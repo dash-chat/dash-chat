@@ -84,34 +84,36 @@
 {/snippet}
 
 <div
-	bind:this={messageEl}
+	class="flex justify-end"
 	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
 >
-	<Card
-		raised
-		contentWrapPadding="p-2"
-		class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-	>
-		<MessageContent
-			{message}
-			{searchQuery}
-			senderName={m.you()}
-			editedIndicator={message.editHistory.length > 0
-				? editedIndicator
-				: undefined}
-			metadata={isLast ? metadata : undefined}
-		/>
-	</Card>
-	{#if Object.keys(message.reactions).length > 0}
-		<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
-			<Reactions
-				reactions={message.reactions}
-				{myDeviceId}
-				onToggleReaction={emoji =>
-					toggleReaction(store, message, myDeviceId, emoji)}
+	<div bind:this={messageEl} class="max-w-[85%]">
+		<Card
+			raised
+			contentWrapPadding="p-2"
+			class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+		>
+			<MessageContent
+				{message}
+				{searchQuery}
+				senderName={m.you()}
+				editedIndicator={message.editHistory.length > 0
+					? editedIndicator
+					: undefined}
+				metadata={isLast ? metadata : undefined}
 			/>
-		</div>
-	{/if}
+		</Card>
+		{#if Object.keys(message.reactions).length > 0}
+			<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
+				<Reactions
+					reactions={message.reactions}
+					{myDeviceId}
+					onToggleReaction={emoji =>
+						toggleReaction(store, message, myDeviceId, emoji)}
+				/>
+			</div>
+		{/if}
+	</div>
 </div>
 <MessageActions
 	{message}

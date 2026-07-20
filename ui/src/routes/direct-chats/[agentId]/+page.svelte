@@ -558,7 +558,7 @@
 														)}
 														{#if myDeviceId == message.author}
 															<div
-																class="self-end max-w-[85%]"
+																class="w-full"
 																data-message-hash={hash}
 																use:scrollToBottomOnMount={hash}
 															>
@@ -580,7 +580,7 @@
 															</div>
 														{:else}
 															<div
-																class="self-start max-w-[85%]"
+																class="w-full"
 																data-message-hash={hash}
 																use:readMessageOnObserve={readHashes?.has(hash)
 																	? null

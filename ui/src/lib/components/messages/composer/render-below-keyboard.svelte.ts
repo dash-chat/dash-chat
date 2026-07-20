@@ -107,6 +107,9 @@ export const renderBelowKeyboard: Action<
 			open &&
 			(phase === 'shown' || phase === 'opening') &&
 			target instanceof HTMLElement &&
+			// hideKeyboard's throwaway inputs drive the IME, they never mean
+			// the keyboard is reclaiming the slot.
+			target.dataset.keyboardDummy === undefined &&
 			(target.tagName === 'INPUT' ||
 				target.tagName === 'TEXTAREA' ||
 				target.isContentEditable)

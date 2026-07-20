@@ -3,7 +3,11 @@
 	import { fade } from 'svelte/transition';
 	import { untrack, type Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { keyboard } from '$lib/utils/keyboard.svelte';
+	import {
+		keyboard,
+		preserveKeyboardSpace,
+		releaseKeyboardSpace,
+	} from '$lib/utils/keyboard.svelte';
 	import { safeAreaInsets } from '$lib/utils/safe-area';
 	import {
 		hideKeyboard,
@@ -44,19 +48,39 @@
 	});
 
 	// The keyboard gives way to the overlay — hidden explicitly, since only
-	// some WebViews retract it on long-press and only some of the time — and
-	// if it was open, dismissing the overlay refocuses the composer and brings
-	// it back.
+	// some WebViews retract it on long-press and only some of the time —
+	// while the composer keeps an empty spacer in its slot so the input bar
+	// doesn't drop to the bottom. Dismissing the overlay refocuses the
+	// composer and brings the keyboard back into the reserved space.
+	// Tracked with a plain variable and an explicit open→close transition
+	// (not an effect cleanup): the effect can re-run spuriously while the
+	// overlay stays open, and a cleanup-based restore would re-summon the
+	// keyboard mid-hide on every such re-run.
 	let restoreKeyboard = false;
 
 	$effect(() => {
 		if (opened) {
-			restoreKeyboard = untrack(() => keyboard.isOpen);
-			if (restoreKeyboard) hideKeyboard();
+			if (untrack(() => keyboard.isOpen)) {
+				restoreKeyboard = true;
+				preserveKeyboardSpace();
+				hideKeyboard();
+			}
 		} else if (restoreKeyboard) {
 			restoreKeyboard = false;
+			// Not released here: the composer's spacer releases it once the
+			// rising keyboard has reclaimed the slot. Releasing earlier flashes
+			// the bar's safe-area padding on for the frames where neither the
+			// keyboard nor the preserved slot is there.
 			reopenComposerKeyboard();
 		}
+	});
+
+	// Destroyed while open (e.g. navigation): drop the composer's keyboard
+	// spacer, but don't re-summon the keyboard.
+	$effect(() => {
+		return () => {
+			if (restoreKeyboard) releaseKeyboardSpace();
+		};
 	});
 
 	// The whole spotlight scene lives between the page chrome (z <= 30) and
@@ -167,7 +191,7 @@
 
 {#if opened}
 	<button
-		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/50"
+		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/90"
 		aria-label={m.close()}
 		transition:fade={{ duration: 200 }}
 		onclick={onClose}

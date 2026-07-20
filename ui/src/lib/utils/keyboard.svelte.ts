@@ -99,6 +99,18 @@ export function pulseKeyboardTracking(durationMs = 400) {
 	pulseRaf = requestAnimationFrame(tick);
 }
 
+let spacePreserved = $state(false);
+
+/** While set, the composer keeps an empty spacer in the keyboard's slot so the
+ * input bar stays put while the keyboard is hidden under an overlay. */
+export function preserveKeyboardSpace() {
+	spacePreserved = true;
+}
+
+export function releaseKeyboardSpace() {
+	spacePreserved = false;
+}
+
 export const keyboard = {
 	/** Live keyboard height in px, following the open/close animation. */
 	get height() {
@@ -106,6 +118,9 @@ export const keyboard = {
 	},
 	get isOpen() {
 		return liveHeight > OPEN_THRESHOLD;
+	},
+	get spacePreserved() {
+		return spacePreserved;
 	},
 	/** The full keyboard height (largest seen, persisted), or a fallback before
 	 *  any keyboard has been shown. */
