@@ -166,7 +166,10 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
         .unwrap();
 
     // Delete for me targets the tip of the chain (the edit).
-    alice.delete_message_for_me(chat, edit.hash()).await.unwrap();
+    alice
+        .delete_message_for_me(chat, edit.hash())
+        .await
+        .unwrap();
 
     poll.wait_for(|| async {
         match payload_present(&alice, *chat, alice.device_id(), edit.hash()).await {
@@ -263,7 +266,13 @@ async fn delete_for_me_hides_edits_arriving_after_the_delete() {
     })
     .await
     .unwrap();
-    assert!(alice.projection.is_tombstoned(*chat, edit.hash()).await.unwrap());
+    assert!(
+        alice
+            .projection
+            .is_tombstoned(*chat, edit.hash())
+            .await
+            .unwrap()
+    );
     assert!(alice.get_messages(chat).await.unwrap().is_empty());
 
     // Bobbi still sees the edited message.

@@ -80,7 +80,7 @@ export class MockMessagesClient implements IMessagesClient {
 	async deleteMessageForMe(chatId: ChatId, targetHash: Hash): Promise<Hash> {
 		// The store passes the original message hash, but resolve the root
 		// defensively (editChainHashes walks back to it) so the whole message is
-		// named regardless of which version was pointed at.
+		// referenced regardless of which version was pointed at.
 		const chain = await this.editChainHashes(chatId, targetHash);
 		const messageHash = chain[chain.length - 1];
 		return this.logsClient.create(this.deviceGroupTopicId, {

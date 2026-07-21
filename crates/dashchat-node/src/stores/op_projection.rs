@@ -47,8 +47,8 @@ const MIGRATIONS: &[&str] = &[
 /// Why an operation was tombstoned. Recorded per tombstone so the frontend can
 /// tell a delete-for-everyone (which still renders a "deleted" placeholder for
 /// the message's author) apart from a delete-for-me (which vanishes with no
-/// trace). An edit that targets a tombstoned operation inherits its referent's
-/// reason (see [`OpProjection::reduce`]).
+/// trace). An edit that targets a `DeletedForMe` tombstoned operation inherits
+/// its referent's reason (see [`OpProjection::reduce`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TombstoneReason {
     DeletedForEveryone,
@@ -56,19 +56,17 @@ pub enum TombstoneReason {
 }
 
 impl TombstoneReason {
-    fn as_str(self) -> &'static str {
-        match self {
-            TombstoneReason::DeletedForEveryone => "for_everyone",
-            TombstoneReason::DeletedForMe => "for_me",
-        }
+    fn to_db(self) -> String {
+        serde_json::to_value(self)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .expect("TombstoneReason serializes to a string")
     }
 
     fn from_db(value: &str) -> anyhow::Result<Self> {
-        match value {
-            "for_everyone" => Ok(TombstoneReason::DeletedForEveryone),
-            "for_me" => Ok(TombstoneReason::DeletedForMe),
-            other => Err(anyhow::anyhow!("unknown tombstone reason: {other}")),
-        }
+        Ok(serde_json::from_value(serde_json::Value::String(
+            value.to_owned(),
+        ))?)
     }
 }
 
@@ -236,10 +234,7 @@ impl OpProjection {
     /// Every tombstone in `topic`, paired with its reason. The frontend uses
     /// this to drop delete-for-me messages (and their edits) from view while
     /// keeping the delete-for-everyone placeholders.
-    pub async fn tombstones(
-        &self,
-        topic: TopicId,
-    ) -> anyhow::Result<Vec<(Hash, TombstoneReason)>> {
+    pub async fn tombstones(&self, topic: TopicId) -> anyhow::Result<Vec<(Hash, TombstoneReason)>> {
         let rows: Vec<(Vec<u8>, String)> =
             sqlx::query_as("SELECT op_hash, reason FROM tombstones WHERE topic_id = ?")
                 .bind(topic.as_bytes().to_vec())
@@ -292,6 +287,11 @@ impl OpProjection {
                 // arrive after the delete, and it keeps a delete-for-everyone's
                 // late edits from lingering too. Edits of live messages are
                 // validated later in `process_app`.
+                //
+                // It is not valid for an Edit to be applied to an operation which
+                // was DeletedForEveryone, but that validation lives elsewhere, and
+                // it's simpler to just unconditionally apply this transitive
+                // tombstoning here.
                 if let Some(reason) = self.tombstone_reason(topic.into(), *edit_hash).await? {
                     let self_hash = operation.event.operation.header().hash();
                     self.add_tombstone(topic.into(), self_hash, reason).await?;
@@ -585,12 +585,14 @@ impl OpProjection {
         op_hash: Hash,
         reason: TombstoneReason,
     ) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR IGNORE INTO tombstones (topic_id, op_hash, reason) VALUES (?, ?, ?)")
-            .bind(topic.as_bytes().to_vec())
-            .bind(op_hash.as_bytes().to_vec())
-            .bind(reason.as_str())
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "INSERT OR IGNORE INTO tombstones (topic_id, op_hash, reason) VALUES (?, ?, ?)",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(op_hash.as_bytes().to_vec())
+        .bind(reason.to_db())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 }
