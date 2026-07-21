@@ -39,6 +39,7 @@
       imports = [
         ./nix/docker.nix
         ./nix/android-emulator.nix
+        ./nix/e2e-chromedrivers.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
         ./crates/push-notifications-server/default.nix
@@ -104,20 +105,6 @@
           devShells.androidDev =
             let
               rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.android.toml;
-              e2eChromedrivers = pkgs.linkFarm "e2e-chromedrivers" [
-                {
-                  name = "chromedriver-150";
-                  path = "${inputs'.nixpkgs-chromedriver-150.legacyPackages.chromedriver}/bin/chromedriver";
-                }
-                {
-                  name = "chromedriver-149";
-                  path = "${inputs'.nixpkgs-chromedriver-149.legacyPackages.chromedriver}/bin/chromedriver";
-                }
-                {
-                  name = "chromedriver-124";
-                  path = "${inputs'.nixpkgs-chromedriver-124.legacyPackages.chromedriver}/bin/chromedriver";
-                }
-              ];
             in
             pkgs.mkShell {
               packages = [
@@ -126,9 +113,6 @@
                 pkgs.jdk
               ];
               inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
-              shellHook = ''
-                export E2E_CHROMEDRIVERS_DIR=${e2eChromedrivers}
-              '';
             };
 
           devShells.iosDev =

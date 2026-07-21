@@ -28,18 +28,16 @@ const DEVICE_MAILBOX_PORT = 3200;
 /** `android` = physical device, `android-emulator` = running emulator. */
 export type AndroidKind = 'android' | 'android-emulator';
 
-/** Directory of flake-pinned chromedrivers (one per device WebView major);
- *  Appium picks the matching one per device. Exported by the androidDev
- *  dev shell. */
-function chromedriversDir(): string {
-	const dir = process.env.E2E_CHROMEDRIVERS_DIR;
-	if (dir === undefined) {
-		throw new Error(
-			'E2E_CHROMEDRIVERS_DIR is not set — Android agents must run inside ' +
-				"the androidDev dev shell ('just test e2e' handles this)",
-		);
-	}
-	return dir;
+/** Flake-pinned chromedrivers (one per device WebView major), materialized
+ *  by the launcher via `nix build --out-link`; Appium picks the matching one
+ *  per device. */
+const CHROMEDRIVERS_DIR = path.join(E2E_DIR, '.appium', 'chromedrivers');
+
+function materializeChromedrivers() {
+	execSync(
+		`nix build 'git+file:${ROOT}#e2e-chromedrivers' --out-link '${CHROMEDRIVERS_DIR}'`,
+		{ stdio: 'inherit' },
+	);
 }
 
 function deviceAbi(udid: string): string {
@@ -192,12 +190,19 @@ export class AndroidPlatform implements AgentPlatform {
 	private loggers = new Map<number, ChildProcess>();
 
 	constructor(kindBySlot: Map<number, AndroidKind>) {
+		if (process.env.NDK_HOME === undefined) {
+			throw new Error(
+				'Android agents must run inside the androidDev dev shell ' +
+					"('just test e2e' handles this)",
+			);
+		}
 		this.slots = [...kindBySlot.keys()];
 		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
 		process.env.APPIUM_HOME = path.join(E2E_DIR, '.appium');
 		// Workers reload this module; device provisioning belongs to the
 		// launcher, which claims before any worker starts.
 		if (process.env.WDIO_WORKER_ID === undefined) {
+			materializeChromedrivers();
 			warnAboutUnauthorizedDevices();
 			bootMissingEmulators(
 				[...kindBySlot.values()].filter(k => k === 'android-emulator').length,
@@ -222,7 +227,7 @@ export class AndroidPlatform implements AgentPlatform {
 				'appium:chromedriverPort': allocatePinnedPort(
 					`_WDIO_CHROMEDRIVER_PORT${slot}`,
 				),
-				'appium:chromedriverExecutableDir': chromedriversDir(),
+				'appium:chromedriverExecutableDir': CHROMEDRIVERS_DIR,
 				'appium:adbExecTimeout': 60_000,
 				'appium:newCommandTimeout': 240,
 			} as WebdriverIO.Capabilities,
