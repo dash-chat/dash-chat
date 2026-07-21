@@ -14,15 +14,16 @@ const E2E_DIR = path.resolve(__dirname, '..', '..');
 const APK_DIR = path.join(ROOT, 'src-tauri/gen/android/app/build/outputs/apk');
 const APP_PACKAGE = 'studio.darksoil.dashchat';
 
-// ABIs covered by `just test e2e android-build` (--split-per-abi): the gradle
-// flavor that names each APK and the rust target the build recipe takes.
+// ABIs the e2e APK build covers (--split-per-abi): the gradle flavor that
+// names each APK and the rust target passed to tauri.
 const ABIS: Record<string, { flavor: string; target: string }> = {
 	'arm64-v8a': { flavor: 'arm64', target: 'aarch64' },
 	'armeabi-v7a': { flavor: 'arm', target: 'armv7' },
 	x86_64: { flavor: 'x86_64', target: 'x86_64' },
 };
 
-// Must match the MAILBOX_URL baked into the APK by `just test e2e android-build`.
+// The device's own loopback port baked into the APK as MAILBOX_URL; onPrepare
+// bridges it to the host's mailbox via adb reverse.
 const DEVICE_MAILBOX_PORT = 3200;
 
 /** `android` = physical device, `android-emulator` = running emulator. */
@@ -244,20 +245,32 @@ export class AndroidPlatform implements AgentPlatform {
 		ensureUiautomator2Driver();
 
 		// Build the e2e APKs only for the claimed devices' architectures.
+		// Debuginfo is dropped and symbols stripped (debug_assertions stays
+		// on, which is what makes the webview inspectable) — with them the
+		// APK is over 3GB.
 		const targets = new Set(
 			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
 		);
-		execSync(`just test e2e android-build '${[...targets].join(' ')}'`, {
-			cwd: ROOT,
-			stdio: 'inherit',
-		});
+		execSync(
+			'pnpm tauri android build --debug --apk --split-per-abi ' +
+				`--features e2e-tests -t ${[...targets].join(' ')}`,
+			{
+				cwd: ROOT,
+				stdio: 'inherit',
+				env: {
+					...process.env,
+					MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
+					CARGO_PROFILE_DEV_DEBUG: '0',
+					CARGO_PROFILE_DEV_STRIP: 'symbols',
+				},
+			},
+		);
 
 		for (const udid of this.udids.values()) {
 			const apk = apkForDevice(udid);
 			if (!existsSync(apk)) {
 				throw new Error(
-					`e2e APK not found at ${apk} (for device ${udid}) after ` +
-						`'just test e2e android-build'`,
+					`e2e APK not found at ${apk} (for device ${udid}) after the tauri android build`,
 				);
 			}
 		}

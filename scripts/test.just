@@ -14,7 +14,7 @@ node *ARGS:
 dashchat-node *ARGS:
     just test node {{ARGS}}
 
-# end-to-end tests (run, build, android-build)
+# end-to-end tests (run, build)
 mod e2e 'e2e.just'
 
 # run backwards compatibility tests against version tags (e.g. just test compat v0.10.0 v0.10.1)
