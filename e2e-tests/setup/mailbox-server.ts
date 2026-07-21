@@ -21,16 +21,10 @@ export function mailboxLogFile(dbPath: string): string {
 
 /** Spawn the mailbox server in its own process group on the given port + db. */
 export function spawnMailboxServer(port: number, dbPath: string): ChildProcess {
-	// stdout/stderr go to a file, not pipes: the server's tracing output is on
-	// stdout, and a respawned server (restartMailbox) outlives the spec worker
-	// that spawned it — a pipe with no reader would eventually block its writes.
-	const logFd = openSync(mailboxLogFile(dbPath), 'a');
 	// The prebuilt binary (run-e2e.sh runs `cargo build -p mailbox-server`) is
 	// spawned directly: `cargo run` here would rebuild with whatever toolchain
 	// is on PATH — under the androidDev shell of an Android combo that means
 	// recompiling the world and blowing the readiness timeout.
-	// `detached: true` puts it in its own process group so lifecycle helpers
-	// can signal -pid without touching the test runner.
 	const bin = path.join(ROOT, 'target', 'debug', 'mailbox-server');
 	if (!existsSync(bin)) {
 		throw new Error(
@@ -38,6 +32,12 @@ export function spawnMailboxServer(port: number, dbPath: string): ChildProcess {
 				`it) or 'cargo build -p mailbox-server'`,
 		);
 	}
+	// stdout/stderr go to a file, not pipes: the server's tracing output is on
+	// stdout, and a respawned server (restartMailbox) outlives the spec worker
+	// that spawned it — a pipe with no reader would eventually block its writes.
+	const logFd = openSync(mailboxLogFile(dbPath), 'a');
+	// `detached: true` puts it in its own process group so lifecycle helpers
+	// can signal -pid without touching the test runner.
 	const server = spawn(
 		bin,
 		['--db-path', dbPath, '--addr', `0.0.0.0:${port}`],

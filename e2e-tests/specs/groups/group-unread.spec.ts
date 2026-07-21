@@ -11,10 +11,7 @@ describe('Group unread messages', () => {
 
 	before(async function () {
 		this.timeout(120_000);
-		({ agent1, agent2 } = await setupAgents(this, {
-			agent1: 'any',
-			agent2: 'any',
-		}));
+		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 
 		await agent2.homePage.chatListItem('mygroup').waitForExist();

@@ -6,10 +6,7 @@ describe('New group', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		({ agent1, agent2 } = await setupAgents(this, {
-			agent1: 'any',
-			agent2: 'any',
-		}));
+		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
 		await agent1.enablePreviewFeatures();
 		await agent2.enablePreviewFeatures();
 		await agent1.createProfilePage.createProfile('Alice', 'Test');

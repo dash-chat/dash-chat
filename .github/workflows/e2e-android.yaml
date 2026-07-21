@@ -67,8 +67,7 @@ jobs:
 
       - name: Run E2E tests on two Android emulators
         env:
-          AGENT_1: android-emulator
-          AGENT_2: android-emulator
+          PLATFORMS: android-emulator,android-emulator
         run: set -o pipefail && just test e2e 2>&1 | tee e2e-android-output.log
 
       - name: Upload test logs on failure

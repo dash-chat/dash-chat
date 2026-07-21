@@ -19,10 +19,7 @@ describe('Long name truncation', () => {
 	let agent2Code = '';
 
 	before(async function () {
-		({ agent1, agent2 } = await setupAgents(this, {
-			agent1: 'any',
-			agent2: 'any',
-		}));
+		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
 	});
 
 	it('creates profiles — agent1 with a very long name', async () => {

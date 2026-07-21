@@ -41,10 +41,7 @@ describe('Compat verify — check data with current version', () => {
 		}
 		state = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
 
-		({ agent1, agent2 } = await setupAgents(this, {
-			agent1: 'any',
-			agent2: 'any',
-		}));
+		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
 	});
 
 	it('both agents skip profile creation (profiles persisted)', async () => {

@@ -8,7 +8,7 @@ describe('Get Started cards', () => {
 	let agent: Agent;
 
 	before(async function () {
-		({ agent1: agent } = await setupAgents(this, { agent1: 'any' }));
+		[agent] = await setupAgents(this, ['any']);
 		await agent.createProfilePage.createProfile('Alice', 'Test');
 	});
 

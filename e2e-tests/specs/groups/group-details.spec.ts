@@ -6,10 +6,7 @@ describe('Group details spec', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		({ agent1, agent2 } = await setupAgents(this, {
-			agent1: 'any',
-			agent2: 'any',
-		}));
+		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 	});
 

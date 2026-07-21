@@ -1,9 +1,10 @@
 /**
- * Unified e2e config. The AGENT_1/AGENT_2 env vars pick each agent's platform
- * — `desktop` (default, tauri-driver against the built binary), `android`
- * (physical device via Appium) or `android-emulator` (running emulator via
- * Appium) — so any combo runs through this one config, e.g.
- * `AGENT_1=android just test e2e run send-messages` for phone + desktop.
+ * Unified e2e config. The PLATFORMS env var lists the agents to launch as an
+ * unordered multiset of platforms (default `desktop,desktop`) — `desktop`
+ * (tauri-driver against the built binary), `android` (physical device via
+ * Appium) or `android-emulator` (running emulator via Appium) — so any combo
+ * runs through this one config, e.g.
+ * `PLATFORMS=android,desktop just test e2e run send-messages`.
  */
 import { type ChildProcess } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,9 +18,9 @@ import { AndroidPlatform, type AndroidKind } from './setup/platforms/android';
 import { DesktopPlatform } from './setup/platforms/desktop';
 import type { AgentPlatform } from './setup/platforms/platform';
 import {
-	agentPlatform,
 	type AgentPlatformName,
 	getSpecFileRetries,
+	platformNames,
 	remoteMailboxUrl,
 } from './setup/test-env';
 
@@ -27,7 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 const nameBySlot = new Map<number, AgentPlatformName>(
-	[1, 2].map(slot => [slot, agentPlatform(slot)]),
+	platformNames().map((name, i) => [i + 1, name]),
 );
 
 const desktopSlots = [...nameBySlot]
@@ -81,10 +82,9 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	maxInstances: 1,
 	specFileRetries: getSpecFileRetries(),
 
-	capabilities: {
-		agent1: agentEntry(1),
-		agent2: agentEntry(2),
-	},
+	capabilities: Object.fromEntries(
+		[...nameBySlot.keys()].map(slot => [`agent${slot}`, agentEntry(slot)]),
+	),
 
 	services:
 		android !== null

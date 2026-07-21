@@ -433,7 +433,7 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 
 ### E2E Tests (WebdriverIO)
 
-The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch two agents and exercise the full messaging flow (profile creation, contact exchange, messaging). Each agent runs on a platform picked by the `AGENT_1`/`AGENT_2` env vars: `desktop` (default; tauri-driver against the built binary), `android` (physical device via Appium in the webview context), or `android-emulator` (headless emulator, booted automatically). Page objects and specs work unchanged across platforms.
+The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (tauri-driver against the built binary), `android` (physical device via Appium in the webview context), or `android-emulator` (headless emulator, booted automatically). Page objects and specs work unchanged across platforms.
 
 ```bash
 # Build the Tauri binary and run the e2e suite (recommended)
@@ -445,14 +445,15 @@ just test e2e build
 # Build and run a single spec
 just test e2e run full-flow
 
-# Phone + desktop, two phones, or two auto-booted emulators
-AGENT_1=android just test e2e run send-messages
-AGENT_1=android AGENT_2=android just test e2e run send-messages
-AGENT_1=android-emulator AGENT_2=android-emulator just test e2e run send-messages
+# Phone + desktop, two phones, two auto-booted emulators, or a single desktop
+PLATFORMS=android,desktop just test e2e run send-messages
+PLATFORMS=android,android just test e2e run send-messages
+PLATFORMS=android-emulator,android-emulator just test e2e run send-messages
+PLATFORMS=desktop just test e2e run settings-pages
 ```
 
 **Key details:**
-- Tests use page objects from `e2e-tests/helpers/pages/`. `setupAgents(this, { agent1: 'any', agent2: 'any' })` returns the named `Agent`s with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
+- Tests use page objects from `e2e-tests/helpers/pages/`. `[agent1, agent2] = await setupAgents(this, ['any', 'any'])` returns one `Agent` per requirement with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
 - Platform-specific setup (tauri-driver instances, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
 - Desktop agents get `DATA_DIR` and `MAILBOX_URL` through each agent's tauri-driver spawn env (`e2e-tests/setup/platforms/desktop.ts`); Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
@@ -466,7 +467,7 @@ AGENT_1=android-emulator AGENT_2=android-emulator just test e2e run send-message
 - **Specs run in narrow (mobile) layout by default.** `setupAgent` forces `agent.setWideScreen(false)` so back buttons (`direct-chat-back`, `offline-back`, …) and FABs render — most of those are gated by `{#if !isWideScreen.value}`. When a spec needs the desktop two-panel layout (e.g. `review-checks` switching combos), call `agent.setWideScreen(true)` in `before()`. Wide-screen mode mounts `ChatListPanel` / `SettingsPanel` / `NewMessagePanel` in the sidebar; some navigation steps that need a back-out in narrow can skip it in wide-screen because the sidebar is always there. The handful of cross-mode helpers (`helpers/review/visit-all-pages.ts`) guard with `if (await page.back.isDisplayed())` to handle both.
 - **Use `page.ready()` instead of bare waits after navigation.** Each page object has a `ready()` method that waits for the first stable element on that page. Call it right after the click that triggered the navigation.
 - **Only pass custom `waitUntil` / `waitForExist` arguments when strictly necessary.** The default `waitforTimeout` (30s) is correct for incidental waits — animations, navigations, store hydration. Override `timeout` / `interval` / `timeoutMsg` only when (a) the operation genuinely needs longer than 30s (network sync, p2p propagation, connection-state flips that depend on real timeouts) or (b) a custom error message is the only way to diagnose a flake. Don't copy timeouts from neighbouring code without justifying them.
-- **Specs declare per-agent platform requirements in `setupAgents`.** Each suite builds its agents with `({ agent1, agent2 } = await setupAgents(this, { agent1: 'any', agent2: 'any' }))` inside `before(async function () { ... })` (a plain `function`, so `this` is the mocha context). A spec covering a platform-specific feature passes `'desktop'`, `'android'` (fulfilled by a physical device or an emulator), or `'ios'` for the agent that needs it; `setupAgents` skips the suite when the current `AGENT_1`/`AGENT_2` combo doesn't fulfil the requirements.
+- **Specs declare per-agent platform requirements in `setupAgents`.** Each suite builds its agents with `[agent1, agent2] = await setupAgents(this, ['any', 'any'])` inside `before(async function () { ... })` (a plain `function`, so `this` is the mocha context). A spec covering a platform-specific feature passes `'desktop'`, `'android'` (fulfilled by a physical device or an emulator), or `'ios'` for the agent that needs it. The harness matches the requirements against the unordered `PLATFORMS` multiset — a `'desktop'` requirement gets a desktop agent regardless of its position in the list — and skips the suite when no assignment exists (including when the spec asks for more agents than `PLATFORMS` launches).
 - **One page object per route, one spec per feature.** When you add a new route under `ui/src/routes/`, add a matching page object under `e2e-tests/helpers/pages/` (mirror the route structure: `routes/settings/profile/edit-name/+page.svelte` → `helpers/pages/settings/profile/edit-name-page.ts`) and wire it into `setup-agents.ts`. New UI features must also ship with a spec in `e2e-tests/specs/` covering the happy path.
 
 **REQUIREMENT:** E2E specs must drive the UI via page objects (`agent.homePage.newMessageButton.click()`), not by inlining `document.querySelector` or duplicating selectors. DOM-side helpers that can't be expressed as clicks belong in `ui/tests/setup-utils.ts` under `window.__test`.

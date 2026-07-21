@@ -34,10 +34,7 @@ describe('Waiting-for-profile placeholder', () => {
 		// The placeholder window only exists while the mailbox is suspended,
 		// which is impossible against a remote environment mailbox.
 		if (isRemoteMailbox()) this.skip();
-		({ agent1, agent2 } = await setupAgents(this, {
-			agent1: 'any',
-			agent2: 'any',
-		}));
+		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
 		await Promise.all([
 			agent1.createProfilePage.createProfile('Alice', 'Test'),
 			agent2.createProfilePage.createProfile('Bob', 'Test'),

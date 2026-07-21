@@ -1,12 +1,12 @@
 /**
  * Shared helpers for E2E test setup.
  *
- * `setupAgents(this, { agent1: 'any', agent2: 'desktop' })` returns the named
- * `Agent`s — each a `WebdriverIO.Browser` plus page-object instances
+ * `[a, b] = await setupAgents(this, ['any', 'desktop'])` returns one `Agent`
+ * per requirement — each a `WebdriverIO.Browser` plus page-object instances
  * (`agent.homePage`, `agent.directChatPage`, …) and a small set of agent-level
  * helpers that proxy to the browser-side test registry (`agent.tr`,
- * `agent.goto`, `agent.setLocale`, …) — or skips the suite when an agent's
- * platform requirement isn't fulfilled by the current AGENT_1/AGENT_2 combo.
+ * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
+ * multiset can't fulfill the requirements.
  */
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
@@ -34,7 +34,7 @@ import { EditPhotoPage } from '../helpers/pages/settings/profile/edit-photo-page
 import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { checkOverflow } from '../helpers/review/checks';
-import { agentPlatform, type AgentPlatformName } from './test-env';
+import { type AgentPlatformName, platformNames } from './test-env';
 
 export type Agent = WebdriverIO.Browser & {
 	accountPage: AccountPage;
@@ -224,28 +224,44 @@ function fulfills(
 	return false;
 }
 
-/**
- * Build the requested agents, skipping the suite when an agent's platform
- * requirement isn't fulfilled by the current AGENT_1/AGENT_2 combo. Call from
- * a `before(async function () { ... })` hook (not an arrow function — `this`
- * must be the mocha context so the suite can be skipped).
- */
-export async function setupAgents<K extends 'agent1' | 'agent2'>(
-	ctx: Mocha.Context,
-	requirements: Record<K, PlatformRequirement>,
-): Promise<Record<K, Agent>> {
-	const names = Object.keys(requirements) as K[];
-	for (const name of names) {
-		const slot = Number(name.replace('agent', ''));
-		if (!fulfills(requirements[name], agentPlatform(slot))) {
-			ctx.skip();
-		}
+/** Assign each requirement a distinct launched slot — specific requirements
+ *  first so 'any' takes the leftovers, ascending slot order for determinism —
+ *  or null when the launched platforms can't fulfill them all. */
+function matchSlots(
+	requirements: readonly PlatformRequirement[],
+	platforms: AgentPlatformName[],
+): number[] | null {
+	const free = platforms.map((platform, i) => ({ slot: i + 1, platform }));
+	const slots: number[] = [];
+	const order = [...requirements.keys()].sort(
+		(a, b) =>
+			Number(requirements[a] === 'any') - Number(requirements[b] === 'any'),
+	);
+	for (const i of order) {
+		const j = free.findIndex(f => fulfills(requirements[i], f.platform));
+		if (j === -1) return null;
+		slots[i] = free[j].slot;
+		free.splice(j, 1);
 	}
-	const agents = await Promise.all(names.map(name => setupAgent(name)));
-	return Object.fromEntries(names.map((name, i) => [name, agents[i]])) as Record<
-		K,
-		Agent
-	>;
+	return slots;
+}
+
+/**
+ * Build one agent per requirement, matched against the unordered PLATFORMS
+ * multiset (a 'desktop' requirement gets a desktop agent no matter its
+ * position in PLATFORMS), skipping the suite when no assignment exists. Call
+ * from a `before(async function () { ... })` hook (not an arrow function —
+ * `this` must be the mocha context so the suite can be skipped).
+ */
+export async function setupAgents<
+	const T extends readonly PlatformRequirement[],
+>(ctx: Mocha.Context, requirements: T): Promise<{ [K in keyof T]: Agent }> {
+	const slots = matchSlots(requirements, platformNames());
+	if (slots === null) ctx.skip();
+	const agents = await Promise.all(
+		slots.map(slot => setupAgent(`agent${slot}`)),
+	);
+	return agents as { [K in keyof T]: Agent };
 }
 
 /**

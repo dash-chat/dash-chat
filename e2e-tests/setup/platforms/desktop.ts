@@ -73,6 +73,11 @@ export class DesktopPlatform implements AgentPlatform {
 		// Wait for ports to be fully released after SIGKILL.
 		await Promise.all(this.ports.map(p => waitForPortFree(p)));
 
+		const mailboxUrl = process.env.MAILBOX_URL;
+		if (mailboxUrl === undefined) {
+			throw new Error('MAILBOX_URL not set — onPrepare must run first');
+		}
+
 		for (const agent of this.agents) {
 			// Clean all agent data for a fresh start (important for
 			// specFileRetries). Must remove the entire agent directory, not just
@@ -88,11 +93,7 @@ export class DesktopPlatform implements AgentPlatform {
 
 			mkdirSync(agentDir, { recursive: true });
 
-			const mailboxUrl = process.env.MAILBOX_URL;
-			if (mailboxUrl === undefined) {
-				throw new Error('MAILBOX_URL not set — onPrepare must run first');
-			}
-
+			// tauri-plugin-log names the file after productName (tauri.conf.json).
 			agent.logger = startAgentLogger(
 				`agent-${agent.slot}`,
 				path.join(agentDir, 'logs', 'Dash Chat.log'),

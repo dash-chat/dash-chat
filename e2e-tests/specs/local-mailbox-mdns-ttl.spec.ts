@@ -32,10 +32,7 @@ describe('Local mailbox connection survives the mDNS announcement TTL', function
 		if (isRemoteMailbox()) this.skip();
 		// agent1 hosts the in-process local mailbox server, a desktop-only
 		// feature; discovery assumes both agents share the runner's LAN.
-		({ agent1, agent2 } = await setupAgents(this, {
-			agent1: 'desktop',
-			agent2: 'desktop',
-		}));
+		[agent1, agent2] = await setupAgents(this, ['desktop', 'desktop']);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 

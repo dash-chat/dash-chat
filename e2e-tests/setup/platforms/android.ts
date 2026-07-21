@@ -1,5 +1,5 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,6 +41,17 @@ function materializeChromedrivers() {
 	);
 }
 
+/** The headless emulator launcher, materialized by the launcher via
+ *  `nix build --out-link` before it's run per-boot (below). */
+const BOOT_EMULATOR_DIR = path.join(E2E_DIR, '.appium', 'boot-emulator');
+
+function materializeBootEmulator() {
+	execSync(
+		`nix build 'git+file:${ROOT}#boot-emulator' --out-link '${BOOT_EMULATOR_DIR}'`,
+		{ stdio: 'inherit' },
+	);
+}
+
 function deviceAbi(udid: string): string {
 	const abilist = execSync(
 		`adb -s ${udid} shell getprop ro.product.cpu.abilist`,
@@ -75,17 +86,29 @@ function bootMissingEmulators(needed: number) {
 	const running = connectedDevices().filter(d =>
 		d.startsWith('emulator-'),
 	).length;
+	if (running >= needed) return;
+
+	materializeBootEmulator();
+
 	const logFile = path.join(ROOT, '.dbs', 'e2e', 'emulator.log');
 	for (let i = running; i < needed; i++) {
 		mkdirSync(path.dirname(logFile), { recursive: true });
 		console.log(`Booting headless emulator (log: ${logFile})...`);
-		// run-test-emulator's boot-wait loop has no timeout — bound it so a
-		// crashed emulator can't hang the run. Its stdio must go to a file:
-		// the emulator outlives this call and would hold a pipe open forever.
-		execSync(
-			`nix run 'git+file:${ROOT}#boot-emulator' < /dev/null >> '${logFile}' 2>&1`,
-			{ timeout: 600_000 },
-		);
+		try {
+			// run-test-emulator's boot-wait loop has no timeout — bound just the
+			// boot itself (the nix build above already materialized the app, so
+			// this timeout no longer also has to cover a cold nix realization).
+			// Its stdio must go to a file: the emulator outlives this call and
+			// would hold a pipe open forever.
+			execSync(
+				`'${BOOT_EMULATOR_DIR}/bin/boot-emulator' < /dev/null >> '${logFile}' 2>&1`,
+				{ timeout: 600_000 },
+			);
+		} catch (err) {
+			const lines = readFileSync(logFile, 'utf8').split('\n');
+			console.error(lines.slice(-100).join('\n'));
+			throw err;
+		}
 		console.log('Emulator ready.');
 	}
 }

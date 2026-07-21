@@ -32,15 +32,24 @@ export function getSpecFileRetries(): number {
 const AGENT_PLATFORMS = ['desktop', 'android', 'android-emulator'] as const;
 export type AgentPlatformName = (typeof AGENT_PLATFORMS)[number];
 
-/** Platform of the given agent slot, from the AGENT_{slot} env var. */
-export function agentPlatform(slot: number): AgentPlatformName {
-	const name = process.env[`AGENT_${slot}`] ?? 'desktop';
-	if (!(AGENT_PLATFORMS as readonly string[]).includes(name)) {
-		throw new Error(
-			`AGENT_${slot}=${name} is not a valid platform (expected one of: ${AGENT_PLATFORMS.join(', ')})`,
-		);
+/**
+ * Platforms of the launched agents, parsed from the PLATFORMS env var — an
+ * unordered comma-separated multiset (duplicates set the agent count, order
+ * carries no meaning). Index i runs agent slot i+1.
+ */
+export function platformNames(): AgentPlatformName[] {
+	const raw = process.env.PLATFORMS;
+	const names = (raw === undefined || raw === '' ? 'desktop,desktop' : raw)
+		.split(',')
+		.map(name => name.trim());
+	for (const name of names) {
+		if (!(AGENT_PLATFORMS as readonly string[]).includes(name)) {
+			throw new Error(
+				`PLATFORMS entry '${name}' is not a valid platform (expected one of: ${AGENT_PLATFORMS.join(', ')})`,
+			);
+		}
 	}
-	return name as AgentPlatformName;
+	return names as AgentPlatformName[];
 }
 
 /**

@@ -25,17 +25,17 @@ if [[ "$spec_name" != "-" && -n "$spec_name" ]]; then
     wdio_args+=(--spec "specs/${spec_name}.spec.ts")
 fi
 
-export AGENT_1="${AGENT_1:-desktop}"
-export AGENT_2="${AGENT_2:-desktop}"
+export PLATFORMS="${PLATFORMS:-desktop,desktop}"
 
 has_desktop=false
 has_android=false
-for agent in "$AGENT_1" "$AGENT_2"; do
-    case "$agent" in
+IFS=',' read -ra platform_list <<< "$PLATFORMS"
+for platform in "${platform_list[@]}"; do
+    case "$platform" in
         desktop) has_desktop=true ;;
         android|android-emulator) has_android=true ;;
         *)
-            echo "Invalid agent platform '$agent' (expected desktop, android or android-emulator)" >&2
+            echo "Invalid platform '$platform' in PLATFORMS (expected desktop, android or android-emulator)" >&2
             exit 1
             ;;
     esac

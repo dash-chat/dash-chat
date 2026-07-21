@@ -3,9 +3,10 @@ set working-directory := '..'
 # run e2e tests (builds what the agent combo needs first). Pass a spec name to
 # run only that one (e.g. `just test e2e run full-flow`); omit it to run the
 # whole suite. Pass `--no-rerun` to skip WebdriverIO's spec retry on failures.
-# AGENT_1/AGENT_2 env vars pick each agent's platform: desktop (default),
-# android (physical device), or android-emulator (booted automatically), e.g.
-# `AGENT_1=android just test e2e run send-messages` for phone + desktop.
+# The PLATFORMS env var lists the agents to launch as an unordered multiset of
+# platforms (default `desktop,desktop`): desktop, android (physical device), or
+# android-emulator (booted automatically), e.g.
+# `PLATFORMS=android,desktop just test e2e run send-messages`.
 [default]
 run NAME='' *ARGS:
     bash ./scripts/run-e2e.sh {{ if NAME == '' { '-' } else { NAME } }} {{ARGS}}
