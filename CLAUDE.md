@@ -439,9 +439,6 @@ The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. 
 # Build the Tauri binary and run the e2e suite (recommended)
 just test e2e
 
-# Build the binary only
-just test e2e build
-
 # Build and run a single spec
 just test e2e run full-flow
 

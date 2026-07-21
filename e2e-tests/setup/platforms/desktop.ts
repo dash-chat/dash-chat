@@ -1,5 +1,5 @@
-import { type ChildProcess, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,13 +51,14 @@ export class DesktopPlatform implements AgentPlatform {
 	}
 
 	async onPrepare() {
-		const bin = path.join(ROOT, 'target', 'debug', 'dash-chat');
-		if (!existsSync(bin)) {
-			throw new Error(
-				`${bin} not found — run the suite via 'just test e2e' (which ` +
-					`builds it) or 'just test e2e build'`,
-			);
-		}
+		// Wrapped in the default dev shell: under an androidDev-shell run
+		// (mixed combos) a bare build would resolve the android-pinned rustc
+		// and rebuild everything in the shared target dir.
+		execSync(
+			`nix develop 'git+file:${ROOT}' --command ` +
+				'pnpm tauri build --debug --no-bundle --features e2e-tests',
+			{ cwd: ROOT, stdio: 'inherit' },
+		);
 		// Kill any leftover processes from previous interrupted runs.
 		killAllE2EProcesses();
 		killPortHolders(this.ports);

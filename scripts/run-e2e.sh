@@ -27,12 +27,11 @@ fi
 
 export PLATFORMS="${PLATFORMS:-desktop,desktop}"
 
-has_desktop=false
 has_android=false
 IFS=',' read -ra platform_list <<< "$PLATFORMS"
 for platform in "${platform_list[@]}"; do
     case "$platform" in
-        desktop) has_desktop=true ;;
+        desktop) ;;
         android|android-emulator) has_android=true ;;
         *)
             echo "Invalid platform '$platform' in PLATFORMS (expected desktop, android or android-emulator)" >&2
@@ -41,14 +40,10 @@ for platform in "${platform_list[@]}"; do
     esac
 done
 
-# The desktop binary and the mailbox server must be built here, with the
-# default toolchain: a `cargo` run inside the androidDev shell would rebuild
-# everything with the android toolchain. Everything else Android-specific
-# (device detection, APK builds, emulator boot, appium setup) lives in
-# e2e-tests/setup/platforms/android.ts.
-if $has_desktop; then
-    just test e2e build
-fi
+# The mailbox server must be built here, with the default toolchain: a
+# `cargo` run inside the androidDev shell would rebuild everything with the
+# android toolchain. All agent builds and provisioning live in
+# e2e-tests/setup/platforms/.
 cargo build -p mailbox-server
 
 cd "$ROOT/e2e-tests"

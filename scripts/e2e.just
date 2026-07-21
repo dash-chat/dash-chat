@@ -11,7 +11,3 @@ set working-directory := '..'
 run NAME='' *ARGS:
     bash ./scripts/run-e2e.sh {{ if NAME == '' { '-' } else { NAME } }} {{ARGS}}
 
-# build the Tauri binary used by the e2e tests
-build:
-    pnpm tauri build --debug --no-bundle --features e2e-tests
-
