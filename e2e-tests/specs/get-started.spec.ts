@@ -1,14 +1,14 @@
 import {
 	type Agent,
-	setupAgent,
+	setupAgents,
 	waitForTestUtils,
 } from '../setup/setup-agents';
 
 describe('Get Started cards', () => {
 	let agent: Agent;
 
-	before(async () => {
-		agent = await setupAgent('agent1');
+	before(async function () {
+		[agent] = await setupAgents(this, [{ platform: 'any' }]);
 		await agent.createProfilePage.createProfile('Alice', 'Test');
 	});
 
