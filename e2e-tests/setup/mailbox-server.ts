@@ -21,9 +21,9 @@ export function mailboxLogFile(dbPath: string): string {
 
 /** Spawn the mailbox server in its own process group on the given port + db. */
 export function spawnMailboxServer(port: number, dbPath: string): ChildProcess {
-	// The prebuilt binary (run-e2e.sh runs `cargo build -p mailbox-server`) is
-	// spawned directly: `cargo run` here would rebuild with whatever toolchain
-	// is on PATH — under the androidDev shell of an Android combo that means
+	// The prebuilt binary (built by wdio.conf's onPrepare) is spawned
+	// directly: `cargo run` here would rebuild with whatever toolchain is on
+	// PATH — under the androidDev shell of an Android combo that means
 	// recompiling the world and blowing the readiness timeout.
 	const bin = path.join(ROOT, 'target', 'debug', 'mailbox-server');
 	if (!existsSync(bin)) {

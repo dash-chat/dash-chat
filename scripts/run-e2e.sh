@@ -40,12 +40,6 @@ for platform in "${platform_list[@]}"; do
     esac
 done
 
-# The mailbox server must be built here, with the default toolchain: a
-# `cargo` run inside the androidDev shell would rebuild everything with the
-# android toolchain. All agent builds and provisioning live in
-# e2e-tests/setup/platforms/.
-cargo build -p mailbox-server
-
 cd "$ROOT/e2e-tests"
 
 export E2E_SPEC_FILE_RETRIES="$retry_attempts"

@@ -29,27 +29,26 @@ const DEVICE_MAILBOX_PORT = 3200;
 /** `android` = physical device, `android-emulator` = running emulator. */
 export type AndroidKind = 'android' | 'android-emulator';
 
-/** Flake-pinned chromedrivers (one per device WebView major), materialized
- *  by the launcher via `nix build --out-link`; Appium picks the matching one
- *  per device. */
+/** Flake-pinned chromedrivers (one per device WebView major), provided at
+ *  this path by the androidDev shellHook; Appium picks the matching one per
+ *  device. */
 const CHROMEDRIVERS_DIR = path.join(E2E_DIR, '.appium', 'chromedrivers');
 
-function materializeChromedrivers() {
-	execSync(
-		`nix build 'git+file:${ROOT}#e2e-chromedrivers' --out-link '${CHROMEDRIVERS_DIR}'`,
-		{ stdio: 'inherit' },
-	);
-}
-
-/** The headless emulator launcher, materialized by the launcher via
- *  `nix build --out-link` before it's run per-boot (below). */
-const BOOT_EMULATOR_DIR = path.join(E2E_DIR, '.appium', 'boot-emulator');
-
-function materializeBootEmulator() {
-	execSync(
-		`nix build 'git+file:${ROOT}#boot-emulator' --out-link '${BOOT_EMULATOR_DIR}'`,
-		{ stdio: 'inherit' },
-	);
+function assertAndroidToolsAvailable() {
+	try {
+		execSync('command -v adb', { stdio: 'ignore' });
+	} catch {
+		throw new Error(
+			'adb not found — Android agents run inside the androidDev dev ' +
+				"shell ('just test e2e' handles this)",
+		);
+	}
+	if (!existsSync(CHROMEDRIVERS_DIR)) {
+		throw new Error(
+			`${CHROMEDRIVERS_DIR} not found — the androidDev shellHook ` +
+				"provides it ('just test e2e' handles this)",
+		);
+	}
 }
 
 function deviceAbi(udid: string): string {
@@ -88,22 +87,17 @@ function bootMissingEmulators(needed: number) {
 	).length;
 	if (running >= needed) return;
 
-	materializeBootEmulator();
-
 	const logFile = path.join(ROOT, '.dbs', 'e2e', 'emulator.log');
 	for (let i = running; i < needed; i++) {
 		mkdirSync(path.dirname(logFile), { recursive: true });
 		console.log(`Booting headless emulator (log: ${logFile})...`);
 		try {
-			// run-test-emulator's boot-wait loop has no timeout — bound just the
-			// boot itself (the nix build above already materialized the app, so
-			// this timeout no longer also has to cover a cold nix realization).
-			// Its stdio must go to a file: the emulator outlives this call and
+			// The launcher's boot-wait loop has no timeout — bound it here. Its
+			// stdio must go to a file: the emulator outlives this call and
 			// would hold a pipe open forever.
-			execSync(
-				`'${BOOT_EMULATOR_DIR}/bin/boot-emulator' < /dev/null >> '${logFile}' 2>&1`,
-				{ timeout: 600_000 },
-			);
+			execSync(`boot-emulator < /dev/null >> '${logFile}' 2>&1`, {
+				timeout: 600_000,
+			});
 		} catch (err) {
 			const lines = readFileSync(logFile, 'utf8').split('\n');
 			console.error(lines.slice(-100).join('\n'));
@@ -222,19 +216,13 @@ export class AndroidPlatform implements AgentPlatform {
 	private loggers = new Map<number, ChildProcess>();
 
 	constructor(kindBySlot: Map<number, AndroidKind>) {
-		if (process.env.NDK_HOME === undefined) {
-			throw new Error(
-				'Android agents must run inside the androidDev dev shell ' +
-					"('just test e2e' handles this)",
-			);
-		}
+		assertAndroidToolsAvailable();
 		this.slots = [...kindBySlot.keys()];
 		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
 		process.env.APPIUM_HOME = path.join(E2E_DIR, '.appium');
 		// Workers reload this module; device provisioning belongs to the
 		// launcher, which claims before any worker starts.
 		if (process.env.WDIO_WORKER_ID === undefined) {
-			materializeChromedrivers();
 			warnAboutUnauthorizedDevices();
 			bootMissingEmulators(
 				[...kindBySlot.values()].filter(k => k === 'android-emulator').length,

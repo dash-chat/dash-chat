@@ -51,14 +51,10 @@ export class DesktopPlatform implements AgentPlatform {
 	}
 
 	async onPrepare() {
-		// Wrapped in the default dev shell: under an androidDev-shell run
-		// (mixed combos) a bare build would resolve the android-pinned rustc
-		// and rebuild everything in the shared target dir.
-		execSync(
-			`nix develop 'git+file:${ROOT}' --command ` +
-				'pnpm tauri build --debug --no-bundle --features e2e-tests',
-			{ cwd: ROOT, stdio: 'inherit' },
-		);
+		execSync('pnpm tauri build --debug --no-bundle --features e2e-tests', {
+			cwd: ROOT,
+			stdio: 'inherit',
+		});
 		// Kill any leftover processes from previous interrupted runs.
 		killAllE2EProcesses();
 		killPortHolders(this.ports);

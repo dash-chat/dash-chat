@@ -56,14 +56,6 @@ jobs:
       - name: Build UI packages
         run: pnpm -F ./packages/stores build
 
-      - name: Build Tauri app (debug, no-bundle)
-        run: pnpm tauri build --debug --no-bundle --features e2e-tests
-
-      # Pre-build so wdio's onPrepare, which spawns the prebuilt
-      # target/debug/mailbox-server binary, doesn't race the first specs.
-      - name: Build mailbox server
-        run: cargo build -p mailbox-server
-
       # dbus-run-session gives the apps a working session bus. Without it,
       # GLib falls back to the runner's systemd user bus, where activating
       # org.freedesktop.portal.Desktop hangs (headless), stalling every app

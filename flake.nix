@@ -79,6 +79,14 @@
             pango
           ];
           nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
+          # One toolchain (host + android targets) shared by the default and
+          # androidDev shells: identical rustc + host-build env keep artifacts
+          # in the shared target dir fingerprint-compatible across shells.
+          rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          linuxRpathHook = lib.optionalString pkgs.stdenv.isLinux ''
+            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+          '';
           packages = [
             pkgs.mprocs
             pkgs.just
@@ -90,36 +98,29 @@
           ];
         in
         rec {
-          devShells.default =
-            let
-              rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-            in
-            pkgs.mkShell {
-              packages = [ rust ] ++ packages;
-              inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-              shellHook = lib.optionalString pkgs.stdenv.isLinux ''
-                export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
-                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
-              '';
-            };
+          devShells.default = pkgs.mkShell {
+            packages = [ rust ] ++ packages;
+            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
+            shellHook = linuxRpathHook;
+          };
 
-          devShells.androidDev =
-            let
-              rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.android.toml;
-            in
-            pkgs.mkShell {
-              packages = [
-                rust
-                pkgs."nodejs_${nodeVersion}"
-                pkgs.jdk
-              ];
-              inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
-            };
+          devShells.androidDev = pkgs.mkShell {
+            packages = [
+              rust
+              pkgs."nodejs_${nodeVersion}"
+              pkgs.jdk
+            ]
+            ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ];
+            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
+            # The e2e harness consumes tools and artifacts from PATH and
+            # conventional paths; this hook provides the chromedrivers dir.
+            shellHook = linuxRpathHook + ''
+              mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.appium"
+              ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.appium/chromedrivers"
+            '';
+          };
 
           devShells.iosDev =
-            let
-              rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.ios.toml;
-            in
             pkgs.mkShell {
               inputsFrom = [ devShells.default ];
               packages = [ rust ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];

@@ -6,7 +6,7 @@
  * runs through this one config, e.g.
  * `PLATFORMS=android,desktop just test e2e run send-messages`.
  */
-import { type ChildProcess } from 'node:child_process';
+import { type ChildProcess, execSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -140,6 +140,10 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				);
 				console.log(`Using remote mailbox at ${remoteUrl}`);
 			} else {
+				execSync('cargo build -p mailbox-server', {
+					cwd: ROOT,
+					stdio: 'inherit',
+				});
 				// Start a local mailbox server so e2e tests don't hit the internet.
 				({
 					proc: mailboxServer,
