@@ -83,9 +83,10 @@
           # androidDev shells: identical rustc + host-build env keep artifacts
           # in the shared target dir fingerprint-compatible across shells.
           rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-          linuxRpathHook = lib.optionalString pkgs.stdenv.isLinux ''
+          hostBuildEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
             export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+            export SOURCE_DATE_EPOCH=315532800
           '';
           packages = [
             pkgs.mprocs
@@ -101,7 +102,7 @@
           devShells.default = pkgs.mkShell {
             packages = [ rust ] ++ packages;
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            shellHook = linuxRpathHook;
+            shellHook = hostBuildEnvHook;
           };
 
           devShells.androidDev = pkgs.mkShell {
@@ -114,7 +115,16 @@
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
             # The e2e harness consumes tools and artifacts from PATH and
             # conventional paths; this hook provides the chromedrivers dir.
-            shellHook = linuxRpathHook + ''
+            shellHook = hostBuildEnvHook + ''
+              # Host build scripts fingerprint CC/CXX/AR/RANLIB — align them
+              # with the default shell so host artifacts in the shared target
+              # dir stay fingerprint-compatible across shells, keeping the NDK
+              # llvm tools for the android triples via target-scoped vars.
+              for triple in aarch64_linux_android armv7_linux_androideabi x86_64_linux_android i686_linux_android; do
+                export "AR_''${triple}=''${AR}"
+                export "RANLIB_''${triple}=''${RANLIB}"
+              done
+              export CC=gcc CXX=g++ AR=ar RANLIB=ranlib
               mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.appium"
               ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.appium/chromedrivers"
             '';

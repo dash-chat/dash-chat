@@ -440,13 +440,13 @@ The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. 
 just test e2e
 
 # Build and run a single spec
-just test e2e run full-flow
+just test e2e full-flow
 
 # Phone + desktop, two phones, two auto-booted emulators, or a single desktop
-PLATFORMS=android,desktop just test e2e run send-messages
-PLATFORMS=android,android just test e2e run send-messages
-PLATFORMS=android-emulator,android-emulator just test e2e run send-messages
-PLATFORMS=desktop just test e2e run settings-pages
+PLATFORMS=android,desktop just test e2e send-messages
+PLATFORMS=android,android just test e2e send-messages
+PLATFORMS=android-emulator,android-emulator just test e2e send-messages
+PLATFORMS=desktop just test e2e settings-pages
 ```
 
 **Key details:**

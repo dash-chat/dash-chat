@@ -4,7 +4,7 @@
  * (tauri-driver against the built binary), `android` (physical device via
  * Appium) or `android-emulator` (running emulator via Appium) — so any combo
  * runs through this one config, e.g.
- * `PLATFORMS=android,desktop just test e2e run send-messages`.
+ * `PLATFORMS=android,desktop just test e2e send-messages`.
  */
 import { type ChildProcess, execSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';

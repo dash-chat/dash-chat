@@ -14,8 +14,35 @@ node *ARGS:
 dashchat-node *ARGS:
     just test node {{ARGS}}
 
-# end-to-end tests (run, build)
-mod e2e 'e2e.just'
+# run e2e tests (the harness builds what the agent combo needs first). Pass a
+# spec name to run only that one (e.g. `just test e2e full-flow`); omit it to
+# run the whole suite. Pass `--no-rerun` to skip WebdriverIO's spec retry on
+# failures. The PLATFORMS env var lists the agents to launch as an unordered
+# multiset of platforms (default `desktop,desktop`): desktop, android
+# (physical device), or android-emulator (booted automatically), e.g.
+# `PLATFORMS=android,desktop just test e2e send-messages`.
+e2e NAME='' *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd e2e-tests
+    wdio_args=()
+    [[ -n "{{NAME}}" ]] && wdio_args+=(--spec "specs/{{NAME}}.spec.ts")
+    export E2E_SPEC_FILE_RETRIES=1
+    for arg in {{ARGS}}; do
+        case "$arg" in
+            --no-rerun|--no-retry) export E2E_SPEC_FILE_RETRIES=0 ;;
+            *) wdio_args+=("$arg") ;;
+        esac
+    done
+    # wdio itself needs the androidDev shell's tools (adb, appium
+    # chromedrivers, boot-emulator, SDK/NDK for the APK build); it layers
+    # over the caller's default dev shell so tauri-driver/pnpm stay on PATH.
+    if [[ "${PLATFORMS:-}" == *android* ]]; then
+        exec nix develop "git+file:$(git rev-parse --show-toplevel)#androidDev" \
+            --command pnpm wdio run wdio.conf.ts "${wdio_args[@]}"
+    else
+        exec pnpm wdio run wdio.conf.ts "${wdio_args[@]}"
+    fi
 
 # run backwards compatibility tests against version tags (e.g. just test compat v0.10.0 v0.10.1)
 compat *TAGS:

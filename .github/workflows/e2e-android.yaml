@@ -46,7 +46,7 @@ jobs:
           name: dash-chat
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-      # The default dev shell provides just/pnpm/node/cargo; run-e2e.sh enters
+      # The default dev shell provides just/pnpm/node/cargo; the e2e recipe enters
       # the androidDev shell itself for the adb/Appium parts, same as locally.
       - name: Load nix dev shell environment
         uses: nicknovitski/nix-develop@v1
