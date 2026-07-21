@@ -3,6 +3,7 @@ import { ConnectionStatusIndicator } from '../../components/connection-status-in
 import { Messages } from '../../components/messages';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
+import { SYNC_TIMEOUT } from '../../timeouts';
 import { TestHelper } from '../test-helper';
 
 export type MessageStatus = 'sending' | 'local' | 'cloud';
@@ -21,6 +22,11 @@ export class DirectChatPage extends TestHelper {
 	rejectButton = this.el(tid('direct-chat-reject-btn'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
 	rejectConfirm = this.el(tid('direct-chat-reject-confirm'));
+	blockButton = this.el(tid('direct-chat-block-btn'));
+	unblockButton = this.el(tid('direct-chat-unblock-btn'));
+	blockedBanner = this.el(tid('direct-chat-blocked-banner'));
+	blockConfirm = this.el(tid('block-contact-confirm'));
+	blockedNameIcon = this.el(tid('blocked-name-icon'));
 	messageStatus = this.el(tid('message-status'));
 	readMore = this.el(tid('message-read-more'));
 	messages = new Messages(
@@ -37,6 +43,9 @@ export class DirectChatPage extends TestHelper {
 	}
 
 	async sendMessage(text: string) {
+		// The composer only mounts once the chat leaves the pending state, which
+		// depends on the peer's profile syncing peer-to-peer through the mailbox.
+		await this.composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
 		await this.typeInto(tid('message-input-textarea'), text);
 		await this.agent.pause(50);
 		await this.agent.execute((sel: string) => {

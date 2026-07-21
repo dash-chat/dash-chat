@@ -3,6 +3,8 @@ use std::time::Duration;
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::toy::ToyMailboxClient;
 
+mod common;
+
 /// A media blob relays through a mailbox when the sender is offline.
 ///
 /// The mailbox runs in-process inside an always-on "relay" node, sharing that
@@ -41,27 +43,18 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     let mailbox_dir = tempfile::tempdir().unwrap();
     let db_path = mailbox_dir.path().join("mailbox.redb");
 
-    // The relay shares no chat topic with Alice, so it discovers her address
-    // lazily over mDNS rather than via an active gossip connection; retry the
-    // blob fetch on a short interval so a pass lands once her address resolves.
-    let (peer_addr_tx, _peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
-    let server = mailbox_local_server::spawn_local_mailbox_server(
+    let server = common::spawn_relay_mailbox(
+        &relay,
         db_path,
-        relay.blobs(),
-        relay.blob_downloader(),
-        relay.iroh_endpoint().await.unwrap(),
-        Some(mailbox_server::FetchConfig {
+        mailbox_server::FetchConfig {
             concurrency: 4,
             attempt_timeout: Duration::from_secs(10),
             pass_interval: Duration::from_secs(2),
             retry_cooldown: Duration::from_secs(2),
-        }),
-        peer_addr_tx,
+        },
     )
-    .await
-    .unwrap();
+    .await;
     let url = server.url.clone();
-    mailbox_client::toy::wait_for_mailbox_health(&url).await;
 
     // Alice and Bobbi, both pointing their toy mailbox client at the relay's
     // mailbox, using their own EndpointId as the blob-upload sender pubkey.
@@ -88,7 +81,8 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         ))
         .await;
 
-    // Simulate alice and bobbi discovering the relay's address over mDNS.
+    // Simulate alice and bobbi discovering the relay's address over mDNS
+    // and announcing their own address to the relay, but not to each other.
     teach_peers(&alice, [&relay]).await.unwrap();
     teach_peers(&bobbi, [&relay]).await.unwrap();
     alice.register_with_mailbox(&url).await.unwrap();
@@ -268,6 +262,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
             pass_interval: Duration::from_millis(200),
             retry_cooldown: Duration::from_millis(200),
         }),
+        Some(common::TEST_UPLOAD_GRACE),
         peer_addr_tx,
     )
     .await

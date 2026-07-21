@@ -48,7 +48,7 @@
 
 {#snippet subnavbarSnippet()}
 	{#if belowNavbar}
-		<div class="w-full mb-4 {isIosTheme ? 'mt-4' : ''}">
+		<div class="column w-full mb-4 {isIosTheme ? 'mt-4' : ''}">
 			{#if constrainedWidth}
 				<div class="center-in-desktop">
 					{@render belowNavbar()}

@@ -1,6 +1,6 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-import { SYNC_TIMEOUT } from '../timeouts';
+import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
@@ -29,11 +29,34 @@ export class Messages extends TestHelper {
 	lightbox = new Lightbox(this.agent);
 	/** The composer, for driving the type/send step of an in-place edit. */
 	private composer = new Composer(this.agent);
-	quickEditButton = this.el(tid('quick-edit-button'));
-	quickDeleteButton = this.el(tid('quick-delete-button'));
-	deleteConfirmButton = this.el(tid('delete-message-confirm'));
-	deleteForMeConfirmButton = this.el(tid('delete-for-me-confirm'));
-	editHistorySheet = this.el(tid('edit-history-sheet'));
+	/** The delete confirmation dialog's buttons live in the composer, shared by
+	 * both delete-for-everyone and delete-for-me. */
+	deleteForEveryoneConfirmButton = this.el(tid('composer-delete-confirm'));
+	deleteForMeConfirmButton = this.el(tid('composer-delete-for-me-confirm'));
+
+	/** Every message mounts its own (closed) actions popover, so the menu and
+	 * its actions must be resolved scoped to the message containing `text`. */
+	private async messageScoped(text: string, testId: string) {
+		const wrapper = await this.messageBubbleWithText(text);
+		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		return wrapper.$(tid(testId));
+	}
+
+	actionsMenu(text: string) {
+		return this.messageScoped(text, 'message-actions-menu');
+	}
+
+	editAction(text: string) {
+		return this.messageScoped(text, 'message-action-edit');
+	}
+
+	copyAction(text: string) {
+		return this.messageScoped(text, 'message-action-copy');
+	}
+
+	deleteAction(text: string) {
+		return this.messageScoped(text, 'message-action-delete');
+	}
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
@@ -70,7 +93,7 @@ export class Messages extends TestHelper {
 	 * photos from earlier tests. */
 	async waitForPhotoMessage(
 		label: string,
-		timeout = SYNC_TIMEOUT,
+		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
@@ -98,7 +121,7 @@ export class Messages extends TestHelper {
 	/** Wait until a file attachment with the given filename appears. */
 	async waitForFileMessage(
 		name: string,
-		timeout = SYNC_TIMEOUT,
+		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
@@ -169,8 +192,9 @@ export class Messages extends TestHelper {
 	}
 
 	/** Long-press (via a synthetic contextmenu) the bubble containing `text` to
-	 * open its quick-reaction bar, and resolve the bar scoped to that message. */
-	async openReactions(text: string) {
+	 * open its message actions UI — the quick-reaction bar plus, on own
+	 * editable messages, the actions menu — and resolve the bubble's wrapper. */
+	async openMessageActions(text: string) {
 		const dispatched = await this.agent.execute(
 			(messagesSel: string, t: string) => {
 				const wrappers = document.querySelectorAll<HTMLElement>(
@@ -205,7 +229,7 @@ export class Messages extends TestHelper {
 
 	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
 	async reactWith(text: string, emoji: string) {
-		const wrapper = await this.openReactions(text);
+		const wrapper = await this.openMessageActions(text);
 		await wrapper.$(tid(`quick-reaction-${emoji}`)).click();
 	}
 
@@ -264,31 +288,6 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Open the quick-action bar for the message containing `text` by
-	 * dispatching a contextmenu event (the path `longpress` uses on desktop). */
-	async openActions(text: string): Promise<void> {
-		await this.agent.execute(
-			(messagesSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						wrapper.dispatchEvent(
-							new MouseEvent('contextmenu', {
-								bubbles: true,
-								cancelable: true,
-							}),
-						);
-						return;
-					}
-				}
-			},
-			this.messagesSelector,
-			text,
-		);
-	}
-
 	/** Whether the message containing `text` shows the "Edited" indicator. */
 	async hasEditedIndicator(text: string): Promise<boolean> {
 		return this.agent.execute(
@@ -309,55 +308,46 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Click the "Edited" indicator on the message containing `text`. */
-	async openEditHistory(text: string): Promise<void> {
-		await this.agent.execute(
-			(messagesSel: string, editedSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						(wrapper.querySelector(editedSel) as HTMLElement | null)?.click();
-						return;
-					}
-				}
-			},
-			this.messagesSelector,
-			tid('message-edited-indicator'),
-			text,
-		);
-	}
-
-	/** Open the quick-action bar on the message with `oldText`, tap Edit, replace
+	/** Open the actions menu on the message with `oldText`, tap Edit, replace
 	 * the text with `newText`, and send. */
 	async editMessage(oldText: string, newText: string): Promise<void> {
-		await this.openActions(oldText);
-		await this.quickEditButton.waitForClickable();
-		await this.quickEditButton.click();
+		await this.openMessageActions(oldText);
+		const editAction = await this.editAction(oldText);
+		await editAction.waitForClickable();
+		await editAction.click();
+		// The Signal-style editing state: header banner plus the input prefilled
+		// with the message being edited.
 		await this.composer.editingBanner.waitForExist();
+		await this.agent.waitUntil(
+			async () => (await this.composer.messageInput.getValue()) === oldText,
+			{ timeoutMsg: 'Editing input is not prefilled with the original text' },
+		);
 		await this.composer.type(newText);
 		await this.composer.send();
 	}
-
-	/** Open the quick-action bar on the message with `text`, tap Delete, and
-	 * confirm "Delete for everyone" in the dialog. */
+	/** Open the actions menu on the message with `text`, tap Delete, and confirm
+	 * "Delete for everyone" in the dialog. */
 	async deleteMessage(text: string): Promise<void> {
-		await this.openActions(text);
-		await this.quickDeleteButton.waitForClickable();
-		await this.quickDeleteButton.click();
-		await this.deleteConfirmButton.waitForClickable();
-		await this.deleteConfirmButton.click();
+		await this.openDeleteDialog(text);
+		await this.deleteForEveryoneConfirmButton.waitForClickable();
+		await this.deleteForEveryoneConfirmButton.click();
 	}
 
-	/** Open the quick-action bar on the message with `text`, tap Delete, and
-	 * confirm "Delete for me" in the dialog. */
+	/** Open the actions menu on the message with `text`, tap Delete, and confirm
+	 * "Delete for me" in the dialog. */
 	async deleteMessageForMe(text: string): Promise<void> {
-		await this.openActions(text);
-		await this.quickDeleteButton.waitForClickable();
-		await this.quickDeleteButton.click();
+		await this.openDeleteDialog(text);
 		await this.deleteForMeConfirmButton.waitForClickable();
 		await this.deleteForMeConfirmButton.click();
+	}
+
+	/** Long-press the message with `text`, tap Delete, and leave the delete
+	 * confirmation dialog open for the caller to confirm or inspect. */
+	async openDeleteDialog(text: string): Promise<void> {
+		await this.openMessageActions(text);
+		const deleteAction = await this.deleteAction(text);
+		await deleteAction.waitForClickable();
+		await deleteAction.click();
 	}
 
 	/** Wait until `text` is no longer present anywhere in the message list.
@@ -390,7 +380,7 @@ export class Messages extends TestHelper {
 						return Array.from(els).some(el => el.textContent?.includes(p));
 					},
 					this.messagesSelector,
-					tid('deleted-message'),
+					tid('message-deleted-placeholder'),
 					placeholder,
 				);
 			},
@@ -399,17 +389,5 @@ export class Messages extends TestHelper {
 				timeoutMsg: `"${originalText}" was not replaced by the deleted placeholder`,
 			},
 		);
-	}
-
-	/** Text of each version listed in the open edit-history sheet, newest first. */
-	async editHistoryVersions(): Promise<string[]> {
-		await this.editHistorySheet.waitForExist();
-		return this.agent.execute((sel: string) => {
-			const sheet = document.querySelector(sel);
-			if (!sheet) return [];
-			return Array.from(sheet.querySelectorAll('.whitespace-pre-wrap')).map(
-				el => el.textContent?.trim() ?? '',
-			);
-		}, tid('edit-history-sheet'));
 	}
 }

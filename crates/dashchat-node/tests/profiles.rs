@@ -97,12 +97,7 @@ async fn test_profiles_sync_between_contacts() {
         .unwrap();
 
     alice
-        .add_contact(
-            bobbi
-                .new_qr_code(ShareIntent::AddContact, true)
-                .await
-                .unwrap(),
-        )
+        .add_contact(bobbi.new_qr_code(ShareIntent::AddContact).await.unwrap())
         .await
         .unwrap();
 

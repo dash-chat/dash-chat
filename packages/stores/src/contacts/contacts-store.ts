@@ -3,16 +3,26 @@ import { reactive, relay } from 'signalium';
 import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { AgentId, TopicId } from '../p2panda/types';
+import { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import { AnnouncementPayload, ContactCode, Payload } from '../types';
+import { AnnouncementPayload, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
 
 export interface ContactRequest {
 	profile: Profile;
-	code: ContactCode;
+	agentId: AgentId;
 	timestamp: number;
 	topicId: TopicId;
+}
+
+/**
+ * An outgoing contact request we've sent by scanning a QR code, before the
+ * owner's ack has arrived. Keyed on the owner's device pubkey, since we don't
+ * yet know their agent id or profile.
+ */
+export interface OutgoingContactRequest {
+	devicePubkey: DeviceId;
+	timestamp: number;
 }
 
 export class ContactsStore {
@@ -65,6 +75,73 @@ export class ContactsStore {
 		}
 
 		return Array.from(contacts);
+	});
+
+	blockedContactAgentIds = reactive(async () => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const latestByAgent: Record<
+			AgentId,
+			{ blocked: boolean; timestamp: number }
+		> = {};
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				const payload = op.body?.payload;
+				if (payload?.type !== 'BlockAgent' && payload?.type !== 'UnblockAgent')
+					continue;
+				const agentId = payload.payload;
+				const existing = latestByAgent[agentId];
+				if (!existing || op.header.timestamp > existing.timestamp) {
+					latestByAgent[agentId] = {
+						blocked: payload.type === 'BlockAgent',
+						timestamp: op.header.timestamp,
+					};
+				}
+			}
+		}
+
+		const blocked = new Set<AgentId>();
+		for (const [agentId, v] of Object.entries(latestByAgent)) {
+			if (v.blocked) blocked.add(agentId as AgentId);
+		}
+		return blocked;
+	});
+
+	/**
+	 * Outgoing contact requests we've sent but whose ack hasn't arrived yet.
+	 * A pending marker is dropped once its device pubkey resolves to an
+	 * established contact (the ack was processed and the `AddContact` marker
+	 * created a real chat that supersedes the placeholder).
+	 */
+	outgoingPendingRequests = reactive(async () => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const latestByDevice: Record<DeviceId, number> = {};
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				if (op.body?.payload?.type !== 'PendingContactRequest') continue;
+				const { device_pubkey } = op.body.payload.payload;
+				const existing = latestByDevice[device_pubkey];
+				if (existing === undefined || op.header.timestamp > existing) {
+					latestByDevice[device_pubkey] = op.header.timestamp;
+				}
+			}
+		}
+
+		const devices = Object.keys(latestByDevice);
+		const resolved = await Promise.all(
+			devices.map(device => this.client.agentForDevice(device)),
+		);
+
+		const pending: OutgoingContactRequest[] = [];
+		for (let i = 0; i < devices.length; i++) {
+			if (resolved[i] !== undefined) continue;
+			pending.push({
+				devicePubkey: devices[i],
+				timestamp: latestByDevice[devices[i]],
+			});
+		}
+		return pending;
 	});
 
 	contactAddedTimestamp = reactive(async (agentId: AgentId) => {
@@ -125,9 +202,9 @@ export class ContactsStore {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
 					if (operation.body.payload.type !== 'ContactRequest') continue;
-					const { code, profile } = operation.body.payload.payload;
-					if (!code?.agent_id) continue;
-					const agentId = code.agent_id;
+					const { profile, agent_id } = operation.body.payload.payload;
+					if (!agent_id) continue;
+					const agentId = agent_id;
 
 					// We have already accepted this contact request
 					if (contacts.includes(agentId)) continue;
@@ -141,8 +218,8 @@ export class ContactsStore {
 						continue;
 
 					contactRequests.push({
-						code,
 						profile,
+						agentId,
 						topicId,
 						timestamp: operation.header.timestamp,
 					});
@@ -170,8 +247,8 @@ export class ContactsStore {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
 					if (operation.body.payload.type !== 'ContactRequest') continue;
-					const { code, profile } = operation.body.payload.payload;
-					if (code?.agent_id !== agentId) continue;
+					const { profile, agent_id } = operation.body.payload.payload;
+					if (agent_id !== agentId) continue;
 					const ts = operation.header.timestamp;
 					if (!latest || ts > latest.timestamp) {
 						latest = { timestamp: ts, profile };

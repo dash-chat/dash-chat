@@ -19,7 +19,7 @@
     "addContact": "Ajouter contact",
     "contacts": "Contacts",
     "shareCodeWarning": "Partagez votre QR code uniquement avec des personnes en qui vous faîtes confiance. Lorsque vous le partagez, d'autres pourront voir votre profil et commencer à discuter avec vous.",
-    "enterYourContactsCode": "Entrez le code de votre contact",
+    "enterYourContactsLink": "Entrez le code de votre contact",
     "code": "Code",
     "scan": "Scan",
     "scanQrCodeOfYourContact": "Scannez le QR code de l'appareil de votre contact.",

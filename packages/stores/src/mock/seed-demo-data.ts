@@ -106,10 +106,7 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 				payload: {
 					type: 'AddContact',
 					payload: {
-						device_pubkey: contact.deviceId,
 						agent_id: contact.agentId,
-						inbox_topic: undefined,
-						share_intent: 'AddContact' as const,
 					},
 				},
 			},
@@ -220,12 +217,8 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 			payload: {
 				type: 'ContactRequest',
 				payload: {
-					code: {
-						device_pubkey: EVE.deviceId,
-						agent_id: EVE.agentId,
-						inbox_topic: undefined,
-						share_intent: 'AddContact' as const,
-					},
+					agent_id: EVE.agentId,
+					reply_topic: DEMO_IDS.INBOX_TOPIC,
 					profile: {
 						name: EVE.name,
 						surname: EVE.surname,

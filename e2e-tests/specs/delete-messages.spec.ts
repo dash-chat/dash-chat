@@ -1,14 +1,14 @@
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Deleting messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
@@ -70,14 +70,12 @@ describe('Deleting messages', () => {
 		await agent2.directChatPage.sendMessage("Bob's message");
 		await agent1.directChatPage.messages.waitForMessage("Bob's message");
 
-		await agent1.directChatPage.messages.openActions("Bob's message");
-		await agent1.directChatPage.messages.quickDeleteButton.waitForClickable();
-		await agent1.directChatPage.messages.quickDeleteButton.click();
+		await agent1.directChatPage.messages.openDeleteDialog("Bob's message");
 
 		// Only "Delete for me" is available for a received message.
 		await agent1.directChatPage.messages.deleteForMeConfirmButton.waitForExist();
 		expect(
-			await agent1.directChatPage.messages.deleteConfirmButton.isExisting(),
+			await agent1.directChatPage.messages.deleteForEveryoneConfirmButton.isExisting(),
 		).toBe(false);
 
 		await agent1.directChatPage.messages.deleteForMeConfirmButton.click();

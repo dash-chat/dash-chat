@@ -52,6 +52,16 @@ async fn test_mailbox_bootstrap() {
         .await
         .unwrap();
 
+    // Wait for the message to arrive at bobbi first: consistency() compares
+    // processed_ops sets, which can match vacuously in the window before
+    // alice's own pipeline has processed the op she just published.
+    poll.wait_for(|| async {
+        let n = bobbi.get_messages(direct_chat_topic).await.unwrap().len();
+        (n == 1).then_some(()).ok_or(n)
+    })
+    .await
+    .unwrap();
+
     poll.consistency([&alice, &bobbi], &[direct_chat_topic.into()])
         .await
         .unwrap();

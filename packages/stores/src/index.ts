@@ -9,7 +9,6 @@ export * from './types.js';
 
 export * from './contacts/contacts-store.js';
 export * from './contacts/contacts-client.js';
-export * from './contacts/contact-code.js';
 export * from './contacts/errors.js';
 
 export * from './devices/devices-store.js';
@@ -23,8 +22,9 @@ export * from './group-chats/group-chat-client.js';
 
 export * from './chats/chats-store.js';
 export * from './chats/chats-client.js';
-export * from './chats/edits.js';
-export * from './chats/deletes.js';
+export * from './chats/chat-key.js';
+export * from './chats/messages-store.js';
+export * from './chats/messages-client.js';
 
 export * from './settings/settings-client.js';
 export * from './settings/settings-store.js';

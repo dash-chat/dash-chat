@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.19.9"
+version = "0.19.10"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -21,6 +21,7 @@ vergen-gitcl = "9"
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
 
+tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -55,7 +56,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 thiserror = "2.0"
 regex = "1"
 hex = "0.4.3"
-mdns-sd = "0.17"
+mdns-sd = "0.20"
 nanoid = "0"
 image = "0.25"
 
@@ -123,12 +124,11 @@ objc2 = "0.6"
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"
-tauri-plugin-mcp-bridge = "0.8"
 mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
 
 [features]
-e2e-tests = []
+e2e-tests = ["dashchat-node/testing"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

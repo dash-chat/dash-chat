@@ -88,9 +88,6 @@ pub fn run() {
         if cfg!(feature = "e2e-tests") {
             // E2E tests run multiple built instances side-by-side;
             // skip single-instance, updater, and MCP bridge plugins.
-        } else if tauri::is_dev() {
-            // MCP for Claude Code to control the tauri app
-            builder = builder.plugin(tauri_plugin_mcp_bridge::init());
         } else {
             // single-instance must be registered before deep-link so it can
             // forward deep link URLs from a second process to this one.
@@ -115,6 +112,13 @@ pub fn run() {
         }
     }
 
+    // MCP bridge for Claude Code to drive the running app, on every platform.
+    // Dev-only: the WebSocket server never starts in production builds. E2E runs
+    // its own multi-instance harness, so skip it there.
+    if tauri::is_dev() && !cfg!(feature = "e2e-tests") {
+        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
     builder
         .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
@@ -127,10 +131,14 @@ pub fn run() {
             commands::devices::my_device_group_topic,
             commands::contacts::my_device_id,
             commands::contacts::my_agent_id,
+            commands::contacts::agent_for_device,
             commands::contacts::create_contact_code,
             commands::contacts::add_contact,
+            commands::contacts::accept_contact,
             commands::contacts::active_inbox_topics,
             commands::contacts::reject_contact_request,
+            commands::contacts::block_contact,
+            commands::contacts::unblock_contact,
             commands::direct_chats::direct_chat_id,
             commands::chats::send_message,
             commands::chats::edit_message,
@@ -155,6 +163,8 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::media::save_blob_to_cache,
+            #[cfg(feature = "e2e-tests")]
+            commands::testing::close_iroh_endpoint,
         ])
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())

@@ -1,7 +1,6 @@
 import type { IContactsClient, Profile } from '../contacts/contacts-client';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import type { ContactCode, InboxTopic } from '../types';
 import type { LocalStorageLogsClient } from './client';
 
 export class MockContactsClient implements IContactsClient {
@@ -21,6 +20,10 @@ export class MockContactsClient implements IContactsClient {
 		return this.deviceId;
 	}
 
+	async agentForDevice(_devicePubkey: DeviceId): Promise<AgentId | undefined> {
+		return undefined;
+	}
+
 	async setProfile(profile: Profile): Promise<void> {
 		await this.logsClient.create(personalTopicFor(this.agentId), {
 			type: 'Announcements',
@@ -28,25 +31,24 @@ export class MockContactsClient implements IContactsClient {
 		});
 	}
 
-	async createContactCode(): Promise<ContactCode> {
-		return {
-			device_pubkey: this.deviceId,
-			agent_id: this.agentId,
-			inbox_topic: this.inboxTopics[0]
-				? { topic: this.inboxTopics[0], expires_at: Date.now() + 86400000 }
-				: undefined,
-			share_intent: 'AddContact',
-		};
+	async createContactCode(): Promise<string> {
+		const bytes = new Uint8Array(45);
+		crypto.getRandomValues(bytes);
+		return btoa(String.fromCharCode(...Array.from(bytes)));
 	}
 
 	async activeInboxTopics(): Promise<TopicId[]> {
 		return this.inboxTopics;
 	}
 
-	async addContact(contactCode: ContactCode): Promise<void> {
+	async addContact(_contactCode: string): Promise<DeviceId> {
+		return this.deviceId;
+	}
+
+	async acceptContact(agentId: AgentId): Promise<void> {
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',
-			payload: { type: 'AddContact', payload: contactCode },
+			payload: { type: 'AddContact', payload: { agent_id: agentId } },
 		});
 	}
 
@@ -54,6 +56,20 @@ export class MockContactsClient implements IContactsClient {
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',
 			payload: { type: 'RejectContactRequest', payload: agentId },
+		});
+	}
+
+	async blockContact(agentId: AgentId): Promise<void> {
+		await this.logsClient.create(this.deviceGroupTopicId, {
+			type: 'DeviceGroupPayload',
+			payload: { type: 'BlockAgent', payload: agentId },
+		});
+	}
+
+	async unblockContact(agentId: AgentId): Promise<void> {
+		await this.logsClient.create(this.deviceGroupTopicId, {
+			type: 'DeviceGroupPayload',
+			payload: { type: 'UnblockAgent', payload: agentId },
 		});
 	}
 }

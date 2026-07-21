@@ -1,7 +1,11 @@
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
-import { resumeMailbox, suspendMailbox } from '../setup/mailbox-control';
-import { type Agent, setupAgent } from '../setup/setup-agents';
 import { tid } from '../helpers/selectors';
+import {
+	isRemoteMailbox,
+	resumeMailbox,
+	suspendMailbox,
+} from '../setup/mailbox-control';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 async function waitForTextContent(
 	agent: Agent,
@@ -23,21 +27,29 @@ describe('Waiting-for-profile placeholder', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 	let waitingText: string;
+	let contactCode1: string;
 	let mailboxSuspended = false;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+	before(async function () {
+		// The placeholder window only exists while the mailbox is suspended,
+		// which is impossible against a remote environment mailbox.
+		if (isRemoteMailbox()) this.skip();
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 		await Promise.all([
 			agent1.createProfilePage.createProfile('Alice', 'Test'),
 			agent2.createProfilePage.createProfile('Bob', 'Test'),
 		]);
 		waitingText = await agent2.tr('waitingForProfile');
-		// Suspend the shared mailbox before any contact exchange so agent1's
-		// profile cannot sync to agent2 while we check the placeholder. Without
-		// this the placeholder window is only ~2s wide and races slow setups.
+		// Fetch agent1's contact code while its p2p is still up (generating the
+		// code sets up agent1's inbox gossip topic, which needs a live endpoint).
+		await navigateToAddContact(agent1);
+		contactCode1 = await agent1.addContactPage.getAddContactLink();
+		// Hold agent2 in the pre-sync state so the "waiting for profile"
+		// placeholder stays visible: suspend the shared mailbox AND cut agent1
+		// off from p2p. Without disabling p2p, the two agents sync agent1's
+		// profile directly over the iroh relay (mDNS is already off in e2e
+		// builds), bypassing the suspended mailbox and racing the assertions.
+		await agent1.disableP2p();
 		suspendMailbox();
 		mailboxSuspended = true;
 	});
@@ -54,14 +66,15 @@ describe('Waiting-for-profile placeholder', () => {
 	});
 
 	it('shows the placeholder on direct-chat after one-sided contact addition', async () => {
-		await navigateToAddContact(agent1);
-		const code1 = await agent1.addContactPage.getContactCode();
-
 		await navigateToAddContact(agent2);
-		await agent2.addContactPage.enterCode(code1);
+		await agent2.addContactPage.enterAddContactLink(contactCode1);
 		await agent2.directChatPage.ready();
 
-		await waitForTextContent(agent2, tid('direct-chat-peer-header'), waitingText);
+		await waitForTextContent(
+			agent2,
+			tid('direct-chat-peer-header'),
+			waitingText,
+		);
 		await waitForTextContent(
 			agent2,
 			tid('direct-chat-settings-link'),

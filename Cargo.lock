@@ -1951,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.19.9"
+version = "0.19.10"
 dependencies = [
  "anyhow",
  "app_dirs2",
@@ -2078,6 +2078,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
+ "serde_repr",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
@@ -3088,6 +3089,17 @@ name = "flume"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "spin 0.9.8",
+]
+
+[[package]]
+name = "flume"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e139bc46ca777eb5efaf62df0ab8cc5fd400866427e56c68b22e414e53bd3be"
 dependencies = [
  "futures-core",
  "futures-sink",
@@ -4388,16 +4400,6 @@ dependencies = [
 
 [[package]]
 name = "if-addrs"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf39cc0423ee66021dc5eccface85580e4a001e0c5288bae8bea7ecb69225e90"
-dependencies = [
- "libc",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "if-addrs"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
@@ -4416,7 +4418,7 @@ dependencies = [
  "core-foundation 0.9.4",
  "fnv",
  "futures",
- "if-addrs 0.15.0",
+ "if-addrs",
  "ipnet",
  "log",
  "netlink-packet-core",
@@ -5424,8 +5426,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dashchat-utils",
- "futures",
- "if-watch",
  "iroh",
  "iroh-blobs",
  "log",
@@ -5443,6 +5443,7 @@ dependencies = [
  "axum",
  "axum-test",
  "base64 0.22.1",
+ "bytes",
  "clap",
  "dashchat-utils",
  "futures",
@@ -5530,13 +5531,13 @@ dependencies = [
 
 [[package]]
 name = "mdns-sd"
-version = "0.17.2"
+version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "183d7ebd9fe3815c1635cd039d1ed95f1d315731cc13e6d504e4ae039d527b8d"
+checksum = "fb75febbe5fa1837a52fdbd1c735e168286c5c645fc2ddd31526f65c49941c2e"
 dependencies = [
  "fastrand 2.4.1",
- "flume",
- "if-addrs 0.14.0",
+ "flume 0.12.0",
+ "if-addrs",
  "log",
  "mio",
  "socket-pktinfo",
@@ -9412,13 +9413,13 @@ checksum = "fad6c857cbab2627dcf01ec85a623ca4e7dcb5691cbaa3d7fb7653671f0d09c9"
 
 [[package]]
 name = "socket-pktinfo"
-version = "0.3.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "927136cc2ae6a1b0e66ac6b1210902b75c3f726db004a73bc18686dcd0dcd22f"
+checksum = "3e8e43b4bdce7cff8a4d3f8025ee38fce5ca138fab868ebbf9529c81328fbf9d"
 dependencies = [
  "libc",
  "socket2 0.6.4",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9732,7 +9733,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2d12fe70b2c1b4401038055f90f151b78208de1f9f89a7dbfd41587a10c3eea"
 dependencies = [
  "atoi",
- "flume",
+ "flume 0.11.1",
  "futures-channel",
  "futures-core",
  "futures-executor",

@@ -1,4 +1,3 @@
-mod compat_tests;
 mod message;
 mod validation;
 pub use message::*;

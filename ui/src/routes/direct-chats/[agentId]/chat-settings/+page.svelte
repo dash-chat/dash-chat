@@ -1,19 +1,25 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { fullName, type ChatsStore } from 'dash-chat-stores';
+	import {
+		fullName,
+		type ChatsStore,
+		type ContactsStore,
+	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiBellOutline,
 		mdiMagnify,
 		mdiPalette,
 		mdiPlusCircle,
 		mdiChevronRight,
+		mdiCancel,
 	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { onActivate } from '$lib/utils/keyboard';
 	import { showToast } from '$lib/utils/toasts';
+	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
@@ -33,11 +39,26 @@
 
 	const theme = $derived(useTheme());
 	const chatsStore: ChatsStore = getContext('chats-store');
+	const contactsStore: ContactsStore = getContext('contacts-store');
 	const store = chatsStore.directChats(agentId);
 
 	const peerProfile = useReactivePromise(store.peerProfile);
+	const blockedAgentIds = useReactiveValue(
+		contactsStore.blockedContactAgentIds,
+	);
+	const isBlocked = $derived(($blockedAgentIds ?? new Set()).has(agentId));
 
 	let showPeerProfile = $state(false);
+	let showBlockDialog = $state(false);
+
+	async function confirmBlockToggle() {
+		showBlockDialog = false;
+		if (isBlocked) {
+			await contactsStore.client.unblockContact(agentId);
+		} else {
+			await contactsStore.client.blockContact(agentId);
+		}
+	}
 
 	function comingSoon() {
 		showToast(m.comingSoon());
@@ -131,6 +152,22 @@
 					class="mx-4 my-2 border-t border-gray-200 dark:border-gray-700"
 				></div>
 
+				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
+					<ListItem
+						link
+						chevron={false}
+						title={isBlocked ? m.unblock() : m.block()}
+						class={isBlocked ? '' : 'text-red-500'}
+						onClick={() => (showBlockDialog = true)}
+						data-testid="chat-settings-block-toggle"
+					>
+						{#snippet media()}
+							<wa-icon style="font-size: 1.5rem;" src={wrapPathInSvg(mdiCancel)}
+							></wa-icon>
+						{/snippet}
+					</ListItem>
+				</List>
+
 				<!-- TODO: Coming soon - chat color/wallpaper and groups in common -->
 				{#if false}
 					<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
@@ -181,6 +218,14 @@
 				opened={showPeerProfile}
 				onClose={() => (showPeerProfile = false)}
 				{profile}
+			/>
+
+			<BlockContactDialog
+				opened={showBlockDialog}
+				name={fullName(profile)}
+				blocked={isBlocked}
+				onConfirm={confirmBlockToggle}
+				onClose={() => (showBlockDialog = false)}
 			/>
 		{/if}
 	{/await}

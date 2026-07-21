@@ -13,6 +13,9 @@ export class Composer extends TestHelper {
 	addMoreTile = this.el(tid('message-input-add-more'));
 	editingBanner = this.el(tid('composer-editing-banner'));
 	cancelEditButton = this.el(tid('composer-cancel-edit'));
+	discardDraftDialog = this.el(tid('composer-discard-draft-dialog'));
+	discardDraftCancel = this.el(tid('composer-discard-draft-cancel'));
+	discardDraftConfirm = this.el(tid('composer-discard-draft-confirm'));
 	attachButton = this.el(tid('message-input-attach'));
 	mediaPanel = this.el(tid('message-input-media-panel'));
 	recentPhotos = new RecentPhotosStrip(this.agent);
@@ -86,6 +89,7 @@ export class Composer extends TestHelper {
 		contents = 'hello from e2e',
 		mimeType = 'text/plain',
 	): Promise<void> {
+		await this.messageInput.waitForExist();
 		await this.agent.execute(
 			(n: string, c: string, m: string) => {
 				const bytes = Array.from(new TextEncoder().encode(c));
@@ -100,6 +104,7 @@ export class Composer extends TestHelper {
 
 	/** Attach a zero-filled file of exactly `sizeBytes` to test the size cap. */
 	async attachFileOfSize(sizeBytes: number, name = 'big.bin'): Promise<void> {
+		await this.messageInput.waitForExist();
 		await this.agent.execute(
 			(size: number, n: string) => {
 				window.__test.pasteFiles([
@@ -114,6 +119,7 @@ export class Composer extends TestHelper {
 
 	/** Paste a single synthesized PNG named `${label}.png` into the composer. */
 	async pastePhotos(label: string): Promise<void> {
+		await this.messageInput.waitForExist();
 		await this.agent.execute(
 			(pngBytes: number[], name: string) => {
 				window.__test.pasteFiles([
@@ -128,6 +134,7 @@ export class Composer extends TestHelper {
 
 	/** Drop a single synthesized PNG named `${label}.png` onto the window. */
 	async dropPhotos(label: string): Promise<void> {
+		await this.messageInput.waitForExist();
 		await this.agent.execute(
 			(pngBytes: number[], name: string) => {
 				window.__test.dropFiles([

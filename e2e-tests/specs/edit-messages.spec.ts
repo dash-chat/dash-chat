@@ -1,14 +1,14 @@
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Editing messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
@@ -39,19 +39,58 @@ describe('Editing messages', () => {
 		);
 	});
 
-	it('shows the full edit history, original first', async () => {
-		await agent1.directChatPage.messages.openEditHistory('Hello world');
-		const versions = await agent1.directChatPage.messages.editHistoryVersions();
-		expect(versions).toEqual(['Hello world', 'Helo world']);
-	});
-
 	it('does not offer Edit on the peer’s messages', async () => {
 		await agent2.directChatPage.sendMessage("Bob's message");
 		await agent1.directChatPage.messages.waitForMessage("Bob's message");
 
-		await agent1.directChatPage.messages.openActions("Bob's message");
+		await agent1.directChatPage.messages.openMessageActions("Bob's message");
+		const messages = agent1.directChatPage.messages;
+		await (await messages.actionsMenu("Bob's message")).waitForDisplayed();
 		expect(
-			await agent1.directChatPage.messages.quickEditButton.isExisting(),
+			await (await messages.editAction("Bob's message")).isExisting(),
 		).toBe(false);
+	});
+
+	it('copies a message to the clipboard from the actions menu', async () => {
+		await agent1.directChatPage.messages.openMessageActions("Bob's message");
+		const copyAction =
+			await agent1.directChatPage.messages.copyAction("Bob's message");
+		await copyAction.waitForClickable();
+		await copyAction.click();
+		await agent1.toast.expectMessage(
+			await agent1.tr('copiedMessageToClipboard'),
+		);
+	});
+
+	it('asks before discarding a draft when starting an edit', async () => {
+		const { composer, messages } = agent1.directChatPage;
+		const startEdit = async () => {
+			await messages.openMessageActions('Hello world');
+			const editAction = await messages.editAction('Hello world');
+			await editAction.waitForClickable();
+			await editAction.click();
+			await composer.discardDraftConfirm.waitForClickable();
+		};
+
+		await composer.type('Draft in progress');
+		await startEdit();
+
+		// Cancel keeps the draft and stays out of edit mode.
+		await composer.discardDraftCancel.click();
+		await composer.discardDraftConfirm.waitForClickable({ reverse: true });
+		expect(await composer.editingBanner.isExisting()).toBe(false);
+		expect(await composer.messageInput.getValue()).toBe('Draft in progress');
+
+		// Discard drops the draft and enters edit mode prefilled.
+		await startEdit();
+		await composer.discardDraftConfirm.click();
+		await composer.editingBanner.waitForExist();
+		await browser.waitUntil(
+			async () => (await composer.messageInput.getValue()) === 'Hello world',
+			{ timeoutMsg: 'Editing input is not prefilled with the message text' },
+		);
+
+		await composer.cancelEditButton.click();
+		await composer.editingBanner.waitForExist({ reverse: true });
 	});
 });

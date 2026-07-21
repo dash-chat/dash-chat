@@ -7,6 +7,8 @@
  *
  * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
+import { invokeAfterSetup } from 'dash-chat-stores';
+
 import type { m } from '../src/lib/paraglide/messages.js';
 
 type Messages = typeof m;
@@ -44,6 +46,13 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
+/** Close this agent's iroh endpoint so it can no longer sync with peers over
+ * p2p. Backed by the `close_iroh_endpoint` command (only registered under the
+ * `e2e-tests` feature). One-way — the agent stays p2p-disconnected until it
+ * restarts. */
+function disableP2p(): Promise<void> {
+	return invokeAfterSetup('close_iroh_endpoint');
+}
 export interface TestFileSpec {
 	name: string;
 	mimeType: string;
@@ -101,6 +110,7 @@ function dropFiles(specs: TestFileSpec[]) {
 export const testUtils = {
 	simulateUpdate,
 	hasText,
+	disableP2p,
 	pasteFiles,
 	dropFiles,
 	/** E2E override for the composer's recent-photos strip; left undefined unless

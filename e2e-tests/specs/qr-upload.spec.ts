@@ -1,15 +1,12 @@
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('QR code image upload', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 	});
 
 	it('creates profiles on both agents', async () => {
@@ -21,7 +18,7 @@ describe('QR code image upload', () => {
 		await navigateToAddContact(agent1);
 		await navigateToAddContact(agent2);
 
-		const contactCode = await agent2.addContactPage.getContactCode();
+		const contactCode = await agent2.addContactPage.getAddContactLink();
 		await agent1.addContactPage.uploadQrCodeImage(contactCode);
 
 		await agent1.directChatPage.ready();

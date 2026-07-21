@@ -100,7 +100,7 @@ async fn delete_for_me_tombstones_locally_without_affecting_peer() {
     // Alice: message tombstoned in the chat topic, payload gone, no longer shown.
     assert!(
         alice
-            .local_store
+            .projection
             .is_tombstoned(*chat, msg.hash())
             .await
             .unwrap()
@@ -112,7 +112,7 @@ async fn delete_for_me_tombstones_locally_without_affecting_peer() {
     // peer's copy.
     assert!(
         !bobbi
-            .local_store
+            .projection
             .is_tombstoned(*chat, msg.hash())
             .await
             .unwrap()
@@ -178,7 +178,7 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
 
     // Alice tombstoned the whole chain and no longer shows the message.
     for hash in [msg.hash(), edit.hash()] {
-        assert!(alice.local_store.is_tombstoned(*chat, hash).await.unwrap());
+        assert!(alice.projection.is_tombstoned(*chat, hash).await.unwrap());
         assert_eq!(
             payload_present(&alice, *chat, alice.device_id(), hash).await,
             Some(false)
@@ -188,7 +188,7 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
 
     // Bobbi still sees the (edited) message intact.
     for hash in [msg.hash(), edit.hash()] {
-        assert!(!bobbi.local_store.is_tombstoned(*chat, hash).await.unwrap());
+        assert!(!bobbi.projection.is_tombstoned(*chat, hash).await.unwrap());
         assert_eq!(
             payload_present(&bobbi, *chat, alice.device_id(), hash).await,
             Some(true)

@@ -1,14 +1,14 @@
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
-import { type Agent, setupAgent } from '../../setup/setup-agents';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Editing group messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 		await agent1.groupChatPage.ready();
@@ -41,19 +41,15 @@ describe('Editing group messages', () => {
 		);
 	});
 
-	it('shows the full edit history, original first', async () => {
-		await agent1.groupChatPage.messages.openEditHistory('Hello group');
-		const versions = await agent1.groupChatPage.messages.editHistoryVersions();
-		expect(versions).toEqual(['Hello group', 'Helo group']);
-	});
-
 	it('does not offer Edit on another member’s messages', async () => {
 		await agent2.groupChatPage.sendMessage("Bob's message");
 		await agent1.groupChatPage.messages.waitForMessage("Bob's message");
 
-		await agent1.groupChatPage.messages.openActions("Bob's message");
+		await agent1.groupChatPage.messages.openMessageActions("Bob's message");
+		const messages = agent1.groupChatPage.messages;
+		await (await messages.actionsMenu("Bob's message")).waitForDisplayed();
 		expect(
-			await agent1.groupChatPage.messages.quickEditButton.isExisting(),
+			await (await messages.editAction("Bob's message")).isExisting(),
 		).toBe(false);
 	});
 });
