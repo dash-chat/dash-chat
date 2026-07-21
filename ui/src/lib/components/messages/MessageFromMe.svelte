@@ -97,7 +97,11 @@
 
 <div
 	class="flex justify-end"
-	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
+	use:longpress={{
+		onLongPress: () => {
+			if (hasBody(message.content)) reactionsOpened = true;
+		},
+	}}
 >
 	<div bind:this={messageEl} class="max-w-[85%]">
 		<Card

@@ -40,6 +40,10 @@ bundle:
 release version:
     ./scripts/release.sh {{version}}
 
+# update the version in all version files without committing (e.g. just update-version 0.11.0)
+update-version version:
+    ./scripts/update-version.sh {{version}}
+
 # format both UI and rust files
 format:
     cargo fmt

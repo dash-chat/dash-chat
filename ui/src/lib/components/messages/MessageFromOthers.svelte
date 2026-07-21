@@ -93,7 +93,6 @@
 {/snippet}
 
 <div
-	bind:this={messageEl}
 	class="flex justify-start"
 	use:longpress={{
 		onLongPress: () => {

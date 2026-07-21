@@ -1,7 +1,7 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-import { SYNC_TIMEOUT } from '../timeouts';
 import { Composer } from './composer';
+import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
 import { Lightbox } from './lightbox';
 
 // Driver for a chat's rendered message list — the messages themselves plus the
@@ -85,7 +85,7 @@ export class Messages extends TestHelper {
 	 * photos from earlier tests. */
 	async waitForPhotoMessage(
 		label: string,
-		timeout = SYNC_TIMEOUT,
+		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
@@ -113,7 +113,7 @@ export class Messages extends TestHelper {
 	/** Wait until a file attachment with the given filename appears. */
 	async waitForFileMessage(
 		name: string,
-		timeout = SYNC_TIMEOUT,
+		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>

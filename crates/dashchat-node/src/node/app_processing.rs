@@ -205,16 +205,6 @@ impl Node {
                                 if let Err(err) = node.ack_operation(&operation).await {
                                     tracing::error!(?err, "failed to acknowledge operation");
                                 }
-
-                                // Acknowledge the operation now that application-layer
-                                // processing has finished. The node uses an `Explicit`
-                                // ack policy, so this persisted ack is what makes the
-                                // operation eligible for mailbox transmission (see
-                                // `OpStore::acked_log_height`).
-                                if let Err(err) = operation.ack().await {
-                                    tracing::error!(?err, "failed to acknowledge operation");
-                                }
-
                             },
                         }
 

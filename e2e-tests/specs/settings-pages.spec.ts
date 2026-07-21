@@ -1,10 +1,10 @@
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Settings pages', () => {
 	let agent: Agent;
 
-	before(async () => {
-		agent = await setupAgent('agent1');
+	before(async function () {
+		[agent] = await setupAgents(this, [{ platform: 'any' }]);
 		await agent.createProfilePage.createProfile('Settings', 'Test');
 		await agent.homePage.settingsLink.click();
 		await agent.settingsPage.ready();

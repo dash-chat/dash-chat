@@ -265,7 +265,7 @@ function applyDeletes(
 		// stay as body-less records. Skip the delete entirely until at least one
 		// target is present.
 		//
-		// We trust the backend to delivery only valid operations, so this is not a check
+		// We trust the backend to deliver only valid operations, so this is not a check
 		// for validity.
 		const chain = del.hashes.filter(hash => messages[hash] !== undefined);
 		if (chain.length === 0) continue;
