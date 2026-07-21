@@ -28,7 +28,7 @@ bundle:
 # boot a headless Android emulator (keeps running in the background); it then
 # counts as a connected device, e.g. for `AGENT_1=android-emulator just test e2e`
 boot-emulator:
-    nix develop git+file:.#androidDev --command bash ./scripts/android-emulator.sh
+    nix run .#boot-emulator
 
 # kill all running Android emulators
 kill-emulator:

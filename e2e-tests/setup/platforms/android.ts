@@ -1,5 +1,5 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -68,17 +68,25 @@ function warnAboutUnauthorizedDevices() {
 	}
 }
 
-/** Boot a headless emulator for each android-emulator agent that doesn't have
- *  a running emulator yet. Emulators stay running across runs (kill with
- *  `just android kill-emulator`). */
+/** Boot a headless emulator for each android-emulator agent that doesn't
+ *  have a running emulator yet. Emulators stay running across runs (kill
+ *  with `just android kill-emulator`). */
 function bootMissingEmulators(needed: number) {
 	const running = connectedDevices().filter(d =>
 		d.startsWith('emulator-'),
 	).length;
+	const logFile = path.join(ROOT, '.dbs', 'e2e', 'emulator.log');
 	for (let i = running; i < needed; i++) {
-		execSync(`bash ${path.join(ROOT, 'scripts', 'android-emulator.sh')}`, {
-			stdio: 'inherit',
-		});
+		mkdirSync(path.dirname(logFile), { recursive: true });
+		console.log(`Booting headless emulator (log: ${logFile})...`);
+		// run-test-emulator's boot-wait loop has no timeout — bound it so a
+		// crashed emulator can't hang the run. Its stdio must go to a file:
+		// the emulator outlives this call and would hold a pipe open forever.
+		execSync(
+			`nix run 'git+file:${ROOT}#boot-emulator' < /dev/null >> '${logFile}' 2>&1`,
+			{ timeout: 600_000 },
+		);
+		console.log('Emulator ready.');
 	}
 }
 
