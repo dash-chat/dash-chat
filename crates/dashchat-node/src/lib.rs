@@ -13,6 +13,7 @@ pub mod util;
 
 mod id;
 pub mod mailbox;
+mod report;
 
 pub mod compat;
 #[cfg(feature = "testing")]

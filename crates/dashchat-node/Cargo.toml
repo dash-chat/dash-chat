@@ -13,6 +13,8 @@ serde_repr = "0.1"
 
 mailbox-client = { workspace = true }
 mailbox-server = { workspace = true }
+push-notifications-client = { path = "../push-notifications-client" }
+report-common = { workspace = true }
 
 p2panda = { workspace = true, features = ["test_utils"] }
 p2panda-auth = { workspace = true }

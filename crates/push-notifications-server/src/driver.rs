@@ -4,6 +4,7 @@ pub mod sql;
 use std::collections::{HashMap, HashSet};
 
 use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
+use report_common::ReportRow;
 
 #[async_trait::async_trait]
 pub trait Driver: Send + Sync + 'static {
@@ -44,4 +45,8 @@ pub trait Driver: Send + Sync + 'static {
         verifying_key: &VerifyingKey,
         topic_ids: &HashSet<TopicId>,
     ) -> anyhow::Result<()>;
+
+    /// Persist one row per reported device (the reporter and timestamp are
+    /// duplicated across the rows produced from a single report request).
+    async fn store_reports(&self, rows: Vec<ReportRow>) -> anyhow::Result<()>;
 }

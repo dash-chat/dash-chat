@@ -2,6 +2,7 @@ use anyhow::Context;
 
 use crate::requests::*;
 use crate::types::{FcmToken, OperationId, TopicId, VerifyingKey};
+use report_common::ReportRequest;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
@@ -115,6 +116,18 @@ impl PushNotificationsClient {
                 verifying_key,
                 topic_ids,
             })
+            .send()
+            .await?;
+        check_response(resp).await
+    }
+
+    /// Report one or more devices to the push notifications server. The request
+    /// carries the reporter's signature over the reported ids and timestamp.
+    pub async fn report(&self, request: ReportRequest) -> anyhow::Result<()> {
+        let resp = self
+            .http
+            .post(format!("{}/report", self.base_url))
+            .json(&request)
             .send()
             .await?;
         check_response(resp).await

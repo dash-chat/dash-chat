@@ -320,6 +320,25 @@ where
         self.trigger_sync();
     }
 
+    /// Send a `/report` to every currently-registered mailbox, best-effort.
+    /// Each mailbox is contacted independently; a failure against one is logged
+    /// and does not prevent the others from receiving the report.
+    pub async fn report_all(&self, request: report_common::ReportRequest) {
+        let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
+            .mailboxes
+            .lock()
+            .await
+            .iter()
+            .map(|(id, tm)| (id.clone(), tm.clone()))
+            .collect();
+        for (id, tracked_mailbox) in mailboxes {
+            let client = tracked_mailbox.client().await;
+            if let Err(err) = client.report(request.clone()).await {
+                tracing::error!(?err, mailbox = %id, "failed to send report to mailbox");
+            }
+        }
+    }
+
     pub async fn subscribe(
         &self,
         topic: Item::Topic,
