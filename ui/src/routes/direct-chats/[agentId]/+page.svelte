@@ -54,10 +54,7 @@
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
-	import {
-		messagePosition,
-		canEditMessage,
-	} from '$lib/components/messages/message-helpers';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
@@ -569,10 +566,6 @@
 																		{myDeviceId}
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
-																		canEdit={canEditMessage(
-																			message,
-																			myDeviceId,
-																		)}
 																		onEdit={() =>
 																			composer?.editMessage(message)}
 																	/>

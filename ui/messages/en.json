@@ -6,6 +6,8 @@
 	"close": "Close",
 	"quickReactions": "Quick reactions",
 	"moreReactions": "More reactions",
+	"addReaction": "Add reaction",
+	"messageOptions": "Message options",
 	"edit": "Edit",
 	"edited": "Edited",
 	"editingMessage": "Edit message",

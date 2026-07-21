@@ -27,10 +27,7 @@
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import {
-		messagePosition,
-		canEditMessage,
-	} from '$lib/components/messages/message-helpers';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -263,7 +260,6 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														canEdit={canEditMessage(message, myDeviceId)}
 														onEdit={() => composer?.editMessage(message)}
 													/>
 												</div>
