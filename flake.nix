@@ -13,8 +13,9 @@
     tauri-plugin-holochain.url = "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
 
     # nixpkgs revs pinned only for the chromedrivers matching the e2e Android
-    # devices' WebView majors (physical phones on 149, the emulator image on
-    # 124). Appium picks the right one per device from E2E_CHROMEDRIVERS_DIR.
+    # devices' WebView majors (physical phones on 149/150, the emulator image
+    # on 124). Appium picks the right one per device from E2E_CHROMEDRIVERS_DIR.
+    nixpkgs-chromedriver-150.url = "github:nixos/nixpkgs/421eebfd0ec7bccd4abe826ce62d7e6e83129493";
     nixpkgs-chromedriver-149.url = "github:nixos/nixpkgs/d25a391ba507bc1cb32a8a732a2deb0d9dd16ad6";
     nixpkgs-chromedriver-124.url = "github:nixos/nixpkgs/fcc7d2be753560cdf34228a398f7a44202f09aaa";
   };
@@ -104,6 +105,10 @@
             let
               rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.android.toml;
               e2eChromedrivers = pkgs.linkFarm "e2e-chromedrivers" [
+                {
+                  name = "chromedriver-150";
+                  path = "${inputs'.nixpkgs-chromedriver-150.legacyPackages.chromedriver}/bin/chromedriver";
+                }
                 {
                   name = "chromedriver-149";
                   path = "${inputs'.nixpkgs-chromedriver-149.legacyPackages.chromedriver}/bin/chromedriver";
