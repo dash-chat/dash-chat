@@ -1,8 +1,9 @@
 /**
  * Shared helpers for E2E test setup.
  *
- * `[a, b] = await setupAgents(this, ['any', 'desktop'])` returns one `Agent`
- * per requirement — each a `WebdriverIO.Browser` plus page-object instances
+ * `[a, b] = await setupAgents(this, [{ platform: 'any' }, { platform: 'desktop' }])`
+ * returns one `Agent` per requirement — each a `WebdriverIO.Browser` plus
+ * page-object instances
  * (`agent.homePage`, `agent.directChatPage`, …) and a small set of agent-level
  * helpers that proxy to the browser-side test registry (`agent.tr`,
  * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
@@ -212,6 +213,11 @@ async function setupAgent(agentName: string): Promise<Agent> {
  *  physical device or an emulator; no platform fulfills 'ios' yet. */
 export type PlatformRequirement = 'desktop' | 'android' | 'ios' | 'any';
 
+/** What a spec requires of one agent. */
+export interface AgentRequirement {
+	platform: PlatformRequirement;
+}
+
 function fulfills(
 	requirement: PlatformRequirement,
 	platform: AgentPlatformName,
@@ -254,9 +260,12 @@ function matchSlots(
  * `this` must be the mocha context so the suite can be skipped).
  */
 export async function setupAgents<
-	const T extends readonly PlatformRequirement[],
+	const T extends readonly AgentRequirement[],
 >(ctx: Mocha.Context, requirements: T): Promise<{ [K in keyof T]: Agent }> {
-	const slots = matchSlots(requirements, platformNames());
+	const slots = matchSlots(
+		requirements.map(r => r.platform),
+		platformNames(),
+	);
 	if (slots === null) ctx.skip();
 	const agents = await Promise.all(
 		slots.map(slot => setupAgent(`agent${slot}`)),

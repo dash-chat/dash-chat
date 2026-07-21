@@ -12,7 +12,7 @@ describe('Media attachments', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 		await agent1.createProfilePage.createProfile('Alice', 'Media');
 		await agent2.createProfilePage.createProfile('Bob', 'Media');
 		await exchangeContacts(agent1, agent2);

@@ -4,7 +4,7 @@ describe('Settings pages', () => {
 	let agent: Agent;
 
 	before(async function () {
-		[agent] = await setupAgents(this, ['any']);
+		[agent] = await setupAgents(this, [{ platform: 'any' }]);
 		await agent.createProfilePage.createProfile('Settings', 'Test');
 		await agent.homePage.settingsLink.click();
 		await agent.settingsPage.ready();

@@ -10,7 +10,7 @@ describe('Photo lightbox', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 		await agent1.createProfilePage.createProfile('Alice', 'Lightbox');
 		await agent2.createProfilePage.createProfile('Bob', 'Lightbox');
 		await exchangeContacts(agent1, agent2);

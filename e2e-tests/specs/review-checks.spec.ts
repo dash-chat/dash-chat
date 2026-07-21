@@ -23,7 +23,7 @@ describe('Review checks', function () {
 	before(async function () {
 		this.timeout(180_000);
 
-		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Tester');

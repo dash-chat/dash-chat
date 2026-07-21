@@ -4,7 +4,7 @@ describe('UpdaterBanner', () => {
 	let agent: Agent;
 
 	before(async function () {
-		[agent] = await setupAgents(this, ['desktop']);
+		[agent] = await setupAgents(this, [{ platform: 'desktop' }]);
 		await agent.createProfilePage.createProfile('Updater', 'Test');
 	});
 

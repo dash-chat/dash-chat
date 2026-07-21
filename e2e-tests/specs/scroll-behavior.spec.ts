@@ -21,7 +21,7 @@ describe('Chat scroll behavior', () => {
 
 	before(async function () {
 		this.timeout(120_000);
-		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 		await exchangeContacts(agent1, agent2);

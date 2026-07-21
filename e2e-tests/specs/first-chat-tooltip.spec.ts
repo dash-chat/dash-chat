@@ -17,7 +17,7 @@ describe('FirstChatTooltip', () => {
 	let agent: Agent;
 
 	before(async function () {
-		[agent] = await setupAgents(this, ['any']);
+		[agent] = await setupAgents(this, [{ platform: 'any' }]);
 
 		await agent.execute(() =>
 			localStorage.removeItem('first-chat-tooltip-shown'),

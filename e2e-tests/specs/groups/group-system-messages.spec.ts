@@ -6,7 +6,7 @@ describe('Group chat inline system messages', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, ['any', 'any']);
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 	});
 
