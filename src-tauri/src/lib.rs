@@ -35,9 +35,7 @@ pub fn run() {
 
     i18n::init_i18n();
 
-    // Registered on all platforms: its commands/events are no-ops on desktop,
-    // and registering everywhere keeps the frontend free of platform checks.
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_virtual_keyboard::init());
+    let mut builder = tauri::Builder::default();
 
     #[cfg(mobile)]
     {
@@ -159,6 +157,7 @@ pub fn run() {
             #[cfg(feature = "e2e-tests")]
             commands::testing::close_iroh_endpoint,
         ])
+        .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
