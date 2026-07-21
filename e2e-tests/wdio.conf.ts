@@ -52,9 +52,6 @@ function agentEntry(slot: number) {
 	return platform.remoteOptions(slot);
 }
 
-// Only specs proven to work on-device. Grow this list as specs are ported.
-const ON_DEVICE_SPECS = ['./specs/send-messages.spec.ts'];
-
 let mailboxServer: ChildProcess | undefined;
 let mailboxLogger: ChildProcess | undefined;
 
@@ -77,7 +74,7 @@ async function teardown() {
 export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
 
-	specs: android !== null ? ON_DEVICE_SPECS : ['./specs/**/*.spec.ts'],
+	specs: ['./specs/**/*.spec.ts'],
 	exclude: ['./specs/compat-*.spec.ts'],
 	maxInstances: 1,
 	specFileRetries: getSpecFileRetries(),
