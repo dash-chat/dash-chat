@@ -8,3 +8,8 @@ export const UI_TIMEOUT = 30_000;
  *  agent, rendered on another. p2p sync through the mailbox is slow to settle
  *  on cold, headless CI runners, so anything cross-agent waits this long. */
 export const SYNC_TIMEOUT = 60_000;
+
+/** Cross-agent wait for media attachments: the bytes ride the iroh blob
+ *  channel (with a mailbox relay hop) separately from the message op, which
+ *  is slower still than op sync on cold CI runners. */
+export const MEDIA_SYNC_TIMEOUT = 120_000;

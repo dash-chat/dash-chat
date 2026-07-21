@@ -3,6 +3,7 @@
  * chats the same way they do in direct chats.
  */
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Group media attachments', () => {
@@ -14,8 +15,10 @@ describe('Group media attachments', () => {
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 
 		// The flow leaves agent2 on the home page; open the group so it can
-		// receive the media sent below.
-		await agent2.homePage.chatListItem('mygroup').waitForExist();
+		// receive the media sent below. The group arrives over p2p sync.
+		await agent2.homePage.chatListItem('mygroup').waitForExist({
+			timeout: SYNC_TIMEOUT,
+		});
 		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
 	});
