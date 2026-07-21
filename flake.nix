@@ -116,15 +116,6 @@
             # The e2e harness consumes tools and artifacts from PATH and
             # conventional paths; this hook provides the chromedrivers dir.
             shellHook = hostBuildEnvHook + ''
-              # Host build scripts fingerprint CC/CXX/AR/RANLIB — align them
-              # with the default shell so host artifacts in the shared target
-              # dir stay fingerprint-compatible across shells, keeping the NDK
-              # llvm tools for the android triples via target-scoped vars.
-              for triple in aarch64_linux_android armv7_linux_androideabi x86_64_linux_android i686_linux_android; do
-                export "AR_''${triple}=''${AR}"
-                export "RANLIB_''${triple}=''${RANLIB}"
-              done
-              export CC=gcc CXX=g++ AR=ar RANLIB=ranlib
               mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.appium"
               ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.appium/chromedrivers"
             '';
