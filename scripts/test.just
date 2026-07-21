@@ -25,15 +25,19 @@ e2e NAME='' *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
     cd e2e-tests
+    spec=''
     wdio_args=()
-    [[ -n "{{NAME}}" ]] && wdio_args+=(--spec "specs/{{NAME}}.spec.ts")
     export E2E_SPEC_FILE_RETRIES=1
-    for arg in {{ARGS}}; do
+    for arg in {{NAME}} {{ARGS}}; do
         case "$arg" in
             --no-rerun|--no-retry) export E2E_SPEC_FILE_RETRIES=0 ;;
-            *) wdio_args+=("$arg") ;;
+            --*) wdio_args+=("$arg") ;;
+            *) spec="$arg" ;;
         esac
     done
+    if [[ -n "$spec" ]]; then
+        wdio_args+=(--spec "specs/${spec}.spec.ts")
+    fi
     # wdio itself needs the androidDev shell's tools (adb, appium
     # chromedrivers, boot-emulator, SDK/NDK for the APK build); it layers
     # over the caller's default dev shell so tauri-driver/pnpm stay on PATH.
