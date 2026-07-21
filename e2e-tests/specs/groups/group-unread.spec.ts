@@ -1,6 +1,6 @@
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { UI_TIMEOUT } from '../../helpers/timeouts';
-import { type Agent, setupAgent } from '../../setup/setup-agents';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Group unread messages', () => {
 	const REQUIRED_OVERFLOW = 400;
@@ -11,10 +11,7 @@ describe('Group unread messages', () => {
 
 	before(async function () {
 		this.timeout(120_000);
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 
 		await agent2.homePage.chatListItem('mygroup').waitForExist();

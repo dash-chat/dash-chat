@@ -433,24 +433,27 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 
 ### E2E Tests (WebdriverIO)
 
-The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO + `tauri-driver`. Tests launch two built Tauri instances and exercise the full messaging flow (profile creation, contact exchange, messaging).
+The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (tauri-driver against the built binary), `android` (physical device via Appium in the webview context), or `android-emulator` (headless emulator, booted automatically). Page objects and specs work unchanged across platforms.
 
 ```bash
 # Build the Tauri binary and run the e2e suite (recommended)
 just test e2e
 
-# Build the binary only
-just test e2e-build
-
 # Build and run a single spec
 just test e2e full-flow
+
+# Phone + desktop, two phones, two auto-booted emulators, or a single desktop
+PLATFORMS=android,desktop just test e2e send-messages
+PLATFORMS=android,android just test e2e send-messages
+PLATFORMS=android-emulator,android-emulator just test e2e send-messages
+PLATFORMS=desktop just test e2e settings-pages
 ```
 
 **Key details:**
-- Tests use page objects from `e2e-tests/helpers/pages/`. `setupAgent('agent1')` returns an `Agent` with all page-object instances pre-attached (`agent.homePage`, `agent.directChatPage`, …).
+- Tests use page objects from `e2e-tests/helpers/pages/`. `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` returns one `Agent` per requirement with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
-- Two `tauri-driver` instances run on ports 4444 and 4446.
-- Launch scripts (`e2e-tests/setup/`) set `DATA_DIR` and `MAILBOX_URL` env vars.
+- Platform-specific setup (tauri-driver instances, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
+- Desktop agents get `DATA_DIR` and `MAILBOX_URL` through each agent's tauri-driver spawn env (`e2e-tests/setup/platforms/desktop.ts`); Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events.
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run.
 
@@ -459,7 +462,8 @@ just test e2e full-flow
 - **Navigate via the UI, not `agent.goto()`.** Always walk through the app the way a user would — click back buttons, sidebar links, FABs, list items. `agent.goto()` and `window.__test.goto()` exist as escape hatches only for cases that genuinely cannot be reached by clicking (e.g. simulating a page reload, or the `review-checks` spec that programmatically enumerates every page). If you add a new `goto()` call, leave a comment explaining why the UI path doesn't work.
 - **Specs run in narrow (mobile) layout by default.** `setupAgent` forces `agent.setWideScreen(false)` so back buttons (`direct-chat-back`, `offline-back`, …) and FABs render — most of those are gated by `{#if !isWideScreen.value}`. When a spec needs the desktop two-panel layout (e.g. `review-checks` switching combos), call `agent.setWideScreen(true)` in `before()`. Wide-screen mode mounts `ChatListPanel` / `SettingsPanel` / `NewMessagePanel` in the sidebar; some navigation steps that need a back-out in narrow can skip it in wide-screen because the sidebar is always there. The handful of cross-mode helpers (`helpers/review/visit-all-pages.ts`) guard with `if (await page.back.isDisplayed())` to handle both.
 - **Use `page.ready()` instead of bare waits after navigation.** Each page object has a `ready()` method that waits for the first stable element on that page. Call it right after the click that triggered the navigation.
-- **Only pass custom `waitUntil` / `waitForExist` arguments when strictly necessary.** The default `waitforTimeout` (10s) is correct for incidental waits — animations, navigations, store hydration. Override `timeout` / `interval` / `timeoutMsg` only when (a) the operation genuinely needs longer than 10s (network sync, p2p propagation, connection-state flips that depend on real timeouts) or (b) a custom error message is the only way to diagnose a flake. Don't copy timeouts from neighbouring code without justifying them.
+- **Only pass custom `waitUntil` / `waitForExist` arguments when strictly necessary.** The default `waitforTimeout` (30s) is correct for incidental waits — animations, navigations, store hydration. Override `timeout` / `interval` / `timeoutMsg` only when (a) the operation genuinely needs longer than 30s (network sync, p2p propagation, connection-state flips that depend on real timeouts) or (b) a custom error message is the only way to diagnose a flake. Don't copy timeouts from neighbouring code without justifying them.
+- **Specs declare per-agent requirements in `setupAgents`.** Each suite builds its agents with `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` inside `before(async function () { ... })` (a plain `function`, so `this` is the mocha context). A spec covering a platform-specific feature passes `{ platform: 'desktop' }`, `{ platform: 'android' }` (fulfilled by a physical device or an emulator), or `{ platform: 'ios' }` for the agent that needs it. The harness matches the requirements against the unordered `PLATFORMS` multiset — a `'desktop'` requirement gets a desktop agent regardless of its position in the list — and skips the suite when no assignment exists (including when the spec asks for more agents than `PLATFORMS` launches).
 - **One page object per route, one spec per feature.** When you add a new route under `ui/src/routes/`, add a matching page object under `e2e-tests/helpers/pages/` (mirror the route structure: `routes/settings/profile/edit-name/+page.svelte` → `helpers/pages/settings/profile/edit-name-page.ts`) and wire it into `setup-agents.ts`. New UI features must also ship with a spec in `e2e-tests/specs/` covering the happy path.
 
 **REQUIREMENT:** E2E specs must drive the UI via page objects (`agent.homePage.newMessageButton.click()`), not by inlining `document.querySelector` or duplicating selectors. DOM-side helpers that can't be expressed as clicks belong in `ui/tests/setup-utils.ts` under `window.__test`.
@@ -542,7 +546,7 @@ Testing keyboard behavior and UI interactions in the iOS simulator has inherent 
 
 - **Log redaction**: The `get_redacted_log` command in `src-tauri/src/commands/logs.rs` strips sensitive data from log files before they are sent as error report attachments. This includes: hex strings, base64 blobs, public key byte arrays, hashes, signatures, device/agent IDs, timestamps, profile fields (name, surname, about), chat message content, and reactions. **When adding any new feature that introduces private or user-generated data, you must also update the redaction patterns in `get_redacted_log` to ensure that data never leaves the device in error reports.**
 - **Rust edition**: Uses Rust edition 2021 (src-tauri) and 2024 (dashchat-node)
-- **Rust toolchain**: Pinned to stable 1.94.0 via `rust-toolchain.toml` (mobile variants: `rust-toolchain.ios.toml`, `rust-toolchain.android.toml`).
+- **Rust toolchain**: Pinned to stable 1.94.0 via `rust-toolchain.toml` (one toolchain including the Android and iOS targets).
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)
 - **Internationalization**: UI supports multiple languages via Weblate integration
 
