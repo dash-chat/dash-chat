@@ -9,16 +9,17 @@ import type { AgentPlatform, PrepareContext } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..', '..');
+const E2E_DIR = path.resolve(__dirname, '..', '..');
 
 const APK_DIR = path.join(ROOT, 'src-tauri/gen/android/app/build/outputs/apk');
 const APP_PACKAGE = 'studio.darksoil.dashchat';
 
-// ABIs covered by `just test e2e android-build` (--split-per-abi), mapped to
-// the gradle flavor that names each APK.
-const ABI_FLAVORS: Record<string, string> = {
-	'arm64-v8a': 'arm64',
-	'armeabi-v7a': 'arm',
-	x86_64: 'x86_64',
+// ABIs covered by `just test e2e android-build` (--split-per-abi): the gradle
+// flavor that names each APK and the rust target the build recipe takes.
+const ABIS: Record<string, { flavor: string; target: string }> = {
+	'arm64-v8a': { flavor: 'arm64', target: 'aarch64' },
+	'armeabi-v7a': { flavor: 'arm', target: 'armv7' },
+	x86_64: { flavor: 'x86_64', target: 'x86_64' },
 };
 
 // Must match the MAILBOX_URL baked into the APK by `just test e2e android-build`.
@@ -41,18 +42,60 @@ function chromedriversDir(): string {
 	return dir;
 }
 
-function apkForDevice(udid: string): string {
+function deviceAbi(udid: string): string {
 	const abilist = execSync(
 		`adb -s ${udid} shell getprop ro.product.cpu.abilist`,
 		{ encoding: 'utf8' },
 	).trim();
-	for (const abi of abilist.split(',')) {
-		const flavor = ABI_FLAVORS[abi];
-		if (flavor !== undefined) {
-			return path.join(APK_DIR, flavor, 'debug', `app-${flavor}-debug.apk`);
-		}
+	const abi = abilist.split(',').find(a => a in ABIS);
+	if (abi === undefined) {
+		throw new Error(`No e2e APK flavor for device ${udid} (abis: ${abilist})`);
 	}
-	throw new Error(`No e2e APK flavor for device ${udid} (abis: ${abilist})`);
+	return abi;
+}
+
+function apkForDevice(udid: string): string {
+	const flavor = ABIS[deviceAbi(udid)].flavor;
+	return path.join(APK_DIR, flavor, 'debug', `app-${flavor}-debug.apk`);
+}
+
+function warnAboutUnauthorizedDevices() {
+	const out = execSync('adb devices', { encoding: 'utf8' });
+	if (/unauthorized$/m.test(out)) {
+		console.warn(
+			'Note: an unauthorized device is connected — accept its USB ' +
+				'debugging prompt to use it.',
+		);
+	}
+}
+
+/** Boot a headless emulator for each android-emulator agent that doesn't have
+ *  a running emulator yet. Emulators stay running across runs (kill with
+ *  `just android kill-emulator`). */
+function bootMissingEmulators(needed: number) {
+	const running = connectedDevices().filter(d =>
+		d.startsWith('emulator-'),
+	).length;
+	for (let i = running; i < needed; i++) {
+		execSync(`bash ${path.join(ROOT, 'scripts', 'android-emulator.sh')}`, {
+			stdio: 'inherit',
+		});
+	}
+}
+
+/** The uiautomator2 driver lives in APPIUM_HOME (not node_modules); install
+ *  it on first run. Pinned to the last version compatible with appium 2.x. */
+function ensureUiautomator2Driver() {
+	const installed = execSync(
+		'pnpm exec appium driver list --installed 2>&1 || true',
+		{ encoding: 'utf8', cwd: E2E_DIR },
+	);
+	if (!installed.includes('uiautomator2')) {
+		execSync('pnpm exec appium driver install uiautomator2@4.2.9', {
+			stdio: 'inherit',
+			cwd: E2E_DIR,
+		});
+	}
 }
 
 function connectedDevices(): string[] {
@@ -151,6 +194,15 @@ export class AndroidPlatform implements AgentPlatform {
 	constructor(kindBySlot: Map<number, AndroidKind>) {
 		this.slots = [...kindBySlot.keys()];
 		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
+		process.env.APPIUM_HOME = path.join(E2E_DIR, '.appium');
+		// Workers reload this module; device provisioning belongs to the
+		// launcher, which claims before any worker starts.
+		if (process.env.WDIO_WORKER_ID === undefined) {
+			warnAboutUnauthorizedDevices();
+			bootMissingEmulators(
+				[...kindBySlot.values()].filter(k => k === 'android-emulator').length,
+			);
+		}
 		this.udids = claimDevices(kindBySlot);
 	}
 
@@ -184,12 +236,23 @@ export class AndroidPlatform implements AgentPlatform {
 			);
 		}
 
+		ensureUiautomator2Driver();
+
+		// Build the e2e APKs only for the claimed devices' architectures.
+		const targets = new Set(
+			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
+		);
+		execSync(`just test e2e android-build '${[...targets].join(' ')}'`, {
+			cwd: ROOT,
+			stdio: 'inherit',
+		});
+
 		for (const udid of this.udids.values()) {
 			const apk = apkForDevice(udid);
 			if (!existsSync(apk)) {
 				throw new Error(
-					`e2e APK not found at ${apk} (for device ${udid}). ` +
-						`Build it with 'just test e2e android-build'.`,
+					`e2e APK not found at ${apk} (for device ${udid}) after ` +
+						`'just test e2e android-build'`,
 				);
 			}
 		}
