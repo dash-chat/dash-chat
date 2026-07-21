@@ -88,7 +88,7 @@ pub fn run() {
         if cfg!(feature = "e2e-tests") {
             // E2E tests run multiple built instances side-by-side;
             // skip single-instance, updater, and MCP bridge plugins.
-        } else {
+        } else if !tauri::is_dev() {
             // single-instance must be registered before deep-link so it can
             // forward deep link URLs from a second process to this one.
             builder = builder
