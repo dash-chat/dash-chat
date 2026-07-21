@@ -610,16 +610,21 @@ impl Node {
             }
 
             Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(delete)) => {
-                // Enforce the tombstones the projection just recorded against the
-                // *chat* topic (this op lives in the device group topic). Unlike
+                // `reduce` (above) tombstoned the message and its whole current
+                // edit chain in the *chat* topic (this op lives in the device
+                // group topic). Drop the bodies of those chain members that still
+                // have one — pre-existing edits aren't reprocessed, so their
+                // bodies won't be dropped by the enforce-on-arrival path. Unlike
                 // delete-for-everyone, a `DeleteForMe` op is never shared with the
-                // other chat participants, so their copies are untouched — the
-                // message only disappears from my own device group. We fall
-                // through to `notify_payload` below so the frontend learns of the
-                // deletion and drops the message from its chat view.
+                // other chat participants, so their copies are untouched. We fall
+                // through to `notify_payload` below so the frontend re-reads the
+                // tombstone set and drops the message from its chat view.
                 let chat_topic: TopicId = delete.chat_id.into();
-                for hash in &delete.hashes {
-                    if let Some(op) = self.op_store.get_operation(hash).await? {
+                for hash in self.projection.tombstoned_hashes(chat_topic).await? {
+                    let Some(op) = self.op_store.get_operation(&hash).await? else {
+                        continue;
+                    };
+                    if op.body.is_some() {
                         self.enforce_tombstone(chat_topic, &op).await?;
                     }
                 }

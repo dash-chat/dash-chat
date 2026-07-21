@@ -140,16 +140,19 @@ pub struct ReadMessagesPayload {
 ///
 /// Unlike `DeleteMessage` (delete for everyone), this lives in the private
 /// device group topic, so it is only ever seen by the author's own devices and
-/// syncs the deletion between them. `hashes` is the complete edit chain of the
-/// message being deleted (the same set `DeleteMessage` uses); `chat_id`
-/// identifies the chat topic the operations live in, since the delete itself is
-/// stored in a different topic. Processing tombstones every referenced
-/// operation locally, without scrubbing the shared chat mailbox — the message
-/// remains visible to the other chat participants.
+/// syncs the deletion between them. It names only the *original* message
+/// (`message_hash`), not the whole edit chain: because a delete-for-me may
+/// target another author's message, the full chain can't be captured reliably
+/// at delete time (a later edit would be missed). Instead the receiver
+/// tombstones the message and walks its edits forward, and any edit arriving
+/// afterwards is tombstoned transitively. `chat_id` identifies the chat topic
+/// the message lives in, since the delete itself is stored in a different
+/// topic. Processing never scrubs the shared chat mailbox — the message remains
+/// visible to the other chat participants.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DeleteForMePayload {
     pub chat_id: ChatId,
-    pub hashes: BTreeSet<Hash>,
+    pub message_hash: Hash,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

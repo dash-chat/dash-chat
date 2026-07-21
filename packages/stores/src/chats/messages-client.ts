@@ -1,5 +1,5 @@
 import { Hash } from '../p2panda/types';
-import { ChatId, ChatReaction, OutgoingMedia } from '../types';
+import { ChatId, ChatReaction, OutgoingMedia, Tombstone } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface IMessagesClient {
@@ -13,6 +13,7 @@ export interface IMessagesClient {
 	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash>;
 	deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash>;
 	deleteMessageForMe(chatId: ChatId, targetHash: Hash): Promise<Hash>;
+	getTombstones(chatId: ChatId): Promise<Tombstone[]>;
 }
 
 export class MessagesClient implements IMessagesClient {
@@ -62,5 +63,9 @@ export class MessagesClient implements IMessagesClient {
 			chatId,
 			targetHash,
 		});
+	}
+
+	getTombstones(chatId: ChatId): Promise<Tombstone[]> {
+		return invokeAfterSetup('get_tombstones', { chatId });
 	}
 }

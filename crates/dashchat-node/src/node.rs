@@ -30,7 +30,7 @@ use tokio::task::JoinHandle;
 
 use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
-    collect_deletable_edit_chain,
+    collect_deletable_edit_chain, resolve_message_root,
 };
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
@@ -1113,8 +1113,13 @@ impl Node {
     /// `DeleteForMe` operation to the private device group topic, so only my own
     /// devices see it and the deletion eventually syncs to all of them. There is
     /// no delete window and no authorship restriction — any message (mine or a
-    /// peer's) can be deleted from my own devices. Processing tombstones the full
-    /// edit chain locally; the message stays visible to the other participants.
+    /// peer's) can be deleted from my own devices. The payload names only the
+    /// original message; the receiver tombstones it and its edit chain (present
+    /// and future). The message stays visible to the other participants.
+    ///
+    /// `target` may be any operation in the message's edit chain (typically the
+    /// latest edit shown in the UI); it is resolved back to the original message
+    /// so the whole chain is captured.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn delete_message_for_me(
         &self,
@@ -1123,19 +1128,32 @@ impl Node {
     ) -> Result<Header, DeleteMessageError> {
         let chat_id = topic.into();
         let ops = self.valid_chat_ops(chat_id).await?;
-        let hashes = collect_deletable_edit_chain(&ops, &target)?;
+        let message_hash = resolve_message_root(&ops, &target)?;
 
         let header = self
             .publish(
                 self.device_group_topic(),
                 Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(
-                    crate::payload::DeleteForMePayload { chat_id, hashes },
+                    crate::payload::DeleteForMePayload {
+                        chat_id,
+                        message_hash,
+                    },
                 )),
                 Some(&format!("delete_message_for_me({:?})", chat_id.aliased())),
             )
             .await?;
 
         Ok(header)
+    }
+
+    /// Every tombstone in a chat, paired with why it was tombstoned. The
+    /// frontend uses this to drop delete-for-me messages (and their edits) from
+    /// view while keeping the delete-for-everyone placeholders.
+    pub async fn chat_tombstones(
+        &self,
+        chat_id: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<(Hash, crate::stores::TombstoneReason)>> {
+        self.projection.tombstones(chat_id.into().into()).await
     }
 
     /// Publish a delete without validating it. For testing the receiving-side

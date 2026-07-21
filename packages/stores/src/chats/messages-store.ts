@@ -11,6 +11,7 @@ import {
 	MessageVersion,
 	OutgoingMedia,
 	Payload,
+	Tombstone,
 	hasBody,
 	mediaBundleToAttachment,
 } from '../types';
@@ -73,38 +74,25 @@ export class MessagesStore {
 
 		applyDeletes(messages, deletes);
 
-		// Following Signal, a delete-for-me leaves no placeholder — the message
-		// simply disappears from this device (and, once synced, the rest of the
-		// device group).
-		const deletedForMe = await this.deletedForMeHashes();
-		deletedForMe.forEach(hash => delete messages[hash]);
+		applyTombstones(messages, await this.tombstones());
 
 		return messages;
 	});
 
-	// The hashes deleted "for me" for this chat. Unlike delete-for-everyone,
-	// `DeleteForMe` ops live in the private device group topic (mirroring how
-	// reads are tracked), so they're read from there rather than the chat log.
-	deletedForMeHashes = reactive(async () => {
+	// The backend's tombstone set for this chat (each hash tagged with why it was
+	// tombstoned). Re-fetched whenever the chat log or the device-group log
+	// changes, since that's when a delete — or a transitively-tombstoned edit —
+	// gets recorded. Delete-for-me can't be derived from the raw ops the way
+	// reads are: the backend drops the tombstoned edits' bodies, so their
+	// edit-chain pointers are gone and only the backend knows the full set.
+	tombstones = reactive(async () => {
 		const chatId = await this.chatId();
-		const myDeviceGroupTopic =
-			await this.contactsStore.devicesStore.myDeviceGroupTopic();
-		const hashes: Set<Hash> = new Set();
-
-		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
-			for (const op of ops) {
-				if (
-					op.body?.payload?.type === 'DeleteForMe' &&
-					op.body.payload.payload.chat_id === chatId
-				) {
-					for (const hash of op.body.payload.payload.hashes) {
-						hashes.add(hash);
-					}
-				}
-			}
-		}
-
-		return hashes;
+		if (chatId === '') return [];
+		// Establish reactive dependencies on the logs so this recomputes when a
+		// delete or a tombstoned edit is processed into either topic.
+		await this.logsStore.logsForAllAuthors(chatId);
+		await this.contactsStore.devicesStore.myDeviceGroupTopic();
+		return this.client.getTombstones(chatId);
 	});
 
 	lastMessage = reactive(async () => {
@@ -186,8 +174,32 @@ export class MessagesStore {
 
 	async deleteMessageForMe(message: Message): Promise<Hash> {
 		const chatId = await this.chatId();
-		const current = currentVersion(message);
-		return this.client.deleteMessageForMe(chatId, current.hash);
+		// The whole message is deleted regardless of which version is shown, so
+		// target the original op; the backend tombstones its edit chain.
+		return this.client.deleteMessageForMe(chatId, message.hash);
+	}
+}
+
+/** Reconcile the built message map with the backend's tombstone set.
+ *
+ * A `DeletedForMe` op (and any of its edits) is removed outright — following
+ * Signal, a delete-for-me leaves no placeholder. A `DeletedForEveryone` edit
+ * that slipped through as a raw body-less placeholder (rather than the
+ * chain-collapsed `'deleted-for-everyone'` root that `applyDeletes` produces
+ * from the `DeleteMessage` op) is removed too, so only the root placeholder
+ * remains. Body-less ops that are *not* tombstoned stay as `'body-unavailable'`
+ * — a genuinely unfetched message, which the tombstone set lets us tell apart
+ * from a deletion. */
+function applyTombstones(
+	messages: Record<Hash, Message>,
+	tombstones: Tombstone[],
+): void {
+	for (const { hash, reason } of tombstones) {
+		const message = messages[hash];
+		if (message === undefined) continue;
+		if (reason === 'DeletedForMe' || message.content === 'body-unavailable') {
+			delete messages[hash];
+		}
 	}
 }
 

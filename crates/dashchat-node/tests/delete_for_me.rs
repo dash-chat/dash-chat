@@ -1,8 +1,9 @@
 //! Delete-for-me tests: a `DeleteForMe` operation lives in the author's private
-//! device group, tombstones the referenced chat operations locally, and never
-//! touches the peer or the shared mailbox — the message stays visible to the
-//! other participant. Unlike delete-for-everyone there is no authorship
-//! restriction and no delete window, so a received message can be deleted too.
+//! device group, names only the original message, and tombstones that message
+//! plus its whole edit chain (present and future) locally — never touching the
+//! peer or the shared mailbox, so the message stays visible to the other
+//! participant. Unlike delete-for-everyone there is no authorship restriction
+//! and no delete window, so a received message can be deleted too.
 
 #![cfg(test)]
 
@@ -194,5 +195,77 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
             Some(true)
         );
     }
+    assert_eq!(bobbi.get_messages(chat).await.unwrap().len(), 1);
+}
+
+/// An edit that arrives *after* a delete-for-me is tombstoned transitively — a
+/// peer editing a message I already deleted for myself can't resurrect it. This
+/// is the reason `DeleteForMe` names only the original message: the whole chain,
+/// including edits that don't exist yet, is caught on the receiving side.
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_for_me_hides_edits_arriving_after_the_delete() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mb = TestMailbox::from_env();
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mb)
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_topic(bobbi.agent_id());
+
+    // Bobbi sends a message; Alice receives it and deletes it just for herself.
+    let msg = bobbi.send_message_raw(chat, "hi".into()).await.unwrap();
+    poll.wait_for(|| async {
+        let n = alice.get_messages(chat).await.unwrap().len();
+        (n == 1).then_some(()).ok_or(n)
+    })
+    .await
+    .unwrap();
+    alice.delete_message_for_me(chat, msg.hash()).await.unwrap();
+    poll.wait_for(|| async {
+        alice
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .is_empty()
+            .then_some(())
+            .ok_or(())
+    })
+    .await
+    .unwrap();
+
+    // Bobbi (for whom nothing is deleted) edits the same message.
+    let edit = bobbi
+        .edit_message(chat, msg.hash(), "edited hi")
+        .await
+        .unwrap();
+
+    // Alice receives the edit but it is tombstoned transitively: its body is
+    // dropped and the message stays gone from her view.
+    poll.wait_for(|| async {
+        match payload_present(&alice, *chat, bobbi.device_id(), edit.hash()).await {
+            Some(false) => Ok(()),
+            other => Err(other),
+        }
+    })
+    .await
+    .unwrap();
+    assert!(alice.projection.is_tombstoned(*chat, edit.hash()).await.unwrap());
+    assert!(alice.get_messages(chat).await.unwrap().is_empty());
+
+    // Bobbi still sees the edited message.
     assert_eq!(bobbi.get_messages(chat).await.unwrap().len(), 1);
 }

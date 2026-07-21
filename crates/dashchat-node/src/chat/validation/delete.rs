@@ -86,6 +86,31 @@ pub fn collect_deletable_edit_chain(
     Err(DeleteError::IncompleteChain)
 }
 
+/// Walk backwards from `target` through the edit chain to the original
+/// `Message` operation and return its hash. Unlike
+/// [`collect_deletable_edit_chain`] this imposes no "must be the latest edit"
+/// restriction — `target` may be any operation in the chain — because
+/// delete-for-me deletes a whole message regardless of which version the caller
+/// happened to point at.
+pub fn resolve_message_root(
+    valid_ops: &HashMap<Hash, ChatOp>,
+    target: &Hash,
+) -> Result<Hash, DeleteError> {
+    let mut current = *target;
+    for _ in 0..valid_ops.len() + 1 {
+        let op = valid_ops.get(&current).ok_or(DeleteError::TargetNotFound)?;
+        match &op.kind {
+            ChatOpKind::Message => return Ok(current),
+            ChatOpKind::Edit(edit_hash) => current = *edit_hash,
+            ChatOpKind::Delete(_) | ChatOpKind::Other => {
+                return Err(DeleteError::TargetNotDeletable);
+            }
+        }
+    }
+    // Cyclic chain: cannot happen for chains built by valid edits.
+    Err(DeleteError::IncompleteChain)
+}
+
 pub struct DeleteCandidate {
     pub hashes: BTreeSet<Hash>,
     pub deleter: DeviceId,

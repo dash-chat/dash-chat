@@ -178,9 +178,20 @@ export interface ReadMessagesPayload {
 
 export interface DeleteForMePayload {
 	chat_id: ChatId;
-	/** The complete edit chain being deleted (a single hash when the message
-	 * was never edited), mirroring `DeleteMessagePayload`. */
-	hashes: Hash[];
+	/** The original message being deleted. Its edit chain (present and future)
+	 * is tombstoned transitively by the backend, so only the root is named
+	 * here — unlike `DeleteMessagePayload`, which lists the whole chain. */
+	message_hash: Hash;
+}
+
+/** Why an operation was tombstoned, mirroring the backend `TombstoneReason`. A
+ * delete-for-everyone still shows a "deleted" placeholder for the author's
+ * message; a delete-for-me vanishes with no trace. */
+export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
+
+export interface Tombstone {
+	hash: Hash;
+	reason: TombstoneReason;
 }
 
 export type DeviceGroupPayload =

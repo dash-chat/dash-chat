@@ -1,5 +1,6 @@
 use dashchat_node::{
     AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia, RemoveGroupMemberError,
+    stores::TombstoneReason,
 };
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
@@ -124,6 +125,29 @@ pub async fn delete_message_for_me(
         .await
         .map_err(|err| format!("{err:?}"))?;
     Ok(header.hash())
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Tombstone {
+    pub hash: Hash,
+    pub reason: TombstoneReason,
+}
+
+#[tauri::command]
+pub async fn get_tombstones(
+    chat_id: ChatId,
+    app_node: State<'_, AppNode>,
+) -> Result<Vec<Tombstone>, String> {
+    let node = app_node.get().await?;
+    let rows = node
+        .chat_tombstones(chat_id)
+        .await
+        .map_err(|err| format!("{err:?}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|(hash, reason)| Tombstone { hash, reason })
+        .collect())
 }
 
 #[tauri::command]
