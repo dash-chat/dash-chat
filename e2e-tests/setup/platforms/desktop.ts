@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { echoLinesWithPrefix } from '../agent-logger';
+import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import { killAllE2EProcesses, killAndWait, killPortHolders } from '../cleanup';
 import { waitForPortFree, waitForPortListening } from '../wait-for-port';
@@ -17,6 +17,7 @@ interface DesktopAgent {
 	port: number;
 	nativePort: number;
 	driver?: ChildProcess;
+	logger?: ChildProcess | null;
 }
 
 /** Agents running the desktop binary, one tauri-driver instance per slot. */
@@ -85,8 +86,11 @@ export class DesktopPlatform implements AgentPlatform {
 				throw new Error('MAILBOX_URL not set — onPrepare must run first');
 			}
 
-			// The app is spawned by WebKitWebDriver, itself spawned by
-			// tauri-driver — env and stdout are inherited down that chain.
+			agent.logger = startAgentLogger(
+				`agent-${agent.slot}`,
+				path.join(agentDir, 'logs', 'Dash Chat.log'),
+			);
+
 			agent.driver = spawn(
 				'tauri-driver',
 				[
@@ -96,7 +100,7 @@ export class DesktopPlatform implements AgentPlatform {
 					String(agent.nativePort),
 				],
 				{
-					stdio: ['ignore', 'pipe', 'pipe'],
+					stdio: ['ignore', 'ignore', 'pipe'],
 					env: {
 						...process.env,
 						DATA_DIR: agentDir,
@@ -112,7 +116,6 @@ export class DesktopPlatform implements AgentPlatform {
 					},
 				},
 			);
-			echoLinesWithPrefix(`agent-${agent.slot}`, agent.driver.stdout!);
 			agent.driver.stderr?.on('data', (data: Buffer) => {
 				console.error(`[tauri-driver:${agent.port}] ${data.toString().trim()}`);
 			});
@@ -128,10 +131,17 @@ export class DesktopPlatform implements AgentPlatform {
 		// Kill orphaned dash-chat E2E instances and anything holding our ports.
 		killAllE2EProcesses();
 		killPortHolders(this.ports);
+		for (const agent of this.agents) {
+			agent.logger?.kill();
+			agent.logger = null;
+		}
 	}
 
 	async onComplete() {
 		killAllE2EProcesses();
 		killPortHolders(this.ports);
+		for (const agent of this.agents) {
+			agent.logger?.kill();
+		}
 	}
 }
