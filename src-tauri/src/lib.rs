@@ -35,12 +35,13 @@ pub fn run() {
 
     i18n::init_i18n();
 
-    let mut builder = tauri::Builder::default();
+    // Registered on all platforms: its commands/events are no-ops on desktop,
+    // and registering everywhere keeps the frontend free of platform checks.
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_virtual_keyboard::init());
 
     #[cfg(mobile)]
     {
         builder = builder
-            .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
             .plugin(tauri_plugin_view::init())
             .plugin(tauri_plugin_system_bars_styles::init());

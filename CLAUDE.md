@@ -504,11 +504,11 @@ cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
 
 ### Mobile Virtual Keyboard Handling
 
-The `tauri-plugin-virtual-keyboard-padding` plugin is registered under `#[cfg(mobile)]` in `src-tauri/src/lib.rs` to fix native-vs-webview keyboard behavior that Tauri does not handle out of the box ([tauri-apps/tauri#10631](https://github.com/tauri-apps/tauri/issues/10631)). On **iOS** WKWebView leaves a scrollable gap behind the keyboard and shows a "Done" input-accessory toolbar; on **Android** the WebView is obscured by the IME instead of being pushed above it. The plugin makes focused inputs remain visible on both platforms and gives the webview a stable, non-scrolling viewport while the keyboard is open.
+The `tauri-plugin-virtual-keyboard` plugin (source: `https://github.com/dash-chat/tauri-plugin-virtual-keyboard`) owns all soft-keyboard integration ([tauri-apps/tauri#10631](https://github.com/tauri-apps/tauri/issues/10631) background). Its contract:
 
-**Plugin source:** `tauri-plugin-virtual-keyboard-padding`. `Cargo.toml` uses git URL `https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding`. The plugin's own README still claims iOS is unsupported — that is outdated; the Swift implementation exists and is registered alongside Android.
-
-**CSS requirement (iOS):** `html` and `body` must have `background-color: transparent !important` (set in `app.css`) so the native background color the plugin applies to the view hierarchy shows through during the keyboard animation.
+- **The webview never resizes.** The keyboard overlays it; the plugin maintains a `--keyboard-height` CSS variable on `documentElement`, updated per frame during open/close animations (Android: insets animation callback; iOS: display-link interpolation). `MobileLayout` pads its shell by this variable, which reproduces resize semantics declaratively for every screen.
+- **Native commands** `hide`/`show` retract/summon the IME at the OS level (`WindowInsetsControllerCompat` on Android, `endEditing` on iOS; `show` is a no-op on iOS and desktop). Exposed via the `tauri-plugin-virtual-keyboard` npm package (`hideKeyboard()`/`showKeyboard()`). Never manipulate the keyboard through DOM focus tricks.
+- **Native events** `willShow {height, durationMs}` / `willHide {durationMs}` / `didShow` / `didHide` / `change` feed the guest-js keyboard state, exposed as signalium signals (`keyboard.height/isOpen/reservedHeight`, each with `.value`; signalium is a peer dependency of the npm package). In Svelte, bridge them with `useSignal(() => keyboard.isOpen.value)` from `$lib/stores/use-signal`; read them imperatively via `.value`. `willShow` arrives before the animation with the exact target height.
 
 ### iOS Simulator Testing
 

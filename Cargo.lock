@@ -2017,7 +2017,7 @@ dependencies = [
  "tauri-plugin-system-bars-styles",
  "tauri-plugin-updater",
  "tauri-plugin-view",
- "tauri-plugin-virtual-keyboard-padding",
+ "tauri-plugin-virtual-keyboard",
  "tempfile",
  "thiserror 2.0.18",
  "time",
@@ -10637,9 +10637,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "tauri-plugin-virtual-keyboard-padding"
+name = "tauri-plugin-virtual-keyboard"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding?branch=main#efbf0a80c705c9f3753e38b87579f002fe995da1"
+source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard?branch=native-keyboard-control#2fc30fe69d334a0dcec62257b2c5d2b335c04f72"
 dependencies = [
  "serde",
  "tauri",

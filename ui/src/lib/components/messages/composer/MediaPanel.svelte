@@ -4,7 +4,7 @@
 	import { pickMedia } from '$lib/utils/media';
 	import LabelledIconButton from '$lib/components/contacts/LabelledIconButton.svelte';
 	import RecentPhotosStrip from './RecentPhotosStrip.svelte';
-	import { renderBelowKeyboard } from './render-below-keyboard.svelte';
+	import { renderBelowKeyboard } from './render-below-keyboard';
 
 	interface Props {
 		/** Whether the panel is open. Bindable: the action also clears it once the

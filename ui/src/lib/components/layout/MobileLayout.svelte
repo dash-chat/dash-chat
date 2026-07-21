@@ -18,6 +18,10 @@
 		flex-direction: column;
 		height: 100vh;
 		width: 100%;
+		/* The keyboard overlays the webview without resizing it; the plugin
+		   maintains --keyboard-height per frame, so this padding shrinks the
+		   content in lockstep with the keyboard on every screen. */
+		padding-bottom: var(--keyboard-height, 0px);
 	}
 
 	.mobile-content {

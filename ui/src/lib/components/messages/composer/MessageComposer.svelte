@@ -4,7 +4,8 @@
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
-	import { keyboard } from '$lib/utils/keyboard.svelte';
+	import { useSignal } from '$lib/stores/use-signal';
+	import { keyboard } from 'tauri-plugin-virtual-keyboard';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -30,6 +31,8 @@
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
+
+	const keyboardIsOpen = useSignal(() => keyboard.isOpen.value);
 
 	interface Props {
 		value?: string;
@@ -160,13 +163,10 @@
 
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
-	     below it): no panel and no keyboard. Keying it off the panel alone bumps
-	     the bar by `env(safe-area-inset-bottom)` during the panel→keyboard swap,
-	     because the panel closes before the (visual-viewport-driven) safe area
-	     has collapsed to 0. -->
+	     below it): no panel and no keyboard. -->
 	<div
 		class="message-input-bar"
-		class:pb-safe={!showMediaPanel && !keyboard.isOpen}
+		class:pb-safe={!showMediaPanel && !$keyboardIsOpen}
 	>
 		{#if !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
