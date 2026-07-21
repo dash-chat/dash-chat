@@ -4,7 +4,7 @@
  * kills it), so the spawn command lives in exactly one place.
  */
 import { type ChildProcess, spawn } from 'node:child_process';
-import { closeSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,8 +31,15 @@ export function spawnMailboxServer(port: number, dbPath: string): ChildProcess {
 	// recompiling the world and blowing the readiness timeout.
 	// `detached: true` puts it in its own process group so lifecycle helpers
 	// can signal -pid without touching the test runner.
+	const bin = path.join(ROOT, 'target', 'debug', 'mailbox-server');
+	if (!existsSync(bin)) {
+		throw new Error(
+			`${bin} not found — run the suite via 'just test e2e' (which builds ` +
+				`it) or 'cargo build -p mailbox-server'`,
+		);
+	}
 	const server = spawn(
-		path.join(ROOT, 'target', 'debug', 'mailbox-server'),
+		bin,
 		['--db-path', dbPath, '--addr', `0.0.0.0:${port}`],
 		{ cwd: ROOT, stdio: ['ignore', logFd, logFd], detached: true },
 	);

@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,6 +51,13 @@ export class DesktopPlatform implements AgentPlatform {
 	}
 
 	async onPrepare() {
+		const bin = path.join(ROOT, 'target', 'debug', 'dash-chat');
+		if (!existsSync(bin)) {
+			throw new Error(
+				`${bin} not found — run the suite via 'just test e2e' (which ` +
+					`builds it) or 'just test e2e build'`,
+			);
+		}
 		// Kill any leftover processes from previous interrupted runs.
 		killAllE2EProcesses();
 		killPortHolders(this.ports);

@@ -455,7 +455,7 @@ AGENT_1=android-emulator AGENT_2=android-emulator just test e2e run send-message
 - Tests use page objects from `e2e-tests/helpers/pages/`. `setupAgents(this, { agent1: 'any', agent2: 'any' })` returns the named `Agent`s with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
 - Platform-specific setup (tauri-driver instances, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
-- Launch scripts (`e2e-tests/setup/`) set `DATA_DIR` and `MAILBOX_URL` env vars for desktop agents; Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
+- Desktop agents get `DATA_DIR` and `MAILBOX_URL` through each agent's tauri-driver spawn env (`e2e-tests/setup/platforms/desktop.ts`); Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events.
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run.
 - When any agent is Android, only the on-device allowlist (`ON_DEVICE_SPECS` in `wdio.conf.ts`) runs — grow it as specs are proven on-device.
