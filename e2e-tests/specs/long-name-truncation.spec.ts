@@ -7,7 +7,7 @@
  * sheet, and the profile-settings list item.
  */
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 const LONG_NAME = 'Bartholomew';
 const LONG_SURNAME = 'Wolfeschlegelsteinhausenbergerdorff';
@@ -18,11 +18,8 @@ describe('Long name truncation', () => {
 	let agent1Code = '';
 	let agent2Code = '';
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 	});
 
 	it('creates profiles — agent1 with a very long name', async () => {

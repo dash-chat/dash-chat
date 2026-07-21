@@ -1,32 +1,22 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { UI_TIMEOUT } from '../helpers/timeouts';
-import { allocateDriverPorts } from '../setup/allocate-port';
+import { startAgentLogger } from '../setup/agent-logger';
+import { allocatePinnedPort } from '../setup/allocate-port';
 import {
 	killAllE2EProcesses,
 	killAndWait,
 	killPortHolders,
 } from '../setup/cleanup';
+import { getSpecFileRetries } from '../setup/test-env';
 import { waitForPortFree, waitForPortListening } from '../setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');
 const ROOT = path.resolve(__dirname, '../..');
-
-function getSpecFileRetries(): number {
-	const rawRetries = process.env.E2E_SPEC_FILE_RETRIES ?? '1';
-	const retries = Number.parseInt(rawRetries, 10);
-	if (Number.isNaN(retries) || retries < 0) {
-		throw new Error(
-			`E2E_SPEC_FILE_RETRIES must be a non-negative integer, got ${rawRetries}`,
-		);
-	}
-	return retries;
-}
 
 const phase = process.env.COMPAT_PHASE;
 if (!phase || !['setup', 'verify'].includes(phase)) {
@@ -42,26 +32,16 @@ const specFile =
 		? path.join(E2E_DIR, 'specs', 'compat-setup.spec.ts')
 		: path.join(E2E_DIR, 'specs', 'compat-verify.spec.ts');
 
-const { port1, nativePort1, port2, nativePort2 } = allocateDriverPorts();
+const port1 = allocatePinnedPort('_WDIO_PORT1');
+const nativePort1 = allocatePinnedPort('_WDIO_NATIVE_PORT1');
+const port2 = allocatePinnedPort('_WDIO_PORT2');
+const nativePort2 = allocatePinnedPort('_WDIO_NATIVE_PORT2');
 const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
 
 let tauriDriver1: ChildProcess;
 let tauriDriver2: ChildProcess;
 let agent1Logger: ChildProcess | null = null;
 let agent2Logger: ChildProcess | null = null;
-
-function startAgentLogger(agent: string, logFile: string): ChildProcess {
-	mkdirSync(path.dirname(logFile), { recursive: true });
-	writeFileSync(logFile, '');
-	const proc = spawn('tail', ['-n', '0', '-F', logFile], {
-		stdio: ['ignore', 'pipe', 'ignore'],
-	});
-	const rl = createInterface({ input: proc.stdout! });
-	rl.on('line', (line: string) => {
-		console.log(`[${agent}] ${line}`);
-	});
-	return proc;
-}
 
 export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
