@@ -88,9 +88,6 @@ pub fn run() {
         if cfg!(feature = "e2e-tests") {
             // E2E tests run multiple built instances side-by-side;
             // skip single-instance, updater, and MCP bridge plugins.
-        } else if tauri::is_dev() {
-            // MCP for Claude Code to control the tauri app
-            builder = builder.plugin(tauri_plugin_mcp_bridge::init());
         } else {
             // single-instance must be registered before deep-link so it can
             // forward deep link URLs from a second process to this one.
@@ -113,6 +110,13 @@ pub fn run() {
                 .plugin(tauri_plugin_updater::Builder::new().build())
                 .plugin(tauri_plugin_keepawake::init());
         }
+    }
+
+    // MCP bridge for Claude Code to drive the running app, on every platform.
+    // Dev-only: the WebSocket server never starts in production builds. E2E runs
+    // its own multi-instance harness, so skip it there.
+    if tauri::is_dev() && !cfg!(feature = "e2e-tests") {
+        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }
 
     builder
