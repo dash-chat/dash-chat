@@ -48,7 +48,11 @@ describe('Offline UX', () => {
 		// The whole suite toggles the mailbox server's lifecycle, which is
 		// impossible against a remote environment mailbox.
 		if (isRemoteMailbox()) this.skip();
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		// agent1 enables the local mailbox, which is desktop-only.
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'desktop' },
+			{ platform: 'any' },
+		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 		// exchangeContacts leaves agent1 inside its direct chat with Bob —

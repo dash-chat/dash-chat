@@ -19,11 +19,14 @@ describe('Review checks', function () {
 
 	let agent1: Agent;
 	let agent2: Agent;
+	let wideSupported: boolean;
 
 	before(async function () {
 		this.timeout(180_000);
 
 		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+
+		wideSupported = await agent1.supportsWideScreen();
 
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Tester');
@@ -52,7 +55,8 @@ describe('Review checks', function () {
 	});
 
 	describe('English - Light', function () {
-		it('Material Desktop', async () => {
+		it('Material Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'material', true);
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
@@ -62,7 +66,8 @@ describe('Review checks', function () {
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
 
-		it('iOS Desktop', async () => {
+		it('iOS Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'ios', true);
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
@@ -74,7 +79,8 @@ describe('Review checks', function () {
 	});
 
 	describe('English - Dark', function () {
-		it('Material Desktop', async () => {
+		it('Material Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'material', true, true);
 			assertNoIssues(
 				await visitAllPages(agent1, { hasChat: true, checkDarkMode: true }),
@@ -88,7 +94,8 @@ describe('Review checks', function () {
 			);
 		});
 
-		it('iOS Desktop', async () => {
+		it('iOS Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'ios', true, true);
 			assertNoIssues(
 				await visitAllPages(agent1, { hasChat: true, checkDarkMode: true }),
@@ -111,7 +118,8 @@ describe('Review checks', function () {
 			await agent1.homePage.ready();
 		});
 
-		it('Material Desktop', async () => {
+		it('Material Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'material', true);
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
@@ -121,7 +129,8 @@ describe('Review checks', function () {
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
 
-		it('iOS Desktop', async () => {
+		it('iOS Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'ios', true);
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
@@ -143,7 +152,8 @@ describe('Review checks', function () {
 			});
 		});
 
-		it('Material Desktop', async () => {
+		it('Material Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'material', true);
 			await agent1.execute(() => {
 				document.documentElement.dir = 'rtl';
@@ -163,7 +173,8 @@ describe('Review checks', function () {
 			);
 		});
 
-		it('iOS Desktop', async () => {
+		it('iOS Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'ios', true);
 			await agent1.execute(() => {
 				document.documentElement.dir = 'rtl';

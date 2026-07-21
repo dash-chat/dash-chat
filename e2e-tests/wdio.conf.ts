@@ -71,6 +71,27 @@ async function teardown() {
 	mailboxLogger?.kill();
 }
 
+/** Save a per-agent screenshot of the current webview to .dbs/e2e/failures/. */
+async function saveFailureScreenshots(test: {
+	parent: string;
+	title: string;
+}): Promise<void> {
+	const dir = path.join(ROOT, '.dbs', 'e2e', 'failures');
+	mkdirSync(dir, { recursive: true });
+	const slug = `${test.parent} ${test.title}`
+		.replace(/[^a-zA-Z0-9]+/g, '-')
+		.slice(0, 80);
+	for (const name of browser.instances) {
+		try {
+			await browser
+				.getInstance(name)
+				.saveScreenshot(path.join(dir, `${slug}-${name}.png`));
+		} catch {
+			/* session may already be dead */
+		}
+	}
+}
+
 export const config: WebdriverIO.MultiremoteConfig = {
 	runner: 'local',
 
@@ -169,6 +190,16 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		for (const platform of platforms) {
 			await platform.beforeSession();
 		}
+	},
+
+	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes
+	 * that only reproduce on slow devices leave usable evidence behind. */
+	async afterTest(test, _context, result) {
+		if (!result.passed) await saveFailureScreenshots(test);
+	},
+
+	async afterHook(test, _context, result) {
+		if (!result.passed) await saveFailureScreenshots(test);
 	},
 
 	async afterSession() {

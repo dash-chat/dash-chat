@@ -21,14 +21,21 @@ describe('Group unread messages', () => {
 
 	it('fills the group chat until it overflows enough to scroll', async () => {
 		let i = 0;
-		let overflow = await agent1.groupChatPage.scroll.overflow();
+		// agent2 does the scrolling below, and viewports differ across
+		// platforms — keep filling until BOTH containers overflow enough.
+		const minOverflow = async () =>
+			Math.min(
+				await agent1.groupChatPage.scroll.overflow(),
+				await agent2.groupChatPage.scroll.overflow(),
+			);
+		let overflow = await minOverflow();
 		while (overflow < REQUIRED_OVERFLOW && i < MAX_FILLER) {
 			await agent1.groupChatPage.sendMessage(`filler ${i}`);
 			await agent1.groupChatPage.messages.waitForMessage(
 				`filler ${i}`,
 				UI_TIMEOUT,
 			);
-			overflow = await agent1.groupChatPage.scroll.overflow();
+			overflow = await minOverflow();
 			i++;
 		}
 		expect(overflow).toBeGreaterThanOrEqual(REQUIRED_OVERFLOW);

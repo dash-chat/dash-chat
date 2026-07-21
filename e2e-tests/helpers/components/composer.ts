@@ -19,9 +19,29 @@ export class Composer extends TestHelper {
 	attachMenu = this.el(tid('message-input-attach-menu'));
 	attachPhotosItem = this.el(tid('message-input-attach-photos'));
 	attachFileItem = this.el(tid('message-input-attach-file'));
+	stagedMediaPage = this.el(tid('staged-media-page'));
 
 	removeAttachmentButton(index: number) {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
+	}
+
+	/** Wait for the staged-media UI: the inline preview on desktop, the
+	 * full-screen staged-media page on mobile. */
+	async waitForStagedMedia(): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				(await this.mediaPreview.isExisting()) ||
+				(await this.stagedMediaPage.isExisting()),
+			{ timeout: 5_000, timeoutMsg: 'Staged media UI did not appear' },
+		);
+	}
+
+	/** Close the mobile staged-media page, discarding the staged draft. Android
+	 * has no close button — popping the history entry is the hardware-back path
+	 * that works on every mobile platform. */
+	private async closeStagedMediaPage(): Promise<void> {
+		await this.agent.execute(() => history.back());
+		await this.stagedMediaPage.waitForExist({ reverse: true });
 	}
 
 	/** Open the mobile media panel via the attach button. Returns false when the
@@ -94,7 +114,7 @@ export class Composer extends TestHelper {
 			contents,
 			mimeType,
 		);
-		await this.mediaPreview.waitForExist({ timeout: 5_000 });
+		await this.waitForStagedMedia();
 	}
 
 	/** Attach a zero-filled file of exactly `sizeBytes` to test the size cap. */
@@ -109,7 +129,7 @@ export class Composer extends TestHelper {
 			sizeBytes,
 			name,
 		);
-		await this.mediaPreview.waitForExist({ timeout: 5_000 });
+		await this.waitForStagedMedia();
 	}
 
 	/** Paste a single synthesized PNG named `${label}.png` into the composer. */
@@ -124,7 +144,7 @@ export class Composer extends TestHelper {
 			TINY_PNG_BYTES,
 			label,
 		);
-		await this.mediaPreview.waitForExist({ timeout: 5_000 });
+		await this.waitForStagedMedia();
 	}
 
 	/** Drop a single synthesized PNG named `${label}.png` onto the window. */
@@ -139,7 +159,7 @@ export class Composer extends TestHelper {
 			TINY_PNG_BYTES,
 			label,
 		);
-		await this.mediaPreview.waitForExist({ timeout: 5_000 });
+		await this.waitForStagedMedia();
 	}
 
 	/** Type `text` into the composer textarea without sending. */
@@ -160,10 +180,16 @@ export class Composer extends TestHelper {
 		);
 	}
 
-	/** Send the composer content. The send button only renders on mobile
-	 * user agents, so on desktop (CI) dispatch Enter on the textarea the way
-	 * a desktop user sends. Composer must already have content. */
+	/** Send the composer content. With the mobile staged-media page open, its
+	 * own send button must be used (the composer's is covered by the overlay
+	 * and shares the same testid). Otherwise the send button only renders on
+	 * mobile user agents, so on desktop (CI) dispatch Enter on the textarea
+	 * the way a desktop user sends. Composer must already have content. */
 	async send(): Promise<void> {
+		if (await this.stagedMediaPage.isExisting()) {
+			await this.stagedMediaPage.$(tid('message-input-send')).click();
+			return;
+		}
 		if (await this.sendButton.isExisting()) {
 			await this.sendButton.click();
 			return;
@@ -182,20 +208,61 @@ export class Composer extends TestHelper {
 		}, tid('message-input-textarea'));
 	}
 
-	/** Remove the currently-attached draft via the preview's remove button. */
+	/** Discard the staged draft: the preview's remove button on desktop,
+	 * closing the staged-media page on mobile. */
 	async removeDraft(): Promise<void> {
+		if (await this.stagedMediaPage.isExisting()) {
+			await this.closeStagedMediaPage();
+			return;
+		}
 		await this.mediaPreview.$('button').click();
 	}
 
-	async hasMediaPreview(): Promise<boolean> {
-		return this.mediaPreview.isExisting();
+	/** Discard every staged attachment: the clear-all button on desktop,
+	 * closing the staged-media page on mobile. */
+	async clearAll(): Promise<void> {
+		if (await this.stagedMediaPage.isExisting()) {
+			await this.closeStagedMediaPage();
+			return;
+		}
+		await this.clearAttachments.click();
 	}
 
-	/** Number of photo thumbnails currently staged in the composer preview. */
+	/** Remove the staged photo at `index`: the tile's remove button on desktop;
+	 * on mobile select its thumbnail, then click its remove overlay. */
+	async removeStagedPhoto(index: number): Promise<void> {
+		if (await this.stagedMediaPage.isExisting()) {
+			await this.agent.$(tid(`staged-media-thumb-${index}`)).click();
+			await this.agent.$(tid(`staged-media-remove-${index}`)).click();
+			return;
+		}
+		await this.removeAttachmentButton(index).click();
+	}
+
+	async hasMediaPreview(): Promise<boolean> {
+		return (
+			(await this.mediaPreview.isExisting()) ||
+			(await this.stagedMediaPage.isExisting())
+		);
+	}
+
+	/** Number of staged photos: preview thumbnails on desktop, carousel slides
+	 * (page images minus thumbnail-strip images) on mobile. */
 	async stagedPhotoCount(): Promise<number> {
 		return this.agent.execute(
-			(sel: string) => document.querySelectorAll(`${sel} img`).length,
+			(previewSel: string, pageSel: string, stripSel: string) => {
+				const preview = document.querySelector(previewSel);
+				if (preview) return preview.querySelectorAll('img').length;
+				const page = document.querySelector(pageSel);
+				if (!page) return 0;
+				return (
+					page.querySelectorAll('img').length -
+					page.querySelectorAll(`${stripSel} img`).length
+				);
+			},
 			tid('message-input-media-preview'),
+			tid('staged-media-page'),
+			tid('staged-media-strip'),
 		);
 	}
 
