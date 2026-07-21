@@ -1,16 +1,15 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { startAgentLogger } from '../agent-logger';
+import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import { killAllE2EProcesses, killAndWait, killPortHolders } from '../cleanup';
 import { waitForPortFree, waitForPortListening } from '../wait-for-port';
 import type { AgentPlatform } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SETUP_DIR = path.resolve(__dirname, '..');
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 
 interface DesktopAgent {
@@ -18,7 +17,6 @@ interface DesktopAgent {
 	port: number;
 	nativePort: number;
 	driver?: ChildProcess;
-	logger?: ChildProcess | null;
 }
 
 /** Agents running the desktop binary, one tauri-driver instance per slot. */
@@ -45,7 +43,7 @@ export class DesktopPlatform implements AgentPlatform {
 				platformName:
 					process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
-					application: path.join(SETUP_DIR, `launch-agent${slot}.sh`),
+					application: path.join(ROOT, 'target', 'debug', 'dash-chat'),
 				},
 			} as WebdriverIO.Capabilities,
 		};
@@ -80,11 +78,15 @@ export class DesktopPlatform implements AgentPlatform {
 				/* ignore */
 			}
 
-			agent.logger = startAgentLogger(
-				`agent-${agent.slot}`,
-				path.join(agentDir, 'agent.log'),
-			);
+			mkdirSync(agentDir, { recursive: true });
 
+			const mailboxUrl = process.env.MAILBOX_URL;
+			if (mailboxUrl === undefined) {
+				throw new Error('MAILBOX_URL not set — onPrepare must run first');
+			}
+
+			// The app is spawned by WebKitWebDriver, itself spawned by
+			// tauri-driver — env and stdout are inherited down that chain.
 			agent.driver = spawn(
 				'tauri-driver',
 				[
@@ -93,8 +95,24 @@ export class DesktopPlatform implements AgentPlatform {
 					'--native-port',
 					String(agent.nativePort),
 				],
-				{ stdio: ['ignore', 'ignore', 'pipe'] },
+				{
+					stdio: ['ignore', 'pipe', 'pipe'],
+					env: {
+						...process.env,
+						DATA_DIR: agentDir,
+						MAILBOX_URL: mailboxUrl,
+						// Disable AT-SPI accessibility bridge to prevent D-Bus
+						// contention.
+						NO_AT_BRIDGE: '1',
+						GTK_A11Y: 'none',
+						// Disable the DMA-BUF renderer — it causes
+						// non-deterministic WebKitGTK freezes. See
+						// https://github.com/tauri-apps/tauri/issues/13498
+						WEBKIT_DISABLE_DMABUF_RENDERER: '1',
+					},
+				},
 			);
+			echoLinesWithPrefix(`agent-${agent.slot}`, agent.driver.stdout!);
 			agent.driver.stderr?.on('data', (data: Buffer) => {
 				console.error(`[tauri-driver:${agent.port}] ${data.toString().trim()}`);
 			});
@@ -110,17 +128,10 @@ export class DesktopPlatform implements AgentPlatform {
 		// Kill orphaned dash-chat E2E instances and anything holding our ports.
 		killAllE2EProcesses();
 		killPortHolders(this.ports);
-		for (const agent of this.agents) {
-			agent.logger?.kill();
-			agent.logger = null;
-		}
 	}
 
 	async onComplete() {
 		killAllE2EProcesses();
 		killPortHolders(this.ports);
-		for (const agent of this.agents) {
-			agent.logger?.kill();
-		}
 	}
 }
