@@ -20,8 +20,19 @@ describe('QR code image upload', () => {
 
 		const contactCode = await agent2.addContactPage.getAddContactLink();
 
-		// The link sheet button only renders on mobile agents.
-		if (await agent1.addContactPage.linkButton.isExisting()) {
+		if (agent1.platform === 'desktop') {
+			// Desktop shows the inline copy-link box and no link sheet button.
+			expect(await agent1.addContactPage.linkButton.isExisting()).toBe(false);
+			expect(await agent1.addContactPage.copyLinkBox.getText()).toContain(
+				await agent1.addContactPage.getAddContactLink(),
+			);
+			await agent1.addContactPage.copyLinkButton.click();
+			await agent1.toast.expectMessage(
+				await agent1.tr('copiedCodeToClipboard'),
+			);
+		} else {
+			// Mobile shows the link sheet button and no inline copy-link box.
+			expect(await agent1.addContactPage.copyLinkBox.isExisting()).toBe(false);
 			await agent1.addContactPage.linkButton.click();
 			await agent1.waitUntil(() => agent1.addContactPage.linkSheetIsOpen());
 			expect(await agent1.addContactPage.linkSheetLink.getText()).toContain(
@@ -34,17 +45,6 @@ describe('QR code image upload', () => {
 			await agent1.addContactPage.closeLinkSheet();
 			await agent1.waitUntil(
 				async () => !(await agent1.addContactPage.linkSheetIsOpen()),
-			);
-		}
-
-		// The copy-link box only renders on desktop agents.
-		if (await agent1.addContactPage.copyLinkBox.isExisting()) {
-			expect(await agent1.addContactPage.copyLinkBox.getText()).toContain(
-				await agent1.addContactPage.getAddContactLink(),
-			);
-			await agent1.addContactPage.copyLinkButton.click();
-			await agent1.toast.expectMessage(
-				await agent1.tr('copiedCodeToClipboard'),
 			);
 		}
 
