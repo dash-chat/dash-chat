@@ -34,10 +34,17 @@ export async function addContactFromDeepLink(
 	await addContactFromCode(contactsStore, code);
 }
 
+// A duplicate delivery of the same code (a re-delivered deep link, a double
+// tap) arrives while the first one is still being handled — drop it. A
+// genuine repeat click lands after handling finished and passes through.
+let inFlightCode: string | null = null;
+
 export async function addContactFromCode(
 	contactsStore: ContactsStore,
 	code: string,
 ): Promise<void> {
+	if (code === inFlightCode) return;
+	inFlightCode = code;
 	addContactPending.value = true;
 	try {
 		const devicePubkey = await contactsStore.client.addContact(code);
@@ -73,6 +80,7 @@ export async function addContactFromCode(
 				showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	} finally {
+		inFlightCode = null;
 		addContactPending.value = false;
 	}
 }
