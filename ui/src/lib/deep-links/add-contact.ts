@@ -41,10 +41,11 @@ export async function addContactFromCode(
 	addContactPending.value = true;
 	try {
 		const devicePubkey = await contactsStore.client.addContact(code);
-		showToast(m.contactRequestSent());
 
 		const knownAgent = await contactsStore.client.agentForDevice(devicePubkey);
 		await goto(`/direct-chats/${knownAgent ?? pendingChatKey(devicePubkey)}`);
+
+		showToast(m.contactRequestSent());
 	} catch (e) {
 		console.error(e);
 		const error = e as AddContactError;
