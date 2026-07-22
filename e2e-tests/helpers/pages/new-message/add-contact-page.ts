@@ -11,6 +11,13 @@ export class AddContactPage extends TestHelper {
 	scanTab = this.el(tid('add-contact-scan-tab'));
 	qrCode = this.el('wa-qr-code');
 	copyButton = this.el(tid('add-contact-copy-btn'));
+	copyLinkBox = this.el(tid('add-contact-copy-link-box'));
+	copyLinkButton = this.el(tid('add-contact-copy-link-btn'));
+	linkButton = this.el(tid('add-contact-link-btn'));
+	linkSheet = this.el(tid('qr-link-sheet'));
+	linkSheetLink = this.el(tid('qr-link-sheet-link'));
+	linkSheetCopyButton = this.el(tid('qr-link-sheet-copy'));
+	linkSheetShareButton = this.el(tid('qr-link-sheet-share'));
 	codeInput = this.el(tid('add-contact-link-input'));
 	shareButton = this.el(tid('add-contact-share-btn'));
 	saveButton = this.el(tid('add-contact-save-btn'));
@@ -21,6 +28,26 @@ export class AddContactPage extends TestHelper {
 
 	async ready() {
 		await this.codeInput.waitForExist();
+	}
+
+	/** True if the link sheet is open (not the slide-out dismissed state). */
+	linkSheetIsOpen(): Promise<boolean> {
+		return this.agent.execute((sel: string) => {
+			const inner = document.querySelector(sel);
+			const sheet = inner?.closest('.k-sheet');
+			if (!sheet) return false;
+			return sheet.classList.contains('-translate-y-full');
+		}, tid('qr-link-sheet'));
+	}
+
+	/** Close the link sheet by clicking its backdrop. */
+	async closeLinkSheet() {
+		await this.agent.execute((sel: string) => {
+			const inner = document.querySelector(sel);
+			const sheet = inner?.closest('.k-sheet');
+			const backdrop = sheet?.previousElementSibling as HTMLElement | null;
+			backdrop?.click();
+		}, tid('qr-link-sheet'));
 	}
 
 	/** Read the contact link from the QR element. */

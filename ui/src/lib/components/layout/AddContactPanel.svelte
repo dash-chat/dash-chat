@@ -29,6 +29,10 @@
 	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
+	import { mdiContentCopy } from '@mdi/js';
+	import { writeText } from '$lib/utils/clipboard';
+	import BorderedBox from '$lib/components/BorderedBox.svelte';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 	import {
 		toDeepLink,
@@ -38,6 +42,7 @@
 	import SelectColor from './SelectColor.svelte';
 	import QrCodeCard from '$lib/components/QrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
+	import QrLinkSheet from '$lib/components/contacts/QrLinkSheet.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
 	import QrCodeUploader from '$lib/components/contacts/QrCodeUploader.svelte';
 
@@ -132,6 +137,7 @@
 	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
 	let colorForPicker = $state(defaultQrColor());
+	let linkSheetOpen = $state(false);
 
 	async function getMyName(): Promise<string> {
 		const profile = await contactsStore.myProfile();
@@ -162,6 +168,11 @@
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
+	}
+
+	async function copyDeepLink(link: string) {
+		await writeText(link);
+		showToast(m.copiedCodeToClipboard());
 	}
 
 	async function switchTab(nextTab: TabName) {
@@ -293,18 +304,43 @@
 
 								<QrActionButtons
 									{isMobile}
+									onLink={() => {
+										linkSheetOpen = true;
+									}}
 									onShare={() => shareCode(deepLink)}
 									onSave={() => saveCode(deepLink, color)}
 									onUpload={() => uploaderRef?.trigger()}
 									onOpenColorPicker={openColorPicker}
 								/>
 
+								<QrLinkSheet
+									opened={linkSheetOpen}
+									link={deepLink}
+									onClose={() => (linkSheetOpen = false)}
+								/>
+
+								{#if !isMobile}
+									<BorderedBox
+										class="row w-full items-center gap-3"
+										data-testid="add-contact-copy-link-box"
+									>
+										<IconButton
+											icon={mdiContentCopy}
+											label={m.copy()}
+											testid="add-contact-copy-link-btn"
+											onClick={() => void copyDeepLink(deepLink)}
+											class="shrink-0"
+										/>
+										<span class="break-all text-start text-sm">{deepLink}</span>
+									</BorderedBox>
+								{/if}
+
 								<span
-									class="mx-2 mb-2 text-center quiet"
+									class="mx-6 mb-2 text-center quiet"
 									style="font-size: 13px">{m.shareCodeWarning()}</span
 								>
 
-								<div class="column gap-1">
+								<div class="column gap-1" style="display: none">
 									<List
 										nested
 										strongIos

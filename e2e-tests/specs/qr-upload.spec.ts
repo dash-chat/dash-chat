@@ -19,6 +19,35 @@ describe('QR code image upload', () => {
 		await navigateToAddContact(agent2);
 
 		const contactCode = await agent2.addContactPage.getAddContactLink();
+
+		// The link sheet button only renders on mobile agents.
+		if (await agent1.addContactPage.linkButton.isExisting()) {
+			await agent1.addContactPage.linkButton.click();
+			await agent1.waitUntil(() => agent1.addContactPage.linkSheetIsOpen());
+			expect(await agent1.addContactPage.linkSheetLink.getText()).toContain(
+				await agent1.addContactPage.getAddContactLink(),
+			);
+			await agent1.addContactPage.linkSheetCopyButton.click();
+			await agent1.toast.expectMessage(
+				await agent1.tr('copiedCodeToClipboard'),
+			);
+			await agent1.addContactPage.closeLinkSheet();
+			await agent1.waitUntil(
+				async () => !(await agent1.addContactPage.linkSheetIsOpen()),
+			);
+		}
+
+		// The copy-link box only renders on desktop agents.
+		if (await agent1.addContactPage.copyLinkBox.isExisting()) {
+			expect(await agent1.addContactPage.copyLinkBox.getText()).toContain(
+				await agent1.addContactPage.getAddContactLink(),
+			);
+			await agent1.addContactPage.copyLinkButton.click();
+			await agent1.toast.expectMessage(
+				await agent1.tr('copiedCodeToClipboard'),
+			);
+		}
+
 		await agent1.addContactPage.uploadQrCodeImage(contactCode);
 
 		await agent1.directChatPage.ready();

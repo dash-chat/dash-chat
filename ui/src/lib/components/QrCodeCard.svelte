@@ -30,7 +30,7 @@
 	}
 </script>
 
-<Card class="qr-card qr-code-card p-2.5 pb-2" style="background-color: {color}">
+<Card class="qr-card qr-code-card p-4 pb-0" style="background-color: {color}">
 	<div class="column" style="align-items: center">
 		<div
 			class="column w-full p-3"
@@ -40,7 +40,7 @@
 			></wa-qr-code>
 		</div>
 
-		<div class="py-1">
+		<div class="pt-2 pb-1">
 			<Button
 				colors={{
 					touchRipple: isWhite ? 'black' : 'white',
