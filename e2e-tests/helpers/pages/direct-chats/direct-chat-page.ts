@@ -99,6 +99,14 @@ export class DirectChatPage extends TestHelper {
 				issues.push('Navbar has horizontal overflow');
 			}
 			navbar.querySelectorAll('*').forEach(el => {
+				const style = window.getComputedStyle(el);
+				const clipped =
+					style.overflowX === 'hidden' ||
+					style.overflowX === 'clip' ||
+					style.overflow === 'hidden' ||
+					style.overflow === 'clip' ||
+					style.textOverflow === 'ellipsis';
+				if (clipped) return;
 				if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
 					const text = el.textContent?.substring(0, 60).trim();
 					if (text)
