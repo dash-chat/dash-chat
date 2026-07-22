@@ -3,7 +3,7 @@
 	import { Sheet } from 'konsta/svelte';
 	import { mdiContentCopy, mdiShareVariant } from '@mdi/js';
 	import { shareText } from '$lib/utils/share';
-	import { writeText } from '$lib/utils/clipboard';
+	import { copyLinkToClipboard } from '$lib/utils/clipboard';
 	import { showToast } from '$lib/utils/toasts';
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
@@ -17,16 +17,6 @@
 	}
 
 	let { opened, link, onClose }: Props = $props();
-
-	async function copyLink() {
-		try {
-			await writeText(link);
-			showToast(m.copiedLinkToClipboard());
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
 
 	async function share() {
 		try {
@@ -54,7 +44,7 @@
 			<ListAction
 				title={m.copyLink()}
 				icon={mdiContentCopy}
-				onClick={() => void copyLink()}
+				onClick={() => void copyLinkToClipboard(link)}
 				data-testid="qr-link-sheet-copy"
 			/>
 			<ListAction

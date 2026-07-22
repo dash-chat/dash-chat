@@ -27,7 +27,7 @@
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
 	import { mdiContentCopy } from '@mdi/js';
-	import { writeText } from '$lib/utils/clipboard';
+	import { copyLinkToClipboard } from '$lib/utils/clipboard';
 	import BorderedBox from '$lib/components/BorderedBox.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
@@ -161,16 +161,6 @@
 		try {
 			const name = await getMyName();
 			await saveQrCode(code, color ?? defaultQrColor(), name);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
-
-	async function copyDeepLink(link: string) {
-		try {
-			await writeText(link);
-			showToast(m.copiedLinkToClipboard());
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
@@ -329,7 +319,7 @@
 											icon={mdiContentCopy}
 											label={m.copy()}
 											testid="add-contact-copy-link-btn"
-											onClick={() => void copyDeepLink(deepLink)}
+											onClick={() => void copyLinkToClipboard(deepLink)}
 											class="shrink-0"
 										/>
 										<span class="break-all text-start text-sm">{deepLink}</span>

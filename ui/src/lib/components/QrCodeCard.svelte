@@ -4,9 +4,7 @@
 	import { Button, Card } from 'konsta/svelte';
 	import { mdiContentCopy } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { writeText } from '$lib/utils/clipboard';
-	import { showToast } from '$lib/utils/toasts';
-	import { m } from '$lib/paraglide/messages.js';
+	import { copyLinkToClipboard } from '$lib/utils/clipboard';
 
 	let {
 		value,
@@ -21,11 +19,6 @@
 	} = $props();
 
 	const isWhite = $derived(color === '#ffffff');
-
-	async function copyLink() {
-		await writeText(value);
-		showToast(m.copiedLinkToClipboard());
-	}
 </script>
 
 <Card class="qr-card qr-code-card p-4 pb-0" style="background-color: {color}">
@@ -49,7 +42,7 @@
 				clearMaterial
 				small
 				data-testid={copyButtonTestId}
-				onClick={copyLink}
+				onClick={() => void copyLinkToClipboard(value)}
 			>
 				<wa-icon src={wrapPathInSvg(mdiContentCopy)}> </wa-icon>
 				<div class="truncate max-w-40">
