@@ -6,7 +6,7 @@
  * runs through this one config, e.g.
  * `PLATFORMS=android,desktop just test e2e send-messages`.
  */
-import { type ChildProcess, execSync } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { UI_TIMEOUT } from './helpers/timeouts';
 import { killLeftoverMailboxServers } from './setup/cleanup';
 import { startLocalMailboxServer } from './setup/mailbox-server';
-import { AndroidPlatform, type AndroidKind } from './setup/platforms/android';
+import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
 import { DesktopPlatform } from './setup/platforms/desktop';
 import type { AgentPlatform } from './setup/platforms/platform';
 import {
@@ -40,7 +40,30 @@ const androidKinds = new Map<number, AndroidKind>(
 	),
 );
 
-const android = androidKinds.size > 0 ? new AndroidPlatform(androidKinds) : null;
+/** The host mailbox-server build, kicked off before the Android platform is
+ * constructed so it overlaps the emulator boots that block construction.
+ * Awaited in onPrepare. */
+const mailboxBuild =
+	process.env.WDIO_WORKER_ID === undefined && remoteMailboxUrl() === null
+		? new Promise<void>((resolve, reject) => {
+				const proc = spawn('cargo', ['build', '-p', 'mailbox-server'], {
+					cwd: ROOT,
+					stdio: 'inherit',
+				});
+				proc.on('error', reject);
+				proc.on('exit', code => {
+					if (code === 0) resolve();
+					else
+						reject(new Error(`cargo build -p mailbox-server exited ${code}`));
+				});
+			})
+		: null;
+// Register a handler now so a build failure before onPrepare awaits the
+// promise doesn't crash node with an unhandled rejection.
+mailboxBuild?.catch(() => {});
+
+const android =
+	androidKinds.size > 0 ? new AndroidPlatform(androidKinds) : null;
 const desktop =
 	desktopSlots.length > 0 ? new DesktopPlatform(desktopSlots) : null;
 const platforms: AgentPlatform[] = [];
@@ -158,10 +181,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				);
 				console.log(`Using remote mailbox at ${remoteUrl}`);
 			} else {
-				execSync('cargo build -p mailbox-server', {
-					cwd: ROOT,
-					stdio: 'inherit',
-				});
+				await mailboxBuild;
 				// Start a local mailbox server so e2e tests don't hit the internet.
 				({
 					proc: mailboxServer,

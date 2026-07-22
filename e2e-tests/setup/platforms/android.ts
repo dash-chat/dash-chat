@@ -86,25 +86,37 @@ function bootMissingEmulators(needed: number) {
 		d.startsWith('emulator-'),
 	).length;
 	if (running >= needed) return;
+	const toBoot = needed - running;
 
 	const logFile = path.join(ROOT, '.dbs', 'e2e', 'emulator.log');
-	for (let i = running; i < needed; i++) {
-		mkdirSync(path.dirname(logFile), { recursive: true });
-		console.log(`Booting headless emulator (log: ${logFile})...`);
-		try {
-			// The launcher's boot-wait loop has no timeout — bound it here. Its
-			// stdio must go to a file: the emulator outlives this call and
-			// would hold a pipe open forever.
-			execSync(`boot-emulator < /dev/null >> '${logFile}' 2>&1`, {
-				timeout: 600_000,
-			});
-		} catch (err) {
-			const lines = readFileSync(logFile, 'utf8').split('\n');
-			console.error(lines.slice(-100).join('\n'));
-			throw err;
-		}
-		console.log('Emulator ready.');
+	mkdirSync(path.dirname(logFile), { recursive: true });
+	console.log(`Booting ${toBoot} headless emulator(s) (log: ${logFile})...`);
+	// Boots run in parallel, but each launch waits for the previous emulator
+	// to register with adb: run-test-emulator picks its port by scanning
+	// `adb devices`, so unstaggered launches would race for the same port.
+	// The boot-wait loops have no timeout — bound them here. Emulator stdio
+	// must go to the file: the emulators outlive this call and would hold a
+	// pipe open forever.
+	const script = `
+		set -euo pipefail
+		registered() { adb devices | grep -c '^emulator-' || true; }
+		base=$(registered)
+		pids=()
+		for i in $(seq ${toBoot}); do
+			boot-emulator < /dev/null >> '${logFile}' 2>&1 &
+			pids+=($!)
+			until [ "$(registered)" -ge $((base + i)) ]; do sleep 1; done
+		done
+		for pid in "\${pids[@]}"; do wait "$pid"; done
+	`;
+	try {
+		execSync(script, { shell: 'bash', timeout: 600_000 * toBoot });
+	} catch (err) {
+		const lines = readFileSync(logFile, 'utf8').split('\n');
+		console.error(lines.slice(-100).join('\n'));
+		throw err;
 	}
+	console.log('Emulators ready.');
 }
 
 /** The uiautomator2 driver lives in APPIUM_HOME (not node_modules); install
