@@ -42,12 +42,12 @@ describe('Compat setup — create data with old version', () => {
 	});
 
 	it('sends a message from Alice to Bob', async () => {
-		await agent1.directChatPage.sendMessage(MSG_ALICE);
+		await agent1.directChatPage.composer.sendMessage(MSG_ALICE);
 		await agent2.directChatPage.messages.waitForMessage(MSG_ALICE);
 	});
 
 	it('sends a reply from Bob to Alice', async () => {
-		await agent2.directChatPage.sendMessage(MSG_BOB);
+		await agent2.directChatPage.composer.sendMessage(MSG_BOB);
 		await agent1.directChatPage.messages.waitForMessage(MSG_BOB);
 	});
 

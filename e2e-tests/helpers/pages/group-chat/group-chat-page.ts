@@ -24,23 +24,6 @@ export class GroupChatPage extends TestHelper {
 		await this.infoLink.waitForExist();
 	}
 
-	async sendMessage(text: string) {
-		await this.typeInto(tid('message-input-textarea'), text);
-		await this.agent.pause(50);
-		await this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLTextAreaElement;
-			el.focus();
-			el.dispatchEvent(
-				new KeyboardEvent('keydown', {
-					key: 'Enter',
-					code: 'Enter',
-					bubbles: true,
-					cancelable: true,
-				}),
-			);
-		}, tid('message-input-textarea'));
-	}
-
 	systemMessage(
 		kind:
 			| 'group_created'

@@ -1,5 +1,5 @@
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
-import { UI_TIMEOUT } from '../../helpers/timeouts';
+import { SYNC_TIMEOUT, UI_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Group unread messages', () => {
@@ -14,7 +14,10 @@ describe('Group unread messages', () => {
 		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 
-		await agent2.homePage.chatListItem('mygroup').waitForExist();
+		// The group arrives over p2p sync, which can be slow on real devices.
+		await agent2.homePage.chatListItem('mygroup').waitForExist({
+			timeout: SYNC_TIMEOUT,
+		});
 		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
 	});
@@ -30,7 +33,7 @@ describe('Group unread messages', () => {
 			);
 		let overflow = await minOverflow();
 		while (overflow < REQUIRED_OVERFLOW && i < MAX_FILLER) {
-			await agent1.groupChatPage.sendMessage(`filler ${i}`);
+			await agent1.groupChatPage.composer.sendMessage(`filler ${i}`);
 			await agent1.groupChatPage.messages.waitForMessage(
 				`filler ${i}`,
 				UI_TIMEOUT,
@@ -52,7 +55,7 @@ describe('Group unread messages', () => {
 		await agent2.groupChatPage.scroll.scrollUp();
 		expect(await agent2.groupChatPage.scroll.isAtBottom()).toBe(false);
 
-		await agent1.groupChatPage.sendMessage('peer while scrolled up');
+		await agent1.groupChatPage.composer.sendMessage('peer while scrolled up');
 		await agent2.groupChatPage.messages.waitForMessage(
 			'peer while scrolled up',
 		);
@@ -73,7 +76,7 @@ describe('Group unread messages', () => {
 
 	it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
 		await agent2.groupChatPage.scroll.scrollUp();
-		await agent1.groupChatPage.sendMessage('unread badge precondition');
+		await agent1.groupChatPage.composer.sendMessage('unread badge precondition');
 		await agent2.groupChatPage.messages.waitForMessage(
 			'unread badge precondition',
 		);

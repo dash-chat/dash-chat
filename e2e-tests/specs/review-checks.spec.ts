@@ -38,10 +38,10 @@ describe('Review checks', function () {
 			agent2.directChatPage.composer.messageInput.waitForExist(),
 		]);
 
-		await agent1.directChatPage.sendMessage('Hello from Alice!');
+		await agent1.directChatPage.composer.sendMessage('Hello from Alice!');
 		await agent2.directChatPage.messages.waitForMessage('Hello from Alice!');
 
-		await agent2.directChatPage.sendMessage('Hello from Bob!');
+		await agent2.directChatPage.composer.sendMessage('Hello from Bob!');
 		await agent1.directChatPage.messages.waitForMessage('Hello from Bob!');
 
 		await reloadToHome(agent1);
