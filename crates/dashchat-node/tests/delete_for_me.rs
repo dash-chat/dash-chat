@@ -7,6 +7,7 @@
 
 #![cfg(test)]
 
+use dashchat_node::stores::TombstoneReason;
 use dashchat_node::{testing::*, *};
 use p2panda::Hash;
 use p2panda::operation::LogId;
@@ -277,4 +278,78 @@ async fn delete_for_me_hides_edits_arriving_after_the_delete() {
 
     // Bobbi still sees the edited message.
     assert_eq!(bobbi.get_messages(chat).await.unwrap().len(), 1);
+}
+
+/// Deleting for me a message whose body is already gone — deleted for everyone —
+/// succeeds instead of erroring (its op is no longer a resolvable `Message` in
+/// the valid-ops view). The delete-for-me tombstone reason wins, so the message
+/// vanishes for me rather than lingering as a "deleted" placeholder.
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_for_me_of_an_already_deleted_for_everyone_message() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mb = TestMailbox::from_env();
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mb)
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_topic(bobbi.agent_id());
+
+    // Bobbi sends a message, then deletes it for everyone.
+    let msg = bobbi.send_message_raw(chat, "oops".into()).await.unwrap();
+    poll.wait_for(|| async {
+        let n = alice.get_messages(chat).await.unwrap().len();
+        (n == 1).then_some(()).ok_or(n)
+    })
+    .await
+    .unwrap();
+    bobbi.delete_message(chat, msg.hash()).await.unwrap();
+
+    // Alice sees the delete-for-everyone tombstone; the body is gone.
+    poll.wait_for(|| async {
+        match payload_present(&alice, *chat, bobbi.device_id(), msg.hash()).await {
+            Some(false) => Ok(()),
+            other => Err(other),
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        alice
+            .projection
+            .tombstone_reason(*chat, msg.hash())
+            .await
+            .unwrap(),
+        Some(TombstoneReason::DeletedForEveryone)
+    );
+
+    // Alice now deletes the same (body-less) message for herself. This must not
+    // error, and it upgrades the tombstone to DeletedForMe.
+    alice.delete_message_for_me(chat, msg.hash()).await.unwrap();
+    poll.wait_for(|| async {
+        match alice
+            .projection
+            .tombstone_reason(*chat, msg.hash())
+            .await
+            .unwrap()
+        {
+            Some(TombstoneReason::DeletedForMe) => Ok(()),
+            other => Err(other),
+        }
+    })
+    .await
+    .unwrap();
 }

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
+use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
 use crate::stores::{BadUseOfNode, ProjectionError};
 use crate::topic::AutoRegisteredTopic;
@@ -612,19 +613,19 @@ impl Node {
             Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(delete)) => {
                 // `reduce` (above) tombstoned the message and its whole current
                 // edit chain in the *chat* topic (this op lives in the device
-                // group topic). Drop the bodies of those chain members that still
-                // have one — pre-existing edits aren't reprocessed, so their
-                // bodies won't be dropped by the enforce-on-arrival path. Unlike
+                // group topic). Drop the bodies of that chain — pre-existing edits
+                // aren't reprocessed, so their bodies won't be dropped by the
+                // enforce-on-arrival path. `reduce` records tombstones without
+                // touching bodies, so the chain is still resolvable here via
+                // `valid_chat_ops` (which only excludes body-less ops). Unlike
                 // delete-for-everyone, a `DeleteForMe` op is never shared with the
                 // other chat participants, so their copies are untouched. We fall
                 // through to `notify_payload` below so the frontend re-reads the
                 // tombstone set and drops the message from its chat view.
                 let chat_topic: TopicId = delete.chat_id.into();
-                for hash in self.projection.tombstoned_hashes(chat_topic).await? {
-                    let Some(op) = self.op_store.get_operation(&hash).await? else {
-                        continue;
-                    };
-                    if op.body.is_some() {
+                let valid_ops = self.valid_chat_ops(delete.chat_id).await?;
+                for hash in forward_edit_closure(&valid_ops, delete.message_hash) {
+                    if let Some(op) = self.op_store.get_operation(&hash).await? {
                         self.enforce_tombstone(chat_topic, &op).await?;
                     }
                 }

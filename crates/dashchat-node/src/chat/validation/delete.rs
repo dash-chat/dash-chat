@@ -111,6 +111,32 @@ pub fn resolve_message_root(
     Err(DeleteError::IncompleteChain)
 }
 
+/// Every operation reachable forward from `root` through the edit graph: the
+/// root plus every edit that (transitively) targets it. Used to tombstone a
+/// whole message chain given only its original op. Only ops present in
+/// `valid_ops` (i.e. still carrying a body) are reachable — already body-less
+/// members carry no `edit_hash` pointer and don't need re-tombstoning.
+pub fn forward_edit_closure(
+    valid_ops: &HashMap<Hash, ChatOp>,
+    root: Hash,
+) -> BTreeSet<Hash> {
+    let mut chain = BTreeSet::from([root]);
+    loop {
+        let mut grew = false;
+        for (hash, op) in valid_ops {
+            if let ChatOpKind::Edit(target) = &op.kind {
+                if chain.contains(target) && chain.insert(*hash) {
+                    grew = true;
+                }
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    chain
+}
+
 pub struct DeleteCandidate {
     pub hashes: BTreeSet<Hash>,
     pub deleter: DeviceId,

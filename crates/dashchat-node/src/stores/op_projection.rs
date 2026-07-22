@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{BTreeSet, HashMap};
 
-use crate::{AgentId, ChatOpKind, DeleteCandidate, DeviceId, Profile, TopicId};
+use crate::{AgentId, DeleteCandidate, DeviceId, Profile, TopicId, forward_edit_closure};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
@@ -552,23 +552,8 @@ impl OpProjection {
         let chat_topic: TopicId = chat_id.into();
         let valid_ops = node.valid_chat_ops(chat_id).await?;
 
-        let mut chain: BTreeSet<Hash> = BTreeSet::from([root]);
-        loop {
-            let mut grew = false;
-            for (hash, op) in valid_ops.iter() {
-                if let ChatOpKind::Edit(target) = &op.kind {
-                    if chain.contains(target) && chain.insert(*hash) {
-                        grew = true;
-                    }
-                }
-            }
-            if !grew {
-                break;
-            }
-        }
-
-        for hash in &chain {
-            self.add_tombstone(chat_topic, *hash, TombstoneReason::DeletedForMe)
+        for hash in forward_edit_closure(&valid_ops, root) {
+            self.add_tombstone(chat_topic, hash, TombstoneReason::DeletedForMe)
                 .await?;
         }
         Ok(())
