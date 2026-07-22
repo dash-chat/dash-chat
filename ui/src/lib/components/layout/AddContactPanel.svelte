@@ -10,15 +10,12 @@
 	import type { AddContactError } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		Page,
 		Navbar,
 		NavbarBackLink,
-		ListInput,
-		List,
 		Preloader,
 		Button,
 		useTheme,
@@ -344,29 +341,6 @@
 									class="mx-6 mb-2 text-center quiet"
 									style="font-size: 13px">{m.shareCodeWarning()}</span
 								>
-
-								<div class="column gap-1" style="display: none">
-									<List
-										nested
-										strongIos
-										inset={isWideScreen.value || theme === 'ios'}
-									>
-										<ListInput
-											floatingLabel
-											label={m.enterYourContactsLink()}
-											type="text"
-											outline
-											data-testid="add-contact-link-input"
-											onInput={async (e: Event) => {
-												const target = e.target as HTMLInputElement;
-												if (target.value) {
-													await receiveDeepLink(target.value);
-													target.value = '';
-												}
-											}}
-										/>
-									</List>
-								</div>
 							</div>
 						</div>
 						<QrCodeUploader

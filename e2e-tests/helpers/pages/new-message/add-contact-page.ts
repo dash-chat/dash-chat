@@ -18,7 +18,6 @@ export class AddContactPage extends TestHelper {
 	linkSheetLink = this.el(tid('qr-link-sheet-link'));
 	linkSheetCopyButton = this.el(tid('qr-link-sheet-copy'));
 	linkSheetShareButton = this.el(tid('qr-link-sheet-share'));
-	codeInput = this.el(tid('add-contact-link-input'));
 	shareButton = this.el(tid('add-contact-share-btn'));
 	saveButton = this.el(tid('add-contact-save-btn'));
 	uploadButton = this.el(tid('add-contact-upload-btn'));
@@ -27,7 +26,7 @@ export class AddContactPage extends TestHelper {
 	colorButton = this.el(tid('add-contact-color-btn'));
 
 	async ready() {
-		await this.codeInput.waitForExist();
+		await this.copyButton.waitForExist();
 	}
 
 	/** True if the link sheet is open (not the slide-out dismissed state). */
@@ -58,8 +57,13 @@ export class AddContactPage extends TestHelper {
 		return link;
 	}
 
+	// There is no UI to type a contact link; receiving one is only reachable by
+	// opening a shared link, so dispatch it through the app's deep-link routing.
 	async enterAddContactLink(link: string) {
-		await this.typeInto(`${tid('add-contact-link-input')} input`, link);
+		await this.agent.execute(
+			(l: string) => window.__test.handleDeepLink(l),
+			link,
+		);
 	}
 
 	/** Generate a QR PNG for the given string and inject it into the file input. */
