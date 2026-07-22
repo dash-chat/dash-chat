@@ -19,8 +19,13 @@
 	let { opened, link, onClose }: Props = $props();
 
 	async function copyLink() {
-		await writeText(link);
-		showToast(m.copiedLinkToClipboard());
+		try {
+			await writeText(link);
+			showToast(m.copiedLinkToClipboard());
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
 	}
 
 	async function share() {
