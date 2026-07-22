@@ -5,6 +5,7 @@
 	"platforms": ["iOS"],
 	"permissions": [
 		"ios-photos:default",
-		"fs:allow-temp-read-recursive"
+		"fs:allow-temp-read-recursive",
+		"mcp-bridge:default"
 	]
 }

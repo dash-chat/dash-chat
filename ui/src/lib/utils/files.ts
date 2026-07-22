@@ -1,4 +1,5 @@
 import { isTauriEnv } from '$lib/utils/environment';
+import { isShareCancelled } from '$lib/utils/share';
 import { shareFile as shareFileNative } from '@choochmeque/tauri-plugin-sharekit-api';
 import { appCacheDir, basename, join } from '@tauri-apps/api/path';
 import { open, save } from '@tauri-apps/plugin-dialog';
@@ -46,16 +47,6 @@ export async function saveFile(
 	// Revoking synchronously can race the download start.
 	setTimeout(() => URL.revokeObjectURL(url), 0);
 	return false;
-}
-
-function isShareCancelled(error: unknown): boolean {
-	const message =
-		error instanceof Error
-			? error.message
-			: typeof error === 'string'
-				? error
-				: '';
-	return message.trim() === 'Share cancelled';
 }
 
 /**

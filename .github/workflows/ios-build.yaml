@@ -25,9 +25,6 @@ jobs:
       - name: Install xcodegen and just
         run: brew install xcodegen just
 
-      - name: Use iOS rust toolchain
-        run: cp rust-toolchain.ios.toml rust-toolchain.toml
-
       # Workaround for actions/runner-images#14097: on macos-15-arm64/20260511.0048+
       # /opt/homebrew/bin/{cargo,rustc,rustup,rustup-init} are broken rustup-init shims
       # that reject standard subcommands like `metadata`. We must delete them BEFORE

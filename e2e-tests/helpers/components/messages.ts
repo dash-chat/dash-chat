@@ -1,6 +1,6 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-import { SYNC_TIMEOUT } from '../timeouts';
+import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
@@ -85,7 +85,7 @@ export class Messages extends TestHelper {
 	 * photos from earlier tests. */
 	async waitForPhotoMessage(
 		label: string,
-		timeout = SYNC_TIMEOUT,
+		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
@@ -113,7 +113,7 @@ export class Messages extends TestHelper {
 	/** Wait until a file attachment with the given filename appears. */
 	async waitForFileMessage(
 		name: string,
-		timeout = SYNC_TIMEOUT,
+		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>

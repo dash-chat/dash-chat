@@ -11,6 +11,14 @@
     tauri-driver.url = "github:dash-chat/tauri-driver";
 
     tauri-plugin-holochain.url = "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
+
+    # nixpkgs revs pinned only for the chromedrivers matching the e2e Android
+    # devices' WebView majors (physical phones on 149/150, the emulator image
+    # on 124). The harness materializes packages.e2e-chromedrivers via
+    # `nix build --out-link` and Appium picks the right one per device.
+    nixpkgs-chromedriver-150.url = "github:nixos/nixpkgs/421eebfd0ec7bccd4abe826ce62d7e6e83129493";
+    nixpkgs-chromedriver-149.url = "github:nixos/nixpkgs/d25a391ba507bc1cb32a8a732a2deb0d9dd16ad6";
+    nixpkgs-chromedriver-124.url = "github:nixos/nixpkgs/fcc7d2be753560cdf34228a398f7a44202f09aaa";
   };
 
   nixConfig = {
@@ -31,6 +39,8 @@
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         ./nix/docker.nix
+        ./nix/android-emulator.nix
+        ./nix/e2e-chromedrivers.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
         ./crates/push-notifications-server/default.nix
@@ -69,6 +79,15 @@
             pango
           ];
           nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
+          # One toolchain (host + android targets) shared by the default and
+          # androidDev shells: identical rustc + host-build env keep artifacts
+          # in the shared target dir fingerprint-compatible across shells.
+          rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          hostBuildEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
+            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+            export SOURCE_DATE_EPOCH=315532800
+          '';
           packages = [
             pkgs.mprocs
             pkgs.just
@@ -80,36 +99,29 @@
           ];
         in
         rec {
-          devShells.default =
-            let
-              rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-            in
-            pkgs.mkShell {
-              packages = [ rust ] ++ packages;
-              inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-              shellHook = lib.optionalString pkgs.stdenv.isLinux ''
-                export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
-                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
-              '';
-            };
+          devShells.default = pkgs.mkShell {
+            packages = [ rust ] ++ packages;
+            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
+            shellHook = hostBuildEnvHook;
+          };
 
-          devShells.androidDev =
-            let
-              rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.android.toml;
-            in
-            pkgs.mkShell {
-              packages = [
-                rust
-                pkgs."nodejs_${nodeVersion}"
-                pkgs.jdk
-              ];
-              inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
-            };
+          devShells.androidDev = pkgs.mkShell {
+            packages = [
+              rust
+              pkgs."nodejs_${nodeVersion}"
+              pkgs.jdk
+            ]
+            ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ];
+            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
+            # The e2e harness consumes tools and artifacts from PATH and
+            # conventional paths; this hook provides the chromedrivers dir.
+            shellHook = hostBuildEnvHook + ''
+              mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.appium"
+              ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.appium/chromedrivers"
+            '';
+          };
 
           devShells.iosDev =
-            let
-              rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.ios.toml;
-            in
             pkgs.mkShell {
               inputsFrom = [ devShells.default ];
               packages = [ rust ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
