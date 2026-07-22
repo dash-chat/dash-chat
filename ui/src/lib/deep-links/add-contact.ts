@@ -1,5 +1,6 @@
 import { goto } from '$app/navigation';
 import { m } from '$lib/paraglide/messages.js';
+import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 import { showToast } from '$lib/utils/toasts';
 import {
 	type AddContactError,
@@ -37,12 +38,13 @@ export async function addContactFromCode(
 	contactsStore: ContactsStore,
 	code: string,
 ): Promise<void> {
+	addContactPending.value = true;
 	try {
 		const devicePubkey = await contactsStore.client.addContact(code);
 		showToast(m.contactRequestSent());
 
 		const knownAgent = await contactsStore.client.agentForDevice(devicePubkey);
-		goto(`/direct-chats/${knownAgent ?? pendingChatKey(devicePubkey)}`);
+		await goto(`/direct-chats/${knownAgent ?? pendingChatKey(devicePubkey)}`);
 	} catch (e) {
 		console.error(e);
 		const error = e as AddContactError;
@@ -69,6 +71,8 @@ export async function addContactFromCode(
 			default:
 				showToast(m.errorUnexpected(), 'unexpected', e);
 		}
+	} finally {
+		addContactPending.value = false;
 	}
 }
 
