@@ -576,10 +576,12 @@ impl OpProjection {
 
     /// Record an operation hash in the per-topic tombstone set with the reason
     /// it was tombstoned. Payloads for tombstoned operations must never be
-    /// stored or synced. Delete-for-me always wins: a `DeletedForMe` upgrades an
-    /// existing `DeletedForEveryone` (so a message I deleted for myself vanishes
-    /// even if it's also deleted for everyone), but a later `DeletedForEveryone`
-    /// never downgrades an existing `DeletedForMe`.
+    /// stored or synced. Reasons are first-write-wins, with one deliberate
+    /// exception: a `DeletedForMe` upgrades an existing `DeletedForEveryone` (so
+    /// a message I deleted for myself vanishes even when it's also deleted for
+    /// everyone). Every other combination keeps the existing reason; any future
+    /// reason's precedence must be spelled out here explicitly rather than
+    /// riding on a general rule.
     async fn add_tombstone(
         &self,
         topic: TopicId,
@@ -589,12 +591,15 @@ impl OpProjection {
         sqlx::query(
             "INSERT INTO tombstones (topic_id, op_hash, reason) VALUES (?, ?, ?)
              ON CONFLICT(topic_id, op_hash) DO UPDATE SET reason = excluded.reason
-             WHERE excluded.reason = ?",
+             WHERE excluded.reason = ? AND tombstones.reason = ?",
         )
         .bind(topic.as_bytes().to_vec())
         .bind(op_hash.as_bytes().to_vec())
         .bind(reason.to_db())
+        // Only the specific DeletedForEveryone -> DeletedForMe upgrade replaces
+        // an existing reason.
         .bind(TombstoneReason::DeletedForMe.to_db())
+        .bind(TombstoneReason::DeletedForEveryone.to_db())
         .execute(&self.pool)
         .await?;
         Ok(())
