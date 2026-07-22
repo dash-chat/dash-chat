@@ -75,7 +75,7 @@
 			setLocale as (locale: string) => void,
 			m,
 			() => previewFeatures.enable(),
-			url => handleUrls([url]),
+			url => handleUrls([url], contactsStore),
 		),
 	);
 
@@ -203,11 +203,11 @@
 	});
 
 	if (isTauriEnv()) {
-		handleLaunchDeepLink();
+		handleLaunchDeepLink(contactsStore);
 	}
 	$effect(() => {
 		if (!isTauriEnv()) return;
-		return listenForDeepLinks();
+		return listenForDeepLinks(contactsStore);
 	});
 </script>
 
