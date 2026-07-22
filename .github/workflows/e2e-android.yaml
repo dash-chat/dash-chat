@@ -1,15 +1,13 @@
 name: E2E Android Tests
 
 on:
-  pull_request:
-    branches: [main, 'main-**', develop]
-  push:
-    branches: [main, develop]
+  schedule:
+    - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:
   e2e-android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-8-core
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
