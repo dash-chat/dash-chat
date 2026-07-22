@@ -38,6 +38,9 @@ import { checkOverflow } from '../helpers/review/checks';
 import { type AgentPlatformName, platformNames } from './test-env';
 
 export type Agent = WebdriverIO.Browser & {
+	/** The platform this agent was launched on. */
+	platform: AgentPlatformName;
+
 	accountPage: AccountPage;
 	addContactPage: AddContactPage;
 	appearancePage: AppearancePage;
@@ -74,6 +77,11 @@ export type Agent = WebdriverIO.Browser & {
 	checkOverflow(): Promise<string[]>;
 	/** Force the responsive `isWideScreen` store (true = desktop, false = mobile). */
 	setWideScreen(value: boolean): Promise<void>;
+	/** Whether this agent's device can legitimately show the wide (two-panel)
+	 *  layout: always true on desktop, and true on mobile only when the
+	 *  viewport matches the same media query `screen.svelte.ts` uses (tablets,
+	 *  not phones). */
+	supportsWideScreen(): Promise<boolean>;
 	/** Cold-restart the app: relaunch the binary against the same data dir (the
 	 *  Rust node re-hydrates from persisted state), re-attach fresh page objects
 	 *  to the new session, and restore narrow layout. */
@@ -150,6 +158,14 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			value,
 		);
 	};
+	agent.supportsWideScreen = async () =>
+		b.execute(() => {
+			const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+			return (
+				!mobile ||
+				window.matchMedia('(min-width: 768px) and (min-height: 500px)').matches
+			);
+		});
 	agent.setTheme = async (theme: 'material' | 'ios') => {
 		await b.execute(
 			(t: 'material' | 'ios') =>
@@ -201,10 +217,14 @@ export async function waitForTestUtils(
 /** Build an agent by capability name and wait for window.__test to be ready.
  *  Defaults to narrow (mobile) layout so back buttons and FABs render — review
  *  checks switch to wide explicitly when they need the desktop two-panel UI. */
-async function setupAgent(agentName: string): Promise<Agent> {
+async function setupAgent(
+	agentName: string,
+	platform: AgentPlatformName,
+): Promise<Agent> {
 	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
 	const agent = makeAgent(b);
+	agent.platform = platform;
 	await agent.setWideScreen(false);
 	return agent;
 }
@@ -262,13 +282,14 @@ function matchSlots(
 export async function setupAgents<
 	const T extends readonly AgentRequirement[],
 >(ctx: Mocha.Context, requirements: T): Promise<{ [K in keyof T]: Agent }> {
+	const platforms = platformNames();
 	const slots = matchSlots(
 		requirements.map(r => r.platform),
-		platformNames(),
+		platforms,
 	);
 	if (slots === null) ctx.skip();
 	const agents = await Promise.all(
-		slots.map(slot => setupAgent(`agent${slot}`)),
+		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1])),
 	);
 	return agents as { [K in keyof T]: Agent };
 }

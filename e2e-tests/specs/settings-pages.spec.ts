@@ -73,6 +73,11 @@ describe('Settings pages', () => {
 	});
 
 	it('opens the offline page', async () => {
+		// The offline settings page is desktop-only ({#if !isMobile}).
+		if (agent.platform !== 'desktop') {
+			await expect(agent.settingsPage.offlineLink).not.toBeDisplayed();
+			return;
+		}
 		await agent.settingsPage.offlineLink.click();
 		await agent.offlinePage.ready();
 		await agent.offlinePage.back.click();

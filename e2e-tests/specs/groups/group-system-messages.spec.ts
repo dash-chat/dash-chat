@@ -1,4 +1,5 @@
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Group chat inline system messages', () => {
@@ -19,7 +20,10 @@ describe('Group chat inline system messages', () => {
 	});
 
 	it('renders "{creator} added you to the group." for the invited member', async () => {
-		await agent2.homePage.chatListItem('mygroup').waitForExist();
+		// The group arrives over p2p sync, which can be slow on real devices.
+		await agent2.homePage.chatListItem('mygroup').waitForExist({
+			timeout: SYNC_TIMEOUT,
+		});
 		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
 
@@ -31,7 +35,7 @@ describe('Group chat inline system messages', () => {
 	});
 
 	it('renders regular chat bubbles separately from system messages', async () => {
-		await agent1.groupChatPage.sendMessage('Hi everyone');
+		await agent1.groupChatPage.composer.sendMessage('Hi everyone');
 		await agent1.groupChatPage.messages.waitForMessage('Hi everyone');
 
 		const bubble = await agent1.groupChatPage.messages.messageBubbleWithText(
