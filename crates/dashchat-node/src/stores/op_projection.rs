@@ -576,9 +576,10 @@ impl OpProjection {
 
     /// Record an operation hash in the per-topic tombstone set with the reason
     /// it was tombstoned. Payloads for tombstoned operations must never be
-    /// stored or synced. The first reason recorded for an op wins — the rare
-    /// delete-for-me-then-delete-for-everyone (or vice versa) on the same op
-    /// keeps whichever landed first, which is acceptable for now.
+    /// stored or synced. Delete-for-me always wins: a `DeletedForMe` upgrades an
+    /// existing `DeletedForEveryone` (so a message I deleted for myself vanishes
+    /// even if it's also deleted for everyone), but a later `DeletedForEveryone`
+    /// never downgrades an existing `DeletedForMe`.
     async fn add_tombstone(
         &self,
         topic: TopicId,
@@ -586,11 +587,14 @@ impl OpProjection {
         reason: TombstoneReason,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT OR IGNORE INTO tombstones (topic_id, op_hash, reason) VALUES (?, ?, ?)",
+            "INSERT INTO tombstones (topic_id, op_hash, reason) VALUES (?, ?, ?)
+             ON CONFLICT(topic_id, op_hash) DO UPDATE SET reason = excluded.reason
+             WHERE excluded.reason = ?",
         )
         .bind(topic.as_bytes().to_vec())
         .bind(op_hash.as_bytes().to_vec())
         .bind(reason.to_db())
+        .bind(TombstoneReason::DeletedForMe.to_db())
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -770,6 +774,23 @@ mod tests {
         assert!(db.is_tombstoned(topic_b, hash1).await.unwrap());
         assert!(!db.is_tombstoned(topic_b, hash2).await.unwrap());
         assert_eq!(db.tombstone_reason(topic_b, hash2).await.unwrap(), None);
+
+        // Delete-for-me always wins: it upgrades an existing delete-for-everyone,
+        // and a later delete-for-everyone never downgrades it back.
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForMe)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
 
         assert_eq!(
             db.tombstoned_hashes(topic_a).await.unwrap(),
