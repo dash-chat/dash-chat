@@ -13,20 +13,18 @@
 		color,
 		copyButtonTestId,
 		label,
-		copiedMessage = m.copiedToClipboard(),
 	}: {
 		value: string;
 		color: string;
 		copyButtonTestId: string;
 		label?: string | undefined;
-		copiedMessage?: string;
 	} = $props();
 
 	const isWhite = $derived(color === '#ffffff');
 
 	async function copyLink() {
 		await writeText(value);
-		showToast(copiedMessage);
+		showToast(m.copiedLinkToClipboard());
 	}
 </script>
 

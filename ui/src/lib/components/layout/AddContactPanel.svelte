@@ -301,7 +301,6 @@
 									label={name}
 									{color}
 									copyButtonTestId="add-contact-copy-btn"
-									copiedMessage={m.copiedCodeToClipboard()}
 								/>
 
 								<QrActionButtons
