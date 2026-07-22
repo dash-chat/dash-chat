@@ -28,7 +28,7 @@ describe('QR code image upload', () => {
 			);
 			await agent1.addContactPage.copyLinkButton.click();
 			await agent1.toast.expectMessage(
-				await agent1.tr('copiedCodeToClipboard'),
+				await agent1.tr('copiedLinkToClipboard'),
 			);
 		} else {
 			// Mobile shows the link sheet button and no inline copy-link box.
@@ -40,7 +40,7 @@ describe('QR code image upload', () => {
 			);
 			await agent1.addContactPage.linkSheetCopyButton.click();
 			await agent1.toast.expectMessage(
-				await agent1.tr('copiedCodeToClipboard'),
+				await agent1.tr('copiedLinkToClipboard'),
 			);
 			await agent1.addContactPage.closeLinkSheet();
 			await agent1.waitUntil(

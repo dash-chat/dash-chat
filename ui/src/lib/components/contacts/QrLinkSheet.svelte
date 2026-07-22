@@ -20,7 +20,7 @@
 
 	async function copyLink() {
 		await writeText(link);
-		showToast(m.copiedCodeToClipboard());
+		showToast(m.copiedLinkToClipboard());
 	}
 
 	async function share() {
