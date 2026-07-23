@@ -248,7 +248,7 @@
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
-		<div class="m-2 row gap-2" style="align-items: center;">
+		<div class="m-2 row gap-2" style="align-items: flex-end;">
 			<!-- While editing, the cancel button sits before the input in the
 			     narrow layout and after it on wide screens; the attach buttons
 			     hide because media cannot be edited. -->

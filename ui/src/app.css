@@ -355,6 +355,19 @@ wa-dropdown-item::part(icon) {
 	width: 42px;
 }
 
+/* The keyboard overlays the webview rather than resizing it, so an element
+   pinned to the viewport bottom sits under it — and under whatever
+   below-keyboard surface is holding the slot. Konsta already offsets by the home
+   indicator, but that indicator is *behind* the keyboard whenever it's up, so
+   the two are alternatives rather than additions: this tops the existing
+   safe-area offset up to the reserved inset, and is 0 when nothing occupies it. */
+.mb-keyboard-inset {
+	margin-bottom: calc(
+		max(var(--keyboard-inset-height, 0px), env(safe-area-inset-bottom, 0px)) -
+			env(safe-area-inset-bottom, 0px)
+	);
+}
+
 /* Home-indicator padding for the bottom-most element above the keyboard slot,
    applied only while it's grounded — i.e. while nothing occupies the slot below
    it. Tied to --keyboard-inset-height so it flips in the same reflow as the inset,

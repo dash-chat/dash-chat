@@ -55,9 +55,10 @@
 <Toast
 	style={toastVariant === 'unexpected' ? '' : 'pointer-events: none'}
 	position="center"
-	class={toastVariant === 'error' || toastVariant === 'unexpected'
+	class="mb-keyboard-inset {toastVariant === 'error' ||
+	toastVariant === 'unexpected'
 		? 'k-color-brand-red'
-		: ''}
+		: ''}"
 	opened={toastOpen}
 >
 	<span data-testid="toast">{toastMessage}</span>
