@@ -30,7 +30,7 @@ _default:
 
 # build dash chat as a binary
 build:
-    pnpm tauri build --no-bundle
+    pnpm tauri build --no-bundle --debug
 
 # build dash chat as an installer (AppImage on linux)
 bundle:

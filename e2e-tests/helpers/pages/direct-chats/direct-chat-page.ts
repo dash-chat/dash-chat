@@ -3,7 +3,6 @@ import { ConnectionStatusIndicator } from '../../components/connection-status-in
 import { Messages } from '../../components/messages';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
-import { SYNC_TIMEOUT } from '../../timeouts';
 import { TestHelper } from '../test-helper';
 
 export type MessageStatus = 'sending' | 'local' | 'cloud';
@@ -40,26 +39,6 @@ export class DirectChatPage extends TestHelper {
 
 	async ready() {
 		await this.page.waitForExist();
-	}
-
-	async sendMessage(text: string) {
-		// The composer only mounts once the chat leaves the pending state, which
-		// depends on the peer's profile syncing peer-to-peer through the mailbox.
-		await this.composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
-		await this.typeInto(tid('message-input-textarea'), text);
-		await this.agent.pause(50);
-		await this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLTextAreaElement;
-			el.focus();
-			el.dispatchEvent(
-				new KeyboardEvent('keydown', {
-					key: 'Enter',
-					code: 'Enter',
-					bubbles: true,
-					cancelable: true,
-				}),
-			);
-		}, tid('message-input-textarea'));
 	}
 
 	async searchFor(query: string) {
@@ -125,6 +104,14 @@ export class DirectChatPage extends TestHelper {
 				issues.push('Navbar has horizontal overflow');
 			}
 			navbar.querySelectorAll('*').forEach(el => {
+				const style = window.getComputedStyle(el);
+				const clipped =
+					style.overflowX === 'hidden' ||
+					style.overflowX === 'clip' ||
+					style.overflow === 'hidden' ||
+					style.overflow === 'clip' ||
+					style.textOverflow === 'ellipsis';
+				if (clipped) return;
 				if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
 					const text = el.textContent?.substring(0, 60).trim();
 					if (text)

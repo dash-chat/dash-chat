@@ -1,0 +1,31 @@
+name: 'Cache docker builds'
+on:
+  push:
+    branches: [develop, main]
+
+jobs:
+  cache-docker-builds:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [mailbox-server, push-notifications-server]
+
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nix
+        uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_path: nixpkgs=channel:nixos-25.11
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: dash-chat
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build docker image
+        run: nix build .#${{ matrix.server }}-docker --accept-flake-config --no-link

@@ -19,7 +19,7 @@ describe('Editing group messages', () => {
 	});
 
 	it('edits a message in place and shows the "Edited" indicator on both sides', async () => {
-		await agent1.groupChatPage.sendMessage('Helo group');
+		await agent1.groupChatPage.composer.sendMessage('Helo group');
 		await agent1.groupChatPage.messages.waitForMessage('Helo group');
 		await agent2.groupChatPage.messages.waitForMessage('Helo group');
 
@@ -42,7 +42,7 @@ describe('Editing group messages', () => {
 	});
 
 	it('does not offer Edit on another member’s messages', async () => {
-		await agent2.groupChatPage.sendMessage("Bob's message");
+		await agent2.groupChatPage.composer.sendMessage("Bob's message");
 		await agent1.groupChatPage.messages.waitForMessage("Bob's message");
 
 		await agent1.groupChatPage.messages.openMessageActions("Bob's message");

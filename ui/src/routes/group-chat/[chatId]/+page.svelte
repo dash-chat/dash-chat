@@ -1,7 +1,10 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import {
+		useReactivePromise,
+		useReactivePromises,
+	} from '$lib/stores/use-signal';
 	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
@@ -35,16 +38,14 @@
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
-		messagePosition,
-		canEditMessage,
 		canDeleteMessageForEveryone,
+		messagePosition,
 	} from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
@@ -53,14 +54,22 @@
 	const readTracker = createReadMessagesTracker(store.messages);
 	const readMessageOnObserve = readTracker.observe;
 
-	const messageGroups = useReactivePromise(store.groupedEvents);
 	const info = useReactivePromise(store.info);
-	const allMembers = useReactivePromise(store.allMembers);
-	const me = useReactivePromise(store.me);
 	const readMessageHashes = useReactivePromise(
 		store.messages.readMessageHashes,
 	);
 	const unreadCount = useReactivePromise(store.messages.unreadCount);
+
+	const headerData = useReactivePromises(() => [
+		store.info(),
+		store.allMembers(),
+	]);
+	const messageListData = useReactivePromises(() => [
+		contactsStore.myDeviceId(),
+		store.groupedEvents(),
+		store.allMembers(),
+	]);
+	const composerData = useReactivePromises(() => [store.me(), store.info()]);
 
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
@@ -97,7 +106,7 @@
 	const theme = $derived(useTheme());
 
 	function getUnreadDividerInfo(
-		messageGroupsInDays: Awaited<typeof $messageGroups>,
+		messageGroupsInDays: Awaited<ReturnType<typeof store.groupedEvents>>,
 		readHashes: Set<Hash> | undefined,
 		deviceId: DeviceId | undefined,
 	): { hash: Hash | null; count: number } {
@@ -194,7 +203,7 @@
 
 		<div class="column" style={`padding-bottom: ${bottomBarHeight}px`}>
 			<div class="mt-16 mb-6 px-4" data-testid="group-chat-header">
-				{#await Promise.all([$info, $allMembers]) then [info, members]}
+				{#await $headerData then [info, members]}
 					<div class="column items-center">
 						<div
 							class="outline-card"
@@ -229,7 +238,7 @@
 
 			<div class="column m-2 gap-1" data-testid="group-chat-messages">
 				{#await $readMessageHashes then readHashes}
-					{#await Promise.all( [$myDeviceId, $messageGroups, $allMembers], ) then [myDeviceId, messageGroupsInDays, members]}
+					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
 						{@const unreadDivider = getUnreadDividerInfo(
 							messageGroupsInDays,
 							readHashes,
@@ -271,9 +280,7 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														canEdit={canEditMessage(message, myDeviceId)}
 														onEdit={() => composer?.editMessage(message)}
-														canDelete
 														onDelete={() =>
 															composer?.deleteMessage(
 																message,
@@ -335,10 +342,10 @@
 
 	<div
 		bind:clientHeight={bottomBarHeight}
-		class="absolute bottom-0 inset-x-0 z-30"
+		class="absolute bottom-0 inset-x-0 z-30 pb-grounded-safe"
 		class:bg-page-surface={theme === 'material'}
 	>
-		{#await Promise.all([$me, $info]) then [me, info]}
+		{#await $composerData then [me, info]}
 			{#if me.member}
 				<MessageComposer
 					bind:this={composer}

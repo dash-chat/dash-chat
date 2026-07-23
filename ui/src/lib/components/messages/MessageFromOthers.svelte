@@ -16,7 +16,9 @@
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageActions from './MessageActions.svelte';
+	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -63,6 +65,19 @@
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
+	let desktopOpen = $state<'reactions' | 'menu' | null>(null);
+	let desktopAnchor = $state<HTMLElement | { x: number; y: number }>();
+
+	function onLongPress(e: MouseEvent | TouchEvent) {
+		if (hasBody(message.content)) {
+			if (isMobile) {
+				reactionsOpened = true;
+			} else if (e instanceof MouseEvent) {
+				desktopAnchor = { x: e.clientX, y: e.clientY };
+				desktopOpen = 'menu';
+			}
+		}
+	}
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -96,15 +111,27 @@
 	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
 {/snippet}
 
-<div
-	class="flex justify-start"
-	use:longpress={{
-		onLongPress: () => {
-			if (hasBody(message.content)) reactionsOpened = true;
-		},
-	}}
->
-	<div bind:this={messageEl} class="max-w-[85%]">
+<div class="group flex justify-start" use:longpress={{ onLongPress }}>
+	<div bind:this={messageEl} class="relative max-w-[85%]">
+		{#if !isMobile}
+			<div
+				class="absolute start-full inset-y-0 ms-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {desktopOpen !==
+				null
+					? '!opacity-100'
+					: ''}"
+			>
+				<MessageHoverToolbar
+					onReact={el => {
+						desktopAnchor = el;
+						desktopOpen = 'reactions';
+					}}
+					onMenu={el => {
+						desktopAnchor = el;
+						desktopOpen = 'menu';
+					}}
+				/>
+			</div>
+		{/if}
 		<div class="row items-end gap-2">
 			{#if showAvatar}
 				{#if isLast}
@@ -151,6 +178,8 @@
 	{canDelete}
 	{onDelete}
 	bind:opened={reactionsOpened}
+	bind:desktopOpen
+	{desktopAnchor}
 	target={messageEl}
 />
 
