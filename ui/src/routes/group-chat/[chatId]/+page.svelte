@@ -312,7 +312,6 @@
 														showSenderName={position === 'first' ||
 															position === 'single'}
 														showAvatar
-														canDelete
 														onDelete={() =>
 															composer?.deleteMessage(message, false)}
 													/>

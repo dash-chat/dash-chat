@@ -20,7 +20,7 @@ describe('Deleting messages', () => {
 		await agent1.directChatPage.messages.waitForMessage('Delete me');
 		await agent2.directChatPage.messages.waitForMessage('Delete me');
 
-		await agent1.directChatPage.messages.deleteMessage('Delete me');
+		await agent1.directChatPage.messages.deleteMessageForEveryone('Delete me');
 
 		await agent1.directChatPage.messages.waitForDeleted(
 			'Delete me',
@@ -39,7 +39,7 @@ describe('Deleting messages', () => {
 		await agent1.directChatPage.messages.waitForMessage('Draft v2');
 		await agent2.directChatPage.messages.waitForMessage('Draft v2');
 
-		await agent1.directChatPage.messages.deleteMessage('Draft v2');
+		await agent1.directChatPage.messages.deleteMessageForEveryone('Draft v2');
 
 		await agent1.directChatPage.messages.waitForDeleted(
 			'Draft v2',

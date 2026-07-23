@@ -166,10 +166,10 @@ export class MessagesStore {
 		return this.client.editMessage(chatId, current.hash, newText);
 	}
 
-	async deleteMessage(message: Message): Promise<Hash> {
+	async deleteMessageForEveryone(message: Message): Promise<Hash> {
 		const chatId = await this.chatId();
 		const current = currentVersion(message);
-		return this.client.deleteMessage(chatId, current.hash);
+		return this.client.deleteMessageForEveryone(chatId, current.hash);
 	}
 
 	async deleteMessageForMe(message: Message): Promise<Hash> {

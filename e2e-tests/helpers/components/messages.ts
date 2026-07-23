@@ -363,7 +363,7 @@ export class Messages extends TestHelper {
 	}
 	/** Open the actions menu on the message with `text`, tap Delete, and confirm
 	 * "Delete for everyone" in the dialog. */
-	async deleteMessage(text: string): Promise<void> {
+	async deleteMessageForEveryone(text: string): Promise<void> {
 		await this.openDeleteDialog(text);
 		await this.deleteForEveryoneConfirmButton.waitForClickable();
 		await this.deleteForEveryoneConfirmButton.click();

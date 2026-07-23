@@ -147,7 +147,7 @@
 		deleting = null;
 		if (!target) return;
 		try {
-			await store.deleteMessage(target);
+			await store.deleteMessageForEveryone(target);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to delete message', e);

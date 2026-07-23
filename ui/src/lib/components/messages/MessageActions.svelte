@@ -30,7 +30,7 @@
 		canEdit?: boolean;
 		onEdit?: () => void;
 		/** Whether to offer a delete-for-everyone action (author, within the delete window). */
-		canDelete?: boolean;
+		canDeleteForEveryone?: boolean;
 		onDelete?: () => void;
 		/** Which desktop popover is showing; null = closed. Desktop only. */
 		desktopOpen?: 'reactions' | 'menu' | null;
@@ -45,7 +45,7 @@
 		myDeviceId,
 		canEdit = false,
 		onEdit,
-		canDelete = false,
+		canDeleteForEveryone = false,
 		onDelete,
 		desktopOpen = $bindable(null),
 		desktopAnchor,
@@ -147,7 +147,7 @@
 				{canEdit}
 				onEdit={edit}
 				onCopy={copy}
-				{canDelete}
+				{canDeleteForEveryone}
 				onDelete={del}
 			/>
 		{/snippet}

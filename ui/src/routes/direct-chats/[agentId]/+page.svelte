@@ -621,7 +621,6 @@
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
 																		sender={profile}
-																		canDelete
 																		onDelete={() =>
 																			composer?.deleteMessage(message, false)}
 																	/>

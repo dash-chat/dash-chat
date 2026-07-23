@@ -47,7 +47,9 @@
 
 	const isLast = $derived(position === 'last' || position === 'single');
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
-	const canDelete = $derived(canDeleteMessageForEveryone(message, myDeviceId));
+	const canDeleteForEveryone = $derived(
+		canDeleteMessageForEveryone(message, myDeviceId),
+	);
 
 	const reactions = $derived(
 		hasBody(message.content) ? message.content.reactions : {},
@@ -165,7 +167,7 @@
 	{myDeviceId}
 	{canEdit}
 	{onEdit}
-	{canDelete}
+	{canDeleteForEveryone}
 	{onDelete}
 	bind:opened={reactionsOpened}
 	bind:desktopOpen

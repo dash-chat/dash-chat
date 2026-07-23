@@ -10,7 +10,10 @@
 		type MessagesStore,
 		type Profile,
 	} from 'dash-chat-stores';
-	import type { MessagePosition } from './message-helpers';
+	import {
+		canDeleteMessageForEveryone,
+		type MessagePosition,
+	} from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
@@ -34,7 +37,6 @@
 		sender,
 		showSenderName = false,
 		showAvatar = false,
-		canDelete = false,
 		onDelete,
 	}: {
 		message: Message;
@@ -45,13 +47,15 @@
 		sender: Profile | undefined;
 		showSenderName?: boolean;
 		showAvatar?: boolean;
-		canDelete?: boolean;
 		onDelete?: () => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
 	const senderDisplayName = $derived(
 		sender && sender.name ? fullName(sender) : m.unknownSender(),
+	);
+	const canDeleteForEveryone = $derived(
+		canDeleteMessageForEveryone(message, myDeviceId),
 	);
 
 	const reactions = $derived(
@@ -175,7 +179,7 @@
 <MessageActions
 	{message}
 	{myDeviceId}
-	{canDelete}
+	{canDeleteForEveryone}
 	{onDelete}
 	bind:opened={reactionsOpened}
 	bind:desktopOpen
