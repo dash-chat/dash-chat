@@ -1128,7 +1128,11 @@ impl Node {
     ) -> Result<Header, DeleteMessageError> {
         let chat_id = topic.into();
         let ops = self.valid_chat_ops(chat_id).await?;
-        let message_hash = resolve_message_root(&ops, &target)?;
+        // Resolve to the original message when we can, but fall back to the raw
+        // target when its body is gone (already deleted for everyone) or never
+        // fetched — such an op isn't in `valid_chat_ops`, and delete-for-me should
+        // still just remove it locally instead of erroring.
+        let message_hash = resolve_message_root(&ops, &target).unwrap_or(target);
 
         let header = self
             .publish(

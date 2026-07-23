@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{BTreeSet, HashMap};
 
-use crate::{AgentId, ChatOpKind, DeleteCandidate, DeviceId, Profile, TopicId};
+use crate::{AgentId, DeleteCandidate, DeviceId, Profile, TopicId, forward_edit_closure};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
@@ -561,23 +561,8 @@ impl OpProjection {
         let chat_topic: TopicId = chat_id.into();
         let valid_ops = node.valid_chat_ops(chat_id).await?;
 
-        let mut chain: BTreeSet<Hash> = BTreeSet::from([root]);
-        loop {
-            let mut grew = false;
-            for (hash, op) in valid_ops.iter() {
-                if let ChatOpKind::Edit(target) = &op.kind {
-                    if chain.contains(target) && chain.insert(*hash) {
-                        grew = true;
-                    }
-                }
-            }
-            if !grew {
-                break;
-            }
-        }
-
-        for hash in &chain {
-            self.add_tombstone(chat_topic, *hash, TombstoneReason::DeletedForMe)
+        for hash in forward_edit_closure(&valid_ops, root) {
+            self.add_tombstone(chat_topic, hash, TombstoneReason::DeletedForMe)
                 .await?;
         }
         Ok(())
@@ -585,9 +570,12 @@ impl OpProjection {
 
     /// Record an operation hash in the per-topic tombstone set with the reason
     /// it was tombstoned. Payloads for tombstoned operations must never be
-    /// stored or synced. The first reason recorded for an op wins — the rare
-    /// delete-for-me-then-delete-for-everyone (or vice versa) on the same op
-    /// keeps whichever landed first, which is acceptable for now.
+    /// stored or synced. Reasons are first-write-wins, with one deliberate
+    /// exception: a `DeletedForMe` upgrades an existing `DeletedForEveryone` (so
+    /// a message I deleted for myself vanishes even when it's also deleted for
+    /// everyone). Every other combination keeps the existing reason; any future
+    /// reason's precedence must be spelled out here explicitly rather than
+    /// riding on a general rule.
     async fn add_tombstone(
         &self,
         topic: TopicId,
@@ -595,11 +583,17 @@ impl OpProjection {
         reason: TombstoneReason,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT OR IGNORE INTO tombstones (topic_id, op_hash, reason) VALUES (?, ?, ?)",
+            "INSERT INTO tombstones (topic_id, op_hash, reason) VALUES (?, ?, ?)
+             ON CONFLICT(topic_id, op_hash) DO UPDATE SET reason = excluded.reason
+             WHERE excluded.reason = ? AND tombstones.reason = ?",
         )
         .bind(topic.as_bytes().to_vec())
         .bind(op_hash.as_bytes().to_vec())
         .bind(reason.to_db())
+        // Only the specific DeletedForEveryone -> DeletedForMe upgrade replaces
+        // an existing reason.
+        .bind(TombstoneReason::DeletedForMe.to_db())
+        .bind(TombstoneReason::DeletedForEveryone.to_db())
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -779,6 +773,23 @@ mod tests {
         assert!(db.is_tombstoned(topic_b, hash1).await.unwrap());
         assert!(!db.is_tombstoned(topic_b, hash2).await.unwrap());
         assert_eq!(db.tombstone_reason(topic_b, hash2).await.unwrap(), None);
+
+        // Delete-for-me always wins: it upgrades an existing delete-for-everyone,
+        // and a later delete-for-everyone never downgrades it back.
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForMe)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
 
         assert_eq!(
             db.tombstoned_hashes(topic_a).await.unwrap(),
