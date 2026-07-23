@@ -18,10 +18,11 @@
 		flex-direction: column;
 		height: 100vh;
 		width: 100%;
-		/* The keyboard overlays the webview without resizing it; the plugin
-		   maintains --keyboard-height per frame, so this padding shrinks the
-		   content in lockstep with the keyboard on every screen. */
-		padding-bottom: var(--keyboard-height, 0px);
+		/* The keyboard overlays the webview without resizing it; the plugin sets
+		   --keyboard-inset-height once per transition, so this padding reserves the
+		   keyboard's space on every screen. Nodes that should glide into that space
+		   rather than jump register with renderAboveKeyboard. */
+		padding-bottom: var(--keyboard-inset-height, 0px);
 	}
 
 	.mobile-content {

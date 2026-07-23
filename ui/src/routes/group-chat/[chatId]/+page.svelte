@@ -307,7 +307,7 @@
 
 	<div
 		bind:clientHeight={bottomBarHeight}
-		class="absolute bottom-0 inset-x-0 z-30"
+		class="absolute bottom-0 inset-x-0 z-30 pb-grounded-safe"
 		class:bg-page-surface={theme === 'material'}
 	>
 		{#await Promise.all([$me, $info]) then [me, info]}

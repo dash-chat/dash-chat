@@ -354,3 +354,16 @@ wa-dropdown-item {
 wa-dropdown-item::part(icon) {
 	width: 42px;
 }
+
+/* Home-indicator padding for the bottom-most element above the keyboard slot,
+   applied only while it's grounded — i.e. while nothing occupies the slot below
+   it. Tied to --keyboard-inset-height so it flips in the same reflow as the inset,
+   never lagging into a bounce. The large multiplier drives the subtraction
+   sharply negative for any non-zero inset, so max() clamps it to 0; the inset is
+   only ever 0 or its target, never an intermediate. */
+.pb-grounded-safe {
+	padding-bottom: max(
+		0px,
+		calc(env(safe-area-inset-bottom, 0px) - var(--keyboard-inset-height, 0px) * 999)
+	);
+}

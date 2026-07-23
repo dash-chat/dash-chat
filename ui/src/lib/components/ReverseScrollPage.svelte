@@ -21,6 +21,7 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { findNavbarBg } from '$lib/utils/konsta';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 
 	interface PageColors {
 		bgIos?: string;
@@ -271,7 +272,7 @@
 		pageObserver.observe(pageEl, { childList: true, subtree: false });
 
 		// Re-evaluate when the node shrinks/grows (e.g. the layout's
-		// --keyboard-height padding squeezing it while the keyboard opens) —
+		// --keyboard-inset-height padding squeezing it while the keyboard opens) —
 		// clientHeight changes shift maxScroll, so the opacity formula needs to
 		// re-run even when scrollTop itself didn't move.
 		const resizeObserver = new ResizeObserver(scheduleUpdate);
@@ -306,9 +307,11 @@
 		style="overflow-anchor: none"
 		{...scrollProps}
 	>
+		<div style="flex: 1 0 auto"></div>
 		<div
 			bind:this={innerEl}
-			style="flex: 1 0 auto; padding-top: var(--chat-navbar-height, 0px);"
+			use:renderAboveKeyboard
+			style="flex: 0 0 auto; padding-top: var(--chat-navbar-height, 0px);"
 		>
 			{@render children?.()}
 		</div>

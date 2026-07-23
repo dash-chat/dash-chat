@@ -16,6 +16,8 @@ allowBuilds:
   "@gbyte/tauri-plugin-ios-photos": true
   # Builds dist via its `prepare` script when installed from the git repo.
   tauri-plugin-virtual-keyboard: true
+  appium: true
+  sharp: true
 
 patchedDependencies:
   konsta@5.0.6: patches/konsta@5.0.6.patch

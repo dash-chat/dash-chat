@@ -4,8 +4,6 @@
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
-	import { useSignal } from '$lib/stores/use-signal';
-	import { keyboard } from 'tauri-plugin-virtual-keyboard';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -18,6 +16,8 @@
 	} from '$lib/utils/media';
 	import type { Hash, MessagesStore } from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
+	import { renderBelowKeyboard } from '$lib/utils/virtual-keyboard/render-below-keyboard';
 	import { showToast } from '$lib/utils/toasts';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
@@ -31,8 +31,6 @@
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
-
-	const keyboardIsOpen = useSignal(() => keyboard.isOpen.value);
 
 	interface Props {
 		value?: string;
@@ -69,9 +67,9 @@
 			return;
 		}
 		// Flip the intent right away so the attach button reacts instantly, then
-		// hand focus to the input: renderBelowKeyboard sees the close arrive with
-		// an input focused and keeps the panel's slot until the rising keyboard
-		// claims it, so the input bar stays pinned during the swap.
+		// hand focus to the input: the plugin sees the close arrive with an input
+		// focused and holds the reserved inset until the rising keyboard claims the
+		// slot, so the input bar stays pinned during the swap.
 		showMediaPanel = false;
 		messageInput?.focus();
 	}
@@ -131,6 +129,11 @@
 		}
 	}
 
+	function stageFromPanel(files: File[]) {
+		showMediaPanel = false;
+		stage(files);
+	}
+
 	async function addMore() {
 		try {
 			const files = await pickMedia('image', true);
@@ -162,12 +165,11 @@
 {/snippet}
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
-	     below it): no panel and no keyboard. -->
-	<div
-		class="message-input-bar"
-		class:pb-safe={!showMediaPanel && !$keyboardIsOpen}
-	>
+	<!-- Only the bar glides; MediaPanel is its sibling so it stays pinned to the
+	     keyboard's slot while the bar rides up over it. The bar is positioned above
+	     the (fixed, and thus positioned) panel so its glass drop-shadow lands on the
+	     panel instead of being painted over by it. -->
+	<div class="message-input-bar relative z-10" use:renderAboveKeyboard>
 		{#if !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
@@ -189,6 +191,7 @@
 				{placeholder}
 				onSend={send}
 				onpaste={onPaste}
+				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
 			>
 				{#snippet after()}
@@ -227,7 +230,17 @@
 	</div>
 
 	{#if isMobile}
-		<MediaPanel bind:open={showMediaPanel} onFiles={stage} />
+		<div
+			use:renderBelowKeyboard={{ open: showMediaPanel }}
+			class="bg-page-surface fixed bottom-0 inset-x-0"
+		>
+			{#if showMediaPanel}
+				<MediaPanel
+					onFiles={stageFromPanel}
+					onPickerOpen={() => (showMediaPanel = false)}
+				/>
+			{/if}
+		</div>
 	{/if}
 </div>
 

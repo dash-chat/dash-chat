@@ -32,7 +32,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
 
-tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", branch = "native-keyboard-control" }
+tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "de5573f3f87547c3ed0721bd42d0ff4b85e5a420" }
 tauri-plugin-mailto = { git = "https://github.com/dash-chat/tauri-plugin-mailto", branch = "main" }
 tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "push-notifications", features = [
   "push-notifications-fcm",
