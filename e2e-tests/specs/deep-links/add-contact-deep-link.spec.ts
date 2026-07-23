@@ -13,25 +13,21 @@ describe('Deep links', () => {
 	});
 
 	describe('add-contact deep link', () => {
-		it('shows an error toast for an invalid contact code', async () => {
+		it('shows an error toast for an invalid contact code without navigating', async () => {
 			await agent1.handleDeepLink(
 				'https://dashchat.org/add-contact/invalidcode',
 			);
-			await agent1.addContactPage.ready();
 			await agent1.toast.expectMessage(
 				await agent1.tr('errorAddContactInvalidLink'),
 			);
-			await agent1.addContactPage.back.click();
 			await agent1.homePage.ready();
 		});
 
 		it('shows an error toast for a scheme-based deep link with an invalid contact code', async () => {
 			await agent1.handleDeepLink('dash-chat://add-contact/invalidcode');
-			await agent1.addContactPage.ready();
 			await agent1.toast.expectMessage(
 				await agent1.tr('errorAddContactInvalidLink'),
 			);
-			await agent1.addContactPage.back.click();
 			await agent1.homePage.ready();
 		});
 

@@ -3,16 +3,13 @@
 	import { fade } from 'svelte/transition';
 	import { untrack, type Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { keyboard } from 'tauri-plugin-virtual-keyboard';
 	import {
-		keyboard,
 		preserveKeyboardSpace,
 		releaseKeyboardSpace,
-	} from '$lib/utils/keyboard.svelte';
-	import { safeAreaInsets } from '$lib/utils/safe-area';
-	import {
-		hideKeyboard,
 		reopenComposerKeyboard,
-	} from '$lib/utils/virtual-keyboard';
+	} from '$lib/utils/virtual-keyboard/keyboard-space.svelte';
+	import { safeAreaInsets } from '$lib/utils/safe-area';
 
 	interface Props {
 		/** Whether the overlay is showing. */
@@ -47,11 +44,11 @@
 		if (opened) spotlighted = true;
 	});
 
-	// The keyboard gives way to the overlay — hidden explicitly, since only
-	// some WebViews retract it on long-press and only some of the time —
-	// while the composer keeps an empty spacer in its slot so the input bar
-	// doesn't drop to the bottom. Dismissing the overlay refocuses the
-	// composer and brings the keyboard back into the reserved space.
+	// The keyboard gives way to the overlay: preserving its space opens the
+	// composer's below-keyboard surface empty, which retracts the keyboard
+	// natively while the surface keeps the input bar pinned in its place.
+	// Dismissing the overlay refocuses the composer and re-summons the
+	// keyboard into the reserved slot.
 	// Tracked with a plain variable and an explicit open→close transition
 	// (not an effect cleanup): the effect can re-run spuriously while the
 	// overlay stays open, and a cleanup-based restore would re-summon the
@@ -60,17 +57,12 @@
 
 	$effect(() => {
 		if (opened) {
-			if (untrack(() => keyboard.isOpen)) {
+			if (untrack(() => keyboard.isOpen.value)) {
 				restoreKeyboard = true;
 				preserveKeyboardSpace();
-				hideKeyboard();
 			}
 		} else if (restoreKeyboard) {
 			restoreKeyboard = false;
-			// Not released here: the composer's spacer releases it once the
-			// rising keyboard has reclaimed the slot. Releasing earlier flashes
-			// the bar's safe-area padding on for the frames where neither the
-			// keyboard nor the preserved slot is there.
 			reopenComposerKeyboard();
 		}
 	});
@@ -125,12 +117,11 @@
 		};
 	});
 
-	// Where the target was when it was pressed — that position, not wherever
-	// the layout re-anchors it once the keyboard hides, is the reference the
-	// overlay pins the message to, like Signal does — plus the minimal
-	// vertical shift that fits the whole ensemble (reaction bar, message,
-	// actions menu) inside the viewport the overlay ends up on: the current
-	// one plus whatever the closing keyboard frees. Both are computed once at
+	// Where the target was when it was pressed is the reference the overlay
+	// pins the message to, like Signal does — plus the minimal vertical shift
+	// that fits the whole ensemble (reaction bar, message, actions menu)
+	// inside the full viewport, which the retracting keyboard uncovers (it
+	// overlays the webview, so nothing resizes). Both are computed once at
 	// open; nothing here re-runs while the keyboard animates away.
 	let baseRect = $state<DOMRect>();
 	let bump = $state(0);
@@ -153,9 +144,7 @@
 			if (!aboveEl || !belowEl) return 0;
 			const { top: safeTop, bottom: safeBottom } = safeAreaInsets();
 			const bottomLimit =
-				(window.visualViewport?.height ?? window.innerHeight) +
-				keyboard.height -
-				safeBottom;
+				(window.visualViewport?.height ?? window.innerHeight) - safeBottom;
 			let next = 0;
 			const menuBottom = base.bottom + GAP + belowEl.offsetHeight + MARGIN;
 			if (menuBottom > bottomLimit) next -= menuBottom - bottomLimit;
