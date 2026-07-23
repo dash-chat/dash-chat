@@ -14,6 +14,7 @@
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 
 	interface Props {
 		media: DraftMedia | undefined;
@@ -53,7 +54,12 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#snippet emojiButton()}
-	<EmojiButton onClick={() => (showEmojiPicker = true)} />
+	<EmojiButton
+		onClick={() => {
+			hideKeyboard();
+			showEmojiPicker = true;
+		}}
+	/>
 {/snippet}
 
 <div

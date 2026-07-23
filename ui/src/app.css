@@ -294,10 +294,26 @@ emoji-picker {
 	opacity: 0.5;
 }
 
+:root {
+	/* The bottom space the app must not lay out into: the keyboard/slot inset
+	   while occupied (the inset always covers the safe area when active), the
+	   home-indicator safe area otherwise. Flips in the same reflow as the
+	   inset. The keyboard-aware sibling of env(safe-area-inset-bottom). */
+	--keyboard-safe-bottom: max(
+		var(--keyboard-inset-height, 0px),
+		env(safe-area-inset-bottom, 0px)
+	);
+}
+
+.pb-keyboard-safe {
+	padding-bottom: var(--keyboard-safe-bottom);
+}
+
 .fixed-action-btn {
 	position: fixed;
 	inset-inline-end: 1rem;
-	bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem);
+	/* Viewport-fixed, so a padded ancestor can't lift it above the keyboard. */
+	bottom: calc(var(--keyboard-safe-bottom, 0px) + 1rem);
 }
 .k-block-title {
 	margin-top: 1rem;
@@ -353,17 +369,4 @@ wa-dropdown-item {
 
 wa-dropdown-item::part(icon) {
 	width: 42px;
-}
-
-/* Home-indicator padding for the bottom-most element above the keyboard slot,
-   applied only while it's grounded — i.e. while nothing occupies the slot below
-   it. Tied to --keyboard-inset-height so it flips in the same reflow as the inset,
-   never lagging into a bounce. The large multiplier drives the subtraction
-   sharply negative for any non-zero inset, so max() clamps it to 0; the inset is
-   only ever 0 or its target, never an intermediate. */
-.pb-grounded-safe {
-	padding-bottom: max(
-		0px,
-		calc(env(safe-area-inset-bottom, 0px) - var(--keyboard-inset-height, 0px) * 999)
-	);
 }
