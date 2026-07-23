@@ -165,10 +165,6 @@
 {/snippet}
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<!-- Only the bar glides; MediaPanel is its sibling so it stays pinned to the
-	     keyboard's slot while the bar rides up over it. The bar is positioned above
-	     the (fixed, and thus positioned) panel so its glass drop-shadow lands on the
-	     panel instead of being painted over by it. -->
 	<div class="message-input-bar relative z-10" use:renderAboveKeyboard>
 		{#if !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
