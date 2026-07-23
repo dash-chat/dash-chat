@@ -1,6 +1,6 @@
 use dashchat_node::{
-    AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia, RemoveGroupMemberError,
-    stores::TombstoneReason,
+    stores::TombstoneReason, AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia,
+    RemoveGroupMemberError,
 };
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
@@ -107,7 +107,7 @@ pub async fn delete_message(
 ) -> Result<Hash, String> {
     let node = app_node.get().await?;
     let header = node
-        .delete_message(chat_id, target_hash)
+        .delete_message_for_everyone(chat_id, target_hash)
         .await
         .map_err(|err| format!("{err:?}"))?;
     Ok(header.hash())

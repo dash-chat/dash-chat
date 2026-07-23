@@ -90,7 +90,7 @@ pub fn collect_deletable_edit_chain(
 /// `Message` operation and return its hash. Unlike
 /// [`collect_deletable_edit_chain`] this imposes no "must be the latest edit"
 /// restriction — `target` may be any operation in the chain — because
-/// delete-for-me deletes a whole message regardless of which version the caller
+/// delete-for-me deletes a whole message chain regardless of which edit the caller
 /// happened to point at.
 pub fn resolve_message_root(
     valid_ops: &HashMap<Hash, ChatOp>,
@@ -114,12 +114,9 @@ pub fn resolve_message_root(
 /// Every operation reachable forward from `root` through the edit graph: the
 /// root plus every edit that (transitively) targets it. Used to tombstone a
 /// whole message chain given only its original op. Only ops present in
-/// `valid_ops` (i.e. still carrying a body) are reachable — already body-less
+/// `valid_ops` (i.e. still carrying a body) are reachable. Already body-less
 /// members carry no `edit_hash` pointer and don't need re-tombstoning.
-pub fn forward_edit_closure(
-    valid_ops: &HashMap<Hash, ChatOp>,
-    root: Hash,
-) -> BTreeSet<Hash> {
+pub fn forward_edit_closure(valid_ops: &HashMap<Hash, ChatOp>, root: Hash) -> BTreeSet<Hash> {
     let mut chain = BTreeSet::from([root]);
     loop {
         let mut grew = false;

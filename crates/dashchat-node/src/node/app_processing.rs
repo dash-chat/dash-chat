@@ -611,14 +611,9 @@ impl Node {
             }
 
             Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(delete)) => {
-                // `reduce` (above) tombstoned the message and its whole current
-                // edit chain in the *chat* topic (this op lives in the device
-                // group topic). Drop the bodies of that chain — pre-existing edits
-                // aren't reprocessed, so their bodies won't be dropped by the
-                // enforce-on-arrival path. `reduce` records tombstones without
-                // touching bodies, so the chain is still resolvable here via
-                // `valid_chat_ops` (which only excludes body-less ops). Unlike
-                // delete-for-everyone, a `DeleteForMe` op is never shared with the
+                // Drop the payloads referenced by the delete.
+                //
+                // Unlike `DeleteForEveryone`, a `DeleteForMe` op is never shared with the
                 // other chat participants, so their copies are untouched. We fall
                 // through to `notify_payload` below so the frontend re-reads the
                 // tombstone set and drops the message from its chat view.

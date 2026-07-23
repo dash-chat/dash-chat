@@ -44,11 +44,7 @@ const MIGRATIONS: &[&str] = &[
     )",
 ];
 
-/// Why an operation was tombstoned. Recorded per tombstone so the frontend can
-/// tell a delete-for-everyone (which still renders a "deleted" placeholder for
-/// the message's author) apart from a delete-for-me (which vanishes with no
-/// trace). An edit that targets a `DeletedForMe` tombstoned operation inherits
-/// its referent's reason (see [`OpProjection::reduce`]).
+/// Why an operation was tombstoned.
 //
 // TODO: ACID: The tombstone state for `DeletedForMe` is actually required for
 // full reconstruction of the OpProjection, because when operations are dropped,
@@ -330,14 +326,6 @@ impl OpProjection {
                     self.unblock_agent(*agent_id).await?;
                 }
                 DeviceGroupPayload::DeleteForMe(delete) => {
-                    // Tombstone the message and its whole edit chain in the *chat*
-                    // topic (this op lives in the device group topic). The payload
-                    // names only the original message; we walk the edits it has
-                    // *now* forward from it, and future edits are caught by the
-                    // `EditMessage` arm above. No authorship check — I may delete
-                    // any message from my own devices — and no mailbox scrubbing:
-                    // the op never reaches the other participants, so their copies
-                    // stay intact.
                     self.tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
                         .await?;
                 }
@@ -549,9 +537,7 @@ impl OpProjection {
     }
 
     /// Tombstone `root` and its entire current edit chain in `chat_id` with
-    /// [`TombstoneReason::DeletedForMe`]. Walks forward from `root` through the
-    /// edits present now; edits that arrive later are caught by the
-    /// `EditMessage` arm of [`Self::reduce`].
+    /// [`TombstoneReason::DeletedForMe`].
     async fn tombstone_message_for_me(
         &self,
         chat_id: ChatId,
@@ -569,13 +555,12 @@ impl OpProjection {
     }
 
     /// Record an operation hash in the per-topic tombstone set with the reason
-    /// it was tombstoned. Payloads for tombstoned operations must never be
-    /// stored or synced. Reasons are first-write-wins, with one deliberate
+    /// it was tombstoned.
+    ///
+    /// Reasons are first-write-wins, with one deliberate
     /// exception: a `DeletedForMe` upgrades an existing `DeletedForEveryone` (so
     /// a message I deleted for myself vanishes even when it's also deleted for
-    /// everyone). Every other combination keeps the existing reason; any future
-    /// reason's precedence must be spelled out here explicitly rather than
-    /// riding on a general rule.
+    /// everyone). Every other combination keeps the existing reason.
     async fn add_tombstone(
         &self,
         topic: TopicId,

@@ -1079,7 +1079,7 @@ impl Node {
     /// `DeleteMessage` payload; processing it tombstones every operation in the
     /// chain. See [`DeleteError`](crate::chat::DeleteError).
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn delete_message(
+    pub async fn delete_message_for_everyone(
         &self,
         topic: impl Into<ChatId>,
         target: Hash,
@@ -1109,15 +1109,8 @@ impl Node {
 
     /// Delete a previously-sent message only for my own device group.
     ///
-    /// Unlike [`Self::delete_message`] (delete for everyone), this publishes a
-    /// `DeleteForMe` operation to the private device group topic, so only my own
-    /// devices see it and the deletion eventually syncs to all of them. There is
-    /// no delete window and no authorship restriction — any message (mine or a
-    /// peer's) can be deleted from my own devices. The payload names only the
-    /// original message; the receiver tombstones it and its edit chain (present
-    /// and future). The message stays visible to the other participants.
-    ///
-    /// `target` may be any operation in the message's edit chain (typically the
+    /// Unlike [`Self::delete_message_for_everyone`], the `target` here
+    /// may be any operation in the message's edit chain (typically the
     /// latest edit shown in the UI); it is resolved back to the original message
     /// so the whole chain is captured.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]

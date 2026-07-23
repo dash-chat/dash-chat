@@ -1,5 +1,5 @@
 //! Delete-for-me tests: a `DeleteForMe` operation lives in the author's private
-//! device group, names only the original message, and tombstones that message
+//! device group, references only the original message, and tombstones that message
 //! plus its whole edit chain (present and future) locally — never touching the
 //! peer or the shared mailbox, so the message stays visible to the other
 //! participant. Unlike delete-for-everyone there is no authorship restriction
@@ -204,7 +204,7 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
 
 /// An edit that arrives *after* a delete-for-me is tombstoned transitively — a
 /// peer editing a message I already deleted for myself can't resurrect it. This
-/// is the reason `DeleteForMe` names only the original message: the whole chain,
+/// is the reason `DeleteForMe` references only the original message: the whole chain,
 /// including edits that don't exist yet, is caught on the receiving side.
 #[tokio::test(flavor = "multi_thread")]
 async fn delete_for_me_hides_edits_arriving_after_the_delete() {
@@ -316,7 +316,10 @@ async fn delete_for_me_of_an_already_deleted_for_everyone_message() {
     })
     .await
     .unwrap();
-    bobbi.delete_message(chat, msg.hash()).await.unwrap();
+    bobbi
+        .delete_message_for_everyone(chat, msg.hash())
+        .await
+        .unwrap();
 
     // Alice sees the delete-for-everyone tombstone; the body is gone.
     poll.wait_for(|| async {
