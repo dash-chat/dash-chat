@@ -1,4 +1,10 @@
-import { type ReactiveFn, ReactivePromise, watcher } from 'signalium';
+import {
+	type Equals,
+	type ReactiveFn,
+	ReactivePromise,
+	reactive,
+	watcher,
+} from 'signalium';
 import { type Readable } from 'svelte/store';
 
 import { getKeepAliveScope } from './keep-alive-scope.svelte';
@@ -139,4 +145,31 @@ export function useReactivePromise<
 			};
 		},
 	};
+}
+
+/**
+ * `useReactivePromise` for several async reactives at once: resolves to a tuple
+ * of their values, so one `{#await}` — keeping its `:then`/`:catch` arms — can
+ * gate a branch that needs all of them, instead of nesting an `{#await}` per
+ * store.
+ *
+ *     useReactivePromises(() => [contactsStore.profiles(agentId), store.info()])
+ */
+export function useReactivePromises<
+	const T extends readonly ReactivePromise<unknown>[],
+>(
+	sources: () => T,
+): Readable<Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }>> {
+	type Values = { -readonly [K in keyof T]: Awaited<T[K]> };
+
+	const sameValues = (a: readonly unknown[], b: readonly unknown[]) =>
+		a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
+
+	// signalium runs an async reactive's `equals` against the resolved value but
+	// types it against the promise.
+	const equals = sameValues as unknown as Equals<Promise<Values>>;
+
+	return useReactivePromise(
+		reactive(async () => await ReactivePromise.all(sources()), { equals }),
+	);
 }
