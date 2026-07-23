@@ -49,6 +49,15 @@ const MIGRATIONS: &[&str] = &[
 /// the message's author) apart from a delete-for-me (which vanishes with no
 /// trace). An edit that targets a `DeletedForMe` tombstoned operation inherits
 /// its referent's reason (see [`OpProjection::reduce`]).
+//
+// TODO: ACID: The tombstone state for `DeletedForMe` is actually required for
+// full reconstruction of the OpProjection, because when operations are dropped,
+// there is nothing left to establish the edit chain and to know to transitively
+// tombstone new Edits that may come in. This means that purging the OpProjection
+// and replaying the operation streams is not sufficient to restore the OpProjection.
+// Possible solutions include:
+// - Storing EditMessage references on the Header as a custom extension (requires p2panda support)
+// - Persisting either edit chains or tombstones in a non-purgable store so that it can be used for projection reconstruction
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TombstoneReason {
     DeletedForEveryone,
