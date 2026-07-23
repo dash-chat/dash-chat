@@ -1342,6 +1342,10 @@ impl Node {
             "adding contact",
         );
 
+        if contact.device_pubkey == self.device_id() {
+            return Err(AddContactError::CannotAddSelf);
+        }
+
         // Register the scanned contact as a bootstrap so p2panda discovery can
         // reach it directly over the internet (relay + pkarr), rather than
         // depending on a mutually-reachable mailbox to introduce the two nodes.

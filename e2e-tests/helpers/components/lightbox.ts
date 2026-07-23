@@ -6,6 +6,7 @@ export class Lightbox extends TestHelper {
 	root = this.el(tid('lightbox'));
 	image = this.el(tid('lightbox-image'));
 	close = this.el(tid('lightbox-close'));
+	back = this.el(tid('lightbox-back'));
 	save = this.el(tid('lightbox-save'));
 	prev = this.el(tid('lightbox-prev'));
 	next = this.el(tid('lightbox-next'));
@@ -51,6 +52,16 @@ export class Lightbox extends TestHelper {
 
 	async isOpen(): Promise<boolean> {
 		return this.root.isExisting();
+	}
+
+	/** Close via the header control: the close button, or the back arrow that
+	 * replaces it on Android. */
+	async clickClose(): Promise<void> {
+		if (await this.close.isExisting()) {
+			await this.close.click();
+			return;
+		}
+		await this.back.click();
 	}
 
 	/** The blob URL of the currently displayed photo. */

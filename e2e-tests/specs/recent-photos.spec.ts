@@ -31,10 +31,11 @@ describe('Recent photos strip', () => {
 			this.skip();
 		}
 
+		// Tapping a strip photo stages it and opens the full-screen staged-media
+		// page, so only one photo can be picked from the strip per staging (more
+		// go through "add more" → the native picker, which can't be driven).
 		await composer.recentPhotos.tile(0).click();
 		await composer.expectStagedPhotoCount(1);
-		await composer.recentPhotos.tile(1).click();
-		await composer.expectStagedPhotoCount(2);
 
 		await composer.type('from recents');
 		await composer.send();
