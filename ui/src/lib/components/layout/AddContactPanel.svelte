@@ -3,22 +3,17 @@
 	import { getContext } from 'svelte';
 	import {
 		fullName,
-		pendingChatKey,
 		type ContactsStore,
 		type SettingsStore,
 	} from 'dash-chat-stores';
-	import type { AddContactError } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		Page,
 		Navbar,
 		NavbarBackLink,
-		ListInput,
-		List,
 		Preloader,
 		Button,
 		useTheme,
@@ -26,18 +21,21 @@
 		TabbarLink,
 		Tabbar,
 	} from 'konsta/svelte';
-	import { goto, replaceState } from '$app/navigation';
-	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
+	import { mdiContentCopy } from '@mdi/js';
+	import { copyLinkToClipboard } from '$lib/utils/clipboard';
+	import BorderedBox from '$lib/components/BorderedBox.svelte';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { saveQrCode, shareQrCode } from '$lib/utils/save-qr-code';
 	import {
 		toDeepLink,
-		extractCodeFromDeepLink,
+		addContactFromDeepLink,
 	} from '$lib/deep-links/add-contact';
 	import { defaultQrColor } from '$lib/utils/qrcode';
 	import SelectColor from './SelectColor.svelte';
 	import QrCodeCard from '$lib/components/QrCodeCard.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
+	import QrLinkSheet from '$lib/components/contacts/QrLinkSheet.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
 	import QrCodeUploader from '$lib/components/contacts/QrCodeUploader.svelte';
 
@@ -65,73 +63,14 @@
 	let scannerRef: QrCodeScanner | null = $state(null);
 	let uploaderRef: QrCodeUploader | null = $state(null);
 
-	$effect(() => {
-		const code = page.url.searchParams.get('code');
-		if (code) void handleCodeFromQueryParam(code);
-	});
-
-	async function handleCodeFromQueryParam(code: string) {
-		const url = new URL(page.url);
-		url.searchParams.delete('code');
-		replaceState(url, page.state);
-
-		await receiveCode(code);
-	}
-
-	async function receiveDeepLink(input: string) {
-		const code = extractCodeFromDeepLink(input.trim());
-		if (code === null) {
-			showToast(m.errorAddContactInvalidLink(), 'error');
-			return;
-		}
-
-		await receiveCode(code);
-	}
-
-	async function receiveCode(code: string) {
-		try {
-			const myCodeString = await myCode;
-
-			if (code === myCodeString) {
-				showToast(m.cantAddYourselfAsContact(), 'error');
-				return;
-			}
-
-			const devicePubkey = await contactsStore.client.addContact(code);
-			showToast(m.contactRequestSent());
-
-			const knownAgent =
-				await contactsStore.client.agentForDevice(devicePubkey);
-			goto(`/direct-chats/${knownAgent ?? pendingChatKey(devicePubkey)}`);
-		} catch (e) {
-			console.error(e);
-			const error = e as AddContactError;
-			switch (error.kind) {
-				case 'ProfileNotCreated':
-					showToast(m.errorAddContactProfileRequired(), 'error');
-					break;
-				case 'InvalidContactCode':
-					showToast(m.errorAddContactInvalidLink(), 'error');
-					break;
-				case 'AddDeviceNotSupported':
-					showToast(m.errorAddContactDeviceLinkingNotSupported(), 'error');
-					break;
-				case 'InitializeTopic':
-				case 'AuthorOperation':
-				case 'CreateQrCode':
-				case 'CreateDirectChat':
-				case 'StoreContact':
-					showToast(m.errorAddContact(), 'error');
-					break;
-				default:
-					showToast(m.errorUnexpected(), 'unexpected', e);
-			}
-		}
+	function receiveDeepLink(link: string) {
+		return addContactFromDeepLink(contactsStore, link);
 	}
 
 	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
 	let colorForPicker = $state(defaultQrColor());
+	let linkSheetOpen = $state(false);
 
 	async function getMyName(): Promise<string> {
 		const profile = await contactsStore.myProfile();
@@ -288,44 +227,45 @@
 									label={name}
 									{color}
 									copyButtonTestId="add-contact-copy-btn"
-									copiedMessage={m.copiedCodeToClipboard()}
 								/>
 
 								<QrActionButtons
 									{isMobile}
+									onLink={() => {
+										linkSheetOpen = true;
+									}}
 									onShare={() => shareCode(deepLink)}
 									onSave={() => saveCode(deepLink, color)}
 									onUpload={() => uploaderRef?.trigger()}
 									onOpenColorPicker={openColorPicker}
 								/>
 
+								<QrLinkSheet
+									opened={linkSheetOpen}
+									link={deepLink}
+									onClose={() => (linkSheetOpen = false)}
+								/>
+
+								{#if !isMobile}
+									<BorderedBox
+										class="row w-full items-center gap-3"
+										data-testid="add-contact-copy-link-box"
+									>
+										<IconButton
+											icon={mdiContentCopy}
+											label={m.copy()}
+											testid="add-contact-copy-link-btn"
+											onClick={() => void copyLinkToClipboard(deepLink)}
+											class="shrink-0"
+										/>
+										<span class="break-all text-start text-sm">{deepLink}</span>
+									</BorderedBox>
+								{/if}
+
 								<span
-									class="mx-2 mb-2 text-center quiet"
+									class="mx-6 mb-2 text-center quiet"
 									style="font-size: 13px">{m.shareCodeWarning()}</span
 								>
-
-								<div class="column gap-1">
-									<List
-										nested
-										strongIos
-										inset={isWideScreen.value || theme === 'ios'}
-									>
-										<ListInput
-											floatingLabel
-											label={m.enterYourContactsLink()}
-											type="text"
-											outline
-											data-testid="add-contact-link-input"
-											onInput={async (e: Event) => {
-												const target = e.target as HTMLInputElement;
-												if (target.value) {
-													await receiveDeepLink(target.value);
-													target.value = '';
-												}
-											}}
-										/>
-									</List>
-								</div>
 							</div>
 						</div>
 						<QrCodeUploader

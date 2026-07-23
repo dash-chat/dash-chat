@@ -209,3 +209,16 @@ async fn test_inbox_two_way_flow() {
 
     assert_eq!(acked_profile.name, "alice");
 }
+
+/// Adding your own contact code must be rejected.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cannot_add_self_as_contact() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+
+    let qr = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
+    let result = alice.add_contact(qr).await;
+
+    assert!(matches!(result, Err(AddContactError::CannotAddSelf)));
+}

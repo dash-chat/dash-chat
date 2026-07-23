@@ -40,7 +40,6 @@ pub fn run() {
     #[cfg(mobile)]
     {
         builder = builder
-            .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
             .plugin(tauri_plugin_view::init())
             .plugin(tauri_plugin_system_bars_styles::init());
@@ -88,7 +87,7 @@ pub fn run() {
         if cfg!(feature = "e2e-tests") {
             // E2E tests run multiple built instances side-by-side;
             // skip single-instance, updater, and MCP bridge plugins.
-        } else {
+        } else if !tauri::is_dev() {
             // single-instance must be registered before deep-link so it can
             // forward deep link URLs from a second process to this one.
             builder = builder
@@ -165,6 +164,7 @@ pub fn run() {
             #[cfg(feature = "e2e-tests")]
             commands::testing::close_iroh_endpoint,
         ])
+        .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())

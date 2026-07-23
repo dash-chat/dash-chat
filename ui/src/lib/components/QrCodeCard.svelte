@@ -4,33 +4,24 @@
 	import { Button, Card } from 'konsta/svelte';
 	import { mdiContentCopy } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { writeText } from '$lib/utils/clipboard';
-	import { showToast } from '$lib/utils/toasts';
-	import { m } from '$lib/paraglide/messages.js';
+	import { copyLinkToClipboard } from '$lib/utils/clipboard';
 
 	let {
 		value,
 		color,
 		copyButtonTestId,
 		label,
-		copiedMessage = m.copiedToClipboard(),
 	}: {
 		value: string;
 		color: string;
 		copyButtonTestId: string;
 		label?: string | undefined;
-		copiedMessage?: string;
 	} = $props();
 
 	const isWhite = $derived(color === '#ffffff');
-
-	async function copyLink() {
-		await writeText(value);
-		showToast(copiedMessage);
-	}
 </script>
 
-<Card class="qr-card qr-code-card p-2.5 pb-2" style="background-color: {color}">
+<Card class="qr-card qr-code-card p-4 pb-0" style="background-color: {color}">
 	<div class="column" style="align-items: center">
 		<div
 			class="column w-full p-3"
@@ -40,7 +31,7 @@
 			></wa-qr-code>
 		</div>
 
-		<div class="py-1">
+		<div class="pt-2 pb-1">
 			<Button
 				colors={{
 					touchRipple: isWhite ? 'black' : 'white',
@@ -51,7 +42,7 @@
 				clearMaterial
 				small
 				data-testid={copyButtonTestId}
-				onClick={copyLink}
+				onClick={() => void copyLinkToClipboard(value)}
 			>
 				<wa-icon src={wrapPathInSvg(mdiContentCopy)}> </wa-icon>
 				<div class="truncate max-w-40">

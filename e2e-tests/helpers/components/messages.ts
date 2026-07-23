@@ -1,7 +1,7 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-import { Composer } from './composer';
 import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
+import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
 // Driver for a chat's rendered message list — the messages themselves plus the
@@ -183,9 +183,9 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Long-press (via a synthetic contextmenu) the bubble containing `text` to
-	 * open its message actions UI — the quick-reaction bar plus, on own
-	 * editable messages, the actions menu — and resolve the bubble's wrapper. */
+	/** Right-click (via a synthetic contextmenu) the bubble containing `text` to
+	 * open its actions menu at the cursor position, and resolve the bubble's
+	 * wrapper. */
 	async openMessageActions(text: string) {
 		const dispatched = await this.agent.execute(
 			(messagesSel: string, t: string) => {
@@ -195,10 +195,14 @@ export class Messages extends TestHelper {
 				for (const wrapper of wrappers) {
 					if (wrapper.textContent?.includes(t)) {
 						const msg = wrapper.querySelector('.message') as HTMLElement | null;
-						(msg ?? wrapper).dispatchEvent(
+						const el = msg ?? wrapper;
+						const rect = el.getBoundingClientRect();
+						el.dispatchEvent(
 							new MouseEvent('contextmenu', {
 								bubbles: true,
 								cancelable: true,
+								clientX: rect.left + rect.width / 2,
+								clientY: rect.top + rect.height / 2,
 							}),
 						);
 						return true;
@@ -210,10 +214,42 @@ export class Messages extends TestHelper {
 			text,
 		);
 		if (!dispatched) throw new Error(`Message "${text}" not found`);
-		// A quick-reaction bar exists per message; scope to this one and wait for
-		// it to actually open.
+		// An actions menu exists per message; scope to this one and wait for it
+		// to actually open.
 		const wrapper = await this.messageBubbleWithText(text);
 		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		const menu = wrapper.$(tid('message-actions-menu'));
+		await menu.waitForDisplayed();
+		return wrapper;
+	}
+
+	/** Click the hover toolbar's add-reaction button on the message containing
+	 * `text` and wait for its quick-reaction bar to open. JS-clicked because the
+	 * toolbar is hover-revealed. */
+	async openReactionBar(text: string) {
+		const wrapper = await this.messageBubbleWithText(text);
+		if (!wrapper) throw new Error(`Message "${text}" not found`);
+		const clicked = await this.agent.execute(
+			(messagesSel: string, t: string, buttonSel: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const w of wrappers) {
+					if (w.textContent?.includes(t)) {
+						const button = w.querySelector(buttonSel) as HTMLElement | null;
+						if (!button) return false;
+						button.click();
+						return true;
+					}
+				}
+				return false;
+			},
+			this.messagesSelector,
+			text,
+			tid('message-hover-react'),
+		);
+		if (!clicked)
+			throw new Error(`Add-reaction button for "${text}" not found`);
 		const bar = wrapper.$(tid('quick-reaction-bar'));
 		await bar.waitForDisplayed();
 		return wrapper;
@@ -221,7 +257,7 @@ export class Messages extends TestHelper {
 
 	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
 	async reactWith(text: string, emoji: string) {
-		const wrapper = await this.openMessageActions(text);
+		const wrapper = await this.openReactionBar(text);
 		await wrapper.$(tid(`quick-reaction-${emoji}`)).click();
 	}
 

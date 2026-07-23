@@ -1,4 +1,5 @@
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Group messages', () => {
@@ -33,11 +34,14 @@ describe('Group messages', () => {
 	});
 
 	it('renders messages from other group members with their avatar', async () => {
-		await agent2.homePage.chatListItem('mygroup').waitForExist();
+		// The group arrives over p2p sync, which can be slow on real devices.
+		await agent2.homePage.chatListItem('mygroup').waitForExist({
+			timeout: SYNC_TIMEOUT,
+		});
 		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
 
-		await agent2.groupChatPage.sendMessage('Hello from Bob!');
+		await agent2.groupChatPage.composer.sendMessage('Hello from Bob!');
 		await agent2.groupChatPage.messages.waitForMessage('Hello from Bob!');
 
 		await agent1.groupChatPage.messages.waitForMessage('Hello from Bob!');
