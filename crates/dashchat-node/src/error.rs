@@ -27,6 +27,9 @@ pub enum AddContactError {
     #[error("Profile must be created before adding contacts")]
     ProfileNotCreated,
 
+    #[error("Cannot add yourself as a contact")]
+    CannotAddSelf,
+
     #[error("Invalid contact code: {0}")]
     InvalidContactCode(String),
 
