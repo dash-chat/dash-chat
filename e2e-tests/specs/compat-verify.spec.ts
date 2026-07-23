@@ -69,10 +69,10 @@ describe('Compat verify — check data with current version', () => {
 	});
 
 	it('can send new messages after upgrade', async () => {
-		await agent1.directChatPage.sendMessage(NEW_MSG_ALICE);
+		await agent1.directChatPage.composer.sendMessage(NEW_MSG_ALICE);
 		await agent2.directChatPage.messages.waitForMessage(NEW_MSG_ALICE);
 
-		await agent2.directChatPage.sendMessage(NEW_MSG_BOB);
+		await agent2.directChatPage.composer.sendMessage(NEW_MSG_BOB);
 		await agent1.directChatPage.messages.waitForMessage(NEW_MSG_BOB);
 	});
 });

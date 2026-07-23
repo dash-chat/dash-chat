@@ -5,7 +5,6 @@
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { keyboard, releaseKeyboardSpace } from '$lib/utils/keyboard.svelte';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -23,7 +22,9 @@
 		hasBody,
 	} from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
-	import { renderBelowKeyboard } from '$lib/components/messages/composer/render-below-keyboard.svelte';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
+	import { renderBelowKeyboard } from '$lib/utils/virtual-keyboard/render-below-keyboard';
+	import { keyboardSpace } from '$lib/utils/virtual-keyboard/keyboard-space.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiPencilOutline } from '@mdi/js';
@@ -150,9 +151,9 @@
 			return;
 		}
 		// Flip the intent right away so the attach button reacts instantly, then
-		// hand focus to the input: renderBelowKeyboard sees the close arrive with
-		// an input focused and keeps the panel's slot until the rising keyboard
-		// claims it, so the input bar stays pinned during the swap.
+		// hand focus to the input: the plugin sees the close arrive with an input
+		// focused and holds the reserved inset until the rising keyboard claims the
+		// slot, so the input bar stays pinned during the swap.
 		showMediaPanel = false;
 		messageInput?.focus();
 	}
@@ -216,6 +217,11 @@
 		}
 	}
 
+	function stageFromPanel(files: File[]) {
+		showMediaPanel = false;
+		stage(files);
+	}
+
 	async function addMore() {
 		try {
 			const files = await pickMedia('image', true);
@@ -262,22 +268,12 @@
 {/snippet}
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
-	     below it): no panel, no keyboard, no preserved keyboard slot. Keying it
-	     off the panel alone bumps the bar by `env(safe-area-inset-bottom)`
-	     during the panel→keyboard swap, because the panel closes before the
-	     (visual-viewport-driven) safe area has collapsed to 0. -->
-	<div
-		class="message-input-bar"
-		class:pb-safe={!showMediaPanel &&
-			!keyboard.isOpen &&
-			!keyboard.spacePreserved}
-	>
+	<div class="message-input-bar relative z-10" use:renderAboveKeyboard>
 		{#if !editing && !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
-		<div class="m-2 row gap-2" style="align-items: center;">
+		<div class="m-2 row gap-2" style="align-items: flex-end;">
 			<!-- While editing, the cancel button sits before the input in the
 			     narrow layout and after it on wide screens; the attach buttons
 			     hide because media cannot be edited. -->
@@ -305,6 +301,7 @@
 				{placeholder}
 				onSend={send}
 				onpaste={onPaste}
+				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
 				banner={editing !== null ? editingBanner : undefined}
 			>
@@ -354,15 +351,22 @@
 	</div>
 
 	{#if isMobile}
-		<MediaPanel bind:open={showMediaPanel} onFiles={stage} />
-		<!-- Empty stand-in for the keyboard while it's hidden under the
-		     message-actions overlay, so the input bar stays put. -->
+		<!-- Also opened empty (no panel) while the keyboard hides under the
+		     message-actions overlay: the surface stands in for the keyboard so
+		     the input bar stays put. -->
 		<div
 			use:renderBelowKeyboard={{
-				open: keyboard.spacePreserved,
-				onClose: releaseKeyboardSpace,
+				open: showMediaPanel || keyboardSpace.preserved,
 			}}
-		></div>
+			class="bg-page-surface fixed bottom-0 inset-x-0"
+		>
+			{#if showMediaPanel}
+				<MediaPanel
+					onFiles={stageFromPanel}
+					onPickerOpen={() => (showMediaPanel = false)}
+				/>
+			{/if}
+		</div>
 	{/if}
 </div>
 

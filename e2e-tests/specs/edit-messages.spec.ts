@@ -1,14 +1,14 @@
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Editing messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
@@ -16,7 +16,7 @@ describe('Editing messages', () => {
 	});
 
 	it('edits a message in place and shows the "Edited" indicator on both sides', async () => {
-		await agent1.directChatPage.sendMessage('Helo world');
+		await agent1.directChatPage.composer.sendMessage('Helo world');
 		await agent1.directChatPage.messages.waitForMessage('Helo world');
 		await agent2.directChatPage.messages.waitForMessage('Helo world');
 
@@ -40,7 +40,7 @@ describe('Editing messages', () => {
 	});
 
 	it('does not offer Edit on the peer’s messages', async () => {
-		await agent2.directChatPage.sendMessage("Bob's message");
+		await agent2.directChatPage.composer.sendMessage("Bob's message");
 		await agent1.directChatPage.messages.waitForMessage("Bob's message");
 
 		await agent1.directChatPage.messages.openMessageActions("Bob's message");

@@ -102,29 +102,11 @@ export class ContactsClient implements IContactsClient {
 	}
 
 	async acceptContact(agentId: AgentId): Promise<void> {
-		await Promise.all([
-			invokeAfterSetup('accept_contact', { agentId }),
-			waitForOperation(
-				this.logsClient,
-				op =>
-					op.body?.type === 'DeviceGroupPayload' &&
-					op.body.payload.type === 'AddContact' &&
-					op.body.payload.payload.agent_id === agentId,
-			),
-		]);
+		await invokeAfterSetup('accept_contact', { agentId });
 	}
 
 	async rejectContactRequest(agentId: AgentId): Promise<void> {
-		await Promise.all([
-			invokeAfterSetup('reject_contact_request', { agentId }),
-			waitForOperation(
-				this.logsClient,
-				op =>
-					op.body?.type === 'DeviceGroupPayload' &&
-					op.body.payload.type === 'RejectContactRequest' &&
-					op.body.payload.payload === agentId,
-			),
-		]);
+		await invokeAfterSetup('reject_contact_request', { agentId });
 	}
 
 	// getContacts(): Promise<Array<VerifyingKey>> {

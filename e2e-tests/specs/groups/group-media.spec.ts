@@ -27,7 +27,7 @@ describe('Group media attachments', () => {
 		await agent1.groupChatPage.composer.attachPhotos('group');
 		await agent1.groupChatPage.composer.attachPhotos('group');
 		await agent1.groupChatPage.composer.expectStagedPhotoCount(2);
-		await agent1.groupChatPage.sendMessage('group pics');
+		await agent1.groupChatPage.composer.sendMessage('group pics');
 		await agent1.groupChatPage.messages.waitForPhotoMessage('group');
 		await agent2.groupChatPage.messages.waitForMessage('group pics');
 		await agent2.groupChatPage.messages.waitForPhotoMessage('group');

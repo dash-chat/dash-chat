@@ -3,16 +3,13 @@
 	import { fade } from 'svelte/transition';
 	import { untrack, type Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { keyboard } from 'tauri-plugin-virtual-keyboard';
 	import {
-		keyboard,
 		preserveKeyboardSpace,
 		releaseKeyboardSpace,
-	} from '$lib/utils/keyboard.svelte';
-	import { safeAreaInsets } from '$lib/utils/safe-area';
-	import {
-		hideKeyboard,
 		reopenComposerKeyboard,
-	} from '$lib/utils/virtual-keyboard';
+	} from '$lib/utils/virtual-keyboard/keyboard-space.svelte';
+	import { safeAreaInsets } from '$lib/utils/safe-area';
 
 	interface Props {
 		/** Whether the overlay is showing. */
@@ -38,20 +35,25 @@
 		below,
 	}: Props = $props();
 
-	// Stays true until the backdrop finishes fading out, so the target keeps
-	// its lift the whole time the dim is visible — dropping it earlier would
-	// flash the closing backdrop over the target.
+	// Stays true until the backdrop finishes fading out, so the target keeps its
+	// place in the stacking order the whole time the dim is visible — dropping it
+	// earlier would flash the closing backdrop over the target.
 	let spotlighted = $state(false);
+
+	function swallowClick(event: Event) {
+		event.preventDefault();
+		event.stopPropagation();
+	}
 
 	$effect(() => {
 		if (opened) spotlighted = true;
 	});
 
-	// The keyboard gives way to the overlay — hidden explicitly, since only
-	// some WebViews retract it on long-press and only some of the time —
-	// while the composer keeps an empty spacer in its slot so the input bar
-	// doesn't drop to the bottom. Dismissing the overlay refocuses the
-	// composer and brings the keyboard back into the reserved space.
+	// The keyboard gives way to the overlay: preserving its space opens the
+	// composer's below-keyboard surface empty, which retracts the keyboard
+	// natively while the surface keeps the input bar pinned in its place.
+	// Dismissing the overlay refocuses the composer and re-summons the
+	// keyboard into the reserved slot.
 	// Tracked with a plain variable and an explicit open→close transition
 	// (not an effect cleanup): the effect can re-run spuriously while the
 	// overlay stays open, and a cleanup-based restore would re-summon the
@@ -60,17 +62,12 @@
 
 	$effect(() => {
 		if (opened) {
-			if (untrack(() => keyboard.isOpen)) {
+			if (untrack(() => keyboard.isOpen.value)) {
 				restoreKeyboard = true;
 				preserveKeyboardSpace();
-				hideKeyboard();
 			}
 		} else if (restoreKeyboard) {
 			restoreKeyboard = false;
-			// Not released here: the composer's spacer releases it once the
-			// rising keyboard has reclaimed the slot. Releasing earlier flashes
-			// the bar's safe-area padding on for the frames where neither the
-			// keyboard nor the preserved slot is there.
 			reopenComposerKeyboard();
 		}
 	});
@@ -91,46 +88,77 @@
 	// the bottom when the keyboard hides, scroll compensations — cannot move
 	// it, and its parent keeps its height locked so the list doesn't reflow.
 	// Matches Signal's focused-message lift.
+	// Pin the target out of flow at its pressed spot and arm its transition. Runs
+	// once while spotlighted and tears down only when the dim has fully faded — it
+	// deliberately does NOT depend on `opened`, so dismissing doesn't re-run it and
+	// snap the styles. The transform effect below owns the open/close animation.
+	const LIFT_MS = 190;
 	$effect(() => {
 		if (!spotlighted || !target || !baseRect) return;
+		const el = target;
 		const base = baseRect;
-		const holder = target.parentElement;
+		const holder = el.parentElement;
 		if (holder) {
 			holder.style.height = `${holder.getBoundingClientRect().height}px`;
 		}
-		target.style.position = 'fixed';
-		target.style.top = `${base.top}px`;
-		target.style.left = `${base.left}px`;
-		target.style.width = `${base.width}px`;
-		target.style.margin = '0';
-		target.style.zIndex = '34';
-		let raf = 0;
-		if (bump !== 0) {
-			// Applied a frame later so the bump animates from the pressed spot.
-			raf = requestAnimationFrame(() => {
-				target.style.transition = 'top 150ms ease';
-				target.style.top = `${base.top + bump}px`;
-			});
-		}
+		el.style.position = 'fixed';
+		el.style.top = `${base.top}px`;
+		el.style.left = `${base.left}px`;
+		el.style.width = `${base.width}px`;
+		el.style.margin = '0';
+		el.style.zIndex = '34';
+		el.style.transition = `transform ${LIFT_MS}ms ease-out`;
+		// The lift puts the target above the backdrop, so its own content stays
+		// clickable — tapping a photo would open the lightbox behind the overlay.
+		// Swallowed in the capture phase, so no descendant handler runs: while
+		// spotlighted the message is there to be looked at, not used.
+		el.addEventListener('click', swallowClick, true);
 		return () => {
-			cancelAnimationFrame(raf);
-			target.style.position = '';
-			target.style.top = '';
-			target.style.left = '';
-			target.style.width = '';
-			target.style.margin = '';
-			target.style.zIndex = '';
-			target.style.transition = '';
+			el.removeEventListener('click', swallowClick, true);
+			el.style.position = '';
+			el.style.top = '';
+			el.style.left = '';
+			el.style.width = '';
+			el.style.margin = '';
+			el.style.zIndex = '';
+			el.style.transition = '';
+			el.style.transform = '';
 			if (holder) holder.style.height = '';
 		};
 	});
 
-	// Where the target was when it was pressed — that position, not wherever
-	// the layout re-anchors it once the keyboard hides, is the reference the
-	// overlay pins the message to, like Signal does — plus the minimal
-	// vertical shift that fits the whole ensemble (reaction bar, message,
-	// actions menu) inside the viewport the overlay ends up on: the current
-	// one plus whatever the closing keyboard frees. Both are computed once at
+	// The open/close animation: one GPU-composited transform transition, not a
+	// per-frame re-layout. Focused = lifted by `bump` to fit the ensemble; resting
+	// = the pressed spot. Flipping `opened` animates between them — up into focus on
+	// open, settle back on close — without re-pinning, so it's symmetric and can't
+	// stutter on an image bubble. No `scale`: scaling an image bubble by a
+	// non-integer factor filters its edge into a faint vertical seam.
+	$effect(() => {
+		if (!spotlighted || !target) return;
+		target.style.transform = opened
+			? `translateY(${bump}px)`
+			: 'translateY(0px)';
+	});
+
+	// Hold the popovers back until the target has finished lifting into place, so
+	// they scale out from the settled message instead of racing its transition. A
+	// fixed timeout, not `transitionend`: a message that already fits has bump 0 and
+	// fires no transition at all. Reset on dismiss so they close with the overlay.
+	let liftDone = $state(false);
+	$effect(() => {
+		if (!opened) {
+			liftDone = false;
+			return;
+		}
+		const t = setTimeout(() => (liftDone = true), LIFT_MS);
+		return () => clearTimeout(t);
+	});
+
+	// Where the target was when it was pressed is the reference the overlay
+	// pins the message to, like Signal does — plus the minimal vertical shift
+	// that fits the whole ensemble (reaction bar, message, actions menu)
+	// inside the full viewport, which the retracting keyboard uncovers (it
+	// overlays the webview, so nothing resizes). Both are computed once at
 	// open; nothing here re-runs while the keyboard animates away.
 	let baseRect = $state<DOMRect>();
 	let bump = $state(0);
@@ -153,9 +181,7 @@
 			if (!aboveEl || !belowEl) return 0;
 			const { top: safeTop, bottom: safeBottom } = safeAreaInsets();
 			const bottomLimit =
-				(window.visualViewport?.height ?? window.innerHeight) +
-				keyboard.height -
-				safeBottom;
+				(window.visualViewport?.height ?? window.innerHeight) - safeBottom;
 			let next = 0;
 			const menuBottom = base.bottom + GAP + belowEl.offsetHeight + MARGIN;
 			if (menuBottom > bottomLimit) next -= menuBottom - bottomLimit;
@@ -217,10 +243,10 @@
 {/if}
 
 <Popover
-	opened={opened && !contentHidden && aboveAnchor !== undefined}
+	opened={opened && liftDone && !contentHidden && aboveAnchor !== undefined}
 	target={aboveAnchor}
 	backdrop={false}
-	class="!z-[36] !w-auto !rounded-full"
+	class="!z-[36] !w-auto !rounded-full !origin-bottom [&>div]:!translate-y-0"
 >
 	<div bind:this={aboveEl}>
 		{@render above()}
@@ -228,10 +254,10 @@
 </Popover>
 
 <Popover
-	opened={opened && !contentHidden && belowAnchor !== undefined}
+	opened={opened && liftDone && !contentHidden && belowAnchor !== undefined}
 	target={belowAnchor}
 	backdrop={false}
-	class="!z-[36] !w-auto !min-w-44 [&>div]:!rounded-2xl"
+	class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0"
 >
 	<div bind:this={belowEl}>
 		{@render below()}
