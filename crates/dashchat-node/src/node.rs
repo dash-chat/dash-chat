@@ -30,7 +30,7 @@ use tokio::task::JoinHandle;
 
 use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
-    collect_deletable_edit_chain,
+    collect_deletable_edit_chain, resolve_message_root,
 };
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
@@ -1079,7 +1079,7 @@ impl Node {
     /// `DeleteMessage` payload; processing it tombstones every operation in the
     /// chain. See [`DeleteError`](crate::chat::DeleteError).
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn delete_message(
+    pub async fn delete_message_for_everyone(
         &self,
         topic: impl Into<ChatId>,
         target: Hash,
@@ -1105,6 +1105,52 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// Delete a previously-sent message only for my own device group.
+    ///
+    /// Unlike [`Self::delete_message_for_everyone`], the `target` here
+    /// may be any operation in the message's edit chain (typically the
+    /// latest edit shown in the UI); it is resolved back to the original message
+    /// so the whole chain is captured.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message_for_me(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let chat_id = topic.into();
+        let ops = self.valid_chat_ops(chat_id).await?;
+        // Resolve to the original message when we can, but fall back to the raw
+        // target when its body is gone (already deleted for everyone) or never
+        // fetched — such an op isn't in `valid_chat_ops`, and delete-for-me should
+        // still just remove it locally instead of erroring.
+        let message_hash = resolve_message_root(&ops, &target).unwrap_or(target);
+
+        let header = self
+            .publish(
+                self.device_group_topic(),
+                Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(
+                    crate::payload::DeleteForMePayload {
+                        chat_id,
+                        message_hash,
+                    },
+                )),
+                Some(&format!("delete_message_for_me({:?})", chat_id.aliased())),
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Every tombstone in a chat, paired with why it was tombstoned. The
+    /// frontend uses this to drop delete-for-me messages (and their edits) from
+    /// view while keeping the delete-for-everyone placeholders.
+    pub async fn chat_tombstones(
+        &self,
+        chat_id: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<(Hash, crate::stores::TombstoneReason)>> {
+        self.projection.tombstones(chat_id.into().into()).await
     }
 
     /// Publish a delete without validating it. For testing the receiving-side
@@ -1375,6 +1421,10 @@ impl Node {
             device_pub_key = ?contact.device_pubkey.aliased(),
             "adding contact",
         );
+
+        if contact.device_pubkey == self.device_id() {
+            return Err(AddContactError::CannotAddSelf);
+        }
 
         // Register the scanned contact as a bootstrap so p2panda discovery can
         // reach it directly over the internet (relay + pkarr), rather than

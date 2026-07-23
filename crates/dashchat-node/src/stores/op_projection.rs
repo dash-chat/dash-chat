@@ -5,10 +5,11 @@ use p2panda::operation::Header;
 use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
 use p2panda_auth::processor::GroupsArgs;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{BTreeSet, HashMap};
 
-use crate::{AgentId, DeleteCandidate, DeviceId, Profile, TopicId};
+use crate::{AgentId, DeleteCandidate, DeviceId, Profile, TopicId, forward_edit_closure};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
@@ -38,9 +39,41 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS tombstones (
         topic_id BLOB NOT NULL,
         op_hash BLOB NOT NULL,
+        reason TEXT NOT NULL,
         PRIMARY KEY (topic_id, op_hash)
     )",
 ];
+
+/// Why an operation was tombstoned.
+//
+// TODO: ACID: The tombstone state for `DeletedForMe` is actually required for
+// full reconstruction of the OpProjection, because when operations are dropped,
+// there is nothing left to establish the edit chain and to know to transitively
+// tombstone new Edits that may come in. This means that purging the OpProjection
+// and replaying the operation streams is not sufficient to restore the OpProjection.
+// Possible solutions include:
+// - Storing EditMessage references on the Header as a custom extension (requires p2panda support)
+// - Persisting either edit chains or tombstones in a non-purgable store so that it can be used for projection reconstruction
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TombstoneReason {
+    DeletedForEveryone,
+    DeletedForMe,
+}
+
+impl TombstoneReason {
+    fn to_db(self) -> String {
+        serde_json::to_value(self)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .expect("TombstoneReason serializes to a string")
+    }
+
+    fn from_db(value: &str) -> anyhow::Result<Self> {
+        Ok(serde_json::from_value(serde_json::Value::String(
+            value.to_owned(),
+        ))?)
+    }
+}
 
 /// The [`OpProjection`] is a projection of the [`crate::stores::OpStore`] that is used to make streamlined queries.
 /// It only contains data already present in the operations, just reshaped to be more queryable.
@@ -186,6 +219,42 @@ impl OpProjection {
             .collect()
     }
 
+    /// The reason `op_hash` was tombstoned in `topic`, or `None` if it isn't
+    /// tombstoned.
+    pub async fn tombstone_reason(
+        &self,
+        topic: TopicId,
+        op_hash: Hash,
+    ) -> anyhow::Result<Option<TombstoneReason>> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT reason FROM tombstones WHERE topic_id = ? AND op_hash = ?")
+                .bind(topic.as_bytes().to_vec())
+                .bind(op_hash.as_bytes().to_vec())
+                .fetch_optional(&self.pool)
+                .await?;
+        row.map(|(reason,)| TombstoneReason::from_db(&reason))
+            .transpose()
+    }
+
+    /// Every tombstone in `topic`, paired with its reason. The frontend uses
+    /// this to drop delete-for-me messages (and their edits) from view while
+    /// keeping the delete-for-everyone placeholders.
+    pub async fn tombstones(&self, topic: TopicId) -> anyhow::Result<Vec<(Hash, TombstoneReason)>> {
+        let rows: Vec<(Vec<u8>, String)> =
+            sqlx::query_as("SELECT op_hash, reason FROM tombstones WHERE topic_id = ?")
+                .bind(topic.as_bytes().to_vec())
+                .fetch_all(&self.pool)
+                .await?;
+        rows.into_iter()
+            .map(|(bytes, reason)| {
+                let arr: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("tombstone op_hash is not 32 bytes"))?;
+                Ok((Hash::from_bytes(arr), TombstoneReason::from_db(&reason)?))
+            })
+            .collect()
+    }
+
     pub async fn reduce(
         &self,
         me: AgentId,
@@ -211,7 +280,26 @@ impl OpProjection {
                 self.validate_delete(topic, operation.event.operation.header(), hashes, node)
                     .await?;
                 for hash in hashes {
-                    self.add_tombstone(topic.into(), *hash).await?;
+                    self.add_tombstone(topic.into(), *hash, TombstoneReason::DeletedForEveryone)
+                        .await?;
+                }
+            }
+
+            Payload::Chat(ChatPayload::EditMessage { edit_hash, .. }) => {
+                // An edit of an already-tombstoned message is itself tombstoned,
+                // inheriting the referent's reason. This is how a delete-for-me
+                // (which only names the original message) reaches edits that
+                // arrive after the delete, and it keeps a delete-for-everyone's
+                // late edits from lingering too. Edits of live messages are
+                // validated later in `process_app`.
+                //
+                // It is not valid for an Edit to be applied to an operation which
+                // was DeletedForEveryone, but that validation lives elsewhere, and
+                // it's simpler to just unconditionally apply this transitive
+                // tombstoning here.
+                if let Some(reason) = self.tombstone_reason(topic.into(), *edit_hash).await? {
+                    let self_hash = operation.event.operation.header().hash();
+                    self.add_tombstone(topic.into(), self_hash, reason).await?;
                 }
             }
 
@@ -236,6 +324,10 @@ impl OpProjection {
                 }
                 DeviceGroupPayload::UnblockAgent(agent_id) => {
                     self.unblock_agent(*agent_id).await?;
+                }
+                DeviceGroupPayload::DeleteForMe(delete) => {
+                    self.tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
+                        .await?;
                 }
                 _ => (),
             },
@@ -444,14 +536,51 @@ impl OpProjection {
         Ok(())
     }
 
-    /// Record an operation hash in the per-topic tombstone set. Payloads for
-    /// tombstoned operations must never be stored or synced.
-    async fn add_tombstone(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR IGNORE INTO tombstones (topic_id, op_hash) VALUES (?, ?)")
-            .bind(topic.as_bytes().to_vec())
-            .bind(op_hash.as_bytes().to_vec())
-            .execute(&self.pool)
-            .await?;
+    /// Tombstone `root` and its entire current edit chain in `chat_id` with
+    /// [`TombstoneReason::DeletedForMe`].
+    async fn tombstone_message_for_me(
+        &self,
+        chat_id: ChatId,
+        root: Hash,
+        node: BadUseOfNode,
+    ) -> anyhow::Result<()> {
+        let chat_topic: TopicId = chat_id.into();
+        let valid_ops = node.valid_chat_ops(chat_id).await?;
+
+        for hash in forward_edit_closure(&valid_ops, root) {
+            self.add_tombstone(chat_topic, hash, TombstoneReason::DeletedForMe)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Record an operation hash in the per-topic tombstone set with the reason
+    /// it was tombstoned.
+    ///
+    /// Reasons are first-write-wins, with one deliberate
+    /// exception: a `DeletedForMe` upgrades an existing `DeletedForEveryone` (so
+    /// a message I deleted for myself vanishes even when it's also deleted for
+    /// everyone). Every other combination keeps the existing reason.
+    async fn add_tombstone(
+        &self,
+        topic: TopicId,
+        op_hash: Hash,
+        reason: TombstoneReason,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO tombstones (topic_id, op_hash, reason) VALUES (?, ?, ?)
+             ON CONFLICT(topic_id, op_hash) DO UPDATE SET reason = excluded.reason
+             WHERE excluded.reason = ? AND tombstones.reason = ?",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(op_hash.as_bytes().to_vec())
+        .bind(reason.to_db())
+        // Only the specific DeletedForEveryone -> DeletedForMe upgrade replaces
+        // an existing reason.
+        .bind(TombstoneReason::DeletedForMe.to_db())
+        .bind(TombstoneReason::DeletedForEveryone.to_db())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 }
@@ -600,17 +729,52 @@ mod tests {
 
         assert!(!db.is_tombstoned(topic_a, hash1).await.unwrap());
 
-        db.add_tombstone(topic_a, hash1).await.unwrap();
-        db.add_tombstone(topic_a, hash2).await.unwrap();
-        db.add_tombstone(topic_b, hash1).await.unwrap();
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
+        db.add_tombstone(topic_a, hash2, TombstoneReason::DeletedForMe)
+            .await
+            .unwrap();
+        db.add_tombstone(topic_b, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
         // Adding the same hash again is idempotent.
-        db.add_tombstone(topic_a, hash1).await.unwrap();
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
 
         assert!(db.is_tombstoned(topic_a, hash1).await.unwrap());
         assert!(db.is_tombstoned(topic_a, hash2).await.unwrap());
+        // The reason is recorded per tombstone.
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForEveryone)
+        );
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash2).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
         // Tombstones are scoped per-topic: hash2 in topic_a does not leak into topic_b.
         assert!(db.is_tombstoned(topic_b, hash1).await.unwrap());
         assert!(!db.is_tombstoned(topic_b, hash2).await.unwrap());
+        assert_eq!(db.tombstone_reason(topic_b, hash2).await.unwrap(), None);
+
+        // Delete-for-me always wins: it upgrades an existing delete-for-everyone,
+        // and a later delete-for-everyone never downgrades it back.
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForMe)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
 
         assert_eq!(
             db.tombstoned_hashes(topic_a).await.unwrap(),

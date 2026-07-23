@@ -8,13 +8,19 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
-	import type { MessagePosition } from './message-helpers';
+	import {
+		canDeleteMessageForEveryone,
+		canEditMessage,
+		type MessagePosition,
+	} from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageActions from './MessageActions.svelte';
+	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
@@ -27,9 +33,7 @@
 		myDeviceId,
 		searchQuery,
 		chatId,
-		canEdit = false,
 		onEdit,
-		canDelete = false,
 		onDelete,
 	}: {
 		message: Message;
@@ -37,13 +41,15 @@
 		myDeviceId: DeviceId;
 		chatId: ChatId;
 		searchQuery: string;
-		canEdit?: boolean;
 		onEdit?: () => void;
-		canDelete?: boolean;
 		onDelete?: () => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+	const canEdit = $derived(canEditMessage(message, myDeviceId));
+	const canDeleteForEveryone = $derived(
+		canDeleteMessageForEveryone(message, myDeviceId),
+	);
 
 	const reactions = $derived(
 		hasBody(message.content) ? message.content.reactions : {},
@@ -56,6 +62,19 @@
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
+	let desktopOpen = $state<'reactions' | 'menu' | null>(null);
+	let desktopAnchor = $state<HTMLElement | { x: number; y: number }>();
+
+	function onLongPress(e: MouseEvent | TouchEvent) {
+		if (hasBody(message.content)) {
+			if (isMobile) {
+				reactionsOpened = true;
+			} else if (e instanceof MouseEvent) {
+				desktopAnchor = { x: e.clientX, y: e.clientY };
+				desktopOpen = 'menu';
+			}
+		}
+	}
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -95,15 +114,28 @@
 	/>
 {/snippet}
 
-<div
-	class="flex justify-end"
-	use:longpress={{
-		onLongPress: () => {
-			if (hasBody(message.content)) reactionsOpened = true;
-		},
-	}}
->
-	<div bind:this={messageEl} class="max-w-[85%]">
+<div class="group flex justify-end" use:longpress={{ onLongPress }}>
+	<div bind:this={messageEl} class="relative max-w-[85%]">
+		{#if !isMobile}
+			<div
+				class="absolute end-full inset-y-0 me-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {desktopOpen !==
+				null
+					? '!opacity-100'
+					: ''}"
+			>
+				<MessageHoverToolbar
+					reverse
+					onReact={el => {
+						desktopAnchor = el;
+						desktopOpen = 'reactions';
+					}}
+					onMenu={el => {
+						desktopAnchor = el;
+						desktopOpen = 'menu';
+					}}
+				/>
+			</div>
+		{/if}
 		<Card
 			raised
 			contentWrapPadding="p-2"
@@ -135,9 +167,11 @@
 	{myDeviceId}
 	{canEdit}
 	{onEdit}
-	{canDelete}
+	{canDeleteForEveryone}
 	{onDelete}
 	bind:opened={reactionsOpened}
+	bind:desktopOpen
+	{desktopAnchor}
 	target={messageEl}
 />
 

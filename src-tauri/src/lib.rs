@@ -40,7 +40,6 @@ pub fn run() {
     #[cfg(mobile)]
     {
         builder = builder
-            .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
             .plugin(tauri_plugin_view::init())
             .plugin(tauri_plugin_system_bars_styles::init());
@@ -143,6 +142,8 @@ pub fn run() {
             commands::chats::send_message,
             commands::chats::edit_message,
             commands::chats::delete_message,
+            commands::chats::delete_message_for_me,
+            commands::chats::get_tombstones,
             commands::chats::send_reaction,
             commands::chats::mark_messages_read,
             commands::chats::create_group,
@@ -165,6 +166,7 @@ pub fn run() {
             #[cfg(feature = "e2e-tests")]
             commands::testing::close_iroh_endpoint,
         ])
+        .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())

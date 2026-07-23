@@ -5,7 +5,6 @@
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { keyboard, releaseKeyboardSpace } from '$lib/utils/keyboard.svelte';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -23,7 +22,9 @@
 		hasBody,
 	} from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
-	import { renderBelowKeyboard } from '$lib/components/messages/composer/render-below-keyboard.svelte';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
+	import { renderBelowKeyboard } from '$lib/utils/virtual-keyboard/render-below-keyboard';
+	import { keyboardSpace } from '$lib/utils/virtual-keyboard/keyboard-space.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiPencilOutline } from '@mdi/js';
@@ -74,8 +75,12 @@
 	let editing = $state<Message | null>(null);
 	/** Edit requested while a draft was present, awaiting discard confirmation. */
 	let pendingEdit = $state<Message | null>(null);
-	/** Message awaiting delete-for-everyone confirmation. */
+	/** Message awaiting delete confirmation. */
 	let deleting = $state<Message | null>(null);
+	/** Whether the pending delete may also be deleted for everyone (my own
+	 * message, within the delete window); otherwise only delete-for-me is
+	 * offered. */
+	let deletingForEveryone = $state(false);
 
 	/** Switch the composer to editing `message`'s text instead of sending a
 	 * new message. Media attachments are disabled while editing. Asks to
@@ -127,20 +132,37 @@
 		}
 	}
 
-	/** Open the delete-for-everyone confirmation dialog for `message`. */
-	export function deleteMessage(message: Message) {
+	/** Open the delete confirmation dialog for `message`. Delete-for-me is
+	 * always offered; delete-for-everyone only when `canDeleteForEveryone`. */
+	export function deleteMessage(
+		message: Message,
+		canDeleteForEveryone: boolean,
+	) {
 		deleting = message;
+		deletingForEveryone = canDeleteForEveryone;
 	}
 
-	async function confirmDelete() {
+	async function confirmDeleteForEveryone() {
 		const target = deleting;
 		deleting = null;
 		if (!target) return;
 		try {
-			await store.deleteMessage(target);
+			await store.deleteMessageForEveryone(target);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to delete message', e);
+		}
+	}
+
+	async function confirmDeleteForMe() {
+		const target = deleting;
+		deleting = null;
+		if (!target) return;
+		try {
+			await store.deleteMessageForMe(target);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to delete message for me', e);
 		}
 	}
 
@@ -150,9 +172,9 @@
 			return;
 		}
 		// Flip the intent right away so the attach button reacts instantly, then
-		// hand focus to the input: renderBelowKeyboard sees the close arrive with
-		// an input focused and keeps the panel's slot until the rising keyboard
-		// claims it, so the input bar stays pinned during the swap.
+		// hand focus to the input: the plugin sees the close arrive with an input
+		// focused and holds the reserved inset until the rising keyboard claims the
+		// slot, so the input bar stays pinned during the swap.
 		showMediaPanel = false;
 		messageInput?.focus();
 	}
@@ -216,6 +238,11 @@
 		}
 	}
 
+	function stageFromPanel(files: File[]) {
+		showMediaPanel = false;
+		stage(files);
+	}
+
 	async function addMore() {
 		try {
 			const files = await pickMedia('image', true);
@@ -262,22 +289,12 @@
 {/snippet}
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
-	     below it): no panel, no keyboard, no preserved keyboard slot. Keying it
-	     off the panel alone bumps the bar by `env(safe-area-inset-bottom)`
-	     during the panel→keyboard swap, because the panel closes before the
-	     (visual-viewport-driven) safe area has collapsed to 0. -->
-	<div
-		class="message-input-bar"
-		class:pb-safe={!showMediaPanel &&
-			!keyboard.isOpen &&
-			!keyboard.spacePreserved}
-	>
+	<div class="message-input-bar relative z-10" use:renderAboveKeyboard>
 		{#if !editing && !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
-		<div class="m-2 row gap-2" style="align-items: center;">
+		<div class="m-2 row gap-2" style="align-items: flex-end;">
 			<!-- While editing, the cancel button sits before the input in the
 			     narrow layout and after it on wide screens; the attach buttons
 			     hide because media cannot be edited. -->
@@ -305,6 +322,7 @@
 				{placeholder}
 				onSend={send}
 				onpaste={onPaste}
+				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
 				banner={editing !== null ? editingBanner : undefined}
 			>
@@ -354,15 +372,22 @@
 	</div>
 
 	{#if isMobile}
-		<MediaPanel bind:open={showMediaPanel} onFiles={stage} />
-		<!-- Empty stand-in for the keyboard while it's hidden under the
-		     message-actions overlay, so the input bar stays put. -->
+		<!-- Also opened empty (no panel) while the keyboard hides under the
+		     message-actions overlay: the surface stands in for the keyboard so
+		     the input bar stays put. -->
 		<div
 			use:renderBelowKeyboard={{
-				open: keyboard.spacePreserved,
-				onClose: releaseKeyboardSpace,
+				open: showMediaPanel || keyboardSpace.preserved,
 			}}
-		></div>
+			class="bg-page-surface fixed bottom-0 inset-x-0"
+		>
+			{#if showMediaPanel}
+				<MediaPanel
+					onFiles={stageFromPanel}
+					onPickerOpen={() => (showMediaPanel = false)}
+				/>
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -413,15 +438,44 @@
 	data-testid="composer-delete-message-dialog"
 >
 	{#snippet buttons()}
-		<DialogButton
-			data-testid="composer-delete-cancel"
-			onClick={() => (deleting = null)}
-		>
-			{m.cancel()}
-		</DialogButton>
-		<DialogButton data-testid="composer-delete-confirm" onClick={confirmDelete}>
-			{m.deleteForEveryone()}
-		</DialogButton>
+		{#if deletingForEveryone}
+			<div class="flex flex-col w-full">
+				<DialogButton
+					class="!text-red-500"
+					data-testid="composer-delete-confirm"
+					onClick={confirmDeleteForEveryone}
+				>
+					{m.deleteForEveryone()}
+				</DialogButton>
+				<DialogButton
+					class="!text-red-500"
+					data-testid="composer-delete-for-me-confirm"
+					onClick={confirmDeleteForMe}
+				>
+					{m.deleteForMe()}
+				</DialogButton>
+				<DialogButton
+					data-testid="composer-delete-cancel"
+					onClick={() => (deleting = null)}
+				>
+					{m.cancel()}
+				</DialogButton>
+			</div>
+		{:else}
+			<DialogButton
+				data-testid="composer-delete-cancel"
+				onClick={() => (deleting = null)}
+			>
+				{m.cancel()}
+			</DialogButton>
+			<DialogButton
+				class="!text-red-500"
+				data-testid="composer-delete-for-me-confirm"
+				onClick={confirmDeleteForMe}
+			>
+				{m.deleteForMe()}
+			</DialogButton>
+		{/if}
 	{/snippet}
 </Dialog>
 

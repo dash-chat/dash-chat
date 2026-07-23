@@ -10,7 +10,7 @@
 		onEdit?: () => void;
 		onCopy: () => void;
 		/** Whether to offer a delete-for-everyone action (author, within the delete window). */
-		canDelete?: boolean;
+		canDeleteForEveryone?: boolean;
 		onDelete?: () => void;
 	}
 
@@ -18,7 +18,7 @@
 		canEdit = false,
 		onEdit,
 		onCopy,
-		canDelete = false,
+		canDeleteForEveryone = false,
 		onDelete,
 	}: Props = $props();
 </script>
@@ -38,7 +38,7 @@
 		onClick={onCopy}
 		data-testid="message-action-copy"
 	/>
-	{#if canDelete}
+	{#if canDeleteForEveryone}
 		<ListAction
 			title={m.delete()}
 			icon={mdiDelete}

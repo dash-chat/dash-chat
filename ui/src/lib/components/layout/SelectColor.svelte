@@ -91,7 +91,6 @@
 				color={selectedColor}
 				label={qrCodeLabel}
 				copyButtonTestId="color-picker-copy-btn"
-				copiedMessage={m.copiedCodeToClipboard()}
 			/>
 
 			<div

@@ -1,14 +1,14 @@
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Deleting messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
@@ -20,7 +20,7 @@ describe('Deleting messages', () => {
 		await agent1.directChatPage.messages.waitForMessage('Delete me');
 		await agent2.directChatPage.messages.waitForMessage('Delete me');
 
-		await agent1.directChatPage.messages.deleteMessage('Delete me');
+		await agent1.directChatPage.messages.deleteMessageForEveryone('Delete me');
 
 		await agent1.directChatPage.messages.waitForDeleted(
 			'Delete me',
@@ -39,7 +39,7 @@ describe('Deleting messages', () => {
 		await agent1.directChatPage.messages.waitForMessage('Draft v2');
 		await agent2.directChatPage.messages.waitForMessage('Draft v2');
 
-		await agent1.directChatPage.messages.deleteMessage('Draft v2');
+		await agent1.directChatPage.messages.deleteMessageForEveryone('Draft v2');
 
 		await agent1.directChatPage.messages.waitForDeleted(
 			'Draft v2',
@@ -51,13 +51,37 @@ describe('Deleting messages', () => {
 		);
 	});
 
-	it('does not offer Delete on the peer’s messages', async () => {
-		await agent2.directChatPage.sendMessage("Bob's message stays");
-		await agent1.directChatPage.messages.waitForMessage("Bob's message stays");
+	it('deletes a message only for me, leaving no placeholder', async () => {
+		await agent1.directChatPage.sendMessage('Just for me');
+		await agent1.directChatPage.messages.waitForMessage('Just for me');
+		await agent2.directChatPage.messages.waitForMessage('Just for me');
 
-		await agent1.directChatPage.messages.openActions("Bob's message stays");
+		await agent1.directChatPage.messages.deleteMessageForMe('Just for me');
+
+		// Gone on my side (no placeholder, unlike delete-for-everyone)...
+		await agent1.directChatPage.messages.waitForMessageGone('Just for me');
+		// ...but still visible for the peer.
 		expect(
-			await agent1.directChatPage.messages.quickDeleteButton.isExisting(),
+			await agent2.directChatPage.messages.messageAreaContains('Just for me'),
+		).toBe(true);
+	});
+
+	it('offers Delete for me (but not Delete for everyone) on the peer’s messages', async () => {
+		await agent2.directChatPage.sendMessage("Bob's message");
+		await agent1.directChatPage.messages.waitForMessage("Bob's message");
+
+		await agent1.directChatPage.messages.openDeleteDialog("Bob's message");
+
+		// Only "Delete for me" is available for a received message.
+		await agent1.directChatPage.messages.deleteForMeConfirmButton.waitForExist();
+		expect(
+			await agent1.directChatPage.messages.deleteForEveryoneConfirmButton.isExisting(),
 		).toBe(false);
+
+		await agent1.directChatPage.messages.deleteForMeConfirmButton.click();
+		await agent1.directChatPage.messages.waitForMessageGone("Bob's message");
+		expect(
+			await agent2.directChatPage.messages.messageAreaContains("Bob's message"),
+		).toBe(true);
 	});
 });

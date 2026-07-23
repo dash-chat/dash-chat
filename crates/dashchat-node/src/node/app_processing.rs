@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
+use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
 use crate::stores::{BadUseOfNode, ProjectionError};
 use crate::topic::AutoRegisteredTopic;
@@ -605,6 +606,22 @@ impl Node {
                 for hash in hashes {
                     if let Some(op) = self.op_store.get_operation(hash).await? {
                         self.enforce_tombstone(topic, &op).await?;
+                    }
+                }
+            }
+
+            Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(delete)) => {
+                // Drop the payloads referenced by the delete.
+                //
+                // Unlike `DeleteForEveryone`, a `DeleteForMe` op is never shared with the
+                // other chat participants, so their copies are untouched. We fall
+                // through to `notify_payload` below so the frontend re-reads the
+                // tombstone set and drops the message from its chat view.
+                let chat_topic: TopicId = delete.chat_id.into();
+                let valid_ops = self.valid_chat_ops(delete.chat_id).await?;
+                for hash in forward_edit_closure(&valid_ops, delete.message_hash) {
+                    if let Some(op) = self.op_store.get_operation(&hash).await? {
+                        self.enforce_tombstone(chat_topic, &op).await?;
                     }
                 }
             }

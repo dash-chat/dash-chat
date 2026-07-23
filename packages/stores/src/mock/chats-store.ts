@@ -5,7 +5,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { type IDirectChatClient } from '../direct-chats/direct-chat-client';
 import { type IGroupChatClient } from '../group-chats/group-chat-client';
 import { LogsStore } from '../p2panda/logs-store';
-import { AgentId } from '../p2panda/types';
+import { AgentId, TopicId } from '../p2panda/types';
 import { Payload } from '../types';
 import { type LocalStorageLogsClient } from './client';
 import { MockDirectChatClient } from './direct-chat-client';
@@ -19,6 +19,7 @@ export class MockChatsStore extends ChatsStore {
 		client: IChatsClient,
 		private mockLogsClient: LocalStorageLogsClient,
 		private agentId: AgentId,
+		private deviceGroupTopicId: TopicId,
 	) {
 		super(logsStore, contactsStore, client);
 	}
@@ -32,6 +33,6 @@ export class MockChatsStore extends ChatsStore {
 	}
 
 	protected messagesClient(): IMessagesClient {
-		return new MockMessagesClient(this.mockLogsClient);
+		return new MockMessagesClient(this.mockLogsClient, this.deviceGroupTopicId);
 	}
 }

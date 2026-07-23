@@ -162,14 +162,20 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 
     // Deleting the original of an edited message is an error: the delete must
     // target the most recent edit of the chain.
-    let err = alice.delete_message(chat, msg1.hash()).await.unwrap_err();
+    let err = alice
+        .delete_message_for_everyone(chat, msg1.hash())
+        .await
+        .unwrap_err();
     assert!(matches!(
         err,
         DeleteMessageError::Validation(DeleteError::NotLatestEdit)
     ));
 
     // Delete the earlier message via its edit.
-    alice.delete_message(chat, edit1.hash()).await.unwrap();
+    alice
+        .delete_message_for_everyone(chat, edit1.hash())
+        .await
+        .unwrap();
 
     // Await consistency so that bobbi processes the delete.
     poll.consistency([&alice, &bobbi], &[chat.into()])
@@ -391,7 +397,10 @@ async fn invalid_deletes_are_rejected() {
     .unwrap();
 
     // Author-side: bobbi cannot delete alice's message.
-    let err = bobbi.delete_message(chat, msg.hash()).await.unwrap_err();
+    let err = bobbi
+        .delete_message_for_everyone(chat, msg.hash())
+        .await
+        .unwrap_err();
     assert!(matches!(
         err,
         DeleteMessageError::Validation(DeleteError::NotAuthor)
@@ -425,8 +434,14 @@ async fn invalid_deletes_are_rejected() {
     }
 
     // Deleting an already-deleted message is an error.
-    alice.delete_message(chat, msg.hash()).await.unwrap();
-    let err = alice.delete_message(chat, msg.hash()).await.unwrap_err();
+    alice
+        .delete_message_for_everyone(chat, msg.hash())
+        .await
+        .unwrap();
+    let err = alice
+        .delete_message_for_everyone(chat, msg.hash())
+        .await
+        .unwrap_err();
     assert!(matches!(err, DeleteMessageError::Validation(_)));
 }
 

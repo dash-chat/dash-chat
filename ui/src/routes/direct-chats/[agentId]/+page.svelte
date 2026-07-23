@@ -57,9 +57,8 @@
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import {
-		messagePosition,
-		canEditMessage,
 		canDeleteMessageForEveryone,
+		messagePosition,
 	} from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
@@ -593,18 +592,16 @@
 																		{myDeviceId}
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
-																		canEdit={canEditMessage(
-																			message,
-																			myDeviceId,
-																		)}
 																		onEdit={() =>
 																			composer?.editMessage(message)}
-																		canDelete={canDeleteMessageForEveryone(
-																			message,
-																			myDeviceId,
-																		)}
 																		onDelete={() =>
-																			composer?.deleteMessage(message)}
+																			composer?.deleteMessage(
+																				message,
+																				canDeleteMessageForEveryone(
+																					message,
+																					myDeviceId,
+																				),
+																			)}
 																	/>
 																{/await}
 															</div>
@@ -624,6 +621,8 @@
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
 																		sender={profile}
+																		onDelete={() =>
+																			composer?.deleteMessage(message, false)}
 																	/>
 																{/await}
 															</div>
@@ -716,7 +715,7 @@
 
 				<div
 					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 inset-x-0 z-30"
+					class="absolute bottom-0 inset-x-0 z-30 pb-grounded-safe"
 					class:bg-page-surface={theme === 'material'}
 				>
 					{#if searchMode}
