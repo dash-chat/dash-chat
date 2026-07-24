@@ -294,10 +294,26 @@ emoji-picker {
 	opacity: 0.5;
 }
 
+:root {
+	/* The bottom space the app must not lay out into: the keyboard/slot inset
+	   while occupied (the inset always covers the safe area when active), the
+	   home-indicator safe area otherwise. Flips in the same reflow as the
+	   inset. The keyboard-aware sibling of env(safe-area-inset-bottom). */
+	--keyboard-safe-bottom: max(
+		var(--keyboard-inset-height, 0px),
+		env(safe-area-inset-bottom, 0px)
+	);
+}
+
+.pb-keyboard-safe {
+	padding-bottom: var(--keyboard-safe-bottom);
+}
+
 .fixed-action-btn {
 	position: fixed;
 	inset-inline-end: 1rem;
-	bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem);
+	/* Viewport-fixed, so a padded ancestor can't lift it above the keyboard. */
+	bottom: calc(var(--keyboard-safe-bottom, 0px) + 1rem);
 }
 .k-block-title {
 	margin-top: 1rem;
