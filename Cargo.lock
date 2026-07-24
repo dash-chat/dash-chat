@@ -4135,7 +4135,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -4241,7 +4241,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
@@ -6072,7 +6072,7 @@ dependencies = [
  "pin-project-lite",
  "rustc-hash 2.1.3",
  "rustls 0.23.41",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -6117,7 +6117,7 @@ checksum = "3137a52df66c20090a889828d1c655f21f52294cba64e5c4fbb04fc83eee7c8e"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -9434,16 +9434,6 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "socket2"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
@@ -10639,7 +10629,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-virtual-keyboard"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard?rev=de5573f3f87547c3ed0721bd42d0ff4b85e5a420#de5573f3f87547c3ed0721bd42d0ff4b85e5a420"
+source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard?rev=80d4ce7a90c96f9df40161e8ea086a454899be86#80d4ce7a90c96f9df40161e8ea086a454899be86"
 dependencies = [
  "serde",
  "tauri",
