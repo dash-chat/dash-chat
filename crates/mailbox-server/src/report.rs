@@ -37,7 +37,6 @@ pub async fn report(
 
 fn report_error_status(err: ReportError) -> (StatusCode, String) {
     let status = match err {
-        ReportError::StaleTimestamp => StatusCode::BAD_REQUEST,
         ReportError::SignatureVerificationFailed => StatusCode::UNAUTHORIZED,
         _ => StatusCode::BAD_REQUEST,
     };

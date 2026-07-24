@@ -5,12 +5,10 @@ use anyhow::Result;
 
 use crate::driver::Driver;
 use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
-use report_common::ReportRow;
 
 pub struct MemDb {
     tokens: Mutex<HashMap<VerifyingKey, FcmToken>>,
     subscriptions: Mutex<HashMap<TopicId, HashSet<VerifyingKey>>>,
-    reports: Mutex<Vec<ReportRow>>,
 }
 
 impl MemDb {
@@ -18,7 +16,6 @@ impl MemDb {
         Self {
             tokens: Mutex::new(HashMap::new()),
             subscriptions: Mutex::new(HashMap::new()),
-            reports: Mutex::new(Vec::new()),
         }
     }
 }
@@ -125,11 +122,6 @@ impl Driver for MemDb {
                 .insert(verifying_key.clone());
         }
 
-        Ok(())
-    }
-
-    async fn store_reports(&self, rows: Vec<ReportRow>) -> Result<()> {
-        self.reports.lock().await.extend(rows);
         Ok(())
     }
 }

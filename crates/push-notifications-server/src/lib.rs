@@ -43,7 +43,6 @@ pub async fn build(db: Arc<dyn driver::Driver>, fcm: Arc<dyn Fcm>) -> anyhow::Re
             post(routes::unregister_fcm_token::unregister_fcm_token),
         )
         .route("/notify-topic", post(routes::notify_topic::notify_topics))
-        .route("/report", post(routes::report::report))
         .with_state(state);
 
     Ok(router)

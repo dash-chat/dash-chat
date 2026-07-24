@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::driver::Driver;
 use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
-use report_common::ReportRow;
 
 pub struct SqlDriver {
     pool: AnyPool,
@@ -55,17 +54,6 @@ impl SqlDriver {
         .execute(&pool)
         .await
         .context("failed to create verifying_key index on topic_subscribers")?;
-
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS reports (
-                reported_device_id BLOB NOT NULL,
-                reporter_device_id BLOB NOT NULL,
-                timestamp BIGINT NOT NULL
-            )",
-        )
-        .execute(&pool)
-        .await
-        .context("failed to create reports table")?;
 
         Ok(Self { pool })
     }
@@ -268,31 +256,6 @@ impl Driver for SqlDriver {
                 .context("failed to insert subscriptions")?;
         }
 
-        tx.commit().await.context("failed to commit transaction")?;
-        Ok(())
-    }
-
-    async fn store_reports(&self, rows: Vec<ReportRow>) -> Result<()> {
-        if rows.is_empty() {
-            return Ok(());
-        }
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin transaction")?;
-        for row in &rows {
-            sqlx::query(
-                "INSERT INTO reports (reported_device_id, reporter_device_id, timestamp)
-                 VALUES ($1, $2, $3)",
-            )
-            .bind(row.reported_device_id.to_vec())
-            .bind(row.reporter_device_id.to_vec())
-            .bind(row.timestamp)
-            .execute(&mut *tx)
-            .await
-            .context("failed to insert report")?;
-        }
         tx.commit().await.context("failed to commit transaction")?;
         Ok(())
     }

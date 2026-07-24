@@ -297,28 +297,3 @@ async fn set_subscriptions_from_empty() {
     assert_eq!(subs.get(&t1).unwrap(), &vec![alice.clone()]);
     assert_eq!(subs.get(&t2).unwrap(), &vec![alice]);
 }
-
-// --- reports ---
-
-#[tokio::test]
-async fn store_reports_persists_all_rows() {
-    use report_common::ReportRow;
-    let db = create_driver().await;
-
-    let rows = vec![
-        ReportRow {
-            reported_device_id: [2u8; 32],
-            reporter_device_id: [1u8; 32],
-            timestamp: 1000,
-        },
-        ReportRow {
-            reported_device_id: [3u8; 32],
-            reporter_device_id: [1u8; 32],
-            timestamp: 1000,
-        },
-    ];
-
-    db.store_reports(rows).await.unwrap();
-    // Empty input is a no-op and must not error.
-    db.store_reports(Vec::new()).await.unwrap();
-}

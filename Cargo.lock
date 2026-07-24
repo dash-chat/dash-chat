@@ -2073,7 +2073,6 @@ dependencies = [
  "p2panda-spaces",
  "p2panda-store",
  "pretty_assertions",
- "push-notifications-client",
  "rand 0.9.4",
  "regex",
  "report-common",
@@ -7897,7 +7896,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "derive_more 2.1.1",
- "report-common",
  "reqwest 0.12.28",
  "serde",
 ]
@@ -7911,7 +7909,6 @@ dependencies = [
  "axum",
  "axum-test",
  "clap",
- "ed25519-dalek 2.2.0",
  "fcm_v1",
  "futures",
  "hex",
@@ -7919,7 +7916,6 @@ dependencies = [
  "pretty_assertions",
  "push-notifications-client",
  "push-notifications-server",
- "report-common",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

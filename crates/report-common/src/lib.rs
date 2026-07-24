@@ -21,6 +21,10 @@ pub const REPORT_TIMESTAMP_TOLERANCE: Duration = Duration::from_secs(60 * 60);
 /// never be reinterpreted as a signature over some other kind of message.
 const SIGNING_DOMAIN: &[u8] = b"dashchat/report/v1";
 
+/// Upper bound on how many devices a single report may name, so one signed
+/// request can't explode into an unbounded number of stored rows.
+pub const MAX_REPORTED_DEVICES: usize = 1000;
+
 /// A signed request to report one or more devices.
 ///
 /// Device ids and the reporter pubkey are hex-encoded ed25519 public keys (64
@@ -48,6 +52,10 @@ pub struct ReportRow {
 pub enum ReportError {
     #[error("report timestamp is outside the accepted window")]
     StaleTimestamp,
+    #[error("report lists no devices")]
+    EmptyReport,
+    #[error("report lists too many devices (max {MAX_REPORTED_DEVICES})")]
+    TooManyReportedDevices,
     #[error("invalid reporter pubkey: {0}")]
     InvalidReporterPubkey(String),
     #[error("invalid reported device id: {0}")]
@@ -72,18 +80,27 @@ fn decode_key(hex_str: &str) -> Option<[u8; 32]> {
     bytes.try_into().ok()
 }
 
-/// The exact bytes signed by the reporter: a domain tag, the count and raw
-/// bytes of each reported device id (in order), and the timestamp. Returns
-/// `None` if any reported id is not a valid 32-byte hex key.
-pub fn signing_bytes(reported_device_ids: &[String], timestamp: i64) -> Option<Vec<u8>> {
+/// The signed-bytes layout over already-decoded keys: a domain tag, the count
+/// and raw bytes of each reported device id (in order), and the timestamp.
+fn encode_signing_bytes(reported_device_ids: &[[u8; 32]], timestamp: i64) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(SIGNING_DOMAIN);
     out.extend_from_slice(&(reported_device_ids.len() as u64).to_be_bytes());
     for id in reported_device_ids {
-        out.extend_from_slice(&decode_key(id)?);
+        out.extend_from_slice(id);
     }
     out.extend_from_slice(&timestamp.to_be_bytes());
-    Some(out)
+    out
+}
+
+/// The exact bytes signed by the reporter. Returns `None` if any reported id is
+/// not a valid 32-byte hex key.
+pub fn signing_bytes(reported_device_ids: &[String], timestamp: i64) -> Option<Vec<u8>> {
+    let decoded = reported_device_ids
+        .iter()
+        .map(|id| decode_key(id))
+        .collect::<Option<Vec<_>>>()?;
+    Some(encode_signing_bytes(&decoded, timestamp))
 }
 
 /// Build a signed [`ReportRequest`] for the given devices, stamped with the
@@ -103,11 +120,21 @@ pub fn build_report(signing_key: &SigningKey, reported_device_ids: Vec<String>) 
 }
 
 /// Verify a report against `now_millis` (the server's clock) and, on success,
-/// explode it into one [`ReportRow`] per reported device. Checks timestamp
-/// freshness and the reporter's signature over the reported ids and timestamp.
+/// explode it into one [`ReportRow`] per reported device (duplicate ids are
+/// collapsed). Checks the reported-list size, timestamp freshness, and the
+/// reporter's signature over the reported ids and timestamp.
 pub fn verify_report(req: &ReportRequest, now_millis: i64) -> Result<Vec<ReportRow>, ReportError> {
+    if req.reported_device_ids.is_empty() {
+        return Err(ReportError::EmptyReport);
+    }
+    if req.reported_device_ids.len() > MAX_REPORTED_DEVICES {
+        return Err(ReportError::TooManyReportedDevices);
+    }
+
+    // Saturating arithmetic: `timestamp` is attacker-controlled JSON, and a
+    // value near `i64::MIN` would otherwise overflow the subtraction / `.abs()`.
     let tolerance = REPORT_TIMESTAMP_TOLERANCE.as_millis() as i64;
-    if (now_millis - req.timestamp).abs() > tolerance {
+    if now_millis.saturating_sub(req.timestamp).saturating_abs() > tolerance {
         return Err(ReportError::StaleTimestamp);
     }
 
@@ -122,17 +149,21 @@ pub fn verify_report(req: &ReportRequest, now_millis: i64) -> Result<Vec<ReportR
         .ok_or_else(|| ReportError::InvalidSignatureEncoding(req.signature.clone()))?;
     let signature = Signature::from_bytes(&sig_bytes);
 
-    let message = signing_bytes(&req.reported_device_ids, req.timestamp).ok_or_else(|| {
-        ReportError::InvalidReportedDeviceId("one or more reported ids are not valid hex".into())
-    })?;
+    let reported: Vec<[u8; 32]> = req
+        .reported_device_ids
+        .iter()
+        .map(|id| decode_key(id).ok_or_else(|| ReportError::InvalidReportedDeviceId(id.clone())))
+        .collect::<Result<_, _>>()?;
+
+    let message = encode_signing_bytes(&reported, req.timestamp);
     verifying_key
         .verify_strict(&message, &signature)
         .map_err(|_| ReportError::SignatureVerificationFailed)?;
 
-    Ok(req
-        .reported_device_ids
-        .iter()
-        .filter_map(|id| decode_key(id))
+    let mut seen = std::collections::HashSet::new();
+    Ok(reported
+        .into_iter()
+        .filter(|id| seen.insert(*id))
         .map(|reported_device_id| ReportRow {
             reported_device_id,
             reporter_device_id: reporter,
@@ -202,5 +233,48 @@ mod tests {
             verify_report(&req, req.timestamp),
             Err(ReportError::SignatureVerificationFailed)
         ));
+    }
+
+    #[test]
+    fn rejects_empty_report() {
+        let req = build_report(&key(1), Vec::new());
+        assert!(matches!(
+            verify_report(&req, req.timestamp),
+            Err(ReportError::EmptyReport)
+        ));
+    }
+
+    #[test]
+    fn rejects_too_many_devices() {
+        let reported: Vec<String> = (0..=MAX_REPORTED_DEVICES)
+            .map(|i| {
+                hex::encode(
+                    SigningKey::from_bytes(&[(i % 251) as u8; 32])
+                        .verifying_key()
+                        .to_bytes(),
+                )
+            })
+            .collect();
+        let req = build_report(&key(1), reported);
+        assert!(matches!(
+            verify_report(&req, req.timestamp),
+            Err(ReportError::TooManyReportedDevices)
+        ));
+    }
+
+    #[test]
+    fn collapses_duplicate_reported_ids() {
+        let dup = ids(&[&key(2), &key(2), &key(3)]);
+        let req = build_report(&key(1), dup);
+        let rows = verify_report(&req, req.timestamp).unwrap();
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn extreme_timestamp_does_not_panic() {
+        let mut req = build_report(&key(1), ids(&[&key(2)]));
+        req.timestamp = i64::MIN;
+        // Must return a clean error rather than overflowing/panicking.
+        assert!(verify_report(&req, 0).is_err());
     }
 }
