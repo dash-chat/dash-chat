@@ -1,5 +1,5 @@
 use redb::TableDefinition;
-use report_common::ReportRow;
+use reporting::ReportRow;
 
 /// Reports table: one entry per reported device.
 ///

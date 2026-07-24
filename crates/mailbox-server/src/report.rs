@@ -1,6 +1,6 @@
 use axum::{extract::State, http::StatusCode, Json};
 use redb::Database;
-use report_common::{now_unix_millis, verify_report, ReportError, ReportRequest, ReportRow};
+use reporting::{now_unix_millis, verify_report, ReportError, ReportRequest, ReportRow};
 
 use crate::{reports_table::encode_report_row, AppState, REPORTS_TABLE};
 

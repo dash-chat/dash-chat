@@ -279,7 +279,7 @@ where
         }
     }
 
-    async fn report(&self, request: report_common::ReportRequest) -> Result<(), anyhow::Error> {
+    async fn report(&self, request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
         let response = HTTP_CLIENT
             .post(format!("{}/report", self.base_url))
             .json(&request)

@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use ed25519_dalek::SigningKey;
 use mailbox_server::test_utils::create_test_server;
-use report_common::{build_report, ReportRequest, REPORT_TIMESTAMP_TOLERANCE};
+use reporting::{build_report, ReportRequest, REPORT_TIMESTAMP_TOLERANCE};
 
 fn key(seed: u8) -> SigningKey {
     SigningKey::from_bytes(&[seed; 32])
@@ -29,7 +29,7 @@ async fn rejects_stale_timestamp() {
     // Sign over an old timestamp so only the freshness check (not the signature)
     // is at fault.
     let stale =
-        report_common::now_unix_millis() - REPORT_TIMESTAMP_TOLERANCE.as_millis() as i64 - 60_000;
+        reporting::now_unix_millis() - REPORT_TIMESTAMP_TOLERANCE.as_millis() as i64 - 60_000;
     let req = build_report_at(&key(1), reported(&[2]), stale);
 
     let response = server.post("/report").json(&req).await;
@@ -55,7 +55,7 @@ fn build_report_at(
     timestamp: i64,
 ) -> ReportRequest {
     use ed25519_dalek::Signer;
-    let message = report_common::signing_bytes(&reported_ids, timestamp).unwrap();
+    let message = reporting::signing_bytes(&reported_ids, timestamp).unwrap();
     let signature = signing_key.sign(&message);
     ReportRequest {
         reported_device_ids: reported_ids,
