@@ -3,12 +3,10 @@
 	import { fade } from 'svelte/transition';
 	import { untrack, type Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { keyboard } from 'tauri-plugin-virtual-keyboard';
 	import {
-		preserveKeyboardSpace,
-		releaseKeyboardSpace,
-		reopenComposerKeyboard,
-	} from '$lib/utils/virtual-keyboard/keyboard-space.svelte';
+		holdKeyboardSlot,
+		type KeyboardSlotHold,
+	} from 'tauri-plugin-virtual-keyboard';
 	import { safeAreaInsets } from '$lib/utils/safe-area';
 
 	interface Props {
@@ -49,34 +47,31 @@
 		if (opened) spotlighted = true;
 	});
 
-	// The keyboard gives way to the overlay: preserving its space opens the
-	// composer's below-keyboard surface empty, which retracts the keyboard
-	// natively while the surface keeps the input bar pinned in its place.
-	// Dismissing the overlay refocuses the composer and re-summons the
-	// keyboard into the reserved slot.
+	// The keyboard gives way to the overlay: holding its slot retracts it
+	// natively while the layout above stays pinned in place. Dismissing the
+	// overlay releases the hold, refocusing the composer and re-summoning the
+	// keyboard into the still-held slot.
 	// Tracked with a plain variable and an explicit open→close transition
 	// (not an effect cleanup): the effect can re-run spuriously while the
-	// overlay stays open, and a cleanup-based restore would re-summon the
+	// overlay stays open, and a cleanup-based release would re-summon the
 	// keyboard mid-hide on every such re-run.
-	let restoreKeyboard = false;
+	let slotHold: KeyboardSlotHold | null = null;
 
 	$effect(() => {
 		if (opened) {
-			if (untrack(() => keyboard.isOpen.value)) {
-				restoreKeyboard = true;
-				preserveKeyboardSpace();
-			}
-		} else if (restoreKeyboard) {
-			restoreKeyboard = false;
-			reopenComposerKeyboard();
+			if (slotHold === null) slotHold = holdKeyboardSlot();
+		} else if (slotHold) {
+			slotHold.release({ restoreFocus: true });
+			slotHold = null;
 		}
 	});
 
-	// Destroyed while open (e.g. navigation): drop the composer's keyboard
-	// spacer, but don't re-summon the keyboard.
+	// Destroyed while open (e.g. navigation): give the slot back, but don't
+	// re-summon the keyboard.
 	$effect(() => {
 		return () => {
-			if (restoreKeyboard) releaseKeyboardSpace();
+			slotHold?.release();
+			slotHold = null;
 		};
 	});
 
@@ -180,8 +175,10 @@
 		bump = untrack(() => {
 			if (!aboveEl || !belowEl) return 0;
 			const { top: safeTop, bottom: safeBottom } = safeAreaInsets();
-			const bottomLimit =
-				(window.visualViewport?.height ?? window.innerHeight) - safeBottom;
+			// Not visualViewport.height: Chromium shrinks it under the IME, and at
+			// this point the keyboard is often still up. innerHeight is the full
+			// height the retracting keyboard uncovers (the webview never resizes).
+			const bottomLimit = window.innerHeight - safeBottom;
 			let next = 0;
 			const menuBottom = base.bottom + GAP + belowEl.offsetHeight + MARGIN;
 			if (menuBottom > bottomLimit) next -= menuBottom - bottomLimit;

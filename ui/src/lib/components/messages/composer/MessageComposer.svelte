@@ -19,7 +19,6 @@
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	import { renderBelowKeyboard } from '$lib/utils/virtual-keyboard/render-below-keyboard';
-	import { keyboardSpace } from '$lib/utils/virtual-keyboard/keyboard-space.svelte';
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -340,12 +339,9 @@
 	</div>
 
 	{#if isMobile}
-		<!-- Also opened empty (no panel) while the keyboard hides under the
-		     message-actions overlay: the surface stands in for the keyboard so
-		     the input bar stays put. -->
 		<div
 			use:renderBelowKeyboard={{
-				open: showMediaPanel || keyboardSpace.preserved,
+				open: showMediaPanel,
 				onHidden: () => (mediaPanelMounted = false),
 			}}
 			class="bg-page-surface fixed bottom-0 inset-x-0 z-20"

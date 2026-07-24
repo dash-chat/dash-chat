@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiContentCopy, mdiPencil } from '@mdi/js';
+	import { mdiContentCopy, mdiPencilOutline } from '@mdi/js';
 	import { List } from 'konsta/svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 
@@ -18,7 +18,7 @@
 	{#if canEdit}
 		<ListAction
 			title={m.edit()}
-			icon={mdiPencil}
+			icon={mdiPencilOutline}
 			onClick={() => onEdit?.()}
 			data-testid="message-action-edit"
 		/>
