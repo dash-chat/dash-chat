@@ -42,6 +42,11 @@ const MIGRATIONS: &[&str] = &[
         mailbox_id TEXT NOT NULL,
         PRIMARY KEY (blob_hash, mailbox_id)
     )",
+    "CREATE TABLE IF NOT EXISTS reported_contacts (
+        device_id BLOB NOT NULL,
+        mailbox_id TEXT NOT NULL,
+        PRIMARY KEY (device_id, mailbox_id)
+    )",
 ];
 
 #[derive(Clone, Debug)]
@@ -383,6 +388,64 @@ impl LocalStore {
         }
         Ok(out)
     }
+
+    /// Record that each of `device_ids` has been successfully reported to each
+    /// of `mailbox_ids`. The `(device_id, mailbox_id)` table is denormalized so
+    /// a later report can skip mailboxes that already have every reported id.
+    pub async fn record_reported_devices(
+        &self,
+        device_ids: &[DeviceId],
+        mailbox_ids: &[String],
+    ) -> anyhow::Result<()> {
+        for device_id in device_ids {
+            for mailbox_id in mailbox_ids {
+                sqlx::query(
+                    "INSERT OR IGNORE INTO reported_contacts (device_id, mailbox_id) VALUES (?, ?)",
+                )
+                .bind(*device_id)
+                .bind(mailbox_id)
+                .execute(&self.pool)
+                .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Mailboxes that have already received a report covering every one of
+    /// `device_ids` (the intersection of each device's reported-mailbox set).
+    /// A report covering `device_ids` can skip exactly these mailboxes, since
+    /// any mailbox missing even one id still needs the full request. Returns an
+    /// empty set when `device_ids` is empty.
+    pub async fn mailboxes_reported_to_all(
+        &self,
+        device_ids: &[DeviceId],
+    ) -> anyhow::Result<BTreeSet<String>> {
+        let mut common: Option<BTreeSet<String>> = None;
+        for device_id in device_ids {
+            let reported = self.reported_mailboxes_for_device(*device_id).await?;
+            common = Some(match common {
+                None => reported,
+                Some(prev) => prev.intersection(&reported).cloned().collect(),
+            });
+            if common.as_ref().is_some_and(|c| c.is_empty()) {
+                break;
+            }
+        }
+        Ok(common.unwrap_or_default())
+    }
+
+    /// The set of mailboxes `device_id` has been successfully reported to.
+    pub async fn reported_mailboxes_for_device(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<BTreeSet<String>> {
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT mailbox_id FROM reported_contacts WHERE device_id = ?")
+                .bind(device_id)
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
 }
 
 #[cfg(test)]
@@ -490,6 +553,78 @@ mod tests {
         let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
         assert_eq!(by_mailbox.get("mbx-a").unwrap(), &vec![h2]);
         assert!(by_mailbox.get("mbx-b").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_reported_contacts_crud() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_reported.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
+
+        let device = |n: u8| DeviceId::from(SigningKey::from_bytes(&[n; 32]).verifying_key());
+        let d1 = device(1);
+        let d2 = device(2);
+
+        // d1 reported to both mailboxes; d2 only to mailbox-a.
+        store
+            .record_reported_devices(&[d1], &["mbx-a".into(), "mbx-b".into()])
+            .await
+            .unwrap();
+        store
+            .record_reported_devices(&[d2], &["mbx-a".into()])
+            .await
+            .unwrap();
+        // Idempotent insert.
+        store
+            .record_reported_devices(&[d1], &["mbx-a".into()])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.reported_mailboxes_for_device(d1).await.unwrap(),
+            BTreeSet::from(["mbx-a".into(), "mbx-b".into()])
+        );
+
+        // Skip set for {d1, d2} is the intersection: only mailbox-a covers both.
+        assert_eq!(
+            store.mailboxes_reported_to_all(&[d1, d2]).await.unwrap(),
+            BTreeSet::from(["mbx-a".into()])
+        );
+        // A single device's skip set is its full reported-mailbox set.
+        assert_eq!(
+            store.mailboxes_reported_to_all(&[d1]).await.unwrap(),
+            BTreeSet::from(["mbx-a".into(), "mbx-b".into()])
+        );
+        // An unreported device drags the intersection to empty.
+        assert!(
+            store
+                .mailboxes_reported_to_all(&[d1, device(3)])
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        // Empty input yields an empty skip set.
+        assert!(
+            store
+                .mailboxes_reported_to_all(&[])
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        // Persists across reopen.
+        drop(store);
+        pool.close().await;
+        let pool = create_sqlite_pool(dir.path().join("test_reported.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
+        assert_eq!(
+            store.mailboxes_reported_to_all(&[d1, d2]).await.unwrap(),
+            BTreeSet::from(["mbx-a".into()])
+        );
     }
 
     #[tokio::test]
