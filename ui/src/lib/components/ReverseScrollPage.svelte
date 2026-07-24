@@ -21,6 +21,7 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { findNavbarBg } from '$lib/utils/konsta';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 
 	interface PageColors {
 		bgIos?: string;
@@ -52,6 +53,17 @@
 	let innerEl: HTMLDivElement | null = $state(null);
 	let suppressCompensateUntil = 0;
 	let releaseSuppress: (() => void) | null = null;
+
+	// On keyboard show the inset reflow is deferred to the end of the glide, so
+	// scroll/resize observers can't re-run the navbar opacity until the
+	// animation ends — while content is already gliding under the navbar. The
+	// plugin's preview-measure callback is the one moment the settled geometry
+	// is readable up front; registered once at mount, it delegates to the
+	// current effect run's updateNavbar.
+	let measureNavbar: (() => void) | null = null;
+	function onPreviewLayoutMeasure() {
+		measureNavbar?.();
+	}
 
 	export function scrollToBottom(animate = true) {
 		if (!el) return;
@@ -270,17 +282,19 @@
 		const pageObserver = new MutationObserver(scheduleUpdate);
 		pageObserver.observe(pageEl, { childList: true, subtree: false });
 
-		// Re-evaluate when the viewport shrinks/grows (e.g. the iOS keyboard
-		// opening resizes the WKWebView frame) — clientHeight changes shift
-		// maxScroll, so the opacity formula needs to re-run even when scrollTop
-		// itself didn't move.
+		// Re-evaluate when the node shrinks/grows (e.g. the layout's
+		// --keyboard-inset-height padding squeezing it while the keyboard opens) —
+		// clientHeight changes shift maxScroll, so the opacity formula needs to
+		// re-run even when scrollTop itself didn't move.
 		const resizeObserver = new ResizeObserver(scheduleUpdate);
 		resizeObserver.observe(node);
 
 		syncNavbar();
 		updateNavbar();
+		measureNavbar = updateNavbar;
 
 		return () => {
+			measureNavbar = null;
 			if (frame) cancelAnimationFrame(frame);
 			innerObserver.disconnect();
 			pageObserver.disconnect();
@@ -306,9 +320,11 @@
 		style="overflow-anchor: none"
 		{...scrollProps}
 	>
+		<div style="flex: 1 0 auto"></div>
 		<div
 			bind:this={innerEl}
-			style="flex: 1 0 auto; padding-top: var(--chat-navbar-height, 0px);"
+			use:renderAboveKeyboard={{ onPreviewLayoutMeasure }}
+			style="flex: 0 0 auto; padding-top: var(--chat-navbar-height, 0px);"
 		>
 			{@render children?.()}
 		</div>

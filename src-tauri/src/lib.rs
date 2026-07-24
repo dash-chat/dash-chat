@@ -40,7 +40,6 @@ pub fn run() {
     #[cfg(mobile)]
     {
         builder = builder
-            .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
             .plugin(tauri_plugin_view::init())
             .plugin(tauri_plugin_system_bars_styles::init());
@@ -162,6 +161,7 @@ pub fn run() {
             #[cfg(feature = "e2e-tests")]
             commands::testing::close_iroh_endpoint,
         ])
+        .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())

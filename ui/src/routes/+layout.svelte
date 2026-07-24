@@ -3,6 +3,7 @@
 	import '@awesome.me/webawesome/dist/styles/themes/default.css';
 
 	import '../app.css';
+	import 'tauri-plugin-virtual-keyboard';
 	import { setContext } from 'svelte';
 
 	import {
@@ -43,7 +44,6 @@
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
-	import { trackKeyboardHeight } from '$lib/utils/keyboard.svelte';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 	import {
 		listenForDeepLinks,
@@ -172,10 +172,6 @@
 		applyDarkMode(effectiveDark).catch(e => {
 			showToast(m.errorApplyStyle(), 'error');
 		});
-	});
-
-	$effect(() => {
-		if (isMobile) trackKeyboardHeight();
 	});
 
 	$effect(() => {

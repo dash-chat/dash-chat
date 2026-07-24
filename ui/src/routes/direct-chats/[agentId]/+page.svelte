@@ -668,132 +668,135 @@
 				{/if}
 
 				<div
-					bind:clientHeight={bottomBarHeight}
 					class="absolute bottom-0 inset-x-0 z-30"
 					class:bg-page-surface={theme === 'material'}
 				>
-					{#if searchMode}
-						<div class="pb-safe bg-page-surface">
-							<div
-								class="mx-4 border-t border-gray-300 dark:border-gray-600"
-								style="margin: 0 auto"
-							></div>
-							<div
-								class="row items-center gap-2 px-4 py-3"
-								style="margin: 0 auto"
-							>
-								<button
-									onclick={() => dateInput?.click()}
-									aria-label={m.jumpToDate()}
+					<div bind:clientHeight={bottomBarHeight}>
+						{#if searchMode}
+							<div class="pb-safe bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<div
+									class="row items-center gap-2 px-4 py-3"
+									style="margin: 0 auto"
 								>
-									<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
-									></wa-icon>
-								</button>
-								<input
-									type="date"
-									class="absolute opacity-0 h-0 w-0"
-									bind:this={dateInput}
-									onchange={e => jumpToDate(e.currentTarget.value)}
-								/>
-								<span
-									class="flex-1 text-center text-sm quiet"
-									data-testid="search-results-count"
-								>
-									{#if !searchQuery}
-										<!-- empty -->
-									{:else if matchingHashes.length === 0}
-										{m.noResults()}
-									{:else}
-										{m.searchResultsCount({
-											current: String(currentMatchIndex + 1),
-											total: String(matchingHashes.length),
-										})}
-									{/if}
-								</span>
-								<button
-									disabled={!matchingHashes.length}
-									onclick={goToPreviousMatch}
-									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-									aria-label={m.previousResult()}
-								>
-									<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
-								</button>
-								<button
-									disabled={!matchingHashes.length}
-									onclick={goToNextMatch}
-									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-									aria-label={m.nextResult()}
-								>
-									<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-								</button>
-							</div>
-						</div>
-					{:else if isPendingChat}
-						<div class="pb-safe bg-page-surface">
-							<div
-								class="mx-4 border-t border-gray-300 dark:border-gray-600"
-								style="margin: 0 auto"
-							></div>
-							<p
-								class="px-6 py-4 text-center text-sm text-gray-600 dark:text-gray-400"
-								data-testid="direct-chat-pending-note"
-							>
-								{m.waitingForProfile()}
-							</p>
-						</div>
-					{:else if contactRequest}
-						<div class="pb-safe bg-page-surface">
-							<div
-								class="mx-4 border-t border-gray-300 dark:border-gray-600"
-								style="margin: 0 auto"
-							></div>
-							<div
-								class="flex flex-col items-center gap-3 px-6 py-3"
-								style="margin: 0 auto"
-							>
-								<p
-									class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
-								>
-									{@html m
-										.contactRequestBanner({
-											name: contactRequest.profile.name
-												.replace(/&/g, '&amp;')
-												.replace(/</g, '&lt;')
-												.replace(/>/g, '&gt;')
-												.replace(/"/g, '&quot;'),
-										})
-										.replace(
-											/\*\*(.*?)\*\*/g,
-											'<strong class="text-black dark:text-white">$1</strong>',
-										)}
-								</p>
-								<div class="flex w-full gap-2">
-									<Button
-										class="neutral-tonal-button text-red-500 flex-1"
-										rounded
-										tonal
-										data-testid="direct-chat-reject-btn"
-										onClick={() => (showRejectDialog = true)}
-										>{m.reject()}</Button
+									<button
+										onclick={() => dateInput?.click()}
+										aria-label={m.jumpToDate()}
 									>
-									<Button
-										class="neutral-tonal-button flex-1"
-										rounded
-										tonal
-										data-testid="direct-chat-accept-btn"
-										onClick={() => (showAcceptDialog = true)}
-										>{m.accept()}</Button
+										<wa-icon
+											class="quiet"
+											src={wrapPathInSvg(mdiCalendarSearch)}
+										></wa-icon>
+									</button>
+									<input
+										type="date"
+										class="absolute opacity-0 h-0 w-0"
+										bind:this={dateInput}
+										onchange={e => jumpToDate(e.currentTarget.value)}
+									/>
+									<span
+										class="flex-1 text-center text-sm quiet"
+										data-testid="search-results-count"
 									>
+										{#if !searchQuery}
+											<!-- empty -->
+										{:else if matchingHashes.length === 0}
+											{m.noResults()}
+										{:else}
+											{m.searchResultsCount({
+												current: String(currentMatchIndex + 1),
+												total: String(matchingHashes.length),
+											})}
+										{/if}
+									</span>
+									<button
+										disabled={!matchingHashes.length}
+										onclick={goToPreviousMatch}
+										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+										aria-label={m.previousResult()}
+									>
+										<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+									</button>
+									<button
+										disabled={!matchingHashes.length}
+										onclick={goToNextMatch}
+										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+										aria-label={m.nextResult()}
+									>
+										<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
+									</button>
 								</div>
 							</div>
-						</div>
-					{:else}
-						<MessageComposer
-							store={store.messages}
-							destinationName={profile ? fullName(profile) : undefined}
-							onSent={onMessageSent}
-						/>
-					{/if}
+						{:else if isPendingChat}
+							<div class="pb-safe bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<p
+									class="px-6 py-4 text-center text-sm text-gray-600 dark:text-gray-400"
+									data-testid="direct-chat-pending-note"
+								>
+									{m.waitingForProfile()}
+								</p>
+							</div>
+						{:else if contactRequest}
+							<div class="pb-safe bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<div
+									class="flex flex-col items-center gap-3 px-6 py-3"
+									style="margin: 0 auto"
+								>
+									<p
+										class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
+									>
+										{@html m
+											.contactRequestBanner({
+												name: contactRequest.profile.name
+													.replace(/&/g, '&amp;')
+													.replace(/</g, '&lt;')
+													.replace(/>/g, '&gt;')
+													.replace(/"/g, '&quot;'),
+											})
+											.replace(
+												/\*\*(.*?)\*\*/g,
+												'<strong class="text-black dark:text-white">$1</strong>',
+											)}
+									</p>
+									<div class="flex w-full gap-2">
+										<Button
+											class="neutral-tonal-button text-red-500 flex-1"
+											rounded
+											tonal
+											data-testid="direct-chat-reject-btn"
+											onClick={() => (showRejectDialog = true)}
+											>{m.reject()}</Button
+										>
+										<Button
+											class="neutral-tonal-button flex-1"
+											rounded
+											tonal
+											data-testid="direct-chat-accept-btn"
+											onClick={() => (showAcceptDialog = true)}
+											>{m.accept()}</Button
+										>
+									</div>
+								</div>
+							</div>
+						{:else}
+							<MessageComposer
+								store={store.messages}
+								destinationName={profile ? fullName(profile) : undefined}
+								onSent={onMessageSent}
+							/>
+						{/if}
+					</div>
 				</div>
 			{/await}
 		{/await}

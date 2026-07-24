@@ -8,6 +8,7 @@
 		placeholder?: string;
 		onSend?: () => Promise<boolean>;
 		onpaste?: (event: ClipboardEvent) => void;
+		onfocus?: (event: FocusEvent) => void;
 		/** Leading content rendered inside the pill, before the textarea. */
 		before?: Snippet;
 		/** Trailing content rendered inside the pill, after the textarea. */
@@ -19,6 +20,7 @@
 		placeholder = m.typeMessage(),
 		onSend,
 		onpaste,
+		onfocus,
 		before,
 		after,
 	}: Props = $props();
@@ -73,6 +75,7 @@
 		rows="1"
 		onkeydown={handleKeydown}
 		oninput={handleInput}
+		{onfocus}
 	></textarea>
 
 	{@render after?.()}

@@ -4,7 +4,6 @@
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
-	import { keyboard } from '$lib/utils/keyboard.svelte';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -17,6 +16,9 @@
 	} from '$lib/utils/media';
 	import type { Hash, MessagesStore } from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
+	import { renderBelowKeyboard } from '$lib/utils/virtual-keyboard/render-below-keyboard';
+	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import { showToast } from '$lib/utils/toasts';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
@@ -59,16 +61,20 @@
 	let sending = false;
 
 	let showMediaPanel = $state(false);
+	// Stays true through the panel→keyboard swap so the panel remains visible
+	// under the rising keyboard; cleared by the slot's onHidden once covered.
+	let mediaPanelMounted = $state(false);
 
 	function toggleMediaPanel() {
 		if (!showMediaPanel) {
 			showMediaPanel = true;
+			mediaPanelMounted = true;
 			return;
 		}
 		// Flip the intent right away so the attach button reacts instantly, then
-		// hand focus to the input: renderBelowKeyboard sees the close arrive with
-		// an input focused and keeps the panel's slot until the rising keyboard
-		// claims it, so the input bar stays pinned during the swap.
+		// hand focus to the input: the plugin sees the close arrive with an input
+		// focused and holds the reserved inset until the rising keyboard claims the
+		// slot, so the input bar stays pinned during the swap.
 		showMediaPanel = false;
 		messageInput?.focus();
 	}
@@ -128,6 +134,11 @@
 		}
 	}
 
+	function stageFromPanel(files: File[]) {
+		showMediaPanel = false;
+		stage(files);
+	}
+
 	async function addMore() {
 		try {
 			const files = await pickMedia('image', true);
@@ -144,6 +155,11 @@
 		if (isMobile && media && !page.state.stagedMedia) media = undefined;
 	});
 
+	function openEmojiPicker() {
+		hideKeyboard();
+		showEmojiPicker = true;
+	}
+
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
@@ -155,18 +171,14 @@
 <MediaDropOverlay onFiles={stage} />
 
 {#snippet emojiButton()}
-	<EmojiButton onClick={() => (showEmojiPicker = true)} />
+	<EmojiButton onClick={openEmojiPicker} />
 {/snippet}
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
-	     below it): no panel and no keyboard. Keying it off the panel alone bumps
-	     the bar by `env(safe-area-inset-bottom)` during the panel→keyboard swap,
-	     because the panel closes before the (visual-viewport-driven) safe area
-	     has collapsed to 0. -->
 	<div
-		class="message-input-bar"
-		class:pb-safe={!showMediaPanel && !keyboard.isOpen}
+		class="message-input-bar relative z-10 flow-root"
+		class:bg-page-surface={theme === 'material'}
+		use:renderAboveKeyboard
 	>
 		{#if !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
@@ -181,7 +193,7 @@
 					/>
 				{/if}
 			{:else}
-				<EmojiButton onClick={() => (showEmojiPicker = true)} />
+				<EmojiButton onClick={openEmojiPicker} />
 			{/if}
 			<MessageInput
 				bind:this={messageInput}
@@ -189,6 +201,7 @@
 				{placeholder}
 				onSend={send}
 				onpaste={onPaste}
+				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
 			>
 				{#snippet after()}
@@ -227,7 +240,20 @@
 	</div>
 
 	{#if isMobile}
-		<MediaPanel bind:open={showMediaPanel} onFiles={stage} />
+		<div
+			use:renderBelowKeyboard={{
+				open: showMediaPanel,
+				onHidden: () => (mediaPanelMounted = false),
+			}}
+			class="bg-page-surface fixed bottom-0 inset-x-0 z-20"
+		>
+			{#if mediaPanelMounted}
+				<MediaPanel
+					onFiles={stageFromPanel}
+					onPickerOpen={() => (showMediaPanel = false)}
+				/>
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -265,3 +291,20 @@
 		></EmojiPickerWrapper>
 	</Block>
 </Sheet>
+
+<style>
+	/* During keyboard glides the bar can lead the keyboard's edge by a few px;
+	   this skirt extends the bar's surface downward so the sliver between the
+	   bar and the keyboard paints page-surface instead of exposing the messages
+	   gliding behind it. Invisible at rest: everything legitimately below the
+	   bar (the shell's reserved-space padding, the media panel, the keyboard
+	   itself) either shares this color or paints above it. */
+	.message-input-bar:global(.bg-page-surface)::after {
+		content: '';
+		position: absolute;
+		inset-inline: 0;
+		top: 100%;
+		height: 64px;
+		background: inherit;
+	}
+</style>
