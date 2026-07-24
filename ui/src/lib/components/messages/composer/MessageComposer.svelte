@@ -24,6 +24,7 @@
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	import { renderBelowKeyboard } from '$lib/utils/virtual-keyboard/render-below-keyboard';
+	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import { keyboardSpace } from '$lib/utils/virtual-keyboard/keyboard-space.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -71,6 +72,9 @@
 	let sending = false;
 
 	let showMediaPanel = $state(false);
+	// Stays true through the panel→keyboard swap so the panel remains visible
+	// under the rising keyboard; cleared by the slot's onHidden once covered.
+	let mediaPanelMounted = $state(false);
 
 	let editing = $state<Message | null>(null);
 	/** Edit requested while a draft was present, awaiting discard confirmation. */
@@ -169,6 +173,7 @@
 	function toggleMediaPanel() {
 		if (!showMediaPanel) {
 			showMediaPanel = true;
+			mediaPanelMounted = true;
 			return;
 		}
 		// Flip the intent right away so the attach button reacts instantly, then
@@ -263,6 +268,11 @@
 		if (editing) messageInput?.focus();
 	});
 
+	function openEmojiPicker() {
+		hideKeyboard();
+		showEmojiPicker = true;
+	}
+
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
@@ -274,7 +284,7 @@
 <MediaDropOverlay onFiles={stage} />
 
 {#snippet emojiButton()}
-	<EmojiButton onClick={() => (showEmojiPicker = true)} />
+	<EmojiButton onClick={openEmojiPicker} />
 {/snippet}
 
 {#snippet editingBanner()}
@@ -289,7 +299,13 @@
 {/snippet}
 
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<div class="message-input-bar relative z-10" use:renderAboveKeyboard>
+	<div
+		class="message-input-bar relative flow-root {theme === 'ios'
+			? 'z-30'
+			: 'z-10'}"
+		class:bg-page-surface={theme === 'material'}
+		use:renderAboveKeyboard
+	>
 		{#if !editing && !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
@@ -314,7 +330,7 @@
 				/>
 			{/if}
 			{#if !isMobile}
-				<EmojiButton onClick={() => (showEmojiPicker = true)} />
+				<EmojiButton onClick={openEmojiPicker} />
 			{/if}
 			<MessageInput
 				bind:this={messageInput}
@@ -378,10 +394,11 @@
 		<div
 			use:renderBelowKeyboard={{
 				open: showMediaPanel || keyboardSpace.preserved,
+				onHidden: () => (mediaPanelMounted = false),
 			}}
-			class="bg-page-surface fixed bottom-0 inset-x-0"
+			class="bg-page-surface fixed bottom-0 inset-x-0 z-20"
 		>
-			{#if showMediaPanel}
+			{#if mediaPanelMounted}
 				<MediaPanel
 					onFiles={stageFromPanel}
 					onPickerOpen={() => (showMediaPanel = false)}
@@ -496,3 +513,20 @@
 		></EmojiPickerWrapper>
 	</Block>
 </Sheet>
+
+<style>
+	/* During keyboard glides the bar can lead the keyboard's edge by a few px;
+	   this skirt extends the bar's surface downward so the sliver between the
+	   bar and the keyboard paints page-surface instead of exposing the messages
+	   gliding behind it. Invisible at rest: everything legitimately below the
+	   bar (the shell's reserved-space padding, the media panel, the keyboard
+	   itself) either shares this color or paints above it. */
+	.message-input-bar:global(.bg-page-surface)::after {
+		content: '';
+		position: absolute;
+		inset-inline: 0;
+		top: 100%;
+		height: 64px;
+		background: inherit;
+	}
+</style>

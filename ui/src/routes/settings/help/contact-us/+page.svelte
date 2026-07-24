@@ -7,7 +7,6 @@
 	import { showToast } from '$lib/utils/toasts';
 	import {
 		BlockTitle,
-		Button,
 		Checkbox,
 		List,
 		ListInput,
@@ -17,6 +16,7 @@
 		Page,
 		useTheme,
 	} from 'konsta/svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 
 	const theme = $derived(useTheme());
 
@@ -138,13 +138,11 @@
 		</div>
 	</div>
 
-	<Button
-		rounded
+	<FixedActionButton
 		onClick={handleSubmit}
 		disabled={!message}
-		data-testid="contact-us-next-btn"
-		class="fixed-action-btn"
+		testId="contact-us-next-btn"
 	>
 		{m.next()}
-	</Button>
+	</FixedActionButton>
 </Page>

@@ -1,13 +1,7 @@
 <script lang="ts">
-	import {
-		Page,
-		Navbar,
-		NavbarBackLink,
-		Button,
-		Link,
-		useTheme,
-	} from 'konsta/svelte';
+	import { Page, Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import type { Snippet } from 'svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 
 	interface Props {
 		title: string;
@@ -97,14 +91,12 @@
 	{/if}
 
 	{#if !isIosTheme}
-		<Button
+		<FixedActionButton
 			onClick={handleAction}
-			data-testid={actionTestId}
-			class="fixed-action-btn"
-			rounded
+			testId={actionTestId}
 			disabled={actionDisabled}
 		>
 			{actionLabel}
-		</Button>
+		</FixedActionButton>
 	{/if}
 </Page>

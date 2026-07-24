@@ -561,11 +561,6 @@
 										</div>
 									</div>
 
-									<ProfileNamesSheet
-										opened={profileNamesSheetOpen}
-										onClose={() => (profileNamesSheetOpen = false)}
-									/>
-
 									<div
 										class="column m-2 gap-1"
 										data-testid="direct-chat-messages"
@@ -649,74 +644,83 @@
 							{/await}
 						{/await}
 					{/if}
-					{#if contactRequest}
-						<Dialog
-							opened={showAcceptDialog}
-							onBackdropClick={() => (showAcceptDialog = false)}
-							title={m.acceptRequestTitle()}
-						>
-							<span>{m.acceptRequestDescription()}</span>
-							{#snippet buttons()}
-								<DialogButton onClick={() => (showAcceptDialog = false)}>
-									{m.cancel()}
-								</DialogButton>
-								<DialogButton
-									data-testid="direct-chat-accept-confirm"
-									onClick={() => {
-										showAcceptDialog = false;
-										acceptContactRequest(contactRequest);
-									}}
-								>
-									{m.accept()}
-								</DialogButton>
-							{/snippet}
-						</Dialog>
-						<Dialog
-							opened={showRejectDialog}
-							onBackdropClick={() => (showRejectDialog = false)}
-							title={m.rejectRequestTitle()}
-						>
-							<span>{m.rejectRequestDescription()}</span>
-							{#snippet buttons()}
-								<DialogButton onClick={() => (showRejectDialog = false)}>
-									{m.cancel()}
-								</DialogButton>
-								<DialogButton
-									data-testid="direct-chat-reject-confirm"
-									onClick={() => {
-										showRejectDialog = false;
-										rejectContactRequest(contactRequest);
-									}}
-								>
-									{m.reject()}
-								</DialogButton>
-							{/snippet}
-						</Dialog>
-					{/if}
-					<BlockContactDialog
-						opened={showBlockDialog}
-						name={profile ? fullName(profile) : ''}
-						blocked={isBlocked}
-						onConfirm={confirmBlock}
-						onClose={() => (showBlockDialog = false)}
-					/>
-					<ReportContactDialog
-						opened={showReportDialog}
-						name={profile ? fullName(profile) : ''}
-						onConfirm={confirmReport}
-						onClose={() => (showReportDialog = false)}
-					/>
-					<SafetyTipsSheet
-						opened={showSecurityTips}
-						onClose={() => (showSecurityTips = false)}
-					/>
-
-					<PeerProfileSheet
-						opened={showPeerProfile}
-						onClose={() => (showPeerProfile = false)}
-						{profile}
-					/>
 				</ReverseScrollPage>
+
+				{#if contactRequest}
+					<Dialog
+						opened={showAcceptDialog}
+						onBackdropClick={() => (showAcceptDialog = false)}
+						title={m.acceptRequestTitle()}
+					>
+						<span>{m.acceptRequestDescription()}</span>
+						{#snippet buttons()}
+							<DialogButton onClick={() => (showAcceptDialog = false)}>
+								{m.cancel()}
+							</DialogButton>
+							<DialogButton
+								data-testid="direct-chat-accept-confirm"
+								onClick={() => {
+									showAcceptDialog = false;
+									acceptContactRequest(contactRequest);
+								}}
+							>
+								{m.accept()}
+							</DialogButton>
+						{/snippet}
+					</Dialog>
+					<Dialog
+						opened={showRejectDialog}
+						onBackdropClick={() => (showRejectDialog = false)}
+						title={m.rejectRequestTitle()}
+					>
+						<span>{m.rejectRequestDescription()}</span>
+						{#snippet buttons()}
+							<DialogButton onClick={() => (showRejectDialog = false)}>
+								{m.cancel()}
+							</DialogButton>
+							<DialogButton
+								data-testid="direct-chat-reject-confirm"
+								onClick={() => {
+									showRejectDialog = false;
+									rejectContactRequest(contactRequest);
+								}}
+							>
+								{m.reject()}
+							</DialogButton>
+						{/snippet}
+					</Dialog>
+				{/if}
+
+				<BlockContactDialog
+					opened={showBlockDialog}
+					name={profile ? fullName(profile) : ''}
+					blocked={isBlocked}
+					onConfirm={confirmBlock}
+					onClose={() => (showBlockDialog = false)}
+				/>
+
+				<ReportContactDialog
+					opened={showReportDialog}
+					name={profile ? fullName(profile) : ''}
+					onConfirm={confirmReport}
+					onClose={() => (showReportDialog = false)}
+				/>
+
+				<SafetyTipsSheet
+					opened={showSecurityTips}
+					onClose={() => (showSecurityTips = false)}
+				/>
+
+				<PeerProfileSheet
+					opened={showPeerProfile}
+					onClose={() => (showPeerProfile = false)}
+					{profile}
+				/>
+
+				<ProfileNamesSheet
+					opened={profileNamesSheetOpen}
+					onClose={() => (profileNamesSheetOpen = false)}
+				/>
 
 				{#if !isAtBottom}
 					{#await $unreadCount then count}
@@ -733,168 +737,172 @@
 				{/if}
 
 				<div
-					bind:clientHeight={bottomBarHeight}
-					class="absolute bottom-0 inset-x-0 z-30 pb-grounded-safe"
+					class="absolute bottom-0 inset-x-0 z-30"
 					class:bg-page-surface={theme === 'material'}
 				>
-					{#if searchMode}
-						<div class="pb-safe bg-page-surface">
-							<div
-								class="mx-4 border-t border-gray-300 dark:border-gray-600"
-								style="margin: 0 auto"
-							></div>
-							<div
-								class="row items-center gap-2 px-4 py-3"
-								style="margin: 0 auto"
-							>
-								<button
-									onclick={() => dateInput?.click()}
-									aria-label={m.jumpToDate()}
+					<div bind:clientHeight={bottomBarHeight}>
+						{#if searchMode}
+							<div class="bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<div
+									class="row items-center gap-2 px-4 py-3"
+									style="margin: 0 auto"
 								>
-									<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
-									></wa-icon>
-								</button>
-								<input
-									type="date"
-									class="absolute opacity-0 h-0 w-0"
-									bind:this={dateInput}
-									onchange={e => jumpToDate(e.currentTarget.value)}
-								/>
-								<span
-									class="flex-1 text-center text-sm quiet"
-									data-testid="search-results-count"
-								>
-									{#if !searchQuery}
-										<!-- empty -->
-									{:else if matchingHashes.length === 0}
-										{m.noResults()}
-									{:else}
-										{m.searchResultsCount({
-											current: String(currentMatchIndex + 1),
-											total: String(matchingHashes.length),
-										})}
-									{/if}
-								</span>
-								<button
-									disabled={!matchingHashes.length}
-									onclick={goToPreviousMatch}
-									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-									aria-label={m.previousResult()}
-								>
-									<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
-								</button>
-								<button
-									disabled={!matchingHashes.length}
-									onclick={goToNextMatch}
-									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-									aria-label={m.nextResult()}
-								>
-									<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-								</button>
-							</div>
-						</div>
-					{:else if isPendingChat}
-						<div class="pb-safe bg-page-surface">
-							<div
-								class="mx-4 border-t border-gray-300 dark:border-gray-600"
-								style="margin: 0 auto"
-							></div>
-							<p
-								class="px-6 py-4 text-center text-sm text-gray-600 dark:text-gray-400"
-								data-testid="direct-chat-pending-note"
-							>
-								{m.waitingForProfile()}
-							</p>
-						</div>
-					{:else if isBlocked}
-						<div class="pb-safe bg-page-surface">
-							<div
-								class="mx-4 border-t border-gray-300 dark:border-gray-600"
-								style="margin: 0 auto"
-							></div>
-							<div
-								class="flex flex-col items-center gap-3 px-6 py-3"
-								data-testid="direct-chat-blocked-banner"
-							>
-								<p
-									class="flex items-center gap-2 text-center text-sm text-gray-600 dark:text-gray-400"
-								>
-									<wa-icon
-										class="small-icon quiet shrink-0"
-										src={wrapPathInSvg(mdiCancel)}
-									></wa-icon>
-									{m.youBlockedThisPerson()}
-								</p>
-								<Button
-									class="neutral-tonal-button flex-1"
-									rounded
-									tonal
-									data-testid="direct-chat-unblock-btn"
-									onClick={() => (showBlockDialog = true)}>{m.unblock()}</Button
-								>
-							</div>
-						</div>
-					{:else if contactRequest}
-						<div class="pb-safe bg-page-surface">
-							<div
-								class="mx-4 border-t border-gray-300 dark:border-gray-600"
-								style="margin: 0 auto"
-							></div>
-							<div
-								class="flex flex-col items-center gap-3 px-6 py-3"
-								style="margin: 0 auto"
-							>
-								<p
-									class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
-								>
-									{@html m
-										.contactRequestBanner({
-											name: contactRequest.profile.name
-												.replace(/&/g, '&amp;')
-												.replace(/</g, '&lt;')
-												.replace(/>/g, '&gt;')
-												.replace(/"/g, '&quot;'),
-										})
-										.replace(
-											/\*\*(.*?)\*\*/g,
-											'<strong class="text-black dark:text-white">$1</strong>',
-										)}
-								</p>
-								<div class="flex w-full gap-2">
-									<Button
-										class="neutral-tonal-button text-red-500 flex-1"
-										rounded
-										tonal
-										data-testid="direct-chat-block-btn"
-										onClick={() => (showBlockDialog = true)}>{m.block()}</Button
+									<button
+										onclick={() => dateInput?.click()}
+										aria-label={m.jumpToDate()}
 									>
-									<Button
-										class="neutral-tonal-button text-red-500 flex-1"
-										rounded
-										tonal
-										data-testid="direct-chat-report-btn"
-										onClick={() => (showReportDialog = true)}
-										>{m.report()}</Button
+										<wa-icon
+											class="quiet"
+											src={wrapPathInSvg(mdiCalendarSearch)}
+										></wa-icon>
+									</button>
+									<input
+										type="date"
+										class="absolute opacity-0 h-0 w-0"
+										bind:this={dateInput}
+										onchange={e => jumpToDate(e.currentTarget.value)}
+									/>
+									<span
+										class="flex-1 text-center text-sm quiet"
+										data-testid="search-results-count"
 									>
+										{#if !searchQuery}
+											<!-- empty -->
+										{:else if matchingHashes.length === 0}
+											{m.noResults()}
+										{:else}
+											{m.searchResultsCount({
+												current: String(currentMatchIndex + 1),
+												total: String(matchingHashes.length),
+											})}
+										{/if}
+									</span>
+									<button
+										disabled={!matchingHashes.length}
+										onclick={goToPreviousMatch}
+										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+										aria-label={m.previousResult()}
+									>
+										<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+									</button>
+									<button
+										disabled={!matchingHashes.length}
+										onclick={goToNextMatch}
+										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+										aria-label={m.nextResult()}
+									>
+										<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
+									</button>
+								</div>
+							</div>
+						{:else if isPendingChat}
+							<div class="bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<p
+									class="px-6 py-4 text-center text-sm text-gray-600 dark:text-gray-400"
+									data-testid="direct-chat-pending-note"
+								>
+									{m.waitingForProfile()}
+								</p>
+							</div>
+						{:else if isBlocked}
+							<div class="bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<div
+									class="flex flex-col items-center gap-3 px-6 py-3"
+									data-testid="direct-chat-blocked-banner"
+								>
+									<p
+										class="flex items-center gap-2 text-center text-sm text-gray-600 dark:text-gray-400"
+									>
+										<wa-icon
+											class="small-icon quiet shrink-0"
+											src={wrapPathInSvg(mdiCancel)}
+										></wa-icon>
+										{m.youBlockedThisPerson()}
+									</p>
 									<Button
 										class="neutral-tonal-button flex-1"
 										rounded
 										tonal
-										data-testid="direct-chat-accept-btn"
-										onClick={() => (showAcceptDialog = true)}
-										>{m.accept()}</Button
+										data-testid="direct-chat-unblock-btn"
+										onClick={() => (showBlockDialog = true)}>{m.unblock()}</Button
 									>
 								</div>
 							</div>
-						</div>
-					{:else}
-						<MessageComposer
-							bind:this={composer}
-							store={store.messages}
-							destinationName={profile ? fullName(profile) : undefined}
-							onSent={onMessageSent}
-						/>
-					{/if}
+						{:else if contactRequest}
+							<div class="bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<div
+									class="flex flex-col items-center gap-3 px-6 py-3"
+									style="margin: 0 auto"
+								>
+									<p
+										class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
+									>
+										{@html m
+											.contactRequestBanner({
+												name: contactRequest.profile.name
+													.replace(/&/g, '&amp;')
+													.replace(/</g, '&lt;')
+													.replace(/>/g, '&gt;')
+													.replace(/"/g, '&quot;'),
+											})
+											.replace(
+												/\*\*(.*?)\*\*/g,
+												'<strong class="text-black dark:text-white">$1</strong>',
+											)}
+									</p>
+									<div class="flex w-full gap-2">
+										<Button
+											class="neutral-tonal-button text-red-500 flex-1"
+											rounded
+											tonal
+											data-testid="direct-chat-block-btn"
+											onClick={() => (showBlockDialog = true)}
+											>{m.block()}</Button
+										>
+										<Button
+											class="neutral-tonal-button text-red-500 flex-1"
+											rounded
+											tonal
+											data-testid="direct-chat-report-btn"
+											onClick={() => (showReportDialog = true)}
+											>{m.report()}</Button
+										>
+										<Button
+											class="neutral-tonal-button flex-1"
+											rounded
+											tonal
+											data-testid="direct-chat-accept-btn"
+											onClick={() => (showAcceptDialog = true)}
+											>{m.accept()}</Button
+										>
+									</div>
+								</div>
+							</div>
+						{:else}
+							<MessageComposer
+								bind:this={composer}
+								store={store.messages}
+								destinationName={profile ? fullName(profile) : undefined}
+								onSent={onMessageSent}
+							/>
+						{/if}
+					</div>
 				</div>
 			{/await}
 		{/await}
