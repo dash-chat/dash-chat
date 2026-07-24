@@ -52,8 +52,10 @@ export interface IContactsClient {
 	// Unblock a contact
 	unblockContact(agentId: AgentId): Promise<void>;
 
-	// Report a contact to the shared infrastructure
-	reportContact(agentId: AgentId): Promise<void>;
+	// Report a contact to the shared infrastructure. Resolves with every mailbox
+	// the contact has been reported to so far; empty means no mailbox could be
+	// reached and the report was not delivered anywhere.
+	reportContact(agentId: AgentId): Promise<string[]>;
 
 	// Whether a contact has already been reported
 	isContactReported(agentId: AgentId): Promise<boolean>;
@@ -129,8 +131,8 @@ export class ContactsClient implements IContactsClient {
 		await invokeAfterSetup('unblock_contact', { agentId });
 	}
 
-	async reportContact(agentId: AgentId): Promise<void> {
-		await invokeAfterSetup('report_contact', { agentId });
+	reportContact(agentId: AgentId): Promise<string[]> {
+		return invokeAfterSetup('report_contact', { agentId });
 	}
 
 	isContactReported(agentId: AgentId): Promise<boolean> {

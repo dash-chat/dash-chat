@@ -119,9 +119,15 @@ export class ContactsStore {
 		return await this.client.isContactReported(agentId);
 	});
 
-	async reportContact(agentId: AgentId): Promise<void> {
-		await this.client.reportContact(agentId);
+	/**
+	 * Report a contact. Resolves with every mailbox it has been reported to so
+	 * far — an empty array means no mailbox could be reached, so the report
+	 * hasn't been delivered and the caller should tell the user to retry.
+	 */
+	async reportContact(agentId: AgentId): Promise<string[]> {
+		const mailboxes = await this.client.reportContact(agentId);
 		this.reportVersion.value++;
+		return mailboxes;
 	}
 
 	/**

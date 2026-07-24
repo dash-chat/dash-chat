@@ -67,7 +67,8 @@
 
 	async function confirmReport() {
 		showReportDialog = false;
-		await contactsStore.reportContact(agentId);
+		const mailboxes = await contactsStore.reportContact(agentId);
+		if (mailboxes.length === 0) showToast(m.reportNoMailboxReached());
 	}
 
 	function comingSoon() {

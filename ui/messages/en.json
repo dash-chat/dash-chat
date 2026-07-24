@@ -16,6 +16,7 @@
 	"reported": "Reported",
 	"reportContactTitle": "Report {{name}}?",
 	"reportContactDescription": "This account will be reported to Dash Chat for review. They won't be notified, and reporting won't block them.",
+	"reportNoMailboxReached": "No message server could be reached. Try again when you have a network connection.",
 	"quickReactions": "Quick reactions",
 	"moreReactions": "More reactions",
 	"addReaction": "Add reaction",

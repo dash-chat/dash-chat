@@ -16,6 +16,7 @@
 	import { goto } from '$app/navigation';
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { showToast } from '$lib/utils/toasts';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
 		Navbar,
@@ -89,7 +90,8 @@
 		if (!dialogFor) return;
 		const { agentId } = dialogFor;
 		showReportDialog = false;
-		await contactsStore.reportContact(agentId);
+		const mailboxes = await contactsStore.reportContact(agentId);
+		if (mailboxes.length === 0) showToast(m.reportNoMailboxReached());
 		dialogFor = null;
 	}
 

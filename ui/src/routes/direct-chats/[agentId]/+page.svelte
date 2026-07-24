@@ -153,8 +153,10 @@
 	async function confirmReport() {
 		showReportDialog = false;
 		try {
-			await contactsStore.reportContact(agentId);
-			showToast(m.reported());
+			const mailboxes = await contactsStore.reportContact(agentId);
+			showToast(
+				mailboxes.length > 0 ? m.reported() : m.reportNoMailboxReached(),
+			);
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);

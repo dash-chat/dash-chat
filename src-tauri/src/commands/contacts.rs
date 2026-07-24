@@ -1,4 +1,5 @@
 use dashchat_node::{topic::kind::Inbox, AgentId, DeviceId, QrCode, ShareIntent, Topic};
+use mailbox_client::MailboxId;
 use std::{collections::BTreeSet, str::FromStr};
 use tauri::State;
 
@@ -90,13 +91,18 @@ pub async fn unblock_contact(agent_id: AgentId, app_node: State<'_, AppNode>) ->
     Ok(node.unblock_contact(agent_id).await?)
 }
 
+/// Returns every mailbox the contact has been reported to so far; empty means
+/// no mailbox could be reached and the report has not been delivered anywhere.
 #[tauri::command]
-pub async fn report_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> Result<(), Error> {
+pub async fn report_contact(
+    agent_id: AgentId,
+    app_node: State<'_, AppNode>,
+) -> Result<Vec<MailboxId>, Error> {
     let node = app_node.get().await?;
-    node.report_contact(agent_id)
+    Ok(node
+        .report_contact(agent_id)
         .await
-        .map_err(|e| dashchat_node::Error::AuthorOperation(e.to_string()))?;
-    Ok(())
+        .map_err(|e| dashchat_node::Error::AuthorOperation(e.to_string()))?)
 }
 
 #[tauri::command]

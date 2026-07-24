@@ -75,8 +75,9 @@ export class MockContactsClient implements IContactsClient {
 
 	private reported = new Set<AgentId>();
 
-	async reportContact(agentId: AgentId): Promise<void> {
+	async reportContact(agentId: AgentId): Promise<string[]> {
 		this.reported.add(agentId);
+		return ['mock-mailbox'];
 	}
 
 	async isContactReported(agentId: AgentId): Promise<boolean> {
