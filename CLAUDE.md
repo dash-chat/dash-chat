@@ -93,52 +93,6 @@ Please read this coding style carefully and take it into account when planning o
 pnpm install
 ```
 
-## Common Commands
-
-### Running the Application
-```bash
-# Start two instances forming a p2panda network
-pnpm start
-
-# This uses mprocs to spawn multiple processes:
-# - agent1 and agent2: Two Tauri development instances
-# - ui: Frontend development server
-# - stores: Watches and rebuilds the stores package
-```
-
-### Development Tasks
-```bash
-# Run Rust tests
-cargo nextest run
-# or
-pnpm test
-
-# Type check Svelte components (from ui/ directory)
-pnpm check
-pnpm check:watch
-
-# Build UI (from ui/ directory)
-pnpm build
-
-# Build stores package (from packages/stores/ directory)
-pnpm build
-```
-
-### Mobile Development
-```bash
-# Run on Android
-pnpm tauri android dev
-
-# View Android logs
-adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:space:] ' ' | cut -d' ' -f2`"
-
-# Run on iOS simulator
-pnpm tauri ios dev "iPhone 16"
-
-# Run on physical iOS device
-pnpm tauri ios dev --device
-```
-
 ## Architecture
 
 ### Monorepo Structure
@@ -401,10 +355,6 @@ Core p2panda dependencies (from custom fork):
 - p2panda-spaces: Space management
 - p2panda-discovery: Peer discovery (mDNS)
 
-## CI
-
-Execute all CI commands inside of the default nix shell with `nix develop`.
-
 ## Testing
 
 ### Rust Tests
@@ -414,21 +364,8 @@ cargo nextest run
 
 Run tests from workspace root. Tests use tokio async runtime.
 
-### Running Tests Against a Deployment Environment
-
-By default all tests use a local (in-memory or in-process) mailbox. Run the same suites against a deployment environment's cloud mailbox by setting `MAILBOX_URL` to that environment's mailbox. The `justfile` loads `.env.${ENV:-development}` via dotenv, so `ENV=<env>` selects the environment (whose `.env.<env>` defines `MAILBOX_URL`):
-
-```bash
-ENV=testing just test          # Rust suite
-ENV=testing just test e2e      # E2E suite
-```
-
-- **Rust**: tests build their mailbox via `TestMailbox::from_env()` (`crates/dashchat-node/src/testing/mailbox.rs`) and register it with `TestNode::add_mailbox(&mb)`. `MAILBOX_URL` unset → a fresh `MemMailbox`; set → a `ToyMailboxClient` for that mailbox, registered the way the production app does it (id from `/health`, address book entry, `/peers/register`). Don't use `MemMailbox::new()` directly in new tests.
-- **E2E**: when `MAILBOX_URL` is set, `wdio.conf.ts` skips spawning the local mailbox server and points the agents at it. Specs that drive the mailbox server's lifecycle (suspend/kill) skip themselves via `isRemoteMailbox()`.
-
-Allowed mailbox URLs are allowlisted as regex patterns in the repo-root `allowed-test-mailbox-url-patterns.json`, read by both suites (`TestMailbox::from_env` in Rust and `remoteMailboxUrl()` in `e2e-tests/setup/test-env.ts`); a `MAILBOX_URL` matching none of them fails fast so tests can never hit staging/production.
-
 ### Development Testing
+
 Use `pnpm start` to run two instances locally that can communicate with each other over the p2panda network.
 
 ### E2E Tests (WebdriverIO)
@@ -472,30 +409,6 @@ PLATFORMS=desktop just test e2e settings-pages
 
 **REQUIREMENT:** The review-checks E2E test (`e2e-tests/specs/review-checks.spec.ts`) must visit every page in the app. When adding a new page, add it to `e2e-tests/helpers/review/visit-all-pages.ts` so it is covered by the overflow, dark-mode, and RTL checks.
 
-### Backwards Compatibility Tests
-
-The `e2e-tests/compat/` directory contains tests that verify data created by older versions can be read by the current version. This catches breaking changes to the data model before they ship.
-
-```bash
-# Run compat test against a specific version tag
-cd e2e-tests && bash compat/run.sh v0.10.0
-
-# Test multiple versions
-cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
-```
-
-**How it works:**
-1. Builds the current version and the old version (with patches for E2E support)
-2. Phase 1 (setup): Creates profiles, contacts, and messages using the old binary
-3. Phase 2 (verify): Launches the current binary against the same data and verifies everything persisted
-4. Data is stored in `.dbs/compat/` with state saved to `state.json` between phases
-
-**Key files:**
-- `compat/run.sh` — Orchestrator script (entry point)
-- `compat/wdio.compat.ts` — WDIO config (reads COMPAT_PHASE and COMPAT_BINARY env vars)
-- `specs/compat-setup.spec.ts` — Phase 1: create data with old version
-- `specs/compat-verify.spec.ts` — Phase 2: verify with current version
-
 ### Verifying UI Features
 
 **REQUIREMENT:** Every time you make UI changes, you MUST start the app, visually verify that the feature works correctly and looks polished, and then kill the dev processes when done. Do not skip this step.
@@ -508,39 +421,7 @@ cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
 
 ### Mobile Virtual Keyboard Handling
 
-The `tauri-plugin-virtual-keyboard` plugin (source: `https://github.com/dash-chat/tauri-plugin-virtual-keyboard`) owns all soft-keyboard integration ([tauri-apps/tauri#10631](https://github.com/tauri-apps/tauri/issues/10631) background). Its contract:
-
-- **The webview never resizes.** The keyboard overlays it; the plugin's guest-js sets a `--keyboard-inset-height` CSS variable on `documentElement` — in one shot per open/close transition, not per frame — so the layout reflows exactly once. `MobileLayout` pads its shell by this variable, which reproduces resize semantics declaratively for every screen. (There is no per-frame `--keyboard-height` variable.) To make the single-reflow jump look animated, nodes registered via `registerAboveKeyboard()` are FLIP-transitioned: the plugin measures their before/after positions and glides them on the compositor in sync with the native keyboard animation. `registerBelowKeyboard()` is the counterpart for surfaces (e.g. a media panel) that take over the keyboard's bottom slot; `--keyboard-inset-height` reflects whichever of the two is active.
-- **Native commands** `hide`/`show` retract/summon the IME at the OS level (`WindowInsetsControllerCompat` on Android, `endEditing` on iOS; `show` is a no-op on iOS and desktop). Exposed via the `tauri-plugin-virtual-keyboard` npm package (`hideKeyboard()`/`showKeyboard()`). Never manipulate the keyboard through DOM focus tricks.
-- **Native events** `willShow {height, durationMs}` / `willHide {durationMs}` / `didShow` / `didHide` / `change` feed the guest-js keyboard state, exposed as signalium signals (`keyboard.height/isOpen/reservedHeight`, each with `.value`; signalium is a peer dependency of the npm package). In Svelte, bridge them with `useSignal(() => keyboard.isOpen.value)` from `$lib/stores/use-signal`; read them imperatively via `.value`. `willShow` arrives before the animation with the exact target height.
-
-### iOS Simulator Testing
-
-Testing keyboard behavior and UI interactions in the iOS simulator has inherent limitations due to idb + WKWebView interop issues. **Keyboard behavior is best verified on a real device.**
-
-**What works in the simulator:**
-- `idb ui tap --udid <UDID> <x> <y>` can focus *some* WKWebView inputs (e.g. Konsta `ListInput` with `placeholder` prop). Coordinates are in device points (iPhone 16: 393x852).
-- Typing via AppleScript `keystroke` when hardware keyboard is connected (toggle with Cmd+Shift+K in Simulator)
-- `xcrun simctl pbcopy <UDID>` to set pasteboard content
-- `xcrun simctl io <UDID> screenshot <path>` to capture screenshots
-- Visual verification of keyboard show/hide (no scrollbar, proper frame resize)
-
-**What doesn't work:**
-- `idb ui tap` doesn't reliably reach all WKWebView elements (floating-label Konsta inputs don't respond)
-- `idb ui text` doesn't type into WKWebView inputs
-- Tapping virtual keyboard keys dismisses the keyboard instead of typing
-- `xcrun simctl keyboard input` is not available on iOS 18
-- AppleScript `click at` screen coordinates doesn't reach WKWebView content
-
-**Recommended workflow for iOS simulator testing:**
-1. Start with `pnpm tauri ios dev "iPhone 16"`
-2. Disconnect hardware keyboard (Cmd+Shift+K) to show software keyboard
-3. Use `idb ui tap` to focus inputs (works for some elements)
-4. Connect hardware keyboard (Cmd+Shift+K) to type via AppleScript
-5. Toggle back to verify keyboard visual behavior
-6. Use `xcrun simctl io <UDID> screenshot` to capture and inspect state
-
-**iOS app icon note:** iOS icons must have NO alpha channel. The `tauri icon --ios-color` command generates RGBA PNGs (Tauri CLI bug). Fix by stripping alpha from all icons in `src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/`.
+The `tauri-plugin-virtual-keyboard` plugin (source: `https://github.com/dash-chat/tauri-plugin-virtual-keyboard`) owns all soft-keyboard integration ([tauri-apps/tauri#10631](https://github.com/tauri-apps/tauri/issues/10631) background). 
 
 ## Important Notes
 
@@ -555,22 +436,9 @@ Testing keyboard behavior and UI interactions in the iOS simulator has inherent 
 - Run `just format` before considering any code ready to commit.
 - IDE diagnostics for Rust code will usually be stale and inaccurate while you're changing things. If you can verify that they're up to date, use them, but otherwise prefer running explicit lints/checks.
  
-## Build Configuration
-
-### Development
-Standard development builds with debug symbols.
-
-### Release
-Optimized builds with:
-- opt-level 3
-- LTO enabled ("fat")
-- Single codegen unit
-- Panic = abort
-
 ## Localization
 
 Translations managed through Weblate: https://hosted.weblate.org/projects/dash-chat
-Contact team at hello@dashchat.org to become a translation reviewer.
 
 **IMPORTANT:** Never modify non-English translation files. They are managed exclusively through Weblate and any manual changes will be overwritten. Only the English source strings (`en.json`) should be edited in code.
 

@@ -23,7 +23,7 @@ describe('Edit/delete action availability (group chat)', () => {
 	});
 
 	it('offers both Edit and Delete on your own message', async () => {
-		await agent1.groupChatPage.sendMessage('My own message');
+		await agent1.groupChatPage.composer.sendMessage('My own message');
 		await agent1.groupChatPage.messages.waitForMessage('My own message');
 
 		await agent1.groupChatPage.messages.openMessageActions('My own message');
@@ -39,7 +39,7 @@ describe('Edit/delete action availability (group chat)', () => {
 	});
 
 	it('offers Delete but not Edit on another member’s message', async () => {
-		await agent2.groupChatPage.sendMessage("Bob's message");
+		await agent2.groupChatPage.composer.sendMessage("Bob's message");
 		await agent1.groupChatPage.messages.waitForMessage("Bob's message");
 
 		await agent1.groupChatPage.messages.openMessageActions("Bob's message");
