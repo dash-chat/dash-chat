@@ -51,6 +51,10 @@
 
 <div class="column" style="position: relative; flex: 1;">
 	<div
+		class="fixed bottom-0 inset-x-0 bg-black/50 pointer-events-none"
+		style="height: env(safe-area-inset-bottom, 0px)"
+	></div>
+	<div
 		class="row p-4"
 		style="color: white; align-items: center; justify-content: center; z-index: 1; text-align: center"
 	>
