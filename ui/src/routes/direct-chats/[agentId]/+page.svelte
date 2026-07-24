@@ -49,6 +49,7 @@
 	import type { Action } from 'svelte/action';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
+	import ReportContactDialog from '$lib/components/contacts/ReportContactDialog.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -149,12 +150,24 @@
 		}
 	}
 
+	async function confirmReport() {
+		showReportDialog = false;
+		try {
+			await contactsStore.reportContact(agentId);
+			showToast(m.reported());
+		} catch (e) {
+			console.error(e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
+	}
+
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
 	let showRejectDialog = $state(false);
 	let showBlockDialog = $state(false);
+	let showReportDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
 	// Initial value reserves space for the bottom bar before bind:clientHeight
 	// has measured it, so the latest message doesn't flash under the input on
@@ -687,6 +700,12 @@
 						onConfirm={confirmBlock}
 						onClose={() => (showBlockDialog = false)}
 					/>
+					<ReportContactDialog
+						opened={showReportDialog}
+						name={profile ? fullName(profile) : ''}
+						onConfirm={confirmReport}
+						onClose={() => (showReportDialog = false)}
+					/>
 					<SafetyTipsSheet
 						opened={showSecurityTips}
 						onClose={() => (showSecurityTips = false)}
@@ -848,6 +867,14 @@
 										tonal
 										data-testid="direct-chat-block-btn"
 										onClick={() => (showBlockDialog = true)}>{m.block()}</Button
+									>
+									<Button
+										class="neutral-tonal-button text-red-500 flex-1"
+										rounded
+										tonal
+										data-testid="direct-chat-report-btn"
+										onClick={() => (showReportDialog = true)}
+										>{m.report()}</Button
 									>
 									<Button
 										class="neutral-tonal-button flex-1"

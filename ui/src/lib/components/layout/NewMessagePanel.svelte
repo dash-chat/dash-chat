@@ -36,6 +36,7 @@
 	import Avatar from '../profiles/Avatar.svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
 	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
+	import ReportContactDialog from '$lib/components/contacts/ReportContactDialog.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -47,12 +48,15 @@
 
 	let menuFor = $state<{ agentId: AgentId; profile: Profile } | null>(null);
 	let menuIsBlocked = $state(false);
+	let menuIsReported = $state(false);
 	let showBlockDialog = $state(false);
+	let showReportDialog = $state(false);
 	let dialogFor = $state<{ agentId: AgentId; profile: Profile } | null>(null);
 
-	function openMenu(agentId: AgentId, profile: Profile, blocked: boolean) {
+	async function openMenu(agentId: AgentId, profile: Profile, blocked: boolean) {
 		menuFor = { agentId, profile };
 		menuIsBlocked = blocked;
+		menuIsReported = await contactsStore.client.isContactReported(agentId);
 	}
 
 	function requestBlockToggle() {
@@ -71,6 +75,21 @@
 		} else {
 			await contactsStore.client.blockContact(agentId);
 		}
+		dialogFor = null;
+	}
+
+	function requestReport() {
+		if (!menuFor) return;
+		dialogFor = menuFor;
+		showReportDialog = true;
+		menuFor = null;
+	}
+
+	async function confirmReport() {
+		if (!dialogFor) return;
+		const { agentId } = dialogFor;
+		showReportDialog = false;
+		await contactsStore.reportContact(agentId);
 		dialogFor = null;
 	}
 
@@ -223,6 +242,12 @@
 		>
 			{menuIsBlocked ? m.unblock() : m.block()}
 		</ActionsButton>
+		<ActionsButton
+			onClick={menuIsReported ? () => (menuFor = null) : requestReport}
+			data-testid="contact-report"
+		>
+			{menuIsReported ? m.reported() : m.report()}
+		</ActionsButton>
 	</ActionsGroup>
 	<ActionsGroup>
 		<ActionsButton onClick={() => (menuFor = null)}>
@@ -239,6 +264,15 @@
 		onConfirm={confirmBlockToggle}
 		onClose={() => {
 			showBlockDialog = false;
+			dialogFor = null;
+		}}
+	/>
+	<ReportContactDialog
+		opened={showReportDialog}
+		name={fullName(dialogFor.profile)}
+		onConfirm={confirmReport}
+		onClose={() => {
+			showReportDialog = false;
 			dialogFor = null;
 		}}
 	/>

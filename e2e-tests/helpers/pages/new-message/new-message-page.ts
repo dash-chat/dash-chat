@@ -7,6 +7,10 @@ export class NewMessagePage extends TestHelper {
 	addContact = this.el(`${tid('new-message-add-contact')} a`);
 	newGroup = this.el(`${tid('new-message-new-group')} a`);
 	contactList = this.el(tid('new-message-contact-list'));
+	contactMenuButton = this.el(tid('contact-menu-button'));
+	contactBlockToggle = this.el(tid('contact-block-toggle'));
+	contactReport = this.el(tid('contact-report'));
+	reportConfirm = this.el(tid('report-contact-confirm'));
 
 	async ready() {
 		await this.addContact.waitForExist();

@@ -72,4 +72,14 @@ export class MockContactsClient implements IContactsClient {
 			payload: { type: 'UnblockAgent', payload: agentId },
 		});
 	}
+
+	private reported = new Set<AgentId>();
+
+	async reportContact(agentId: AgentId): Promise<void> {
+		this.reported.add(agentId);
+	}
+
+	async isContactReported(agentId: AgentId): Promise<boolean> {
+		return this.reported.has(agentId);
+	}
 }

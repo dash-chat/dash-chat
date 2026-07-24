@@ -138,6 +138,8 @@ pub fn run() {
             commands::contacts::reject_contact_request,
             commands::contacts::block_contact,
             commands::contacts::unblock_contact,
+            commands::contacts::report_contact,
+            commands::contacts::is_contact_reported,
             commands::direct_chats::direct_chat_id,
             commands::chats::send_message,
             commands::chats::edit_message,

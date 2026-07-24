@@ -1,4 +1,4 @@
-import { reactive, relay } from 'signalium';
+import { reactive, relay, signal } from 'signalium';
 
 import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
@@ -106,6 +106,23 @@ export class ContactsStore {
 		}
 		return blocked;
 	});
+
+	private reportVersion = signal(0);
+
+	/**
+	 * Whether the given contact has already been reported. Reported state lives
+	 * in the local store (not the synced logs), so it's tracked with a version
+	 * signal that `reportContact` bumps rather than derived from the op logs.
+	 */
+	contactReported = reactive(async (agentId: AgentId) => {
+		void this.reportVersion.value;
+		return await this.client.isContactReported(agentId);
+	});
+
+	async reportContact(agentId: AgentId): Promise<void> {
+		await this.client.reportContact(agentId);
+		this.reportVersion.value++;
+	}
 
 	/**
 	 * Outgoing contact requests we've sent but whose ack hasn't arrived yet.

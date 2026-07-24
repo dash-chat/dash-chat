@@ -90,6 +90,27 @@ pub async fn unblock_contact(agent_id: AgentId, app_node: State<'_, AppNode>) ->
     Ok(node.unblock_contact(agent_id).await?)
 }
 
+#[tauri::command]
+pub async fn report_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> Result<(), Error> {
+    let node = app_node.get().await?;
+    node.report_contact(agent_id)
+        .await
+        .map_err(|e| dashchat_node::Error::AuthorOperation(e.to_string()))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn is_contact_reported(
+    agent_id: AgentId,
+    app_node: State<'_, AppNode>,
+) -> Result<bool, Error> {
+    let node = app_node.get().await?;
+    Ok(node
+        .is_contact_reported(agent_id)
+        .await
+        .map_err(|e| dashchat_node::Error::AuthorOperation(e.to_string()))?)
+}
+
 // #[tauri::command]
 // pub async fn remove_contact(
 //     contact_id: VerifyingKey,

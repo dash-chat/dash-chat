@@ -52,6 +52,12 @@ export interface IContactsClient {
 	// Unblock a contact
 	unblockContact(agentId: AgentId): Promise<void>;
 
+	// Report a contact to the shared infrastructure
+	reportContact(agentId: AgentId): Promise<void>;
+
+	// Whether a contact has already been reported
+	isContactReported(agentId: AgentId): Promise<boolean>;
+
 	// Remove contact
 	// removeContact(contact: ContactId): Promise<void>;
 
@@ -121,6 +127,14 @@ export class ContactsClient implements IContactsClient {
 
 	async unblockContact(agentId: AgentId): Promise<void> {
 		await invokeAfterSetup('unblock_contact', { agentId });
+	}
+
+	async reportContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('report_contact', { agentId });
+	}
+
+	isContactReported(agentId: AgentId): Promise<boolean> {
+		return invokeAfterSetup('is_contact_reported', { agentId });
 	}
 
 	// getContacts(): Promise<Array<VerifyingKey>> {

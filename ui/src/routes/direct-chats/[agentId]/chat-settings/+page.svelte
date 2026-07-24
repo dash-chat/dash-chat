@@ -15,11 +15,13 @@
 		mdiPlusCircle,
 		mdiChevronRight,
 		mdiCancel,
+		mdiFlagOutline,
 	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { onActivate } from '$lib/utils/keyboard';
 	import { showToast } from '$lib/utils/toasts';
 	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
+	import ReportContactDialog from '$lib/components/contacts/ReportContactDialog.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
@@ -47,9 +49,12 @@
 		contactsStore.blockedContactAgentIds,
 	);
 	const isBlocked = $derived(($blockedAgentIds ?? new Set()).has(agentId));
+	const reported = useReactiveValue(contactsStore.contactReported, agentId);
+	const isReported = $derived($reported === true);
 
 	let showPeerProfile = $state(false);
 	let showBlockDialog = $state(false);
+	let showReportDialog = $state(false);
 
 	async function confirmBlockToggle() {
 		showBlockDialog = false;
@@ -58,6 +63,11 @@
 		} else {
 			await contactsStore.client.blockContact(agentId);
 		}
+	}
+
+	async function confirmReport() {
+		showReportDialog = false;
+		await contactsStore.reportContact(agentId);
 	}
 
 	function comingSoon() {
@@ -166,6 +176,21 @@
 							></wa-icon>
 						{/snippet}
 					</ListItem>
+					<ListItem
+						link={!isReported}
+						chevron={false}
+						title={isReported ? m.reported() : m.report()}
+						class={isReported ? 'quiet' : 'text-red-500'}
+						onClick={isReported ? undefined : () => (showReportDialog = true)}
+						data-testid="chat-settings-report"
+					>
+						{#snippet media()}
+							<wa-icon
+								style="font-size: 1.5rem;"
+								src={wrapPathInSvg(mdiFlagOutline)}
+							></wa-icon>
+						{/snippet}
+					</ListItem>
 				</List>
 
 				<!-- TODO: Coming soon - chat color/wallpaper and groups in common -->
@@ -226,6 +251,13 @@
 				blocked={isBlocked}
 				onConfirm={confirmBlockToggle}
 				onClose={() => (showBlockDialog = false)}
+			/>
+
+			<ReportContactDialog
+				opened={showReportDialog}
+				name={fullName(profile)}
+				onConfirm={confirmReport}
+				onClose={() => (showReportDialog = false)}
 			/>
 		{/if}
 	{/await}

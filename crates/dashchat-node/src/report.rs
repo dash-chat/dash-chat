@@ -1,9 +1,26 @@
 use ed25519_dalek::SigningKey;
 use mailbox_client::MailboxId;
 
-use crate::DeviceId;
+use crate::{AgentId, DeviceId};
 
 impl crate::Node {
+    /// Report a contact by reporting every device known for their agent id.
+    /// See [`Node::report_devices`] for delivery semantics.
+    pub async fn report_contact(&self, agent_id: AgentId) -> anyhow::Result<Vec<MailboxId>> {
+        let device_ids = self.projection.devices_for_agent(agent_id).await?;
+        self.report_devices(device_ids).await
+    }
+
+    /// Whether this contact has already been reported to at least one mailbox.
+    pub async fn is_contact_reported(&self, agent_id: AgentId) -> anyhow::Result<bool> {
+        let device_ids = self.projection.devices_for_agent(agent_id).await?;
+        let reported = self
+            .local_store
+            .mailboxes_reported_to_any(&device_ids)
+            .await?;
+        Ok(!reported.is_empty())
+    }
+
     /// Report one or more devices to the shared infrastructure by sending a
     /// signed `/report` to every connected mailbox that hasn't already received
     /// a report covering all of `reported_device_ids`. The report is signed by
