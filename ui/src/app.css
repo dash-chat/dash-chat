@@ -309,6 +309,25 @@ emoji-picker {
 	padding-bottom: var(--keyboard-safe-bottom);
 }
 
+/* Pages paint their own surface but stop at the shell's safe-area padding, so
+   the transparent webview would show the native window color under the system
+   nav bar. Paint that strip explicitly: page surface normally; over the QR
+   scanner's transparent page, the same scrim its viewfinder surround uses, so
+   the camera stays visible edge-to-edge but consistently dimmed. */
+.mobile-shell::after {
+	content: '';
+	position: fixed;
+	inset-inline: 0;
+	bottom: 0;
+	height: env(safe-area-inset-bottom, 0px);
+	background-color: var(--color-page-surface);
+	pointer-events: none;
+}
+
+.mobile-shell:has(.k-page.transparent)::after {
+	background-color: rgb(0 0 0 / 0.5);
+}
+
 .fixed-action-btn {
 	position: fixed;
 	inset-inline-end: 1rem;
