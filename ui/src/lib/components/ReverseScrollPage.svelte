@@ -153,14 +153,14 @@
 			// keep them visually separated. As the user scrolls up toward the top
 			// of the content (welcome card / avatar area), the bg fades out so the
 			// navbar blends with the welcome surface.
+			// The top of the scroll range is the inner div's navbar-height
+			// padding, not content — subtract it so a chat whose content barely
+			// overflows (slack ≤ padding) still reads as nothing-under-navbar.
 			// WebKit uses negative scrollTop in column-reverse; abs() normalises.
 			const maxScroll = node.scrollHeight - node.clientHeight;
+			const navbarHeight = observedNavbar?.offsetHeight ?? 0;
 			navbarBgEl.style.opacity =
-				maxScroll < 1
-					? '0'
-					: maxScroll - Math.abs(node.scrollTop) > 10
-						? '1'
-						: '0';
+				maxScroll - Math.abs(node.scrollTop) - navbarHeight > 10 ? '1' : '0';
 		};
 
 		// Coalesce mutation-driven updates to one per frame.
