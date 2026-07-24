@@ -21,7 +21,7 @@ describe('Edit/delete action availability (direct chat)', () => {
 	});
 
 	it('offers both Edit and Delete on your own message', async () => {
-		await agent1.directChatPage.sendMessage('My own message');
+		await agent1.directChatPage.composer.sendMessage('My own message');
 		await agent1.directChatPage.messages.waitForMessage('My own message');
 
 		await agent1.directChatPage.messages.openMessageActions('My own message');
@@ -37,7 +37,7 @@ describe('Edit/delete action availability (direct chat)', () => {
 	});
 
 	it('offers Delete but not Edit on the peer’s message', async () => {
-		await agent2.directChatPage.sendMessage("Peer's message");
+		await agent2.directChatPage.composer.sendMessage("Peer's message");
 		await agent1.directChatPage.messages.waitForMessage("Peer's message");
 
 		await agent1.directChatPage.messages.openMessageActions("Peer's message");

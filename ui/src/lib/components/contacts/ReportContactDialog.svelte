@@ -15,7 +15,11 @@
 	} = $props();
 </script>
 
-<Dialog {opened} onBackdropClick={onClose} title={m.reportContactTitle({ name })}>
+<Dialog
+	{opened}
+	onBackdropClick={onClose}
+	title={m.reportContactTitle({ name })}
+>
 	<span>{m.reportContactDescription()}</span>
 	{#snippet buttons()}
 		<DialogButton onClick={onClose}>{m.cancel()}</DialogButton>

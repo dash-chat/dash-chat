@@ -744,7 +744,7 @@
 				>
 					<div bind:clientHeight={bottomBarHeight}>
 						{#if searchMode}
-							<div class="bg-page-surface">
+							<div class="pb-safe bg-page-surface">
 								<div
 									class="mx-4 border-t border-gray-300 dark:border-gray-600"
 									style="margin: 0 auto"
@@ -802,7 +802,7 @@
 								</div>
 							</div>
 						{:else if isPendingChat}
-							<div class="bg-page-surface">
+							<div class="pb-safe bg-page-surface">
 								<div
 									class="mx-4 border-t border-gray-300 dark:border-gray-600"
 									style="margin: 0 auto"
@@ -815,7 +815,7 @@
 								</p>
 							</div>
 						{:else if isBlocked}
-							<div class="bg-page-surface">
+							<div class="pb-safe bg-page-surface">
 								<div
 									class="mx-4 border-t border-gray-300 dark:border-gray-600"
 									style="margin: 0 auto"
@@ -838,12 +838,13 @@
 										rounded
 										tonal
 										data-testid="direct-chat-unblock-btn"
-										onClick={() => (showBlockDialog = true)}>{m.unblock()}</Button
+										onClick={() => (showBlockDialog = true)}
+										>{m.unblock()}</Button
 									>
 								</div>
 							</div>
 						{:else if contactRequest}
-							<div class="bg-page-surface">
+							<div class="pb-safe bg-page-surface">
 								<div
 									class="mx-4 border-t border-gray-300 dark:border-gray-600"
 									style="margin: 0 auto"

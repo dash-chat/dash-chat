@@ -54,7 +54,11 @@
 	let showReportDialog = $state(false);
 	let dialogFor = $state<{ agentId: AgentId; profile: Profile } | null>(null);
 
-	async function openMenu(agentId: AgentId, profile: Profile, blocked: boolean) {
+	async function openMenu(
+		agentId: AgentId,
+		profile: Profile,
+		blocked: boolean,
+	) {
 		menuFor = { agentId, profile };
 		menuIsBlocked = blocked;
 		menuIsReported = await contactsStore.client.isContactReported(agentId);

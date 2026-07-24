@@ -23,9 +23,8 @@
 	} from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
-	import { renderBelowKeyboard } from '$lib/utils/virtual-keyboard/render-below-keyboard';
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
-	import { keyboardSpace } from '$lib/utils/virtual-keyboard/keyboard-space.svelte';
+	import BelowKeyboardSurface from '$lib/components/BelowKeyboardSurface.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiPencilOutline } from '@mdi/js';
@@ -72,9 +71,6 @@
 	let sending = false;
 
 	let showMediaPanel = $state(false);
-	// Stays true through the panel→keyboard swap so the panel remains visible
-	// under the rising keyboard; cleared by the slot's onHidden once covered.
-	let mediaPanelMounted = $state(false);
 
 	let editing = $state<Message | null>(null);
 	/** Edit requested while a draft was present, awaiting discard confirmation. */
@@ -173,7 +169,6 @@
 	function toggleMediaPanel() {
 		if (!showMediaPanel) {
 			showMediaPanel = true;
-			mediaPanelMounted = true;
 			return;
 		}
 		// Flip the intent right away so the attach button reacts instantly, then
@@ -388,23 +383,12 @@
 	</div>
 
 	{#if isMobile}
-		<!-- Also opened empty (no panel) while the keyboard hides under the
-		     message-actions overlay: the surface stands in for the keyboard so
-		     the input bar stays put. -->
-		<div
-			use:renderBelowKeyboard={{
-				open: showMediaPanel || keyboardSpace.preserved,
-				onHidden: () => (mediaPanelMounted = false),
-			}}
-			class="bg-page-surface fixed bottom-0 inset-x-0 z-20"
-		>
-			{#if mediaPanelMounted}
-				<MediaPanel
-					onFiles={stageFromPanel}
-					onPickerOpen={() => (showMediaPanel = false)}
-				/>
-			{/if}
-		</div>
+		<BelowKeyboardSurface open={showMediaPanel} class="bg-page-surface z-20">
+			<MediaPanel
+				onFiles={stageFromPanel}
+				onPickerOpen={() => (showMediaPanel = false)}
+			/>
+		</BelowKeyboardSurface>
 	{/if}
 </div>
 

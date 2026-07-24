@@ -16,7 +16,7 @@ describe('Deleting messages', () => {
 	});
 
 	it('deletes a message for everyone, showing a placeholder on both sides', async () => {
-		await agent1.directChatPage.sendMessage('Delete me');
+		await agent1.directChatPage.composer.sendMessage('Delete me');
 		await agent1.directChatPage.messages.waitForMessage('Delete me');
 		await agent2.directChatPage.messages.waitForMessage('Delete me');
 
@@ -33,7 +33,7 @@ describe('Deleting messages', () => {
 	});
 
 	it('deletes an edited message via its latest edit', async () => {
-		await agent1.directChatPage.sendMessage('Draft v1');
+		await agent1.directChatPage.composer.sendMessage('Draft v1');
 		await agent1.directChatPage.messages.waitForMessage('Draft v1');
 		await agent1.directChatPage.messages.editMessage('Draft v1', 'Draft v2');
 		await agent1.directChatPage.messages.waitForMessage('Draft v2');
@@ -52,7 +52,7 @@ describe('Deleting messages', () => {
 	});
 
 	it('deletes a message only for me, leaving no placeholder', async () => {
-		await agent1.directChatPage.sendMessage('Just for me');
+		await agent1.directChatPage.composer.sendMessage('Just for me');
 		await agent1.directChatPage.messages.waitForMessage('Just for me');
 		await agent2.directChatPage.messages.waitForMessage('Just for me');
 
@@ -67,7 +67,7 @@ describe('Deleting messages', () => {
 	});
 
 	it('offers Delete for me (but not Delete for everyone) on the peer’s messages', async () => {
-		await agent2.directChatPage.sendMessage("Bob's message");
+		await agent2.directChatPage.composer.sendMessage("Bob's message");
 		await agent1.directChatPage.messages.waitForMessage("Bob's message");
 
 		await agent1.directChatPage.messages.openDeleteDialog("Bob's message");
