@@ -18,8 +18,8 @@
 	import type { Hash, Message, MessagesStore } from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
-	import { renderBelowKeyboard } from '$lib/utils/virtual-keyboard/render-below-keyboard';
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
+	import BelowKeyboardSurface from '$lib/components/BelowKeyboardSurface.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiPencilOutline } from '@mdi/js';
@@ -66,9 +66,6 @@
 	let sending = false;
 
 	let showMediaPanel = $state(false);
-	// Stays true through the panel→keyboard swap so the panel remains visible
-	// under the rising keyboard; cleared by the slot's onHidden once covered.
-	let mediaPanelMounted = $state(false);
 
 	let editing = $state<Message | null>(null);
 	/** Edit requested while a draft was present, awaiting discard confirmation. */
@@ -126,7 +123,6 @@
 	function toggleMediaPanel() {
 		if (!showMediaPanel) {
 			showMediaPanel = true;
-			mediaPanelMounted = true;
 			return;
 		}
 		// Flip the intent right away so the attach button reacts instantly, then
@@ -339,20 +335,12 @@
 	</div>
 
 	{#if isMobile}
-		<div
-			use:renderBelowKeyboard={{
-				open: showMediaPanel,
-				onHidden: () => (mediaPanelMounted = false),
-			}}
-			class="bg-page-surface fixed bottom-0 inset-x-0 z-20"
-		>
-			{#if mediaPanelMounted}
-				<MediaPanel
-					onFiles={stageFromPanel}
-					onPickerOpen={() => (showMediaPanel = false)}
-				/>
-			{/if}
-		</div>
+		<BelowKeyboardSurface open={showMediaPanel} class="bg-page-surface z-20">
+			<MediaPanel
+				onFiles={stageFromPanel}
+				onPickerOpen={() => (showMediaPanel = false)}
+			/>
+		</BelowKeyboardSurface>
 	{/if}
 </div>
 

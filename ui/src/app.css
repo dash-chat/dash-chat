@@ -294,17 +294,8 @@ emoji-picker {
 	opacity: 0.5;
 }
 
-:root {
-	/* The bottom space the app must not lay out into: the keyboard/slot inset
-	   while occupied (the inset always covers the safe area when active), the
-	   home-indicator safe area otherwise. Flips in the same reflow as the
-	   inset. The keyboard-aware sibling of env(safe-area-inset-bottom). */
-	--keyboard-safe-bottom: max(
-		var(--keyboard-inset-height, 0px),
-		env(safe-area-inset-bottom, 0px)
-	);
-}
-
+/* --keyboard-safe-bottom is injected by tauri-plugin-virtual-keyboard: the
+   bottom space the app must not lay out into. */
 .pb-keyboard-safe {
 	padding-bottom: var(--keyboard-safe-bottom);
 }
@@ -379,20 +370,6 @@ wa-dropdown-item::part(icon) {
    safe-area offset up to the reserved inset, and is 0 when nothing occupies it. */
 .mb-keyboard-inset {
 	margin-bottom: calc(
-		max(var(--keyboard-inset-height, 0px), env(safe-area-inset-bottom, 0px)) -
-			env(safe-area-inset-bottom, 0px)
-	);
-}
-
-/* Home-indicator padding for the bottom-most element above the keyboard slot,
-   applied only while it's grounded — i.e. while nothing occupies the slot below
-   it. Tied to --keyboard-inset-height so it flips in the same reflow as the inset,
-   never lagging into a bounce. The large multiplier drives the subtraction
-   sharply negative for any non-zero inset, so max() clamps it to 0; the inset is
-   only ever 0 or its target, never an intermediate. */
-.pb-grounded-safe {
-	padding-bottom: max(
-		0px,
-		calc(env(safe-area-inset-bottom, 0px) - var(--keyboard-inset-height, 0px) * 999)
+		var(--keyboard-safe-bottom, 0px) - env(safe-area-inset-bottom, 0px)
 	);
 }

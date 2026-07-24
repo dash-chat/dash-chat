@@ -43,6 +43,40 @@
 		event.stopPropagation();
 	}
 
+	/** Pin `el` out of the flow, fixed at `base` (its pressed position), lock
+	 * its holder's height so the list doesn't reflow, and arm its lift
+	 * transition. The lift puts the target above the backdrop, so its own
+	 * content stays clickable — tapping a photo would open the lightbox behind
+	 * the overlay. Clicks are swallowed in the capture phase, so no descendant
+	 * handler runs: while spotlighted the message is there to be looked at,
+	 * not used. Returns the restore function. */
+	function pinTarget(el: HTMLElement, base: DOMRect): () => void {
+		const holder = el.parentElement;
+		if (holder) {
+			holder.style.height = `${holder.getBoundingClientRect().height}px`;
+		}
+		el.style.position = 'fixed';
+		el.style.top = `${base.top}px`;
+		el.style.left = `${base.left}px`;
+		el.style.width = `${base.width}px`;
+		el.style.margin = '0';
+		el.style.zIndex = '34';
+		el.style.transition = `transform ${LIFT_MS}ms ease-out`;
+		el.addEventListener('click', swallowClick, true);
+		return () => {
+			el.removeEventListener('click', swallowClick, true);
+			el.style.position = '';
+			el.style.top = '';
+			el.style.left = '';
+			el.style.width = '';
+			el.style.margin = '';
+			el.style.zIndex = '';
+			el.style.transition = '';
+			el.style.transform = '';
+			if (holder) holder.style.height = '';
+		};
+	}
+
 	$effect(() => {
 		if (opened) spotlighted = true;
 	});
@@ -78,48 +112,18 @@
 	// The whole spotlight scene lives between the page chrome (z <= 30) and
 	// Konsta's modal layer (z-40): backdrop 32, lifted target 34, anchored
 	// popovers 36. Sheets/dialogs (40) and toasts (50) always cover it.
-	// The target is taken out of the flow and fixed at its pressed position
-	// (plus the bump), so layout shifts underneath — the chat re-anchoring to
-	// the bottom when the keyboard hides, scroll compensations — cannot move
-	// it, and its parent keeps its height locked so the list doesn't reflow.
-	// Matches Signal's focused-message lift.
-	// Pin the target out of flow at its pressed spot and arm its transition. Runs
-	// once while spotlighted and tears down only when the dim has fully faded — it
-	// deliberately does NOT depend on `opened`, so dismissing doesn't re-run it and
-	// snap the styles. The transform effect below owns the open/close animation.
+	// Pinning fixes the target at its pressed position (plus the bump), so
+	// layout shifts underneath — the chat re-anchoring to the bottom when the
+	// keyboard hides, scroll compensations — cannot move it. Matches Signal's
+	// focused-message lift.
+	// Runs once while spotlighted and tears down only when the dim has fully
+	// faded — it deliberately does NOT depend on `opened`, so dismissing
+	// doesn't re-run it and snap the styles. The transform effect below owns
+	// the open/close animation.
 	const LIFT_MS = 190;
 	$effect(() => {
 		if (!spotlighted || !target || !baseRect) return;
-		const el = target;
-		const base = baseRect;
-		const holder = el.parentElement;
-		if (holder) {
-			holder.style.height = `${holder.getBoundingClientRect().height}px`;
-		}
-		el.style.position = 'fixed';
-		el.style.top = `${base.top}px`;
-		el.style.left = `${base.left}px`;
-		el.style.width = `${base.width}px`;
-		el.style.margin = '0';
-		el.style.zIndex = '34';
-		el.style.transition = `transform ${LIFT_MS}ms ease-out`;
-		// The lift puts the target above the backdrop, so its own content stays
-		// clickable — tapping a photo would open the lightbox behind the overlay.
-		// Swallowed in the capture phase, so no descendant handler runs: while
-		// spotlighted the message is there to be looked at, not used.
-		el.addEventListener('click', swallowClick, true);
-		return () => {
-			el.removeEventListener('click', swallowClick, true);
-			el.style.position = '';
-			el.style.top = '';
-			el.style.left = '';
-			el.style.width = '';
-			el.style.margin = '';
-			el.style.zIndex = '';
-			el.style.transition = '';
-			el.style.transform = '';
-			if (holder) holder.style.height = '';
-		};
+		return pinTarget(target, baseRect);
 	});
 
 	// The open/close animation: one GPU-composited transform transition, not a
@@ -135,19 +139,12 @@
 			: 'translateY(0px)';
 	});
 
-	// Hold the popovers back until the target has finished lifting into place, so
-	// they scale out from the settled message instead of racing its transition. A
-	// fixed timeout, not `transitionend`: a message that already fits has bump 0 and
-	// fires no transition at all. Reset on dismiss so they close with the overlay.
-	let liftDone = $state(false);
-	$effect(() => {
-		if (!opened) {
-			liftDone = false;
-			return;
-		}
-		const t = setTimeout(() => (liftDone = true), LIFT_MS);
-		return () => clearTimeout(t);
-	});
+	// Hold the popovers back until the target has finished lifting into place,
+	// so they scale out from the settled message instead of racing its
+	// transition — a CSS enter delay matching LIFT_MS, applied only while
+	// showing so dismissal still hides them immediately.
+	const panelsShown = $derived(opened && !contentHidden);
+	const panelDelay = $derived(panelsShown ? '!delay-[190ms]' : '');
 
 	// Where the target was when it was pressed is the reference the overlay
 	// pins the message to, like Signal does — plus the minimal vertical shift
@@ -172,20 +169,11 @@
 		}
 		const base = target.getBoundingClientRect();
 		baseRect = base;
-		bump = untrack(() => {
-			if (!aboveEl || !belowEl) return 0;
-			const { top: safeTop, bottom: safeBottom } = safeAreaInsets();
-			// Not visualViewport.height: Chromium shrinks it under the IME, and at
-			// this point the keyboard is often still up. innerHeight is the full
-			// height the retracting keyboard uncovers (the webview never resizes).
-			const bottomLimit = window.innerHeight - safeBottom;
-			let next = 0;
-			const menuBottom = base.bottom + GAP + belowEl.offsetHeight + MARGIN;
-			if (menuBottom > bottomLimit) next -= menuBottom - bottomLimit;
-			const barTop = base.top + next - GAP - aboveEl.offsetHeight - MARGIN;
-			if (barTop < safeTop) next += safeTop - barTop;
-			return next;
-		});
+		bump = untrack(() =>
+			aboveEl && belowEl
+				? ensembleBump(base, aboveEl.offsetHeight, belowEl.offsetHeight)
+				: 0,
+		);
 		// Konsta popovers only re-read their anchors on window resize; nudge
 		// them once the anchors are in place.
 		requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
@@ -210,6 +198,21 @@
 
 	const GAP = 8;
 	const MARGIN = 8;
+
+	/** The minimal vertical shift that fits the whole ensemble — reaction bar,
+	 * target, actions menu — between the safe-area top and the bottom of the
+	 * full viewport, which the retracting keyboard uncovers (innerHeight: the
+	 * webview never resizes). */
+	function ensembleBump(base: DOMRect, aboveH: number, belowH: number): number {
+		const { top: safeTop, bottom: safeBottom } = safeAreaInsets();
+		const bottomLimit = window.innerHeight - safeBottom;
+		let next = 0;
+		const menuBottom = base.bottom + GAP + belowH + MARGIN;
+		if (menuBottom > bottomLimit) next -= menuBottom - bottomLimit;
+		const barTop = base.top + next - GAP - aboveH - MARGIN;
+		if (barTop < safeTop) next += safeTop - barTop;
+		return next;
+	}
 </script>
 
 {#if opened}
@@ -240,10 +243,10 @@
 {/if}
 
 <Popover
-	opened={opened && liftDone && !contentHidden && aboveAnchor !== undefined}
+	opened={panelsShown && aboveAnchor !== undefined}
 	target={aboveAnchor}
 	backdrop={false}
-	class="!z-[36] !w-auto !rounded-full !origin-bottom [&>div]:!translate-y-0"
+	class="!z-[36] !w-auto !rounded-full !origin-bottom [&>div]:!translate-y-0 {panelDelay}"
 >
 	<div bind:this={aboveEl}>
 		{@render above()}
@@ -251,10 +254,10 @@
 </Popover>
 
 <Popover
-	opened={opened && liftDone && !contentHidden && belowAnchor !== undefined}
+	opened={panelsShown && belowAnchor !== undefined}
 	target={belowAnchor}
 	backdrop={false}
-	class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0"
+	class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0 {panelDelay}"
 >
 	<div bind:this={belowEl}>
 		{@render below()}
