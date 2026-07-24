@@ -6,7 +6,6 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
-		Button,
 		Link,
 		Navbar,
 		NavbarBackLink,
@@ -14,6 +13,7 @@
 		Preloader,
 		useTheme,
 	} from 'konsta/svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import Form from '$lib/components/form/Form.svelte';
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import { showToast } from '$lib/utils/toasts';
@@ -125,15 +125,13 @@
 		</Container>
 
 		{#if !isIos}
-			<Button
+			<FixedActionButton
 				onClick={save}
-				class="fixed-action-btn"
-				rounded
-				data-testid="edit-name-save-btn"
+				testId="edit-name-save-btn"
 				disabled={saveDisabled(myProfile)}
 			>
 				{m.save()}
-			</Button>
+			</FixedActionButton>
 		{/if}
 	{/await}
 </Page>

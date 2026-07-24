@@ -9,7 +9,6 @@
 	import { type SettingsStore, type ColorScheme } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
 	import {
-		Button,
 		BlockTitle,
 		Link,
 		List,
@@ -19,6 +18,7 @@
 		Page,
 		useTheme,
 	} from 'konsta/svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
@@ -103,14 +103,9 @@
 		</div>
 
 		{#if setup && !isIos}
-			<Button
-				onClick={() => goto('/')}
-				class="fixed-action-btn"
-				rounded
-				data-testid="appearance-done-btn"
-			>
+			<FixedActionButton onClick={() => goto('/')} testId="appearance-done-btn">
 				{m.done()}
-			</Button>
+			</FixedActionButton>
 		{/if}
 	{/await}
 </Page>

@@ -15,6 +15,7 @@
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 
 	interface Props {
 		media: DraftMedia | undefined;
@@ -112,7 +113,11 @@
 		{/if}
 	</div>
 
-	<div class="staged-footer shrink-0 pb-safe">
+	<div
+		class="staged-footer shrink-0 pb-keyboard-safe"
+		class:bg-black={!isIos}
+		use:renderAboveKeyboard
+	>
 		<div class="row gap-3 px-4 pt-3 pb-3" style="align-items: center;">
 			<MessageInput
 				bind:value
