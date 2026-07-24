@@ -434,6 +434,20 @@ impl LocalStore {
         Ok(common.unwrap_or_default())
     }
 
+    /// Every mailbox that has received a report covering at least one of
+    /// `device_ids` (the union of each device's reported-mailbox set). Returns
+    /// an empty set when `device_ids` is empty.
+    pub async fn mailboxes_reported_to_any(
+        &self,
+        device_ids: &[DeviceId],
+    ) -> anyhow::Result<BTreeSet<String>> {
+        let mut union = BTreeSet::new();
+        for device_id in device_ids {
+            union.extend(self.reported_mailboxes_for_device(*device_id).await?);
+        }
+        Ok(union)
+    }
+
     /// The set of mailboxes `device_id` has been successfully reported to.
     pub async fn reported_mailboxes_for_device(
         &self,
@@ -596,6 +610,18 @@ mod tests {
         assert_eq!(
             store.mailboxes_reported_to_all(&[d1]).await.unwrap(),
             BTreeSet::from(["mbx-a".into(), "mbx-b".into()])
+        );
+        // The union spans every mailbox any of the devices reached.
+        assert_eq!(
+            store.mailboxes_reported_to_any(&[d1, d2]).await.unwrap(),
+            BTreeSet::from(["mbx-a".into(), "mbx-b".into()])
+        );
+        assert!(
+            store
+                .mailboxes_reported_to_any(&[])
+                .await
+                .unwrap()
+                .is_empty()
         );
         // An unreported device drags the intersection to empty.
         assert!(

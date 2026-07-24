@@ -11,8 +11,8 @@ impl crate::Node {
     /// mailboxes can authenticate the reporter and reject replays.
     ///
     /// Successful deliveries are persisted to the `reported_contacts` table so
-    /// future reports skip them, and the ids of the mailboxes reported to this
-    /// call are returned.
+    /// future reports skip them. Returns the cumulative union of every mailbox
+    /// these devices have ever been reported to, not just this call's deliveries.
     pub async fn report_devices(
         &self,
         reported_device_ids: Vec<DeviceId>,
@@ -34,6 +34,11 @@ impl crate::Node {
         self.local_store
             .record_reported_devices(&reported_device_ids, &succeeded)
             .await?;
-        Ok(succeeded)
+
+        let reported_mailboxes = self
+            .local_store
+            .mailboxes_reported_to_any(&reported_device_ids)
+            .await?;
+        Ok(reported_mailboxes.into_iter().collect())
     }
 }
