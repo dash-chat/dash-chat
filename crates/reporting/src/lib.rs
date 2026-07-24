@@ -1,5 +1,4 @@
-//! Shared logic for the user-reporting endpoint exposed by both the
-//! `mailbox-server` and the `push-notifications-server`.
+//! Shared logic for the user-reporting endpoint exposed by mailbox servers.
 //!
 //! A reporter signs a list of device ids together with the current timestamp
 //! and posts the request to a server's `/report` endpoint. The server verifies

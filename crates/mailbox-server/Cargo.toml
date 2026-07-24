@@ -28,7 +28,7 @@ base64 = "0.22"
 uuid = { version = "1.0", features = ["v7"] }
 clap = { version = "4.5", features = ["derive"] }
 push-notifications-client = { path = "../push-notifications-client" }
-report-common = { workspace = true }
+reporting = { workspace = true }
 dashchat-utils = { workspace = true }
 async-trait = "0.1"
 anyhow = "1"
@@ -57,5 +57,5 @@ serial_test = "3"
 base64 = "0.22"
 ed25519-dalek = { workspace = true }
 hex = "0.4"
-report-common = { workspace = true }
+reporting = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }

@@ -27,7 +27,7 @@ dashchat-utils = { path = "crates/dashchat-utils" }
 mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
 mailbox-local-server = { path = "crates/mailbox-local-server" }
-report-common = { path = "crates/report-common" }
+reporting = { path = "crates/reporting" }
 
 p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
 p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [

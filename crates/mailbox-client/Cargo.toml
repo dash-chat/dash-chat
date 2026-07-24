@@ -24,7 +24,7 @@ bytes = { workspace = true }
 
 
 
-report-common = { workspace = true }
+reporting = { workspace = true }
 
 # TODO: pull out the toy mailbox request/response types so they can be
 #       independently depended upon
