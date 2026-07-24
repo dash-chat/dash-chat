@@ -1,5 +1,5 @@
-import type { Action } from 'svelte/action';
 import { watcher } from 'signalium';
+import type { Action } from 'svelte/action';
 import { registerBelowKeyboard } from 'tauri-plugin-virtual-keyboard';
 
 /**
