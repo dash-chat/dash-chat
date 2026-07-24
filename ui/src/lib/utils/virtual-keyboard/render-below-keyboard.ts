@@ -1,4 +1,5 @@
 import type { Action } from 'svelte/action';
+import { watcher } from 'signalium';
 import { registerBelowKeyboard } from 'tauri-plugin-virtual-keyboard';
 
 /**
@@ -17,13 +18,20 @@ export const renderBelowKeyboard: Action<
 	HTMLElement,
 	{ open: boolean; onHidden?: () => void }
 > = (node, params) => {
-	const surface = registerBelowKeyboard(node, { onHidden: params.onHidden });
+	const surface = registerBelowKeyboard(node);
+	let onHidden = params.onHidden;
+	const visibility = watcher(() => surface.visible.value);
+	const unsubscribe = visibility.addListener(() => {
+		if (!surface.visible.value) onHidden?.();
+	});
 	surface.setOpen(params.open);
 	return {
 		update(next) {
+			onHidden = next.onHidden;
 			surface.setOpen(next.open);
 		},
 		destroy() {
+			unsubscribe();
 			surface.destroy();
 		},
 	};
