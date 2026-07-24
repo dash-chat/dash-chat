@@ -328,26 +328,27 @@
 	{/if}
 
 	<div
-		bind:clientHeight={bottomBarHeight}
-		class="absolute bottom-0 inset-x-0 z-30 pb-grounded-safe"
+		class="absolute bottom-0 inset-x-0 z-30"
 		class:bg-page-surface={theme === 'material'}
 	>
-		{#await $composerData then [me, info]}
-			{#if me.member}
-				<MessageComposer
-					bind:this={composer}
-					store={store.messages}
-					destinationName={info.name}
-					onSent={onMessageSent}
-				/>
-			{:else}
-				<div
-					class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
-					data-testid="group-chat-not-member"
-				>
-					{m.youAreNoLongerAMember()}
-				</div>
-			{/if}
-		{/await}
+		<div bind:clientHeight={bottomBarHeight}>
+			{#await $composerData then [me, info]}
+				{#if me.member}
+					<MessageComposer
+						bind:this={composer}
+						store={store.messages}
+						destinationName={info.name}
+						onSent={onMessageSent}
+					/>
+				{:else}
+					<div
+						class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
+						data-testid="group-chat-not-member"
+					>
+						{m.youAreNoLongerAMember()}
+					</div>
+				{/if}
+			{/await}
+		</div>
 	</div>
 </div>
