@@ -19,7 +19,7 @@ dev-sim device="iPhone 16":
 
 # build the app
 build:
-    pnpm tauri ios build
+    pnpm tauri ios build --debug
 
 # open XCode to build the app
 build-xcode:
