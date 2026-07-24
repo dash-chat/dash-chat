@@ -90,7 +90,7 @@
 	const avatarSize = 100;
 </script>
 
-<Page>
+<Page style="height: calc(100% - var(--keyboard-safe-bottom, 0px))">
 	{#if showPicker}
 		<AvatarPicker
 			bind:avatar={pickerAvatar}

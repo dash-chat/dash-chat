@@ -3,6 +3,7 @@
 	import '@awesome.me/webawesome/dist/styles/themes/default.css';
 
 	import '../app.css';
+	import 'tauri-plugin-virtual-keyboard';
 	import { setContext } from 'svelte';
 
 	import {

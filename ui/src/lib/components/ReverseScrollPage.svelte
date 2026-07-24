@@ -54,6 +54,17 @@
 	let suppressCompensateUntil = 0;
 	let releaseSuppress: (() => void) | null = null;
 
+	// On keyboard show the inset reflow is deferred to the end of the glide, so
+	// scroll/resize observers can't re-run the navbar opacity until the
+	// animation ends — while content is already gliding under the navbar. The
+	// plugin's preview-measure callback is the one moment the settled geometry
+	// is readable up front; registered once at mount, it delegates to the
+	// current effect run's updateNavbar.
+	let measureNavbar: (() => void) | null = null;
+	function onPreviewLayoutMeasure() {
+		measureNavbar?.();
+	}
+
 	export function scrollToBottom(animate = true) {
 		if (!el) return;
 		const node = el;
@@ -280,8 +291,10 @@
 
 		syncNavbar();
 		updateNavbar();
+		measureNavbar = updateNavbar;
 
 		return () => {
+			measureNavbar = null;
 			if (frame) cancelAnimationFrame(frame);
 			innerObserver.disconnect();
 			pageObserver.disconnect();
@@ -310,7 +323,7 @@
 		<div style="flex: 1 0 auto"></div>
 		<div
 			bind:this={innerEl}
-			use:renderAboveKeyboard
+			use:renderAboveKeyboard={{ onPreviewLayoutMeasure }}
 			style="flex: 0 0 auto; padding-top: var(--chat-navbar-height, 0px);"
 		>
 			{@render children?.()}
