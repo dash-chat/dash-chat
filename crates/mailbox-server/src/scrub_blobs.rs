@@ -87,7 +87,8 @@ fn tombstone_refs(db: &Database, refs: &[BlobRef]) -> Result<Vec<iroh_blobs::Has
                 .insert(key.as_slice(), REF_TOMBSTONED)
                 .map_err(|e| format!("Failed to tombstone blob ref: {}", e))?;
 
-            if !has_live_ref(&table, &blob_ref.blob_hash)? && !orphaned.contains(&blob_ref.blob_hash)
+            if !has_live_ref(&table, &blob_ref.blob_hash)?
+                && !orphaned.contains(&blob_ref.blob_hash)
             {
                 orphaned.push(blob_ref.blob_hash);
             }
@@ -125,6 +126,13 @@ fn has_live_ref(
 /// Record a live reference from `op_ref` to each blob, skipping any reference
 /// already tombstoned. Returns the hashes that are still wanted, i.e. those the
 /// mailbox should go on to store or fetch.
+///
+/// An empty `op_ref` marks a *re-announce* rather than a new reference: it
+/// records nothing and merely reports which blobs still have a live reference
+/// from some operation. Clients re-announcing blobs the mailbox never fetched
+/// have only a per-mailbox hash list to work from, no originating operation, so
+/// letting them mint a reference would leave every re-announced blob holding an
+/// unattributable one that no scrub could ever tombstone.
 pub fn record_blob_refs(
     db: &Database,
     hashes: &[iroh_blobs::Hash],
@@ -141,6 +149,15 @@ pub fn record_blob_refs(
             .map_err(|e| format!("Failed to open blob refs table: {}", e))?;
 
         for hash in hashes {
+            if op_ref.is_empty() {
+                if has_live_ref(&table, hash)? {
+                    wanted.push(*hash);
+                } else {
+                    tracing::debug!(%hash, "ignoring re-announce of a blob with no live reference");
+                }
+                continue;
+            }
+
             let key = blob_ref_key(hash, op_ref);
             let tombstoned = table
                 .get(key.as_slice())

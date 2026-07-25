@@ -58,7 +58,10 @@ async fn scrub_replaces_the_stored_blip_with_its_committed_form() {
         .assert_status(axum::http::StatusCode::CREATED);
     assert_eq!(stored_bytes(&server).await.unwrap(), full);
 
-    let response = server.post("/blips/scrub").json(&scrub_request(&scrubbed)).await;
+    let response = server
+        .post("/blips/scrub")
+        .json(&scrub_request(&scrubbed))
+        .await;
     response.assert_status_ok();
     let body: ScrubBlipsResponse = response.json();
     assert_eq!(body.scrubbed.len(), 1);
@@ -104,7 +107,10 @@ async fn scrub_of_an_uncommitted_blip_is_rejected() {
         .await
         .assert_status(axum::http::StatusCode::CREATED);
 
-    let response = server.post("/blips/scrub").json(&scrub_request(&scrubbed)).await;
+    let response = server
+        .post("/blips/scrub")
+        .json(&scrub_request(&scrubbed))
+        .await;
     response.assert_status_ok();
     let body: ScrubBlipsResponse = response.json();
     assert!(body.scrubbed.is_empty());
@@ -127,7 +133,10 @@ async fn scrubbing_twice_is_idempotent() {
         .assert_status(axum::http::StatusCode::CREATED);
 
     for _ in 0..2 {
-        let response = server.post("/blips/scrub").json(&scrub_request(&scrubbed)).await;
+        let response = server
+            .post("/blips/scrub")
+            .json(&scrub_request(&scrubbed))
+            .await;
         response.assert_status_ok();
         let body: ScrubBlipsResponse = response.json();
         assert_eq!(body.scrubbed.len(), 1);
@@ -274,10 +283,7 @@ async fn a_scrubbed_blob_reference_is_never_accepted_again() {
 
     // Re-announcing the same reference is ignored: the mailbox neither reports
     // it stored nor queues a fetch for it.
-    let response = server
-        .post("/blobs/register-hashes")
-        .json(&announce)
-        .await;
+    let response = server.post("/blobs/register-hashes").json(&announce).await;
     response.assert_status_ok();
     let body: mailbox_server::RegisterHashesResponse = response.json();
     assert!(
@@ -291,10 +297,7 @@ async fn a_scrubbed_blob_reference_is_never_accepted_again() {
         .bytes(data)
         .await
         .assert_status_ok();
-    let response = server
-        .post("/blobs/register-hashes")
-        .json(&announce)
-        .await;
+    let response = server.post("/blobs/register-hashes").json(&announce).await;
     response.assert_status_ok();
     let body: mailbox_server::RegisterHashesResponse = response.json();
     assert!(

@@ -63,6 +63,17 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     async fn report(&self, _request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
         Ok(())
     }
+
+    /// Replace this mailbox's copies of `items` with their payload-free forms
+    /// and release the media blobs they referenced, so a message deleted for
+    /// everyone stops being served to peers who have not synced yet.
+    ///
+    /// `items` must still carry their payloads: the payload-free form and the
+    /// blob references are both derived from them here. Idempotent — every node
+    /// that processes a delete scrubs every mailbox it knows.
+    async fn scrub(&self, _items: Vec<Item>) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -121,6 +132,17 @@ pub trait MailboxItem:
     fn topic(&self) -> Self::Topic;
     fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
         Vec::new()
+    }
+
+    /// This item with its payload removed: what a mailbox stores in its place
+    /// once the payload is deleted for everyone.
+    ///
+    /// A mailbox cannot derive this itself — it treats items as opaque bytes —
+    /// so the publisher commits to it up front and the mailbox accepts no other
+    /// replacement. `None` means the item has no payload to remove, which
+    /// leaves it unscrubbable.
+    fn scrubbed(&self) -> Option<Self> {
+        None
     }
 }
 

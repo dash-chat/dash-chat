@@ -18,9 +18,10 @@ pub struct RegisterHashesRequest {
     /// Opaque identifier of the operation these blobs belong to. The mailbox
     /// records a `(blob, operation)` reference for each hash, which is what
     /// `/blobs/scrub` later tombstones — blobs are content-addressed over
-    /// plaintext media, so the bare hash is not a safe unit of deletion. An
-    /// announce that omits it records an unattributable reference, leaving the
-    /// blob unscrubbable.
+    /// plaintext media, so the bare hash is not a safe unit of deletion. Left
+    /// empty for a re-announce of blobs already vouched for by an earlier
+    /// request, which refreshes the mailbox's fetch intent without minting a
+    /// new reference.
     #[serde(default)]
     pub op_ref: OpRef,
     /// The peer the mailbox should dial to fetch any hash it does not already

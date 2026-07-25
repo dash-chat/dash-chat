@@ -4,9 +4,9 @@ use redb::TableDefinition;
 /// blob. The mailbox never interprets it; it only needs it to tell two
 /// references to the same bytes apart.
 ///
-/// The empty string is the reference recorded for a blob announced without one.
-/// It is never tombstoned by a scrub naming a real operation, so such a blob is
-/// simply unscrubbable — the same way a blip stored without a commitment is.
+/// The empty string is not a reference at all: it marks a re-announce of blobs
+/// some other operation already vouched for. See
+/// [`record_blob_refs`](crate::scrub_blobs::record_blob_refs).
 pub type OpRef = String;
 
 /// References from blobs to the operations that carry them.

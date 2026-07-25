@@ -15,8 +15,7 @@ pub type ScrubHash = iroh_blobs::Hash;
 ///
 /// A separate table rather than a wider `BLIPS_TABLE` value, which would be a
 /// redb schema change requiring migration of existing databases.
-pub const SCRUB_TABLE: TableDefinition<BlipsKey, &[u8]> =
-    TableDefinition::new("scrub_commitments");
+pub const SCRUB_TABLE: TableDefinition<BlipsKey, &[u8]> = TableDefinition::new("scrub_commitments");
 
 /// Whether a stored blip is already in its scrubbed form.
 ///

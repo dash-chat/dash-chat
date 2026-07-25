@@ -244,7 +244,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
         assert!(served.iter().any(|op| op.header.hash() == msg1.hash()));
     }
 
-    if mailbox_scrubbing_implemented() {
+    {
         // The mailbox's own copies were scrubbed: fetching everything it holds for
         // the chat returns the deleted chain body-less.
         let mb_client = mb.client().await;
@@ -304,7 +304,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
     .await
     .unwrap();
 
-    if mailbox_scrubbing_implemented() {
+    {
         for hash in [msg1.hash(), edit1.hash()] {
             assert_eq!(
                 payload_present(&carol, *chat, alice.device_id(), hash).await,
@@ -318,14 +318,6 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
             payload_present(&carol, *chat, alice.device_id(), hash).await,
             Some(true)
         );
-    }
-
-    // When mailbox scrubbing is implemented, we should not wait for consistency.
-    // Until then, carol needs to process the delete message before the deleted conditions are met.
-    if !mailbox_scrubbing_implemented() {
-        poll.consistency([&alice, &bobbi, &carol], &[chat.into()])
-            .await
-            .unwrap();
     }
 
     // Carol sees only the undeleted message (with its edit) and never learns
@@ -350,11 +342,6 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
             .await
             .is_empty()
     );
-}
-
-#[deprecated = "this just calls attention to the need for mailbox scrubbing. When that is implemented, replace all calls to this function with `true`."]
-fn mailbox_scrubbing_implemented() -> bool {
-    false
 }
 
 /// Receiver-side validation: a delete injected by someone other than the

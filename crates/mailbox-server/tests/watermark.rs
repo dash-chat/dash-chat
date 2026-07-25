@@ -1,4 +1,7 @@
-use mailbox_server::{test_utils::{create_test_server, stored_blip}, GetBlipsResponse};
+use mailbox_server::{
+    test_utils::{create_test_server, stored_blip},
+    GetBlipsResponse,
+};
 use serde_json::json;
 
 #[tokio::test]

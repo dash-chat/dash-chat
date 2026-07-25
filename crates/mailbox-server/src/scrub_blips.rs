@@ -120,10 +120,7 @@ fn scrub_blips_inner(
         scrubbed.len(),
         rejected.len()
     );
-    Ok(ScrubBlipsResponse {
-        scrubbed,
-        rejected,
-    })
+    Ok(ScrubBlipsResponse { scrubbed, rejected })
 }
 
 /// The stored rows at `topic:author:seq` whose commitment the submitted bytes

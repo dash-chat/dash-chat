@@ -259,12 +259,37 @@ impl Node {
     ) -> anyhow::Result<bool> {
         let hash = tombstoned_op.hash;
         if self.projection.is_tombstoned(topic, hash).await? {
+            // Capture the operation before dropping the body: the mailboxes
+            // need it with its payload still attached to derive both the
+            // payload-free replacement and the media references to release.
+            self.scrub_mailboxes(topic, tombstoned_op);
             self.unprocess_app(tombstoned_op).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
         } else {
             Ok(false)
         }
+    }
+
+    /// Ask every mailbox to replace its copy of a just-tombstoned operation with
+    /// the payload-free form and drop the media it referenced.
+    ///
+    /// Driven from tombstone enforcement rather than from the delete itself, so
+    /// it covers the author and every recipient alike, and re-fires if a mailbox
+    /// ever serves the payload back to us.
+    ///
+    /// Detached, so a slow or unreachable mailbox can't stall operation
+    /// processing. Nothing waits on the result: if the scrub never lands the
+    /// mailbox keeps serving the payload, the next node to sync it re-enforces
+    /// the tombstone, and the scrub is issued again.
+    fn scrub_mailboxes(&self, topic: TopicId, tombstoned_op: &Operation) {
+        let op = MailboxOperation {
+            topic,
+            header: tombstoned_op.header.clone(),
+            body: tombstoned_op.body.clone(),
+        };
+        let node = self.clone();
+        tokio::spawn(async move { node.mailboxes.scrub_all(vec![op]).await });
     }
 
     /// Filter out operations whose payloads are not able to be deleted.

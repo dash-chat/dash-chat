@@ -83,24 +83,19 @@ fire-and-forget retry story in §5 work.
 
 ### 1. Commitment at store time
 
-`StoreBlipsRequest` gains a second map, mirroring the shape of `blips`:
+`StoreBlipsRequest`'s blip value carries the commitment with it:
 
 ```rust
-pub struct StoreBlipsRequest {
-    pub blips: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SequenceNumber, Blip>>>,
-    #[serde(default)]
-    pub scrub_hashes: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SequenceNumber, ScrubHash>>>,
-    // ... existing sender_pubkey, signature
+pub struct StoredBlip {
+    pub blip: Blip,
+    pub scrub_hash: Option<ScrubHash>,
 }
 ```
 
-A parallel optional map rather than changing the `Blip` value type, so the wire
-format stays compatible in *both* directions: an old client's request still
-deserializes on a new server, and a new client's request still deserializes on
-an old server (which ignores the commitment, leaving the blip unscrubbable
-rather than failing the store outright). Given that mailbox servers and clients
-update independently, a store request that hard-fails against a lagging server
-would stop message delivery entirely — not worth the tidier shape.
+This is a breaking wire change — an old client's bare-base64 blip no longer
+deserializes — which is the right trade while we are not yet holding to
+backward compatibility. `None` is not a compatibility shim but a real case:
+item types with no payload to remove commit to nothing and are unscrubbable.
 
 `ScrubHash` is blake3 (`iroh_blobs::Hash`, already in both crates' dependency
 graphs).
@@ -204,9 +199,13 @@ this blob" a plain prefix range.
   iroh's GC reclaims the bytes.
 - A re-send of the same media in another message is a *different* ref, so it
   stores and serves normally.
-- A legacy announce carrying no op hash gets a ref under an all-zero op hash. It
-  behaves as a permanently live ref — such a blob is simply unscrubbable, matching
-  how uncommitted blips behave.
+- An announce with an **empty** op ref is a *re-announce*, not a new reference:
+  it records nothing and merely reports which blobs still have a live reference.
+  The node's unfetched-blob followup re-announces from a per-mailbox hash list
+  with no originating operation, and letting it mint a reference would leave
+  every re-announced blob holding an unattributable one that no scrub could ever
+  tombstone — quietly defeating blob scrubbing for exactly the blobs that needed
+  a retry.
 
 **Refs are never expired.** A permanent tombstone set is unbounded by
 definition, so there is nothing to garbage collect: dropping a tombstone would
@@ -229,9 +228,12 @@ has to keep it.
 - `MailboxItem` gains `fn scrubbed(&self) -> Option<Self> { None }`;
   `MailboxOperation` overrides it with `Self { topic, header, body: None }`. The
   default keeps in-memory and test item types untouched.
-- `MailboxClient` gains `scrub_blips` / `scrub_blobs`, defaulting to `Ok(())` so
-  the in-memory client is unaffected. `ToyMailboxClient` implements both.
-- `Mailboxes` gains a `scrub` method fanning out to every tracked mailbox.
+- `MailboxClient` gains a single `scrub(items)`, defaulting to `Ok(())`. The
+  items still carry their payloads; the client derives both the payload-free
+  replacement and the blob references from them. `ToyMailboxClient` posts to
+  both endpoints; `MemMailboxClient` implements it too, since the node's
+  delete tests run against the in-memory mailbox by default.
+- `Mailboxes` gains `scrub_all`, fanning out to every tracked mailbox.
 - The trigger is `enforce_tombstone`: whenever it returns `true`, the node has
   just dropped a body, so it holds exactly the op needed to scrub and (via
   `unprocess_app`, which already extracts them) the media hashes to release.
@@ -241,26 +243,34 @@ has to keep it.
 - Because the author's own delete flows through the same `enforce_tombstone`
   path, author-side scrubbing needs no separate call site.
 
-**Retry story:** fire-and-forget, self-healing. If a scrub does not land, the
-mailbox keeps serving the body; the next node to sync it re-ingests the op,
-`enforce_tombstone` fires again, and the scrub is re-issued. No new persistence.
-Retention is the ultimate backstop.
+**Retry story:** fire-and-forget, self-healing. The fan-out runs in a detached
+task so a slow or unreachable mailbox never stalls operation processing. If a
+scrub does not land, the mailbox keeps serving the body; the next node to sync
+it re-ingests the op, `enforce_tombstone` fires again, and the scrub is
+re-issued. No new persistence. Retention is the ultimate backstop.
 
 A node that only ever saw the delete, never the deleted op, cannot scrub — it
 has no header to submit. That is fine; nodes that did see it will.
 
 ## Testing
 
-- **mailbox-server** (`tests/integration.rs`): store-with-commitment then scrub;
-  scrub with wrong bytes rejected; scrub of an uncommitted blip rejected; scrub
-  twice is idempotent; re-store after scrub does not resurrect the payload;
-  `/blips/get` returns the blip body-less afterwards; watermarks unchanged.
-- **blob**: after `/blobs/scrub` the mailbox no longer serves the blob and does
-  not re-fetch it.
-- **dashchat-node**: delete `mailbox_scrubbing_implemented()` and its
-  `#[deprecated]` marker in `tests/delete_messages.rs`, enabling the three
-  already-written blocks — including the late-joiner (carol) assertion that a
-  node syncing purely from the mailbox never receives a deleted payload.
+- **mailbox-server** (`tests/scrub.rs`): store-with-commitment then scrub; scrub
+  with wrong bytes rejected; scrub of an uncommitted blip rejected; scrub twice
+  is idempotent; re-store after scrub does not resurrect the payload; watermarks
+  unchanged. For blobs: one reference scrubbed leaves the blob for its other
+  referrer, a tombstoned reference is never accepted again (announce or upload),
+  and the same media re-sent under a new operation still stores.
+- **Determinism** — the two halves of the commitment contract, since a mismatch
+  would silently reject every scrub:
+  - `mailbox-client`: the commitment computed at publish equals the hash of the
+    bytes `scrub` submits.
+  - `dashchat-node`: the payload-free encoding of a `MailboxOperation` is pinned
+    to a known hash, so serde drift fails loudly instead of quietly stranding
+    blips published by older clients.
+- **dashchat-node** (`tests/delete_messages.rs`): `mailbox_scrubbing_implemented()`
+  and its `#[deprecated]` marker are gone, enabling the three already-written
+  blocks — including the late-joiner (carol) assertion that a node syncing purely
+  from the mailbox never receives a deleted payload.
 
 ## Settled
 
@@ -269,12 +279,6 @@ has no header to submit. That is fine; nodes that did see it will.
   authorship over time, not take new dependencies on it.
 - **Blob refs are per `(blob_hash, op_hash)`**, tracked in the flattest table
   that works and never expired.
-
-## Open questions
-
-1. **Wire compatibility.** Is the parallel `scrub_hashes` map the right call, or
-   is a cleaner value type worth a coordinated client/server rollout?
-2. **Determinism.** Publisher and scrubber must produce byte-identical CBOR for
-   the payload-free operation. Any change to `MailboxOperation`'s serde
-   representation silently makes in-flight blips unscrubbable (bounded by
-   retention). Worth a round-trip test pinning the encoding?
+- **A clean value type over wire compatibility**, which we are not yet holding
+  to.
+- **The payload-free encoding is pinned by test**, on both sides.

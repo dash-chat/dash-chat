@@ -1,6 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
-use mailbox_server::{Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest};
+use mailbox_server::{
+    Blip, BlobRef, GetBlipsRequest, GetBlipsResponse, OpRef, ScrubBlipsRequest, ScrubBlobsRequest,
+    ScrubHash, StoreBlipsRequest, StoredBlip,
+};
 
 use super::*;
 
@@ -54,6 +57,7 @@ fn classify_upload_error(err: reqwest::Error) -> UploadError {
 pub async fn send_register_hashes(
     base_url: &str,
     hashes: Vec<iroh_blobs::Hash>,
+    op_ref: OpRef,
     sender_pubkey: iroh::EndpointId,
     expect_upload: bool,
 ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
@@ -62,6 +66,7 @@ pub async fn send_register_hashes(
     }
     let request = mailbox_server::RegisterHashesRequest {
         blob_hashes: hashes,
+        op_ref,
         sender_pubkey,
         expect_upload,
         signature: Vec::new(),
@@ -147,28 +152,41 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     /// batch of large blobs never stalls this per-mailbox publish iteration, and
     /// scoped to `not_stored`, so we never re-upload blobs the mailbox already
     /// holds.
-    async fn store_blobs(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
-        if hashes.is_empty() {
-            return Ok(());
-        }
+    /// `blobs_by_op` groups the hashes by the operation that references them.
+    /// The mailbox records a reference per `(blob, operation)` pair, which is
+    /// what makes deletion safe: blob hashes are content-addressed, so two
+    /// messages carrying the same media announce the same hash and deleting one
+    /// must not drop the other's copy.
+    async fn store_blobs(
+        &self,
+        blobs_by_op: Vec<(OpRef, Vec<iroh_blobs::Hash>)>,
+    ) -> anyhow::Result<()> {
         // Tell the mailbox to defer its fetch backstop only when we can actually
         // stream the bytes; a reader-less client never uploads, so the mailbox
         // should fetch from us right away.
         let expect_upload = self.blob_reader.is_some();
-        let already_stored = send_register_hashes(
-            &self.base_url,
-            hashes.clone(),
-            self.sender_pubkey,
-            expect_upload,
-        )
-        .await?;
-        let not_stored: Vec<_> = hashes
-            .into_iter()
-            .filter(|h| !already_stored.contains(h))
-            .collect();
-        self.tracker.record(&self.id, &not_stored).await;
-        self.tracker.remove(&self.id, &already_stored).await;
-        self.spawn_blob_upload(not_stored);
+        let mut all_not_stored = Vec::new();
+        for (op_ref, hashes) in blobs_by_op {
+            if hashes.is_empty() {
+                continue;
+            }
+            let already_stored = send_register_hashes(
+                &self.base_url,
+                hashes.clone(),
+                op_ref,
+                self.sender_pubkey,
+                expect_upload,
+            )
+            .await?;
+            let not_stored: Vec<_> = hashes
+                .into_iter()
+                .filter(|h| !already_stored.contains(h))
+                .collect();
+            self.tracker.record(&self.id, &not_stored).await;
+            self.tracker.remove(&self.id, &already_stored).await;
+            all_not_stored.extend(not_stored);
+        }
+        self.spawn_blob_upload(all_not_stored);
         Ok(())
     }
 
@@ -235,23 +253,29 @@ where
         }
 
         // Group operations by topic -> author -> seq_num
-        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, StoredBlip>>> =
+            BTreeMap::new();
 
-        let blob_hashes: Vec<iroh_blobs::Hash> =
-            ops.iter().flat_map(|op| op.blob_hashes()).collect();
+        let blobs_by_op: Vec<(OpRef, Vec<iroh_blobs::Hash>)> = ops
+            .iter()
+            .map(|op| (Self::op_ref(op), op.blob_hashes()))
+            .collect();
 
         for op in ops {
             let topic_id = Self::encode_topic_id(&op.topic());
             let log_id = Self::device_id_to_log_id(&op.author());
             let seq_num = op.seq_num();
-            let blip = Self::serialize_operation(&op)?;
+            let stored = StoredBlip {
+                blip: Self::serialize_operation(&op)?,
+                scrub_hash: Self::scrub_hash(&op)?,
+            };
 
             blips
                 .entry(topic_id)
                 .or_default()
                 .entry(log_id)
                 .or_default()
-                .insert(seq_num, blip);
+                .insert(seq_num, stored);
         }
 
         let request = StoreBlipsRequest {
@@ -266,7 +290,7 @@ where
             .await?;
 
         if response.status().is_success() {
-            self.store_blobs(blob_hashes).await?;
+            self.store_blobs(blobs_by_op).await?;
             Ok(())
         } else {
             let status = response.status();
@@ -292,6 +316,39 @@ where
             let body = response.text().await.unwrap_or_default();
             Err(anyhow::anyhow!("Failed to report: {} - {}", status, body))
         }
+    }
+
+    async fn scrub(&self, items: Vec<Item>) -> Result<(), anyhow::Error> {
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
+        let mut refs: Vec<BlobRef> = Vec::new();
+
+        for item in &items {
+            let op_ref = Self::op_ref(item);
+            refs.extend(item.blob_hashes().into_iter().map(|blob_hash| BlobRef {
+                blob_hash,
+                op_ref: op_ref.clone(),
+            }));
+
+            let Some(scrubbed) = item.scrubbed() else {
+                continue;
+            };
+            blips
+                .entry(Self::encode_topic_id(&item.topic()))
+                .or_default()
+                .entry(Self::device_id_to_log_id(&item.author()))
+                .or_default()
+                .insert(item.seq_num(), Self::serialize_operation(&scrubbed)?);
+        }
+
+        if !blips.is_empty() {
+            self.post_scrub("/blips/scrub", &ScrubBlipsRequest { blips })
+                .await?;
+        }
+        if !refs.is_empty() {
+            self.post_scrub("/blobs/scrub", &ScrubBlobsRequest { refs })
+                .await?;
+        }
+        Ok(())
     }
 
     async fn fetch(
@@ -388,6 +445,40 @@ where
         Ok(Blip::new(bytes))
     }
 
+    /// The commitment to `item`'s payload-free form, or `None` when it has no
+    /// payload to remove. This is what the mailbox later checks a scrub against,
+    /// so it must be computed over exactly the bytes [`Self::scrub`] submits.
+    fn scrub_hash(item: &Item) -> Result<Option<ScrubHash>, anyhow::Error> {
+        let Some(scrubbed) = item.scrubbed() else {
+            return Ok(None);
+        };
+        Ok(Some(ScrubHash::new(
+            Self::serialize_operation(&scrubbed)?.as_slice(),
+        )))
+    }
+
+    /// The opaque identifier the mailbox uses to tell two references to the same
+    /// blob apart. Only determinism matters — the mailbox never interprets it.
+    fn op_ref(item: &Item) -> OpRef {
+        stringify(item.hash())
+    }
+
+    async fn post_scrub(&self, path: &str, request: &impl Serialize) -> anyhow::Result<()> {
+        let response = HTTP_CLIENT
+            .post(format!("{}{path}", self.base_url))
+            .json(request)
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        Err(anyhow::anyhow!(
+            "Failed to scrub via {path}: {status} - {body}"
+        ))
+    }
+
     fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
         Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
     }
@@ -449,6 +540,72 @@ mod tests {
         }
     }
 
+    /// An item whose payload-free form is a distinct value, so the commitment
+    /// and the scrub submission can be compared meaningfully.
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    struct Parcel {
+        seq: u64,
+        payload: Option<String>,
+    }
+
+    impl MailboxItem for Parcel {
+        type Hash = u64;
+        type Author = char;
+        type Topic = u8;
+
+        fn hash(&self) -> u64 {
+            self.seq
+        }
+        fn author(&self) -> char {
+            'a'
+        }
+        fn seq_num(&self) -> u64 {
+            self.seq
+        }
+        fn topic(&self) -> u8 {
+            1
+        }
+        fn scrubbed(&self) -> Option<Self> {
+            self.payload.as_ref()?;
+            Some(Self {
+                seq: self.seq,
+                payload: None,
+            })
+        }
+    }
+
+    /// The commitment is computed when a blip is published and checked against
+    /// bytes submitted by a later, separate scrub. If those two encodings ever
+    /// disagree the mailbox rejects every scrub, so pin that they match.
+    #[test]
+    fn the_publish_commitment_matches_what_scrub_submits() {
+        let item = Parcel {
+            seq: 7,
+            payload: Some("secret".into()),
+        };
+
+        let committed = ToyMailboxClient::<Parcel>::scrub_hash(&item)
+            .unwrap()
+            .expect("an item with a payload is scrubbable");
+        let submitted =
+            ToyMailboxClient::<Parcel>::serialize_operation(&item.scrubbed().unwrap()).unwrap();
+
+        assert_eq!(committed, ScrubHash::new(submitted.as_slice()));
+    }
+
+    #[test]
+    fn an_item_with_no_payload_commits_to_nothing() {
+        let item = Parcel {
+            seq: 7,
+            payload: None,
+        };
+        assert!(
+            ToyMailboxClient::<Parcel>::scrub_hash(&item)
+                .unwrap()
+                .is_none()
+        );
+    }
+
     #[test]
     fn test_stringify_unstringify() {
         let topic = Abecedarian(10);
@@ -486,6 +643,7 @@ mod tests {
         let already = crate::toy::send_register_hashes(
             &base_url,
             vec![h_stored, h_new],
+            "op-1".to_string(),
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
             false,
         )
@@ -615,7 +773,10 @@ mod tests {
         )
         .with_blob_reader(std::sync::Arc::new(StubReader(data.clone())));
 
-        client.store_blobs(vec![hash]).await.unwrap();
+        client
+            .store_blobs(vec![("op-1".to_string(), vec![hash])])
+            .await
+            .unwrap();
 
         // The upload is spawned, so wait for the detached task to deliver it.
         for _ in 0..100 {

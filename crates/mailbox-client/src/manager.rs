@@ -353,6 +353,31 @@ where
         succeeded
     }
 
+    /// Ask every registered mailbox to replace its copies of `items` with their
+    /// payload-free forms and release the media they referenced, best-effort.
+    ///
+    /// Fire-and-forget by design: if a scrub doesn't land, the mailbox goes on
+    /// serving the payload, the next node to sync it re-ingests the operation
+    /// and re-enforces the tombstone, and the scrub is issued again.
+    pub async fn scrub_all(&self, items: Vec<Item>) {
+        if items.is_empty() {
+            return;
+        }
+        let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
+            .mailboxes
+            .lock()
+            .await
+            .iter()
+            .map(|(id, tm)| (id.clone(), tm.clone()))
+            .collect();
+        for (id, tracked_mailbox) in mailboxes {
+            let client = tracked_mailbox.client().await;
+            if let Err(err) = client.scrub(items.clone()).await {
+                tracing::warn!(?err, mailbox = %id, "failed to scrub mailbox");
+            }
+        }
+    }
+
     pub async fn subscribe(
         &self,
         topic: Item::Topic,

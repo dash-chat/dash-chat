@@ -41,6 +41,7 @@ const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
+pub use blob_refs_table::{OpRef, BLOB_REFS_TABLE};
 pub use blob_sync::{BlobFetchPool, BlobSync};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
 pub use dashchat_utils::FetchConfig;
@@ -51,12 +52,9 @@ pub use register_hashes::{
     record_blob_sources, register_hashes, upload_blob, RegisterHashesRequest,
     RegisterHashesResponse, UploadBlobResponse,
 };
-pub use blob_refs_table::{OpRef, BLOB_REFS_TABLE};
 pub use register_peer::RegisterPeerRequest;
 pub use reports_table::REPORTS_TABLE;
-pub use scrub_blips::{
-    scrub_blips, ScrubBlipsRequest, ScrubBlipsResponse, ScrubbedBlip,
-};
+pub use scrub_blips::{scrub_blips, ScrubBlipsRequest, ScrubBlipsResponse, ScrubbedBlip};
 pub use scrub_blobs::{scrub_blobs, BlobRef, ScrubBlobsRequest, ScrubBlobsResponse};
 pub use scrub_table::{ScrubHash, SCRUB_TABLE};
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};

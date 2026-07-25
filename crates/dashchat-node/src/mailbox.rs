@@ -36,6 +36,19 @@ impl MailboxItem for MailboxOperation {
         self.topic
     }
 
+    /// The operation with its body dropped. The header is untouched — it still
+    /// carries the payload hash and size, which the signature covers — so every
+    /// node that holds the operation produces identical bytes here, which is
+    /// what lets one node's commitment validate another node's scrub.
+    fn scrubbed(&self) -> Option<Self> {
+        self.body.as_ref()?;
+        Some(Self {
+            topic: self.topic,
+            header: self.header.clone(),
+            body: None,
+        })
+    }
+
     fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
         let Some(body) = &self.body else {
             return Vec::new();
@@ -159,6 +172,51 @@ mod tests {
 
         let hashes = op.blob_hashes();
         assert_eq!(hashes, vec![media_hash]);
+    }
+
+    /// Scrubbing drops the body and nothing else. The header keeps the payload
+    /// hash and size — the signature covers them — so the operation stays
+    /// verifiable with its payload gone.
+    #[test]
+    fn scrubbed_drops_only_the_body() {
+        let topic: TopicId = crate::Topic::<crate::topic::kind::Untyped>::new([9u8; 32]).into();
+        let header = make_header(topic);
+        let body = p2panda_core::Body::new(b"secret");
+        let op = super::MailboxOperation {
+            topic,
+            header: header.clone(),
+            body: Some(body),
+        };
+
+        let scrubbed = op.scrubbed().expect("an op with a body is scrubbable");
+        assert!(scrubbed.body.is_none());
+        assert_eq!(scrubbed.header, header);
+        assert_eq!(scrubbed.topic, topic);
+
+        // Already payload-free: nothing to remove.
+        assert!(scrubbed.scrubbed().is_none());
+    }
+
+    /// A blip's scrub commitment is made by whoever published it and checked
+    /// against bytes submitted later by a different node, possibly running a
+    /// different build. Both sides must encode the payload-free operation
+    /// identically, so this pins the encoding: if `MailboxOperation`'s serde
+    /// representation drifts, blips published by older clients silently become
+    /// unscrubbable, and this test is the warning.
+    #[test]
+    fn scrubbed_operation_encoding_is_pinned() {
+        let topic: TopicId = crate::Topic::<crate::topic::kind::Untyped>::new([9u8; 32]).into();
+        let op = super::MailboxOperation {
+            topic,
+            header: make_header(topic),
+            body: Some(p2panda_core::Body::new(b"secret")),
+        };
+        let encoded = p2panda_core::cbor::encode_cbor(&op.scrubbed().unwrap()).unwrap();
+        assert_eq!(
+            iroh_blobs::Hash::new(&encoded).to_string(),
+            "54fcfcab82239838735b37ddbd5d468ff140f488ca630e3e0b37d3bf5e6ad29b",
+            "the payload-free encoding of a MailboxOperation changed"
+        );
     }
 
     #[test]

@@ -27,10 +27,21 @@ pub type MemMailboxLogs<Item> = HashMap<
     HashMap<<Item as MailboxItem>::Author, BTreeMap<u64, Item>>,
 >;
 
+/// The coordinate of an operation whose payload has been scrubbed.
+type ScrubbedSlot<Item> = (
+    <Item as MailboxItem>::Topic,
+    <Item as MailboxItem>::Author,
+    u64,
+);
+
 #[derive(Clone)]
 pub struct MemMailbox<Item: MailboxItem> {
     id: MailboxId,
     ops: Arc<RwLock<MemMailboxLogs<Item>>>,
+    /// Slots whose payload has been scrubbed. Kept so a republish can't put the
+    /// payload back, mirroring the real mailbox's once-scrubbed-always-scrubbed
+    /// rule.
+    scrubbed: Arc<RwLock<HashSet<ScrubbedSlot<Item>>>>,
 }
 
 impl<Item: MailboxItem> MemMailbox<Item> {
@@ -38,6 +49,7 @@ impl<Item: MailboxItem> MemMailbox<Item> {
         Self {
             id: nanoid::nanoid!(),
             ops: Arc::new(RwLock::new(HashMap::new())),
+            scrubbed: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -74,11 +86,16 @@ where
 
     async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
         let mut store = self.mailbox.ops.write().await;
+        let scrubbed = self.mailbox.scrubbed.read().await;
         // ops.entry(topic).or_insert_with(Vec::new).push(op.into());
         for op in ops {
             let author = op.author();
             let seq_num = op.seq_num();
             let topic = op.topic();
+            if scrubbed.contains(&(topic, author, seq_num)) {
+                tracing::debug!(topic = ?topic, hash = ?op.hash(), "ignoring publish of a scrubbed operation");
+                continue;
+            }
             tracing::info!(topic = ?topic, hash = ?op.hash(), "publishing mailbox operation");
             store
                 .entry(topic)
@@ -86,6 +103,27 @@ where
                 .entry(author)
                 .or_default()
                 .insert(seq_num, op);
+        }
+        Ok(())
+    }
+
+    async fn scrub(&self, items: Vec<Item>) -> Result<(), anyhow::Error> {
+        let mut store = self.mailbox.ops.write().await;
+        let mut scrubbed_slots = self.mailbox.scrubbed.write().await;
+        for item in items {
+            let Some(scrubbed) = item.scrubbed() else {
+                continue;
+            };
+            let (topic, author, seq_num) = (item.topic(), item.author(), item.seq_num());
+            tracing::info!(topic = ?topic, hash = ?item.hash(), "scrubbing mailbox operation");
+            scrubbed_slots.insert((topic, author, seq_num));
+            if let Some(slot) = store
+                .get_mut(&topic)
+                .and_then(|authors| authors.get_mut(&author))
+                .and_then(|seqs| seqs.get_mut(&seq_num))
+            {
+                *slot = scrubbed;
+            }
         }
         Ok(())
     }

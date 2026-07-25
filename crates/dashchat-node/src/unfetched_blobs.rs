@@ -65,8 +65,18 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         }
         // Re-announce so the mailbox re-registers these hashes for fetching. No
         // upload follows here, so ask it to fetch immediately rather than deferring
-        // by its grace window.
-        match mailbox_client::toy::send_register_hashes(&url, hashes, self_endpoint, false).await {
+        // by its grace window. The empty op_ref marks this as a re-announce: we
+        // track unfetched blobs per mailbox, not per operation, so we have no
+        // reference to offer and must not mint one.
+        match mailbox_client::toy::send_register_hashes(
+            &url,
+            hashes,
+            String::new(),
+            self_endpoint,
+            false,
+        )
+        .await
+        {
             Ok(already_stored) => {
                 if let Err(err) = node
                     .local_store
