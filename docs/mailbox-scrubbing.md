@@ -68,11 +68,16 @@ keep their copies, and the loss is availability for not-yet-synced recipients
 only. For an unauthenticated toy mailbox this is an acceptable trade; it should
 be revisited when the mailbox gains real authentication.
 
-**Optional strengthening** (see open questions): `BlipsKey.author` *is* the
-authoring device's public key, so the mailbox could additionally require an
-ed25519 signature over the scrubbed bytes verifiable under that key. That
-restricts scrubbing to the operation's author, at the cost of preventing
-recipients — and the author's other devices — from scrubbing on their behalf.
+**Rejected: author signatures.** `BlipsKey.author` *is* the authoring device's
+public key, so the mailbox could cheaply require an ed25519 signature over the
+scrubbed bytes verifiable under it, restricting scrubbing to the operation's
+author. We are not doing this. The direction of travel is for the mailbox to
+know *less* about authorship, not more — so new checks that take a dependency on
+it are moving the wrong way. Hash-only validation is indifferent to who the
+author is and stays correct if the author column later becomes opaque; a
+signature check would have to be torn out again. It also keeps scrubbing open to
+recipients and to the author's other devices, which is what makes the
+fire-and-forget retry story in §5 work.
 
 ## Design
 
@@ -178,21 +183,36 @@ The fix is to make the reference, not the hash, the unit of deletion.
 blob hash, and the mailbox keeps a reference table:
 
 ```rust
-pub const BLOB_REFS_TABLE: TableDefinition<BlobRefKey, u8> =
-    TableDefinition::new("blob_refs");   // key: (blob_hash, op_hash); value: live | tombstoned
+// key: blob_hash (32B) ++ op_hash (32B)   value: 0 = live, 1 = tombstoned
+pub const BLOB_REFS_TABLE: TableDefinition<&[u8], u8> =
+    TableDefinition::new("blob_refs");
 ```
+
+Deliberately the dumbest thing that works: a flat concatenated byte key using
+redb's built-in `&[u8]` and `u8` impls, so there is no custom `Key`/`Value` impl
+to write (contrast `BlipsKey`). Putting the blob hash first makes "all refs for
+this blob" a plain prefix range.
 
 - `/blobs/register-hashes` records a live `(blob, op)` ref — unless that exact
   ref is already tombstoned, in which case it is ignored **permanently**. This is
   the true tombstone you're after, and it is safe because the coordinate is
   position-like again: a given operation references a given blob exactly once.
 - `/blobs/scrub` takes `(blob_hash, op_hash)` pairs and marks those refs
-  tombstoned. When a blob has no live refs left, the mailbox removes it from the
-  `BlobFetchPool` (otherwise it re-fetches from a peer that still holds it) and
-  deletes its `mailbox/<secs>/<hash>` retention tags so iroh's GC reclaims the
-  bytes. Refs are expired alongside blips in `cleanup.rs`.
+  tombstoned. If a prefix scan then finds no live refs for that blob, the mailbox
+  removes it from the `BlobFetchPool` (otherwise it re-fetches from a peer that
+  still holds it) and deletes its `mailbox/<secs>/<hash>` retention tags so
+  iroh's GC reclaims the bytes.
 - A re-send of the same media in another message is a *different* ref, so it
   stores and serves normally.
+- A legacy announce carrying no op hash gets a ref under an all-zero op hash. It
+  behaves as a permanently live ref — such a blob is simply unscrubbable, matching
+  how uncommitted blips behave.
+
+**Refs are never expired.** A permanent tombstone set is unbounded by
+definition, so there is nothing to garbage collect: dropping a tombstone would
+re-open the hole it exists to close. Growth is ~65 bytes per (blob, message)
+pair, forever, which is the honest price of the guarantee. If that ever matters,
+the lever is capping the table, not aging it.
 
 This costs no new metadata. The blip's header is plaintext CBOR (only the body
 payload is encrypted) and the blip key already carries the topic, so a mailbox
@@ -242,20 +262,19 @@ has no header to submit. That is fine; nodes that did see it will.
   already-written blocks — including the late-joiner (carol) assertion that a
   node syncing purely from the mailbox never receives a deleted payload.
 
+## Settled
+
+- **No author signatures.** Hash-only validation, for the reasons in
+  "What this does not defend against" — the mailbox should learn less about
+  authorship over time, not take new dependencies on it.
+- **Blob refs are per `(blob_hash, op_hash)`**, tracked in the flattest table
+  that works and never expired.
+
 ## Open questions
 
-1. **Author signature?** Require an ed25519 signature over the scrubbed bytes
-   under `BlipsKey.author`, or accept that read authority implies scrub
-   authority? Signing blocks third-party censorship but also blocks recipients
-   and the author's other devices from scrubbing.
-2. **Blob ref granularity.** §4 keys refs on `(blob_hash, op_hash)`. Is
-   per-operation the right unit, or should an edit chain share one ref? Per-op
-   is simpler and over-retains at worst (an edit that keeps the same media holds
-   a second live ref until it too is deleted — and a delete-for-everyone
-   tombstones the whole chain anyway, so both refs drop together).
-3. **Wire compatibility.** Is the parallel `scrub_hashes` map the right call, or
+1. **Wire compatibility.** Is the parallel `scrub_hashes` map the right call, or
    is a cleaner value type worth a coordinated client/server rollout?
-4. **Determinism.** Publisher and scrubber must produce byte-identical CBOR for
+2. **Determinism.** Publisher and scrubber must produce byte-identical CBOR for
    the payload-free operation. Any change to `MailboxOperation`'s serde
    representation silently makes in-flight blips unscrubbable (bounded by
    retention). Worth a round-trip test pinning the encoding?
