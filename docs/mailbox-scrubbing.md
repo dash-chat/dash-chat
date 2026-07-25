@@ -150,19 +150,59 @@ op that never had a body is trivially and harmlessly "already scrubbed".
 In practice this path is rarely hit — the mailbox reports the seq as present, so
 clients do not republish it — but it closes the race.
 
-### 4. `POST /blobs/scrub`
-
-```jsonc
-{ "blob_hashes": ["<hash>", "..."] }
-```
+### 4. `POST /blobs/scrub`, and why blobs need reference counting
 
 Two endpoints rather than one: blips and blobs live in different storage
 subsystems (redb vs. the iroh blob store), have different request shapes, and
 have different validation stories. The node-side call site issues both together.
 
-Per hash: remove it from the `BlobFetchPool` (otherwise the mailbox re-fetches
-it from a peer that still holds it), and delete its `mailbox/<secs>/<hash>`
-retention tags so iroh's GC reclaims the bytes on its next sweep.
+The obvious shape — `{ "blob_hashes": [...] }`, drop each hash — is wrong, for a
+reason that also settles how permanent the tombstone can be.
+
+**Blips are addressed by log position; blobs are addressed by content.** A
+`(topic, author, seq)` coordinate is append-only and can never legitimately be
+reused, which is what makes the blip rule in §3 safe to enforce *forever*. A
+blob hash is blake3 of the plaintext media (`Node::send_message` hands
+`photo.data` straight to `store_blob`; nothing encrypts it), so identical bytes
+collide globally, across chats and users. Deleting or tombstoning a bare hash
+therefore:
+
+- **over-deletes** — a delete in chat A drops media still referenced by a live
+  message in chat B, and
+- **cannot be made permanent** — a permanent bare-hash tombstone would block a
+  legitimate re-send of the same photo, by anyone, anywhere on that mailbox,
+  forever. Anyone who learned a popular image's hash could poison it mailbox-wide.
+
+The fix is to make the reference, not the hash, the unit of deletion.
+`RegisterHashesRequest` carries the **referencing operation hash** alongside each
+blob hash, and the mailbox keeps a reference table:
+
+```rust
+pub const BLOB_REFS_TABLE: TableDefinition<BlobRefKey, u8> =
+    TableDefinition::new("blob_refs");   // key: (blob_hash, op_hash); value: live | tombstoned
+```
+
+- `/blobs/register-hashes` records a live `(blob, op)` ref — unless that exact
+  ref is already tombstoned, in which case it is ignored **permanently**. This is
+  the true tombstone you're after, and it is safe because the coordinate is
+  position-like again: a given operation references a given blob exactly once.
+- `/blobs/scrub` takes `(blob_hash, op_hash)` pairs and marks those refs
+  tombstoned. When a blob has no live refs left, the mailbox removes it from the
+  `BlobFetchPool` (otherwise it re-fetches from a peer that still holds it) and
+  deletes its `mailbox/<secs>/<hash>` retention tags so iroh's GC reclaims the
+  bytes. Refs are expired alongside blips in `cleanup.rs`.
+- A re-send of the same media in another message is a *different* ref, so it
+  stores and serves normally.
+
+This costs no new metadata. The blip's header is plaintext CBOR (only the body
+payload is encrypted) and the blip key already carries the topic, so a mailbox
+that wanted the blob↔operation association could already derive every operation
+hash from the headers it stores. Sending the op hash explicitly tells it nothing
+it could not compute.
+
+The node already has what it needs: `ToyMailboxClient::publish` currently
+flattens `op.blob_hashes()` across all ops, discarding the association; it just
+has to keep it.
 
 ### 5. Node-side triggering
 
@@ -208,10 +248,11 @@ has no header to submit. That is fine; nodes that did see it will.
    under `BlipsKey.author`, or accept that read authority implies scrub
    authority? Signing blocks third-party censorship but also blocks recipients
    and the author's other devices from scrubbing.
-2. **Re-fetch suppression for blobs.** A node racing the delete can re-announce
-   a scrubbed blob's hash via `/blobs/register-hashes` and the mailbox will
-   fetch it again. Add a short-lived "recently scrubbed" set the announce path
-   consults, or rely on the next scrub to clean it up?
+2. **Blob ref granularity.** §4 keys refs on `(blob_hash, op_hash)`. Is
+   per-operation the right unit, or should an edit chain share one ref? Per-op
+   is simpler and over-retains at worst (an edit that keeps the same media holds
+   a second live ref until it too is deleted — and a delete-for-everyone
+   tombstones the whole chain anyway, so both refs drop together).
 3. **Wire compatibility.** Is the parallel `scrub_hashes` map the right call, or
    is a cleaner value type worth a coordinated client/server rollout?
 4. **Determinism.** Publisher and scrubber must produce byte-identical CBOR for
