@@ -1,6 +1,6 @@
 use mailbox_server::{
     encode_mailbox_id,
-    test_utils::{create_test_server, test_blob_sync},
+    test_utils::{committed_blip, create_test_server, stored_blip, test_blob_sync},
     GetBlipsResponse,
 };
 use serde_json::json;
@@ -53,7 +53,7 @@ async fn test_store_and_retrieve_single_message() {
             "blips": {
                 "test-topic-1": {
                     "author-a": {
-                        "0": message_b64
+                        "0": stored_blip(&message_b64)
                     }
                 }
             }
@@ -97,9 +97,9 @@ async fn test_store_and_retrieve_multiple_messages_same_topic() {
             "blips": {
                 "test-topic-multi": {
                     "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"First message".to_vec()),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Second message".to_vec()),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Third message".to_vec()),
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"First message".to_vec())),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Second message".to_vec())),
+                        "2": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Third message".to_vec())),
                     }
                 }
             }
@@ -143,12 +143,12 @@ async fn test_retrieve_messages_from_multiple_topics() {
             "blips": {
                 "topic-a": {
                     "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, topic1_msg)
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, topic1_msg))
                     }
                 },
                 "topic-b": {
                     "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, topic2_msg)
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, topic2_msg))
                     }
                 }
             }
@@ -223,12 +223,12 @@ async fn test_topic_isolation() {
             "blips": {
                 "isolated-topic-1": {
                     "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"))
                     }
                 },
                 "isolated-topic-2": {
                     "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"))
                     }
                 }
             }
@@ -265,11 +265,11 @@ async fn test_sequence_number_filtering() {
             "blips": {
                 "test-topic": {
                     "author-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3"),
-                        "4": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")),
+                        "2": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")),
+                        "3": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3")),
+                        "4": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4"))
                     }
                 }
             }
@@ -324,16 +324,16 @@ async fn test_get_returns_all_authors_for_topic() {
             "blips": {
                 "test-topic": {
                     "author-a": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 2")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 1")),
+                        "2": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 2"))
                     },
                     "author-b": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author B - Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author B - Message 1")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author B - Message 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author B - Message 1"))
                     },
                     "author-c": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author C - Message 0")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author C - Message 0"))
                     }
                 }
             }
@@ -405,9 +405,9 @@ async fn test_missing_blips_server_behind() {
             "blips": {
                 "test-topic": {
                     "author-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")),
+                        "2": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"))
                     }
                 }
             }
@@ -490,8 +490,8 @@ async fn test_missing_blips_multiple_authors() {
             "blips": {
                 "test-topic": {
                     "author-a": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - 1")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - 1"))
                     }
                 }
             }
@@ -540,12 +540,12 @@ async fn test_no_missing_when_server_is_ahead() {
             "blips": {
                 "test-topic": {
                     "author-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3"),
-                        "4": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4"),
-                        "5": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 5")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")),
+                        "2": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")),
+                        "3": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3")),
+                        "4": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4")),
+                        "5": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 5"))
                     }
                 }
             }

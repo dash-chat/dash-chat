@@ -2,7 +2,7 @@ use redb::{Database, ReadableTable};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::{BlipsKey, BLIPS_TABLE};
+use crate::{scrub_table::SCRUB_TABLE, BlipsKey, BLIPS_TABLE};
 
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 const MESSAGE_MAX_AGE: Duration = Duration::from_secs(90 * 24 * 60 * 60); // 90 days
@@ -38,6 +38,10 @@ pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::erro
 
     {
         let mut table = write_txn.open_table(BLIPS_TABLE)?;
+        // A commitment is only meaningful alongside the blip it describes.
+        // (Blob references are deliberately never expired — see
+        // `blob_refs_table`.)
+        let mut scrub_table = write_txn.open_table(SCRUB_TABLE)?;
 
         // Collect keys to delete
         let mut keys_to_delete: Vec<BlipsKey> = Vec::new();
@@ -54,6 +58,7 @@ pub async fn cleanup_old_messages(db: &Database) -> Result<(), Box<dyn std::erro
         // Delete old messages
         for key in &keys_to_delete {
             table.remove(key)?;
+            scrub_table.remove(key)?;
             deleted_count += 1;
         }
     }

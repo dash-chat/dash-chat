@@ -1,6 +1,6 @@
 use futures::future::join_all;
 use mailbox_server::{
-    test_utils::create_test_server, Author, GetBlipsResponse, SequenceNumber, TopicId,
+    test_utils::{create_test_server, stored_blip}, Author, GetBlipsResponse, SequenceNumber, TopicId,
 };
 use serde_json::json;
 use serial_test::serial;
@@ -21,7 +21,7 @@ fn create_store_request(
         "blips": {
             topic_id: {
                 "author-1": {
-                    seq_num.to_string(): message_b64
+                    seq_num.to_string(): stored_blip(&message_b64)
                 }
             }
         }

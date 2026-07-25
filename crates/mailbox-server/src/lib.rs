@@ -14,6 +14,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod blip;
 mod blips_table;
+mod blob_refs_table;
 mod blob_sync;
 mod cleanup;
 mod get_blips;
@@ -22,6 +23,9 @@ mod register_hashes;
 mod register_peer;
 mod report;
 mod reports_table;
+mod scrub_blips;
+mod scrub_blobs;
+mod scrub_table;
 mod server_key;
 mod store_blips;
 mod watermark;
@@ -47,10 +51,16 @@ pub use register_hashes::{
     record_blob_sources, register_hashes, upload_blob, RegisterHashesRequest,
     RegisterHashesResponse, UploadBlobResponse,
 };
+pub use blob_refs_table::{OpRef, BLOB_REFS_TABLE};
 pub use register_peer::RegisterPeerRequest;
 pub use reports_table::REPORTS_TABLE;
+pub use scrub_blips::{
+    scrub_blips, ScrubBlipsRequest, ScrubBlipsResponse, ScrubbedBlip,
+};
+pub use scrub_blobs::{scrub_blobs, BlobRef, ScrubBlobsRequest, ScrubBlobsResponse};
+pub use scrub_table::{ScrubHash, SCRUB_TABLE};
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
-pub use store_blips::{store_blips, StoreBlipsRequest};
+pub use store_blips::{store_blips, StoreBlipsRequest, StoredBlip};
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
@@ -185,6 +195,8 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
         let _server_key_table = write_txn.open_table(SERVER_KEY_TABLE)?;
         let _reports_table = write_txn.open_table(REPORTS_TABLE)?;
+        let _scrub_table = write_txn.open_table(SCRUB_TABLE)?;
+        let _blob_refs_table = write_txn.open_table(BLOB_REFS_TABLE)?;
     }
     write_txn.commit()?;
 
@@ -218,6 +230,8 @@ pub fn create_app(
         )
         .route("/blobs/upload", post(register_hashes::upload_blob))
         .route("/blips/get", post(get_blips_for_topics))
+        .route("/blips/scrub", post(scrub_blips))
+        .route("/blobs/scrub", post(scrub_blobs))
         .route("/peers/register", post(register_peer::register_peer))
         .route("/report", post(report::report))
         .layer(CorsLayer::permissive())

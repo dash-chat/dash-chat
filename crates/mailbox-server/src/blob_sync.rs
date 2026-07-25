@@ -457,6 +457,36 @@ impl BlobSync {
         }
     }
 
+    /// Delete every retention tag protecting `hash`, so iroh's GC reclaims the
+    /// bytes on its next sweep. Called when a blob's last live reference is
+    /// tombstoned by `/blobs/scrub`.
+    pub async fn release_blob(&self, hash: iroh_blobs::Hash) {
+        let tags = self.blobs.store().tags();
+        let mut stream = match tags.list_prefix(BLOB_TAG_PREFIX.as_bytes()).await {
+            Ok(stream) => stream,
+            Err(err) => {
+                tracing::warn!(%hash, ?err, "failed to list blob tags while scrubbing");
+                return;
+            }
+        };
+        let mut to_delete = Vec::new();
+        while let Some(info) = stream.next().await {
+            match info {
+                Ok(info) if tag_names_blob(info.name.as_ref(), &hash) => to_delete.push(info.name),
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::warn!(%hash, ?err, "failed to read blob tag while scrubbing");
+                    return;
+                }
+            }
+        }
+        for name in to_delete {
+            if let Err(err) = tags.delete(name).await {
+                tracing::warn!(%hash, ?err, "failed to delete blob tag while scrubbing");
+            }
+        }
+    }
+
     /// Spawn the loop that expires stored-blob tags past the retention window;
     /// iroh's background GC then reclaims the now-untagged blobs. Returns `None`
     /// when sharing a node's store (the node owns blob lifecycle).
@@ -498,6 +528,16 @@ async fn expire_blob_tags(blobs: &iroh_blobs::BlobsProtocol) -> anyhow::Result<(
         tags.delete(name).await?;
     }
     Ok(())
+}
+
+/// Whether a `mailbox/<secs>/<hash>` tag protects `hash`.
+fn tag_names_blob(name: &[u8], hash: &iroh_blobs::Hash) -> bool {
+    let Ok(name) = std::str::from_utf8(name) else {
+        return false;
+    };
+    name.strip_prefix(BLOB_TAG_PREFIX)
+        .and_then(|rest| rest.split('/').nth(1))
+        .is_some_and(|tagged| tagged == hash.to_string())
 }
 
 /// Parse the embedded fetch time (unix seconds) from a `mailbox/<secs>/<hash>` tag.

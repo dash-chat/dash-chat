@@ -1,7 +1,11 @@
 use axum::{body::Bytes, extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
-use crate::{AppState, BlobSync};
+use crate::{
+    blob_refs_table::OpRef,
+    scrub_blobs::{blob_is_wanted, record_blob_refs},
+    AppState, BlobSync,
+};
 
 /// A client's request to announce blob hashes to the mailbox. For each hash the
 /// mailbox already holds it reports `already_stored`; every other hash it
@@ -11,6 +15,14 @@ use crate::{AppState, BlobSync};
 #[derive(Serialize, Deserialize)]
 pub struct RegisterHashesRequest {
     pub blob_hashes: Vec<iroh_blobs::Hash>,
+    /// Opaque identifier of the operation these blobs belong to. The mailbox
+    /// records a `(blob, operation)` reference for each hash, which is what
+    /// `/blobs/scrub` later tombstones — blobs are content-addressed over
+    /// plaintext media, so the bare hash is not a safe unit of deletion. An
+    /// announce that omits it records an unattributable reference, leaving the
+    /// blob unscrubbable.
+    #[serde(default)]
+    pub op_ref: OpRef,
     /// The peer the mailbox should dial to fetch any hash it does not already
     /// hold (typically the sending client itself).
     pub sender_pubkey: iroh::EndpointId,
@@ -69,10 +81,34 @@ pub async fn record_blob_sources(
 pub async fn register_hashes(
     State(state): State<AppState>,
     Json(payload): Json<RegisterHashesRequest>,
-) -> Json<RegisterHashesResponse> {
+) -> Result<Json<RegisterHashesResponse>, (StatusCode, String)> {
+    // Record this operation's reference to each blob. Any hash whose reference
+    // is already tombstoned drops out here and is neither stored nor fetched:
+    // a node that has not yet processed the delete must not be able to
+    // resurrect scrubbed media by re-announcing it.
+    let db = state.db.clone();
+    let hashes = payload.blob_hashes.clone();
+    let op_ref = payload.op_ref.clone();
+    let wanted = tokio::task::spawn_blocking(move || record_blob_refs(&db, &hashes, &op_ref))
+        .await
+        .map_err(|e| {
+            tracing::error!("Task join error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
+        })?
+        .map_err(|e| {
+            tracing::error!("{}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
+        })?;
+
     let mut already_stored = Vec::new();
     let mut to_fetch = Vec::new();
-    for hash in payload.blob_hashes {
+    for hash in wanted {
         if state.blob_sync.blobs.has(hash).await.unwrap_or(false) {
             already_stored.push(hash);
         } else {
@@ -86,7 +122,7 @@ pub async fn register_hashes(
         payload.expect_upload,
     )
     .await;
-    Json(RegisterHashesResponse { already_stored })
+    Ok(Json(RegisterHashesResponse { already_stored }))
 }
 
 /// Handle `POST /blobs/upload`: store the raw blob bytes in the request body and
@@ -99,6 +135,32 @@ pub async fn upload_blob(
     State(state): State<AppState>,
     body: Bytes,
 ) -> Result<Json<UploadBlobResponse>, (StatusCode, String)> {
+    // Refuse bytes whose every reference has been scrubbed, so an upload racing
+    // a delete can't put the media back. Checked before storing, since the
+    // upload carries no reference of its own to record.
+    let offered = iroh_blobs::Hash::new(&body);
+    let db = state.db.clone();
+    let wanted = tokio::task::spawn_blocking(move || blob_is_wanted(&db, &offered))
+        .await
+        .map_err(|e| {
+            tracing::error!("Task join error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
+        })?
+        .map_err(|e| {
+            tracing::error!("{}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
+        })?;
+    if !wanted {
+        tracing::debug!(hash = %offered, "rejecting upload of a scrubbed blob");
+        return Ok(Json(UploadBlobResponse { hash: offered }));
+    }
+
     let hash = state
         .blob_sync
         .store_pushed_blob(body)

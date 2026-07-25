@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use axum_test::{TestServer, TestServerConfig, Transport};
-use mailbox_server::test_utils::create_test_db;
+use mailbox_server::test_utils::{create_test_db, stored_blip};
 use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::requests::{AddTopicSubscriptionsRequest, RegisterFcmTokenRequest};
 use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
@@ -135,7 +135,7 @@ async fn mailbox_store_triggers_push_notification() {
             "blips": {
                 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
                     "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
-                        "0": blip_data
+                        "0": stored_blip(&blip_data)
                     }
                 }
             }
@@ -167,7 +167,7 @@ async fn mailbox_store_no_subscribers_no_push() {
             "blips": {
                 "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd": {
                     "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
-                        "0": blip_data
+                        "0": stored_blip(&blip_data)
                     }
                 }
             }
@@ -233,7 +233,7 @@ async fn mailbox_store_duplicate_blip_no_second_push() {
         "blips": {
             "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": {
                 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
-                    "0": blip_data
+                    "0": stored_blip(&blip_data)
                 }
             }
         }

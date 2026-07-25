@@ -1,4 +1,4 @@
-use mailbox_server::{test_utils::create_test_server, GetBlipsResponse};
+use mailbox_server::{test_utils::{create_test_server, stored_blip}, GetBlipsResponse};
 use serde_json::json;
 
 #[tokio::test]
@@ -12,9 +12,9 @@ async fn test_watermark_contiguous_store() {
             "blips": {
                 "test-topic": {
                     "log-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")),
+                        "2": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"))
                     }
                 }
             }
@@ -57,10 +57,10 @@ async fn test_watermark_with_gap_does_not_advance() {
             "blips": {
                 "test-topic": {
                     "log-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3"),
-                        "4": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")),
+                        "3": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3")),
+                        "4": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4"))
                     }
                 }
             }
@@ -103,10 +103,10 @@ async fn test_watermark_gap_fill_extends_watermark() {
             "blips": {
                 "test-topic": {
                     "log-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3"),
-                        "4": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")),
+                        "3": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3")),
+                        "4": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4"))
                     }
                 }
             }
@@ -121,7 +121,7 @@ async fn test_watermark_gap_fill_extends_watermark() {
             "blips": {
                 "test-topic": {
                     "log-x": {
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")
+                        "2": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"))
                     }
                 }
             }
@@ -164,9 +164,9 @@ async fn test_watermark_no_seq_zero() {
             "blips": {
                 "test-topic": {
                     "log-x": {
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3")
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")),
+                        "2": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")),
+                        "3": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3"))
                     }
                 }
             }
@@ -211,14 +211,14 @@ async fn test_watermark_independent_per_log() {
             "blips": {
                 "test-topic": {
                     "log-a": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 2")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 1")),
+                        "2": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 2"))
                     },
                     "log-b": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log B - 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log B - 1"),
-                        "5": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log B - 5")
+                        "0": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log B - 0")),
+                        "1": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log B - 1")),
+                        "5": stored_blip(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log B - 5"))
                     }
                 }
             }
