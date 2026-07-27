@@ -70,6 +70,8 @@
 		contactsStore.blockedContactAgentIds,
 	);
 	const isBlocked = $derived(($blockedAgentIds ?? new Set()).has(agentId));
+	const reported = useReactiveValue(contactsStore.contactReported, agentId);
+	const isReported = $derived($reported === true);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
@@ -879,12 +881,15 @@
 											>{m.block()}</Button
 										>
 										<Button
-											class="neutral-tonal-button text-red-500 flex-1"
+											class={`neutral-tonal-button flex-1 ${isReported ? 'quiet opacity-60' : 'text-red-500'}`}
 											rounded
 											tonal
+											disabled={isReported}
 											data-testid="direct-chat-report-btn"
-											onClick={() => (showReportDialog = true)}
-											>{m.report()}</Button
+											onClick={isReported
+												? undefined
+												: () => (showReportDialog = true)}
+											>{isReported ? m.reported() : m.report()}</Button
 										>
 										<Button
 											class="neutral-tonal-button flex-1"

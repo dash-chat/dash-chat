@@ -181,7 +181,7 @@
 						link={!isReported}
 						chevron={false}
 						title={isReported ? m.reported() : m.report()}
-						class={isReported ? 'quiet' : 'text-red-500'}
+						class={isReported ? 'quiet opacity-60' : 'text-red-500'}
 						onClick={isReported ? undefined : () => (showReportDialog = true)}
 						data-testid="chat-settings-report"
 					>
