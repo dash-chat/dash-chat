@@ -10,6 +10,7 @@
 	import { type MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
+	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
@@ -78,13 +79,18 @@
 </script>
 
 {#snippet metadata()}
-	<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+	{#if message.editHistory.length > 0}
+		<EditedIndicator class="dark-quiet" />
+	{/if}
+	{#if isLast}
+		<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
 
-	<MessageStatusIndicator
-		{chatId}
-		author={message.author}
-		seq={message.seqNum}
-	/>
+		<MessageStatusIndicator
+			{chatId}
+			author={message.author}
+			seq={message.seqNum}
+		/>
+	{/if}
 {/snippet}
 
 <div class="group flex justify-end" use:longpress={{ onLongPress }}>
@@ -105,10 +111,11 @@
 		>
 			<MessageContent
 				{message}
-				{myDeviceId}
 				{searchQuery}
 				senderName={m.you()}
-				metadata={isLast ? metadata : undefined}
+				metadata={isLast || message.editHistory.length > 0
+					? metadata
+					: undefined}
 			/>
 		</Card>
 		{#if Object.keys(message.reactions).length > 0}
