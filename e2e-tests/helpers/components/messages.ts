@@ -18,14 +18,49 @@ export class Messages extends TestHelper {
 		this.unreadDivider = this.el(this.dividerSelector);
 	}
 
-	private readonly messagesSelector: string;
-	private readonly dividerSelector: string;
+	readonly messagesSelector: string;
+	readonly dividerSelector: string;
 	readonly root;
 	readonly unreadDivider;
 	scrollBottom = this.el(tid('chat-scroll-bottom'));
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
+
+	/** The rendered message whose text contains `text`, as a `Message` helper
+	 * scoped to it (by its message hash), or null if none is rendered. */
+	async messageWithText(text: string): Promise<Message | null> {
+		const hash = await this.agent.execute(
+			(messagesSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return wrapper.getAttribute('data-message-hash');
+					}
+				}
+				return null;
+			},
+			this.messagesSelector,
+			text,
+		);
+		return hash === null ? null : new Message(this.agent, this, hash);
+	}
+
+	/** Wait until a message whose text contains `text` renders, and return its
+	 * `Message` helper. */
+	async waitForMessage(text: string, timeout = SYNC_TIMEOUT): Promise<Message> {
+		let message: Message | null = null;
+		await this.agent.waitUntil(
+			async () => {
+				message = await this.messageWithText(text);
+				return message !== null;
+			},
+			{ timeout, timeoutMsg: `Message "${text}" not found` },
+		);
+		return message!;
+	}
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
@@ -40,19 +75,6 @@ export class Messages extends TestHelper {
 				document.querySelector(sel)?.textContent?.includes(t) ?? false,
 			this.messagesSelector,
 			text,
-		);
-	}
-
-	async waitForMessage(text: string, timeout = SYNC_TIMEOUT) {
-		await this.agent.waitUntil(
-			async () =>
-				this.agent.execute(
-					(sel: string, t: string) =>
-						document.querySelector(sel)?.textContent?.includes(t) ?? false,
-					this.messagesSelector,
-					text,
-				),
-			{ timeout, timeoutMsg: `Message "${text}" not found` },
 		);
 	}
 
@@ -112,147 +134,99 @@ export class Messages extends TestHelper {
 	photoCellButton(index: number) {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
 	}
+}
 
-	/** True if the unread divider precedes (in DOM order) the message wrapper containing `text`. */
-	async unreadDividerPrecedes(messageText: string): Promise<boolean> {
+// Driver for a single rendered message, identified by its message hash.
+// Obtain one via `Messages.messageWithText()`. Elements re-resolve on every
+// use, so a Message never holds a stale handle across re-renders.
+export class Message extends TestHelper {
+	constructor(
+		agent: WebdriverIO.Browser,
+		private messages: Messages,
+		readonly hash: string,
+	) {
+		super(agent);
+		this.wrapperSelector = `${messages.messagesSelector} [data-message-hash="${hash}"]`;
+		this.wrapper = this.el(this.wrapperSelector);
+	}
+
+	private readonly wrapperSelector: string;
+	/** The message's wrapper element in the list. */
+	readonly wrapper;
+
+	/** Long-press (via a synthetic contextmenu) the bubble to open its
+	 * quick-reaction bar, and wait for the bar to actually open. */
+	async openReactions() {
+		await this.agent.execute((wrapperSel: string) => {
+			const wrapper = document.querySelector<HTMLElement>(wrapperSel);
+			if (!wrapper) return;
+			const msg = wrapper.querySelector('.message') as HTMLElement | null;
+			(msg ?? wrapper).dispatchEvent(
+				new MouseEvent('contextmenu', {
+					bubbles: true,
+					cancelable: true,
+				}),
+			);
+		}, this.wrapperSelector);
+		// A quick-reaction bar exists per message; scope to this one.
+		await this.wrapper.$(tid('quick-reaction-bar')).waitForDisplayed();
+	}
+
+	/** Open the quick-reaction bar and tap the given quick emoji. */
+	async reactWith(emoji: string) {
+		await this.openReactions();
+		await this.wrapper.$(tid(`quick-reaction-${emoji}`)).click();
+	}
+
+	/** Whether this message shows a reaction chip for `emoji`. */
+	hasReaction(emoji: string): Promise<boolean> {
 		return this.agent.execute(
-			(dividerSel: string, messagesSel: string, text: string) => {
-				const divider = document.querySelector(dividerSel);
-				if (!divider) return false;
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(text)) {
-						return !!(
-							divider.compareDocumentPosition(wrapper) &
-							Node.DOCUMENT_POSITION_FOLLOWING
-						);
-					}
-				}
-				return false;
-			},
-			this.dividerSelector,
-			this.messagesSelector,
-			messageText,
-		);
-	}
-
-	async messageBubbleWithText(text: string) {
-		const hash = await this.agent.execute(
-			(messagesSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						return wrapper.getAttribute('data-message-hash');
-					}
-				}
-				return null;
-			},
-			this.messagesSelector,
-			text,
-		);
-		if (!hash) return null;
-		return this.agent.$(
-			`${this.messagesSelector} [data-message-hash="${hash}"]`,
-		);
-	}
-
-	/** Long-press (via a synthetic contextmenu) the bubble containing `text` to
-	 * open its quick-reaction bar, and resolve the bar scoped to that message. */
-	async openReactions(text: string) {
-		const dispatched = await this.agent.execute(
-			(messagesSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						const msg = wrapper.querySelector('.message') as HTMLElement | null;
-						(msg ?? wrapper).dispatchEvent(
-							new MouseEvent('contextmenu', {
-								bubbles: true,
-								cancelable: true,
-							}),
-						);
-						return true;
-					}
-				}
-				return false;
-			},
-			this.messagesSelector,
-			text,
-		);
-		if (!dispatched) throw new Error(`Message "${text}" not found`);
-		// A quick-reaction bar exists per message; scope to this one and wait for
-		// it to actually open.
-		const wrapper = await this.messageBubbleWithText(text);
-		if (!wrapper) throw new Error(`Message "${text}" not found`);
-		const bar = wrapper.$(tid('quick-reaction-bar'));
-		await bar.waitForDisplayed();
-		return wrapper;
-	}
-
-	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
-	async reactWith(text: string, emoji: string) {
-		const wrapper = await this.openReactions(text);
-		await wrapper.$(tid(`quick-reaction-${emoji}`)).click();
-	}
-
-	/** Whether the bubble containing `text` shows a reaction chip for `emoji`. */
-	hasReaction(text: string, emoji: string): Promise<boolean> {
-		return this.agent.execute(
-			(messagesSel: string, t: string, chipSel: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						return !!wrapper.querySelector(chipSel);
-					}
-				}
-				return false;
-			},
-			this.messagesSelector,
-			text,
+			(wrapperSel: string, chipSel: string) =>
+				!!document.querySelector(wrapperSel)?.querySelector(chipSel),
+			this.wrapperSelector,
 			tid(`reaction-chip-${emoji}`),
 		);
 	}
 
-	async waitForReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
-		await this.agent.waitUntil(() => this.hasReaction(text, emoji), {
+	async waitForReaction(emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(() => this.hasReaction(emoji), {
 			timeout,
-			timeoutMsg: `Reaction "${emoji}" on "${text}" not found`,
+			timeoutMsg: `Reaction "${emoji}" on message ${this.hash} not found`,
 		});
 	}
 
-	async waitForNoReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
-		await this.agent.waitUntil(
-			async () => !(await this.hasReaction(text, emoji)),
-			{ timeout, timeoutMsg: `Reaction "${emoji}" on "${text}" still present` },
-		);
+	async waitForNoReaction(emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(async () => !(await this.hasReaction(emoji)), {
+			timeout,
+			timeoutMsg: `Reaction "${emoji}" on message ${this.hash} still present`,
+		});
 	}
 
-	async getAuthorInitials(messageText: string): Promise<string | null> {
+	authorInitials(): Promise<string | null> {
+		return this.agent.execute((wrapperSel: string) => {
+			const avatar = document
+				.querySelector(wrapperSel)
+				?.querySelector('wa-avatar') as
+				| (Element & { initials?: string })
+				| null;
+			return avatar?.initials || null;
+		}, this.wrapperSelector);
+	}
+
+	/** True if the unread divider precedes this message in DOM order. */
+	isPrecededByUnreadDivider(): Promise<boolean> {
 		return this.agent.execute(
-			(sel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${sel} [data-message-hash]`,
+			(dividerSel: string, wrapperSel: string) => {
+				const divider = document.querySelector(dividerSel);
+				const wrapper = document.querySelector(wrapperSel);
+				if (!divider || !wrapper) return false;
+				return !!(
+					divider.compareDocumentPosition(wrapper) &
+					Node.DOCUMENT_POSITION_FOLLOWING
 				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						const avatar = wrapper.querySelector('wa-avatar') as
-							| (Element & { initials?: string })
-							| null;
-						return avatar?.initials || null;
-					}
-				}
-				return null;
 			},
-			this.messagesSelector,
-			messageText,
+			this.messages.dividerSelector,
+			this.wrapperSelector,
 		);
 	}
 }
