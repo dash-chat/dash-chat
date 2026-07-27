@@ -108,7 +108,7 @@
 
 <div class="group flex justify-start" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
-		{#if !isMobile}
+		{#if !isMobile && hasBody(message.content)}
 			<MessageHoverToolbar {message} {myDeviceId} />
 		{/if}
 		<div class="row items-end gap-2">

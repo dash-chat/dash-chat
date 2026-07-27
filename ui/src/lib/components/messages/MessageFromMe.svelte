@@ -107,7 +107,7 @@
 
 <div class="group flex justify-end" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
-		{#if !isMobile}
+		{#if !isMobile && hasBody(message.content)}
 			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onDelete} reverse />
 		{/if}
 		<Card
