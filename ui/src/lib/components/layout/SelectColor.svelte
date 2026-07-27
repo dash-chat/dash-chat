@@ -4,16 +4,10 @@
 	import { showToast } from '$lib/utils/toasts';
 	import { type SettingsStore } from 'dash-chat-stores';
 	import { defaultQrColor } from '$lib/utils/qrcode';
-	import {
-		Page,
-		Navbar,
-		NavbarBackLink,
-		Link,
-		Button,
-		useTheme,
-	} from 'konsta/svelte';
+	import { Page, Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
 	import QrCodeCard from '$lib/components/QrCodeCard.svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 
 	let {
 		qrCodeValue,
@@ -126,14 +120,8 @@
 	</div>
 
 	{#if !isIos}
-		<Button
-			rounded
-			inline
-			onClick={save}
-			data-testid="color-picker-done"
-			class="fixed-action-btn"
-		>
+		<FixedActionButton onClick={save} testId="color-picker-done">
 			{m.done()}
-		</Button>
+		</FixedActionButton>
 	{/if}
 </Page>

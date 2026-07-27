@@ -24,34 +24,23 @@ describe('Edit/delete action availability (group chat)', () => {
 
 	it('offers both Edit and Delete on your own message', async () => {
 		await agent1.groupChatPage.composer.sendMessage('My own message');
-		await agent1.groupChatPage.messages.waitForMessage('My own message');
+		const message =
+			await agent1.groupChatPage.messages.waitForMessage('My own message');
 
-		await agent1.groupChatPage.messages.openMessageActions('My own message');
-		const editAction =
-			await agent1.groupChatPage.messages.editAction('My own message');
-		await editAction.waitForExist();
-		expect(await editAction.isExisting()).toBe(true);
-		expect(
-			await (
-				await agent1.groupChatPage.messages.deleteAction('My own message')
-			).isExisting(),
-		).toBe(true);
+		await message.openActions();
+		await message.editAction.waitForExist();
+		expect(await message.editAction.isExisting()).toBe(true);
+		expect(await message.deleteAction.isExisting()).toBe(true);
 	});
 
 	it('offers Delete but not Edit on another member’s message', async () => {
 		await agent2.groupChatPage.composer.sendMessage("Bob's message");
-		await agent1.groupChatPage.messages.waitForMessage("Bob's message");
+		const message =
+			await agent1.groupChatPage.messages.waitForMessage("Bob's message");
 
-		await agent1.groupChatPage.messages.openMessageActions("Bob's message");
-		expect(
-			await (
-				await agent1.groupChatPage.messages.deleteAction("Bob's message")
-			).isExisting(),
-		).toBe(true);
-		expect(
-			await (
-				await agent1.groupChatPage.messages.editAction("Bob's message")
-			).isExisting(),
-		).toBe(false);
+		await message.openActions();
+		await message.deleteAction.waitForExist();
+		expect(await message.deleteAction.isExisting()).toBe(true);
+		expect(await message.editAction.isExisting()).toBe(false);
 	});
 });

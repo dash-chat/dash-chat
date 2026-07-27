@@ -8,16 +8,13 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
-	import {
-		canDeleteMessageForEveryone,
-		canEditMessage,
-		type MessagePosition,
-	} from './message-helpers';
+	import { type MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import MessageActions from './MessageActions.svelte';
+	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
+	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
@@ -46,10 +43,6 @@
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
-	const canEdit = $derived(canEditMessage(message, myDeviceId));
-	const canDeleteForEveryone = $derived(
-		canDeleteMessageForEveryone(message, myDeviceId),
-	);
 
 	const reactions = $derived(
 		hasBody(message.content) ? message.content.reactions : {},
@@ -62,17 +55,14 @@
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
-	let desktopOpen = $state<'reactions' | 'menu' | null>(null);
-	let desktopAnchor = $state<HTMLElement | { x: number; y: number }>();
+	let contextMenuPoint = $state<{ x: number; y: number }>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
-		if (hasBody(message.content)) {
-			if (isMobile) {
-				reactionsOpened = true;
-			} else if (e instanceof MouseEvent) {
-				desktopAnchor = { x: e.clientX, y: e.clientY };
-				desktopOpen = 'menu';
-			}
+		if (!hasBody(message.content)) return;
+		if (isMobile) {
+			reactionsOpened = true;
+		} else if (e instanceof MouseEvent) {
+			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
 
@@ -100,41 +90,25 @@
 	);
 </script>
 
-{#snippet editedIndicator()}
-	<EditedIndicator class="dark-quiet" />
-{/snippet}
-
 {#snippet metadata()}
-	<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
+	{#if editHistory.length > 0}
+		<EditedIndicator class="dark-quiet" />
+	{/if}
+	{#if isLast}
+		<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
 
-	<MessageStatusIndicator
-		{chatId}
-		author={message.author}
-		seq={message.seqNum}
-	/>
+		<MessageStatusIndicator
+			{chatId}
+			author={message.author}
+			seq={message.seqNum}
+		/>
+	{/if}
 {/snippet}
 
 <div class="group flex justify-end" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
-		{#if !isMobile}
-			<div
-				class="absolute end-full inset-y-0 me-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {desktopOpen !==
-				null
-					? '!opacity-100'
-					: ''}"
-			>
-				<MessageHoverToolbar
-					reverse
-					onReact={el => {
-						desktopAnchor = el;
-						desktopOpen = 'reactions';
-					}}
-					onMenu={el => {
-						desktopAnchor = el;
-						desktopOpen = 'menu';
-					}}
-				/>
-			</div>
+		{#if !isMobile && hasBody(message.content)}
+			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onDelete} reverse />
 		{/if}
 		<Card
 			raised
@@ -146,8 +120,7 @@
 				{searchQuery}
 				senderName={m.you()}
 				deletedText={m.youDeletedThisMessage()}
-				editedIndicator={editHistory.length > 0 ? editedIndicator : undefined}
-				metadata={isLast ? metadata : undefined}
+				metadata={isLast || editHistory.length > 0 ? metadata : undefined}
 			/>
 		</Card>
 		{#if Object.keys(reactions).length > 0}
@@ -162,18 +135,24 @@
 		{/if}
 	</div>
 </div>
-<MessageActions
-	{message}
-	{myDeviceId}
-	{canEdit}
-	{onEdit}
-	{canDeleteForEveryone}
-	{onDelete}
-	bind:opened={reactionsOpened}
-	bind:desktopOpen
-	{desktopAnchor}
-	target={messageEl}
-/>
+{#if isMobile}
+	<MessageActionsOverlay
+		{message}
+		{myDeviceId}
+		{onEdit}
+		{onDelete}
+		bind:opened={reactionsOpened}
+		target={messageEl}
+	/>
+{:else}
+	<MessageContextMenu
+		{message}
+		{myDeviceId}
+		{onEdit}
+		{onDelete}
+		bind:point={contextMenuPoint}
+	/>
+{/if}
 
 <style>
 	:global(.my-message) {
