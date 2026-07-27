@@ -44,11 +44,11 @@ describe('Group messages', () => {
 		await agent2.groupChatPage.composer.sendMessage('Hello from Bob!');
 		await agent2.groupChatPage.messages.waitForMessage('Hello from Bob!');
 
-		await agent1.groupChatPage.messages.waitForMessage('Hello from Bob!');
+		const message = await agent1.groupChatPage.messages.waitForMessage(
+			'Hello from Bob!',
+		);
 		await agent1.waitUntil(
-			async () =>
-				(await agent1.groupChatPage.messages.getAuthorInitials('Hello from Bob!')) ===
-				'Bo',
+			async () => (await message.authorInitials()) === 'Bo',
 			{ timeoutMsg: 'Avatar initials "Bo" did not appear on Bob\'s message' },
 		);
 	});

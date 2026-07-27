@@ -247,7 +247,6 @@
 								/>
 
 								<QrActionButtons
-									{isMobile}
 									onLink={() => {
 										linkSheetOpen = true;
 									}}

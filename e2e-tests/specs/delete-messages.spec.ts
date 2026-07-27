@@ -17,10 +17,11 @@ describe('Deleting messages', () => {
 
 	it('deletes a message for everyone, showing a placeholder on both sides', async () => {
 		await agent1.directChatPage.composer.sendMessage('Delete me');
-		await agent1.directChatPage.messages.waitForMessage('Delete me');
+		const message =
+			await agent1.directChatPage.messages.waitForMessage('Delete me');
 		await agent2.directChatPage.messages.waitForMessage('Delete me');
 
-		await agent1.directChatPage.messages.deleteMessageForEveryone('Delete me');
+		await message.deleteForEveryone();
 
 		await agent1.directChatPage.messages.waitForDeleted(
 			'Delete me',
@@ -34,12 +35,14 @@ describe('Deleting messages', () => {
 
 	it('deletes an edited message via its latest edit', async () => {
 		await agent1.directChatPage.composer.sendMessage('Draft v1');
-		await agent1.directChatPage.messages.waitForMessage('Draft v1');
-		await agent1.directChatPage.messages.editMessage('Draft v1', 'Draft v2');
-		await agent1.directChatPage.messages.waitForMessage('Draft v2');
+		const original =
+			await agent1.directChatPage.messages.waitForMessage('Draft v1');
+		await original.edit('Draft v1', 'Draft v2');
+		const edited =
+			await agent1.directChatPage.messages.waitForMessage('Draft v2');
 		await agent2.directChatPage.messages.waitForMessage('Draft v2');
 
-		await agent1.directChatPage.messages.deleteMessageForEveryone('Draft v2');
+		await edited.deleteForEveryone();
 
 		await agent1.directChatPage.messages.waitForDeleted(
 			'Draft v2',
@@ -53,10 +56,11 @@ describe('Deleting messages', () => {
 
 	it('deletes a message only for me, leaving no placeholder', async () => {
 		await agent1.directChatPage.composer.sendMessage('Just for me');
-		await agent1.directChatPage.messages.waitForMessage('Just for me');
+		const message =
+			await agent1.directChatPage.messages.waitForMessage('Just for me');
 		await agent2.directChatPage.messages.waitForMessage('Just for me');
 
-		await agent1.directChatPage.messages.deleteMessageForMe('Just for me');
+		await message.deleteForMe();
 
 		// Gone on my side (no placeholder, unlike delete-for-everyone)...
 		await agent1.directChatPage.messages.waitForMessageGone('Just for me');
@@ -68,9 +72,10 @@ describe('Deleting messages', () => {
 
 	it('offers Delete for me (but not Delete for everyone) on the peer’s messages', async () => {
 		await agent2.directChatPage.composer.sendMessage("Bob's message");
-		await agent1.directChatPage.messages.waitForMessage("Bob's message");
+		const message =
+			await agent1.directChatPage.messages.waitForMessage("Bob's message");
 
-		await agent1.directChatPage.messages.openDeleteDialog("Bob's message");
+		await message.openDeleteDialog();
 
 		// Only "Delete for me" is available for a received message.
 		await agent1.directChatPage.messages.deleteForMeConfirmButton.waitForExist();

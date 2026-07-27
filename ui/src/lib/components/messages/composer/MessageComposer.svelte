@@ -26,9 +26,6 @@
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import BelowKeyboardSurface from '$lib/components/BelowKeyboardSurface.svelte';
 	import { showToast } from '$lib/utils/toasts';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiClose, mdiPencilOutline } from '@mdi/js';
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
@@ -41,7 +38,8 @@
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
-	import IconButton from '$lib/components/IconButton.svelte';
+	import EditingBanner from '$lib/components/messages/composer/EditingBanner.svelte';
+	import DiscardEditButton from '$lib/components/messages/composer/DiscardEditButton.svelte';
 
 	interface Props {
 		value?: string;
@@ -283,14 +281,7 @@
 {/snippet}
 
 {#snippet editingBanner()}
-	<div
-		class="flex items-center gap-1.5 ps-3 pt-2 text-sm font-semibold"
-		data-testid="composer-editing-banner"
-	>
-		<wa-icon src={wrapPathInSvg(mdiPencilOutline)} style="font-size: 0.9rem"
-		></wa-icon>
-		{m.editingMessage()}
-	</div>
+	<EditingBanner />
 {/snippet}
 
 <div style="display: flow-root" use:keepKeyboardOpen>
@@ -306,17 +297,9 @@
 		{/if}
 
 		<div class="m-2 row gap-2" style="align-items: flex-end;">
-			<!-- While editing, the cancel button sits before the input in the
-			     narrow layout and after it on wide screens; the attach buttons
-			     hide because media cannot be edited. -->
 			{#if editing}
 				{#if !isWideScreen.value}
-					<IconButton
-						icon={mdiClose}
-						onClick={cancelEdit}
-						label={m.cancel()}
-						testid="composer-cancel-edit"
-					/>
+					<DiscardEditButton onClick={cancelEdit} />
 				{/if}
 			{:else if isMobile && theme === 'ios'}
 				<StandaloneAttachButton
@@ -349,12 +332,7 @@
 
 			{#if editing}
 				{#if isWideScreen.value}
-					<IconButton
-						icon={mdiClose}
-						onClick={cancelEdit}
-						label={m.cancel()}
-						testid="composer-cancel-edit"
-					/>
+					<DiscardEditButton onClick={cancelEdit} />
 				{/if}
 				<SendButton onSend={send} editing />
 			{:else if isMobile}
