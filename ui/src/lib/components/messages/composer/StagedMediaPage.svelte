@@ -102,13 +102,15 @@
 			<StagedPhotosCarousel bind:media bind:index {onAddMore} {onClose} />
 		{:else if media?.kind === 'file'}
 			<div
-				class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center"
+				class="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center"
 			>
-				<ExtensionSheet name={media.file.name} width={72} height={90} />
-				<span
-					class="break-all text-sm text-white"
-					data-testid="staged-media-file-name">{media.file.name}</span
-				>
+				<div class="flex flex-col items-center gap-3" use:renderAboveKeyboard>
+					<ExtensionSheet name={media.file.name} width={72} height={90} />
+					<span
+						class="break-all text-sm text-white"
+						data-testid="staged-media-file-name">{media.file.name}</span
+					>
+				</div>
 			</div>
 		{/if}
 	</div>

@@ -6,6 +6,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
 	import { objectUrl } from '$lib/actions/object-url';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import ImageCarousel from '$lib/components/ImageCarousel.svelte';
 
@@ -76,6 +77,7 @@
 				class="rounded-2xl object-contain"
 				style="max-height: 70vh; max-width: 70vw;"
 				use:objectUrl={photo}
+				use:renderAboveKeyboard
 				alt={photo.name}
 			/>
 		{/snippet}
@@ -84,6 +86,7 @@
 	<div
 		class="absolute inset-x-0 bottom-0 z-10 flex items-center justify-start gap-3 overflow-x-auto px-4 pt-3 pb-3"
 		data-testid="staged-media-strip"
+		use:renderAboveKeyboard
 	>
 		{#if photos.length > 1}
 			{#each photos as photo, i (photo)}
