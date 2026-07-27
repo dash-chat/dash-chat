@@ -17,46 +17,41 @@ describe('Editing messages', () => {
 
 	it('edits a message in place and shows the "Edited" indicator on both sides', async () => {
 		await agent1.directChatPage.composer.sendMessage('Helo world');
-		await agent1.directChatPage.messages.waitForMessage('Helo world');
+		const message =
+			await agent1.directChatPage.messages.waitForMessage('Helo world');
 		await agent2.directChatPage.messages.waitForMessage('Helo world');
 
-		await agent1.directChatPage.messages.editMessage(
-			'Helo world',
-			'Hello world',
-		);
+		await message.edit('Helo world', 'Hello world');
 
 		// Author and peer both converge on the corrected text in place.
-		await agent1.directChatPage.messages.waitForMessage('Hello world');
-		await agent2.directChatPage.messages.waitForMessage('Hello world');
+		const edited1 =
+			await agent1.directChatPage.messages.waitForMessage('Hello world');
+		const edited2 =
+			await agent2.directChatPage.messages.waitForMessage('Hello world');
 
-		await browser.waitUntil(
-			() => agent1.directChatPage.messages.hasEditedIndicator('Hello world'),
-			{ timeoutMsg: 'No "Edited" indicator on the author side' },
-		);
-		await browser.waitUntil(
-			() => agent2.directChatPage.messages.hasEditedIndicator('Hello world'),
-			{ timeoutMsg: 'No "Edited" indicator on the peer side' },
-		);
+		await browser.waitUntil(() => edited1.hasEditedIndicator(), {
+			timeoutMsg: 'No "Edited" indicator on the author side',
+		});
+		await browser.waitUntil(() => edited2.hasEditedIndicator(), {
+			timeoutMsg: 'No "Edited" indicator on the peer side',
+		});
 	});
 
 	it('does not offer Edit on the peer’s messages', async () => {
 		await agent2.directChatPage.composer.sendMessage("Bob's message");
-		await agent1.directChatPage.messages.waitForMessage("Bob's message");
+		const message =
+			await agent1.directChatPage.messages.waitForMessage("Bob's message");
 
-		await agent1.directChatPage.messages.openMessageActions("Bob's message");
-		const messages = agent1.directChatPage.messages;
-		await (await messages.actionsMenu("Bob's message")).waitForDisplayed();
-		expect(
-			await (await messages.editAction("Bob's message")).isExisting(),
-		).toBe(false);
+		await message.openActions();
+		expect(await message.editAction.isExisting()).toBe(false);
 	});
 
 	it('copies a message to the clipboard from the actions menu', async () => {
-		await agent1.directChatPage.messages.openMessageActions("Bob's message");
-		const copyAction =
-			await agent1.directChatPage.messages.copyAction("Bob's message");
-		await copyAction.waitForClickable();
-		await copyAction.click();
+		const message =
+			await agent1.directChatPage.messages.waitForMessage("Bob's message");
+		await message.openActions();
+		await message.copyAction.waitForClickable();
+		await message.copyAction.click();
 		await agent1.toast.expectMessage(
 			await agent1.tr('copiedMessageToClipboard'),
 		);
@@ -65,10 +60,10 @@ describe('Editing messages', () => {
 	it('asks before discarding a draft when starting an edit', async () => {
 		const { composer, messages } = agent1.directChatPage;
 		const startEdit = async () => {
-			await messages.openMessageActions('Hello world');
-			const editAction = await messages.editAction('Hello world');
-			await editAction.waitForClickable();
-			await editAction.click();
+			const message = await messages.waitForMessage('Hello world');
+			await message.openActions();
+			await message.editAction.waitForClickable();
+			await message.editAction.click();
 			await composer.discardDraftConfirm.waitForClickable();
 		};
 
