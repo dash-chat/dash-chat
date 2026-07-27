@@ -10629,7 +10629,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-virtual-keyboard"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard?rev=a453078939ca4abe8753e4d73758f66092a9f288#a453078939ca4abe8753e4d73758f66092a9f288"
+source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard?rev=e9083317b12dcdd8be8607bb08a3b91b7183a2ef#e9083317b12dcdd8be8607bb08a3b91b7183a2ef"
 dependencies = [
  "serde",
  "tauri",
