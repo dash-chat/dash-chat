@@ -9,18 +9,13 @@
 		canEdit?: boolean;
 		onEdit?: () => void;
 		onCopy: () => void;
-		/** Whether to offer a delete-for-everyone action (author, within the delete window). */
-		canDeleteForEveryone?: boolean;
+		/** Opens the delete dialog. Offered on every message, since delete-for-me
+		 * is always allowed; the dialog decides whether delete-for-everyone is
+		 * also on offer. */
 		onDelete?: () => void;
 	}
 
-	let {
-		canEdit = false,
-		onEdit,
-		onCopy,
-		canDeleteForEveryone = false,
-		onDelete,
-	}: Props = $props();
+	let { canEdit = false, onEdit, onCopy, onDelete }: Props = $props();
 </script>
 
 <List nested data-testid="message-actions-menu">
@@ -38,12 +33,12 @@
 		onClick={onCopy}
 		data-testid="message-action-copy"
 	/>
-	{#if canDeleteForEveryone}
+	{#if onDelete}
 		<ListAction
 			title={m.delete()}
 			icon={mdiDelete}
 			actionType="danger"
-			onClick={() => onDelete?.()}
+			onClick={onDelete}
 			data-testid="message-action-delete"
 		/>
 	{/if}

@@ -24,10 +24,11 @@ describe('Deleting messages for me (group chat)', () => {
 
 	it('deletes my own message only for me, leaving other members untouched', async () => {
 		await agent1.groupChatPage.composer.sendMessage('Only I forget this');
-		await agent1.groupChatPage.messages.waitForMessage('Only I forget this');
+		const message =
+			await agent1.groupChatPage.messages.waitForMessage('Only I forget this');
 		await agent2.groupChatPage.messages.waitForMessage('Only I forget this');
 
-		await agent1.groupChatPage.messages.deleteMessageForMe('Only I forget this');
+		await message.deleteForMe();
 
 		// Gone on my side with no placeholder (unlike delete-for-everyone)...
 		await agent1.groupChatPage.messages.waitForMessageGone('Only I forget this');
@@ -41,9 +42,10 @@ describe('Deleting messages for me (group chat)', () => {
 
 	it("deletes another member's message only for me", async () => {
 		await agent2.groupChatPage.composer.sendMessage("Bob's group message");
-		await agent1.groupChatPage.messages.waitForMessage("Bob's group message");
+		const message =
+			await agent1.groupChatPage.messages.waitForMessage("Bob's group message");
 
-		await agent1.groupChatPage.messages.openDeleteDialog("Bob's group message");
+		await message.openDeleteDialog();
 
 		// Only "Delete for me" is available for another member's message.
 		await agent1.groupChatPage.messages.deleteForMeConfirmButton.waitForExist();

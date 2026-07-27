@@ -15,7 +15,6 @@
 		message,
 		searchQuery,
 		metadata,
-		editedIndicator,
 		senderName = '',
 		showSenderName = false,
 		deletedText = '',
@@ -23,7 +22,6 @@
 		message: Message;
 		searchQuery: string;
 		metadata?: Snippet;
-		editedIndicator?: Snippet;
 		/** Author display name; shown as the bubble header (in groups) and used
 		 * as the lightbox title. */
 		senderName?: string;
@@ -98,16 +96,11 @@
 				{senderName}
 				timestamp={message.timestamp}
 			/>
-			{#if isPhotoOnly && (metadata || editedIndicator)}
+			{#if isPhotoOnly && metadata}
 				<div
 					class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
 				>
-					{#if editedIndicator}
-						{@render editedIndicator()}
-					{/if}
-					{#if metadata}
-						{@render metadata()}
-					{/if}
+					{@render metadata()}
 				</div>
 			{/if}
 		</div>
@@ -119,26 +112,21 @@
 			/>
 		</div>
 	{/if}
-	{#if hasText || (metadata && !isPhotoOnly && !isFileOnly) || (editedIndicator && !isPhotoOnly && !isFileOnly)}
+	{#if hasText || (metadata && !isPhotoOnly && !isFileOnly)}
 		<div class="caption relative px-1">
-			{#if metadata || editedIndicator}
+			{#if metadata}
 				<div
 					class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
 					bind:clientWidth={metadataWidth}
 				>
-					{#if editedIndicator}
-						{@render editedIndicator()}
-					{/if}
-					{#if metadata}
-						{@render metadata()}
-					{/if}
+					{@render metadata()}
 				</div>
 			{/if}
 			<div class="max-w-full" use:shrinkToWidestLine>
 				<MessageText text={body?.message ?? ''} {searchQuery} />
 				<!-- Reserves the metadata's space in the bottom-end corner, since
 			     wrapped text cannot be made to avoid an absolute box via CSS. -->
-				{#if metadata || editedIndicator}
+				{#if metadata}
 					<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
 					></span>
 				{/if}

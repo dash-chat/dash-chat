@@ -69,7 +69,10 @@ export class MockMessagesClient implements IMessagesClient {
 		return hashes;
 	}
 
-	async deleteMessageForEveryone(chatId: ChatId, targetHash: Hash): Promise<Hash> {
+	async deleteMessageForEveryone(
+		chatId: ChatId,
+		targetHash: Hash,
+	): Promise<Hash> {
 		const hashes = await this.editChainHashes(chatId, targetHash);
 		return this.logsClient.create(chatId, {
 			type: 'Chat',

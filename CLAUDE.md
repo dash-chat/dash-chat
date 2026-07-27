@@ -148,7 +148,7 @@ The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tau
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
-- **iOS theme action buttons**: On actual iOS devices, primary action buttons (Save, Done, Create, Add, Next) appear as a `<Link>` in the Navbar's `right` snippet. On all other platforms (including macOS desktop), they appear as a bottom FAB (`class="fixed-action-btn"`). Use `import { isIos } from '$lib/utils/environment'` and `{#if isIos}` in the navbar right snippet and `{#if !isIos}` around the FAB. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
+- **iOS theme action buttons**: On actual iOS devices, primary action buttons (Save, Done, Create, Add, Next) appear as a `<Link>` in the Navbar's `right` snippet. On all other platforms (including macOS desktop), they appear as a bottom action pill: use the `FixedActionButton` component (`ui/src/lib/components/FixedActionButton.svelte`), which also glides with the virtual keyboard. Use `import { isIos } from '$lib/utils/environment'` and `{#if isIos}` in the navbar right snippet and `{#if !isIos}` around the `FixedActionButton`. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
 
 ### Desktop Layout
 

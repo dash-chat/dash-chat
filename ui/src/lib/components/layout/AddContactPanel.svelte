@@ -8,12 +8,15 @@
 	} from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		Page,
 		Navbar,
 		NavbarBackLink,
+		List,
+		ListInput,
 		Preloader,
 		Button,
 		useTheme,
@@ -30,6 +33,8 @@
 	import {
 		toDeepLink,
 		addContactFromDeepLink,
+		addContactFromCode,
+		extractCodeFromDeepLink,
 	} from '$lib/deep-links/add-contact';
 	import { defaultQrColor } from '$lib/utils/qrcode';
 	import SelectColor from './SelectColor.svelte';
@@ -65,6 +70,18 @@
 
 	function receiveDeepLink(link: string) {
 		return addContactFromDeepLink(contactsStore, link);
+	}
+
+	let pastedCode = $state('');
+
+	async function submitPastedCode() {
+		const input = pastedCode.trim();
+		if (input === '') return;
+		pastedCode = '';
+		await addContactFromCode(
+			contactsStore,
+			extractCodeFromDeepLink(input) ?? input,
+		);
 	}
 
 	const qrColor = useReactivePromise(settingsStore.qrColor);
@@ -230,7 +247,6 @@
 								/>
 
 								<QrActionButtons
-									{isMobile}
 									onLink={() => {
 										linkSheetOpen = true;
 									}}
@@ -266,6 +282,34 @@
 									class="mx-6 mb-2 text-center quiet"
 									style="font-size: 13px">{m.shareCodeWarning()}</span
 								>
+
+								{#if import.meta.env.DEV}
+									<div class="column w-full gap-2">
+										<List
+											nested
+											strongIos
+											inset={isWideScreen.value || theme === 'ios'}
+										>
+											<ListInput
+												floatingLabel
+												label="Paste contact link or code (dev only)"
+												type="text"
+												outline
+												data-testid="add-contact-code-input"
+												value={pastedCode}
+												onInput={(e: Event) =>
+													(pastedCode = (e.target as HTMLInputElement).value)}
+											/>
+										</List>
+										<Button
+											rounded
+											disabled={pastedCode.trim() === ''}
+											data-testid="add-contact-code-submit"
+											onClick={() => void submitPastedCode()}
+											>{m.addContact()}</Button
+										>
+									</div>
+								{/if}
 							</div>
 						</div>
 						<QrCodeUploader
