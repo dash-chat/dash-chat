@@ -141,7 +141,10 @@ export class MessagesStore {
 	async editMessage(message: Message, newText: string): Promise<Hash> {
 		const chatId = await this.chatId();
 
-		const current = currentVersion(message);
+		// Callers hold a snapshot captured when editing began; re-resolve so an
+		// edit that arrived mid-compose is chained from, not forked off.
+		const fresh = (await this.messages())[message.hash] ?? message;
+		const current = currentVersion(fresh);
 		return this.client.editMessage(chatId, current.hash, newText);
 	}
 }
