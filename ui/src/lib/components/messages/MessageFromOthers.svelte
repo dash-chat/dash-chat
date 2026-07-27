@@ -15,7 +15,8 @@
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import MessageActions from './MessageActions.svelte';
+	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
+	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
@@ -61,17 +62,14 @@
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
-	let desktopOpen = $state<'reactions' | 'menu' | null>(null);
-	let desktopAnchor = $state<HTMLElement | { x: number; y: number }>();
+	let contextMenuPoint = $state<{ x: number; y: number }>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
-		if (hasBody(message.content)) {
-			if (isMobile) {
-				reactionsOpened = true;
-			} else if (e instanceof MouseEvent) {
-				desktopAnchor = { x: e.clientX, y: e.clientY };
-				desktopOpen = 'menu';
-			}
+		if (!hasBody(message.content)) return;
+		if (isMobile) {
+			reactionsOpened = true;
+		} else if (e instanceof MouseEvent) {
+			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
 
@@ -99,34 +97,19 @@
 	);
 </script>
 
-{#snippet editedIndicator()}
-	<EditedIndicator class="quiet" />
-{/snippet}
-
 {#snippet metadata()}
-	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+	{#if editHistory.length > 0}
+		<EditedIndicator class="quiet" />
+	{/if}
+	{#if isLast}
+		<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+	{/if}
 {/snippet}
 
 <div class="group flex justify-start" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile}
-			<div
-				class="absolute start-full inset-y-0 ms-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {desktopOpen !==
-				null
-					? '!opacity-100'
-					: ''}"
-			>
-				<MessageHoverToolbar
-					onReact={el => {
-						desktopAnchor = el;
-						desktopOpen = 'reactions';
-					}}
-					onMenu={el => {
-						desktopAnchor = el;
-						desktopOpen = 'menu';
-					}}
-				/>
-			</div>
+			<MessageHoverToolbar {message} {myDeviceId} />
 		{/if}
 		<div class="row items-end gap-2">
 			{#if showAvatar}
@@ -151,8 +134,7 @@
 					senderName={senderDisplayName}
 					{showSenderName}
 					deletedText={m.thisMessageWasDeleted()}
-					editedIndicator={editHistory.length > 0 ? editedIndicator : undefined}
-					metadata={isLast ? metadata : undefined}
+					metadata={isLast || editHistory.length > 0 ? metadata : undefined}
 				/>
 			</Card>
 		</div>
@@ -168,14 +150,16 @@
 		{/if}
 	</div>
 </div>
-<MessageActions
-	{message}
-	{myDeviceId}
-	bind:opened={reactionsOpened}
-	bind:desktopOpen
-	{desktopAnchor}
-	target={messageEl}
-/>
+{#if isMobile}
+	<MessageActionsOverlay
+		{message}
+		{myDeviceId}
+		bind:opened={reactionsOpened}
+		target={messageEl}
+	/>
+{:else}
+	<MessageContextMenu {message} {myDeviceId} bind:point={contextMenuPoint} />
+{/if}
 
 <style>
 	:global(.others-message) {

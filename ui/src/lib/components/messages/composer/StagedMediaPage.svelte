@@ -10,11 +10,13 @@
 	import IconButton from '$lib/components/IconButton.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import StagedPhotosCarousel from '$lib/components/messages/composer/StagedPhotosCarousel.svelte';
+	import StagedPhotosStrip from '$lib/components/messages/composer/StagedPhotosStrip.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 
 	interface Props {
 		media: DraftMedia | undefined;
@@ -70,7 +72,9 @@
 	aria-label={ariaLabel}
 	data-testid="staged-media-page"
 >
-	<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden pt-safe-12">
+	<div
+		class="relative flex min-h-0 flex-1 flex-col overflow-hidden pt-safe-12 pb-keyboard-safe"
+	>
 		<div
 			class="staged-header absolute inset-x-0 z-10 flex items-center gap-2 px-2"
 		>
@@ -98,21 +102,30 @@
 		</div>
 
 		{#if media?.kind === 'photos'}
-			<StagedPhotosCarousel bind:media bind:index {onAddMore} {onClose} />
+			<StagedPhotosCarousel bind:media bind:index />
 		{:else if media?.kind === 'file'}
 			<div
-				class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center"
+				class="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center"
 			>
-				<ExtensionSheet name={media.file.name} width={72} height={90} />
-				<span
-					class="break-all text-sm text-white"
-					data-testid="staged-media-file-name">{media.file.name}</span
-				>
+				<div class="flex flex-col items-center gap-3" use:renderAboveKeyboard>
+					<ExtensionSheet name={media.file.name} width={72} height={90} />
+					<span
+						class="break-all text-sm text-white"
+						data-testid="staged-media-file-name">{media.file.name}</span
+					>
+				</div>
 			</div>
 		{/if}
 	</div>
 
-	<div class="staged-footer shrink-0 pb-safe">
+	<div
+		class="staged-footer absolute inset-x-0 bottom-0 flex flex-col pb-keyboard-safe"
+		class:bg-black={!isIos}
+		use:renderAboveKeyboard
+	>
+		{#if media?.kind === 'photos'}
+			<StagedPhotosStrip bind:media bind:index {onAddMore} {onClose} />
+		{/if}
 		<div class="row gap-3 px-4 pt-3 pb-3" style="align-items: center;">
 			<MessageInput
 				bind:value

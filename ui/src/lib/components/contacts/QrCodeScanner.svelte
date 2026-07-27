@@ -51,6 +51,10 @@
 
 <div class="column" style="position: relative; flex: 1;">
 	<div
+		class="fixed bottom-0 inset-x-0 bg-black/50 pointer-events-none"
+		style="height: env(safe-area-inset-bottom, 0px)"
+	></div>
+	<div
 		class="row p-4"
 		style="color: white; align-items: center; justify-content: center; z-index: 1; text-align: center"
 	>
@@ -67,7 +71,7 @@
 		</div>
 	</div>
 	<div
-		style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); padding-top: 24px; display: flex; justify-content: center; z-index: 1;"
+		style="padding-bottom: 24px; padding-top: 24px; display: flex; justify-content: center; z-index: 1;"
 	>
 		<button
 			class="w-14 h-14 rounded-full bg-white text-gray-700 border-none cursor-pointer flex items-center justify-center shadow-[0_2px_8px_rgba(0,0,0,0.3)] transition-transform duration-200 hover:scale-105 active:scale-95"

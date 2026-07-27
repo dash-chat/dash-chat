@@ -11,6 +11,7 @@ export class Messages extends TestHelper {
 		agent: WebdriverIO.Browser,
 		messagesTestId: string,
 		unreadDividerTestId: string,
+		private composer: Composer,
 	) {
 		super(agent);
 		this.messagesSelector = tid(messagesTestId);
@@ -19,35 +20,50 @@ export class Messages extends TestHelper {
 		this.unreadDivider = this.el(this.dividerSelector);
 	}
 
-	private readonly messagesSelector: string;
-	private readonly dividerSelector: string;
+	readonly messagesSelector: string;
+	readonly dividerSelector: string;
 	readonly root;
 	readonly unreadDivider;
 	scrollBottom = this.el(tid('chat-scroll-bottom'));
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
-	/** The composer, for driving the type/send step of an in-place edit. */
-	private composer = new Composer(this.agent);
 
-	/** Every message mounts its own (closed) actions popover, so the menu and
-	 * its actions must be resolved scoped to the message containing `text`. */
-	private async messageScoped(text: string, testId: string) {
-		const wrapper = await this.messageBubbleWithText(text);
-		if (!wrapper) throw new Error(`Message "${text}" not found`);
-		return wrapper.$(tid(testId));
+	/** The rendered message whose text contains `text`, as a `Message` helper
+	 * scoped to it (by its message hash), or null if none is rendered. */
+	async messageWithText(text: string): Promise<Message | null> {
+		const hash = await this.agent.execute(
+			(messagesSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return wrapper.getAttribute('data-message-hash');
+					}
+				}
+				return null;
+			},
+			this.messagesSelector,
+			text,
+		);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
 	}
 
-	actionsMenu(text: string) {
-		return this.messageScoped(text, 'message-actions-menu');
-	}
-
-	editAction(text: string) {
-		return this.messageScoped(text, 'message-action-edit');
-	}
-
-	copyAction(text: string) {
-		return this.messageScoped(text, 'message-action-copy');
+	/** Wait until a message whose text contains `text` renders, and return its
+	 * `Message` helper. */
+	async waitForMessage(text: string, timeout = SYNC_TIMEOUT): Promise<Message> {
+		let message: Message | null = null;
+		await this.agent.waitUntil(
+			async () => {
+				message = await this.messageWithText(text);
+				return message !== null;
+			},
+			{ timeout, timeoutMsg: `Message "${text}" not found` },
+		);
+		return message!;
 	}
 
 	async unreadBadgeText(): Promise<string | null> {
@@ -63,19 +79,6 @@ export class Messages extends TestHelper {
 				document.querySelector(sel)?.textContent?.includes(t) ?? false,
 			this.messagesSelector,
 			text,
-		);
-	}
-
-	async waitForMessage(text: string, timeout = SYNC_TIMEOUT) {
-		await this.agent.waitUntil(
-			async () =>
-				this.agent.execute(
-					(sel: string, t: string) =>
-						document.querySelector(sel)?.textContent?.includes(t) ?? false,
-					this.messagesSelector,
-					text,
-				),
-			{ timeout, timeoutMsg: `Message "${text}" not found` },
 		);
 	}
 
@@ -135,214 +138,238 @@ export class Messages extends TestHelper {
 	photoCellButton(index: number) {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
 	}
+}
 
-	/** True if the unread divider precedes (in DOM order) the message wrapper containing `text`. */
-	async unreadDividerPrecedes(messageText: string): Promise<boolean> {
+/** Comfortably past the 500ms threshold in the app's `longpress` action. */
+const LONG_PRESS_MS = 700;
+
+type BubbleGesture = 'contextmenu' | 'touchstart' | 'touchend';
+
+/**
+ * Dispatch one gesture event at the centre of a message's bubble. Serialized
+ * into the page by `execute`, so it has to stay self-contained — and `execute`
+ * widens its arguments to `string`, so the gesture is narrowed by the
+ * `pressBubble` caller rather than here.
+ *
+ * A long-press is the caller's job to compose: `touchstart`, a hold, then
+ * `touchend` — the app starts its own timer off `touchstart`.
+ */
+function dispatchBubbleGesture(wrapperSel: string, gesture: string) {
+	const wrapper = document.querySelector<HTMLElement>(wrapperSel);
+	if (!wrapper) return;
+	const msg = wrapper.querySelector('.message') as HTMLElement | null;
+	const el = msg ?? wrapper;
+	const rect = el.getBoundingClientRect();
+	const clientX = rect.left + rect.width / 2;
+	const clientY = rect.top + rect.height / 2;
+	if (gesture === 'contextmenu') {
+		el.dispatchEvent(
+			new MouseEvent('contextmenu', {
+				bubbles: true,
+				cancelable: true,
+				clientX,
+				clientY,
+			}),
+		);
+		return;
+	}
+	const touch = new Touch({ identifier: 1, target: el, clientX, clientY });
+	const down = gesture === 'touchstart';
+	el.dispatchEvent(
+		new TouchEvent(gesture, {
+			bubbles: true,
+			cancelable: true,
+			touches: down ? [touch] : [],
+			targetTouches: down ? [touch] : [],
+			changedTouches: [touch],
+		}),
+	);
+}
+
+// Driver for a single rendered message, identified by its message hash.
+// Obtain one via `Messages.messageWithText()`. Elements re-resolve on every
+// use, so a Message never holds a stale handle across re-renders.
+export class Message extends TestHelper {
+	constructor(
+		agent: WebdriverIO.Browser,
+		private messages: Messages,
+		readonly hash: string,
+		private composer: Composer,
+	) {
+		super(agent);
+		this.wrapperSelector = `${messages.messagesSelector} [data-message-hash="${hash}"]`;
+		this.wrapper = this.el(this.wrapperSelector);
+	}
+
+	private readonly wrapperSelector: string;
+	/** The message's wrapper element in the list. */
+	readonly wrapper;
+
+	/** Every message mounts its own (closed) actions popover, so the menu and
+	 * its actions must be resolved scoped to this message's wrapper. */
+	get actionsMenu() {
+		return this.wrapper.$(tid('message-actions-menu'));
+	}
+
+	get editAction() {
+		return this.wrapper.$(tid('message-action-edit'));
+	}
+
+	get copyAction() {
+		return this.wrapper.$(tid('message-action-copy'));
+	}
+
+	/** Open this message's actions menu with the gesture its platform uses — a
+	 * long-press on mobile, which opens the spotlight overlay, or a right-click
+	 * on desktop, which opens the popover at the cursor — and wait for it to
+	 * actually open. */
+	async openActions() {
+		if (await this.isMobileBuild()) {
+			await this.longPressBubble();
+		} else {
+			await this.rightClickBubble();
+		}
+		await this.actionsMenu.waitForDisplayed();
+	}
+
+	/** Whether the app is rendering its mobile UI. Read from the user agent
+	 * because that is exactly what the app's own `isMobile` branches on to
+	 * choose between the spotlight overlay and the desktop popovers, so the
+	 * gesture can never drift from the UI that is actually mounted. */
+	private isMobileBuild(): Promise<boolean> {
+		return this.agent.execute(() =>
+			/iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
+		);
+	}
+
+	private pressBubble(gesture: BubbleGesture): Promise<void> {
 		return this.agent.execute(
-			(dividerSel: string, messagesSel: string, text: string) => {
-				const divider = document.querySelector(dividerSel);
-				if (!divider) return false;
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(text)) {
-						return !!(
-							divider.compareDocumentPosition(wrapper) &
-							Node.DOCUMENT_POSITION_FOLLOWING
-						);
-					}
-				}
-				return false;
-			},
-			this.dividerSelector,
-			this.messagesSelector,
-			messageText,
+			dispatchBubbleGesture,
+			this.wrapperSelector,
+			gesture,
 		);
 	}
 
-	async messageBubbleWithText(text: string) {
-		const hash = await this.agent.execute(
-			(messagesSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						return wrapper.getAttribute('data-message-hash');
-					}
-				}
-				return null;
-			},
-			this.messagesSelector,
-			text,
-		);
-		if (!hash) return null;
-		return this.agent.$(
-			`${this.messagesSelector} [data-message-hash="${hash}"]`,
-		);
+	private async rightClickBubble() {
+		await this.pressBubble('contextmenu');
 	}
 
-	/** Right-click (via a synthetic contextmenu) the bubble containing `text` to
-	 * open its actions menu at the cursor position, and resolve the bubble's
-	 * wrapper. */
-	async openMessageActions(text: string) {
-		const dispatched = await this.agent.execute(
-			(messagesSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						const msg = wrapper.querySelector('.message') as HTMLElement | null;
-						const el = msg ?? wrapper;
-						const rect = el.getBoundingClientRect();
-						el.dispatchEvent(
-							new MouseEvent('contextmenu', {
-								bubbles: true,
-								cancelable: true,
-								clientX: rect.left + rect.width / 2,
-								clientY: rect.top + rect.height / 2,
-							}),
-						);
-						return true;
-					}
-				}
-				return false;
-			},
-			this.messagesSelector,
-			text,
-		);
-		if (!dispatched) throw new Error(`Message "${text}" not found`);
-		// An actions menu exists per message; scope to this one and wait for it
-		// to actually open.
-		const wrapper = await this.messageBubbleWithText(text);
-		if (!wrapper) throw new Error(`Message "${text}" not found`);
-		const menu = wrapper.$(tid('message-actions-menu'));
-		await menu.waitForDisplayed();
-		return wrapper;
+	/** Hold a touch on the bubble past the long-press threshold, then lift it,
+	 * the way a mobile user opens the actions menu. */
+	private async longPressBubble() {
+		await this.pressBubble('touchstart');
+		await this.agent.pause(LONG_PRESS_MS);
+		await this.pressBubble('touchend');
 	}
 
-	/** Click the hover toolbar's add-reaction button on the message containing
-	 * `text` and wait for its quick-reaction bar to open. JS-clicked because the
-	 * toolbar is hover-revealed. */
-	async openReactionBar(text: string) {
-		const wrapper = await this.messageBubbleWithText(text);
-		if (!wrapper) throw new Error(`Message "${text}" not found`);
+	/** Open this message's quick-reaction bar with the gesture its platform
+	 * uses — the same long-press that opens the actions menu on mobile, since
+	 * the spotlight carries the bar above the message and the menu below, or
+	 * the hover toolbar's add-reaction button on desktop — and wait for it to
+	 * actually open. */
+	async openReactionBar() {
+		if (await this.isMobileBuild()) {
+			await this.longPressBubble();
+		} else {
+			await this.clickHoverReact();
+		}
+		// A quick-reaction bar exists per message; scope to this one.
+		await this.wrapper.$(tid('quick-reaction-bar')).waitForDisplayed();
+	}
+
+	/** JS-clicked because the toolbar is hover-revealed. */
+	private async clickHoverReact() {
 		const clicked = await this.agent.execute(
-			(messagesSel: string, t: string, buttonSel: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const w of wrappers) {
-					if (w.textContent?.includes(t)) {
-						const button = w.querySelector(buttonSel) as HTMLElement | null;
-						if (!button) return false;
-						button.click();
-						return true;
-					}
-				}
-				return false;
+			(wrapperSel: string, buttonSel: string) => {
+				const button = document
+					.querySelector(wrapperSel)
+					?.querySelector(buttonSel) as HTMLElement | null;
+				if (!button) return false;
+				button.click();
+				return true;
 			},
-			this.messagesSelector,
-			text,
+			this.wrapperSelector,
 			tid('message-hover-react'),
 		);
 		if (!clicked)
-			throw new Error(`Add-reaction button for "${text}" not found`);
-		const bar = wrapper.$(tid('quick-reaction-bar'));
-		await bar.waitForDisplayed();
-		return wrapper;
+			throw new Error(`Add-reaction button on message ${this.hash} not found`);
 	}
 
-	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
-	async reactWith(text: string, emoji: string) {
-		const wrapper = await this.openReactionBar(text);
-		await wrapper.$(tid(`quick-reaction-${emoji}`)).click();
+	/** Open the quick-reaction bar and tap the given quick emoji. */
+	async reactWith(emoji: string) {
+		await this.openReactionBar();
+		await this.wrapper.$(tid(`quick-reaction-${emoji}`)).click();
 	}
 
-	/** Whether the bubble containing `text` shows a reaction chip for `emoji`. */
-	hasReaction(text: string, emoji: string): Promise<boolean> {
+	/** Whether this message shows a reaction chip for `emoji`. */
+	hasReaction(emoji: string): Promise<boolean> {
 		return this.agent.execute(
-			(messagesSel: string, t: string, chipSel: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						return !!wrapper.querySelector(chipSel);
-					}
-				}
-				return false;
-			},
-			this.messagesSelector,
-			text,
+			(wrapperSel: string, chipSel: string) =>
+				!!document.querySelector(wrapperSel)?.querySelector(chipSel),
+			this.wrapperSelector,
 			tid(`reaction-chip-${emoji}`),
 		);
 	}
 
-	async waitForReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
-		await this.agent.waitUntil(() => this.hasReaction(text, emoji), {
+	async waitForReaction(emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(() => this.hasReaction(emoji), {
 			timeout,
-			timeoutMsg: `Reaction "${emoji}" on "${text}" not found`,
+			timeoutMsg: `Reaction "${emoji}" on message ${this.hash} not found`,
 		});
 	}
 
-	async waitForNoReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
-		await this.agent.waitUntil(
-			async () => !(await this.hasReaction(text, emoji)),
-			{ timeout, timeoutMsg: `Reaction "${emoji}" on "${text}" still present` },
+	async waitForNoReaction(emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(async () => !(await this.hasReaction(emoji)), {
+			timeout,
+			timeoutMsg: `Reaction "${emoji}" on message ${this.hash} still present`,
+		});
+	}
+
+	authorInitials(): Promise<string | null> {
+		return this.agent.execute((wrapperSel: string) => {
+			const avatar = document
+				.querySelector(wrapperSel)
+				?.querySelector('wa-avatar') as
+				| (Element & { initials?: string })
+				| null;
+			return avatar?.initials || null;
+		}, this.wrapperSelector);
+	}
+
+	/** True if the unread divider precedes this message in DOM order. */
+	isPrecededByUnreadDivider(): Promise<boolean> {
+		return this.agent.execute(
+			(dividerSel: string, wrapperSel: string) => {
+				const divider = document.querySelector(dividerSel);
+				const wrapper = document.querySelector(wrapperSel);
+				if (!divider || !wrapper) return false;
+				return !!(
+					divider.compareDocumentPosition(wrapper) &
+					Node.DOCUMENT_POSITION_FOLLOWING
+				);
+			},
+			this.messages.dividerSelector,
+			this.wrapperSelector,
 		);
 	}
 
-	async getAuthorInitials(messageText: string): Promise<string | null> {
+	/** Whether this message shows the "Edited" indicator. */
+	hasEditedIndicator(): Promise<boolean> {
 		return this.agent.execute(
-			(sel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${sel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						const avatar = wrapper.querySelector('wa-avatar') as
-							| (Element & { initials?: string })
-							| null;
-						return avatar?.initials || null;
-					}
-				}
-				return null;
-			},
-			this.messagesSelector,
-			messageText,
-		);
-	}
-
-	/** Whether the message containing `text` shows the "Edited" indicator. */
-	async hasEditedIndicator(text: string): Promise<boolean> {
-		return this.agent.execute(
-			(messagesSel: string, editedSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						return !!wrapper.querySelector(editedSel);
-					}
-				}
-				return false;
-			},
-			this.messagesSelector,
+			(wrapperSel: string, editedSel: string) =>
+				!!document.querySelector(wrapperSel)?.querySelector(editedSel),
+			this.wrapperSelector,
 			tid('message-edited-indicator'),
-			text,
 		);
 	}
 
-	/** Open the actions menu on the message with `oldText`, tap Edit, replace
-	 * the text with `newText`, and send. */
-	async editMessage(oldText: string, newText: string): Promise<void> {
-		await this.openMessageActions(oldText);
-		const editAction = await this.editAction(oldText);
-		await editAction.waitForClickable();
-		await editAction.click();
+	/** Open the actions menu, tap Edit, replace the text with `newText`, and
+	 * send. `oldText` is the message's current text, used to assert the
+	 * editing input is prefilled. */
+	async edit(oldText: string, newText: string): Promise<void> {
+		await this.openActions();
+		await this.editAction.waitForClickable();
+		await this.editAction.click();
 		// The Signal-style editing state: header banner plus the input prefilled
 		// with the message being edited.
 		await this.composer.editingBanner.waitForExist();
