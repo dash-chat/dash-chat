@@ -13,6 +13,7 @@
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
+	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
@@ -44,13 +45,13 @@
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
-	let toolbar = $state<ReturnType<typeof MessageHoverToolbar>>();
+	let contextMenuPoint = $state<{ x: number; y: number }>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (isMobile) {
 			reactionsOpened = true;
 		} else if (e instanceof MouseEvent) {
-			toolbar?.openMenuAt({ x: e.clientX, y: e.clientY });
+			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
 
@@ -96,13 +97,7 @@
 <div class="group flex justify-end" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile}
-			<MessageHoverToolbar
-				bind:this={toolbar}
-				{message}
-				{myDeviceId}
-				{onEdit}
-				reverse
-			/>
+			<MessageHoverToolbar {message} {myDeviceId} {onEdit} reverse />
 		{/if}
 		<Card
 			raised
@@ -137,6 +132,13 @@
 		{onEdit}
 		bind:opened={reactionsOpened}
 		target={messageEl}
+	/>
+{:else}
+	<MessageContextMenu
+		{message}
+		{myDeviceId}
+		{onEdit}
+		bind:point={contextMenuPoint}
 	/>
 {/if}
 

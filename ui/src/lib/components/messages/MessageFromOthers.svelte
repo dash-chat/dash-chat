@@ -15,6 +15,7 @@
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
+	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
@@ -53,13 +54,13 @@
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
-	let toolbar = $state<ReturnType<typeof MessageHoverToolbar>>();
+	let contextMenuPoint = $state<{ x: number; y: number }>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (isMobile) {
 			reactionsOpened = true;
 		} else if (e instanceof MouseEvent) {
-			toolbar?.openMenuAt({ x: e.clientX, y: e.clientY });
+			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
 
@@ -99,7 +100,7 @@
 <div class="group flex justify-start" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile}
-			<MessageHoverToolbar bind:this={toolbar} {message} {myDeviceId} />
+			<MessageHoverToolbar {message} {myDeviceId} />
 		{/if}
 		<div class="row items-end gap-2">
 			{#if showAvatar}
@@ -148,6 +149,8 @@
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
+{:else}
+	<MessageContextMenu {message} {myDeviceId} bind:point={contextMenuPoint} />
 {/if}
 
 <style>

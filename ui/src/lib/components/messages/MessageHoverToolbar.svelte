@@ -30,34 +30,15 @@
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
 
 	let open = $state<'reactions' | 'menu' | null>(null);
-	let anchor = $state<HTMLElement | { x: number; y: number }>();
 	let expanded = $state(false);
 	let reactEl = $state<HTMLElement>();
 	let menuEl = $state<HTMLElement>();
-	let pointAnchorEl = $state<HTMLElement>();
 
-	const point = $derived(anchor instanceof HTMLElement ? undefined : anchor);
-	const targetEl = $derived(
-		anchor instanceof HTMLElement ? anchor : pointAnchorEl,
-	);
-
-	/** Open the actions menu popover at a viewport point (e.g. the cursor of a
-	 * right-click on the bubble). */
-	export function openMenuAt(p: { x: number; y: number }) {
-		anchor = p;
-		open = 'menu';
-	}
+	const targetEl = $derived(open === 'reactions' ? reactEl : menuEl);
 
 	// Reset the picker state once the actions UI is closed.
 	$effect(() => {
 		if (open === null) expanded = false;
-	});
-
-	$effect(() => {
-		if (open === null) return;
-		// Konsta popovers only re-read their anchors on window resize; nudge
-		// them once the anchor is in place.
-		requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
 	});
 
 	function close() {
@@ -114,10 +95,7 @@
 	>
 		<span bind:this={reactEl}>
 			<IconButton
-				onClick={() => {
-					anchor = reactEl;
-					open = 'reactions';
-				}}
+				onClick={() => (open = 'reactions')}
 				label={m.addReaction()}
 				testid="message-hover-react"
 				class="!h-9 !w-9"
@@ -128,10 +106,7 @@
 		</span>
 		<span bind:this={menuEl}>
 			<IconButton
-				onClick={() => {
-					anchor = menuEl;
-					open = 'menu';
-				}}
+				onClick={() => (open = 'menu')}
 				label={m.messageOptions()}
 				testid="message-hover-menu"
 				class="!h-9 !w-9"
@@ -143,15 +118,6 @@
 	</div>
 </div>
 
-{#if open !== null && point}
-	<!-- Viewport-pixel anchor; --k-safe-area-top zeroes out the space above
-	     it so Konsta places the popover below the point, context-menu style. -->
-	<div
-		bind:this={pointAnchorEl}
-		class="pointer-events-none fixed"
-		style={`left: ${point.x}px; top: ${point.y}px; width: 0; height: 0; --k-safe-area-top: ${point.y}px`}
-	></div>
-{/if}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="contents [&>div:not(.k-popover)]:!bg-transparent"
