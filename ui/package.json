@@ -43,7 +43,7 @@
 		"tailwindcss": "^4.1.18",
 		"tauri-plugin-android-fs-api": "^28.2.1",
 		"tauri-plugin-view-api": "^0.0.5",
-		"tauri-plugin-virtual-keyboard": "github:dash-chat/tauri-plugin-virtual-keyboard#fe1da510d03ec095a01da715e8968367df94572d",
+		"tauri-plugin-virtual-keyboard": "github:dash-chat/tauri-plugin-virtual-keyboard#665a4049f8acd67b9cb251afe4e91a2323a115cc",
 		"vite-plugin-babel": "^1.3.2"
 	},
 	"devDependencies": {
