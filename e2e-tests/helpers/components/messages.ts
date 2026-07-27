@@ -262,10 +262,23 @@ export class Message extends TestHelper {
 		await this.pressBubble('touchend');
 	}
 
-	/** Click the hover toolbar's add-reaction button and wait for the
-	 * quick-reaction bar to open. JS-clicked because the toolbar is
-	 * hover-revealed. */
+	/** Open this message's quick-reaction bar with the gesture its platform
+	 * uses — the same long-press that opens the actions menu on mobile, since
+	 * the spotlight carries the bar above the message and the menu below, or
+	 * the hover toolbar's add-reaction button on desktop — and wait for it to
+	 * actually open. */
 	async openReactionBar() {
+		if (await this.isMobileBuild()) {
+			await this.longPressBubble();
+		} else {
+			await this.clickHoverReact();
+		}
+		// A quick-reaction bar exists per message; scope to this one.
+		await this.wrapper.$(tid('quick-reaction-bar')).waitForDisplayed();
+	}
+
+	/** JS-clicked because the toolbar is hover-revealed. */
+	private async clickHoverReact() {
 		const clicked = await this.agent.execute(
 			(wrapperSel: string, buttonSel: string) => {
 				const button = document
@@ -280,8 +293,6 @@ export class Message extends TestHelper {
 		);
 		if (!clicked)
 			throw new Error(`Add-reaction button on message ${this.hash} not found`);
-		// A quick-reaction bar exists per message; scope to this one.
-		await this.wrapper.$(tid('quick-reaction-bar')).waitForDisplayed();
 	}
 
 	/** Open the quick-reaction bar and tap the given quick emoji. */
