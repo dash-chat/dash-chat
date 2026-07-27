@@ -17,6 +17,7 @@
 		Card,
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
 	import Avatar from './Avatar.svelte';
@@ -90,7 +91,7 @@
 	const avatarSize = 100;
 </script>
 
-<Page style="height: calc(100% - var(--keyboard-safe-bottom, 0px))">
+<Page class="pb-keyboard-safe">
 	{#if showPicker}
 		<AvatarPicker
 			bind:avatar={pickerAvatar}
@@ -102,15 +103,13 @@
 		/>
 
 		{#if !textEditorOpen && !isIos}
-			<Button
-				rounded
+			<FixedActionButton
 				tonal
 				disabled={!pickerHasChanges}
 				onClick={selectAvatar}
-				class="fixed-action-btn"
 			>
 				{m.save()}
-			</Button>
+			</FixedActionButton>
 		{/if}
 	{:else}
 		<Navbar
@@ -184,15 +183,13 @@
 		</div>
 
 		{#if !isIos}
-			<Button
+			<FixedActionButton
 				onClick={setProfile}
-				class="fixed-action-btn"
-				rounded
 				disabled={name === undefined || name === ''}
-				data-testid="create-profile-create-btn"
+				testId="create-profile-create-btn"
 			>
 				{m.create()}
-			</Button>
+			</FixedActionButton>
 		{/if}
 	{/if}
 </Page>

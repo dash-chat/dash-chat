@@ -1,8 +1,4 @@
-/** Safe-area insets in px, probed from `env()`. Trustworthy at any moment —
- * including while the keyboard is up or retracting — because the
- * virtual-keyboard plugin feeds the webview an IME-less view of the window
- * insets, so Android's collapse of `env(safe-area-inset-bottom)` under the
- * IME never reaches us. */
+// Safe-area insets in px, probed from `env()`
 export function safeAreaInsets(): { top: number; bottom: number } {
 	const el = document.createElement('div');
 	el.style.cssText =

@@ -5,10 +5,11 @@
 	import { goto } from '$app/navigation';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Page } from 'konsta/svelte';
+	import { Page } from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
 	import AvatarPicker from '$lib/components/profiles/AvatarPicker.svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let avatar = $state<string | undefined>(undefined);
@@ -70,15 +71,13 @@
 	/>
 
 	{#if !inModalState && !isIos}
-		<Button
-			rounded
+		<FixedActionButton
 			tonal
 			disabled={!hasChanges}
 			onClick={save}
-			class="fixed-action-btn"
-			data-testid="edit-photo-save-btn"
+			testId="edit-photo-save-btn"
 		>
 			{m.save()}
-		</Button>
+		</FixedActionButton>
 	{/if}
 </Page>

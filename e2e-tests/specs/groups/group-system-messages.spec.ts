@@ -36,11 +36,9 @@ describe('Group chat inline system messages', () => {
 
 	it('renders regular chat bubbles separately from system messages', async () => {
 		await agent1.groupChatPage.composer.sendMessage('Hi everyone');
-		await agent1.groupChatPage.messages.waitForMessage('Hi everyone');
+		const message =
+			await agent1.groupChatPage.messages.waitForMessage('Hi everyone');
 
-		const bubble = await agent1.groupChatPage.messages.messageBubbleWithText(
-			'Hi everyone',
-		);
-		expect(bubble).not.toBeNull();
+		expect(await message.wrapper.isExisting()).toBe(true);
 	});
 });
