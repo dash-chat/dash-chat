@@ -59,16 +59,13 @@ describe('Editing messages', () => {
 
 	it('asks before discarding a draft when starting an edit', async () => {
 		const { composer, messages } = agent1.directChatPage;
-		const startEdit = async () => {
-			const message = await messages.waitForMessage('Hello world');
-			await message.openActions();
-			await message.editAction.waitForClickable();
-			await message.editAction.click();
-			await composer.discardDraftConfirm.waitForClickable();
-		};
+		const message = await messages.waitForMessage('Hello world');
 
 		await composer.type('Draft in progress');
-		await startEdit();
+		await message.openActions();
+		await message.editAction.waitForClickable();
+		await message.editAction.click();
+		await composer.discardDraftConfirm.waitForClickable();
 
 		// Cancel keeps the draft and stays out of edit mode.
 		await composer.discardDraftCancel.click();
@@ -77,7 +74,10 @@ describe('Editing messages', () => {
 		expect(await composer.messageInput.getValue()).toBe('Draft in progress');
 
 		// Discard drops the draft and enters edit mode prefilled.
-		await startEdit();
+		await message.openActions();
+		await message.editAction.waitForClickable();
+		await message.editAction.click();
+		await composer.discardDraftConfirm.waitForClickable();
 		await composer.discardDraftConfirm.click();
 		await composer.editingBanner.waitForExist();
 		await browser.waitUntil(

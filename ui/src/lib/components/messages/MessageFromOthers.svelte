@@ -12,9 +12,8 @@
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
-	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import MessageActions from './MessageActions.svelte';
+	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
@@ -53,15 +52,13 @@
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
-	let desktopOpen = $state<'reactions' | 'menu' | null>(null);
-	let desktopAnchor = $state<HTMLElement | { x: number; y: number }>();
+	let toolbar = $state<ReturnType<typeof MessageHoverToolbar>>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (isMobile) {
 			reactionsOpened = true;
 		} else if (e instanceof MouseEvent) {
-			desktopAnchor = { x: e.clientX, y: e.clientY };
-			desktopOpen = 'menu';
+			toolbar?.openMenuAt({ x: e.clientX, y: e.clientY });
 		}
 	}
 
@@ -89,10 +86,6 @@
 	);
 </script>
 
-{#snippet editedIndicator()}
-	<EditedIndicator class="quiet" />
-{/snippet}
-
 {#snippet metadata()}
 	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
 {/snippet}
@@ -100,23 +93,7 @@
 <div class="group flex justify-start" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile}
-			<div
-				class="absolute start-full inset-y-0 ms-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {desktopOpen !==
-				null
-					? '!opacity-100'
-					: ''}"
-			>
-				<MessageHoverToolbar
-					onReact={el => {
-						desktopAnchor = el;
-						desktopOpen = 'reactions';
-					}}
-					onMenu={el => {
-						desktopAnchor = el;
-						desktopOpen = 'menu';
-					}}
-				/>
-			</div>
+			<MessageHoverToolbar bind:this={toolbar} {message} {myDeviceId} />
 		{/if}
 		<div class="row items-end gap-2">
 			{#if showAvatar}
@@ -137,12 +114,10 @@
 			>
 				<MessageContent
 					{message}
+					{myDeviceId}
 					{searchQuery}
 					senderName={senderDisplayName}
 					{showSenderName}
-					editedIndicator={message.editHistory.length > 0
-						? editedIndicator
-						: undefined}
 					metadata={isLast ? metadata : undefined}
 				/>
 			</Card>
@@ -159,14 +134,14 @@
 		{/if}
 	</div>
 </div>
-<MessageActions
-	{message}
-	{myDeviceId}
-	bind:opened={reactionsOpened}
-	bind:desktopOpen
-	{desktopAnchor}
-	target={messageEl}
-/>
+{#if isMobile}
+	<MessageActionsOverlay
+		{message}
+		{myDeviceId}
+		bind:opened={reactionsOpened}
+		target={messageEl}
+	/>
+{/if}
 
 <style>
 	:global(.others-message) {

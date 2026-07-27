@@ -140,6 +140,52 @@ export class Messages extends TestHelper {
 	}
 }
 
+/** Comfortably past the 500ms threshold in the app's `longpress` action. */
+const LONG_PRESS_MS = 700;
+
+type BubbleGesture = 'contextmenu' | 'touchstart' | 'touchend';
+
+/**
+ * Dispatch one gesture event at the centre of a message's bubble. Serialized
+ * into the page by `execute`, so it has to stay self-contained — and `execute`
+ * widens its arguments to `string`, so the gesture is narrowed by the
+ * `pressBubble` caller rather than here.
+ *
+ * A long-press is the caller's job to compose: `touchstart`, a hold, then
+ * `touchend` — the app starts its own timer off `touchstart`.
+ */
+function dispatchBubbleGesture(wrapperSel: string, gesture: string) {
+	const wrapper = document.querySelector<HTMLElement>(wrapperSel);
+	if (!wrapper) return;
+	const msg = wrapper.querySelector('.message') as HTMLElement | null;
+	const el = msg ?? wrapper;
+	const rect = el.getBoundingClientRect();
+	const clientX = rect.left + rect.width / 2;
+	const clientY = rect.top + rect.height / 2;
+	if (gesture === 'contextmenu') {
+		el.dispatchEvent(
+			new MouseEvent('contextmenu', {
+				bubbles: true,
+				cancelable: true,
+				clientX,
+				clientY,
+			}),
+		);
+		return;
+	}
+	const touch = new Touch({ identifier: 1, target: el, clientX, clientY });
+	const down = gesture === 'touchstart';
+	el.dispatchEvent(
+		new TouchEvent(gesture, {
+			bubbles: true,
+			cancelable: true,
+			touches: down ? [touch] : [],
+			targetTouches: down ? [touch] : [],
+			changedTouches: [touch],
+		}),
+	);
+}
+
 // Driver for a single rendered message, identified by its message hash.
 // Obtain one via `Messages.messageWithText()`. Elements re-resolve on every
 // use, so a Message never holds a stale handle across re-renders.
@@ -173,25 +219,47 @@ export class Message extends TestHelper {
 		return this.wrapper.$(tid('message-action-copy'));
 	}
 
-	/** Right-click (via a synthetic contextmenu) the bubble to open its actions
-	 * menu at the cursor position, and wait for it to actually open. */
+	/** Open this message's actions menu with the gesture its platform uses — a
+	 * long-press on mobile, which opens the spotlight overlay, or a right-click
+	 * on desktop, which opens the popover at the cursor — and wait for it to
+	 * actually open. */
 	async openActions() {
-		await this.agent.execute((wrapperSel: string) => {
-			const wrapper = document.querySelector<HTMLElement>(wrapperSel);
-			if (!wrapper) return;
-			const msg = wrapper.querySelector('.message') as HTMLElement | null;
-			const el = msg ?? wrapper;
-			const rect = el.getBoundingClientRect();
-			el.dispatchEvent(
-				new MouseEvent('contextmenu', {
-					bubbles: true,
-					cancelable: true,
-					clientX: rect.left + rect.width / 2,
-					clientY: rect.top + rect.height / 2,
-				}),
-			);
-		}, this.wrapperSelector);
+		if (await this.isMobileBuild()) {
+			await this.longPressBubble();
+		} else {
+			await this.rightClickBubble();
+		}
 		await this.actionsMenu.waitForDisplayed();
+	}
+
+	/** Whether the app is rendering its mobile UI. Read from the user agent
+	 * because that is exactly what the app's own `isMobile` branches on to
+	 * choose between the spotlight overlay and the desktop popovers, so the
+	 * gesture can never drift from the UI that is actually mounted. */
+	private isMobileBuild(): Promise<boolean> {
+		return this.agent.execute(() =>
+			/iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
+		);
+	}
+
+	private pressBubble(gesture: BubbleGesture): Promise<void> {
+		return this.agent.execute(
+			dispatchBubbleGesture,
+			this.wrapperSelector,
+			gesture,
+		);
+	}
+
+	private async rightClickBubble() {
+		await this.pressBubble('contextmenu');
+	}
+
+	/** Hold a touch on the bubble past the long-press threshold, then lift it,
+	 * the way a mobile user opens the actions menu. */
+	private async longPressBubble() {
+		await this.pressBubble('touchstart');
+		await this.agent.pause(LONG_PRESS_MS);
+		await this.pressBubble('touchend');
 	}
 
 	/** Click the hover toolbar's add-reaction button and wait for the
@@ -211,9 +279,7 @@ export class Message extends TestHelper {
 			tid('message-hover-react'),
 		);
 		if (!clicked)
-			throw new Error(
-				`Add-reaction button on message ${this.hash} not found`,
-			);
+			throw new Error(`Add-reaction button on message ${this.hash} not found`);
 		// A quick-reaction bar exists per message; scope to this one.
 		await this.wrapper.$(tid('quick-reaction-bar')).waitForDisplayed();
 	}

@@ -7,12 +7,11 @@
 		Message,
 		MessagesStore,
 	} from 'dash-chat-stores';
-	import { canEditMessage, type MessagePosition } from './message-helpers';
+	import { type MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
-	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import MessageActions from './MessageActions.svelte';
+	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
@@ -39,21 +38,18 @@
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
-	const canEdit = $derived(canEditMessage(message, myDeviceId));
 
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
-	let desktopOpen = $state<'reactions' | 'menu' | null>(null);
-	let desktopAnchor = $state<HTMLElement | { x: number; y: number }>();
+	let toolbar = $state<ReturnType<typeof MessageHoverToolbar>>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (isMobile) {
 			reactionsOpened = true;
 		} else if (e instanceof MouseEvent) {
-			desktopAnchor = { x: e.clientX, y: e.clientY };
-			desktopOpen = 'menu';
+			toolbar?.openMenuAt({ x: e.clientX, y: e.clientY });
 		}
 	}
 
@@ -81,10 +77,6 @@
 	);
 </script>
 
-{#snippet editedIndicator()}
-	<EditedIndicator class="dark-quiet" />
-{/snippet}
-
 {#snippet metadata()}
 	<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
 
@@ -98,24 +90,13 @@
 <div class="group flex justify-end" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile}
-			<div
-				class="absolute end-full inset-y-0 me-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 {desktopOpen !==
-				null
-					? '!opacity-100'
-					: ''}"
-			>
-				<MessageHoverToolbar
-					reverse
-					onReact={el => {
-						desktopAnchor = el;
-						desktopOpen = 'reactions';
-					}}
-					onMenu={el => {
-						desktopAnchor = el;
-						desktopOpen = 'menu';
-					}}
-				/>
-			</div>
+			<MessageHoverToolbar
+				bind:this={toolbar}
+				{message}
+				{myDeviceId}
+				{onEdit}
+				reverse
+			/>
 		{/if}
 		<Card
 			raised
@@ -124,11 +105,9 @@
 		>
 			<MessageContent
 				{message}
+				{myDeviceId}
 				{searchQuery}
 				senderName={m.you()}
-				editedIndicator={message.editHistory.length > 0
-					? editedIndicator
-					: undefined}
 				metadata={isLast ? metadata : undefined}
 			/>
 		</Card>
@@ -144,16 +123,15 @@
 		{/if}
 	</div>
 </div>
-<MessageActions
-	{message}
-	{myDeviceId}
-	{canEdit}
-	{onEdit}
-	bind:opened={reactionsOpened}
-	bind:desktopOpen
-	{desktopAnchor}
-	target={messageEl}
-/>
+{#if isMobile}
+	<MessageActionsOverlay
+		{message}
+		{myDeviceId}
+		{onEdit}
+		bind:opened={reactionsOpened}
+		target={messageEl}
+	/>
+{/if}
 
 <style>
 	:global(.my-message) {
