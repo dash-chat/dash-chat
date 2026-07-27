@@ -42,12 +42,15 @@
 
 			<p class="text-center text-sm quiet">{m.shareLinkWarning()}</p>
 
-			<BorderedBox
-				class="w-full {theme === 'ios' ? 'bg-white' : ''}"
-				data-testid="qr-link-sheet-link"
-			>
-				<span class="break-all text-start text-sm">{link}</span>
-			</BorderedBox>
+			{#if isIos}
+				<div class="rounded-2xl bg-white px-4 py-3">
+					<span class="break-all text-start text-sm">{link}</span>
+				</div>
+			{:else}
+				<BorderedBox class="w-full" data-testid="qr-link-sheet-link">
+					<span class="break-all text-start text-sm">{link}</span>
+				</BorderedBox>
+			{/if}
 		</div>
 
 		<div class="pt-4 pb-8">
