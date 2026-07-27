@@ -270,6 +270,9 @@
 						onClick={cancelEdit}
 						label={m.cancel()}
 						testid="composer-cancel-edit"
+						class="!h-[42px] !w-[42px] !opacity-100 {theme === 'ios'
+							? '!bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:!bg-ios-dark-glass dark:shadow-ios-dark-glass'
+							: '!bg-[#545863] !text-white dark:!bg-[#BEBFC5] dark:!text-[#1E2438]'}"
 					/>
 				{/if}
 			{:else if isMobile && theme === 'ios'}
@@ -308,6 +311,7 @@
 						onClick={cancelEdit}
 						label={m.cancel()}
 						testid="composer-cancel-edit"
+						class="!bg-[#848484] !text-white !opacity-100"
 					/>
 				{/if}
 				<SendButton onSend={send} editing />
