@@ -23,12 +23,13 @@ export class DirectChatPage extends TestHelper {
 	rejectConfirm = this.el(tid('direct-chat-reject-confirm'));
 	messageStatus = this.el(tid('message-status'));
 	readMore = this.el(tid('message-read-more'));
+	composer = new Composer(this.agent);
 	messages = new Messages(
 		this.agent,
 		'direct-chat-messages',
 		'direct-chat-unread-divider',
+		this.composer,
 	);
-	composer = new Composer(this.agent);
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 

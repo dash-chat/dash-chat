@@ -11,6 +11,7 @@ export class Messages extends TestHelper {
 		agent: WebdriverIO.Browser,
 		messagesTestId: string,
 		unreadDividerTestId: string,
+		private composer: Composer,
 	) {
 		super(agent);
 		this.messagesSelector = tid(messagesTestId);
@@ -46,7 +47,9 @@ export class Messages extends TestHelper {
 			this.messagesSelector,
 			text,
 		);
-		return hash === null ? null : new Message(this.agent, this, hash);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
 	}
 
 	/** Wait until a message whose text contains `text` renders, and return its
@@ -145,6 +148,7 @@ export class Message extends TestHelper {
 		agent: WebdriverIO.Browser,
 		private messages: Messages,
 		readonly hash: string,
+		private composer: Composer,
 	) {
 		super(agent);
 		this.wrapperSelector = `${messages.messagesSelector} [data-message-hash="${hash}"]`;
@@ -154,8 +158,6 @@ export class Message extends TestHelper {
 	private readonly wrapperSelector: string;
 	/** The message's wrapper element in the list. */
 	readonly wrapper;
-	/** The composer, for driving the type/send step of an in-place edit. */
-	private composer = new Composer(this.agent);
 
 	/** Every message mounts its own (closed) actions popover, so the menu and
 	 * its actions must be resolved scoped to this message's wrapper. */
