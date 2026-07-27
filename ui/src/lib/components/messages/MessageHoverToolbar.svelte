@@ -27,9 +27,13 @@
 
 	const store: MessagesStore = getContext('messages-store');
 
-	const canEdit = $derived(canEditMessage(message, myDeviceId));
-
 	let open = $state<'reactions' | 'menu' | null>(null);
+
+	// Depends on `open` so the 24h edit window is re-checked each time the
+	// menu opens, not once at mount.
+	const canEdit = $derived(
+		open !== null && canEditMessage(message, myDeviceId),
+	);
 	let expanded = $state(false);
 	let reactEl = $state<HTMLElement>();
 	let menuEl = $state<HTMLElement>();

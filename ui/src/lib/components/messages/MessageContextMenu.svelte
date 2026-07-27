@@ -18,7 +18,11 @@
 
 	let { message, myDeviceId, onEdit, point = $bindable() }: Props = $props();
 
-	const canEdit = $derived(canEditMessage(message, myDeviceId));
+	// Depends on `point` so the 24h edit window is re-checked each time the
+	// menu opens, not once at mount.
+	const canEdit = $derived(
+		point !== undefined && canEditMessage(message, myDeviceId),
+	);
 
 	let pointAnchorEl = $state<HTMLElement>();
 

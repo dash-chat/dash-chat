@@ -30,7 +30,9 @@
 
 	const store: MessagesStore = getContext('messages-store');
 
-	const canEdit = $derived(canEditMessage(message, myDeviceId));
+	// Depends on `opened` so the 24h edit window is re-checked each time the
+	// overlay opens, not once at mount.
+	const canEdit = $derived(opened && canEditMessage(message, myDeviceId));
 
 	let expanded = $state(false);
 
