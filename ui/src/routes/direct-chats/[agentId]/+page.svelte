@@ -522,11 +522,6 @@
 										</div>
 									</div>
 
-									<ProfileNamesSheet
-										opened={profileNamesSheetOpen}
-										onClose={() => (profileNamesSheetOpen = false)}
-									/>
-
 									<div
 										class="column m-2 gap-1"
 										data-testid="direct-chat-messages"
@@ -600,61 +595,68 @@
 							{/await}
 						{/await}
 					{/if}
-					{#if contactRequest}
-						<Dialog
-							opened={showAcceptDialog}
-							onBackdropClick={() => (showAcceptDialog = false)}
-							title={m.acceptRequestTitle()}
-						>
-							<span>{m.acceptRequestDescription()}</span>
-							{#snippet buttons()}
-								<DialogButton onClick={() => (showAcceptDialog = false)}>
-									{m.cancel()}
-								</DialogButton>
-								<DialogButton
-									data-testid="direct-chat-accept-confirm"
-									onClick={() => {
-										showAcceptDialog = false;
-										acceptContactRequest(contactRequest);
-									}}
-								>
-									{m.accept()}
-								</DialogButton>
-							{/snippet}
-						</Dialog>
-						<Dialog
-							opened={showRejectDialog}
-							onBackdropClick={() => (showRejectDialog = false)}
-							title={m.rejectRequestTitle()}
-						>
-							<span>{m.rejectRequestDescription()}</span>
-							{#snippet buttons()}
-								<DialogButton onClick={() => (showRejectDialog = false)}>
-									{m.cancel()}
-								</DialogButton>
-								<DialogButton
-									data-testid="direct-chat-reject-confirm"
-									onClick={() => {
-										showRejectDialog = false;
-										rejectContactRequest(contactRequest);
-									}}
-								>
-									{m.reject()}
-								</DialogButton>
-							{/snippet}
-						</Dialog>
-					{/if}
-					<SafetyTipsSheet
-						opened={showSecurityTips}
-						onClose={() => (showSecurityTips = false)}
-					/>
-
-					<PeerProfileSheet
-						opened={showPeerProfile}
-						onClose={() => (showPeerProfile = false)}
-						{profile}
-					/>
 				</ReverseScrollPage>
+
+				{#if contactRequest}
+					<Dialog
+						opened={showAcceptDialog}
+						onBackdropClick={() => (showAcceptDialog = false)}
+						title={m.acceptRequestTitle()}
+					>
+						<span>{m.acceptRequestDescription()}</span>
+						{#snippet buttons()}
+							<DialogButton onClick={() => (showAcceptDialog = false)}>
+								{m.cancel()}
+							</DialogButton>
+							<DialogButton
+								data-testid="direct-chat-accept-confirm"
+								onClick={() => {
+									showAcceptDialog = false;
+									acceptContactRequest(contactRequest);
+								}}
+							>
+								{m.accept()}
+							</DialogButton>
+						{/snippet}
+					</Dialog>
+					<Dialog
+						opened={showRejectDialog}
+						onBackdropClick={() => (showRejectDialog = false)}
+						title={m.rejectRequestTitle()}
+					>
+						<span>{m.rejectRequestDescription()}</span>
+						{#snippet buttons()}
+							<DialogButton onClick={() => (showRejectDialog = false)}>
+								{m.cancel()}
+							</DialogButton>
+							<DialogButton
+								data-testid="direct-chat-reject-confirm"
+								onClick={() => {
+									showRejectDialog = false;
+									rejectContactRequest(contactRequest);
+								}}
+							>
+								{m.reject()}
+							</DialogButton>
+						{/snippet}
+					</Dialog>
+				{/if}
+
+				<SafetyTipsSheet
+					opened={showSecurityTips}
+					onClose={() => (showSecurityTips = false)}
+				/>
+
+				<PeerProfileSheet
+					opened={showPeerProfile}
+					onClose={() => (showPeerProfile = false)}
+					{profile}
+				/>
+
+				<ProfileNamesSheet
+					opened={profileNamesSheetOpen}
+					onClose={() => (profileNamesSheetOpen = false)}
+				/>
 
 				{#if !isAtBottom}
 					{#await $unreadCount then count}
@@ -676,7 +678,7 @@
 				>
 					<div bind:clientHeight={bottomBarHeight}>
 						{#if searchMode}
-							<div class="pb-safe bg-page-surface">
+							<div class="bg-page-surface">
 								<div
 									class="mx-4 border-t border-gray-300 dark:border-gray-600"
 									style="margin: 0 auto"
@@ -734,7 +736,7 @@
 								</div>
 							</div>
 						{:else if isPendingChat}
-							<div class="pb-safe bg-page-surface">
+							<div class="bg-page-surface">
 								<div
 									class="mx-4 border-t border-gray-300 dark:border-gray-600"
 									style="margin: 0 auto"
@@ -747,7 +749,7 @@
 								</p>
 							</div>
 						{:else if contactRequest}
-							<div class="pb-safe bg-page-surface">
+							<div class="bg-page-surface">
 								<div
 									class="mx-4 border-t border-gray-300 dark:border-gray-600"
 									style="margin: 0 auto"

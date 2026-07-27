@@ -1,4 +1,10 @@
-import { mdiArrowLeft, mdiArrowRight } from '@mdi/js';
+import { isIos } from '$lib/utils/environment';
+import {
+	mdiArrowLeft,
+	mdiArrowRight,
+	mdiExportVariant,
+	mdiShareVariant,
+} from '@mdi/js';
 
 // Wraps a path from @mdi/js into an svg, to be used inside an <sl-icon src=""></sl-icon>
 export function wrapPathInSvg(path: string): string {
@@ -16,3 +22,4 @@ export const mdiArrowBack =
 	document.dir === 'rtl' ? mdiArrowRight : mdiArrowLeft;
 export const mdiArrowNext =
 	document.dir === 'rtl' ? mdiArrowLeft : mdiArrowRight;
+export const mdiShare = isIos ? mdiExportVariant : mdiShareVariant;

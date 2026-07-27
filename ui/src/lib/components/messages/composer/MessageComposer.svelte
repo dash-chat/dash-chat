@@ -249,7 +249,9 @@
 
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<div
-		class="message-input-bar relative z-10 flow-root"
+		class="message-input-bar relative flow-root {theme === 'ios'
+			? 'z-30'
+			: 'z-10'}"
 		class:bg-page-surface={theme === 'material'}
 		use:renderAboveKeyboard
 	>

@@ -2,24 +2,23 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import {
 		mdiLinkVariant,
-		mdiShareVariant,
 		mdiTrayArrowDown,
 		mdiPalette,
 		mdiUpload,
 	} from '@mdi/js';
+	import { mdiShare } from '$lib/utils/icon';
 	import LabelledIconButton from '$lib/components/contacts/LabelledIconButton.svelte';
+	import { isMobile } from '$lib/utils/environment';
 
 	type ActionHandler = () => void | Promise<void>;
 
 	let {
-		isMobile,
 		onLink,
 		onShare,
 		onSave,
 		onUpload,
 		onOpenColorPicker,
 	}: {
-		isMobile: boolean;
 		onLink: ActionHandler;
 		onShare: ActionHandler;
 		onSave: ActionHandler;
@@ -38,7 +37,7 @@
 		/>
 		<LabelledIconButton
 			label={m.share()}
-			icon={mdiShareVariant}
+			icon={mdiShare}
 			onClick={onShare}
 			testId="add-contact-share-btn"
 		/>
