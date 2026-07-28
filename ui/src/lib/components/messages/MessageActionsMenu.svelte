@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiContentCopy, mdiDelete, mdiPencilOutline } from '@mdi/js';
+	import { mdiContentCopy, mdiDeleteOutline, mdiPencilOutline } from '@mdi/js';
 	import { List } from 'konsta/svelte';
 	import type { DeviceId, Message } from 'dash-chat-stores';
 	import {
@@ -52,7 +52,7 @@
 	{#if canDelete}
 		<ListAction
 			title={m.delete()}
-			icon={mdiDelete}
+			icon={mdiDeleteOutline}
 			actionType="danger"
 			onClick={() => onDelete?.()}
 			data-testid="message-action-delete"

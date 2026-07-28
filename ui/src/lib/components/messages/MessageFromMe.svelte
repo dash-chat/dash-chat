@@ -7,9 +7,11 @@
 		type Message,
 		type MessagesStore,
 		hasBody,
+		isDeleted,
 	} from 'dash-chat-stores';
 	import { type MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
+	import DeletedMessage from './DeletedMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
@@ -43,6 +45,7 @@
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+	const deleted = $derived(isDeleted(message.content));
 
 	const reactions = $derived(
 		hasBody(message.content) ? message.content.reactions : {},
@@ -110,19 +113,28 @@
 		{#if !isMobile && hasBody(message.content)}
 			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onDelete} reverse />
 		{/if}
-		<Card
-			raised
-			contentWrapPadding="p-2"
-			class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-		>
-			<MessageContent
-				{message}
-				{searchQuery}
-				senderName={m.you()}
-				deletedText={m.youDeletedThisMessage()}
-				metadata={isLast || editHistory.length > 0 ? metadata : undefined}
-			/>
-		</Card>
+		{#if deleted}
+			<DeletedMessage {message} {position} {myDeviceId} />
+		{:else}
+			<Card
+				raised
+				contentWrapPadding="p-2"
+				colors={{
+					bgIos: 'bg-brand-primary',
+					bgMaterial: 'bg-brand-primary',
+					textIos: 'text-white',
+					textMaterial: 'text-white',
+				}}
+				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+			>
+				<MessageContent
+					{message}
+					{searchQuery}
+					senderName={m.you()}
+					metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+				/>
+			</Card>
+		{/if}
 		{#if Object.keys(reactions).length > 0}
 			<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
 				<Reactions
@@ -153,33 +165,3 @@
 		bind:point={contextMenuPoint}
 	/>
 {/if}
-
-<style>
-	:global(.my-message) {
-		align-self: end;
-		background-color: var(--color-brand-primary);
-		color: white;
-		margin: 0;
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-
-	:global(.my-message.first-message) {
-		border-end-end-radius: 4px;
-	}
-	:global(.my-message.middle-message) {
-		border-start-end-radius: 4px;
-		border-end-end-radius: 4px;
-	}
-	:global(.my-message.last-message) {
-		border-start-end-radius: 4px;
-	}
-
-	:global(.my-message.offline-message) {
-		border: 3px dashed rgb(255, 182, 193);
-		background-clip: padding-box;
-	}
-	:global(.my-message.offline-message > div) {
-		padding: calc(0.5rem - 2px) !important;
-	}
-</style>

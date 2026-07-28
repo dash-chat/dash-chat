@@ -25,7 +25,9 @@ describe('Deleting messages', () => {
 		await mine.delete();
 
 		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
-		await theirs.waitForDeleted(await agent2.tr('thisMessageWasDeleted'));
+		await theirs.waitForDeleted(
+			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice Test' }),
+		);
 	});
 
 	it('deletes an edited message via its latest edit', async () => {
@@ -42,7 +44,9 @@ describe('Deleting messages', () => {
 		await mine.delete();
 
 		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
-		await theirs.waitForDeleted(await agent2.tr('thisMessageWasDeleted'));
+		await theirs.waitForDeleted(
+			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice Test' }),
+		);
 	});
 
 	it('does not offer Delete on the peer’s messages', async () => {
