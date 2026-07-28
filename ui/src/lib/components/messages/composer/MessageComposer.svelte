@@ -41,7 +41,6 @@
 	import EditingBanner from '$lib/components/messages/composer/EditingBanner.svelte';
 	import DiscardEditButton from '$lib/components/messages/composer/DiscardEditButton.svelte';
 	import DiscardDraftDialog from '$lib/components/messages/composer/DiscardDraftDialog.svelte';
-	import DeleteMessageDialog from '$lib/components/messages/composer/DeleteMessageDialog.svelte';
 
 	interface Props {
 		value?: string;
@@ -74,8 +73,6 @@
 
 	let editing = $state<Message | null>(null);
 	let discardDialog: ReturnType<typeof DiscardDraftDialog> | undefined =
-		$state();
-	let deleteDialog: ReturnType<typeof DeleteMessageDialog> | undefined =
 		$state();
 
 	/** Switch the composer to editing `message`'s text instead of sending a
@@ -122,20 +119,6 @@
 			console.error('Failed to edit message', e);
 		} finally {
 			sending = false;
-		}
-	}
-
-	/** Open the delete-for-everyone confirmation dialog for `message`. */
-	export function deleteMessage(message: Message) {
-		deleteDialog?.confirm(message);
-	}
-
-	async function confirmDelete(message: Message) {
-		try {
-			await store.deleteMessage(message);
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to delete message', e);
 		}
 	}
 
@@ -363,8 +346,6 @@
 {/if}
 
 <DiscardDraftDialog bind:this={discardDialog} onConfirm={discardDraftAndEdit} />
-
-<DeleteMessageDialog bind:this={deleteDialog} onConfirm={confirmDelete} />
 
 <Sheet
 	class="pb-safe text-lg"

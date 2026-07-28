@@ -563,8 +563,6 @@
 																		searchQuery={searchMode ? searchQuery : ''}
 																		onEdit={() =>
 																			composer?.editMessage(message)}
-																		onDelete={() =>
-																			composer?.deleteMessage(message)}
 																	/>
 																{/await}
 															</div>
