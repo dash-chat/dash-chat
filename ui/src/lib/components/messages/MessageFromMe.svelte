@@ -171,12 +171,11 @@
 	/>
 {/if}
 
-{#if confirmingDelete}
-	<DeleteMessageDialog
-		onConfirm={deleteMessage}
-		onCancel={() => (confirmingDelete = false)}
-	/>
-{/if}
+<DeleteMessageDialog
+	opened={confirmingDelete}
+	onConfirm={deleteMessage}
+	onCancel={() => (confirmingDelete = false)}
+/>
 
 <style>
 	:global(.my-message) {
