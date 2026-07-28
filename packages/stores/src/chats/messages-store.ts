@@ -268,7 +268,7 @@ function deletedMessages(
  * is, so the placeholder lands in the slot the original occupied. `seq_num`
  * can't be used: once devices are linked an edit may come from another device,
  * and positions in different logs aren't comparable. The hash breaks ties so
- * every peer picks the same op. */
+ * every peer eventually picks the same op. */
 function earliestOp(
 	hashes: Hash[],
 	messages: Record<Hash, Message>,
