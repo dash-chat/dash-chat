@@ -231,8 +231,6 @@ function collectMessageActionsByType(
 					timestamp: operation.header.timestamp,
 				};
 			} else if (body.payload.type === 'DeleteMessage') {
-				// We trust the backend to deliver only valid operations, so the
-				// covered hashes are not checked against the messages they claim.
 				for (const hash of body.payload.payload.hashes) {
 					deletedMessages.add(hash);
 				}
