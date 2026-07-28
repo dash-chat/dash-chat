@@ -2,10 +2,6 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { Popover } from 'konsta/svelte';
 	import { type Message, type DeviceId, hasBody } from 'dash-chat-stores';
-	import {
-		canDeleteMessageForEveryone,
-		canEditMessage,
-	} from './message-helpers';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
 	import { writeText } from '$lib/utils/clipboard';
 	import { showToast } from '$lib/utils/toasts';
@@ -27,15 +23,6 @@
 		onDelete,
 		point = $bindable(),
 	}: Props = $props();
-
-	// Depends on `point` so the 24h windows are re-checked each time the
-	// menu opens, not once at mount.
-	const canEdit = $derived(
-		point !== undefined && canEditMessage(message, myDeviceId),
-	);
-	const canDelete = $derived(
-		point !== undefined && canDeleteMessageForEveryone(message, myDeviceId),
-	);
 
 	let pointAnchorEl = $state<HTMLElement>();
 
@@ -109,10 +96,10 @@
 		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
 	>
 		<MessageActionsMenu
-			{canEdit}
+			{message}
+			{myDeviceId}
 			onEdit={edit}
 			onCopy={copy}
-			{canDelete}
 			onDelete={del}
 			testid="message-context-menu"
 		/>
