@@ -79,6 +79,7 @@ describe('Editing messages', () => {
 		await message.editAction.click();
 		await composer.discardDraftConfirm.waitForClickable();
 		await composer.discardDraftConfirm.click();
+		await composer.discardDraftConfirm.waitForClickable({ reverse: true });
 		await composer.editingBanner.waitForExist();
 		await browser.waitUntil(
 			async () => (await composer.messageInput.getValue()) === 'Hello world',

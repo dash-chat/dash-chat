@@ -143,7 +143,7 @@ export class Messages extends TestHelper {
 /** Comfortably past the 500ms threshold in the app's `longpress` action. */
 const LONG_PRESS_MS = 700;
 
-type BubbleGesture = 'contextmenu' | 'touchstart' | 'touchend';
+type BubbleGesture = 'touchstart' | 'touchend';
 
 /**
  * Dispatch one gesture event at the centre of a message's bubble. Serialized
@@ -162,17 +162,6 @@ function dispatchBubbleGesture(wrapperSel: string, gesture: string) {
 	const rect = el.getBoundingClientRect();
 	const clientX = rect.left + rect.width / 2;
 	const clientY = rect.top + rect.height / 2;
-	if (gesture === 'contextmenu') {
-		el.dispatchEvent(
-			new MouseEvent('contextmenu', {
-				bubbles: true,
-				cancelable: true,
-				clientX,
-				clientY,
-			}),
-		);
-		return;
-	}
 	const touch = new Touch({ identifier: 1, target: el, clientX, clientY });
 	const down = gesture === 'touchstart';
 	el.dispatchEvent(
@@ -220,14 +209,13 @@ export class Message extends TestHelper {
 	}
 
 	/** Open this message's actions menu with the gesture its platform uses — a
-	 * long-press on mobile, which opens the spotlight overlay, or a right-click
-	 * on desktop, which opens the popover at the cursor — and wait for it to
-	 * actually open. */
+	 * long-press on mobile, which opens the spotlight overlay, or the hover
+	 * toolbar's ⋯ button on desktop — and wait for it to actually open. */
 	async openActions() {
 		if (await this.isMobileBuild()) {
 			await this.longPressBubble();
 		} else {
-			await this.rightClickBubble();
+			await this.clickHoverButton('message-hover-menu');
 		}
 		await this.actionsMenu.waitForDisplayed();
 	}
@@ -250,10 +238,6 @@ export class Message extends TestHelper {
 		);
 	}
 
-	private async rightClickBubble() {
-		await this.pressBubble('contextmenu');
-	}
-
 	/** Hold a touch on the bubble past the long-press threshold, then lift it,
 	 * the way a mobile user opens the actions menu. */
 	private async longPressBubble() {
@@ -271,14 +255,14 @@ export class Message extends TestHelper {
 		if (await this.isMobileBuild()) {
 			await this.longPressBubble();
 		} else {
-			await this.clickHoverReact();
+			await this.clickHoverButton('message-hover-react');
 		}
 		// A quick-reaction bar exists per message; scope to this one.
 		await this.wrapper.$(tid('quick-reaction-bar')).waitForDisplayed();
 	}
 
 	/** JS-clicked because the toolbar is hover-revealed. */
-	private async clickHoverReact() {
+	private async clickHoverButton(testid: string) {
 		const clicked = await this.agent.execute(
 			(wrapperSel: string, buttonSel: string) => {
 				const button = document
@@ -289,10 +273,12 @@ export class Message extends TestHelper {
 				return true;
 			},
 			this.wrapperSelector,
-			tid('message-hover-react'),
+			tid(testid),
 		);
 		if (!clicked)
-			throw new Error(`Add-reaction button on message ${this.hash} not found`);
+			throw new Error(
+				`Hover-toolbar button "${testid}" on message ${this.hash} not found`,
+			);
 	}
 
 	/** Open the quick-reaction bar and tap the given quick emoji. */
