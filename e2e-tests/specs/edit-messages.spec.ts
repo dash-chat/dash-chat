@@ -79,13 +79,15 @@ describe('Editing messages', () => {
 		await message.editAction.click();
 		await composer.discardDraftConfirm.waitForClickable();
 		await composer.discardDraftConfirm.click();
-		await composer.discardDraftConfirm.waitForClickable({ reverse: true });
 		await composer.editingBanner.waitForExist();
 		await browser.waitUntil(
 			async () => (await composer.messageInput.getValue()) === 'Hello world',
 			{ timeoutMsg: 'Editing input is not prefilled with the message text' },
 		);
 
+		// The dialog's backdrop lingers a frame past its own button going
+		// unclickable, so wait for the target itself rather than the dialog.
+		await composer.cancelEditButton.waitForClickable();
 		await composer.cancelEditButton.click();
 		await composer.editingBanner.waitForExist({ reverse: true });
 	});
