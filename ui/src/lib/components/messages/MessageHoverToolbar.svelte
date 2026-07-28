@@ -11,10 +11,6 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
-	import {
-		canDeleteMessageForEveryone,
-		canEditMessage,
-	} from './message-helpers';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
@@ -44,14 +40,6 @@
 
 	let open = $state<'reactions' | 'menu' | null>(null);
 
-	// Depends on `open` so the 24h windows are re-checked each time the
-	// menu opens, not once at mount.
-	const canEdit = $derived(
-		open !== null && canEditMessage(message, myDeviceId),
-	);
-	const canDelete = $derived(
-		open !== null && canDeleteMessageForEveryone(message, myDeviceId),
-	);
 	let expanded = $state(false);
 	let reactEl = $state<HTMLElement>();
 	let menuEl = $state<HTMLElement>();
@@ -173,10 +161,10 @@
 		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
 	>
 		<MessageActionsMenu
-			{canEdit}
+			{message}
+			{myDeviceId}
 			onEdit={edit}
 			onCopy={copy}
-			{canDelete}
 			onDelete={del}
 		/>
 	</Popover>

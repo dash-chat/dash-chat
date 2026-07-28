@@ -2,15 +2,18 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiContentCopy, mdiDelete, mdiPencilOutline } from '@mdi/js';
 	import { List } from 'konsta/svelte';
+	import type { DeviceId, Message } from 'dash-chat-stores';
+	import {
+		canDeleteMessageForEveryone,
+		canEditMessage,
+	} from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 
 	interface Props {
-		/** Whether to offer an edit action (author, within the edit window). */
-		canEdit?: boolean;
+		message: Message;
+		myDeviceId: DeviceId;
 		onEdit?: () => void;
 		onCopy: () => void;
-		/** Whether to offer a delete-for-everyone action (author, within the delete window). */
-		canDelete?: boolean;
 		onDelete?: () => void;
 		/** Names this mount. A desktop message hosts two of these menus at once —
 		 * the hover toolbar's and the right-click one — so they need distinct
@@ -19,13 +22,16 @@
 	}
 
 	let {
-		canEdit = false,
+		message,
+		myDeviceId,
 		onEdit,
 		onCopy,
-		canDelete = false,
 		onDelete,
 		testid = 'message-actions-menu',
 	}: Props = $props();
+
+	const canEdit = $derived(canEditMessage(message, myDeviceId));
+	const canDelete = $derived(canDeleteMessageForEveryone(message, myDeviceId));
 </script>
 
 <List nested data-testid={testid}>
