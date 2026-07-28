@@ -96,7 +96,7 @@ importers:
         version: 2.19.0
       expect-webdriverio:
         specifier: ^5.7.0
-        version: 5.7.0(@wdio/globals@9.29.1)(@wdio/logger@9.18.0)(webdriverio@9.29.1)
+        version: 5.7.0(@wdio/globals@9.29.1)(@wdio/logger@9.29.1)(webdriverio@9.29.1)
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -7696,7 +7696,7 @@ snapshots:
 
   '@wdio/globals@9.29.1(expect-webdriverio@5.7.0)(webdriverio@9.29.1)':
     dependencies:
-      expect-webdriverio: 5.7.0(@wdio/globals@9.29.1)(@wdio/logger@9.18.0)(webdriverio@9.29.1)
+      expect-webdriverio: 5.7.0(@wdio/globals@9.29.1)(@wdio/logger@9.29.1)(webdriverio@9.29.1)
       webdriverio: 9.29.1
 
   '@wdio/local-runner@9.24.0(@wdio/globals@9.29.1)(webdriverio@9.29.1)':
@@ -8920,11 +8920,11 @@ snapshots:
       jest-matcher-utils: 30.2.0
       webdriverio: 9.29.1
 
-  expect-webdriverio@5.7.0(@wdio/globals@9.29.1)(@wdio/logger@9.18.0)(webdriverio@9.29.1):
+  expect-webdriverio@5.7.0(@wdio/globals@9.29.1)(@wdio/logger@9.29.1)(webdriverio@9.29.1):
     dependencies:
       '@vitest/snapshot': 4.1.10
       '@wdio/globals': 9.29.1(expect-webdriverio@5.7.0)(webdriverio@9.29.1)
-      '@wdio/logger': 9.18.0
+      '@wdio/logger': 9.29.1
       deep-eql: 5.0.2
       expect: 30.4.1
       jest-matcher-utils: 30.4.1

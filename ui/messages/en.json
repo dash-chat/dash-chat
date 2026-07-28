@@ -15,7 +15,7 @@
 	"deleteMessageTitle": "Delete message?",
 	"deleteForEveryone": "Delete for everyone",
 	"youDeletedThisMessage": "You deleted this message.",
-	"thisMessageWasDeleted": "This message was deleted.",
+	"someoneDeletedThisMessage": "{{name}} deleted this message.",
 	"messageDeleted": "Message deleted",
 	"messageUnavailable": "Message unavailable",
 	"originalMessage": "Original",

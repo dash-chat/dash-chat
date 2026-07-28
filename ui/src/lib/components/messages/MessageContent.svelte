@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { type Message, hasBody, isDeleted } from 'dash-chat-stores';
+	import { type Message, hasBody } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiAlertCircleOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -17,7 +17,6 @@
 		metadata,
 		senderName = '',
 		showSenderName = false,
-		deletedText = '',
 	}: {
 		message: Message;
 		searchQuery: string;
@@ -26,8 +25,6 @@
 		 * as the lightbox title. */
 		senderName?: string;
 		showSenderName?: boolean;
-		/** Placeholder shown when the message was deleted for everyone. */
-		deletedText?: string;
 	} = $props();
 
 	const body = $derived(hasBody(message.content) ? message.content : null);
@@ -59,20 +56,13 @@
 			</div>
 		{/if}
 		<div class="max-w-full">
-			{#if isDeleted(message.content)}
-				<span
-					class="italic opacity-80"
-					data-testid="message-deleted-placeholder">{deletedText}</span
-				>
-			{:else}
-				<span
-					class="message-unavailable inline-flex items-center gap-1"
-					data-testid="message-unavailable"
-				>
-					<wa-icon src={wrapPathInSvg(mdiAlertCircleOutline)}></wa-icon>
-					{m.messageUnavailable()}
-				</span>
-			{/if}
+			<span
+				class="message-unavailable inline-flex items-center gap-1"
+				data-testid="message-unavailable"
+			>
+				<wa-icon src={wrapPathInSvg(mdiAlertCircleOutline)}></wa-icon>
+				{m.messageUnavailable()}
+			</span>
 			{#if metadata}
 				<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
 				></span>
