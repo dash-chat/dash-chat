@@ -13,6 +13,7 @@
 		ContactsStore,
 		DeviceId,
 		Hash,
+		Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
@@ -67,6 +68,8 @@
 
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
+
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
@@ -257,7 +260,7 @@
 											)}
 											{#if myDeviceId === message.author}
 												<div
-													class="self-end max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:scrollToBottomOnMount={hash}
 												>
@@ -267,6 +270,7 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
+														onEdit={() => composer?.editMessage(message)}
 													/>
 												</div>
 											{:else}
@@ -274,7 +278,7 @@
 													m.deviceIds.includes(message.author),
 												)}
 												<div
-													class="self-start max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:readMessageOnObserve={readHashes?.has(hash)
 														? null
@@ -323,6 +327,7 @@
 			{#await $composerData then [me, info]}
 				{#if me.member}
 					<MessageComposer
+						bind:this={composer}
 						store={store.messages}
 						destinationName={info.name}
 						onSent={onMessageSent}

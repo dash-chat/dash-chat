@@ -12,6 +12,7 @@
 		type ContactsStore,
 		type DeviceId,
 		type Hash,
+		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -124,6 +125,7 @@
 		}
 	}
 
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -548,7 +550,7 @@
 														)}
 														{#if myDeviceId == message.author}
 															<div
-																class="self-end max-w-[85%]"
+																class="w-full"
 																data-message-hash={hash}
 																use:scrollToBottomOnMount={hash}
 															>
@@ -559,12 +561,14 @@
 																		{myDeviceId}
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
+																		onEdit={() =>
+																			composer?.editMessage(message)}
 																	/>
 																{/await}
 															</div>
 														{:else}
 															<div
-																class="self-start max-w-[85%]"
+																class="w-full"
 																data-message-hash={hash}
 																use:readMessageOnObserve={readHashes?.has(hash)
 																	? null
@@ -792,6 +796,7 @@
 							</div>
 						{:else}
 							<MessageComposer
+								bind:this={composer}
 								store={store.messages}
 								destinationName={profile ? fullName(profile) : undefined}
 								onSent={onMessageSent}

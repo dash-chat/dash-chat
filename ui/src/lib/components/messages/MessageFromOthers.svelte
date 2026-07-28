@@ -12,9 +12,13 @@
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
+	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import QuickReactionBar from './QuickReactionBar.svelte';
+	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
+	import MessageContextMenu from './MessageContextMenu.svelte';
+	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -50,6 +54,15 @@
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
+	let contextMenuPoint = $state<{ x: number; y: number }>();
+
+	function onLongPress(e: MouseEvent | TouchEvent) {
+		if (isMobile) {
+			reactionsOpened = true;
+		} else if (e instanceof MouseEvent) {
+			contextMenuPoint = { x: e.clientX, y: e.clientY };
+		}
+	}
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -76,56 +89,69 @@
 </script>
 
 {#snippet metadata()}
-	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+	{#if message.editHistory.length > 0}
+		<EditedIndicator class="quiet" />
+	{/if}
+	{#if isLast}
+		<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+	{/if}
 {/snippet}
 
-<div
-	bind:this={messageEl}
-	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
->
-	<div class="row items-end gap-2">
-		{#if showAvatar}
-			{#if isLast}
-				<Avatar
-					image={sender?.avatar}
-					initials={sender?.name.slice(0, 2)}
-					size="2rem"
-				/>
-			{:else}
-				<div class="shrink-0" style="width: 2rem"></div>
-			{/if}
+<div class="group flex justify-start" use:longpress={{ onLongPress }}>
+	<div bind:this={messageEl} class="relative max-w-[85%]">
+		{#if !isMobile}
+			<MessageHoverToolbar {message} {myDeviceId} />
 		{/if}
-		<Card
-			raised
-			contentWrapPadding="p-2"
-			class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-		>
-			<MessageContent
-				{message}
-				{searchQuery}
-				senderName={senderDisplayName}
-				{showSenderName}
-				metadata={isLast ? metadata : undefined}
-			/>
-		</Card>
-	</div>
-	{#if Object.keys(message.reactions).length > 0}
-		<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
-			<Reactions
-				reactions={message.reactions}
-				{myDeviceId}
-				onToggleReaction={emoji =>
-					toggleReaction(store, message, myDeviceId, emoji)}
-			/>
+		<div class="row items-end gap-2">
+			{#if showAvatar}
+				{#if isLast}
+					<Avatar
+						image={sender?.avatar}
+						initials={sender?.name.slice(0, 2)}
+						size="2rem"
+					/>
+				{:else}
+					<div class="shrink-0" style="width: 2rem"></div>
+				{/if}
+			{/if}
+			<Card
+				raised
+				contentWrapPadding="p-2"
+				class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+			>
+				<MessageContent
+					{message}
+					{searchQuery}
+					senderName={senderDisplayName}
+					{showSenderName}
+					metadata={isLast || message.editHistory.length > 0
+						? metadata
+						: undefined}
+				/>
+			</Card>
 		</div>
-	{/if}
+		{#if Object.keys(message.reactions).length > 0}
+			<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
+				<Reactions
+					reactions={message.reactions}
+					{myDeviceId}
+					onToggleReaction={emoji =>
+						toggleReaction(store, message, myDeviceId, emoji)}
+				/>
+			</div>
+		{/if}
+	</div>
 </div>
-<QuickReactionBar
-	{message}
-	{myDeviceId}
-	bind:opened={reactionsOpened}
-	target={messageEl}
-/>
+{#if isMobile}
+	<MessageActionsOverlay
+		{message}
+		{myDeviceId}
+		bind:opened={reactionsOpened}
+		target={messageEl}
+	/>
+{:else}
+	<MessageContextMenu {message} {myDeviceId} bind:point={contextMenuPoint} />
+{/if}
 
 <style>
 	:global(.others-message) {

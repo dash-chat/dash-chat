@@ -1,6 +1,7 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
+import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
 // Driver for a chat's rendered message list — the messages themselves plus the
@@ -10,6 +11,7 @@ export class Messages extends TestHelper {
 		agent: WebdriverIO.Browser,
 		messagesTestId: string,
 		unreadDividerTestId: string,
+		private composer: Composer,
 	) {
 		super(agent);
 		this.messagesSelector = tid(messagesTestId);
@@ -45,7 +47,9 @@ export class Messages extends TestHelper {
 			this.messagesSelector,
 			text,
 		);
-		return hash === null ? null : new Message(this.agent, this, hash);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
 	}
 
 	/** Wait until a message whose text contains `text` renders, and return its
@@ -136,6 +140,52 @@ export class Messages extends TestHelper {
 	}
 }
 
+/** Comfortably past the 500ms threshold in the app's `longpress` action. */
+const LONG_PRESS_MS = 700;
+
+type BubbleGesture = 'contextmenu' | 'touchstart' | 'touchend';
+
+/**
+ * Dispatch one gesture event at the centre of a message's bubble. Serialized
+ * into the page by `execute`, so it has to stay self-contained — and `execute`
+ * widens its arguments to `string`, so the gesture is narrowed by the
+ * `pressBubble` caller rather than here.
+ *
+ * A long-press is the caller's job to compose: `touchstart`, a hold, then
+ * `touchend` — the app starts its own timer off `touchstart`.
+ */
+function dispatchBubbleGesture(wrapperSel: string, gesture: string) {
+	const wrapper = document.querySelector<HTMLElement>(wrapperSel);
+	if (!wrapper) return;
+	const msg = wrapper.querySelector('.message') as HTMLElement | null;
+	const el = msg ?? wrapper;
+	const rect = el.getBoundingClientRect();
+	const clientX = rect.left + rect.width / 2;
+	const clientY = rect.top + rect.height / 2;
+	if (gesture === 'contextmenu') {
+		el.dispatchEvent(
+			new MouseEvent('contextmenu', {
+				bubbles: true,
+				cancelable: true,
+				clientX,
+				clientY,
+			}),
+		);
+		return;
+	}
+	const touch = new Touch({ identifier: 1, target: el, clientX, clientY });
+	const down = gesture === 'touchstart';
+	el.dispatchEvent(
+		new TouchEvent(gesture, {
+			bubbles: true,
+			cancelable: true,
+			touches: down ? [touch] : [],
+			targetTouches: down ? [touch] : [],
+			changedTouches: [touch],
+		}),
+	);
+}
+
 // Driver for a single rendered message, identified by its message hash.
 // Obtain one via `Messages.messageWithText()`. Elements re-resolve on every
 // use, so a Message never holds a stale handle across re-renders.
@@ -144,6 +194,7 @@ export class Message extends TestHelper {
 		agent: WebdriverIO.Browser,
 		private messages: Messages,
 		readonly hash: string,
+		private composer: Composer,
 	) {
 		super(agent);
 		this.wrapperSelector = `${messages.messagesSelector} [data-message-hash="${hash}"]`;
@@ -154,27 +205,116 @@ export class Message extends TestHelper {
 	/** The message's wrapper element in the list. */
 	readonly wrapper;
 
-	/** Long-press (via a synthetic contextmenu) the bubble to open its
-	 * quick-reaction bar, and wait for the bar to actually open. */
-	async openReactions() {
-		await this.agent.execute((wrapperSel: string) => {
-			const wrapper = document.querySelector<HTMLElement>(wrapperSel);
-			if (!wrapper) return;
-			const msg = wrapper.querySelector('.message') as HTMLElement | null;
-			(msg ?? wrapper).dispatchEvent(
-				new MouseEvent('contextmenu', {
-					bubbles: true,
-					cancelable: true,
-				}),
-			);
-		}, this.wrapperSelector);
+	/** Every message mounts its own (closed) actions popover, so the menu and
+	 * its actions must be resolved scoped to this message's wrapper. */
+	get actionsMenu() {
+		return this.wrapper.$(tid('message-actions-menu'));
+	}
+
+	get editAction() {
+		return this.wrapper.$(tid('message-action-edit'));
+	}
+
+	get copyAction() {
+		return this.wrapper.$(tid('message-action-copy'));
+	}
+
+	/** Open this message's actions menu with the gesture its platform uses — a
+	 * long-press on mobile, which opens the spotlight overlay, or the hover
+	 * toolbar's ⋯ button on desktop — and wait for it to actually open. */
+	async openActions() {
+		if (await this.isMobileBuild()) {
+			await this.longPressBubble();
+		} else {
+			await this.clickHoverButton('message-hover-menu');
+		}
+		await this.actionsMenu.waitForDisplayed();
+	}
+
+	/** The right-click menu, a second actions menu the message hosts alongside
+	 * the hover toolbar's. Its items have the same testids as that one, so they
+	 * must be resolved inside it rather than in the message wrapper. */
+	get contextMenu() {
+		return this.wrapper.$(tid('message-context-menu'));
+	}
+
+	get contextMenuCopyAction() {
+		return this.contextMenu.$(tid('message-action-copy'));
+	}
+
+	/** Open this message's actions menu the other way desktop offers — a
+	 * right-click on the bubble, which opens `MessageContextMenu` at the cursor
+	 * rather than the hover toolbar's popover. Desktop only: on mobile the
+	 * gesture belongs to the spotlight overlay instead. */
+	async openActionsByRightClick() {
+		await this.pressBubble('contextmenu');
+		await this.contextMenu.waitForDisplayed();
+	}
+
+	/** Whether the app is rendering its mobile UI. Read from the user agent
+	 * because that is exactly what the app's own `isMobile` branches on to
+	 * choose between the spotlight overlay and the desktop popovers, so the
+	 * gesture can never drift from the UI that is actually mounted. */
+	private isMobileBuild(): Promise<boolean> {
+		return this.agent.execute(() =>
+			/iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
+		);
+	}
+
+	private pressBubble(gesture: BubbleGesture): Promise<void> {
+		return this.agent.execute(
+			dispatchBubbleGesture,
+			this.wrapperSelector,
+			gesture,
+		);
+	}
+
+	/** Hold a touch on the bubble past the long-press threshold, then lift it,
+	 * the way a mobile user opens the actions menu. */
+	private async longPressBubble() {
+		await this.pressBubble('touchstart');
+		await this.agent.pause(LONG_PRESS_MS);
+		await this.pressBubble('touchend');
+	}
+
+	/** Open this message's quick-reaction bar with the gesture its platform
+	 * uses — the same long-press that opens the actions menu on mobile, since
+	 * the spotlight carries the bar above the message and the menu below, or
+	 * the hover toolbar's add-reaction button on desktop — and wait for it to
+	 * actually open. */
+	async openReactionBar() {
+		if (await this.isMobileBuild()) {
+			await this.longPressBubble();
+		} else {
+			await this.clickHoverButton('message-hover-react');
+		}
 		// A quick-reaction bar exists per message; scope to this one.
 		await this.wrapper.$(tid('quick-reaction-bar')).waitForDisplayed();
 	}
 
+	/** JS-clicked because the toolbar is hover-revealed. */
+	private async clickHoverButton(testid: string) {
+		const clicked = await this.agent.execute(
+			(wrapperSel: string, buttonSel: string) => {
+				const button = document
+					.querySelector(wrapperSel)
+					?.querySelector(buttonSel) as HTMLElement | null;
+				if (!button) return false;
+				button.click();
+				return true;
+			},
+			this.wrapperSelector,
+			tid(testid),
+		);
+		if (!clicked)
+			throw new Error(
+				`Hover-toolbar button "${testid}" on message ${this.hash} not found`,
+			);
+	}
+
 	/** Open the quick-reaction bar and tap the given quick emoji. */
 	async reactWith(emoji: string) {
-		await this.openReactions();
+		await this.openReactionBar();
 		await this.wrapper.$(tid(`quick-reaction-${emoji}`)).click();
 	}
 
@@ -228,5 +368,33 @@ export class Message extends TestHelper {
 			this.messages.dividerSelector,
 			this.wrapperSelector,
 		);
+	}
+
+	/** Whether this message shows the "Edited" indicator. */
+	hasEditedIndicator(): Promise<boolean> {
+		return this.agent.execute(
+			(wrapperSel: string, editedSel: string) =>
+				!!document.querySelector(wrapperSel)?.querySelector(editedSel),
+			this.wrapperSelector,
+			tid('message-edited-indicator'),
+		);
+	}
+
+	/** Open the actions menu, tap Edit, replace the text with `newText`, and
+	 * send. `oldText` is the message's current text, used to assert the
+	 * editing input is prefilled. */
+	async edit(oldText: string, newText: string): Promise<void> {
+		await this.openActions();
+		await this.editAction.waitForClickable();
+		await this.editAction.click();
+		// The Signal-style editing state: header banner plus the input prefilled
+		// with the message being edited.
+		await this.composer.editingBanner.waitForExist();
+		await this.agent.waitUntil(
+			async () => (await this.composer.messageInput.getValue()) === oldText,
+			{ timeoutMsg: 'Editing input is not prefilled with the original text' },
+		);
+		await this.composer.type(newText);
+		await this.composer.send();
 	}
 }

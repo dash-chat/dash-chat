@@ -165,6 +165,8 @@ async fn test_inbox_two_way_flow() {
         .add_mailbox(&mailbox)
         .await;
 
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
     // Alice generates a QR code with an inbox and Bobbi scans it, sending his
     // contact request to Alice's inbox.
     let qr = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();

@@ -14,6 +14,17 @@ import {
 } from '../types';
 import { type IMessagesClient } from './messages-client';
 
+/** The window during which a message may be edited, measured from the original
+ * message timestamp. Frontend operation timestamps are milliseconds since the
+ * UNIX epoch (the backend serializes them as such), so this is 24h in ms. */
+export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export interface MessageVersion {
+	hash: string;
+	text: string;
+	timestamp: number;
+}
+
 export interface Message {
 	hash: string;
 	content: {
@@ -24,6 +35,7 @@ export interface Message {
 	author: DeviceId;
 	seqNum: number;
 	reactions: Record<DeviceId, string>;
+	editHistory: MessageVersion[];
 }
 
 // The messages of a single chat, direct or group alike: the message log with
@@ -42,7 +54,8 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget } = collectMessageActionsByType(logs);
+		const { messages, reactionsByTarget, editsByTarget } =
+			collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
@@ -51,6 +64,10 @@ export class MessagesStore {
 			} else {
 				console.warn('reaction for missing message');
 			}
+		}
+
+		for (const [hash, message] of Object.entries(messages)) {
+			messages[hash] = applyEdits(message, editsByTarget);
 		}
 
 		return messages;
@@ -120,6 +137,16 @@ export class MessagesStore {
 		const chatId = await this.chatId();
 		await this.client.sendReaction(chatId, reaction);
 	}
+
+	async editMessage(message: Message, newText: string): Promise<Hash> {
+		const chatId = await this.chatId();
+
+		// Callers hold a snapshot captured when editing began; re-resolve so an
+		// edit that arrived mid-compose is chained from, not forked off.
+		const fresh = (await this.messages())[message.hash] ?? message;
+		const current = currentVersion(fresh);
+		return this.client.editMessage(chatId, current.hash, newText);
+	}
 }
 
 function collectMessageActionsByType(
@@ -127,9 +154,11 @@ function collectMessageActionsByType(
 ): {
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
+	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
 } {
 	const messages: Record<Hash, Message> = {};
-	const reactions: Record<Hash, Record<DeviceId, string>> = {};
+	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
+	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
@@ -146,20 +175,83 @@ function collectMessageActionsByType(
 					seqNum: operation.header.seq_num,
 					timestamp: operation.header.timestamp,
 					reactions: {},
+					editHistory: [],
 				};
 			} else if (body.payload.type === 'Reaction') {
 				const { target, emoji } = body.payload.payload;
-				if (reactions[target] === undefined) {
-					reactions[target] = {};
+				if (reactionsByTarget[target] === undefined) {
+					reactionsByTarget[target] = {};
 				}
 				if (emoji) {
-					reactions[target][author] = emoji;
+					reactionsByTarget[target][author] = emoji;
 				} else {
-					delete reactions[target][author];
+					delete reactionsByTarget[target][author];
 				}
+			} else if (body.payload.type === 'EditMessage') {
+				const target = body.payload.payload.edit_hash;
+				if (editsByTarget[target] === undefined) {
+					editsByTarget[target] = {};
+				}
+				editsByTarget[target][operation.hash] = {
+					hash: operation.hash,
+					text: body.payload.payload.message,
+					timestamp: operation.header.timestamp,
+				};
 			}
 		}
 	}
 
-	return { messages, reactionsByTarget: reactions };
+	return {
+		messages,
+		reactionsByTarget,
+		editsByTarget,
+	};
+}
+
+// Apply the message's edits and return the resulting message. Every edit
+// reachable from the message — following chains through `editsByTarget`,
+// across forks — becomes a version; the one with the highest timestamp is the
+// displayed text.
+//
+// TODO(after p2panda-spaces integration): this trusts every edit op in the
+// raw logs and enforces none of the backend's edit-validation rules
+// (`ValidChatOps::validate_edit` in crates/dashchat-node/src/chat/edit.rs):
+// author-only, at most one edit per target resolved by (seq_num, hash), the
+// 24h edit window, and target-must-be-editable. A misbehaving peer's ops
+// would therefore render here. Once p2panda-spaces is integrated the
+// frontend should consume validated logs (or mirror validate_edit) instead.
+function applyEdits(
+	message: Message,
+	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>,
+): Message {
+	const versions: MessageVersion[] = [];
+	const seen = new Set<Hash>([message.hash]);
+	const pending = Object.values(editsByTarget[message.hash] ?? {});
+	while (pending.length > 0) {
+		const edit = pending.pop();
+		if (edit === undefined || seen.has(edit.hash)) continue;
+		seen.add(edit.hash);
+		versions.push(edit);
+		pending.push(...Object.values(editsByTarget[edit.hash] ?? {}));
+	}
+	if (versions.length === 0) return message;
+
+	versions.sort((v1, v2) => v1.timestamp - v2.timestamp);
+	const latest = versions[versions.length - 1];
+	return {
+		...message,
+		content: { ...message.content, message: latest.text },
+		editHistory: versions,
+	};
+}
+
+function currentVersion(message: Message): MessageVersion {
+	if (message.editHistory.length > 0) {
+		return message.editHistory[message.editHistory.length - 1];
+	}
+	return {
+		hash: message.hash,
+		text: message.content.message,
+		timestamp: message.timestamp,
+	};
 }
