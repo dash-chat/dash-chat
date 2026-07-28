@@ -54,6 +54,9 @@ export class DesktopPlatform implements AgentPlatform {
 		execSync('pnpm tauri build --debug --no-bundle --features e2e-tests', {
 			cwd: ROOT,
 			stdio: 'inherit',
+			// Reaches the frontend as import.meta.env.VITE_E2E, which compiles
+			// development-only chrome out of the binary under test.
+			env: { ...process.env, VITE_E2E: 'true' },
 		});
 		// Kill any leftover processes from previous interrupted runs.
 		killAllE2EProcesses();

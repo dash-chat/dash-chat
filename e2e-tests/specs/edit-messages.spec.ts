@@ -85,9 +85,6 @@ describe('Editing messages', () => {
 			{ timeoutMsg: 'Editing input is not prefilled with the message text' },
 		);
 
-		// The dialog's backdrop lingers a frame past its own button going
-		// unclickable, so wait for the target itself rather than the dialog.
-		await composer.cancelEditButton.waitForClickable();
 		await composer.cancelEditButton.click();
 		await composer.editingBanner.waitForExist({ reverse: true });
 	});
