@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Block, Dialog, DialogButton, useTheme } from 'konsta/svelte';
+	import { Sheet, Block, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
@@ -35,6 +35,7 @@
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import EditingBanner from '$lib/components/messages/composer/EditingBanner.svelte';
 	import DiscardEditButton from '$lib/components/messages/composer/DiscardEditButton.svelte';
+	import DiscardDraftDialog from '$lib/components/messages/composer/DiscardDraftDialog.svelte';
 
 	interface Props {
 		value?: string;
@@ -66,15 +67,15 @@
 	let showMediaPanel = $state(false);
 
 	let editing = $state<Message | null>(null);
-	/** Edit requested while a draft was present, awaiting discard confirmation. */
-	let pendingEdit = $state<Message | null>(null);
+	let discardDialog: ReturnType<typeof DiscardDraftDialog> | undefined =
+		$state();
 
 	/** Switch the composer to editing `message`'s text instead of sending a
 	 * new message. Media attachments are disabled while editing. Asks to
 	 * discard first when a draft (text or staged media) would be lost. */
 	export function editMessage(message: Message) {
 		if (!editing && hasContent) {
-			pendingEdit = message;
+			discardDialog?.confirm(message);
 			return;
 		}
 		startEdit(message);
@@ -85,10 +86,7 @@
 		value = message.content.message;
 	}
 
-	function discardDraftAndEdit() {
-		const message = pendingEdit;
-		pendingEdit = null;
-		if (!message) return;
+	function discardDraftAndEdit(message: Message) {
 		media = undefined;
 		startEdit(message);
 	}
@@ -341,28 +339,7 @@
 	/>
 {/if}
 
-<Dialog
-	opened={pendingEdit !== null}
-	onBackdropClick={() => (pendingEdit = null)}
-	title={m.discardDraftTitle()}
-	data-testid="composer-discard-draft-dialog"
->
-	<span>{m.discardDraftDescription()}</span>
-	{#snippet buttons()}
-		<DialogButton
-			data-testid="composer-discard-draft-cancel"
-			onClick={() => (pendingEdit = null)}
-		>
-			{m.cancel()}
-		</DialogButton>
-		<DialogButton
-			data-testid="composer-discard-draft-confirm"
-			onClick={discardDraftAndEdit}
-		>
-			{m.discard()}
-		</DialogButton>
-	{/snippet}
-</Dialog>
+<DiscardDraftDialog bind:this={discardDialog} onConfirm={discardDraftAndEdit} />
 
 <Sheet
 	class="pb-safe text-lg"
