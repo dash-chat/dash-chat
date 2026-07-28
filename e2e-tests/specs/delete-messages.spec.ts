@@ -1,14 +1,14 @@
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Deleting messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
@@ -16,48 +16,42 @@ describe('Deleting messages', () => {
 	});
 
 	it('deletes a message for everyone, showing a placeholder on both sides', async () => {
-		await agent1.directChatPage.sendMessage('Delete me');
-		await agent1.directChatPage.messages.waitForMessage('Delete me');
-		await agent2.directChatPage.messages.waitForMessage('Delete me');
+		await agent1.directChatPage.composer.sendMessage('Delete me');
+		const mine =
+			await agent1.directChatPage.messages.waitForMessage('Delete me');
+		const theirs =
+			await agent2.directChatPage.messages.waitForMessage('Delete me');
 
-		await agent1.directChatPage.messages.deleteMessage('Delete me');
+		await mine.delete();
 
-		await agent1.directChatPage.messages.waitForDeleted(
-			'Delete me',
-			'You deleted this message.',
-		);
-		await agent2.directChatPage.messages.waitForDeleted(
-			'Delete me',
-			'This message was deleted.',
-		);
+		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
+		await theirs.waitForDeleted(await agent2.tr('thisMessageWasDeleted'));
 	});
 
 	it('deletes an edited message via its latest edit', async () => {
-		await agent1.directChatPage.sendMessage('Draft v1');
-		await agent1.directChatPage.messages.waitForMessage('Draft v1');
-		await agent1.directChatPage.messages.editMessage('Draft v1', 'Draft v2');
+		await agent1.directChatPage.composer.sendMessage('Draft v1');
+		const mine =
+			await agent1.directChatPage.messages.waitForMessage('Draft v1');
+		await agent2.directChatPage.messages.waitForMessage('Draft v1');
+
+		await mine.edit('Draft v1', 'Draft v2');
 		await agent1.directChatPage.messages.waitForMessage('Draft v2');
-		await agent2.directChatPage.messages.waitForMessage('Draft v2');
+		const theirs =
+			await agent2.directChatPage.messages.waitForMessage('Draft v2');
 
-		await agent1.directChatPage.messages.deleteMessage('Draft v2');
+		await mine.delete();
 
-		await agent1.directChatPage.messages.waitForDeleted(
-			'Draft v2',
-			'You deleted this message.',
-		);
-		await agent2.directChatPage.messages.waitForDeleted(
-			'Draft v2',
-			'This message was deleted.',
-		);
+		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
+		await theirs.waitForDeleted(await agent2.tr('thisMessageWasDeleted'));
 	});
 
 	it('does not offer Delete on the peer’s messages', async () => {
-		await agent2.directChatPage.sendMessage("Bob's message stays");
-		await agent1.directChatPage.messages.waitForMessage("Bob's message stays");
+		await agent2.directChatPage.composer.sendMessage("Bob's message stays");
+		const message = await agent1.directChatPage.messages.waitForMessage(
+			"Bob's message stays",
+		);
 
-		await agent1.directChatPage.messages.openActions("Bob's message stays");
-		expect(
-			await agent1.directChatPage.messages.quickDeleteButton.isExisting(),
-		).toBe(false);
+		await message.openActions();
+		expect(await message.deleteAction.isExisting()).toBe(false);
 	});
 });
