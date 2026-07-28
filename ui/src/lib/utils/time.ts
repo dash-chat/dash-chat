@@ -54,7 +54,10 @@ function subscriberFor(deadline: number): () => void {
 				windowSubscribers.delete(deadline);
 				update();
 			}, delay);
-			return () => clearTimeout(timer);
+			return () => {
+				clearTimeout(timer);
+				windowSubscribers.delete(deadline);
+			};
 		});
 		windowSubscribers.set(deadline, subscribe);
 	}
