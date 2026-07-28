@@ -89,6 +89,11 @@
 		onBackdropClick={close}
 		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
 	>
-		<MessageActionsMenu {canEdit} onEdit={edit} onCopy={copy} />
+		<MessageActionsMenu
+			{canEdit}
+			onEdit={edit}
+			onCopy={copy}
+			testid="message-context-menu"
+		/>
 	</Popover>
 </div>

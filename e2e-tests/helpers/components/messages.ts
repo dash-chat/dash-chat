@@ -231,13 +231,24 @@ export class Message extends TestHelper {
 		await this.actionsMenu.waitForDisplayed();
 	}
 
+	/** The right-click menu, a second actions menu the message hosts alongside
+	 * the hover toolbar's. Its items have the same testids as that one, so they
+	 * must be resolved inside it rather than in the message wrapper. */
+	get contextMenu() {
+		return this.wrapper.$(tid('message-context-menu'));
+	}
+
+	get contextMenuCopyAction() {
+		return this.contextMenu.$(tid('message-action-copy'));
+	}
+
 	/** Open this message's actions menu the other way desktop offers — a
 	 * right-click on the bubble, which opens `MessageContextMenu` at the cursor
 	 * rather than the hover toolbar's popover. Desktop only: on mobile the
 	 * gesture belongs to the spotlight overlay instead. */
 	async openActionsByRightClick() {
 		await this.pressBubble('contextmenu');
-		await this.actionsMenu.waitForDisplayed();
+		await this.contextMenu.waitForDisplayed();
 	}
 
 	/** Whether the app is rendering its mobile UI. Read from the user agent

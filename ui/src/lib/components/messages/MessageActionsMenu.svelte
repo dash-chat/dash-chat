@@ -9,12 +9,21 @@
 		canEdit?: boolean;
 		onEdit?: () => void;
 		onCopy: () => void;
+		/** Names this mount. A desktop message hosts two of these menus at once —
+		 * the hover toolbar's and the right-click one — so they need distinct
+		 * ids for tests to resolve the one that is actually open. */
+		testid?: string;
 	}
 
-	let { canEdit = false, onEdit, onCopy }: Props = $props();
+	let {
+		canEdit = false,
+		onEdit,
+		onCopy,
+		testid = 'message-actions-menu',
+	}: Props = $props();
 </script>
 
-<List nested data-testid="message-actions-menu">
+<List nested data-testid={testid}>
 	{#if canEdit}
 		<ListAction
 			title={m.edit()}

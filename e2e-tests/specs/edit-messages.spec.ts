@@ -98,11 +98,10 @@ describe('Editing messages', () => {
 			await agent1.directChatPage.messages.waitForMessage('Hello world');
 
 		await message.openActionsByRightClick();
-		// Clickability, not mere presence: every message also mounts the hover
-		// toolbar's own closed popover, so a displayed check could pass without
-		// the context menu ever opening.
-		await message.copyAction.waitForClickable();
-		await message.copyAction.click();
+		// Clickability, not mere presence: the menu fades in, and a closed
+		// popover still counts as displayed while its opacity is rounding to 0.
+		await message.contextMenuCopyAction.waitForClickable();
+		await message.contextMenuCopyAction.click();
 		await agent1.toast.expectMessage(
 			await agent1.tr('copiedMessageToClipboard'),
 		);
