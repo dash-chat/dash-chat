@@ -54,7 +54,7 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget, editsByTarget, deletes } =
+		const { messages, reactionsByTarget, editsByTarget, deletedMessages } =
 			collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
@@ -68,10 +68,12 @@ export class MessagesStore {
 		}
 
 		for (const [hash, message] of Object.entries(messages)) {
-			messages[hash] = applyEdits(message, editsByTarget);
+			if (deletedMessages.has(hash)) {
+				messages[hash] = { ...message, content: 'deleted-for-everyone' };
+			} else {
+				messages[hash] = applyEdits(message, editsByTarget);
+			}
 		}
-
-		applyDeletes(messages, deletes);
 
 		return messages;
 	});
@@ -161,29 +163,18 @@ export class MessagesStore {
 	}
 }
 
-/** A delete op, keyed in `deletesByTarget` by the original message it
- * deletes. */
-interface Delete {
-	hash: Hash;
-	timestamp: number;
-	/** The complete chain covered: the original message plus every edit. */
-	hashes: Hash[];
-}
-
 function collectMessageActionsByType(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
-	/** Delete ops keyed by their own op hash; each carries the full chain of
-	 * message hashes it covers. */
-	deletes: Record<Hash, Delete>;
+	deletedMessages: Set<Hash>;
 } {
 	const messages: Record<Hash, Message> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
-	const deletes: Record<Hash, Delete> = {};
+	const deletedMessages: Set<Hash> = new Set();
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
@@ -193,8 +184,8 @@ function collectMessageActionsByType(
 				// (which carry their action in `header.auth`) and messages whose
 				// payload was tombstoned by a delete. Record the latter as a
 				// placeholder: the DeleteMessage op that references it confirms it
-				// as deleted (see `applyDeletes`); an unreferenced one is an
-				// anomaly rendered as an error bubble (`'body-unavailable'`).
+				// as deleted (see `collapseDeletedChains`); an unreferenced one is
+				// an anomaly rendered as an error bubble (`'body-unavailable'`).
 				if (operation.header.auth) continue;
 				messages[operation.hash] = {
 					hash: operation.hash,
@@ -240,11 +231,11 @@ function collectMessageActionsByType(
 					timestamp: operation.header.timestamp,
 				};
 			} else if (body.payload.type === 'DeleteMessage') {
-				deletes[operation.hash] = {
-					hash: operation.hash,
-					timestamp: operation.header.timestamp,
-					hashes: body.payload.payload.hashes,
-				};
+				// We trust the backend to deliver only valid operations, so the
+				// covered hashes are not checked against the messages they claim.
+				for (const hash of body.payload.payload.hashes) {
+					deletedMessages.add(hash);
+				}
 			}
 		}
 	}
@@ -253,41 +244,8 @@ function collectMessageActionsByType(
 		messages,
 		reactionsByTarget,
 		editsByTarget,
-		deletes,
+		deletedMessages,
 	};
-}
-
-/** Mark deleted messages as such, collapsing each delete's chain (the original
- * message plus its edits) to a single placeholder: keep the original (lowest
- * seq_num, since edits always follow it in the same author's log) as the
- * `'deleted-for-everyone'` placeholder and drop the rest. */
-function applyDeletes(
-	messages: Record<Hash, Message>,
-	deletes: Record<Hash, Delete>,
-): void {
-	for (const del of Object.values(deletes)) {
-		// A chain member is absent from `messages` when it's an edit op that still
-		// has its body (edits live in `editsByTarget`, not `messages`) or an op
-		// this peer hasn't synced yet. Tombstoned members are *not* absent: they
-		// stay as body-less records. Skip the delete entirely until at least one
-		// target is present.
-		//
-		// We trust the backend to deliver only valid operations, so this is not a check
-		// for validity.
-		const chain = del.hashes.filter(hash => messages[hash] !== undefined);
-		if (chain.length === 0) continue;
-
-		const original = chain.reduce((a, b) =>
-			messages[a].seqNum <= messages[b].seqNum ? a : b,
-		);
-		for (const hash of chain) {
-			if (hash === original) {
-				messages[hash].content = 'deleted-for-everyone';
-			} else {
-				delete messages[hash];
-			}
-		}
-	}
 }
 
 // Apply the message's edits and return the resulting message. Every edit
