@@ -1,13 +1,7 @@
 <!--
 	Render content below the keyboard — the counterpart to `renderAboveKeyboard`.
-	The bits above the keyboard (composer bar, message list) glide up; this
-	surface is revealed in the freed space, standing in for the keyboard. The
-	children stay mounted while the plugin reports the surface visible, so they
-	don't vanish mid-swap while the rising keyboard is still covering them.
-
-	Pins itself to the viewport bottom; it must not sit inside a
-	`renderAboveKeyboard` node — a registered ancestor's transform would drag it
-	along instead of leaving it pinned, and would break `position: fixed`.
+	When the keyboard hides, this surface is revealed in the freed space that the
+	keyboard was occupying.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';

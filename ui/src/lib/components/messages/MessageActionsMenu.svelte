@@ -12,6 +12,10 @@
 		/** Whether to offer a delete-for-everyone action (author, within the delete window). */
 		canDelete?: boolean;
 		onDelete?: () => void;
+		/** Names this mount. A desktop message hosts two of these menus at once —
+		 * the hover toolbar's and the right-click one — so they need distinct
+		 * ids for tests to resolve the one that is actually open. */
+		testid?: string;
 	}
 
 	let {
@@ -20,10 +24,11 @@
 		onCopy,
 		canDelete = false,
 		onDelete,
+		testid = 'message-actions-menu',
 	}: Props = $props();
 </script>
 
-<List nested data-testid="message-actions-menu">
+<List nested data-testid={testid}>
 	{#if canEdit}
 		<ListAction
 			title={m.edit()}

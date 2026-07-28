@@ -114,6 +114,7 @@
 			onCopy={copy}
 			{canDelete}
 			onDelete={del}
+			testid="message-context-menu"
 		/>
 	</Popover>
 </div>
