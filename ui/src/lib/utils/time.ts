@@ -64,13 +64,7 @@ function subscriberFor(deadline: number): () => void {
 	return subscribe;
 }
 
-/** Whether `windowMs` has yet to elapse since `timestamp`.
- *
- * Reactive, unlike the predicates above: read inside a `$derived` or `$effect`,
- * it re-runs that computation the moment the window closes. Use it wherever the
- * reader outlives the window — a component that mounts long before it is shown
- * would otherwise evaluate the window once and stay frozen. Timestamps already
- * past their window subscribe to nothing, so they cost no timer. */
+// Whether `windowMs` has yet to elapse since `timestamp`, reactively.
 export function withinWindow(timestamp: number, windowMs: number): boolean {
 	const deadline = timestamp + windowMs;
 	if (deadline <= Date.now()) return false;
