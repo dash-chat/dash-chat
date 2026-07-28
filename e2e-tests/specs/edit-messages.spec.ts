@@ -88,4 +88,23 @@ describe('Editing messages', () => {
 		await composer.cancelEditButton.click();
 		await composer.editingBanner.waitForExist({ reverse: true });
 	});
+
+	// Desktop offers two ways into the actions menu: the hover toolbar's ⋯
+	// button (covered above) and a right-click on the bubble, which opens
+	// MessageContextMenu at the cursor instead.
+	it('opens a working actions menu on right-click', async function () {
+		if (agent1.platform !== 'desktop') this.skip();
+		const message =
+			await agent1.directChatPage.messages.waitForMessage('Hello world');
+
+		await message.openActionsByRightClick();
+		// Clickability, not mere presence: every message also mounts the hover
+		// toolbar's own closed popover, so a displayed check could pass without
+		// the context menu ever opening.
+		await message.copyAction.waitForClickable();
+		await message.copyAction.click();
+		await agent1.toast.expectMessage(
+			await agent1.tr('copiedMessageToClipboard'),
+		);
+	});
 });

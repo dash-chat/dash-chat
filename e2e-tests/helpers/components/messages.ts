@@ -143,7 +143,7 @@ export class Messages extends TestHelper {
 /** Comfortably past the 500ms threshold in the app's `longpress` action. */
 const LONG_PRESS_MS = 700;
 
-type BubbleGesture = 'touchstart' | 'touchend';
+type BubbleGesture = 'contextmenu' | 'touchstart' | 'touchend';
 
 /**
  * Dispatch one gesture event at the centre of a message's bubble. Serialized
@@ -162,6 +162,17 @@ function dispatchBubbleGesture(wrapperSel: string, gesture: string) {
 	const rect = el.getBoundingClientRect();
 	const clientX = rect.left + rect.width / 2;
 	const clientY = rect.top + rect.height / 2;
+	if (gesture === 'contextmenu') {
+		el.dispatchEvent(
+			new MouseEvent('contextmenu', {
+				bubbles: true,
+				cancelable: true,
+				clientX,
+				clientY,
+			}),
+		);
+		return;
+	}
 	const touch = new Touch({ identifier: 1, target: el, clientX, clientY });
 	const down = gesture === 'touchstart';
 	el.dispatchEvent(
@@ -217,6 +228,15 @@ export class Message extends TestHelper {
 		} else {
 			await this.clickHoverButton('message-hover-menu');
 		}
+		await this.actionsMenu.waitForDisplayed();
+	}
+
+	/** Open this message's actions menu the other way desktop offers — a
+	 * right-click on the bubble, which opens `MessageContextMenu` at the cursor
+	 * rather than the hover toolbar's popover. Desktop only: on mobile the
+	 * gesture belongs to the spotlight overlay instead. */
+	async openActionsByRightClick() {
+		await this.pressBubble('contextmenu');
 		await this.actionsMenu.waitForDisplayed();
 	}
 
