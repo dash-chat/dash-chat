@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { mdiCloseCircleOutline } from '@mdi/js';
 	import { Card } from 'konsta/svelte';
-	import type { Message } from 'dash-chat-stores';
+	import type { DeviceId, Message } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import type { MessagePosition } from './message-helpers';
@@ -11,22 +11,23 @@
 	let {
 		message,
 		position,
+		myDeviceId,
 		senderName,
 	}: {
 		message: Message;
 		position: MessagePosition;
-		/** The author's display name; omitted when the message is mine. */
+		myDeviceId: DeviceId;
 		senderName?: string;
 	} = $props();
 
-	const sideClass = $derived(
-		senderName === undefined ? 'outgoing-message' : 'incoming-message',
-	);
+	const mine = $derived(message.author === myDeviceId);
+	const sideClass = $derived(mine ? 'outgoing-message' : 'incoming-message');
+	const isLast = $derived(position === 'last' || position === 'single');
 </script>
 
 <Card
 	outline
-	contentWrapPadding="px-2 py-2"
+	contentWrapPadding="p-2"
 	colors={{
 		bgIos: 'bg-transparent',
 		bgMaterial: 'bg-transparent',
@@ -44,10 +45,14 @@
 				class="small-icon shrink-0"
 				src={wrapPathInSvg(mdiCloseCircleOutline)}
 			></wa-icon>
-			{senderName === undefined
+			{mine
 				? m.youDeletedThisMessage()
-				: m.someoneDeletedThisMessage({ name: senderName })}
+				: m.someoneDeletedThisMessage({
+						name: senderName ?? m.unknownSender(),
+					})}
 		</span>
-		<MessageTimestamp timestamp={message.timestamp} class="self-end" />
+		{#if isLast}
+			<MessageTimestamp timestamp={message.timestamp} class="self-end" />
+		{/if}
 	</div>
 </Card>

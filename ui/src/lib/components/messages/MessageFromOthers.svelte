@@ -127,7 +127,12 @@
 				{/if}
 			{/if}
 			{#if deleted}
-				<DeletedMessage {message} {position} senderName={senderDisplayName} />
+				<DeletedMessage
+					{message}
+					{position}
+					{myDeviceId}
+					senderName={senderDisplayName}
+				/>
 			{:else}
 				<Card
 					raised

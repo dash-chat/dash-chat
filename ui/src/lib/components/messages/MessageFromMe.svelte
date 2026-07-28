@@ -114,7 +114,7 @@
 			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onDelete} reverse />
 		{/if}
 		{#if deleted}
-			<DeletedMessage {message} {position} />
+			<DeletedMessage {message} {position} {myDeviceId} />
 		{:else}
 			<Card
 				raised
