@@ -1,3 +1,4 @@
+import { withinWindow } from '$lib/utils/time';
 import {
 	DELETE_FOR_EVERYONE_WINDOW_MS,
 	type DeviceId,
@@ -15,7 +16,7 @@ export function canEditMessage(
 	if (!hasBody(message.content)) return false;
 	if (message.author !== myDeviceId) return false;
 	// `timestamp` is the original message op's; edits never change it.
-	return Date.now() - message.timestamp <= EDIT_WINDOW_MS;
+	return withinWindow(message.timestamp, EDIT_WINDOW_MS);
 }
 
 export function canDeleteMessageForEveryone(
@@ -25,7 +26,7 @@ export function canDeleteMessageForEveryone(
 	if (!hasBody(message.content)) return false;
 	if (message.author !== myDeviceId) return false;
 	// `timestamp` is the original message op's; edits never change it.
-	return Date.now() - message.timestamp <= DELETE_FOR_EVERYONE_WINDOW_MS;
+	return withinWindow(message.timestamp, DELETE_FOR_EVERYONE_WINDOW_MS);
 }
 
 export function messagePosition(
