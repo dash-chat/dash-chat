@@ -54,26 +54,34 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget, editsByTarget, deletedMessages } =
-			collectMessageActionsByType(logs);
+		const {
+			messages,
+			bodylessOps,
+			reactionsByTarget,
+			editsByTarget,
+			deleteTargets,
+		} = collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
 			if (message === undefined) {
-				console.warn('reaction for missing message');
-				// Deletes are applied last, so live content is always present here.
+				// A reaction on a tombstoned op is moot, not a missing target.
+				if (bodylessOps[target] === undefined) {
+					console.warn('reaction for missing message');
+				}
 			} else if (hasBody(message.content)) {
 				message.content.reactions = byAuthor;
 			}
 		}
 
 		for (const [hash, message] of Object.entries(messages)) {
-			if (deletedMessages.has(hash)) {
-				messages[hash] = { ...message, content: 'deleted-for-everyone' };
-			} else {
-				messages[hash] = applyEdits(message, editsByTarget);
-			}
+			messages[hash] = applyEdits(message, editsByTarget);
 		}
+
+		Object.assign(
+			messages,
+			deletedMessages(deleteTargets, messages, bodylessOps),
+		);
 
 		return messages;
 	});
@@ -167,33 +175,26 @@ function collectMessageActionsByType(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;
+	// Operations whose payload is gone, keyed by hash
+	bodylessOps: Record<Hash, SimplifiedOperation<void>>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
-	deletedMessages: Set<Hash>;
+	/** One entry per delete: every hash it covers — the original message and its
+	 * edits. */
+	deleteTargets: Hash[][];
 } {
 	const messages: Record<Hash, Message> = {};
+	const bodylessOps: Record<Hash, SimplifiedOperation<void>> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
-	const deletedMessages: Set<Hash> = new Set();
+	const deleteTargets: Hash[][] = [];
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
 			const body = operation.body;
 			if (!body) {
-				// The only body-less ops in a chat log are group-control ops
-				// (which carry their action in `header.auth`) and messages whose
-				// payload was tombstoned by a delete. Record the latter as a
-				// placeholder: the DeleteMessage op that references it confirms it
-				// as deleted (see `collapseDeletedChains`); an unreferenced one is
-				// an anomaly rendered as an error bubble (`'body-unavailable'`).
 				if (operation.header.auth) continue;
-				messages[operation.hash] = {
-					hash: operation.hash,
-					content: 'body-unavailable',
-					author,
-					seqNum: operation.header.seq_num,
-					timestamp: operation.header.timestamp,
-				};
+				bodylessOps[operation.hash] = { ...operation, body: undefined };
 				continue;
 			}
 			if (body.type !== 'Chat') continue;
@@ -231,18 +232,75 @@ function collectMessageActionsByType(
 					timestamp: operation.header.timestamp,
 				};
 			} else if (body.payload.type === 'DeleteMessage') {
-				for (const hash of body.payload.payload.hashes) {
-					deletedMessages.add(hash);
-				}
+				deleteTargets.push(body.payload.payload.hashes);
 			}
 		}
 	}
 
 	return {
 		messages,
+		bodylessOps,
 		reactionsByTarget,
 		editsByTarget,
-		deletedMessages,
+		deleteTargets,
+	};
+}
+
+/** The placeholder each delete leaves behind, keyed by the hash it stands in
+ * for. Merged over `messages` these replace the original's live entry, the only
+ * covered op that can be there — edits live in `editsByTarget`. */
+function deletedMessages(
+	deleteTargets: Hash[][],
+	messages: Record<Hash, Message>,
+	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
+): Record<Hash, Message> {
+	const deleted: Record<Hash, Message> = {};
+	for (const hashes of deleteTargets) {
+		const original = earliestOp(hashes, messages, bodylessOps);
+		if (original === undefined) continue;
+		deleted[original.hash] = { ...original, content: 'deleted-for-everyone' };
+	}
+	return deleted;
+}
+
+/** The earliest of `hashes` this peer has — the original message, since its
+ * edits are authored after it. Ordered by timestamp, as the message list itself
+ * is, so the placeholder lands in the slot the original occupied. `seq_num`
+ * can't be used: once devices are linked an edit may come from another device,
+ * and positions in different logs aren't comparable. The hash breaks ties so
+ * every peer picks the same op. */
+function earliestOp(
+	hashes: Hash[],
+	messages: Record<Hash, Message>,
+	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
+): Message | undefined {
+	let earliest: Message | undefined;
+	for (const hash of hashes) {
+		const bodyless = bodylessOps[hash];
+		const op =
+			messages[hash] ??
+			(bodyless === undefined ? undefined : placeholderFor(bodyless));
+		if (op === undefined) continue;
+		if (
+			earliest === undefined ||
+			op.timestamp < earliest.timestamp ||
+			(op.timestamp === earliest.timestamp && op.hash < earliest.hash)
+		) {
+			earliest = op;
+		}
+	}
+	return earliest;
+}
+
+/** The placeholder a tombstoned operation renders as, built from its header
+ * since its payload is gone. */
+function placeholderFor(op: SimplifiedOperation<void>): Message {
+	return {
+		hash: op.hash,
+		content: 'deleted-for-everyone',
+		author: op.header.verifying_key,
+		seqNum: op.header.seq_num,
+		timestamp: op.header.timestamp,
 	};
 }
 
