@@ -41,6 +41,7 @@
 	import EditingBanner from '$lib/components/messages/composer/EditingBanner.svelte';
 	import DiscardEditButton from '$lib/components/messages/composer/DiscardEditButton.svelte';
 	import DiscardDraftDialog from '$lib/components/messages/composer/DiscardDraftDialog.svelte';
+	import DeleteMessageDialog from '$lib/components/messages/composer/DeleteMessageDialog.svelte';
 
 	interface Props {
 		value?: string;
@@ -72,9 +73,9 @@
 	let showMediaPanel = $state(false);
 
 	let editing = $state<Message | null>(null);
-	/** Message awaiting delete-for-everyone confirmation. */
-	let deleting = $state<Message | null>(null);
 	let discardDialog: ReturnType<typeof DiscardDraftDialog> | undefined =
+		$state();
+	let deleteDialog: ReturnType<typeof DeleteMessageDialog> | undefined =
 		$state();
 
 	/** Switch the composer to editing `message`'s text instead of sending a
@@ -126,15 +127,12 @@
 
 	/** Open the delete-for-everyone confirmation dialog for `message`. */
 	export function deleteMessage(message: Message) {
-		deleting = message;
+		deleteDialog?.confirm(message);
 	}
 
-	async function confirmDelete() {
-		const target = deleting;
-		deleting = null;
-		if (!target) return;
+	async function confirmDelete(message: Message) {
 		try {
-			await store.deleteMessage(target);
+			await store.deleteMessage(message);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to delete message', e);
@@ -366,24 +364,7 @@
 
 <DiscardDraftDialog bind:this={discardDialog} onConfirm={discardDraftAndEdit} />
 
-<Dialog
-	opened={deleting !== null}
-	onBackdropClick={() => (deleting = null)}
-	title={m.deleteMessageTitle()}
-	data-testid="composer-delete-message-dialog"
->
-	{#snippet buttons()}
-		<DialogButton
-			data-testid="composer-delete-cancel"
-			onClick={() => (deleting = null)}
-		>
-			{m.cancel()}
-		</DialogButton>
-		<DialogButton data-testid="composer-delete-confirm" onClick={confirmDelete}>
-			{m.deleteForEveryone()}
-		</DialogButton>
-	{/snippet}
-</Dialog>
+<DeleteMessageDialog bind:this={deleteDialog} onConfirm={confirmDelete} />
 
 <Sheet
 	class="pb-safe text-lg"
