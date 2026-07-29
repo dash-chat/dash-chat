@@ -37,6 +37,7 @@ tauri-plugin-mailto = { git = "https://github.com/dash-chat/tauri-plugin-mailto"
 tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "push-notifications", features = [
   "push-notifications-fcm",
 ] }
+tauri-plugin-background-service = "1.0"
 
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
@@ -101,7 +102,7 @@ tauri-plugin-view = "0.0.5"
 jni = "0.21"
 ndk-sys = "0.6"
 ndk-context = "0.1"
-# Saves photos to the shared gallery (MediaStore). 
+# Saves photos to the shared gallery (MediaStore).
 tauri-plugin-android-fs = { version = "28.2" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos
 # strip. JS bindings ship as `@universalappfactory/tauri-plugin-medialibrary`.

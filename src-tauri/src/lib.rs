@@ -1,4 +1,8 @@
+#[cfg(target_os = "android")]
+use crate::background::ExampleBackgroundService;
+
 mod app_node;
+mod background;
 mod blob_protocol;
 mod commands;
 mod device_info;
@@ -118,7 +122,7 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }
 
-    builder
+    builder = builder
         .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
@@ -170,7 +174,18 @@ pub fn run() {
         .plugin(tauri_plugin_sharekit::init())
         .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_os::init());
+
+    eprintln!("[background-service] registering background service");
+
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.plugin(tauri_plugin_background_service::init_with_service(|| {
+            ExampleBackgroundService::new()
+        }));
+    }
+
+    builder
         .on_window_event(|window, event| match event {
             #[cfg(desktop)]
             tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
