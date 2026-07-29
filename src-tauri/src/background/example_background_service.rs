@@ -22,7 +22,7 @@ impl<R: Runtime> BackgroundService<R> for ExampleBackgroundService {
 
     async fn run(&mut self, ctx: &ServiceContext<R>) -> Result<(), ServiceError> {
         eprintln!("[background-service] run loop started");
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
 
         loop {
             tokio::select! {
@@ -33,8 +33,8 @@ impl<R: Runtime> BackgroundService<R> for ExampleBackgroundService {
                 _ = interval.tick() => {
                     self.tick_count += 1;
                     eprintln!("[background-service] tick_count={}", self.tick_count);
-                    let _ = ctx.app.emit("my-service://tick", self.tick_count);
-                    ctx.notifier.show("Tick", "Service is alive");
+                    // let _ = ctx.app.emit("my-service://tick", self.tick_count);
+                    // ctx.notifier.show("Tick", "Service is alive");
                 }
             }
         }
