@@ -150,9 +150,17 @@ export interface GroupInfo {
 	image: string | undefined;
 }
 
+export interface EditMessagePayload {
+	/** The corrected text. Media cannot be edited. */
+	message: string;
+	/** Hash of the message (or prior edit) being edited; edits chain linearly. */
+	edit_hash: Hash;
+}
+
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
 	| { type: 'Reaction'; payload: ChatReaction }
+	| { type: 'EditMessage'; payload: EditMessagePayload }
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo };
 

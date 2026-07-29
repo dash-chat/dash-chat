@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -14,11 +15,11 @@
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
 	} from '$lib/utils/media';
-	import type { Hash, MessagesStore } from 'dash-chat-stores';
+	import type { Hash, Message, MessagesStore } from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
-	import { renderBelowKeyboard } from '$lib/utils/virtual-keyboard/render-below-keyboard';
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
+	import BelowKeyboardSurface from '$lib/components/BelowKeyboardSurface.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
@@ -32,6 +33,9 @@
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
+	import EditingBanner from '$lib/components/messages/composer/EditingBanner.svelte';
+	import DiscardEditButton from '$lib/components/messages/composer/DiscardEditButton.svelte';
+	import DiscardDraftDialog from '$lib/components/messages/composer/DiscardDraftDialog.svelte';
 
 	interface Props {
 		value?: string;
@@ -61,14 +65,60 @@
 	let sending = false;
 
 	let showMediaPanel = $state(false);
-	// Stays true through the panel→keyboard swap so the panel remains visible
-	// under the rising keyboard; cleared by the slot's onHidden once covered.
-	let mediaPanelMounted = $state(false);
+
+	let editing = $state<Message | null>(null);
+	let discardDialog: ReturnType<typeof DiscardDraftDialog> | undefined =
+		$state();
+
+	/** Switch the composer to editing `message`'s text instead of sending a
+	 * new message. Media attachments are disabled while editing. Asks to
+	 * discard first when a draft (text or staged media) would be lost. */
+	export function editMessage(message: Message) {
+		if (!editing && hasContent) {
+			discardDialog?.confirm(message);
+			return;
+		}
+		startEdit(message);
+	}
+
+	function startEdit(message: Message) {
+		editing = message;
+		value = message.content.message;
+	}
+
+	function discardDraftAndEdit(message: Message) {
+		media = undefined;
+		startEdit(message);
+	}
+
+	function cancelEdit() {
+		editing = null;
+		value = '';
+	}
+
+	async function submitEdit() {
+		const target = editing;
+		if (!target || sending) return;
+		const text = value.trim();
+		if (!text || text === target.content.message) {
+			cancelEdit();
+			return;
+		}
+		sending = true;
+		try {
+			await store.editMessage(target, text);
+			cancelEdit();
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to edit message', e);
+		} finally {
+			sending = false;
+		}
+	}
 
 	function toggleMediaPanel() {
 		if (!showMediaPanel) {
 			showMediaPanel = true;
-			mediaPanelMounted = true;
 			return;
 		}
 		// Flip the intent right away so the attach button reacts instantly, then
@@ -81,6 +131,10 @@
 
 	/** Returns whether the message was sent (so callers can keep the draft on failure). */
 	async function send(): Promise<boolean> {
+		if (editing) {
+			await submitEdit();
+			return false;
+		}
 		// Guard against concurrent sends: the button shows a spinner, but the
 		// Enter-key path goes straight here, so hammering Enter during a slow
 		// send would otherwise fire multiple store.sendMessage calls.
@@ -155,6 +209,10 @@
 		if (isMobile && media && !page.state.stagedMedia) media = undefined;
 	});
 
+	$effect(() => {
+		if (editing) messageInput?.focus();
+	});
+
 	function openEmojiPicker() {
 		hideKeyboard();
 		showEmojiPicker = true;
@@ -174,6 +232,10 @@
 	<EmojiButton onClick={openEmojiPicker} />
 {/snippet}
 
+{#snippet editingBanner()}
+	<EditingBanner />
+{/snippet}
+
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<div
 		class="message-input-bar relative flow-root {theme === 'ios'
@@ -182,19 +244,22 @@
 		class:bg-page-surface={theme === 'material'}
 		use:renderAboveKeyboard
 	>
-		{#if !isMobile}
+		{#if !editing && !isMobile}
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
-		<div class="m-2 row gap-2" style="align-items: center;">
-			{#if isMobile}
-				{#if theme === 'ios'}
-					<StandaloneAttachButton
-						expanded={showMediaPanel}
-						onClick={toggleMediaPanel}
-					/>
+		<div class="m-2 row gap-2" style="align-items: flex-end;">
+			{#if editing}
+				{#if !isWideScreen.value}
+					<DiscardEditButton onClick={cancelEdit} />
 				{/if}
-			{:else}
+			{:else if isMobile && theme === 'ios'}
+				<StandaloneAttachButton
+					expanded={showMediaPanel}
+					onClick={toggleMediaPanel}
+				/>
+			{/if}
+			{#if !isMobile}
 				<EmojiButton onClick={openEmojiPicker} />
 			{/if}
 			<MessageInput
@@ -205,9 +270,10 @@
 				onpaste={onPaste}
 				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
+				banner={editing !== null ? editingBanner : undefined}
 			>
 				{#snippet after()}
-					{#if isMobile && theme === 'material' && hasContent}
+					{#if !editing && isMobile && theme === 'material' && hasContent}
 						<InlineAttachButton
 							expanded={showMediaPanel}
 							onClick={toggleMediaPanel}
@@ -216,7 +282,12 @@
 				{/snippet}
 			</MessageInput>
 
-			{#if isMobile}
+			{#if editing}
+				{#if isWideScreen.value}
+					<DiscardEditButton onClick={cancelEdit} />
+				{/if}
+				<SendButton onSend={send} editing />
+			{:else if isMobile}
 				{#if isIos}
 					<div
 						class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
@@ -242,20 +313,12 @@
 	</div>
 
 	{#if isMobile}
-		<div
-			use:renderBelowKeyboard={{
-				open: showMediaPanel,
-				onHidden: () => (mediaPanelMounted = false),
-			}}
-			class="bg-page-surface fixed bottom-0 inset-x-0 z-20"
-		>
-			{#if mediaPanelMounted}
-				<MediaPanel
-					onFiles={stageFromPanel}
-					onPickerOpen={() => (showMediaPanel = false)}
-				/>
-			{/if}
-		</div>
+		<BelowKeyboardSurface open={showMediaPanel} class="bg-page-surface z-20">
+			<MediaPanel
+				onFiles={stageFromPanel}
+				onPickerOpen={() => (showMediaPanel = false)}
+			/>
+		</BelowKeyboardSurface>
 	{/if}
 </div>
 
@@ -275,6 +338,8 @@
 		onClose={() => history.back()}
 	/>
 {/if}
+
+<DiscardDraftDialog bind:this={discardDialog} onConfirm={discardDraftAndEdit} />
 
 <Sheet
 	class="pb-safe text-lg"
