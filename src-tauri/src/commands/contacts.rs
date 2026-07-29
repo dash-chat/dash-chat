@@ -93,6 +93,7 @@ pub async fn unblock_contact(agent_id: AgentId, app_node: State<'_, AppNode>) ->
 
 /// Returns every mailbox the contact has been reported to so far; empty means
 /// no mailbox could be reached and the report has not been delivered anywhere.
+/// Errors when the contact has no known devices, which no retry would fix.
 #[tauri::command]
 pub async fn report_contact(
     agent_id: AgentId,

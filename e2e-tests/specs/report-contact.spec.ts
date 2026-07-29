@@ -99,6 +99,35 @@ describe('report contact', () => {
 		await agent1.directChatPage.ready();
 	});
 
+	// Also runs before the successful report below, for the same reason.
+	it('reports from the new-message contact menu', async function () {
+		if (isRemoteMailbox()) this.skip();
+
+		await agent1.directChatPage.back.click();
+		await agent1.homePage.ready();
+		await agent1.homePage.newMessageButton.click();
+		await agent1.newMessagePage.ready();
+
+		killMailbox();
+		try {
+			await agent1.newMessagePage.contactMenuButton.click();
+			await agent1.newMessagePage.contactReport.waitForDisplayed();
+			await agent1.newMessagePage.contactReport.click();
+			await agent1.newMessagePage.reportConfirm.waitForDisplayed();
+			await agent1.newMessagePage.reportConfirm.click();
+
+			await agent1.toast.expectMessageContaining(
+				'No message server could be reached',
+			);
+		} finally {
+			await restartMailbox();
+		}
+
+		await agent1.newMessagePage.back.click();
+		await agent1.homePage.ready();
+		await agent1.homePage.openChat('Bob');
+	});
+
 	it('reports from chat settings and shows the reported indicator', async () => {
 		await agent1.directChatPage.settingsLink.click();
 		await agent1.chatSettingsPage.ready();
@@ -129,6 +158,24 @@ describe('report contact', () => {
 					'Reported',
 				),
 			{ timeoutMsg: 'reported state did not persist across navigation' },
+		);
+	});
+
+	it('shows the reported state in the new-message contact menu', async () => {
+		await agent1.chatSettingsPage.back.click();
+		await agent1.directChatPage.ready();
+		await agent1.directChatPage.back.click();
+		await agent1.homePage.ready();
+		await agent1.homePage.newMessageButton.click();
+		await agent1.newMessagePage.ready();
+
+		await agent1.newMessagePage.contactMenuButton.click();
+		await agent1.waitUntil(
+			async () =>
+				(await agent1.newMessagePage.contactReport.getText()).includes(
+					'Reported',
+				),
+			{ timeoutMsg: 'contact menu never switched to the reported state' },
 		);
 	});
 });

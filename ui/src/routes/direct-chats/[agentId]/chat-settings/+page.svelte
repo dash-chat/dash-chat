@@ -20,6 +20,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { onActivate } from '$lib/utils/keyboard';
 	import { showToast } from '$lib/utils/toasts';
+	import { reportContactWithFeedback } from '$lib/utils/report-contact';
 	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
 	import ReportContactDialog from '$lib/components/contacts/ReportContactDialog.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
@@ -67,8 +68,7 @@
 
 	async function confirmReport() {
 		showReportDialog = false;
-		const mailboxes = await contactsStore.reportContact(agentId);
-		if (mailboxes.length === 0) showToast(m.reportNoMailboxReached());
+		await reportContactWithFeedback(contactsStore, agentId);
 	}
 
 	function comingSoon() {

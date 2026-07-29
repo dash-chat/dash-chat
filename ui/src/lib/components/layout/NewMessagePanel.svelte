@@ -16,7 +16,7 @@
 	import { goto } from '$app/navigation';
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { showToast } from '$lib/utils/toasts';
+	import { reportContactWithFeedback } from '$lib/utils/report-contact';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
 		Navbar,
@@ -59,9 +59,11 @@
 		profile: Profile,
 		blocked: boolean,
 	) {
+		menuIsReported = false;
 		menuFor = { agentId, profile };
 		menuIsBlocked = blocked;
-		menuIsReported = await contactsStore.client.isContactReported(agentId);
+		const reported = await contactsStore.client.isContactReported(agentId);
+		if (menuFor?.agentId === agentId) menuIsReported = reported;
 	}
 
 	function requestBlockToggle() {
@@ -94,9 +96,8 @@
 		if (!dialogFor) return;
 		const { agentId } = dialogFor;
 		showReportDialog = false;
-		const mailboxes = await contactsStore.reportContact(agentId);
-		if (mailboxes.length === 0) showToast(m.reportNoMailboxReached());
 		dialogFor = null;
+		await reportContactWithFeedback(contactsStore, agentId);
 	}
 
 	const isAddContact = $derived(

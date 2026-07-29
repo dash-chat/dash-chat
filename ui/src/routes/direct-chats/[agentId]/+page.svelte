@@ -46,6 +46,7 @@
 	import ProfileNamesSheet from '$lib/components/ProfileNamesSheet.svelte';
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
+	import { reportContactWithFeedback } from '$lib/utils/report-contact';
 	import type { Action } from 'svelte/action';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
@@ -154,15 +155,7 @@
 
 	async function confirmReport() {
 		showReportDialog = false;
-		try {
-			const mailboxes = await contactsStore.reportContact(agentId);
-			showToast(
-				mailboxes.length > 0 ? m.reported() : m.reportNoMailboxReached(),
-			);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
+		await reportContactWithFeedback(contactsStore, agentId);
 	}
 
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
