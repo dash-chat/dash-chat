@@ -157,17 +157,17 @@ pub async fn build_notification_data(
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
             Some(chat_message_notification(node, topic, sender_device_id, content, id).await)
         }
-        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
-            Some(NotificationData {
-                id,
-                title: Some(sonix_i18n::t!("newContactRequest")),
-                body: Some(profile.name.clone()),
-                icon: Some("ic_stat_icon".to_string()),
-                group: Some(topic.to_hex()),
-                route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
-                ..Default::default()
-            })
-        }
+        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest {
+            agent_id, profile, ..
+        }) => Some(NotificationData {
+            id,
+            title: Some(sonix_i18n::t!("newContactRequest")),
+            body: Some(profile.name.clone()),
+            icon: Some("ic_stat_icon".to_string()),
+            group: Some(topic.to_hex()),
+            route: Some(format!("/direct-chats/{}", agent_id.to_hex())),
+            ..Default::default()
+        }),
         _ => None,
     }
 }
@@ -188,7 +188,7 @@ async fn chat_message_notification(
     };
 
     let sender_profile = if let Some(agent_id) = sender_agent_id {
-        node.local_store.get_profile(agent_id).await.ok().flatten()
+        node.projection.get_profile(agent_id).await.ok().flatten()
     } else {
         None
     };
@@ -311,7 +311,7 @@ async fn auth_control_op_notification(
     let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
     let sender_name = match sender_agent_id {
         Some(agent_id) => node
-            .local_store
+            .projection
             .get_profile(agent_id)
             .await
             .ok()

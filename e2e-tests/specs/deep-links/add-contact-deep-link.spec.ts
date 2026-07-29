@@ -1,14 +1,11 @@
-import { type Agent, setupAgent } from '../../setup/setup-agents';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Deep links', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 		await Promise.all([
 			agent1.createProfilePage.createProfile('Alice', 'Test'),
 			agent2.createProfilePage.createProfile('Bob', 'Test'),
@@ -16,25 +13,21 @@ describe('Deep links', () => {
 	});
 
 	describe('add-contact deep link', () => {
-		it('shows an error toast for an invalid contact code', async () => {
+		it('shows an error toast for an invalid contact code without navigating', async () => {
 			await agent1.handleDeepLink(
 				'https://dashchat.org/add-contact/invalidcode',
 			);
-			await agent1.addContactPage.ready();
 			await agent1.toast.expectMessage(
-				await agent1.tr('errorAddContactInvalidCode'),
+				await agent1.tr('errorAddContactInvalidLink'),
 			);
-			await agent1.addContactPage.back.click();
 			await agent1.homePage.ready();
 		});
 
 		it('shows an error toast for a scheme-based deep link with an invalid contact code', async () => {
 			await agent1.handleDeepLink('dash-chat://add-contact/invalidcode');
-			await agent1.addContactPage.ready();
 			await agent1.toast.expectMessage(
-				await agent1.tr('errorAddContactInvalidCode'),
+				await agent1.tr('errorAddContactInvalidLink'),
 			);
-			await agent1.addContactPage.back.click();
 			await agent1.homePage.ready();
 		});
 
@@ -42,15 +35,13 @@ describe('Deep links', () => {
 			await agent2.homePage.newMessageButton.click();
 			await agent2.newMessagePage.addContact.click();
 			await agent2.addContactPage.ready();
-			const code = await agent2.addContactPage.getContactCode();
+			const link = await agent2.addContactPage.getAddContactLink();
 
 			await agent2.addContactPage.back.click();
 			await agent2.newMessagePage.back.click();
 			await agent2.homePage.ready();
 
-			await agent1.handleDeepLink(
-				`https://dashchat.org/add-contact/${encodeURIComponent(code)}`,
-			);
+			await agent1.handleDeepLink(link);
 			await agent1.directChatPage.ready();
 
 			await agent2.waitUntil(

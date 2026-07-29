@@ -63,7 +63,10 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         if hashes.is_empty() {
             continue; // no unfetched blobs to re-announce
         }
-        match mailbox_client::toy::send_store_blobs(&url, hashes, self_endpoint).await {
+        // Re-announce so the mailbox re-registers these hashes for fetching. No
+        // upload follows here, so ask it to fetch immediately rather than deferring
+        // by its grace window.
+        match mailbox_client::toy::send_register_hashes(&url, hashes, self_endpoint, false).await {
             Ok(already_stored) => {
                 if let Err(err) = node
                     .local_store
@@ -76,7 +79,7 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
                 tracing::info!(mailbox = %mailbox_id, %already_stored_count, "re-sent unfetched blobs");
             }
             Err(err) => {
-                tracing::warn!(?err, mailbox = %mailbox_id, "followup store_blobs failed");
+                tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
             }
         }
     }
@@ -111,7 +114,10 @@ mod tests {
     #[tokio::test]
     async fn tracker_writes_through_to_local_store() {
         let dir = tempfile::tempdir().unwrap();
-        let store = LocalStore::new(dir.path().join("t.db")).await.unwrap();
+        let pool = crate::stores::create_sqlite_pool(dir.path().join("t.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
         let tracker = LocalStoreBlobTracker::new(store.clone());
         let h = iroh_blobs::Hash::new([5; 32]);
 

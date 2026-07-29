@@ -120,6 +120,12 @@ impl AppNode {
         };
         if no_p2p {
             config.no_p2p().no_blob_sync()
+        } else if std::env::var_os("DASHCHAT_NO_P2P").is_some() {
+            // Dev/testing escape hatch: force all communication through mailbox
+            // servers so peers can't sync directly over p2p. Keeps blob sync so
+            // media still flows over the mailbox.
+            log::warn!("DASHCHAT_NO_P2P set: disabling peer-to-peer connectivity");
+            config.no_p2p()
         } else {
             config
         }

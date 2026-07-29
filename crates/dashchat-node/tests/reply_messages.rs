@@ -78,10 +78,7 @@ async fn cannot_reply_to_a_non_message_payload() {
     let mailbox = MemMailbox::new();
     let (alice, _bobbi, chat_id) = two_friends(&mailbox).await;
 
-    let msg = alice
-        .send_message(chat_id, "hi", None, None)
-        .await
-        .unwrap();
+    let msg = alice.send_message(chat_id, "hi", None, None).await.unwrap();
     let reaction = alice
         .add_reaction(
             chat_id,
@@ -130,10 +127,7 @@ async fn reply_must_target_the_latest_known_edit() {
     let mailbox = MemMailbox::new();
     let (alice, _bobbi, chat_id) = two_friends(&mailbox).await;
 
-    let original = alice
-        .send_message(chat_id, "v1", None, None)
-        .await
-        .unwrap();
+    let original = alice.send_message(chat_id, "v1", None, None).await.unwrap();
     let edit = alice
         .edit_message(chat_id, original.hash(), "v2")
         .await
@@ -170,7 +164,10 @@ async fn cannot_reply_to_a_deleted_message() {
         .send_message(chat_id, "going away", None, None)
         .await
         .unwrap();
-    alice.delete_message(chat_id, msg.hash()).await.unwrap();
+    alice
+        .delete_message_for_everyone(chat_id, msg.hash())
+        .await
+        .unwrap();
 
     // The delete tombstoned the target, so it no longer resolves.
     let err = alice
@@ -190,10 +187,7 @@ async fn receiver_ignores_reply_to_a_reaction() {
     let mailbox = MemMailbox::new();
     let (alice, bobbi, chat_id) = two_friends(&mailbox).await;
 
-    let msg = alice
-        .send_message(chat_id, "hi", None, None)
-        .await
-        .unwrap();
+    let msg = alice.send_message(chat_id, "hi", None, None).await.unwrap();
     let reaction = alice
         .add_reaction(
             chat_id,
@@ -243,10 +237,7 @@ async fn receiver_accepts_reply_to_an_edit_it_knows_is_superseded() {
     let mailbox = MemMailbox::new();
     let (alice, bobbi, chat_id) = two_friends(&mailbox).await;
 
-    let original = alice
-        .send_message(chat_id, "v1", None, None)
-        .await
-        .unwrap();
+    let original = alice.send_message(chat_id, "v1", None, None).await.unwrap();
 
     poll.wait_for(|| async {
         let n = bobbi.get_messages(chat_id).await.unwrap().len();

@@ -317,7 +317,7 @@ jobs:
           echo "PUSH_NOTIFICATIONS_SERVER_URL=$PUSH_NOTIFICATIONS_SERVER_URL" >> "$GITHUB_ENV"
 
       - name: Install and Build 🔧
-        run: pnpm install && pnpm tauri android build --aab --apk -- --stacktrace
+        run: pnpm install && pnpm tauri android build --aab --apk
 
       - name: Upload AAB to release
         uses: svenstaro/upload-release-action@v2

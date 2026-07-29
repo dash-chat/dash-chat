@@ -3,6 +3,8 @@ use std::time::Duration;
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::toy::ToyMailboxClient;
 
+mod common;
+
 /// Once a mailbox introduces two `no_p2p` nodes, removing the mailbox must stop
 /// all further sync — unlike the default p2p mode, there is no direct fallback
 /// channel. This is the inverse of `tests/bootstrap.rs::test_mailbox_bootstrap`.
@@ -87,34 +89,18 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
     let mailbox_addr = relay.iroh_endpoint().await.unwrap().addr();
 
     let mailbox_dir = tempfile::tempdir().unwrap();
-    let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
-    let server = mailbox_local_server::spawn_local_mailbox_server(
+    let server = common::spawn_relay_mailbox(
+        &relay,
         mailbox_dir.path().join("mailbox.redb"),
-        relay.blobs(),
-        relay.blob_downloader(),
-        relay.iroh_endpoint().await.unwrap(),
-        Some(mailbox_server::FetchConfig {
+        mailbox_server::FetchConfig {
             concurrency: 4,
             attempt_timeout: Duration::from_secs(10),
             pass_interval: Duration::from_secs(2),
             retry_cooldown: Duration::from_secs(2),
-        }),
-        peer_addr_tx,
+        },
     )
-    .await
-    .unwrap();
+    .await;
     let url = server.url.clone();
-    mailbox_client::toy::wait_for_mailbox_health(&url).await;
-
-    // Forward addresses peers register with the mailbox into the relay node's
-    // address book, so its shared blob fetcher can dial them (the in-process
-    // equivalent of `src-tauri/src/mailbox/server.rs`).
-    let relay_for_addrs = relay.clone();
-    tokio::spawn(async move {
-        while let Some(addr) = peer_addr_rx.recv().await {
-            let _ = relay_for_addrs.insert_peer_addr(addr).await;
-        }
-    });
 
     let config = NodeConfig::testing().no_p2p();
 
@@ -252,31 +238,18 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
     let mailbox_addr = relay.iroh_endpoint().await.unwrap().addr();
 
     let mailbox_dir = tempfile::tempdir().unwrap();
-    let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
-    let server = mailbox_local_server::spawn_local_mailbox_server(
+    let server = common::spawn_relay_mailbox(
+        &relay,
         mailbox_dir.path().join("mailbox.redb"),
-        relay.blobs(),
-        relay.blob_downloader(),
-        relay.iroh_endpoint().await.unwrap(),
-        Some(mailbox_server::FetchConfig {
+        mailbox_server::FetchConfig {
             concurrency: 4,
             attempt_timeout: Duration::from_secs(10),
             pass_interval: Duration::from_secs(2),
             retry_cooldown: Duration::from_secs(2),
-        }),
-        peer_addr_tx,
+        },
     )
-    .await
-    .unwrap();
+    .await;
     let url = server.url.clone();
-    mailbox_client::toy::wait_for_mailbox_health(&url).await;
-
-    let relay_for_addrs = relay.clone();
-    tokio::spawn(async move {
-        while let Some(addr) = peer_addr_rx.recv().await {
-            let _ = relay_for_addrs.insert_peer_addr(addr).await;
-        }
-    });
 
     let config = NodeConfig::testing().no_p2p();
 

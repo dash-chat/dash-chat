@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.19.9"
+version = "0.19.13"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -21,6 +21,7 @@ vergen-gitcl = "9"
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
 
+tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -31,7 +32,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
 
-tauri-plugin-virtual-keyboard-padding = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding", branch = "main" }
+tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "665a4049f8acd67b9cb251afe4e91a2323a115cc" }
 tauri-plugin-mailto = { git = "https://github.com/dash-chat/tauri-plugin-mailto", branch = "main" }
 tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "push-notifications", features = [
   "push-notifications-fcm",
@@ -55,7 +56,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 thiserror = "2.0"
 regex = "1"
 hex = "0.4.3"
-mdns-sd = "0.17"
+mdns-sd = "0.20"
 nanoid = "0"
 image = "0.25"
 
@@ -123,12 +124,11 @@ objc2 = "0.6"
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"
-tauri-plugin-mcp-bridge = "0.8"
 mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
 
 [features]
-e2e-tests = []
+e2e-tests = ["dashchat-node/testing"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

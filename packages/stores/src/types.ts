@@ -1,6 +1,11 @@
 import { Profile } from './contacts/contacts-client';
-import type { Message } from './direct-chats/direct-chat-store';
-import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
+import {
+	AgentId,
+	DeviceId,
+	Hash,
+	TopicId,
+	VerifyingKey,
+} from './p2panda/types';
 
 export type ChatId = TopicId;
 
@@ -170,23 +175,6 @@ export type ChatPayload =
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo };
 
-export interface InboxTopic {
-	expires_at: number;
-	topic: TopicId;
-}
-
-export type ShareIntent = 'AddDevice' | 'AddContact';
-
-export interface ContactCode {
-	/// Pubkey of this node: allows adding this node to groups.
-	device_pubkey: DeviceId;
-	/// Agent ID to add to spaces
-	agent_id: AgentId;
-	inbox_topic: InboxTopic | undefined;
-	/// The intent of the QR code: whether to add this node as a contact or a device.
-	share_intent: ShareIntent;
-}
-
 export interface ReadMessagesPayload {
 	chat_id: ChatId;
 	message_hashes: Hash[];
@@ -194,30 +182,52 @@ export interface ReadMessagesPayload {
 
 export interface DeleteForMePayload {
 	chat_id: ChatId;
-	/** The complete edit chain being deleted (a single hash when the message
-	 * was never edited), mirroring `DeleteMessagePayload`. */
-	hashes: Hash[];
+	/** The original message being deleted. Its edit chain (present and future)
+	 * is tombstoned transitively by the backend, so only the root is named
+	 * here — unlike `DeleteMessagePayload`, which lists the whole chain. */
+	message_hash: Hash;
+}
+
+/** Why an operation was tombstoned, mirroring the backend `TombstoneReason`. A
+ * delete-for-everyone still shows a "deleted" placeholder for the author's
+ * message; a delete-for-me vanishes with no trace. */
+export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
+
+export interface Tombstone {
+	hash: Hash;
+	reason: TombstoneReason;
 }
 
 export type DeviceGroupPayload =
-	| { type: 'AddContact'; payload: ContactCode }
+	| { type: 'AddContact'; payload: { agent_id: AgentId } }
+	| { type: 'PendingContactRequest'; payload: { device_pubkey: DeviceId } }
 	| { type: 'RejectContactRequest'; payload: AgentId }
+	| { type: 'BlockAgent'; payload: AgentId }
+	| { type: 'UnblockAgent'; payload: AgentId }
 	| { type: 'ReadMessages'; payload: ReadMessagesPayload }
 	| { type: 'DeleteForMe'; payload: DeleteForMePayload };
 
 export type InboxPayload = {
 	type: 'ContactRequest';
 	payload: {
-		code: ContactCode;
 		profile: Profile;
+		agent_id: AgentId;
+		reply_topic: TopicId;
 	};
 };
+
+/** `p2panda_auth::processor::GroupsArgs`; `action` is not modeled here. */
+export interface GroupControlPayload {
+	group_id: VerifyingKey;
+	dependencies: Hash[];
+}
 
 export type Payload =
 	| { type: 'Announcements'; payload: AnnouncementPayload }
 	| { type: 'Chat'; payload: ChatPayload }
 	| { type: 'DeviceGroupPayload'; payload: DeviceGroupPayload }
-	| { type: 'Inbox'; payload: InboxPayload };
+	| { type: 'Inbox'; payload: InboxPayload }
+	| { type: 'GroupControl'; payload: GroupControlPayload };
 
 export type MessageId = string;
 
@@ -233,22 +243,6 @@ export type MessageId = string;
 // 	author: VerifyingKey;
 // 	timestamp: number;
 // }
-
-export interface MessagesStore {
-	markAsRead(messageHashes: Hash[]): Promise<void>;
-	/** Sends the message and resolves with the operation id of the created
-	 * message once it is confirmed in the local log. When `replyTo` is set,
-	 * the message is sent as a reply to that message's latest known edit. */
-	sendMessage(input: {
-		message: string;
-		media: OutgoingMedia | null;
-		replyTo?: Message | null;
-	}): Promise<Hash>;
-	editMessage(message: Message, newText: string): Promise<Hash>;
-	deleteMessage(message: Message): Promise<Hash>;
-	deleteMessageForMe(message: Message): Promise<Hash>;
-	sendReaction(reaction: ChatReaction): Promise<void>;
-}
 
 export type GroupControlEvent =
 	| {
@@ -289,13 +283,53 @@ export type GroupControlEvent =
 			timestamp: number;
 	  };
 
+/** A single version of a message's text, with the time it was authored. */
+export interface MessageVersion {
+	hash: string;
+	text: string;
+	timestamp: number;
+}
+
+/** The live, renderable body of a message: its text, media, reactions and edit
+ * history. */
+export interface MessageBody {
+	message: string;
+	media: MediaAttachment | null;
+	reactions: Record<DeviceId, string>;
+	editHistory: MessageVersion[];
+}
+
+/** The renderable content of a message, or a sentinel that replaces the body
+ * entirely (dropping text, media, reactions and edits):
+ * - `'deleted-for-everyone'`: the message was deleted for everyone (a delete op
+ *   references it). Rendered as the deleted placeholder.
+ * - `'body-unavailable'`: the operation's payload is gone but no delete op
+ *   justifies it — an anomaly (e.g. a peer that synced the body-less op before
+ *   the delete arrives). Rendered as an error bubble to bring attention to it. */
+export type MessageDisplay =
+	| MessageBody
+	| 'deleted-for-everyone'
+	| 'body-unavailable';
+
+/** Whether a message still has a live body. Written as a type guard so the
+ * `true` branch narrows `content` to `MessageBody`. */
+export function hasBody(content: MessageDisplay): content is MessageBody {
+	return typeof content !== 'string';
+}
+
+/** Whether a message was deleted for everyone. */
+export function isDeleted(
+	content: MessageDisplay,
+): content is 'deleted-for-everyone' {
+	return content === 'deleted-for-everyone';
+}
+
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			content: { message: string; media: MediaAttachment | null };
+			content: MessageDisplay;
 			authorName?: string;
 			timestamp: number;
-			deleted?: boolean;
 	  }
 	| { kind: 'contact_request'; timestamp: number }
 	| { kind: 'contact_added'; timestamp: number }
@@ -308,4 +342,5 @@ export interface ChatSummary {
 	name: string;
 	avatar: string | undefined;
 	lastEvent: ChatSummaryLastEvent;
+	waitingForProfile?: true;
 }

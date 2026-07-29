@@ -4,7 +4,6 @@
 	import { mdiArrowLeft } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
-		Button,
 		Link,
 		Navbar,
 		Segmented,
@@ -12,6 +11,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import { TextAvatarData } from './text-avatar-data-url';
 	import { TEXT_AVATAR_TEXT_COLOR } from './Avatar.svelte';
 
@@ -180,15 +180,13 @@
 {/if}
 
 {#if !isIos}
-	<Button
-		rounded
+	<FixedActionButton
 		tonal
 		disabled={!currentTextAvatar.text}
 		onClick={generateTextAvatar}
-		class="fixed-action-btn"
 	>
 		{m.done()}
-	</Button>
+	</FixedActionButton>
 {/if}
 
 <style>

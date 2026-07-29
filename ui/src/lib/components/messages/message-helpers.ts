@@ -1,8 +1,9 @@
 import {
-	DELETE_WINDOW_MS,
+	DELETE_FOR_EVERYONE_WINDOW_MS,
 	type DeviceId,
 	EDIT_WINDOW_MS,
 	type Message,
+	hasBody,
 } from 'dash-chat-stores';
 
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
@@ -11,20 +12,20 @@ export function canEditMessage(
 	message: Message,
 	myDeviceId: DeviceId,
 ): boolean {
-	if (message.deleted) return false;
+	if (!hasBody(message.content)) return false;
 	if (message.author !== myDeviceId) return false;
-	const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
-	return Date.now() - rootTimestamp <= EDIT_WINDOW_MS;
+	// `timestamp` is the original message op's; edits never change it.
+	return Date.now() - message.timestamp <= EDIT_WINDOW_MS;
 }
 
-export function canDeleteMessage(
+export function canDeleteMessageForEveryone(
 	message: Message,
 	myDeviceId: DeviceId,
 ): boolean {
-	if (message.deleted) return false;
+	if (!hasBody(message.content)) return false;
 	if (message.author !== myDeviceId) return false;
-	const rootTimestamp = message.history?.[0]?.timestamp ?? message.timestamp;
-	return Date.now() - rootTimestamp <= DELETE_WINDOW_MS;
+	// `timestamp` is the original message op's; edits never change it.
+	return Date.now() - message.timestamp <= DELETE_FOR_EVERYONE_WINDOW_MS;
 }
 
 export function messagePosition(
@@ -61,4 +62,21 @@ export function highlightMatch(text: string, query: string): string {
 		new RegExp(`(${escaped})`, 'gi'),
 		'<mark class="search-highlight">$1</mark>',
 	);
+}
+
+/** Scroll `root` to the message with `hash` and flash its bubble. Used by both
+ * chat search and reply-quote navigation. */
+export function scrollToMessage(
+	root: HTMLElement | undefined,
+	hash: string,
+): void {
+	const el = root?.querySelector(`[data-message-hash="${hash}"]`);
+	if (!el) return;
+	el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	root
+		?.querySelectorAll('.search-flash')
+		.forEach(e => e.classList.remove('search-flash'));
+	const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
+	void (card as HTMLElement).offsetWidth;
+	card.classList.add('search-flash');
 }

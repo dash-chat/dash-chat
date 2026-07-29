@@ -3,6 +3,7 @@
 	import '@awesome.me/webawesome/dist/styles/themes/default.css';
 
 	import '../app.css';
+	import 'tauri-plugin-virtual-keyboard';
 	import { setContext } from 'svelte';
 
 	import {
@@ -24,26 +25,25 @@
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
-		MockDirectChatClient,
-		MockGroupChatClient,
+		MockChatsStore,
 		MockMailboxTrackerStore,
 		MockSettingsClient,
 		seedDemoData,
 		DEMO_IDS,
 	} from 'dash-chat-stores';
-	import { App, KonstaProvider } from 'konsta/svelte';
+	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
+	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
-	import { trackKeyboardHeight } from '$lib/utils/keyboard.svelte';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 	import {
 		listenForDeepLinks,
@@ -76,7 +76,7 @@
 			setLocale as (locale: string) => void,
 			m,
 			() => previewFeatures.enable(),
-			url => handleUrls([url]),
+			url => handleUrls([url], contactsStore),
 		),
 	);
 
@@ -122,17 +122,13 @@
 		);
 
 		const mockChatsClient = new MockChatsClient();
-		chatsStore = new ChatsStore(
+		chatsStore = new MockChatsStore(
 			logsStore,
 			contactsStore,
 			mockChatsClient,
-			() =>
-				new MockDirectChatClient(
-					mockLogsClient,
-					DEMO_IDS.MY_AGENT_ID,
-					DEMO_IDS.DEVICE_GROUP_TOPIC,
-				),
-			() => new MockGroupChatClient(),
+			mockLogsClient,
+			DEMO_IDS.MY_AGENT_ID,
+			DEMO_IDS.DEVICE_GROUP_TOPIC,
 		);
 
 		mailboxTrackerStore = new MockMailboxTrackerStore();
@@ -180,10 +176,6 @@
 	});
 
 	$effect(() => {
-		if (isMobile) trackKeyboardHeight();
-	});
-
-	$effect(() => {
 		const handler = (event: CustomEvent) => {
 			theme = event.detail.theme;
 		};
@@ -209,11 +201,11 @@
 	});
 
 	if (isTauriEnv()) {
-		handleLaunchDeepLink();
+		handleLaunchDeepLink(contactsStore);
 	}
 	$effect(() => {
 		if (!isTauriEnv()) return;
-		return listenForDeepLinks();
+		return listenForDeepLinks(contactsStore);
 	});
 </script>
 
@@ -236,6 +228,15 @@
 				{/if}
 			{/key}
 		</SplashscreenPrompt>
+		{#if addContactPending.value}
+			<div
+				class="fixed inset-0 z-40 flex items-center justify-center"
+				style="background-color: var(--background-color)"
+				data-testid="add-contact-pending-overlay"
+			>
+				<Preloader />
+			</div>
+		{/if}
 		<ToastManager />
 	</App>
 </KonstaProvider>

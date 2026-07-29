@@ -1,6 +1,6 @@
 import { LogsClient, waitForOperation } from '../p2panda/logs-client';
 import { AgentId, DeviceId, type TopicId } from '../p2panda/types';
-import { ContactCode, Payload } from '../types';
+import { Payload } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface Profile {
@@ -21,23 +21,44 @@ export interface IContactsClient {
 
 	myDeviceId(): Promise<DeviceId>;
 
+	// Resolve the agent id recorded for a device pubkey, if the contact is
+	// established. Undefined while an outgoing request is still pending.
+	agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined>;
+
 	// Sets the profile for this user
 	setProfile(profile: Profile): Promise<void>;
 
 	/// contacts
 
-	// Creates a new contact code to be shared
-	createContactCode(): Promise<ContactCode>;
+	// Creates a new contact code string to be shared
+	createContactCode(): Promise<string>;
 
 	activeInboxTopics(): Promise<TopicId[]>;
 
 	// getContacts(): Promise<Array<VerifyingKey>>;
 
-	// Add contact
-	addContact(code: ContactCode): Promise<void>;
+	// Add a contact from the given encoded contact code string; returns the device pubkey
+	addContact(code: string): Promise<DeviceId>;
+
+	// Accept an incoming contact request
+	acceptContact(agentId: AgentId): Promise<void>;
 
 	// Reject contact request
 	rejectContactRequest(agentId: AgentId): Promise<void>;
+
+	// Block a contact
+	blockContact(agentId: AgentId): Promise<void>;
+
+	// Unblock a contact
+	unblockContact(agentId: AgentId): Promise<void>;
+
+	// Report a contact to the shared infrastructure. Resolves with every mailbox
+	// the contact has been reported to so far; empty means no mailbox could be
+	// reached and the report was not delivered anywhere.
+	reportContact(agentId: AgentId): Promise<string[]>;
+
+	// Whether a contact has already been reported
+	isContactReported(agentId: AgentId): Promise<boolean>;
 
 	// Remove contact
 	// removeContact(contact: ContactId): Promise<void>;
@@ -68,13 +89,21 @@ export class ContactsClient implements IContactsClient {
 		return invokeAfterSetup('my_device_id');
 	}
 
+	async agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined> {
+		return (
+			(await invokeAfterSetup<AgentId | null>('agent_for_device', {
+				devicePubkey,
+			})) ?? undefined
+		);
+	}
+
 	async setProfile(profile: Profile): Promise<void> {
 		return invokeAfterSetup('set_profile', {
 			profile,
 		});
 	}
 
-	createContactCode(): Promise<ContactCode> {
+	createContactCode(): Promise<string> {
 		return invokeAfterSetup('create_contact_code');
 	}
 
@@ -82,28 +111,32 @@ export class ContactsClient implements IContactsClient {
 		return invokeAfterSetup('active_inbox_topics');
 	}
 
-	async addContact(contactCode: ContactCode): Promise<void> {
-		await Promise.all([
-			invokeAfterSetup('add_contact', { contactCode }),
-			waitForOperation(
-				this.logsClient,
-				op =>
-					op.body?.payload.type === 'AddContact' &&
-					op.body.payload.payload.agent_id === contactCode.agent_id,
-			),
-		]);
+	async addContact(contactCode: string): Promise<DeviceId> {
+		return invokeAfterSetup('add_contact', { contactCode });
+	}
+
+	async acceptContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('accept_contact', { agentId });
 	}
 
 	async rejectContactRequest(agentId: AgentId): Promise<void> {
-		await Promise.all([
-			invokeAfterSetup('reject_contact_request', { agentId }),
-			waitForOperation(
-				this.logsClient,
-				op =>
-					op.body?.payload.type === 'RejectContactRequest' &&
-					op.body.payload.payload === agentId,
-			),
-		]);
+		await invokeAfterSetup('reject_contact_request', { agentId });
+	}
+
+	async blockContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('block_contact', { agentId });
+	}
+
+	async unblockContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('unblock_contact', { agentId });
+	}
+
+	reportContact(agentId: AgentId): Promise<string[]> {
+		return invokeAfterSetup('report_contact', { agentId });
+	}
+
+	isContactReported(agentId: AgentId): Promise<boolean> {
+		return invokeAfterSetup('is_contact_reported', { agentId });
 	}
 
 	// getContacts(): Promise<Array<VerifyingKey>> {

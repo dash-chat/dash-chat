@@ -20,7 +20,10 @@
 	import { Page } from 'konsta/svelte';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import { watcher } from 'signalium';
+	import { insetTarget } from 'tauri-plugin-virtual-keyboard';
 	import { findNavbarBg } from '$lib/utils/konsta';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 
 	interface PageColors {
 		bgIos?: string;
@@ -141,14 +144,33 @@
 			// keep them visually separated. As the user scrolls up toward the top
 			// of the content (welcome card / avatar area), the bg fades out so the
 			// navbar blends with the welcome surface.
+			// The top of the scroll range is the inner div's navbar-height
+			// padding, not content — subtract it so a chat whose content barely
+			// overflows (slack ≤ padding) still reads as nothing-under-navbar.
 			// WebKit uses negative scrollTop in column-reverse; abs() normalises.
-			const maxScroll = node.scrollHeight - node.clientHeight;
+			//
+			// Keyboard animations make DOM geometry lie (the show reflow is
+			// deferred to the end of the glide), so compute against the viewport
+			// height the layout is heading to: correct clientHeight by the gap
+			// between the applied inset (the CSS var) and the plugin's target.
+			// Every recompute then gives the same answer no matter where in the
+			// glide it runs. inner's rect height stands in for scrollHeight —
+			// equal whenever content overflows, and translation transforms don't
+			// affect it.
+			const appliedInset =
+				parseFloat(
+					document.documentElement.style.getPropertyValue(
+						'--keyboard-inset-height',
+					),
+				) || 0;
+			const clientHeight = node.clientHeight + appliedInset - insetTarget.value;
+			const maxScroll = Math.max(
+				inner.getBoundingClientRect().height - clientHeight,
+				0,
+			);
+			const navbarHeight = observedNavbar?.offsetHeight ?? 0;
 			navbarBgEl.style.opacity =
-				maxScroll < 1
-					? '0'
-					: maxScroll - Math.abs(node.scrollTop) > 10
-						? '1'
-						: '0';
+				maxScroll - Math.abs(node.scrollTop) - navbarHeight > 10 ? '1' : '0';
 		};
 
 		// Coalesce mutation-driven updates to one per frame.
@@ -270,17 +292,26 @@
 		const pageObserver = new MutationObserver(scheduleUpdate);
 		pageObserver.observe(pageEl, { childList: true, subtree: false });
 
-		// Re-evaluate when the viewport shrinks/grows (e.g. the iOS keyboard
-		// opening resizes the WKWebView frame) — clientHeight changes shift
-		// maxScroll, so the opacity formula needs to re-run even when scrollTop
-		// itself didn't move.
+		// Re-evaluate when the node shrinks/grows (e.g. the layout's
+		// --keyboard-inset-height padding squeezing it while the keyboard opens) —
+		// clientHeight changes shift maxScroll, so the opacity formula needs to
+		// re-run even when scrollTop itself didn't move.
 		const resizeObserver = new ResizeObserver(scheduleUpdate);
 		resizeObserver.observe(node);
+
+		// The inset target flips at intent time (willShow/willHide), before any
+		// reflow — re-running the opacity here is what makes the navbar track
+		// the glide from its first frame on both show and hide. The fn must
+		// RETURN the value: signalium only notifies listeners when the watched
+		// computation's result changes, so a void fn never fires.
+		const insetWatcher = watcher(() => insetTarget.value);
+		const unsubscribeInset = insetWatcher.addListener(updateNavbar);
 
 		syncNavbar();
 		updateNavbar();
 
 		return () => {
+			unsubscribeInset();
 			if (frame) cancelAnimationFrame(frame);
 			innerObserver.disconnect();
 			pageObserver.disconnect();
@@ -306,9 +337,11 @@
 		style="overflow-anchor: none"
 		{...scrollProps}
 	>
+		<div style="flex: 1 0 auto"></div>
 		<div
 			bind:this={innerEl}
-			style="flex: 1 0 auto; padding-top: var(--chat-navbar-height, 0px);"
+			use:renderAboveKeyboard
+			style="flex: 0 0 auto; padding-top: var(--chat-navbar-height, 0px);"
 		>
 			{@render children?.()}
 		</div>

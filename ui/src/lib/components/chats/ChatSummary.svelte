@@ -2,7 +2,13 @@
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
-	import { type ChatSummary, type MediaAttachment } from 'dash-chat-stores';
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import {
+		type ChatSummary,
+		type MediaAttachment,
+		hasBody,
+		isDeleted,
+	} from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
@@ -14,8 +20,14 @@
 	} from '$lib/utils/time';
 	import { groupEventText } from '$lib/utils/group-event-text';
 	import Avatar from '../profiles/Avatar.svelte';
+	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { mdiCancel } from '@mdi/js';
 
-	let { summary, active }: { summary: ChatSummary; active: boolean } = $props();
+	let {
+		summary,
+		active,
+		blocked = false,
+	}: { summary: ChatSummary; active: boolean; blocked?: boolean } = $props();
 
 	const chatHref = (s: ChatSummary) =>
 		s.type === 'GroupChat'
@@ -35,14 +47,32 @@
 </script>
 
 <TitleTruncatedListItem
-	title={summary.name || m.waitingForProfile()}
-	titleWrapClass={summary.name ? '' : 'quiet'}
 	link
 	class={active ? 'active' : ''}
 	linkProps={{ href: chatHref(summary) }}
 	chevron={false}
 	data-testid="all-chats-row"
 >
+	{#snippet title()}
+		<span
+			class="flex min-w-0 flex-row items-center gap-1 {summary.waitingForProfile
+				? 'quiet'
+				: ''}"
+		>
+			{#if blocked}
+				<wa-icon
+					class="small-icon quiet shrink-0"
+					src={wrapPathInSvg(mdiCancel)}
+					data-testid="blocked-row-icon"
+				></wa-icon>
+			{/if}
+			<span class="truncate min-w-0"
+				>{summary.waitingForProfile
+					? m.waitingForProfile()
+					: summary.name}</span
+			>
+		</span>
+	{/snippet}
 	{#snippet media()}
 		<Avatar image={summary.avatar} initials={summary.name.slice(0, 2)} />
 	{/snippet}
@@ -85,15 +115,23 @@
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
 						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
-						{#if summary.lastEvent.deleted}
-							<span class="italic">{m.messageDeleted()}</span>
-						{:else}
+						{#if hasBody(summary.lastEvent.content)}
 							{summarizeMessage(summary.lastEvent.content)}
+						{:else}
+							<span class="italic"
+								>{isDeleted(summary.lastEvent.content)
+									? m.messageDeleted()
+									: m.messageUnavailable()}</span
+							>
 						{/if}
-					{:else if summary.lastEvent.deleted}
-						<span class="italic">{m.messageDeleted()}</span>
-					{:else}
+					{:else if hasBody(summary.lastEvent.content)}
 						{summarizeMessage(summary.lastEvent.content)}
+					{:else}
+						<span class="italic"
+							>{isDeleted(summary.lastEvent.content)
+								? m.messageDeleted()
+								: m.messageUnavailable()}</span
+						>
 					{/if}
 				{:else}
 					{groupEventText(summary.lastEvent)}

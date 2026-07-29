@@ -52,7 +52,7 @@ pub enum DeleteError {
 ///
 /// This is the author-side helper that builds the hash set for a
 /// `DeleteMessage` payload. Note that the set is unordered.
-pub fn collect_edit_chain_hashes(
+pub fn collect_deletable_edit_chain(
     valid_ops: &HashMap<Hash, ChatOp>,
     target: &Hash,
 ) -> Result<BTreeSet<Hash>, DeleteError> {
@@ -84,6 +84,54 @@ pub fn collect_edit_chain_hashes(
     }
     // Cyclic chain: cannot happen for chains built by valid edits.
     Err(DeleteError::IncompleteChain)
+}
+
+/// Walk backwards from `target` through the edit chain to the original
+/// `Message` operation and return its hash. Unlike
+/// [`collect_deletable_edit_chain`] this imposes no "must be the latest edit"
+/// restriction — `target` may be any operation in the chain — because
+/// delete-for-me deletes a whole message chain regardless of which edit the caller
+/// happened to point at.
+pub fn resolve_message_root(
+    valid_ops: &HashMap<Hash, ChatOp>,
+    target: &Hash,
+) -> Result<Hash, DeleteError> {
+    let mut current = *target;
+    for _ in 0..valid_ops.len() + 1 {
+        let op = valid_ops.get(&current).ok_or(DeleteError::TargetNotFound)?;
+        match &op.kind {
+            ChatOpKind::Message => return Ok(current),
+            ChatOpKind::Edit(edit_hash) => current = *edit_hash,
+            ChatOpKind::Delete(_) | ChatOpKind::Other => {
+                return Err(DeleteError::TargetNotDeletable);
+            }
+        }
+    }
+    // Cyclic chain: cannot happen for chains built by valid edits.
+    Err(DeleteError::IncompleteChain)
+}
+
+/// Every operation reachable forward from `root` through the edit graph: the
+/// root plus every edit that (transitively) targets it. Used to tombstone a
+/// whole message chain given only its original op. Only ops present in
+/// `valid_ops` (i.e. still carrying a body) are reachable. Already body-less
+/// members carry no `edit_hash` pointer and don't need re-tombstoning.
+pub fn forward_edit_closure(valid_ops: &HashMap<Hash, ChatOp>, root: Hash) -> BTreeSet<Hash> {
+    let mut chain = BTreeSet::from([root]);
+    loop {
+        let mut grew = false;
+        for (hash, op) in valid_ops {
+            if let ChatOpKind::Edit(target) = &op.kind {
+                if chain.contains(target) && chain.insert(*hash) {
+                    grew = true;
+                }
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    chain
 }
 
 pub struct DeleteCandidate {
@@ -178,9 +226,9 @@ impl DeleteCandidate {
             if covered.is_disjoint(&self.hashes) {
                 return false;
             }
-            let conflicing_order_key = (op.seq_num, *hash);
+            let conflicting_order_key = (op.seq_num, *hash);
             match self_order_key {
-                Some(self_order_key) => conflicing_order_key < self_order_key,
+                Some(self_order_key) => conflicting_order_key < self_order_key,
                 None => true,
             }
         });
@@ -260,7 +308,7 @@ mod tests {
         let alice = device(1);
         let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
         assert_eq!(
-            collect_edit_chain_hashes(&ops, &hash(1)),
+            collect_deletable_edit_chain(&ops, &hash(1)),
             Ok(btreeset![hash(1)])
         );
     }
@@ -274,7 +322,7 @@ mod tests {
             (hash(3), edit(alice, 3000, 2, hash(2))),
         ]);
         assert_eq!(
-            collect_edit_chain_hashes(&ops, &hash(3)),
+            collect_deletable_edit_chain(&ops, &hash(3)),
             Ok(btreeset![hash(1), hash(2), hash(3)])
         );
     }
@@ -288,7 +336,7 @@ mod tests {
         ]);
         // The original message has been edited, so it is not the tip.
         assert_eq!(
-            collect_edit_chain_hashes(&ops, &hash(1)),
+            collect_deletable_edit_chain(&ops, &hash(1)),
             Err(DeleteError::NotLatestEdit)
         );
     }
@@ -298,7 +346,7 @@ mod tests {
         let alice = device(1);
         let ops = ValidChatOps::new([(hash(1), other(alice, 1000, 0))]);
         assert_eq!(
-            collect_edit_chain_hashes(&ops, &hash(1)),
+            collect_deletable_edit_chain(&ops, &hash(1)),
             Err(DeleteError::TargetNotDeletable)
         );
     }

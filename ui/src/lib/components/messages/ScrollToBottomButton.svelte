@@ -4,6 +4,7 @@
 	import { mdiChevronDown } from '@mdi/js';
 	import { Badge } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 
 	interface Props {
 		unreadCount?: number;
@@ -11,36 +12,12 @@
 	}
 
 	let { unreadCount = 0, onClick }: Props = $props();
-
-	// Stash the input that had focus *before* the tap so we can restore it
-	// after `onClick` runs — keeps the soft keyboard up while scrolling to
-	// the bottom. `pointerdown.preventDefault()` would also prevent focus
-	// transfer, but on iOS it suppresses the synthesized `click`, so the
-	// scroll-to-bottom action would never run.
-	let previouslyFocused: HTMLElement | null = null;
-
-	function rememberFocus() {
-		const a = document.activeElement;
-		previouslyFocused =
-			a instanceof HTMLElement &&
-			(a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.isContentEditable)
-				? a
-				: null;
-	}
-
-	function handleClick() {
-		onClick();
-		if (previouslyFocused && previouslyFocused !== document.activeElement) {
-			previouslyFocused.focus({ preventScroll: true });
-		}
-		previouslyFocused = null;
-	}
 </script>
 
 <button
+	use:keepKeyboardOpen
 	class="relative flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 shadow-md transition-opacity hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
-	onclick={handleClick}
-	onpointerdown={rememberFocus}
+	onclick={onClick}
 	aria-label={m.scrollToBottom()}
 	data-testid="chat-scroll-bottom"
 >

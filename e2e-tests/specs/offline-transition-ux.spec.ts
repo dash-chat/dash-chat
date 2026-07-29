@@ -17,7 +17,7 @@ import {
 	resumeMailbox,
 	suspendMailbox,
 } from '../setup/mailbox-control';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 async function openOfflineSettings(agent: Agent): Promise<void> {
 	await agent.directChatPage.back.click();
@@ -48,9 +48,10 @@ describe('Offline UX', () => {
 		// The whole suite toggles the mailbox server's lifecycle, which is
 		// impossible against a remote environment mailbox.
 		if (isRemoteMailbox()) this.skip();
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+		// agent1 enables the local mailbox, which is desktop-only.
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'desktop' },
+			{ platform: 'any' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
@@ -73,7 +74,7 @@ describe('Offline UX', () => {
 
 	describe('cloud mailbox online', () => {
 		it('sends a message, peer receives it, sender shows the cloud check, and the navbar chip stays hidden', async () => {
-			await agent1.directChatPage.sendMessage('online hello');
+			await agent1.directChatPage.composer.sendMessage('online hello');
 			await agent2.directChatPage.messages.waitForMessage('online hello');
 
 			await agent1.waitUntil(
@@ -103,7 +104,7 @@ describe('Offline UX', () => {
 		});
 
 		it('new messages stay on the sending spinner', async () => {
-			await agent1.directChatPage.sendMessage('offline hello');
+			await agent1.directChatPage.composer.sendMessage('offline hello');
 			await agent1.waitUntil(
 				async () =>
 					(await agent1.directChatPage.lastMessageStatus()) === 'sending',
@@ -171,7 +172,7 @@ describe('Offline UX', () => {
 			});
 
 			it('a new message advances to the "local" mailbox icon', async () => {
-				await agent1.directChatPage.sendMessage('local hello');
+				await agent1.directChatPage.composer.sendMessage('local hello');
 				await agent1.waitUntil(
 					async () =>
 						(await agent1.directChatPage.lastMessageStatus()) === 'local',
@@ -216,7 +217,7 @@ describe('Offline UX', () => {
 		it('a delivered message still shows the cloud check after restarting with the mailbox down', async function () {
 			this.timeout(120_000);
 			// Deliver a fresh message to the cloud right now (mailbox is online).
-			await agent1.directChatPage.sendMessage('restart hello');
+			await agent1.directChatPage.composer.sendMessage('restart hello');
 			await agent1.waitUntil(
 				async () =>
 					(await agent1.directChatPage.messageStatusFor('restart hello')) ===

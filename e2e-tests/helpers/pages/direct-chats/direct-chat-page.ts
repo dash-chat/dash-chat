@@ -21,36 +21,27 @@ export class DirectChatPage extends TestHelper {
 	rejectButton = this.el(tid('direct-chat-reject-btn'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
 	rejectConfirm = this.el(tid('direct-chat-reject-confirm'));
+	blockButton = this.el(tid('direct-chat-block-btn'));
+	unblockButton = this.el(tid('direct-chat-unblock-btn'));
+	blockedBanner = this.el(tid('direct-chat-blocked-banner'));
+	blockConfirm = this.el(tid('block-contact-confirm'));
+	reportButton = this.el(tid('direct-chat-report-btn'));
+	reportConfirm = this.el(tid('report-contact-confirm'));
+	blockedNameIcon = this.el(tid('blocked-name-icon'));
 	messageStatus = this.el(tid('message-status'));
 	readMore = this.el(tid('message-read-more'));
+	composer = new Composer(this.agent);
 	messages = new Messages(
 		this.agent,
 		'direct-chat-messages',
 		'direct-chat-unread-divider',
+		this.composer,
 	);
-	composer = new Composer(this.agent);
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
 	async ready() {
 		await this.page.waitForExist();
-	}
-
-	async sendMessage(text: string) {
-		await this.typeInto(tid('message-input-textarea'), text);
-		await this.agent.pause(50);
-		await this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLTextAreaElement;
-			el.focus();
-			el.dispatchEvent(
-				new KeyboardEvent('keydown', {
-					key: 'Enter',
-					code: 'Enter',
-					bubbles: true,
-					cancelable: true,
-				}),
-			);
-		}, tid('message-input-textarea'));
 	}
 
 	async searchFor(query: string) {
@@ -116,6 +107,14 @@ export class DirectChatPage extends TestHelper {
 				issues.push('Navbar has horizontal overflow');
 			}
 			navbar.querySelectorAll('*').forEach(el => {
+				const style = window.getComputedStyle(el);
+				const clipped =
+					style.overflowX === 'hidden' ||
+					style.overflowX === 'clip' ||
+					style.overflow === 'hidden' ||
+					style.overflow === 'clip' ||
+					style.textOverflow === 'ellipsis';
+				if (clipped) return;
 				if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
 					const text = el.textContent?.substring(0, 60).trim();
 					if (text)

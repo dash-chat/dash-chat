@@ -18,10 +18,12 @@ mod blob_sync;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
+mod register_hashes;
 mod register_peer;
+mod report;
+mod reports_table;
 mod server_key;
 mod store_blips;
-mod store_blobs;
 mod watermark;
 mod watermarks_table;
 
@@ -41,10 +43,14 @@ pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
 };
+pub use register_hashes::{
+    record_blob_sources, register_hashes, upload_blob, RegisterHashesRequest,
+    RegisterHashesResponse, UploadBlobResponse,
+};
 pub use register_peer::RegisterPeerRequest;
+pub use reports_table::REPORTS_TABLE;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
-pub use store_blobs::{record_blob_sources, store_blobs, StoreBlobsRequest, StoreBlobsResponse};
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
@@ -178,6 +184,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
         let _blips_table = write_txn.open_table(BLIPS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
         let _server_key_table = write_txn.open_table(SERVER_KEY_TABLE)?;
+        let _reports_table = write_txn.open_table(REPORTS_TABLE)?;
     }
     write_txn.commit()?;
 
@@ -205,9 +212,14 @@ pub fn create_app(
     Router::new()
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
-        .route("/blobs/store", post(store_blobs::store_blobs))
+        .route(
+            "/blobs/register-hashes",
+            post(register_hashes::register_hashes),
+        )
+        .route("/blobs/upload", post(register_hashes::upload_blob))
         .route("/blips/get", post(get_blips_for_topics))
         .route("/peers/register", post(register_peer::register_peer))
+        .route("/report", post(report::report))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))

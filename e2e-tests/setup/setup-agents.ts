@@ -1,10 +1,13 @@
 /**
  * Shared helpers for E2E test setup.
  *
- * `setupAgent('agent1')` returns an `Agent` — a `WebdriverIO.Browser` plus
- * page-object instances (`agent.homePage`, `agent.directChatPage`, …) and a
- * small set of agent-level helpers that proxy to the browser-side test
- * registry (`agent.tr`, `agent.goto`, `agent.setLocale`, …).
+ * `[a, b] = await setupAgents(this, [{ platform: 'any' }, { platform: 'desktop' }])`
+ * returns one `Agent` per requirement — each a `WebdriverIO.Browser` plus
+ * page-object instances
+ * (`agent.homePage`, `agent.directChatPage`, …) and a small set of agent-level
+ * helpers that proxy to the browser-side test registry (`agent.tr`,
+ * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
+ * multiset can't fulfill the requirements.
  */
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
@@ -32,8 +35,12 @@ import { EditPhotoPage } from '../helpers/pages/settings/profile/edit-photo-page
 import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { checkOverflow } from '../helpers/review/checks';
+import { type AgentPlatformName, platformNames } from './test-env';
 
 export type Agent = WebdriverIO.Browser & {
+	/** The platform this agent was launched on. */
+	platform: AgentPlatformName;
+
 	accountPage: AccountPage;
 	addContactPage: AddContactPage;
 	appearancePage: AppearancePage;
@@ -70,6 +77,11 @@ export type Agent = WebdriverIO.Browser & {
 	checkOverflow(): Promise<string[]>;
 	/** Force the responsive `isWideScreen` store (true = desktop, false = mobile). */
 	setWideScreen(value: boolean): Promise<void>;
+	/** Whether this agent's device can legitimately show the wide (two-panel)
+	 *  layout: always true on desktop, and true on mobile only when the
+	 *  viewport matches the same media query `screen.svelte.ts` uses (tablets,
+	 *  not phones). */
+	supportsWideScreen(): Promise<boolean>;
 	/** Cold-restart the app: relaunch the binary against the same data dir (the
 	 *  Rust node re-hydrates from persisted state), re-attach fresh page objects
 	 *  to the new session, and restore narrow layout. */
@@ -80,6 +92,10 @@ export type Agent = WebdriverIO.Browser & {
 	setDarkMode(value: boolean): Promise<void>;
 	/** Enable preview features so gated UI (e.g. new-group) becomes visible. */
 	enablePreviewFeatures(): Promise<void>;
+	/** Close this agent's iroh endpoint so it can no longer sync over p2p.
+	 *  One-way for the life of the process; the agent still reads/writes
+	 *  locally and talks to a mailbox. */
+	disableP2p(): Promise<void>;
 };
 
 /** (Re)build every page object against `b`. Called on first setup and again
@@ -142,6 +158,14 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			value,
 		);
 	};
+	agent.supportsWideScreen = async () =>
+		b.execute(() => {
+			const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+			return (
+				!mobile ||
+				window.matchMedia('(min-width: 768px) and (min-height: 500px)').matches
+			);
+		});
 	agent.setTheme = async (theme: 'material' | 'ios') => {
 		await b.execute(
 			(t: 'material' | 'ios') =>
@@ -160,6 +184,11 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	};
 	agent.enablePreviewFeatures = async () => {
 		await b.execute(() => window.__test.enablePreviewFeatures());
+	};
+	agent.disableP2p = async () => {
+		await b.executeAsync((done: () => void) =>
+			window.__test.disableP2p().then(done, done),
+		);
 	};
 	agent.restart = async () => {
 		await b.reloadSession();
@@ -188,12 +217,81 @@ export async function waitForTestUtils(
 /** Build an agent by capability name and wait for window.__test to be ready.
  *  Defaults to narrow (mobile) layout so back buttons and FABs render — review
  *  checks switch to wide explicitly when they need the desktop two-panel UI. */
-export async function setupAgent(agentName: string): Promise<Agent> {
+async function setupAgent(
+	agentName: string,
+	platform: AgentPlatformName,
+): Promise<Agent> {
 	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
 	const agent = makeAgent(b);
+	agent.platform = platform;
 	await agent.setWideScreen(false);
 	return agent;
+}
+
+/** What a spec requires of one agent's platform. 'android' is fulfilled by a
+ *  physical device or an emulator; no platform fulfills 'ios' yet. */
+export type PlatformRequirement = 'desktop' | 'android' | 'ios' | 'any';
+
+/** What a spec requires of one agent. */
+export interface AgentRequirement {
+	platform: PlatformRequirement;
+}
+
+function fulfills(
+	requirement: PlatformRequirement,
+	platform: AgentPlatformName,
+): boolean {
+	if (requirement === 'any') return true;
+	if (requirement === 'desktop') return platform === 'desktop';
+	if (requirement === 'android') {
+		return platform === 'android' || platform === 'android-emulator';
+	}
+	return false;
+}
+
+/** Assign each requirement a distinct launched slot — specific requirements
+ *  first so 'any' takes the leftovers, ascending slot order for determinism —
+ *  or null when the launched platforms can't fulfill them all. */
+function matchSlots(
+	requirements: readonly PlatformRequirement[],
+	platforms: AgentPlatformName[],
+): number[] | null {
+	const free = platforms.map((platform, i) => ({ slot: i + 1, platform }));
+	const slots: number[] = [];
+	const order = [...requirements.keys()].sort(
+		(a, b) =>
+			Number(requirements[a] === 'any') - Number(requirements[b] === 'any'),
+	);
+	for (const i of order) {
+		const j = free.findIndex(f => fulfills(requirements[i], f.platform));
+		if (j === -1) return null;
+		slots[i] = free[j].slot;
+		free.splice(j, 1);
+	}
+	return slots;
+}
+
+/**
+ * Build one agent per requirement, matched against the unordered PLATFORMS
+ * multiset (a 'desktop' requirement gets a desktop agent no matter its
+ * position in PLATFORMS), skipping the suite when no assignment exists. Call
+ * from a `before(async function () { ... })` hook (not an arrow function —
+ * `this` must be the mocha context so the suite can be skipped).
+ */
+export async function setupAgents<
+	const T extends readonly AgentRequirement[],
+>(ctx: Mocha.Context, requirements: T): Promise<{ [K in keyof T]: Agent }> {
+	const platforms = platformNames();
+	const slots = matchSlots(
+		requirements.map(r => r.platform),
+		platforms,
+	);
+	if (slots === null) ctx.skip();
+	const agents = await Promise.all(
+		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1])),
+	);
+	return agents as { [K in keyof T]: Agent };
 }
 
 /**

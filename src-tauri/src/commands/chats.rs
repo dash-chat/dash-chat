@@ -1,5 +1,6 @@
 use dashchat_node::{
-    AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia, RemoveGroupMemberError,
+    stores::TombstoneReason, AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia,
+    RemoveGroupMemberError,
 };
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
@@ -25,7 +26,7 @@ pub async fn create_group(
     let mut members = std::collections::BTreeMap::new();
     for agent_id in initial_members {
         let device_id = node
-            .local_store
+            .projection
             .lookup_contact_by_agent_id(agent_id)
             .await
             .map_err(|e| format!("Failed to look up contact: {e:?}"))?
@@ -58,7 +59,7 @@ pub async fn add_group_member(
 ) -> Result<(), String> {
     let node = app_node.get().await?;
     let device_id = node
-        .local_store
+        .projection
         .lookup_contact_by_agent_id(agent_id)
         .await
         .map_err(|e| format!("Failed to look up contact: {e:?}"))?
@@ -107,7 +108,7 @@ pub async fn delete_message(
 ) -> Result<Hash, String> {
     let node = app_node.get().await?;
     let header = node
-        .delete_message(chat_id, target_hash)
+        .delete_message_for_everyone(chat_id, target_hash)
         .await
         .map_err(|err| format!("{err:?}"))?;
     Ok(header.hash())
@@ -125,6 +126,29 @@ pub async fn delete_message_for_me(
         .await
         .map_err(|err| format!("{err:?}"))?;
     Ok(header.hash())
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Tombstone {
+    pub hash: Hash,
+    pub reason: TombstoneReason,
+}
+
+#[tauri::command]
+pub async fn get_tombstones(
+    chat_id: ChatId,
+    app_node: State<'_, AppNode>,
+) -> Result<Vec<Tombstone>, String> {
+    let node = app_node.get().await?;
+    let rows = node
+        .chat_tombstones(chat_id)
+        .await
+        .map_err(|err| format!("{err:?}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|(hash, reason)| Tombstone { hash, reason })
+        .collect())
 }
 
 #[tauri::command]
@@ -178,7 +202,7 @@ pub async fn get_group_members(
         let agent_id = if device_id == my_device_id {
             my_agent_id
         } else {
-            node.local_store
+            node.projection
                 .lookup_contact_by_device_id(device_id)
                 .await
                 .map_err(|e| format!("Failed to lookup contact: {e:?}"))?
@@ -207,7 +231,7 @@ pub async fn remove_group_member(
 ) -> Result<(), String> {
     let node = app_node.get().await?;
     let device_id = node
-        .local_store
+        .projection
         .lookup_contact_by_agent_id(agent_id)
         .await
         .map_err(|e| format!("{e:?}"))?

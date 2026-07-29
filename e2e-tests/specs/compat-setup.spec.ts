@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -28,11 +28,8 @@ describe('Compat setup — create data with old version', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 	});
 
 	it('creates profiles on both agents', async () => {
@@ -45,12 +42,12 @@ describe('Compat setup — create data with old version', () => {
 	});
 
 	it('sends a message from Alice to Bob', async () => {
-		await agent1.directChatPage.sendMessage(MSG_ALICE);
+		await agent1.directChatPage.composer.sendMessage(MSG_ALICE);
 		await agent2.directChatPage.messages.waitForMessage(MSG_ALICE);
 	});
 
 	it('sends a reply from Bob to Alice', async () => {
-		await agent2.directChatPage.sendMessage(MSG_BOB);
+		await agent2.directChatPage.composer.sendMessage(MSG_BOB);
 		await agent1.directChatPage.messages.waitForMessage(MSG_BOB);
 	});
 

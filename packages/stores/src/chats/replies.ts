@@ -1,8 +1,8 @@
-import type { Message } from '../direct-chats/direct-chat-store';
 import type { SimplifiedOperation } from '../p2panda/simplified-types';
 import type { DeviceId, Hash } from '../p2panda/types';
 import type { MediaAttachment, Payload } from '../types';
 import { mediaBundleToAttachment } from '../types';
+import type { Message } from './messages-store';
 
 /** A reply annotation resolved for rendering. The quoted content is frozen at
  * the version that was replied to — later edits of the target never change
@@ -114,7 +114,10 @@ function resolveReply(
 	const payload = chatPayload(targetOp);
 
 	if (targetOp === undefined || targetOp.body === undefined) {
-		return { kind: 'deleted', scrollTarget: deletePlaceholderHash(ops, target) };
+		return {
+			kind: 'deleted',
+			scrollTarget: deletePlaceholderHash(ops, target),
+		};
 	}
 	if (payload?.type !== 'Message' && payload?.type !== 'EditMessage') {
 		return undefined;
@@ -142,7 +145,7 @@ function resolveReply(
 
 /** Resolve the reply annotation of every message in the already-built
  * `messages` map, in place. Must run after `applyEdits`, `applyDeletes` and
- * `applyDeletesForMe`: a quote pointing at a message that ended up deleted
+ * `applyTombstones`: a quote pointing at a message that ended up deleted
  * falls back to a tombstone, and its scroll target is only kept when the
  * corresponding placeholder actually renders. */
 export function applyReplies(
@@ -167,7 +170,10 @@ export function applyReplies(
 			const rendered = target === undefined ? undefined : messages[target];
 			if (rendered === undefined) {
 				reply.scrollTarget = undefined;
-			} else if (reply.kind === 'content' && rendered.deleted === true) {
+			} else if (
+				reply.kind === 'content' &&
+				rendered.content === 'deleted-for-everyone'
+			) {
 				message.reply = { kind: 'deleted', scrollTarget: target };
 				continue;
 			}

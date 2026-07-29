@@ -12,21 +12,21 @@ import {
 	switchCombo,
 } from '../helpers/review/runner';
 import { visitAllPages } from '../helpers/review/visit-all-pages';
-import { type Agent, setLocale, setupAgent } from '../setup/setup-agents';
+import { type Agent, setLocale, setupAgents } from '../setup/setup-agents';
 
 describe('Review checks', function () {
 	this.timeout(240_000);
 
 	let agent1: Agent;
 	let agent2: Agent;
+	let wideSupported: boolean;
 
 	before(async function () {
 		this.timeout(180_000);
 
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+
+		wideSupported = await agent1.supportsWideScreen();
 
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Tester');
@@ -38,10 +38,10 @@ describe('Review checks', function () {
 			agent2.directChatPage.composer.messageInput.waitForExist(),
 		]);
 
-		await agent1.directChatPage.sendMessage('Hello from Alice!');
+		await agent1.directChatPage.composer.sendMessage('Hello from Alice!');
 		await agent2.directChatPage.messages.waitForMessage('Hello from Alice!');
 
-		await agent2.directChatPage.sendMessage('Hello from Bob!');
+		await agent2.directChatPage.composer.sendMessage('Hello from Bob!');
 		await agent1.directChatPage.messages.waitForMessage('Hello from Bob!');
 
 		await reloadToHome(agent1);
@@ -55,7 +55,8 @@ describe('Review checks', function () {
 	});
 
 	describe('English - Light', function () {
-		it('Material Desktop', async () => {
+		it('Material Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'material', true);
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
@@ -65,7 +66,8 @@ describe('Review checks', function () {
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
 
-		it('iOS Desktop', async () => {
+		it('iOS Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'ios', true);
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
@@ -77,7 +79,8 @@ describe('Review checks', function () {
 	});
 
 	describe('English - Dark', function () {
-		it('Material Desktop', async () => {
+		it('Material Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'material', true, true);
 			assertNoIssues(
 				await visitAllPages(agent1, { hasChat: true, checkDarkMode: true }),
@@ -91,7 +94,8 @@ describe('Review checks', function () {
 			);
 		});
 
-		it('iOS Desktop', async () => {
+		it('iOS Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'ios', true, true);
 			assertNoIssues(
 				await visitAllPages(agent1, { hasChat: true, checkDarkMode: true }),
@@ -114,7 +118,8 @@ describe('Review checks', function () {
 			await agent1.homePage.ready();
 		});
 
-		it('Material Desktop', async () => {
+		it('Material Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'material', true);
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
@@ -124,7 +129,8 @@ describe('Review checks', function () {
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
 
-		it('iOS Desktop', async () => {
+		it('iOS Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'ios', true);
 			assertNoIssues(await visitAllPages(agent1, { hasChat: true }));
 		});
@@ -146,7 +152,8 @@ describe('Review checks', function () {
 			});
 		});
 
-		it('Material Desktop', async () => {
+		it('Material Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'material', true);
 			await agent1.execute(() => {
 				document.documentElement.dir = 'rtl';
@@ -166,7 +173,8 @@ describe('Review checks', function () {
 			);
 		});
 
-		it('iOS Desktop', async () => {
+		it('iOS Desktop', async function () {
+			if (!wideSupported) this.skip();
 			await switchCombo(agent1, 'ios', true);
 			await agent1.execute(() => {
 				document.documentElement.dir = 'rtl';

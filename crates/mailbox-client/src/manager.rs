@@ -307,26 +307,6 @@ where
         _ = self.trigger.try_send(None);
     }
 
-    /// Publish the given items to every registered mailbox, best-effort.
-    /// Used to overwrite an already-synced operation in place (e.g. replacing
-    /// a deleted payload with its body-less form) — regular sync only pushes
-    /// operations a mailbox reports as missing.
-    pub async fn publish_to_all(&self, items: Vec<Item>) {
-        let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
-            .mailboxes
-            .lock()
-            .await
-            .iter()
-            .map(|(id, tm)| (id.clone(), tm.clone()))
-            .collect();
-        for (id, tracked) in mailboxes {
-            let client = tracked.client().await;
-            if let Err(err) = client.publish(items.clone()).await {
-                tracing::warn!(?err, mailbox = %id, "failed to publish items to mailbox");
-            }
-        }
-    }
-
     /// Immediately activate and sync a specific mailbox, resetting any backoff.
     pub fn wakeup(&self, id: MailboxId) {
         _ = self.trigger.try_send(Some(id));
@@ -338,6 +318,39 @@ where
             tracked_mailbox.wakeup();
         }
         self.trigger_sync();
+    }
+
+    /// Send a `/report` to every currently-registered mailbox not in `skip`,
+    /// best-effort. Each mailbox is contacted independently; a failure against
+    /// one is logged and does not prevent the others from receiving the report.
+    /// Returns the ids of the mailboxes the report was successfully delivered
+    /// to (excluding the skipped ones, which are assumed already reported).
+    pub async fn report_all(
+        &self,
+        request: reporting::ReportRequest,
+        skip: &BTreeSet<MailboxId>,
+    ) -> Vec<MailboxId> {
+        let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
+            .mailboxes
+            .lock()
+            .await
+            .iter()
+            .map(|(id, tm)| (id.clone(), tm.clone()))
+            .collect();
+        let mut succeeded = Vec::new();
+        for (id, tracked_mailbox) in mailboxes {
+            if skip.contains(&id) {
+                continue;
+            }
+            let client = tracked_mailbox.client().await;
+            match client.report(request.clone()).await {
+                Ok(()) => succeeded.push(id),
+                Err(err) => {
+                    tracing::error!(?err, mailbox = %id, "failed to send report to mailbox")
+                }
+            }
+        }
+        succeeded
     }
 
     pub async fn subscribe(
@@ -570,6 +583,7 @@ where
         }
 
         // For ops we successfully publish, the mailbox now has at least their seq_num.
+        // ACID: a power cut here would lose these ops_to_publish.
         let publish_acks: Vec<(Item::Topic, Item::Author, u64)> = ops_to_publish
             .iter()
             .map(|op| (op.topic(), op.author(), op.seq_num()))

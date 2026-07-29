@@ -2,13 +2,12 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext, setContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
 		type ChatsStore,
-		type ContactCode,
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
@@ -24,6 +23,7 @@
 		mdiAlert,
 		mdiAccountQuestion,
 		mdiAccountGroup,
+		mdiCancel,
 		mdiChevronDown,
 		mdiChevronRight,
 		mdiChevronUp,
@@ -47,9 +47,11 @@
 	import ProfileNamesSheet from '$lib/components/ProfileNamesSheet.svelte';
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
+	import { reportContactWithFeedback } from '$lib/utils/report-contact';
 	import type { Action } from 'svelte/action';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
-	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
+	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
+	import ReportContactDialog from '$lib/components/contacts/ReportContactDialog.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
@@ -58,34 +60,51 @@
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import {
+		canDeleteMessageForEveryone,
 		messagePosition,
-		canEditMessage,
-		canDeleteMessage,
+		scrollToMessage,
 	} from '$lib/components/messages/message-helpers';
-	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
+	const blockedAgentIds = useReactiveValue(
+		contactsStore.blockedContactAgentIds,
+	);
+	const isBlocked = $derived(($blockedAgentIds ?? new Set()).has(agentId));
+	const reported = useReactiveValue(contactsStore.contactReported, agentId);
+	const isReported = $derived($reported === true);
+
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
-	setContext('messages-store', store);
+	setContext('messages-store', store.messages);
 
-	const readTracker = createReadMessagesTracker(store);
+	const isPendingChat = store.isPending;
+
+	const resolvedAgent = useReactiveValue(store.resolvedPendingAgent);
+	$effect(() => {
+		if (!isPendingChat) return;
+		const agent = $resolvedAgent;
+		if (agent) goto(`/direct-chats/${agent}`, { replaceState: true });
+	});
+
+	const readTracker = createReadMessagesTracker(store.messages);
 	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const chatId = useReactivePromise(store.chatId);
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const contactRequest = useReactivePromise(store.contactRequest);
-	const messagesSets = useReactivePromise(store.messageSets);
-	const readMessageHashes = useReactivePromise(store.readMessageHashes);
-	const unreadCount = useReactivePromise(store.unreadCount);
+	const messageGroups = useReactivePromise(store.groupedMessages);
+	const readMessageHashes = useReactivePromise(
+		store.messages.readMessageHashes,
+	);
+	const unreadCount = useReactivePromise(store.messages.unreadCount);
 
 	async function acceptContactRequest(contactRequest: ContactRequest) {
 		try {
-			await contactsStore.client.addContact(contactRequest.code);
+			await contactsStore.client.acceptContact(contactRequest.agentId);
 			showToast(m.contactAccepted());
 		} catch (e) {
 			console.error(e);
@@ -109,9 +128,7 @@
 
 	async function rejectContactRequest(contactRequest: ContactRequest) {
 		try {
-			await contactsStore.client.rejectContactRequest(
-				contactRequest.code.agent_id,
-			);
+			await contactsStore.client.rejectContactRequest(contactRequest.agentId);
 			// Defer navigation so the rejection operation propagates before the home page renders
 			setTimeout(() => {
 				showToast(m.contactRequestRejected());
@@ -124,65 +141,32 @@
 		}
 	}
 
-	const editing = new MessageEditing(store);
-	let deletingMessage: Message | undefined = $state(undefined);
-	let replying: Message | undefined = $state(undefined);
-
-	// Replying and editing are mutually exclusive composer states.
-	function startReply(message: Message) {
-		editing.cancel();
-		replying = message;
-	}
-
-	function startEdit(message: Message) {
-		replying = undefined;
-		editing.start(message);
-	}
-
-	function deviceDisplayName(
-		deviceId: DeviceId,
-		myDeviceId: DeviceId,
-		profile: Profile | undefined,
-	): string {
-		if (deviceId === myDeviceId) return m.you();
-		return profile ? fullName(profile) : m.unknownSender();
-	}
-
-	function quotedAuthorName(
-		message: Message,
-		myDeviceId: DeviceId,
-		profile: Profile | undefined,
-	): string | undefined {
-		if (message.reply?.kind !== 'content') return undefined;
-		return deviceDisplayName(message.reply.author, myDeviceId, profile);
-	}
-
-	async function deleteForEveryone(message: Message) {
-		deletingMessage = undefined;
+	async function confirmBlock() {
+		showBlockDialog = false;
 		try {
-			await store.deleteMessage(message);
+			if (isBlocked) {
+				await contactsStore.client.unblockContact(agentId);
+			} else {
+				await contactsStore.client.blockContact(agentId);
+			}
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 
-	async function deleteForMe(message: Message) {
-		deletingMessage = undefined;
-		try {
-			await store.deleteMessageForMe(message);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
+	async function confirmReport() {
+		showReportDialog = false;
+		await reportContactWithFeedback(contactsStore, agentId);
 	}
 
-	let historyMessage: Message | undefined = $state(undefined);
-	let showHistory = $state(false);
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
 	let showRejectDialog = $state(false);
+	let showBlockDialog = $state(false);
+	let showReportDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
 	// Initial value reserves space for the bottom bar before bind:clientHeight
 	// has measured it, so the latest message doesn't flash under the input on
@@ -221,7 +205,14 @@
 	};
 
 	function onMessageSent(messageHash: Hash) {
-		justSentMessageHash = messageHash;
+		// The bubble renders off the new-operation event, which can beat
+		// sendMessage's response — if it already mounted, the action missed
+		// the handshake, so scroll now.
+		if (document.querySelector(`[data-message-hash="${messageHash}"]`)) {
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		} else {
+			justSentMessageHash = messageHash;
+		}
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
 	}
@@ -254,23 +245,36 @@
 		});
 	});
 
-	function scrollToMessage(hash: Hash) {
-		const el = parentDivEl?.querySelector(`[data-message-hash="${hash}"]`);
-		if (!el) return;
-		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-		// Remove flash from any previously flashing message
-		parentDivEl
-			?.querySelectorAll('.search-flash')
-			.forEach(e => e.classList.remove('search-flash'));
-		// Flash the message card
-		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
-		void (card as HTMLElement).offsetWidth;
-		card.classList.add('search-flash');
-	}
-
 	function scrollToMatch() {
 		if (!matchingHashes.length) return;
-		scrollToMessage(matchingHashes[currentMatchIndex]);
+		scrollToMessage(
+			parentDivEl ?? undefined,
+			matchingHashes[currentMatchIndex],
+		);
+	}
+
+	function navigateToMessage(hash: Hash) {
+		scrollToMessage(parentDivEl ?? undefined, hash);
+	}
+
+	function deviceDisplayName(
+		deviceId: DeviceId,
+		myDeviceId: DeviceId,
+		profile: Profile | undefined,
+	): string {
+		if (deviceId === myDeviceId) return m.you();
+		return profile ? fullName(profile) : m.unknownSender();
+	}
+
+	/** Display name of the author quoted by `message`'s reply, if it quotes
+	 * content at all. */
+	function quotedAuthorName(
+		message: Message,
+		myDeviceId: DeviceId,
+		profile: Profile | undefined,
+	): string | undefined {
+		if (message.reply?.kind !== 'content') return undefined;
+		return deviceDisplayName(message.reply.author, myDeviceId, profile);
 	}
 
 	function goToPreviousMatch() {
@@ -311,19 +315,14 @@
 		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
-	function openHistory(message: Message) {
-		historyMessage = message;
-		showHistory = true;
-	}
-
 	const theme = $derived(useTheme());
 
 	function getUnreadDividerInfo(
-		messagesSetsInDays: Awaited<typeof $messagesSets>,
+		messageGroupsInDays: Awaited<typeof $messageGroups>,
 		readHashes: Set<Hash> | undefined,
 		deviceId: DeviceId | undefined,
 	): { hash: Hash | null; count: number } {
-		if (!messagesSetsInDays || !readHashes || !deviceId) {
+		if (!messageGroupsInDays || !readHashes || !deviceId) {
 			return { hash: null, count: 0 };
 		}
 
@@ -331,9 +330,9 @@
 			capturedUnreadHash === null &&
 			(!unreadDividerCaptured || !isAtBottom)
 		) {
-			for (const day of messagesSetsInDays) {
-				for (const messageSet of day.eventsSets) {
-					for (const [hash, message] of messageSet) {
+			for (const day of messageGroupsInDays) {
+				for (const messageGroup of day.eventsGroups) {
+					for (const [hash, message] of messageGroup) {
 						if (message.author !== deviceId && !readHashes.has(hash)) {
 							capturedUnreadHash = hash;
 							break;
@@ -353,9 +352,9 @@
 		// and increases when new messages arrive.
 		let count = 0;
 		let found = false;
-		for (const day of messagesSetsInDays) {
-			for (const messageSet of day.eventsSets) {
-				for (const [hash, message] of messageSet) {
+		for (const day of messageGroupsInDays) {
+			for (const messageGroup of day.eventsGroups) {
+				for (const [hash, message] of messageGroup) {
 					if (hash === capturedUnreadHash) found = true;
 					if (found && message.author !== deviceId) count++;
 				}
@@ -429,6 +428,7 @@
 										{#if profile}
 											<AvatarWithName
 												{profile}
+												blocked={isBlocked}
 												nameTestId="direct-chat-peer-name"
 											/>
 										{:else}
@@ -453,314 +453,319 @@
 						{/if}
 					{/snippet}
 
-					{#await $readMessageHashes then readHashes}
-						{#await $messagesSets then messagesSetsInDays}
-							{@const unreadDivider = getUnreadDividerInfo(
-								messagesSetsInDays,
-								readHashes,
-								myDeviceId,
-							)}
+					{#if isPendingChat}
+						<div class="column" style={`padding-bottom: ${bottomBarHeight}px`}>
 							<div
-								class="column"
-								style={`padding-bottom: ${bottomBarHeight}px`}
+								class="column min-w-0"
+								style="align-items: center"
+								data-testid="direct-chat-peer-header"
 							>
-								<div
-									class="column min-w-0"
-									style="align-items: center"
-									data-testid="direct-chat-peer-header"
-								>
-									{#if profile}
-										<Link
-											class="column my-6 gap-2 items-center max-w-full px-4"
-											onclick={() => (showPeerProfile = true)}
-										>
-											<Avatar
-												image={profile.avatar}
-												initials={profile.name.slice(0, 2)}
-												size={80}
-											/>
-											<div class="flex items-center gap-1 max-w-full">
-												<span
-													class="text-xl font-semibold break-words text-center min-w-0"
-													>{fullName(profile)}</span
-												>
-												<wa-icon
-													class="small-icon quiet shrink-0"
-													src={wrapPathInSvg(mdiChevronRight)}
-												></wa-icon>
-											</div>
-										</Link>
-									{:else}
-										<div class="column my-6 gap-2 items-center">
-											<Avatar waitingForProfile size={80} />
-											<span class="quiet text-xl">
-												{m.waitingForProfile()}
-											</span>
-										</div>
-									{/if}
-								</div>
-								<div class="row justify-center mb-4">
-									<div class="outline-card" style="border-radius: 0.75rem;">
-										<div
-											class="flex flex-col gap-1 items-center p-3 text-center"
-										>
-											{#if contactRequest}
-												<div class="flex items-center gap-2 text-amber-600">
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAlert)}
-													></wa-icon>
-													<span class="font-semibold"
-														>{m.reviewCarefully()}</span
-													>
-												</div>
-											{/if}
-											<div
-												class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
-											>
-												<div
-													class="flex items-center justify-center gap-2"
-													role="button"
-													tabindex="0"
-													onclick={() => (profileNamesSheetOpen = true)}
-													onkeydown={onActivate(
-														() => (profileNamesSheetOpen = true),
-													)}
-												>
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAccountQuestion)}
-													></wa-icon>
-													<span
-														><u>{m.profileNames()}</u>{m.areNotVerified()}</span
-													>
-												</div>
-												<div class="flex items-center justify-center gap-2">
-													<wa-icon
-														class="small-icon"
-														src={wrapPathInSvg(mdiAccountGroup)}
-													></wa-icon>
-													<span>{m.noGroupsInCommon()}</span>
-												</div>
-											</div>
-											{#if contactRequest}
-												<div class="row pt-1 justify-center">
-													<Button
-														rounded
-														tonal
-														small
-														onClick={() => (showSecurityTips = true)}
-													>
-														{m.securityTips()}
-													</Button>
-												</div>
-											{/if}
-										</div>
-									</div>
-								</div>
-
-								<ProfileNamesSheet
-									opened={profileNamesSheetOpen}
-									onClose={() => (profileNamesSheetOpen = false)}
-								/>
-
-								<div
-									class="column m-2 gap-1"
-									data-testid="direct-chat-messages"
-								>
-									{#each messagesSetsInDays as messageSetInDay}
-										<div use:navbarSticky class="self-center z-10">
-											<DayTag class="quiet" day={messageSetInDay.day} />
-										</div>
-
-										{#each messageSetInDay.eventsSets as messageSet}
-											<div class="column" style="gap: 1px">
-												{#each messageSet as [hash, message], i (hash)}
-													{#if unreadDivider.hash === hash}
-														<div
-															class="unread-divider"
-															data-testid="direct-chat-unread-divider"
-														>
-															{m.unreadMessages({
-																count: unreadDivider.count,
-															})}
-														</div>
-													{/if}
-													{@const position = messagePosition(
-														messageSet.length,
-														i,
-													)}
-													{#if myDeviceId == message.author}
-														<div
-															class="self-end max-w-[85%]"
-															data-message-hash={hash}
-															use:scrollToBottomOnMount={hash}
-														>
-															{#await $chatId then chatId}
-																<MessageFromMe
-																	{message}
-																	{position}
-																	{myDeviceId}
-																	{chatId}
-																	searchQuery={searchMode ? searchQuery : ''}
-																	onShowHistory={() => openHistory(message)}
-																	canEdit={canEditMessage(message, myDeviceId)}
-																	onEdit={() => startEdit(message)}
-																	canDelete
-																	onDelete={() => (deletingMessage = message)}
-																	onReply={() => startReply(message)}
-																	replyAuthorName={quotedAuthorName(
-																		message,
-																		myDeviceId,
-																		profile,
-																	)}
-																	onNavigateToMessage={scrollToMessage}
-																/>
-															{/await}
-														</div>
-													{:else}
-														<div
-															class="self-start max-w-[85%]"
-															data-message-hash={hash}
-															use:readMessageOnObserve={readHashes?.has(hash)
-																? null
-																: hash}
-														>
-															{#await $chatId then chatId}
-																<MessageFromOthers
-																	{message}
-																	{position}
-																	{myDeviceId}
-																	{chatId}
-																	searchQuery={searchMode ? searchQuery : ''}
-																	sender={profile}
-																	onShowHistory={() => openHistory(message)}
-																	canDelete
-																	onDelete={() => (deletingMessage = message)}
-																	onReply={() => startReply(message)}
-																	replyAuthorName={quotedAuthorName(
-																		message,
-																		myDeviceId,
-																		profile,
-																	)}
-																	onNavigateToMessage={scrollToMessage}
-																/>
-															{/await}
-														</div>
-													{/if}
-												{/each}
-											</div>
-										{/each}
-									{/each}
+								<div class="column my-6 gap-2 items-center">
+									<Avatar waitingForProfile size={80} />
+									<span class="quiet text-xl">
+										{m.waitingForProfile()}
+									</span>
 								</div>
 							</div>
-						{/await}
-					{/await}
-					{#if contactRequest}
-						<Dialog
-							opened={showAcceptDialog}
-							onBackdropClick={() => (showAcceptDialog = false)}
-							title={m.acceptRequestTitle()}
-						>
-							<span>{m.acceptRequestDescription()}</span>
-							{#snippet buttons()}
-								<DialogButton onClick={() => (showAcceptDialog = false)}>
-									{m.cancel()}
-								</DialogButton>
-								<DialogButton
-									data-testid="direct-chat-accept-confirm"
-									onClick={() => {
-										showAcceptDialog = false;
-										acceptContactRequest(contactRequest);
-									}}
+						</div>
+					{:else}
+						{#await $readMessageHashes then readHashes}
+							{#await $messageGroups then messageGroupsInDays}
+								{@const unreadDivider = getUnreadDividerInfo(
+									messageGroupsInDays,
+									readHashes,
+									myDeviceId,
+								)}
+								<div
+									class="column"
+									style={`padding-bottom: ${bottomBarHeight}px`}
 								>
-									{m.accept()}
-								</DialogButton>
-							{/snippet}
-						</Dialog>
-						<Dialog
-							opened={showRejectDialog}
-							onBackdropClick={() => (showRejectDialog = false)}
-							title={m.rejectRequestTitle()}
-						>
-							<span>{m.rejectRequestDescription()}</span>
-							{#snippet buttons()}
-								<DialogButton onClick={() => (showRejectDialog = false)}>
-									{m.cancel()}
-								</DialogButton>
-								<DialogButton
-									data-testid="direct-chat-reject-confirm"
-									onClick={() => {
-										showRejectDialog = false;
-										rejectContactRequest(contactRequest);
-									}}
-								>
-									{m.reject()}
-								</DialogButton>
-							{/snippet}
-						</Dialog>
-					{/if}
-					<SafetyTipsSheet
-						opened={showSecurityTips}
-						onClose={() => (showSecurityTips = false)}
-					/>
-
-					<PeerProfileSheet
-						opened={showPeerProfile}
-						onClose={() => (showPeerProfile = false)}
-						{profile}
-					/>
-
-					<EditHistorySheet
-						message={historyMessage}
-						opened={showHistory}
-						onClose={() => (showHistory = false)}
-					/>
-
-					<Dialog
-						opened={deletingMessage !== undefined}
-						onBackdropClick={() => (deletingMessage = undefined)}
-						title={m.deleteMessageTitle()}
-					>
-						{#snippet buttons()}
-							{#if deletingMessage && canDeleteMessage(deletingMessage, myDeviceId)}
-								<div class="flex flex-col w-full">
-									<DialogButton
-										class="!text-red-500"
-										data-testid="delete-message-confirm"
-										onClick={() =>
-											deletingMessage && deleteForEveryone(deletingMessage)}
+									<div
+										class="column min-w-0"
+										style="align-items: center"
+										data-testid="direct-chat-peer-header"
 									>
-										{m.deleteForEveryone()}
-									</DialogButton>
-									<DialogButton onClick={() => (deletingMessage = undefined)}>
-										{m.cancel()}
-									</DialogButton>
-									<DialogButton
-										class="!text-red-500"
-										data-testid="delete-for-me-confirm"
-										onClick={() =>
-											deletingMessage && deleteForMe(deletingMessage)}
+										{#if profile}
+											<Link
+												class="column my-6 gap-2 items-center max-w-full px-4"
+												onclick={() => (showPeerProfile = true)}
+											>
+												<Avatar
+													image={profile.avatar}
+													initials={profile.name.slice(0, 2)}
+													size={80}
+												/>
+												<div class="flex items-center gap-1 max-w-full">
+													<span
+														class="text-xl font-semibold break-words text-center min-w-0"
+														>{fullName(profile)}</span
+													>
+													<wa-icon
+														class="small-icon quiet shrink-0"
+														src={wrapPathInSvg(mdiChevronRight)}
+													></wa-icon>
+												</div>
+											</Link>
+										{:else}
+											<div class="column my-6 gap-2 items-center">
+												<Avatar waitingForProfile size={80} />
+												<span class="quiet text-xl">
+													{m.waitingForProfile()}
+												</span>
+											</div>
+										{/if}
+									</div>
+									<div class="row justify-center mb-4">
+										<div class="outline-card" style="border-radius: 0.75rem;">
+											<div
+												class="flex flex-col gap-1 items-center p-3 text-center"
+											>
+												{#if contactRequest}
+													<div class="flex items-center gap-2 text-amber-600">
+														<wa-icon
+															class="small-icon"
+															src={wrapPathInSvg(mdiAlert)}
+														></wa-icon>
+														<span class="font-semibold"
+															>{m.reviewCarefully()}</span
+														>
+													</div>
+												{/if}
+												<div
+													class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
+												>
+													<div
+														class="flex items-center justify-center gap-2"
+														role="button"
+														tabindex="0"
+														onclick={() => (profileNamesSheetOpen = true)}
+														onkeydown={onActivate(
+															() => (profileNamesSheetOpen = true),
+														)}
+													>
+														<wa-icon
+															class="small-icon"
+															src={wrapPathInSvg(mdiAccountQuestion)}
+														></wa-icon>
+														<span
+															><u>{m.profileNames()}</u
+															>{m.areNotVerified()}</span
+														>
+													</div>
+													<div class="flex items-center justify-center gap-2">
+														<wa-icon
+															class="small-icon"
+															src={wrapPathInSvg(mdiAccountGroup)}
+														></wa-icon>
+														<span>{m.noGroupsInCommon()}</span>
+													</div>
+												</div>
+												{#if contactRequest}
+													<div class="row pt-1 justify-center">
+														<Button
+															rounded
+															tonal
+															small
+															onClick={() => (showSecurityTips = true)}
+														>
+															{m.securityTips()}
+														</Button>
+													</div>
+												{/if}
+											</div>
+										</div>
+									</div>
+
+									<div
+										class="column m-2 gap-1"
+										data-testid="direct-chat-messages"
 									>
-										{m.deleteForMe()}
-									</DialogButton>
+										{#each messageGroupsInDays as messageGroupsInDay}
+											<div use:navbarSticky class="self-center z-10">
+												<DayTag class="quiet" day={messageGroupsInDay.day} />
+											</div>
+
+											{#each messageGroupsInDay.eventsGroups as messageGroup}
+												<div class="column" style="gap: 1px">
+													{#each messageGroup as [hash, message], i (hash)}
+														{#if unreadDivider.hash === hash}
+															<div
+																class="unread-divider"
+																data-testid="direct-chat-unread-divider"
+															>
+																{m.unreadMessages({
+																	count: unreadDivider.count,
+																})}
+															</div>
+														{/if}
+														{@const position = messagePosition(
+															messageGroup.length,
+															i,
+														)}
+														{#if myDeviceId == message.author}
+															<div
+																class="w-full"
+																data-message-hash={hash}
+																use:scrollToBottomOnMount={hash}
+															>
+																{#await $chatId then chatId}
+																	<MessageFromMe
+																		{message}
+																		{position}
+																		{myDeviceId}
+																		{chatId}
+																		searchQuery={searchMode ? searchQuery : ''}
+																		onEdit={() =>
+																			composer?.editMessage(message)}
+																		onDelete={() =>
+																			composer?.deleteMessage(
+																				message,
+																				canDeleteMessageForEveryone(
+																					message,
+																					myDeviceId,
+																				),
+																			)}
+																		onReply={() =>
+																			composer?.replyToMessage(
+																				message,
+																				deviceDisplayName(
+																					message.author,
+																					myDeviceId,
+																					profile,
+																				),
+																			)}
+																		replyAuthorName={quotedAuthorName(
+																			message,
+																			myDeviceId,
+																			profile,
+																		)}
+																		onNavigateToMessage={navigateToMessage}
+																	/>
+																{/await}
+															</div>
+														{:else}
+															<div
+																class="w-full"
+																data-message-hash={hash}
+																use:readMessageOnObserve={readHashes?.has(hash)
+																	? null
+																	: hash}
+															>
+																{#await $chatId then chatId}
+																	<MessageFromOthers
+																		{message}
+																		{position}
+																		{myDeviceId}
+																		{chatId}
+																		searchQuery={searchMode ? searchQuery : ''}
+																		sender={profile}
+																		onDelete={() =>
+																			composer?.deleteMessage(message, false)}
+																		onReply={() =>
+																			composer?.replyToMessage(
+																				message,
+																				deviceDisplayName(
+																					message.author,
+																					myDeviceId,
+																					profile,
+																				),
+																			)}
+																		replyAuthorName={quotedAuthorName(
+																			message,
+																			myDeviceId,
+																			profile,
+																		)}
+																		onNavigateToMessage={navigateToMessage}
+																	/>
+																{/await}
+															</div>
+														{/if}
+													{/each}
+												</div>
+											{/each}
+										{/each}
+									</div>
 								</div>
-							{:else}
-								<DialogButton onClick={() => (deletingMessage = undefined)}>
-									{m.cancel()}
-								</DialogButton>
-								<DialogButton
-									class="!text-red-500"
-									data-testid="delete-for-me-confirm"
-									onClick={() =>
-										deletingMessage && deleteForMe(deletingMessage)}
-								>
-									{m.deleteForMe()}
-								</DialogButton>
-							{/if}
+							{/await}
+						{/await}
+					{/if}
+				</ReverseScrollPage>
+
+				{#if contactRequest}
+					<Dialog
+						opened={showAcceptDialog}
+						onBackdropClick={() => (showAcceptDialog = false)}
+						title={m.acceptRequestTitle()}
+					>
+						<span>{m.acceptRequestDescription()}</span>
+						{#snippet buttons()}
+							<DialogButton onClick={() => (showAcceptDialog = false)}>
+								{m.cancel()}
+							</DialogButton>
+							<DialogButton
+								data-testid="direct-chat-accept-confirm"
+								onClick={() => {
+									showAcceptDialog = false;
+									acceptContactRequest(contactRequest);
+								}}
+							>
+								{m.accept()}
+							</DialogButton>
 						{/snippet}
 					</Dialog>
-				</ReverseScrollPage>
+					<Dialog
+						opened={showRejectDialog}
+						onBackdropClick={() => (showRejectDialog = false)}
+						title={m.rejectRequestTitle()}
+					>
+						<span>{m.rejectRequestDescription()}</span>
+						{#snippet buttons()}
+							<DialogButton onClick={() => (showRejectDialog = false)}>
+								{m.cancel()}
+							</DialogButton>
+							<DialogButton
+								data-testid="direct-chat-reject-confirm"
+								onClick={() => {
+									showRejectDialog = false;
+									rejectContactRequest(contactRequest);
+								}}
+							>
+								{m.reject()}
+							</DialogButton>
+						{/snippet}
+					</Dialog>
+				{/if}
+
+				<BlockContactDialog
+					opened={showBlockDialog}
+					name={profile ? fullName(profile) : ''}
+					blocked={isBlocked}
+					onConfirm={confirmBlock}
+					onClose={() => (showBlockDialog = false)}
+				/>
+
+				<ReportContactDialog
+					opened={showReportDialog}
+					name={profile ? fullName(profile) : ''}
+					onConfirm={confirmReport}
+					onClose={() => (showReportDialog = false)}
+				/>
+
+				<SafetyTipsSheet
+					opened={showSecurityTips}
+					onClose={() => (showSecurityTips = false)}
+				/>
+
+				<PeerProfileSheet
+					opened={showPeerProfile}
+					onClose={() => (showPeerProfile = false)}
+					{profile}
+				/>
+
+				<ProfileNamesSheet
+					opened={profileNamesSheetOpen}
+					onClose={() => (profileNamesSheetOpen = false)}
+				/>
 
 				{#if !isAtBottom}
 					{#await $unreadCount then count}
@@ -777,128 +782,176 @@
 				{/if}
 
 				<div
-					bind:clientHeight={bottomBarHeight}
 					class="absolute bottom-0 inset-x-0 z-30"
 					class:bg-page-surface={theme === 'material'}
 				>
-					{#if searchMode}
-						<div class="pb-safe bg-page-surface">
-							<div
-								class="mx-4 border-t border-gray-300 dark:border-gray-600"
-								style="margin: 0 auto"
-							></div>
-							<div
-								class="row items-center gap-2 px-4 py-3"
-								style="margin: 0 auto"
-							>
-								<button
-									onclick={() => dateInput?.click()}
-									aria-label={m.jumpToDate()}
+					<div bind:clientHeight={bottomBarHeight}>
+						{#if searchMode}
+							<div class="pb-safe bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<div
+									class="row items-center gap-2 px-4 py-3"
+									style="margin: 0 auto"
 								>
-									<wa-icon class="quiet" src={wrapPathInSvg(mdiCalendarSearch)}
-									></wa-icon>
-								</button>
-								<input
-									type="date"
-									class="absolute opacity-0 h-0 w-0"
-									bind:this={dateInput}
-									onchange={e => jumpToDate(e.currentTarget.value)}
-								/>
-								<span
-									class="flex-1 text-center text-sm quiet"
-									data-testid="search-results-count"
-								>
-									{#if !searchQuery}
-										<!-- empty -->
-									{:else if matchingHashes.length === 0}
-										{m.noResults()}
-									{:else}
-										{m.searchResultsCount({
-											current: String(currentMatchIndex + 1),
-											total: String(matchingHashes.length),
-										})}
-									{/if}
-								</span>
-								<button
-									disabled={!matchingHashes.length}
-									onclick={goToPreviousMatch}
-									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-									aria-label={m.previousResult()}
-								>
-									<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
-								</button>
-								<button
-									disabled={!matchingHashes.length}
-									onclick={goToNextMatch}
-									class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-									aria-label={m.nextResult()}
-								>
-									<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-								</button>
-							</div>
-						</div>
-					{:else if contactRequest}
-						<div class="pb-safe bg-page-surface">
-							<div
-								class="mx-4 border-t border-gray-300 dark:border-gray-600"
-								style="margin: 0 auto"
-							></div>
-							<div
-								class="flex flex-col items-center gap-3 px-6 py-3"
-								style="margin: 0 auto"
-							>
-								<p
-									class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
-								>
-									{@html m
-										.contactRequestBanner({
-											name: contactRequest.profile.name
-												.replace(/&/g, '&amp;')
-												.replace(/</g, '&lt;')
-												.replace(/>/g, '&gt;')
-												.replace(/"/g, '&quot;'),
-										})
-										.replace(
-											/\*\*(.*?)\*\*/g,
-											'<strong class="text-black dark:text-white">$1</strong>',
-										)}
-								</p>
-								<div class="flex w-full gap-2">
-									<Button
-										class="neutral-tonal-button text-red-500 flex-1"
-										rounded
-										tonal
-										data-testid="direct-chat-reject-btn"
-										onClick={() => (showRejectDialog = true)}
-										>{m.reject()}</Button
+									<button
+										onclick={() => dateInput?.click()}
+										aria-label={m.jumpToDate()}
 									>
+										<wa-icon
+											class="quiet"
+											src={wrapPathInSvg(mdiCalendarSearch)}
+										></wa-icon>
+									</button>
+									<input
+										type="date"
+										class="absolute opacity-0 h-0 w-0"
+										bind:this={dateInput}
+										onchange={e => jumpToDate(e.currentTarget.value)}
+									/>
+									<span
+										class="flex-1 text-center text-sm quiet"
+										data-testid="search-results-count"
+									>
+										{#if !searchQuery}
+											<!-- empty -->
+										{:else if matchingHashes.length === 0}
+											{m.noResults()}
+										{:else}
+											{m.searchResultsCount({
+												current: String(currentMatchIndex + 1),
+												total: String(matchingHashes.length),
+											})}
+										{/if}
+									</span>
+									<button
+										disabled={!matchingHashes.length}
+										onclick={goToPreviousMatch}
+										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+										aria-label={m.previousResult()}
+									>
+										<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
+									</button>
+									<button
+										disabled={!matchingHashes.length}
+										onclick={goToNextMatch}
+										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
+										aria-label={m.nextResult()}
+									>
+										<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
+									</button>
+								</div>
+							</div>
+						{:else if isPendingChat}
+							<div class="pb-safe bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<p
+									class="px-6 py-4 text-center text-sm text-gray-600 dark:text-gray-400"
+									data-testid="direct-chat-pending-note"
+								>
+									{m.waitingForProfile()}
+								</p>
+							</div>
+						{:else if isBlocked}
+							<div class="pb-safe bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<div
+									class="flex flex-col items-center gap-3 px-6 py-3"
+									data-testid="direct-chat-blocked-banner"
+								>
+									<p
+										class="flex items-center gap-2 text-center text-sm text-gray-600 dark:text-gray-400"
+									>
+										<wa-icon
+											class="small-icon quiet shrink-0"
+											src={wrapPathInSvg(mdiCancel)}
+										></wa-icon>
+										{m.youBlockedThisPerson()}
+									</p>
 									<Button
 										class="neutral-tonal-button flex-1"
 										rounded
 										tonal
-										data-testid="direct-chat-accept-btn"
-										onClick={() => (showAcceptDialog = true)}
-										>{m.accept()}</Button
+										data-testid="direct-chat-unblock-btn"
+										onClick={() => (showBlockDialog = true)}
+										>{m.unblock()}</Button
 									>
 								</div>
 							</div>
-						</div>
-					{:else}
-						<MessageComposer
-							{store}
-							bind:value={editing.value}
-							editing={editing.editing}
-							onEdit={editing.submit}
-							onCancelEdit={() => editing.cancel()}
-							{replying}
-							replyingToName={replying
-								? deviceDisplayName(replying.author, myDeviceId, profile)
-								: ''}
-							onCancelReply={() => (replying = undefined)}
-							destinationName={profile ? fullName(profile) : undefined}
-							onSent={onMessageSent}
-						/>
-					{/if}
+						{:else if contactRequest}
+							<div class="pb-safe bg-page-surface">
+								<div
+									class="mx-4 border-t border-gray-300 dark:border-gray-600"
+									style="margin: 0 auto"
+								></div>
+								<div
+									class="flex flex-col items-center gap-3 px-6 py-3"
+									style="margin: 0 auto"
+								>
+									<p
+										class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
+									>
+										{@html m
+											.contactRequestBanner({
+												name: contactRequest.profile.name
+													.replace(/&/g, '&amp;')
+													.replace(/</g, '&lt;')
+													.replace(/>/g, '&gt;')
+													.replace(/"/g, '&quot;'),
+											})
+											.replace(
+												/\*\*(.*?)\*\*/g,
+												'<strong class="text-black dark:text-white">$1</strong>',
+											)}
+									</p>
+									<div class="flex w-full gap-2">
+										<Button
+											class="neutral-tonal-button text-red-500 flex-1"
+											rounded
+											tonal
+											data-testid="direct-chat-block-btn"
+											onClick={() => (showBlockDialog = true)}
+											>{m.block()}</Button
+										>
+										<Button
+											class={`neutral-tonal-button flex-1 ${isReported ? 'quiet opacity-60' : 'text-red-500'}`}
+											rounded
+											tonal
+											disabled={isReported}
+											data-testid="direct-chat-report-btn"
+											onClick={isReported
+												? undefined
+												: () => (showReportDialog = true)}
+											>{isReported ? m.reported() : m.report()}</Button
+										>
+										<Button
+											class="neutral-tonal-button flex-1"
+											rounded
+											tonal
+											data-testid="direct-chat-accept-btn"
+											onClick={() => (showAcceptDialog = true)}
+											>{m.accept()}</Button
+										>
+									</div>
+								</div>
+							</div>
+						{:else}
+							<MessageComposer
+								bind:this={composer}
+								store={store.messages}
+								destinationName={profile ? fullName(profile) : undefined}
+								onSent={onMessageSent}
+							/>
+						{/if}
+					</div>
 				</div>
 			{/await}
 		{/await}

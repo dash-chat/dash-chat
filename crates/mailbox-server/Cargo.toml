@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.8", features = ["json"] }
+bytes = { workspace = true }
 futures = "0.3"
 tokio = { version = "1", features = ["full"] }
 p2panda-net = { workspace = true }
@@ -27,6 +28,7 @@ base64 = "0.22"
 uuid = { version = "1.0", features = ["v7"] }
 clap = { version = "4.5", features = ["derive"] }
 push-notifications-client = { path = "../push-notifications-client" }
+reporting = { workspace = true }
 dashchat-utils = { workspace = true }
 async-trait = "0.1"
 anyhow = "1"
@@ -53,4 +55,7 @@ push-notifications-server = { path = "../push-notifications-server", features = 
 futures = "0.3"
 serial_test = "3"
 base64 = "0.22"
+ed25519-dalek = { workspace = true }
+hex = "0.4"
+reporting = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }

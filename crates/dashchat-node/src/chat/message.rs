@@ -97,10 +97,7 @@ mod reply_hash {
     use p2panda::Hash;
     use serde::{Deserializer, Serialize, Serializer, de};
 
-    pub fn serialize<S: Serializer>(
-        hash: &Option<Hash>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(hash: &Option<Hash>, serializer: S) -> Result<S::Ok, S::Error> {
         // `skip_serializing_if` means this is only reached for `Some`.
         let hash = hash.as_ref().expect("None is skipped by the field attr");
         if serializer.is_human_readable() {
@@ -367,5 +364,36 @@ pub mod testing {
                     .then(self.content.partial_cmp(&other.content)?),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use p2panda_core::cbor::{decode_cbor, encode_cbor};
+
+    use super::*;
+
+    #[test]
+    fn chat_message_v1_reply_roundtrip() {
+        let target = Hash::from_bytes([7; 32]);
+        let v1 = ChatMessageContent::new("hello", None, Some(target));
+        let bytes = encode_cbor(&v1).unwrap();
+        let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded, v1);
+        assert_eq!(decoded.reply(), Some(target));
+
+        // The frontend reads the reply hash from JSON, where it must be a hex
+        // string (matching the `Hash` TS type), not a byte array.
+        let json = serde_json::to_value(&v1).unwrap();
+        assert_eq!(json["reply"], serde_json::json!(target.to_hex()));
+    }
+
+    #[test]
+    fn chat_message_without_reply_keeps_pre_reply_wire_form() {
+        // `reply` must be absent (not null) so old clients decode new
+        // non-reply messages byte-for-byte identically.
+        let v1 = ChatMessageContent::text_only("hello");
+        let json = serde_json::to_value(&v1).unwrap();
+        assert!(json.get("reply").is_none());
     }
 }

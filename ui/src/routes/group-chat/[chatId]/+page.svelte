@@ -1,18 +1,20 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import {
+		useReactivePromise,
+		useReactivePromises,
+	} from '$lib/stores/use-signal';
 	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
-		type AgentId,
 		type ChatsStore,
 		type ContactsStore,
 		type DeviceId,
-		type GroupMemberWithProfile,
 		type Hash,
+		type GroupMemberWithProfile,
 		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
@@ -36,123 +38,53 @@
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
-	import EditHistorySheet from '$lib/components/messages/EditHistorySheet.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
+		canDeleteMessageForEveryone,
 		messagePosition,
-		canEditMessage,
-		canDeleteMessage,
+		scrollToMessage,
 	} from '$lib/components/messages/message-helpers';
-	import { showToast } from '$lib/utils/toasts';
-	import { MessageEditing } from '$lib/components/messages/message-editing.svelte';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
-	setContext('messages-store', store);
+	setContext('messages-store', store.messages);
 
-	const readTracker = createReadMessagesTracker(store);
+	const readTracker = createReadMessagesTracker(store.messages);
 	const readMessageOnObserve = readTracker.observe;
 
-	const messageSets = useReactivePromise(store.messageSets);
 	const info = useReactivePromise(store.info);
-	const allMembers = useReactivePromise(store.allMembers);
-	const me = useReactivePromise(store.me);
-	const readMessageHashes = useReactivePromise(store.readMessageHashes);
-	const unreadCount = useReactivePromise(store.unreadCount);
+	const readMessageHashes = useReactivePromise(
+		store.messages.readMessageHashes,
+	);
+	const unreadCount = useReactivePromise(store.messages.unreadCount);
+
+	const headerData = useReactivePromises(() => [
+		store.info(),
+		store.allMembers(),
+	]);
+	const messageListData = useReactivePromises(() => [
+		contactsStore.myDeviceId(),
+		store.groupedEvents(),
+		store.allMembers(),
+	]);
+	const composerData = useReactivePromises(() => [store.me(), store.info()]);
 
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
+	let messagesEl: HTMLDivElement | undefined = $state();
+
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
 		$state();
 
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
 
-	const editing = new MessageEditing(store);
-	let deletingMessage: Message | undefined = $state(undefined);
-	let replying: Message | undefined = $state(undefined);
-
-	// Replying and editing are mutually exclusive composer states.
-	function startReply(message: Message) {
-		editing.cancel();
-		replying = message;
-	}
-
-	function startEdit(message: Message) {
-		replying = undefined;
-		editing.start(message);
-	}
-
-	function deviceDisplayName(
-		deviceId: DeviceId,
-		myDeviceId: DeviceId,
-		members: Record<AgentId, GroupMemberWithProfile>,
-	): string {
-		if (deviceId === myDeviceId) return m.you();
-		const member = Object.values(members).find(mm =>
-			mm.deviceIds.includes(deviceId),
-		);
-		return member?.profile ? fullName(member.profile) : m.unknownSender();
-	}
-
-	function quotedAuthorName(
-		message: Message,
-		myDeviceId: DeviceId,
-		members: Record<AgentId, GroupMemberWithProfile>,
-	): string | undefined {
-		if (message.reply?.kind !== 'content') return undefined;
-		return deviceDisplayName(message.reply.author, myDeviceId, members);
-	}
-
-	let pageEl: HTMLDivElement | null = $state(null);
-
-	function scrollToMessage(hash: Hash) {
-		const el = pageEl?.querySelector(`[data-message-hash="${hash}"]`);
-		if (!el) return;
-		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-		// Remove flash from any previously flashing message
-		pageEl
-			?.querySelectorAll('.search-flash')
-			.forEach(e => e.classList.remove('search-flash'));
-		// Flash the message card
-		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
-		void (card as HTMLElement).offsetWidth;
-		card.classList.add('search-flash');
-	}
-
-	async function deleteForEveryone(message: Message) {
-		deletingMessage = undefined;
-		try {
-			await store.deleteMessage(message);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
-
-	async function deleteForMe(message: Message) {
-		deletingMessage = undefined;
-		try {
-			await store.deleteMessageForMe(message);
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
-
-	let historyMessage: Message | undefined = $state(undefined);
-	let showHistory = $state(false);
-
-	function openHistory(message: Message) {
-		historyMessage = message;
-		showHistory = true;
-	}
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
@@ -164,7 +96,14 @@
 	};
 
 	function onMessageSent(messageHash: Hash) {
-		justSentMessageHash = messageHash;
+		// The bubble renders off the new-operation event, which can beat
+		// sendMessage's response — if it already mounted, the action missed
+		// the handshake, so scroll now.
+		if (document.querySelector(`[data-message-hash="${messageHash}"]`)) {
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		} else {
+			justSentMessageHash = messageHash;
+		}
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
 	}
@@ -172,11 +111,11 @@
 	const theme = $derived(useTheme());
 
 	function getUnreadDividerInfo(
-		messagesSetsInDays: Awaited<typeof $messageSets>,
+		messageGroupsInDays: Awaited<ReturnType<typeof store.groupedEvents>>,
 		readHashes: Set<Hash> | undefined,
 		deviceId: DeviceId | undefined,
 	): { hash: Hash | null; count: number } {
-		if (!messagesSetsInDays || !readHashes || !deviceId) {
+		if (!messageGroupsInDays || !readHashes || !deviceId) {
 			return { hash: null, count: 0 };
 		}
 
@@ -184,9 +123,9 @@
 			capturedUnreadHash === null &&
 			(!unreadDividerCaptured || !isAtBottom)
 		) {
-			for (const day of messagesSetsInDays) {
-				for (const messageSet of day.eventsSets) {
-					for (const [hash, item] of messageSet) {
+			for (const day of messageGroupsInDays) {
+				for (const messageGroup of day.eventsGroups) {
+					for (const [hash, item] of messageGroup) {
 						if (item.kind !== 'message') continue;
 						if (item.message.author !== deviceId && !readHashes.has(hash)) {
 							capturedUnreadHash = hash;
@@ -204,9 +143,9 @@
 
 		let count = 0;
 		let found = false;
-		for (const day of messagesSetsInDays) {
-			for (const messageSet of day.eventsSets) {
-				for (const [hash, item] of messageSet) {
+		for (const day of messageGroupsInDays) {
+			for (const messageGroup of day.eventsGroups) {
+				for (const [hash, item] of messageGroup) {
 					if (hash === capturedUnreadHash) found = true;
 					if (
 						found &&
@@ -220,9 +159,36 @@
 
 		return { hash: capturedUnreadHash, count };
 	}
+
+	function navigateToMessage(hash: Hash) {
+		scrollToMessage(messagesEl, hash);
+	}
+
+	function deviceDisplayName(
+		deviceId: DeviceId,
+		myDeviceId: DeviceId,
+		members: Record<string, GroupMemberWithProfile>,
+	): string {
+		if (deviceId === myDeviceId) return m.you();
+		const member = Object.values(members).find(m =>
+			m.deviceIds.includes(deviceId),
+		);
+		return member?.profile ? fullName(member.profile) : m.unknownSender();
+	}
+
+	/** Display name of the author quoted by `message`'s reply, if it quotes
+	 * content at all. */
+	function quotedAuthorName(
+		message: Message,
+		myDeviceId: DeviceId,
+		members: Record<string, GroupMemberWithProfile>,
+	): string | undefined {
+		if (message.reply?.kind !== 'content') return undefined;
+		return deviceDisplayName(message.reply.author, myDeviceId, members);
+	}
 </script>
 
-<div bind:this={pageEl} class="absolute inset-0" data-testid="group-chat-page">
+<div class="absolute inset-0" data-testid="group-chat-page">
 	<ReverseScrollPage
 		bind:this={reverseScrollPage}
 		bind:isAtBottom
@@ -269,7 +235,7 @@
 
 		<div class="column" style={`padding-bottom: ${bottomBarHeight}px`}>
 			<div class="mt-16 mb-6 px-4" data-testid="group-chat-header">
-				{#await Promise.all([$info, $allMembers]) then [info, members]}
+				{#await $headerData then [info, members]}
 					<div class="column items-center">
 						<div
 							class="outline-card"
@@ -302,22 +268,26 @@
 				{/await}
 			</div>
 
-			<div class="column m-2 gap-1" data-testid="group-chat-messages">
+			<div
+				bind:this={messagesEl}
+				class="column m-2 gap-1"
+				data-testid="group-chat-messages"
+			>
 				{#await $readMessageHashes then readHashes}
-					{#await Promise.all( [$myDeviceId, $messageSets, $allMembers], ) then [myDeviceId, messageSetsInDays, members]}
+					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
 						{@const unreadDivider = getUnreadDividerInfo(
-							messageSetsInDays,
+							messageGroupsInDays,
 							readHashes,
 							myDeviceId,
 						)}
-						{#each messageSetsInDays as messageSetInDay}
+						{#each messageGroupsInDays as messageGroupsInDay}
 							<div class="self-center z-10">
-								<DayTag class="quiet" day={messageSetInDay.day} />
+								<DayTag class="quiet" day={messageGroupsInDay.day} />
 							</div>
 
-							{#each messageSetInDay.eventsSets as messageSet}
+							{#each messageGroupsInDay.eventsGroups as messageGroup}
 								<div class="column" style="gap: 1px">
-									{#each messageSet as [hash, item], i (hash)}
+									{#each messageGroup as [hash, item], i (hash)}
 										{#if unreadDivider.hash === hash}
 											<div
 												class="unread-divider"
@@ -330,10 +300,13 @@
 											<SystemMessage event={item.event} />
 										{:else}
 											{@const message = item.message}
-											{@const position = messagePosition(messageSet.length, i)}
+											{@const position = messagePosition(
+												messageGroup.length,
+												i,
+											)}
 											{#if myDeviceId === message.author}
 												<div
-													class="self-end max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:scrollToBottomOnMount={hash}
 												>
@@ -343,18 +316,15 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
-														onShowHistory={() => openHistory(message)}
-														canEdit={canEditMessage(message, myDeviceId)}
-														onEdit={() => startEdit(message)}
-														canDelete
-														onDelete={() => (deletingMessage = message)}
-														onReply={() => startReply(message)}
-														replyAuthorName={quotedAuthorName(
-															message,
-															myDeviceId,
-															members,
-														)}
-														onNavigateToMessage={scrollToMessage}
+														onEdit={() => composer?.editMessage(message)}
+														onDelete={() =>
+															composer?.deleteMessage(
+																message,
+																canDeleteMessageForEveryone(
+																	message,
+																	myDeviceId,
+																),
+															)}
 													/>
 												</div>
 											{:else}
@@ -362,7 +332,7 @@
 													m.deviceIds.includes(message.author),
 												)}
 												<div
-													class="self-start max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:readMessageOnObserve={readHashes?.has(hash)
 														? null
@@ -377,17 +347,9 @@
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
 															position === 'single'}
-														onShowHistory={() => openHistory(message)}
 														showAvatar
-														canDelete
-														onDelete={() => (deletingMessage = message)}
-														onReply={() => startReply(message)}
-														replyAuthorName={quotedAuthorName(
-															message,
-															myDeviceId,
-															members,
-														)}
-														onNavigateToMessage={scrollToMessage}
+														onDelete={() =>
+															composer?.deleteMessage(message, false)}
 													/>
 												</div>
 											{/if}
@@ -414,69 +376,27 @@
 	{/if}
 
 	<div
-		bind:clientHeight={bottomBarHeight}
 		class="absolute bottom-0 inset-x-0 z-30"
 		class:bg-page-surface={theme === 'material'}
 	>
-		{#await Promise.all( [$me, $info, $myDeviceId, $allMembers], ) then [me, info, myDeviceId, members]}
-			{#if me.member}
-				<MessageComposer
-					{store}
-					bind:value={editing.value}
-					editing={editing.editing}
-					onEdit={editing.submit}
-					onCancelEdit={() => editing.cancel()}
-					{replying}
-					replyingToName={replying
-						? deviceDisplayName(replying.author, myDeviceId, members)
-						: ''}
-					onCancelReply={() => (replying = undefined)}
-					destinationName={info.name}
-					onSent={onMessageSent}
-				/>
-			{:else}
-				<div
-					class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
-					data-testid="group-chat-not-member"
-				>
-					{m.youAreNoLongerAMember()}
-				</div>
-			{/if}
-		{/await}
-	</div>
-
-	<EditHistorySheet
-		message={historyMessage}
-		opened={showHistory}
-		onClose={() => (showHistory = false)}
-	/>
-
-	<Dialog
-		opened={deletingMessage !== undefined}
-		onBackdropClick={() => (deletingMessage = undefined)}
-		title={m.deleteMessageTitle()}
-	>
-		{#snippet buttons()}
-			<DialogButton onClick={() => (deletingMessage = undefined)}>
-				{m.cancel()}
-			</DialogButton>
-			<DialogButton
-				data-testid="delete-for-me-confirm"
-				onClick={() => deletingMessage && deleteForMe(deletingMessage)}
-			>
-				{m.deleteForMe()}
-			</DialogButton>
-			{#await $myDeviceId then myDeviceId}
-				{#if deletingMessage && canDeleteMessage(deletingMessage, myDeviceId)}
-					<DialogButton
-						data-testid="delete-message-confirm"
-						onClick={() =>
-							deletingMessage && deleteForEveryone(deletingMessage)}
+		<div bind:clientHeight={bottomBarHeight}>
+			{#await $composerData then [me, info]}
+				{#if me.member}
+					<MessageComposer
+						bind:this={composer}
+						store={store.messages}
+						destinationName={info.name}
+						onSent={onMessageSent}
+					/>
+				{:else}
+					<div
+						class="quiet px-6 py-4 text-center text-sm"
+						data-testid="group-chat-not-member"
 					>
-						{m.deleteForEveryone()}
-					</DialogButton>
+						{m.youAreNoLongerAMember()}
+					</div>
 				{/if}
 			{/await}
-		{/snippet}
-	</Dialog>
+		</div>
+	</div>
 </div>

@@ -3,17 +3,14 @@
  * them (buttons, keyboard, filmstrip), and closing with focus restored.
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Photo lightbox', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 		await agent1.createProfilePage.createProfile('Alice', 'Lightbox');
 		await agent2.createProfilePage.createProfile('Bob', 'Lightbox');
 		await exchangeContacts(agent1, agent2);
@@ -37,7 +34,7 @@ describe('Photo lightbox', () => {
 	it('opens the clicked photo and closes with the close button', async () => {
 		await agent1.directChatPage.messages.photoCellButton(0).click();
 		await agent1.directChatPage.messages.lightbox.root.waitForExist();
-		await agent1.directChatPage.messages.lightbox.close.click();
+		await agent1.directChatPage.messages.lightbox.clickClose();
 		await agent1.waitUntil(
 			async () => !(await agent1.directChatPage.messages.lightbox.isOpen()),
 		);
@@ -50,14 +47,21 @@ describe('Photo lightbox', () => {
 		const lb = agent1.directChatPage.messages.lightbox;
 		await agent1.waitUntil(async () => (await lb.activeIndex()) === 0);
 
-		await lb.next.click();
+		// Arrow buttons are a desktop (mouse) affordance; mobile swipes instead.
+		if (agent1.platform === 'desktop') {
+			await lb.next.click();
+		} else {
+			await lb.pressKey('ArrowRight');
+		}
 		await agent1.waitUntil(async () => (await lb.activeIndex()) === 1);
 
 		await lb.pressKey('ArrowRight');
 		await agent1.waitUntil(async () => (await lb.activeIndex()) === 2);
 
-		// At the last photo the next button disappears.
-		await agent1.waitUntil(async () => !(await lb.next.isExisting()));
+		if (agent1.platform === 'desktop') {
+			// At the last photo the next button disappears.
+			await agent1.waitUntil(async () => !(await lb.next.isExisting()));
+		}
 
 		await lb.pressKey('ArrowLeft');
 		await agent1.waitUntil(async () => (await lb.activeIndex()) === 1);
@@ -115,6 +119,6 @@ describe('Photo lightbox', () => {
 		await agent2.directChatPage.messages.waitForPhotoMessage('lightbox');
 		await agent2.directChatPage.messages.photoCellButton(0).click();
 		await agent2.directChatPage.messages.lightbox.root.waitForExist();
-		await agent2.directChatPage.messages.lightbox.close.click();
+		await agent2.directChatPage.messages.lightbox.clickClose();
 	});
 });

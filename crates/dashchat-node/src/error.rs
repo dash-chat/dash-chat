@@ -27,14 +27,17 @@ pub enum AddContactError {
     #[error("Profile must be created before adding contacts")]
     ProfileNotCreated,
 
+    #[error("Cannot add yourself as a contact")]
+    CannotAddSelf,
+
+    #[error("Invalid contact code: {0}")]
+    InvalidContactCode(String),
+
     #[error("Failed to create QR code: {0}")]
     CreateQrCode(String),
 
     #[error("Failed to create direct chat: {0}")]
     CreateDirectChat(String),
-
-    #[error("Failed to store contact info: {0}")]
-    StoreContact(String),
 
     #[error(transparent)]
     #[serde(untagged)]

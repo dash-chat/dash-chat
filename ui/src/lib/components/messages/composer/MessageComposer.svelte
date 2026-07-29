@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Block, useTheme } from 'konsta/svelte';
+	import { Sheet, Block, Dialog, DialogButton, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
-	import { isMobile } from '$lib/utils/environment';
-	import { keyboard } from '$lib/utils/keyboard.svelte';
+	import { isIos, isMobile } from '$lib/utils/environment';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
 		type DraftMedia,
 		type IngestError,
@@ -15,22 +15,32 @@
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
 	} from '$lib/utils/media';
-	import type { Hash, Message, MessagesStore } from 'dash-chat-stores';
+	import {
+		type Hash,
+		type Message,
+		type MessagesStore,
+		hasBody,
+	} from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
+	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
+	import BelowKeyboardSurface from '$lib/components/BelowKeyboardSurface.svelte';
 	import { showToast } from '$lib/utils/toasts';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiClose, mdiPencil, mdiReply } from '@mdi/js';
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
-	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
+	import StandaloneAttachButton from '$lib/components/messages/composer/StandaloneAttachButton.svelte';
+	import InlineAttachButton from '$lib/components/messages/composer/InlineAttachButton.svelte';
+	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
+	import EditingBanner from '$lib/components/messages/composer/EditingBanner.svelte';
+	import ReplyBanner from '$lib/components/messages/composer/ReplyBanner.svelte';
+	import DiscardEditButton from '$lib/components/messages/composer/DiscardEditButton.svelte';
 
 	interface Props {
 		value?: string;
@@ -41,19 +51,6 @@
 		destinationName?: string;
 		/** Called after a message is successfully sent (e.g. to scroll the chat). */
 		onSent?: (messageHash: Hash) => void;
-		/** When set, the composer edits this message's text instead of sending a
-		 * new message. Media attachments are disabled while editing. */
-		editing?: Message | null;
-		/** Submit an edit of `message` with the new `text`. */
-		onEdit?: (message: Message, text: string) => Promise<void>;
-		/** Called when the user cancels an in-progress edit. */
-		onCancelEdit?: () => void;
-		/** When set, the next send is a reply to this message. */
-		replying?: Message | null;
-		/** Display name of the author being replied to, for the banner. */
-		replyingToName?: string;
-		/** Called when the user cancels the staged reply (also after sending). */
-		onCancelReply?: () => void;
 	}
 
 	let {
@@ -62,12 +59,6 @@
 		store,
 		destinationName,
 		onSent,
-		editing = null,
-		onEdit,
-		onCancelEdit,
-		replying = null,
-		replyingToName = '',
-		onCancelReply,
 	}: Props = $props();
 
 	const theme = $derived(useTheme());
@@ -80,21 +71,130 @@
 
 	let showMediaPanel = $state(false);
 
-	async function submitEdit() {
-		const target = editing;
-		if (!target || !onEdit) return;
-		const text = value.trim();
-		if (!text || text === target.content.message) {
-			onCancelEdit?.();
+	let editing = $state<Message | null>(null);
+	/** When set, the next send is a reply to this message. */
+	let replying = $state<Message | null>(null);
+	/** Display name of the author being replied to, for the banner. */
+	let replyingToName = $state('');
+	/** Edit requested while a draft was present, awaiting discard confirmation. */
+	let pendingEdit = $state<Message | null>(null);
+	/** Message awaiting delete confirmation. */
+	let deleting = $state<Message | null>(null);
+	/** Whether the pending delete may also be deleted for everyone (my own
+	 * message, within the delete window); otherwise only delete-for-me is
+	 * offered. */
+	let deletingForEveryone = $state(false);
+
+	/** Switch the composer to editing `message`'s text instead of sending a
+	 * new message. Media attachments are disabled while editing. Asks to
+	 * discard first when a draft (text or staged media) would be lost. */
+	export function editMessage(message: Message) {
+		if (!editing && hasContent) {
+			pendingEdit = message;
 			return;
 		}
+		startEdit(message);
+	}
+
+	function startEdit(message: Message) {
+		if (!hasBody(message.content)) return;
+		// Replying and editing are mutually exclusive composer states.
+		replying = null;
+		editing = message;
+		value = message.content.message;
+	}
+
+	function discardDraftAndEdit() {
+		const message = pendingEdit;
+		pendingEdit = null;
+		if (!message) return;
+		media = undefined;
+		startEdit(message);
+	}
+
+	function cancelEdit() {
+		editing = null;
+		value = '';
+	}
+
+	async function submitEdit() {
+		const target = editing;
+		if (!target || sending || !hasBody(target.content)) return;
+		const text = value.trim();
+		if (!text || text === target.content.message) {
+			cancelEdit();
+			return;
+		}
+		sending = true;
 		try {
-			await onEdit(target, text);
-			onCancelEdit?.();
+			await store.editMessage(target, text);
+			cancelEdit();
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to edit message', e);
+		} finally {
+			sending = false;
 		}
+	}
+
+	/** Stage `message` as the target of the next send. `authorName` is the
+	 * display name shown in the banner. */
+	export function replyToMessage(message: Message, authorName: string) {
+		if (editing) cancelEdit();
+		replying = message;
+		replyingToName = authorName;
+		messageInput?.focus();
+	}
+
+	function cancelReply() {
+		replying = null;
+	}
+
+	/** Open the delete confirmation dialog for `message`. Delete-for-me is
+	 * always offered; delete-for-everyone only when `canDeleteForEveryone`. */
+	export function deleteMessage(
+		message: Message,
+		canDeleteForEveryone: boolean,
+	) {
+		deleting = message;
+		deletingForEveryone = canDeleteForEveryone;
+	}
+
+	async function confirmDeleteForEveryone() {
+		const target = deleting;
+		deleting = null;
+		if (!target) return;
+		try {
+			await store.deleteMessageForEveryone(target);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to delete message', e);
+		}
+	}
+
+	async function confirmDeleteForMe() {
+		const target = deleting;
+		deleting = null;
+		if (!target) return;
+		try {
+			await store.deleteMessageForMe(target);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to delete message for me', e);
+		}
+	}
+
+	function toggleMediaPanel() {
+		if (!showMediaPanel) {
+			showMediaPanel = true;
+			return;
+		}
+		// Flip the intent right away so the attach button reacts instantly, then
+		// hand focus to the input: the plugin sees the close arrive with an input
+		// focused and holds the reserved inset until the rising keyboard claims the
+		// slot, so the input bar stays pinned during the swap.
+		showMediaPanel = false;
+		messageInput?.focus();
 	}
 
 	/** Returns whether the message was sent (so callers can keep the draft on failure). */
@@ -124,7 +224,7 @@
 			if (media === draft) {
 				media = undefined;
 			}
-			if (replyTo) onCancelReply?.();
+			if (replying === replyTo) replying = null;
 			messageInput?.reset();
 			onSent?.(hash);
 			return true;
@@ -162,6 +262,11 @@
 		}
 	}
 
+	function stageFromPanel(files: File[]) {
+		showMediaPanel = false;
+		stage(files);
+	}
+
 	async function addMore() {
 		try {
 			const files = await pickMedia('image', true);
@@ -178,6 +283,15 @@
 		if (isMobile && media && !page.state.stagedMedia) media = undefined;
 	});
 
+	$effect(() => {
+		if (editing) messageInput?.focus();
+	});
+
+	function openEmojiPicker() {
+		hideKeyboard();
+		showEmojiPicker = true;
+	}
+
 	function onPaste(event: ClipboardEvent) {
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
@@ -188,113 +302,111 @@
 
 <MediaDropOverlay onFiles={stage} />
 
+{#snippet emojiButton()}
+	<EmojiButton onClick={openEmojiPicker} />
+{/snippet}
+
+{#snippet editingBanner()}
+	<EditingBanner />
+{/snippet}
+
+{#snippet replyBanner()}
+	{#if replying}
+		<ReplyBanner
+			message={replying}
+			authorName={replyingToName}
+			onCancel={cancelReply}
+		/>
+	{/if}
+{/snippet}
+
 <div style="display: flow-root" use:keepKeyboardOpen>
-	<!-- Safe-area padding only when the bar is the bottom-most surface (nothing
-	     below it): no panel and no keyboard. Keying it off the panel alone bumps
-	     the bar by `env(safe-area-inset-bottom)` during the panel→keyboard swap,
-	     because the panel closes before the (visual-viewport-driven) safe area
-	     has collapsed to 0. -->
 	<div
-		class="message-input-bar"
-		class:pb-safe={!showMediaPanel && !keyboard.isOpen}
+		class="message-input-bar relative flow-root {theme === 'ios'
+			? 'z-30'
+			: 'z-10'}"
+		class:bg-page-surface={theme === 'material'}
+		use:renderAboveKeyboard
 	>
-		{#if editing}
-			<div
-				class="row items-center gap-2 px-3 pt-2 text-sm"
-				data-testid="composer-editing-banner"
-			>
-				<wa-icon
-					class="quiet"
-					src={wrapPathInSvg(mdiPencil)}
-					style="font-size: 1rem"
-				></wa-icon>
-				<span class="flex-1 quiet truncate">{m.editingMessage()}</span>
-				<button
-					type="button"
-					class="quiet flex h-7 w-7 items-center justify-center"
-					aria-label={m.cancel()}
-					data-testid="composer-cancel-edit"
-					onclick={() => onCancelEdit?.()}
-				>
-					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 1.1rem"
-					></wa-icon>
-				</button>
-			</div>
-		{:else}
-			{#if replying}
-				<div
-					class="row items-center gap-2 px-3 pt-2 text-sm"
-					data-testid="composer-reply-banner"
-				>
-					<wa-icon
-						class="quiet"
-						src={wrapPathInSvg(mdiReply)}
-						style="font-size: 1rem"
-					></wa-icon>
-					<span class="column min-w-0 flex-1">
-						<span class="quiet truncate font-semibold">
-							{m.replyingTo({ name: replyingToName })}
-						</span>
-						<span class="quiet truncate" data-testid="composer-reply-preview">
-							{replying.content.message ||
-								(replying.content.media?.kind === 'photos'
-									? m.photo()
-									: (replying.content.media?.file.name ?? ''))}
-						</span>
-					</span>
-					<button
-						type="button"
-						class="quiet flex h-7 w-7 items-center justify-center"
-						aria-label={m.cancel()}
-						data-testid="composer-cancel-reply"
-						onclick={() => onCancelReply?.()}
-					>
-						<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 1.1rem"
-						></wa-icon>
-					</button>
-				</div>
-			{/if}
-			{#if !isMobile}
-				<StagedAttachments bind:media onFiles={stage} />
-			{/if}
+		{#if !editing && !isMobile}
+			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
-		<div class="m-2 row gap-2" style="align-items: center;">
+		<div class="m-2 row gap-2" style="align-items: flex-end;">
 			{#if editing}
-				<!-- Media cannot be edited, so the attach button is hidden. -->
-			{:else if isMobile}
-				<AttachButton
-					class="h-10 w-10"
+				{#if !isWideScreen.value}
+					<DiscardEditButton onClick={cancelEdit} />
+				{/if}
+			{:else if isMobile && theme === 'ios'}
+				<StandaloneAttachButton
 					expanded={showMediaPanel}
-					onClick={() => (showMediaPanel = !showMediaPanel)}
+					onClick={toggleMediaPanel}
 				/>
+			{/if}
+			{#if !isMobile}
+				<EmojiButton onClick={openEmojiPicker} />
+			{/if}
+			<MessageInput
+				bind:this={messageInput}
+				bind:value
+				{placeholder}
+				onSend={send}
+				onpaste={onPaste}
+				onfocus={() => (showMediaPanel = false)}
+				before={isMobile && !isIos ? emojiButton : undefined}
+				banner={editing !== null
+					? editingBanner
+					: replying !== null
+						? replyBanner
+						: undefined}
+			>
+				{#snippet after()}
+					{#if !editing && isMobile && theme === 'material' && hasContent}
+						<InlineAttachButton
+							expanded={showMediaPanel}
+							onClick={toggleMediaPanel}
+						/>
+					{/if}
+				{/snippet}
+			</MessageInput>
+
+			{#if editing}
+				{#if isWideScreen.value}
+					<DiscardEditButton onClick={cancelEdit} />
+				{/if}
+				<SendButton onSend={send} editing />
+			{:else if isMobile}
+				{#if isIos}
+					<div
+						class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
+							? 'ms-0 w-[42px] opacity-100'
+							: '-ms-2 w-0 opacity-0'}"
+						style="transform: scale({hasContent ? 1 : 0})"
+						aria-hidden={!hasContent}
+					>
+						<SendButton onSend={send} />
+					</div>
+				{:else if hasContent}
+					<SendButton onSend={send} />
+				{:else if theme !== 'ios'}
+					<StandaloneAttachButton
+						expanded={showMediaPanel}
+						onClick={toggleMediaPanel}
+					/>
+				{/if}
 			{:else}
 				<AttachMenuButton onFiles={stage} />
-			{/if}
-			<div
-				class="input-container flex min-h-[42px] min-w-0 flex-1 items-center ps-2 {theme ===
-				'ios'
-					? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-					: 'bg-white dark:bg-gray-800'}"
-				onpaste={onPaste}
-			>
-				<MessageInput
-					bind:this={messageInput}
-					bind:value
-					{placeholder}
-					onSend={send}
-					onEmojiClick={() => (showEmojiPicker = true)}
-				/>
-			</div>
-
-			{#if isMobile}
-				<SendButton disabled={!hasContent} onSend={send} />
 			{/if}
 		</div>
 	</div>
 
 	{#if isMobile}
-		<MediaPanel bind:open={showMediaPanel} onFiles={stage} />
+		<BelowKeyboardSurface open={showMediaPanel} class="bg-page-surface z-20">
+			<MediaPanel
+				onFiles={stageFromPanel}
+				onPickerOpen={() => (showMediaPanel = false)}
+			/>
+		</BelowKeyboardSurface>
 	{/if}
 </div>
 
@@ -315,6 +427,77 @@
 	/>
 {/if}
 
+<Dialog
+	opened={pendingEdit !== null}
+	onBackdropClick={() => (pendingEdit = null)}
+	title={m.discardDraftTitle()}
+	data-testid="composer-discard-draft-dialog"
+>
+	<span>{m.discardDraftDescription()}</span>
+	{#snippet buttons()}
+		<DialogButton
+			data-testid="composer-discard-draft-cancel"
+			onClick={() => (pendingEdit = null)}
+		>
+			{m.cancel()}
+		</DialogButton>
+		<DialogButton
+			data-testid="composer-discard-draft-confirm"
+			onClick={discardDraftAndEdit}
+		>
+			{m.discard()}
+		</DialogButton>
+	{/snippet}
+</Dialog>
+
+<Dialog
+	opened={deleting !== null}
+	onBackdropClick={() => (deleting = null)}
+	title={m.deleteMessageTitle()}
+	data-testid="composer-delete-message-dialog"
+>
+	{#snippet buttons()}
+		{#if deletingForEveryone}
+			<div class="flex flex-col w-full">
+				<DialogButton
+					class="!text-red-500"
+					data-testid="composer-delete-confirm"
+					onClick={confirmDeleteForEveryone}
+				>
+					{m.deleteForEveryone()}
+				</DialogButton>
+				<DialogButton
+					class="!text-red-500"
+					data-testid="composer-delete-for-me-confirm"
+					onClick={confirmDeleteForMe}
+				>
+					{m.deleteForMe()}
+				</DialogButton>
+				<DialogButton
+					data-testid="composer-delete-cancel"
+					onClick={() => (deleting = null)}
+				>
+					{m.cancel()}
+				</DialogButton>
+			</div>
+		{:else}
+			<DialogButton
+				data-testid="composer-delete-cancel"
+				onClick={() => (deleting = null)}
+			>
+				{m.cancel()}
+			</DialogButton>
+			<DialogButton
+				class="!text-red-500"
+				data-testid="composer-delete-for-me-confirm"
+				onClick={confirmDeleteForMe}
+			>
+				{m.deleteForMe()}
+			</DialogButton>
+		{/if}
+	{/snippet}
+</Dialog>
+
 <Sheet
 	class="pb-safe text-lg"
 	opened={showEmojiPicker}
@@ -334,13 +517,18 @@
 </Sheet>
 
 <style>
-	.input-container {
-		border: 1px solid var(--k-hairline-color);
-		border-radius: 22px;
-		transition: border-color 0.15s ease;
-	}
-
-	.input-container:focus-within {
-		border-color: var(--color-brand-primary);
+	/* During keyboard glides the bar can lead the keyboard's edge by a few px;
+	   this skirt extends the bar's surface downward so the sliver between the
+	   bar and the keyboard paints page-surface instead of exposing the messages
+	   gliding behind it. Invisible at rest: everything legitimately below the
+	   bar (the shell's reserved-space padding, the media panel, the keyboard
+	   itself) either shares this color or paints above it. */
+	.message-input-bar:global(.bg-page-surface)::after {
+		content: '';
+		position: absolute;
+		inset-inline: 0;
+		top: 100%;
+		height: 64px;
+		background: inherit;
 	}
 </style>

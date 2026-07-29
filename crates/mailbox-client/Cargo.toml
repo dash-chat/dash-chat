@@ -20,9 +20,11 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
 tokio = { version = "1.43.0", features = ["full"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-bytes = "1.11.0"
+bytes = { workspace = true }
 
 
+
+reporting = { workspace = true }
 
 # TODO: pull out the toy mailbox request/response types so they can be
 #       independently depended upon

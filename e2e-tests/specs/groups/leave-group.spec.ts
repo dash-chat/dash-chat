@@ -1,17 +1,14 @@
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { tid } from '../../helpers/selectors';
-import { type Agent, setupAgent } from '../../setup/setup-agents';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Leaving group', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
-		]);
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
 
 		await agent1.enablePreviewFeatures();
 		await agent2.enablePreviewFeatures();

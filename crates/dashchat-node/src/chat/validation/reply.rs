@@ -83,9 +83,9 @@ impl ReplyCandidate {
     // the lookup above; this catches a delete that covers the target but has
     // not been applied locally yet.
     fn check_target_not_deleted(&self, valid_ops: &ValidChatOps) -> Result<(), ReplyError> {
-        let deleted = valid_ops
-            .values()
-            .any(|op| matches!(&op.kind, ChatOpKind::Delete(covered) if covered.contains(&self.target)));
+        let deleted = valid_ops.values().any(
+            |op| matches!(&op.kind, ChatOpKind::Delete(covered) if covered.contains(&self.target)),
+        );
         if deleted {
             return Err(ReplyError::TargetDeleted);
         }

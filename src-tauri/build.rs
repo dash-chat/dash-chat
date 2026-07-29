@@ -3,41 +3,41 @@ use std::net::UdpSocket;
 fn main() {
     capture_git_commit();
 
-    // Mobile devices run on a different machine than the dev servers and can't
-    // read the dev shell's runtime env, so bake the dev-server URLs (the compile
-    // host's LAN IP) into debug cross-compiled builds. Desktop dev reads
-    // MAILBOX_URL / PUSH_NOTIFICATIONS_SERVER_URL from the runtime env instead
-    // (set by `just dev`), and release builds fall through to the production URLs.
-    if tauri_build::is_dev() {
-        println!("cargo:rerun-if-env-changed=MAILBOX_URL");
-        println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
-        println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_URL");
-        println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_PORT");
-
-        let mailbox_url = std::env::var("MAILBOX_URL").unwrap_or_else(|_| {
-            let port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
-            let host = local_ip().unwrap_or_else(|| {
-                println!(
-                    "cargo:warning=Could not detect local IP; falling back to 127.0.0.1. \
-                     Mobile devices will not be able to reach the dev servers."
-                );
-                "127.0.0.1".to_string()
-            });
-            format!("http://{host}:{port}")
-        });
-
-        let push_url = std::env::var("PUSH_NOTIFICATIONS_SERVER_URL").unwrap_or_else(|_| {
-            let port = std::env::var("PUSH_NOTIFICATIONS_SERVER_PORT")
-                .unwrap_or_else(|_| "3001".to_string());
-            let host = local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
-            format!("http://{host}:{port}")
-        });
-
-        println!("cargo:rustc-env=MAILBOX_URL={mailbox_url}");
-        println!("cargo:rustc-env=PUSH_NOTIFICATIONS_SERVER_URL={push_url}");
-    }
+    // An explicit MAILBOX_URL / PUSH_NOTIFICATIONS_SERVER_URL in the build env
+    // is read directly by option_env! in the consumers, so build.rs only needs
+    // to synthesize a URL when a dev flow (`just dev`) exports the server's
+    // *_PORT: mobile devices run on a different machine than the dev servers
+    // and can't read the dev shell's runtime env, so bake the compile host's
+    // LAN IP + port into the binary. With neither var set, the consumers fall
+    // through to the production URLs.
+    println!("cargo:rerun-if-env-changed=MAILBOX_URL");
+    println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
+    println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_URL");
+    println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_PORT");
+    synthesize_url_from_port("MAILBOX_URL", "MAILBOX_PORT");
+    synthesize_url_from_port(
+        "PUSH_NOTIFICATIONS_SERVER_URL",
+        "PUSH_NOTIFICATIONS_SERVER_PORT",
+    );
 
     tauri_build::build()
+}
+
+fn synthesize_url_from_port(url_var: &str, port_var: &str) {
+    if std::env::var(url_var).is_ok() {
+        return;
+    }
+    let Ok(port) = std::env::var(port_var) else {
+        return;
+    };
+    let host = local_ip().unwrap_or_else(|| {
+        println!(
+            "cargo:warning=Could not detect local IP; falling back to 127.0.0.1. \
+             Mobile devices will not be able to reach the dev servers."
+        );
+        "127.0.0.1".to_string()
+    });
+    println!("cargo:rustc-env={url_var}=http://{host}:{port}");
 }
 
 /// Returns the compile host's LAN IP by asking the kernel which interface it

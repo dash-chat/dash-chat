@@ -1,65 +1,60 @@
 import { reactive } from 'signalium';
 
-import {
-	applyDeletes,
-	applyDeletesForMe,
-	collectDeleteForMeHashes,
-} from '../chats/deletes';
-import { MessageVersion, applyEdits } from '../chats/edits';
-import { MessageReply, applyReplies } from '../chats/replies';
+import { isPendingChatKey, pendingChatKeyDevice } from '../chats/chat-key';
+import { type IMessagesClient } from '../chats/messages-client';
+import { Message, MessagesStore } from '../chats/messages-store';
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
+import { ChatSummary, Payload } from '../types';
 import {
-	ChatReaction,
-	ChatSummary,
-	MediaAttachment,
-	MessagesStore,
-	OutgoingMedia,
-	Payload,
-	mediaBundleToAttachment,
-} from '../types';
-import { EventWithProvenance, orderInEventSets } from '../utils/event-sets';
+	EventWithProvenance,
+	groupEventsInDays,
+} from '../utils/group-events-in-days';
 import { type IDirectChatClient } from './direct-chat-client';
 
-export interface Message {
-	hash: string;
-	content: {
-		message: string;
-		media: MediaAttachment | null;
-	};
-	timestamp: number;
-	author: DeviceId;
-	seqNum: number;
-	reactions: Record<DeviceId, string>;
-	/** Timestamp of the latest edit, if the message has been edited. */
-	editedAt?: number;
-	/** Every version of the text, original first, when the message was edited. */
-	history?: MessageVersion[];
-	/** Hash of the latest edit op in the chain; the target for the next edit. */
-	latestEditHash?: Hash;
-	/** Whether the message was deleted for everyone; rendered as a placeholder. */
-	deleted?: boolean;
-	/** Raw hash of the operation this message replies to, straight from the log. */
-	replyTo?: Hash;
-	/** The reply resolved for rendering; unset when the annotation is invalid. */
-	reply?: MessageReply;
-}
-
 // Store tied to a specific direct chat
-export class DirectChatStore implements MessagesStore {
+export class DirectChatStore {
+	messages: MessagesStore;
+
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		public client: IDirectChatClient,
 		public peer: AgentId,
-	) {}
+		messagesClient: IMessagesClient,
+	) {
+		this.messages = new MessagesStore(
+			logsStore,
+			contactsStore,
+			this.chatId,
+			messagesClient,
+		);
+	}
 
-	chatId = reactive(async () => await this.client.chatId(this.peer));
+	get isPending(): boolean {
+		return isPendingChatKey(this.peer);
+	}
+
+	resolvedPendingAgent = reactive(async () => {
+		const device = pendingChatKeyDevice(this.peer);
+		if (device === undefined) return undefined;
+		// Depend on the reactive contacts list so this re-runs once the contact
+		// is established (the device→agent mapping is saved around the same time
+		// the AddContact marker is published).
+		await this.contactsStore.contactsAgentIds();
+		return await this.contactsStore.client.agentForDevice(device);
+	});
+
+	chatId = reactive(async () => {
+		if (this.isPending) return '';
+		return await this.client.chatId(this.peer);
+	});
 
 	peerProfile = reactive(async () => {
+		if (this.isPending) return undefined;
 		const request = await this.contactRequest();
 		if (request) return request.profile;
 		return await this.contactsStore.profiles(this.peer);
@@ -67,74 +62,11 @@ export class DirectChatStore implements MessagesStore {
 
 	contactRequest = reactive(async () => {
 		const contactRequests = await this.contactsStore.contactRequests();
-		return contactRequests.find(cr => cr.code.agent_id === this.peer);
+		return contactRequests.find(cr => cr.agentId === this.peer);
 	});
 
-	messages = reactive(async () => {
-		const chatId = await this.chatId();
-		const logs = await this.logsStore.logsForAllAuthors(chatId);
-
-		const messages: Record<Hash, Message> = {};
-
-		for (const [author, operations] of Object.entries(logs)) {
-			for (const operation of operations) {
-				const body = operation.body;
-				if (body?.type === 'Chat') {
-					if (body.payload.type === 'Message') {
-						messages[operation.hash] = {
-							hash: operation.hash,
-							content: {
-								message: body.payload.payload.message,
-								media: mediaBundleToAttachment(body.payload.payload.media),
-							},
-							author,
-							seqNum: operation.header.seq_num,
-							timestamp: operation.header.timestamp,
-							reactions: {},
-							replyTo: body.payload.payload.reply,
-						};
-					}
-				}
-			}
-		}
-		// reactions applied in second loop after messages are fully resolved
-		for (const [author, operations] of Object.entries(logs)) {
-			for (const operation of operations) {
-				const body = operation.body;
-				if (body?.type === 'Chat') {
-					if (body.payload.type === 'Reaction') {
-						const payload = body.payload.payload;
-						let message = messages[payload.target];
-						if (message) {
-							if (payload.emoji) {
-								message.reactions[author] = payload.emoji;
-							} else {
-								delete message.reactions[author];
-							}
-						} else {
-							console.warn('reaction for missing message');
-						}
-					}
-				}
-			}
-		}
-		const deletedForMeHashes = await this.deletedForMeHashes();
-		applyEdits(messages, logs);
-		applyDeletes(messages, logs);
-		applyDeletesForMe(messages, deletedForMeHashes);
-		applyReplies(messages, logs, deletedForMeHashes);
-		return messages;
-	});
-
-	deletedForMeHashes = reactive(async () => {
-		const chatId = await this.chatId();
-		const deviceGroupLog =
-			await this.contactsStore.devicesStore.myDeviceGroupTopic();
-		return collectDeleteForMeHashes(chatId, deviceGroupLog);
-	});
-
-	messageSets = reactive(async () => {
-		const messages = await this.messages();
+	groupedMessages = reactive(async () => {
+		const messages = await this.messages.messages();
 
 		const eventsWithProvenance: Record<Hash, EventWithProvenance<Message>> = {};
 		const devices = new Set<DeviceId>();
@@ -151,20 +83,11 @@ export class DirectChatStore implements MessagesStore {
 
 		const agentsSets = Array.from(devices).map(a => [a]);
 
-		const messagesWithProvenance = orderInEventSets(
+		const messagesWithProvenance = groupEventsInDays(
 			eventsWithProvenance,
 			agentsSets,
 		);
 		return messagesWithProvenance;
-	});
-
-	lastMessage = reactive(async () => {
-		const messages = await this.messages();
-
-		const sortedMessages = Object.values(messages).sort(
-			(m1, m2) => m2.timestamp - m1.timestamp,
-		);
-		return sortedMessages.length > 0 ? sortedMessages[0] : undefined;
 	});
 
 	onNewMessage(
@@ -173,74 +96,22 @@ export class DirectChatStore implements MessagesStore {
 		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
 			const chatId = await this.chatId();
 			if (topicId !== chatId) return;
-			if (op.body?.payload.type !== 'Message') return;
+			if (!(op.body?.type === 'Chat' && op.body.payload.type === 'Message'))
+				return;
 			handler(op, op.body.payload.payload.message);
 		});
 	}
 
-	async sendMessage(input: {
-		message: string;
-		media: OutgoingMedia | null;
-		replyTo?: Message | null;
-	}): Promise<Hash> {
-		const chatId = await this.chatId();
-
-		// A reply targets the latest known edit of the message, like edits and
-		// deletes do.
-		const reply = input.replyTo
-			? (input.replyTo.latestEditHash ?? input.replyTo.hash)
-			: null;
-		return this.client.sendMessage(chatId, input.message, input.media, reply);
-	}
-
-	readMessageHashes = reactive(async () => {
-		const chatId = await this.chatId();
-		const myDeviceGroupTopic =
-			await this.contactsStore.devicesStore.myDeviceGroupTopic();
-		const readHashes: Set<Hash> = new Set();
-
-		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
-			for (const op of ops) {
-				if (
-					op.body?.payload?.type === 'ReadMessages' &&
-					op.body.payload.payload.chat_id === chatId
-				) {
-					for (const hash of op.body.payload.payload.message_hashes) {
-						readHashes.add(hash);
-					}
-				}
-			}
-		}
-
-		return readHashes;
-	});
-
-	unreadCount = reactive(async () => {
-		const messages = await this.messages();
-		const readHashes = await this.readMessageHashes();
-		const myDeviceId = await this.contactsStore.myDeviceId();
-
-		let count = 0;
-		for (const [hash, message] of Object.entries(messages)) {
-			// Only count messages from others (not our own)
-			if (message.author !== myDeviceId && !readHashes.has(hash)) {
-				count++;
-			}
-		}
-		return count;
-	});
-
 	summary = reactive(async (): Promise<ChatSummary> => {
 		const profile = await this.peerProfile();
-		const message = await this.lastMessage();
-		const unreadCount = await this.unreadCount();
+		const message = await this.messages.lastMessage();
+		const unreadCount = await this.messages.unreadCount();
 
 		const lastEvent: ChatSummary['lastEvent'] = message
 			? {
 					kind: 'message',
 					content: message.content,
 					timestamp: message.timestamp,
-					deleted: message.deleted,
 				}
 			: {
 					kind: 'contact_added',
@@ -257,32 +128,4 @@ export class DirectChatStore implements MessagesStore {
 			unreadMessages: unreadCount,
 		};
 	});
-
-	async markAsRead(messageHashes: Hash[]): Promise<void> {
-		const chatId = await this.chatId();
-		await this.client.markMessagesRead(chatId, messageHashes);
-	}
-
-	async sendReaction(reaction: ChatReaction) {
-		const chatId = await this.chatId();
-		await this.client.sendReaction(chatId, reaction);
-	}
-
-	async editMessage(message: Message, newText: string): Promise<Hash> {
-		const chatId = await this.chatId();
-		const target = message.latestEditHash ?? message.hash;
-		return this.client.editMessage(chatId, target, newText);
-	}
-
-	async deleteMessage(message: Message): Promise<Hash> {
-		const chatId = await this.chatId();
-		const target = message.latestEditHash ?? message.hash;
-		return this.client.deleteMessage(chatId, target);
-	}
-
-	async deleteMessageForMe(message: Message): Promise<Hash> {
-		const chatId = await this.chatId();
-		const target = message.latestEditHash ?? message.hash;
-		return this.client.deleteMessageForMe(chatId, target);
-	}
 }

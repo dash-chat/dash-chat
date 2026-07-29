@@ -14,6 +14,7 @@ resolver = "2"
 aliased = "0.1.0"
 anyhow = "1"
 async-trait = "0.1"
+bytes = "1.11"
 ciborium = "0.2.2"
 ed25519-dalek = "2.2"
 derive_more = { version = "2.1.1", features = ["full"] }
@@ -26,6 +27,7 @@ dashchat-utils = { path = "crates/dashchat-utils" }
 mailbox-client = { path = "crates/mailbox-client" }
 mailbox-server = { path = "crates/mailbox-server" }
 mailbox-local-server = { path = "crates/mailbox-local-server" }
+reporting = { path = "crates/reporting" }
 
 p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
 p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
