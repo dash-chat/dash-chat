@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Dialog, DialogButton } from 'konsta/svelte';
+	import { DialogButton } from 'konsta/svelte';
+	import LazyDialog from '$lib/components/LazyDialog.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 
 	interface Props {
@@ -12,7 +13,7 @@
 	let { opened, onConfirm, onCancel }: Props = $props();
 </script>
 
-<Dialog
+<LazyDialog
 	{opened}
 	onBackdropClick={onCancel}
 	title={m.deleteMessageTitle()}
@@ -26,4 +27,4 @@
 			{m.deleteForEveryone()}
 		</DialogButton>
 	{/snippet}
-</Dialog>
+</LazyDialog>
