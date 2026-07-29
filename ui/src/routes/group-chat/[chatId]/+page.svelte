@@ -325,6 +325,21 @@
 																	myDeviceId,
 																),
 															)}
+														onReply={() =>
+															composer?.replyToMessage(
+																message,
+																deviceDisplayName(
+																	message.author,
+																	myDeviceId,
+																	members,
+																),
+															)}
+														replyAuthorName={quotedAuthorName(
+															message,
+															myDeviceId,
+															members,
+														)}
+														onNavigateToMessage={navigateToMessage}
 													/>
 												</div>
 											{:else}
@@ -350,6 +365,21 @@
 														showAvatar
 														onDelete={() =>
 															composer?.deleteMessage(message, false)}
+														onReply={() =>
+															composer?.replyToMessage(
+																message,
+																deviceDisplayName(
+																	message.author,
+																	myDeviceId,
+																	members,
+																),
+															)}
+														replyAuthorName={quotedAuthorName(
+															message,
+															myDeviceId,
+															members,
+														)}
+														onNavigateToMessage={navigateToMessage}
 													/>
 												</div>
 											{/if}
