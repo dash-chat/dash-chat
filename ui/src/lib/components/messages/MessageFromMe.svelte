@@ -19,12 +19,14 @@
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
+	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { toggleReaction } from '$lib/utils/reactions';
+	import { showToast } from '$lib/utils/toasts';
 
 	let {
 		message,
@@ -33,7 +35,6 @@
 		searchQuery,
 		chatId,
 		onEdit,
-		onDelete,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -41,7 +42,6 @@
 		chatId: ChatId;
 		searchQuery: string;
 		onEdit?: () => void;
-		onDelete?: () => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -59,6 +59,17 @@
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
+	let confirmingDelete = $state(false);
+
+	async function deleteMessage() {
+		confirmingDelete = false;
+		try {
+			await store.deleteMessage(message);
+		} catch (e) {
+			console.error('Failed to delete message', e);
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		}
+	}
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (!hasBody(message.content)) return;
@@ -111,7 +122,13 @@
 <div class="group flex justify-end" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile && hasBody(message.content)}
-			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onDelete} reverse />
+			<MessageHoverToolbar
+				{message}
+				{myDeviceId}
+				{onEdit}
+				onDelete={() => (confirmingDelete = true)}
+				reverse
+			/>
 		{/if}
 		{#if deleted}
 			<DeletedMessage {message} {position} {myDeviceId} />
@@ -152,7 +169,7 @@
 		{message}
 		{myDeviceId}
 		{onEdit}
-		{onDelete}
+		onDelete={() => (confirmingDelete = true)}
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
@@ -161,7 +178,13 @@
 		{message}
 		{myDeviceId}
 		{onEdit}
-		{onDelete}
+		onDelete={() => (confirmingDelete = true)}
 		bind:point={contextMenuPoint}
 	/>
 {/if}
+
+<DeleteMessageDialog
+	opened={confirmingDelete}
+	onConfirm={deleteMessage}
+	onCancel={() => (confirmingDelete = false)}
+/>

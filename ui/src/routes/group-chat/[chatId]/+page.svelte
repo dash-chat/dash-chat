@@ -278,7 +278,6 @@
 														{chatId}
 														searchQuery=""
 														onEdit={() => composer?.editMessage(message)}
-														onDelete={() => composer?.deleteMessage(message)}
 													/>
 												</div>
 											{:else}
