@@ -9,9 +9,10 @@ impl crate::Node {
     pub async fn report_contact(&self, agent_id: AgentId) -> anyhow::Result<Vec<MailboxId>> {
         let device_ids = self.projection.devices_for_agent(agent_id).await?;
         // An empty report would be pushed to every mailbox and report back the
-        // mailboxes it reached, reading as a successful report. It also must not
-        // collapse into the empty "no mailbox reached" result, which tells the
-        // user to retry when they have a network connection.
+        // mailboxes it reached, reading as a successful report, so we don't want that.
+        // We also don't want to interpret an empty report as "no mailbox reached",
+        // which tells the user to retry when they have a network connection.
+        // So we fail early here.
         anyhow::ensure!(
             !device_ids.is_empty(),
             "no devices known for agent {agent_id}, cannot report"
