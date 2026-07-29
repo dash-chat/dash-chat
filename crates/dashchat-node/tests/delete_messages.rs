@@ -631,3 +631,85 @@ async fn delete_cannot_censor_unsynced_message_from_another_author() {
         Some(true)
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn junk_hash_in_payload_cannot_disable_delete_chain_validation() {
+    let poll = PollConfig::default();
+    let mb = TestMailbox::from_env();
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mb)
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_topic(bobbi.agent_id());
+
+    let msg = alice
+        .send_message_raw(chat, "my password is hunter2".into())
+        .await
+        .unwrap();
+    let edit = alice
+        .edit_message(chat, msg.hash(), "oops, ignore that")
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    let redacted = bobbi.valid_edits(chat).await.unwrap();
+    assert_eq!(redacted.len(), 1);
+    assert_eq!(redacted[0].text, "oops, ignore that");
+
+    // Control: deleting the tip edit alone is a partial chain, and every hash
+    // resolves, so full validation runs and rejects it.
+    alice
+        .delete_message_raw(chat, maplit::btreeset![edit.hash()])
+        .await
+        .unwrap();
+    alice.send_message_raw(chat, "after".into()).await.unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+    assert!(
+        !bobbi
+            .projection
+            .is_tombstoned(*chat, edit.hash())
+            .await
+            .unwrap(),
+        "a partial-chain delete was applied even with every hash resolvable"
+    );
+
+    // The same partial chain, plus one hash that is not a chat op. Nothing else
+    // about the delete changes.
+    let not_a_chat_op = Hash::from_bytes([0xCD; 32]);
+    alice
+        .delete_message_raw(chat, [edit.hash(), not_a_chat_op].into_iter().collect())
+        .await
+        .unwrap();
+    alice
+        .send_message_raw(chat, "after the junk hash".into())
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    assert!(
+        !bobbi
+            .projection
+            .is_tombstoned(*chat, edit.hash())
+            .await
+            .unwrap(),
+        "a junk hash in the payload disabled chain-completeness validation"
+    );
+}
