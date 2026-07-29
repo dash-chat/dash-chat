@@ -17,40 +17,35 @@ describe('Deleting messages', () => {
 
 	it('deletes a message for everyone, showing a placeholder on both sides', async () => {
 		await agent1.directChatPage.composer.sendMessage('Delete me');
-		const message =
+		const mine =
 			await agent1.directChatPage.messages.waitForMessage('Delete me');
-		await agent2.directChatPage.messages.waitForMessage('Delete me');
+		const theirs =
+			await agent2.directChatPage.messages.waitForMessage('Delete me');
 
-		await message.deleteForEveryone();
+		await mine.deleteForEveryone();
 
-		await agent1.directChatPage.messages.waitForDeleted(
-			'Delete me',
-			'You deleted this message.',
-		);
-		await agent2.directChatPage.messages.waitForDeleted(
-			'Delete me',
-			'This message was deleted.',
+		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
+		await theirs.waitForDeleted(
+			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice Test' }),
 		);
 	});
 
 	it('deletes an edited message via its latest edit', async () => {
 		await agent1.directChatPage.composer.sendMessage('Draft v1');
-		const original =
+		const mine =
 			await agent1.directChatPage.messages.waitForMessage('Draft v1');
-		await original.edit('Draft v1', 'Draft v2');
-		const edited =
-			await agent1.directChatPage.messages.waitForMessage('Draft v2');
-		await agent2.directChatPage.messages.waitForMessage('Draft v2');
+		await agent2.directChatPage.messages.waitForMessage('Draft v1');
 
-		await edited.deleteForEveryone();
+		await mine.edit('Draft v1', 'Draft v2');
+		await agent1.directChatPage.messages.waitForMessage('Draft v2');
+		const theirs =
+			await agent2.directChatPage.messages.waitForMessage('Draft v2');
 
-		await agent1.directChatPage.messages.waitForDeleted(
-			'Draft v2',
-			'You deleted this message.',
-		);
-		await agent2.directChatPage.messages.waitForDeleted(
-			'Draft v2',
-			'This message was deleted.',
+		await mine.deleteForEveryone();
+
+		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
+		await theirs.waitForDeleted(
+			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice Test' }),
 		);
 	});
 

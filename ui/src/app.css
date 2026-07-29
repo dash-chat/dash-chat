@@ -192,9 +192,47 @@ li.plain span {
 */
 .message {
 	font-weight: 425;
+	margin: 0;
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
 .wide-layout .message {
 	font-weight: 500;
+}
+
+/* Bubbles I sent hang on the end side, incoming ones on the start side. Both
+   square off the corner facing their neighbours within a run. */
+.outgoing-message {
+	align-self: end;
+}
+.outgoing-message.first-message {
+	border-end-end-radius: 4px;
+}
+.outgoing-message.middle-message {
+	border-start-end-radius: 4px;
+	border-end-end-radius: 4px;
+}
+.outgoing-message.last-message {
+	border-start-end-radius: 4px;
+}
+.incoming-message.first-message {
+	border-end-start-radius: 4px;
+}
+.incoming-message.middle-message {
+	border-start-start-radius: 4px;
+	border-end-start-radius: 4px;
+}
+.incoming-message.last-message {
+	border-start-start-radius: 4px;
+}
+
+/* A message still waiting to reach the cloud mailbox while we are offline. */
+.offline-message {
+	border: 3px dashed rgb(255, 182, 193);
+	background-clip: padding-box;
+}
+.offline-message > div {
+	padding: calc(0.5rem - 2px) !important;
 }
 
 .icon-only-card {

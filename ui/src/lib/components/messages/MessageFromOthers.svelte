@@ -3,6 +3,7 @@
 	import {
 		fullName,
 		hasBody,
+		isDeleted,
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
@@ -12,6 +13,7 @@
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
+	import DeletedMessage from './DeletedMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
@@ -49,6 +51,7 @@
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+	const deleted = $derived(isDeleted(message.content));
 	const senderDisplayName = $derived(
 		sender && sender.name ? fullName(sender) : m.unknownSender(),
 	);
@@ -125,20 +128,28 @@
 					<div class="shrink-0" style="width: 2rem"></div>
 				{/if}
 			{/if}
-			<Card
-				raised
-				contentWrapPadding="p-2"
-				class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-			>
-				<MessageContent
+			{#if deleted}
+				<DeletedMessage
 					{message}
-					{searchQuery}
+					{position}
+					{myDeviceId}
 					senderName={senderDisplayName}
-					{showSenderName}
-					deletedText={m.thisMessageWasDeleted()}
-					metadata={isLast || editHistory.length > 0 ? metadata : undefined}
 				/>
-			</Card>
+			{:else}
+				<Card
+					raised
+					contentWrapPadding="p-2"
+					class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+				>
+					<MessageContent
+						{message}
+						{searchQuery}
+						senderName={senderDisplayName}
+						{showSenderName}
+						metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+					/>
+				</Card>
+			{/if}
 		</div>
 		{#if Object.keys(reactions).length > 0}
 			<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
@@ -168,29 +179,3 @@
 		bind:point={contextMenuPoint}
 	/>
 {/if}
-
-<style>
-	:global(.others-message) {
-		margin: 0;
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-	:global(.others-message.first-message) {
-		border-end-start-radius: 4px;
-	}
-	:global(.others-message.middle-message) {
-		border-start-start-radius: 4px;
-		border-end-start-radius: 4px;
-	}
-	:global(.others-message.last-message) {
-		border-start-start-radius: 4px;
-	}
-
-	:global(.others-message.offline-message) {
-		border: 3px dashed rgb(255, 182, 193);
-		background-clip: padding-box;
-	}
-	:global(.others-message.offline-message > div) {
-		padding: calc(0.5rem - 2px) !important;
-	}
-</style>

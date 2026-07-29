@@ -268,17 +268,41 @@ export class Message extends TestHelper {
 		return this.wrapper.$(tid('message-action-delete'));
 	}
 
+	/** The deleted-for-everyone placeholder that replaces this message's body. */
+	get deletedPlaceholder() {
+		return this.wrapper.$(tid('message-deleted-placeholder'));
+	}
+
 	/** Open this message's actions menu with the gesture its platform uses — a
-	 * long-press on mobile, which opens the spotlight overlay, or a right-click
-	 * on desktop, which opens the popover at the cursor — and wait for it to
-	 * actually open. */
+	 * long-press on mobile, which opens the spotlight overlay, or the hover
+	 * toolbar's ⋯ button on desktop — and wait for it to actually open. */
 	async openActions() {
 		if (await this.isMobileBuild()) {
 			await this.longPressBubble();
 		} else {
-			await this.rightClickBubble();
+			await this.clickHoverButton('message-hover-menu');
 		}
 		await this.actionsMenu.waitForDisplayed();
+	}
+
+	/** The right-click menu, a second actions menu the message hosts alongside
+	 * the hover toolbar's. Its items have the same testids as that one, so they
+	 * must be resolved inside it rather than in the message wrapper. */
+	get contextMenu() {
+		return this.wrapper.$(tid('message-context-menu'));
+	}
+
+	get contextMenuCopyAction() {
+		return this.contextMenu.$(tid('message-action-copy'));
+	}
+
+	/** Open this message's actions menu the other way desktop offers — a
+	 * right-click on the bubble, which opens `MessageContextMenu` at the cursor
+	 * rather than the hover toolbar's popover. Desktop only: on mobile the
+	 * gesture belongs to the spotlight overlay instead. */
+	async openActionsByRightClick() {
+		await this.pressBubble('contextmenu');
+		await this.contextMenu.waitForDisplayed();
 	}
 
 	/** Whether the app is rendering its mobile UI. Read from the user agent
@@ -299,10 +323,6 @@ export class Message extends TestHelper {
 		);
 	}
 
-	private async rightClickBubble() {
-		await this.pressBubble('contextmenu');
-	}
-
 	/** Hold a touch on the bubble past the long-press threshold, then lift it,
 	 * the way a mobile user opens the actions menu. */
 	private async longPressBubble() {
@@ -320,14 +340,14 @@ export class Message extends TestHelper {
 		if (await this.isMobileBuild()) {
 			await this.longPressBubble();
 		} else {
-			await this.clickHoverReact();
+			await this.clickHoverButton('message-hover-react');
 		}
 		// A quick-reaction bar exists per message; scope to this one.
 		await this.wrapper.$(tid('quick-reaction-bar')).waitForDisplayed();
 	}
 
 	/** JS-clicked because the toolbar is hover-revealed. */
-	private async clickHoverReact() {
+	private async clickHoverButton(testid: string) {
 		const clicked = await this.agent.execute(
 			(wrapperSel: string, buttonSel: string) => {
 				const button = document
@@ -338,10 +358,12 @@ export class Message extends TestHelper {
 				return true;
 			},
 			this.wrapperSelector,
-			tid('message-hover-react'),
+			tid(testid),
 		);
 		if (!clicked)
-			throw new Error(`Add-reaction button on message ${this.hash} not found`);
+			throw new Error(
+				`Hover-toolbar button "${testid}" on message ${this.hash} not found`,
+			);
 	}
 
 	/** Open the quick-reaction bar and tap the given quick emoji. */
@@ -450,5 +472,21 @@ export class Message extends TestHelper {
 		await this.openActions();
 		await this.deleteAction.waitForClickable();
 		await this.deleteAction.click();
+	}
+
+
+	/** Wait for this message to render the deleted-for-everyone placeholder
+	 * reading `text`. A delete tombstones the original message rather than
+	 * replacing it, so the hash — and this helper — stays valid across it. */
+	async waitForDeleted(text: string, timeout = SYNC_TIMEOUT): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				(await this.deletedPlaceholder.isExisting()) &&
+				(await this.deletedPlaceholder.getText()).trim() === text,
+			{
+				timeout,
+				timeoutMsg: `Message ${this.hash} does not show the deleted placeholder "${text}"`,
+			},
+		);
 	}
 }

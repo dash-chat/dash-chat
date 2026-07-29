@@ -7,7 +7,6 @@
 		type ChatSummary,
 		type MediaAttachment,
 		hasBody,
-		isDeleted,
 	} from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge } from 'konsta/svelte';
@@ -118,20 +117,12 @@
 						{#if hasBody(summary.lastEvent.content)}
 							{summarizeMessage(summary.lastEvent.content)}
 						{:else}
-							<span class="italic"
-								>{isDeleted(summary.lastEvent.content)
-									? m.messageDeleted()
-									: m.messageUnavailable()}</span
-							>
+							<span class="italic">{m.messageDeleted()}</span>
 						{/if}
 					{:else if hasBody(summary.lastEvent.content)}
 						{summarizeMessage(summary.lastEvent.content)}
 					{:else}
-						<span class="italic"
-							>{isDeleted(summary.lastEvent.content)
-								? m.messageDeleted()
-								: m.messageUnavailable()}</span
-						>
+						<span class="italic">{m.messageDeleted()}</span>
 					{/if}
 				{:else}
 					{groupEventText(summary.lastEvent)}
