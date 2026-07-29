@@ -7,10 +7,6 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
-	import {
-		canDeleteMessageForEveryone,
-		canEditMessage,
-	} from './message-helpers';
 	import SpotlightOverlay from '$lib/components/SpotlightOverlay.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
@@ -39,13 +35,6 @@
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
-
-	// Depends on `opened` so the 24h windows are re-checked each time the
-	// overlay opens, not once at mount.
-	const canEdit = $derived(opened && canEditMessage(message, myDeviceId));
-	const canDelete = $derived(
-		opened && canDeleteMessageForEveryone(message, myDeviceId),
-	);
 
 	let expanded = $state(false);
 
@@ -92,10 +81,10 @@
 	{/snippet}
 	{#snippet below()}
 		<MessageActionsMenu
-			{canEdit}
+			{message}
+			{myDeviceId}
 			onEdit={edit}
 			onCopy={copy}
-			{canDelete}
 			onDelete={del}
 		/>
 	{/snippet}
