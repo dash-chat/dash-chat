@@ -78,6 +78,7 @@
 			"lightColor": "#6E7BFF"
 		},
 		"background-service": {
+			"androidForegroundServiceTypes": ["remoteMessaging"]
 		}
 	}
 }
