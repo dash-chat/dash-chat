@@ -276,17 +276,10 @@ export interface MessageBody {
 	editHistory: MessageVersion[];
 }
 
-/** The renderable content of a message, or a sentinel that replaces the body
- * entirely (dropping text, media, reactions and edits):
- * - `'deleted-for-everyone'`: the message was deleted for everyone (a delete op
- *   references it). Rendered as the deleted placeholder.
- * - `'body-unavailable'`: the operation's payload is gone but no delete op
- *   justifies it — an anomaly (e.g. a peer that synced the body-less op before
- *   the delete arrives). Rendered as an error bubble to bring attention to it. */
-export type MessageDisplay =
-	| MessageBody
-	| 'deleted-for-everyone'
-	| 'body-unavailable';
+/** The renderable content of a message, or `'deleted-for-everyone'` once a
+ * delete op replaces the body entirely — dropping text, media, reactions and
+ * edits — and it renders as the deleted placeholder. */
+export type MessageDisplay = MessageBody | 'deleted-for-everyone';
 
 /** Whether a message still has a live body. Written as a type guard so the
  * `true` branch narrows `content` to `MessageBody`. */
