@@ -37,7 +37,7 @@ bundle-config := '{"bundle":{"createUpdaterArtifacts":false}}'
 
 # build dash chat as an installer (deb and rpm on linux)
 bundle:
-    pnpm tauri build --config '{{ bundle-config }}'
+    pnpm tauri build -b appimage --config '{{ bundle-config }}'
 
 # cut a new release (e.g. just release 0.11.0)
 release version:
