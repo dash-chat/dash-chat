@@ -32,9 +32,12 @@ _default:
 build:
     pnpm tauri build --no-bundle --debug
 
-# build dash chat as an installer (AppImage on linux)
+# Overrides so a local bundle needs none of the release-only setup CI provides:
+bundle-config := '{"bundle":{"createUpdaterArtifacts":false}}'
+
+# build dash chat as an installer (deb and rpm on linux)
 bundle:
-    pnpm tauri build
+    pnpm tauri build --config '{{ bundle-config }}'
 
 # cut a new release (e.g. just release 0.11.0)
 release version:
