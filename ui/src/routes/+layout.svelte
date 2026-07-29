@@ -86,7 +86,9 @@
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
-	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile;
+	// Never in the binary under test
+	const isE2E = import.meta.env.VITE_E2E === 'true';
+	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile && !isE2E;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
