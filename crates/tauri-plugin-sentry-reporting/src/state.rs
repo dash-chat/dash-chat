@@ -3,14 +3,14 @@ use std::sync::{Arc, OnceLock};
 
 use regex::Regex;
 
-use crate::capture::Captured;
+use crate::capture::Breadcrumbs;
 
 pub struct SentryState {
     /// Dropping this disposes the client, so it lives as long as the app — and
     /// dropping it at shutdown is the point: `close` flushes the transport queue.
     guard: sentry::ClientInitGuard,
     pub redact: Vec<Regex>,
-    pub captured: Arc<Captured>,
+    pub breadcrumbs: Arc<Breadcrumbs>,
     /// Arrives from `log_target`, which the app calls after this state exists.
     pub logs_dir: OnceLock<PathBuf>,
 }
@@ -19,12 +19,12 @@ impl SentryState {
     pub(crate) fn new(
         guard: sentry::ClientInitGuard,
         redact: Vec<Regex>,
-        captured: Arc<Captured>,
+        breadcrumbs: Arc<Breadcrumbs>,
     ) -> Self {
         Self {
             guard,
             redact,
-            captured,
+            breadcrumbs,
             logs_dir: OnceLock::new(),
         }
     }

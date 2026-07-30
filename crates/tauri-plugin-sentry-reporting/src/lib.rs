@@ -58,14 +58,13 @@ pub fn init<R: Runtime>(config: Option<Config>) -> TauriPlugin<R> {
 /// `None` when the DSN is missing or unparseable, which disables reporting and
 /// leaves the command a no-op.
 fn start(config: Config) -> Option<state::SentryState> {
-    let captured = Arc::new(capture::Captured::new());
-    let options = capture::client_options(&config, captured.clone())
+    let options = capture::client_options(&config)
         .inspect_err(|err| log::error!("sentry-reporting: disabled: {err}"))
         .ok()?;
 
     Some(state::SentryState::new(
         sentry::init(options),
         config.redact,
-        captured,
+        Arc::new(capture::Breadcrumbs::new()),
     ))
 }
