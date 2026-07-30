@@ -501,6 +501,7 @@ async fn mixed_hash_delete_cannot_censor_another_author() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "this test is impossible to pass deterministically until p2panda allows custom processors for partial ordering"]
 async fn delete_cannot_censor_unsynced_message_from_another_author() {
     let poll = PollConfig::default();
     let mb = TestMailbox::from_env();
