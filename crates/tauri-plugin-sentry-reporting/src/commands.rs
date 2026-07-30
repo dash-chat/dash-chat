@@ -42,9 +42,7 @@ pub(crate) async fn send_error_report<R: Runtime>(
         if let Some(stack) = error.stack {
             event.extra.insert("stack".into(), stack.into());
         }
-        // Sentry titles and groups by the exception. Leaving the real error in
-        // `extra` instead would collapse every unexpected error into one issue
-        // named after the generic toast copy — and `extra` is not searchable.
+        // Sentry titles and groups by the exception.
         event.exception = vec![Exception {
             ty: error.name,
             value: Some(error.message),
@@ -70,9 +68,6 @@ pub(crate) async fn send_error_report<R: Runtime>(
         }
         // Deliberately not `capture_event`: that would re-enter `before_send`
         // and stash the event straight back into the queue.
-        //
-        // The transport is fire-and-forget, so this reports success whether or
-        // not the report lands. A durable queue with a real outcome follows.
         state.client.send_envelope(envelope);
     }
 
