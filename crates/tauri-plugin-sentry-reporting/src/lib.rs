@@ -25,7 +25,7 @@ use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{AppHandle, Manager, Runtime};
 
 pub use redaction::{redact, redacted_log_tail};
-pub use sentry::types::{Dsn, ParseDsnError};
+pub use sentry::types::Dsn;
 
 use crate::state::SentryState;
 
@@ -44,7 +44,7 @@ pub struct Config {
 ///
 /// `sentry::init` runs here, at builder time, before any thread inherits a `Hub`.
 pub fn init<R: Runtime>(config: Config) -> TauriPlugin<R> {
-    let state = Arc::new(state::SentryState::new(
+    let state = Arc::new(SentryState::new(
         sentry::init(capture::client_options(&config)),
         config.redact,
     ));
