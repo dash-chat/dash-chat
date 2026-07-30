@@ -26,6 +26,7 @@ use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
 
 pub use log_target::log_target;
+pub use redaction::{redact, redacted_log_tail};
 
 pub struct Config {
     pub dsn: String,

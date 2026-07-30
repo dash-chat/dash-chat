@@ -77,8 +77,7 @@
             libsoup_3
             libayatana-appindicator
             pango
-            # libatk-1.0, linked directly by the atk crate. Without it the
-            # test binaries of crates that pull in the GTK stack fail to load.
+            # libatk-1.0
             at-spi2-core
           ];
           nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));

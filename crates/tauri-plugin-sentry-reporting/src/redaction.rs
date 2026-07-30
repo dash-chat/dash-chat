@@ -8,7 +8,9 @@ use serde_json::Value;
 
 const PLACEHOLDER: &str = "[REDACTED]";
 
-pub(crate) fn redact(patterns: &[Regex], text: &str) -> String {
+/// Public so the app can assert its patterns against the real implementation
+/// rather than a copy of it.
+pub fn redact(patterns: &[Regex], text: &str) -> String {
     let mut out = text.to_owned();
     for re in patterns {
         out = re.replace_all(&out, PLACEHOLDER).into_owned();
@@ -85,7 +87,8 @@ pub(crate) fn list_log_files_oldest_first(dir: &Path) -> std::io::Result<Vec<Pat
     Ok(entries.into_iter().map(|(_, p)| p).collect())
 }
 
-pub(crate) fn redacted_log_tail(
+/// Public so the app's debug-log export shares this one implementation.
+pub fn redacted_log_tail(
     patterns: &[Regex],
     logs_dir: &Path,
     max_bytes: usize,
