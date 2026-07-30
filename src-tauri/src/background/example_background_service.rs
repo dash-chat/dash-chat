@@ -8,7 +8,6 @@ pub struct ExampleBackgroundService {
 
 impl ExampleBackgroundService {
     pub fn new() -> Self {
-        eprintln!("[background-service] new");
         Self { tick_count: 0 }
     }
 }
@@ -16,30 +15,36 @@ impl ExampleBackgroundService {
 #[async_trait]
 impl<R: Runtime> BackgroundService<R> for ExampleBackgroundService {
     async fn init(&mut self, _ctx: &ServiceContext<R>) -> Result<(), ServiceError> {
-        eprintln!("[background-service] init");
+        #[cfg(target_os = "android")]
+        android_logger::init_once(
+            android_logger::Config::default()
+                .with_tag("dashchat-bg")
+                .with_max_level(log::LevelFilter::Debug),
+        );
+        log::warn!("[background-service] init");
         Ok(())
     }
 
     async fn run(&mut self, ctx: &ServiceContext<R>) -> Result<(), ServiceError> {
-        eprintln!("[background-service] run loop started");
+        log::warn!("[background-service] run loop started");
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
 
         loop {
             tokio::select! {
                 _ = ctx.shutdown.cancelled() => {
-                    eprintln!("[background-service] shutdown requested");
+                    log::warn!("[background-service] shutdown requested");
                     break;
                 },
                 _ = interval.tick() => {
                     self.tick_count += 1;
-                    eprintln!("[background-service] tick_count={}", self.tick_count);
+                    log::warn!("[background-service] tick_count={}", self.tick_count);
                     // let _ = ctx.app.emit("my-service://tick", self.tick_count);
                     // ctx.notifier.show("Tick", "Service is alive");
                 }
             }
         }
 
-        eprintln!("[background-service] run loop stopped");
+        log::warn!("[background-service] run loop stopped");
         Ok(())
     }
 }
