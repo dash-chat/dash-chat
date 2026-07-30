@@ -1,11 +1,5 @@
 <script lang="ts">
-	import {
-		Checkbox,
-		Dialog,
-		DialogButton,
-		List,
-		ListItem,
-	} from 'konsta/svelte';
+	import { Dialog, DialogButton } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { describeError, sendErrorReport } from '$lib/utils/error-report';
 	import { showToast } from '$lib/utils/toasts';
@@ -20,16 +14,10 @@
 		error?: unknown;
 	} = $props();
 
-	let includeDebugLog = $state(true);
-
 	async function send() {
 		opened = false;
 		try {
-			await sendErrorReport({
-				message,
-				error: describeError(error),
-				includeLog: includeDebugLog,
-			});
+			await sendErrorReport({ message, error: describeError(error) });
 			showToast(m.reportSent());
 		} catch {
 			showToast(m.errorSendErrorReport(), 'error');
@@ -42,20 +30,7 @@
 	onBackdropClick={() => (opened = false)}
 	title={m.sendErrorReport()}
 >
-	<p class="px-4 text-sm opacity-60">{m.errorReportExplanation()}</p>
-	<List nested class="!my-0">
-		<ListItem
-			title={m.includeDebugLog()}
-			onClick={() => (includeDebugLog = !includeDebugLog)}
-		>
-			{#snippet media()}
-				<Checkbox
-					checked={includeDebugLog}
-					onChange={() => (includeDebugLog = !includeDebugLog)}
-				/>
-			{/snippet}
-		</ListItem>
-	</List>
+	<p class="text-sm opacity-60">{m.errorReportExplanation()}</p>
 	{#snippet buttons()}
 		<DialogButton onClick={() => (opened = false)}>
 			{m.cancel()}

@@ -24,7 +24,6 @@ pub(crate) async fn send_error_report<R: Runtime>(
     app: AppHandle<R>,
     message: String,
     error: Option<ReportedError>,
-    include_log: bool,
 ) -> Result<(), String> {
     let Some(state) = app.try_state::<Arc<SentryState>>() else {
         // Built without a DSN. Report success rather than surfacing an error the
@@ -54,14 +53,14 @@ pub(crate) async fn send_error_report<R: Runtime>(
 
     // Reading a megabyte of log and running the patterns over it — and over the
     // event itself — is blocking and CPU-bound, so it stays off the async worker.
-    tauri::async_runtime::spawn_blocking(move || send(&state, event, include_log))
+    tauri::async_runtime::spawn_blocking(move || send(&state, event))
         .await
         .map_err(|err| format!("Report task failed: {err}"))
 }
 
 /// Enriches, redacts and transmits the report. The only path to the network.
-fn send(state: &SentryState, event: Event<'static>, include_log: bool) {
-    let event = capture::enrich(event, state.client(), &state.breadcrumbs);
+fn send(state: &SentryState, event: Event<'static>) {
+    let event = capture::enrich(event, state.client());
 
     let event = match redaction::redact_event(&state.redact, event) {
         Ok(event) => event,
@@ -72,7 +71,7 @@ fn send(state: &SentryState, event: Event<'static>, include_log: bool) {
     };
 
     let mut envelope: Envelope = event.into();
-    if let Some(attachment) = include_log.then(|| read_log_attachment(state)).flatten() {
+    if let Some(attachment) = read_log_attachment(state) {
         envelope.add_item(EnvelopeItem::Attachment(attachment));
     }
     state.client().send_envelope(envelope);

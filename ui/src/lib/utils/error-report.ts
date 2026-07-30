@@ -10,14 +10,12 @@ interface ReportedError {
 interface ErrorReport {
 	message: string;
 	error?: ReportedError;
-	includeLog: boolean;
 }
 
 export async function sendErrorReport(report: ErrorReport): Promise<void> {
 	return invokeAfterSetup('plugin:sentry-reporting|send_error_report', {
 		message: report.message,
 		error: report.error,
-		includeLog: report.includeLog,
 	});
 }
 

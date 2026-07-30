@@ -10,8 +10,6 @@ tauri-plugin = { version = "2", features = ["build"] }
 [dependencies]
 tauri = { version = "2", default-features = false }
 # `Target` / `TargetKind` only — the app still owns logger registration.
-tauri-plugin-log = "2"
-fern = "0.7"
 sentry = { version = "0.42", default-features = false, features = [
   "backtrace",
   "contexts",

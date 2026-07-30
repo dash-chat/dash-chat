@@ -1,32 +1,30 @@
 //! Sentry error reporting on a strict rule: **nothing leaves the device unless
 //! the user explicitly presses Send.**
 //!
-//! Capture is local-only ([`capture`]); egress happens from a user-initiated
-//! command and nowhere else.
+//! The SDK is configured so it cannot transmit anything by itself ([`capture`]);
+//! a report is assembled and sent from a user-initiated command and nowhere else.
 //!
 //! ```ignore
 //! builder = builder.plugin(tauri_plugin_sentry_reporting::init(sentry::config()));
 //!
-//! .targets([
-//!     Target::new(TargetKind::Stdout),
-//!     Target::new(TargetKind::Folder { path: fs.logs_dir(), file_name: None }),
-//!     tauri_plugin_sentry_reporting::log_target(handle, fs.logs_dir()),
-//! ])
+//! // once tauri-plugin-log is registered, so a report can attach the log:
+//! tauri_plugin_sentry_reporting::set_logs_dir(handle, fs.logs_dir());
 //! ```
 
 mod capture;
 mod commands;
-mod log_target;
 mod redaction;
 mod state;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::plugin::{Builder, TauriPlugin};
-use tauri::{Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
-pub use log_target::log_target;
 pub use redaction::{redact, redacted_log_tail};
+
+use crate::state::SentryState;
 
 pub struct Config {
     pub dsn: String,
@@ -55,6 +53,14 @@ pub fn init<R: Runtime>(config: Option<Config>) -> TauriPlugin<R> {
         .build()
 }
 
+/// Tells the plugin where to find the log files a report attaches. Call once
+/// `tauri-plugin-log` owns them. Inert when reporting is disabled.
+pub fn set_logs_dir<R: Runtime>(app: &AppHandle<R>, logs_dir: PathBuf) {
+    if let Some(state) = app.try_state::<Arc<SentryState>>() {
+        let _ = state.logs_dir.set(logs_dir);
+    }
+}
+
 /// `None` when the DSN is missing or unparseable, which disables reporting and
 /// leaves the command a no-op.
 fn start(config: Config) -> Option<state::SentryState> {
@@ -65,6 +71,5 @@ fn start(config: Config) -> Option<state::SentryState> {
     Some(state::SentryState::new(
         sentry::init(options),
         config.redact,
-        Arc::new(capture::Breadcrumbs::new()),
     ))
 }
