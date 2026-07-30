@@ -32,6 +32,7 @@ pub(crate) async fn send_error_report<R: Runtime>(
         log::warn!("sentry-reporting: no DSN configured, discarding report");
         return Ok(());
     };
+    let state = state.inner().clone();
 
     let mut event = Event {
         message: Some(message),
@@ -50,11 +51,25 @@ pub(crate) async fn send_error_report<R: Runtime>(
         }]
         .into();
     }
+
+    // Reading a megabyte of log and running the patterns over it — and over every
+    // string in every stashed event — is blocking and CPU-bound, so it stays off
+    // the async worker.
+    tauri::async_runtime::spawn_blocking(move || assemble_and_send(&state, event, include_log))
+        .await
+        .map_err(|err| format!("Report task failed: {err}"))?
+}
+
+fn assemble_and_send(
+    state: &SentryState,
+    event: Event<'static>,
+    include_log: bool,
+) -> Result<(), String> {
     // Goes through `before_send`, so it lands in the pending queue enriched with
     // contexts and the breadcrumb trail.
     sentry::capture_event(event);
 
-    let log_attachment = include_log.then(|| read_log_attachment(&state)).flatten();
+    let log_attachment = include_log.then(|| read_log_attachment(state)).flatten();
 
     for (index, pending) in state.captured.take_pending().into_iter().enumerate() {
         let redacted = redaction::redact_event(&state.redact, pending)

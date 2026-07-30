@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use sentry::protocol::{Breadcrumb, Event};
+use sentry::protocol::{Breadcrumb, Context, Event};
 use sentry::{BeforeCallback, ClientOptions};
 
 use crate::Config;
@@ -74,13 +74,73 @@ pub(crate) fn client_options(
     })
 }
 
+/// Sentry's context integration sets `server_name` from the OS hostname, which
+/// on a personal machine is often the owner's real name. No redaction pattern
+/// would match a bare hostname, and `prepare_event` fills the field immediately
+/// before `before_send`, so this is where it has to go.
+fn scrub_host_identity(event: &mut Event<'static>) {
+    event.server_name = None;
+    if let Some(Context::Device(device)) = event.contexts.get_mut("device") {
+        device.name = None;
+    }
+}
+
 /// The consent gate. Stamps the breadcrumb trail onto the event, stashes it, and
 /// returns `None` so the SDK's own pipeline never reaches the transport — only a
 /// user-initiated command sends anything.
 fn stash_instead_of_sending(captured: Arc<Captured>) -> BeforeCallback<Event<'static>> {
     Arc::new(move |mut event| {
+        scrub_host_identity(&mut event);
         event.breadcrumbs = captured.snapshot_breadcrumbs().into();
         captured.push_pending(event);
         None
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use sentry::protocol::DeviceContext;
+
+    fn device(name: &str) -> Context {
+        Context::Device(Box::new(DeviceContext {
+            name: Some(name.into()),
+            family: Some("Linux".into()),
+            arch: Some("x86_64".into()),
+            ..Default::default()
+        }))
+    }
+
+    #[test]
+    fn capturing_strips_the_machine_hostname() {
+        let captured = Arc::new(Captured::new());
+        let before_send = stash_instead_of_sending(captured.clone());
+
+        let mut event = Event {
+            server_name: Some("alices-macbook-pro".into()),
+            ..Default::default()
+        };
+        event
+            .contexts
+            .insert("device".into(), device("alices-macbook-pro"));
+
+        assert!(before_send(event).is_none(), "nothing may be transmitted");
+
+        let stashed = captured.take_pending();
+        assert_eq!(stashed.len(), 1);
+
+        let json = serde_json::to_string(&stashed[0]).unwrap();
+        assert!(
+            !json.contains("alices-macbook-pro"),
+            "hostname survived capture: {json}"
+        );
+
+        let Some(Context::Device(device)) = stashed[0].contexts.get("device") else {
+            panic!("device context should survive");
+        };
+        assert_eq!(device.name, None);
+        assert_eq!(device.family.as_deref(), Some("Linux"));
+        assert_eq!(device.arch.as_deref(), Some("x86_64"));
+    }
 }
