@@ -11,19 +11,14 @@ use crate::Config;
 /// `before_send` rejects unconditionally, so everything the SDK captures by
 /// itself — panics above all — is dropped. A report leaves through
 /// [`Client::send_envelope`], which does not consult it.
-pub(crate) fn client_options(config: &Config) -> anyhow::Result<ClientOptions> {
-    let dsn = config
-        .dsn
-        .parse::<sentry::types::Dsn>()
-        .map_err(|err| anyhow::anyhow!("invalid Sentry DSN: {err}"))?;
-
-    Ok(ClientOptions {
-        dsn: Some(dsn),
+pub(crate) fn client_options(config: &Config) -> ClientOptions {
+    ClientOptions {
+        dsn: Some(config.dsn.clone()),
         release: Some(config.release.clone().into()),
         environment: Some(config.environment.clone().into()),
         before_send: Some(Arc::new(|_| None)),
         ..Default::default()
-    })
+    }
 }
 
 /// Adds what sentry's own pipeline would have, minus anything naming the
@@ -57,7 +52,7 @@ mod tests {
 
     fn config() -> Config {
         Config {
-            dsn: "https://key@example.invalid/1".into(),
+            dsn: "https://key@example.invalid/1".parse().unwrap(),
             release: "dash-chat@0.0.0".into(),
             environment: "test".into(),
             redact: vec![],
@@ -66,14 +61,14 @@ mod tests {
 
     #[test]
     fn the_sdk_can_never_transmit_on_its_own() {
-        let before_send = client_options(&config()).unwrap().before_send.unwrap();
+        let before_send = client_options(&config()).before_send.unwrap();
 
         assert!(before_send(Event::default()).is_none());
     }
 
     #[test]
     fn enriching_adds_context_but_never_the_hostname() {
-        let client = Client::from(client_options(&config()).unwrap());
+        let client = Client::from(client_options(&config()));
 
         let event = enrich(Event::default(), &client);
 

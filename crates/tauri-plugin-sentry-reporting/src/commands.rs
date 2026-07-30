@@ -25,13 +25,9 @@ pub(crate) async fn send_error_report<R: Runtime>(
     message: String,
     error: Option<ReportedError>,
 ) -> Result<(), String> {
-    let Some(state) = app.try_state::<Arc<SentryState>>() else {
-        // Built without a DSN. Report success rather than surfacing an error the
-        // user can do nothing about.
-        log::warn!("sentry-reporting: no DSN configured, discarding report");
-        return Ok(());
-    };
-    let state = state.inner().clone();
+    // Registering the plugin always manages the state, and this command only
+    // exists when it was registered.
+    let state = app.state::<Arc<SentryState>>().inner().clone();
 
     let mut event = Event {
         message: Some(message),

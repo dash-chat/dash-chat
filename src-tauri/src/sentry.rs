@@ -4,7 +4,13 @@ use crate::commands::redact_log::REDACTION_REGEXES;
 /// `ENV` telling them apart in Sentry. Absent means nothing is reported; logging
 /// is unaffected.
 pub fn config() -> Option<tauri_plugin_sentry_reporting::Config> {
-    let dsn = option_env!("SENTRY_DSN").filter(|dsn| !dsn.is_empty())?;
+    // Parsed here rather than in the plugin so that registering it cannot fail.
+    // The logger is not installed yet, hence `eprintln!`.
+    let dsn = option_env!("SENTRY_DSN")
+        .filter(|dsn| !dsn.is_empty())?
+        .parse()
+        .inspect_err(|err| eprintln!("invalid SENTRY_DSN, error reporting disabled: {err}"))
+        .ok()?;
 
     // Sentry keys regression detection off the release, so identify the build.
     let release = match option_env!("VERGEN_GIT_SHA") {
@@ -13,7 +19,7 @@ pub fn config() -> Option<tauri_plugin_sentry_reporting::Config> {
     };
 
     Some(tauri_plugin_sentry_reporting::Config {
-        dsn: dsn.to_string(),
+        dsn,
         release,
         // The same `ENV` that selects the dotenv file, so Sentry's environment
         // lines up with how the build was produced.

@@ -12,6 +12,12 @@ interface ErrorReport {
 	error?: ReportedError;
 }
 
+/** Whether the build has a Sentry DSN, so the UI can hide the report action. */
+export const errorReportingEnabled: Promise<boolean> =
+	invokeAfterSetup<boolean>('plugin:sentry-reporting|is_enabled').catch(
+		() => false,
+	);
+
 export async function sendErrorReport(report: ErrorReport): Promise<void> {
 	return invokeAfterSetup('plugin:sentry-reporting|send_error_report', {
 		message: report.message,
