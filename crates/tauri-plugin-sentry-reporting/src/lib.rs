@@ -32,8 +32,7 @@ pub struct Config {
     /// Identifies the build, e.g. `dash-chat@0.19.13+abc1234`.
     pub release: String,
     pub environment: String,
-    /// Applied to everything on its way off the device. The app owns the patterns;
-    /// the plugin decides where they apply, which is everywhere.
+    /// Redaction patterns to be applied to logs before sending them
     pub redact: Vec<regex::Regex>,
 }
 
