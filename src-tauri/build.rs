@@ -10,6 +10,12 @@ fn main() {
     // and can't read the dev shell's runtime env, so bake the compile host's
     // LAN IP + port into the binary. With neither var set, the consumers fall
     // through to the production URLs.
+    // An absent or empty SENTRY_DSN disables Sentry reporting entirely; ENV
+    // becomes the Sentry environment, so one DSN serves every environment and
+    // staging and local runs stay out of production's issues.
+    println!("cargo:rerun-if-env-changed=SENTRY_DSN");
+    println!("cargo:rerun-if-env-changed=ENV");
+
     println!("cargo:rerun-if-env-changed=MAILBOX_URL");
     println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
     println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_URL");

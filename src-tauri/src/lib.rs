@@ -9,6 +9,7 @@ mod mailbox;
 #[cfg(desktop)]
 mod media_drop;
 mod notifications;
+mod sentry;
 mod settings;
 mod setup;
 mod utils;
@@ -35,7 +36,9 @@ pub fn run() {
 
     i18n::init_i18n();
 
-    let mut builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default()
+        // Registered first so `sentry::init` runs before any thread touches Sentry.
+        .plugin(tauri_plugin_sentry_reporting::init(sentry::config()));
 
     #[cfg(mobile)]
     {

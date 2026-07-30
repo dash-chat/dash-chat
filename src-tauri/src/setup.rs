@@ -155,6 +155,9 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
                     path: fs.logs_dir(),
                     file_name: None,
                 }),
+                // Feeds Sentry breadcrumbs and tells the plugin where to find the
+                // log files for a report attachment. Inert without a DSN.
+                tauri_plugin_sentry_reporting::log_target(handle, fs.logs_dir()),
             ])
             .build(),
     )?;

@@ -7,7 +7,7 @@
 		ListItem,
 	} from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { sendMailto } from '$lib/utils/mailto';
+	import { describeError, sendErrorReport } from '$lib/utils/error-report';
 	import { showToast } from '$lib/utils/toasts';
 
 	let {
@@ -22,28 +22,15 @@
 
 	let includeDebugLog = $state(true);
 
-	function formatError(e: unknown): string {
-		if (e instanceof Error) return e.stack ?? e.message;
-		if (typeof e === 'string') return e;
-		try {
-			return JSON.stringify(e);
-		} catch {
-			return String(e);
-		}
-	}
-
 	async function send() {
 		opened = false;
-		const body =
-			error !== undefined
-				? `${message}\n\nError: ${formatError(error)}`
-				: message;
 		try {
-			await sendMailto({
-				subject: 'Dash Chat: Error Report',
-				body,
-				includeDebugLog,
+			await sendErrorReport({
+				message,
+				error: describeError(error),
+				includeLog: includeDebugLog,
 			});
+			showToast(m.reportSent());
 		} catch {
 			showToast(m.errorSendErrorReport(), 'error');
 		}

@@ -31,6 +31,7 @@ tauri-plugin-sharekit = "0.3"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
+tauri-plugin-sentry-reporting = { workspace = true }
 
 tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "a20b82e5091fa9834b1ea1014fc336ebfe7c4547" }
 tauri-plugin-mailto = { git = "https://github.com/dash-chat/tauri-plugin-mailto", branch = "main" }

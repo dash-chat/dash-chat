@@ -9,7 +9,7 @@ use crate::filesystem::FileSystem;
 
 const MAX_LOG_BYTES: usize = 5 * 1024 * 1024;
 
-static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
         // FCM tokens — alphanumeric with colons, hyphens, underscores (100+ chars)
         r"[A-Za-z0-9_:\-]{100,}",
