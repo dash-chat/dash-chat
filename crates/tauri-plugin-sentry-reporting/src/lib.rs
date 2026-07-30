@@ -20,7 +20,7 @@ mod log_target;
 mod redaction;
 mod state;
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
@@ -41,35 +41,30 @@ pub struct Config {
 ///
 /// `sentry::init` runs here, at builder time, before any thread inherits a `Hub`.
 pub fn init<R: Runtime>(config: Option<Config>) -> TauriPlugin<R> {
-    let started = config.and_then(|config| {
-        let captured = Arc::new(capture::Captured::new());
-        let options = capture::client_options(&config, captured.clone())
-            .inspect_err(|err| log::error!("sentry-reporting: disabled: {err}"))
-            .ok()?;
-        let guard = sentry::init(options);
-        let client = guard.clone();
-        Some((config, guard, client, captured))
-    });
+    let state = config.and_then(start).map(Arc::new);
 
     Builder::<R>::new("sentry-reporting")
         .invoke_handler(tauri::generate_handler![commands::send_error_report])
         .setup(move |app, _api| {
-            let Some((config, guard, client, captured)) = started else {
-                return Ok(());
-            };
-
-            app.manage(Arc::new(state::SentryState {
-                client: client.into(),
-                redact: config.redact,
-                captured,
-                logs_dir: OnceLock::new(),
-            }));
-            // Dropping the guard disposes the client, so the app owns it for its
-            // lifetime. Dropping it at shutdown is the point: `close` flushes
-            // whatever is still in the transport queue.
-            app.manage(guard);
-
+            if let Some(state) = state {
+                app.manage(state);
+            }
             Ok(())
         })
         .build()
+}
+
+/// `None` when the DSN is missing or unparseable, which disables reporting and
+/// leaves the command a no-op.
+fn start(config: Config) -> Option<state::SentryState> {
+    let captured = Arc::new(capture::Captured::new());
+    let options = capture::client_options(&config, captured.clone())
+        .inspect_err(|err| log::error!("sentry-reporting: disabled: {err}"))
+        .ok()?;
+
+    Some(state::SentryState::new(
+        sentry::init(options),
+        config.redact,
+        captured,
+    ))
 }

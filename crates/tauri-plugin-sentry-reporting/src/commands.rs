@@ -68,7 +68,7 @@ pub(crate) async fn send_error_report<R: Runtime>(
         }
         // Deliberately not `capture_event`: that would re-enter `before_send`
         // and stash the event straight back into the queue.
-        state.client.send_envelope(envelope);
+        state.client().send_envelope(envelope);
     }
 
     Ok(())
