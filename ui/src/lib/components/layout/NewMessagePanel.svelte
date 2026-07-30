@@ -12,9 +12,12 @@
 		type ContactsStore,
 		type Profile,
 	} from 'dash-chat-stores';
+	import { createAttachmentKey, fromAction } from 'svelte/attachments';
+	import { longpress } from '$lib/actions/longpress';
+	import { isMobile } from '$lib/utils/environment';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
@@ -25,53 +28,32 @@
 		ListItem,
 		Preloader,
 		Searchbar,
-		Actions,
-		ActionsGroup,
-		ActionsButton,
-		ActionsLabel,
 		useTheme,
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '../profiles/Avatar.svelte';
+	import IconButton from '../IconButton.svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
-	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
+	import ContactActionsMenu from '$lib/components/contacts/ContactActionsMenu.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
-	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
-	const blockedAgentIds = useReactiveValue(
-		contactsStore.blockedContactAgentIds,
+	const contacts = useReactivePromise(
+		contactsStore.profilesForUnblockedContacts,
 	);
 	const theme = $derived(useTheme());
 
-	let menuFor = $state<{ agentId: AgentId; profile: Profile } | null>(null);
-	let menuIsBlocked = $state(false);
-	let showBlockDialog = $state(false);
-	let dialogFor = $state<{ agentId: AgentId; profile: Profile } | null>(null);
+	let menuFor = $state<{
+		agentId: AgentId;
+		name: string;
+		anchor: HTMLElement;
+	} | null>(null);
 
-	function openMenu(agentId: AgentId, profile: Profile, blocked: boolean) {
-		menuFor = { agentId, profile };
-		menuIsBlocked = blocked;
-	}
+	const attachLongPress = createAttachmentKey();
 
-	function requestBlockToggle() {
-		if (!menuFor) return;
-		dialogFor = menuFor;
-		showBlockDialog = true;
-		menuFor = null;
-	}
-
-	async function confirmBlockToggle() {
-		if (!dialogFor) return;
-		const { agentId } = dialogFor;
-		showBlockDialog = false;
-		if (menuIsBlocked) {
-			await contactsStore.client.unblockContact(agentId);
-		} else {
-			await contactsStore.client.blockContact(agentId);
-		}
-		dialogFor = null;
+	function openMenu(agentId: AgentId, profile: Profile, anchor: HTMLElement) {
+		menuFor = { agentId, name: fullName(profile), anchor };
 	}
 
 	const isAddContact = $derived(
@@ -158,7 +140,6 @@
 				<Preloader />
 			</div>
 		{:then contacts}
-			{@const blockedSet = $blockedAgentIds ?? new Set<AgentId>()}
 			<List
 				strongIos
 				inset={isWideScreen.value || theme === 'ios'}
@@ -171,10 +152,22 @@
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
 					)}
 					{#each filteredContacts as [actorId, profile]}
-						{@const blocked = blockedSet.has(actorId)}
 						<TitleTruncatedListItem
 							link
-							linkProps={{ href: `/direct-chats/${actorId}` }}
+							class="hover-scope"
+							linkProps={{
+								href: `/direct-chats/${actorId}`,
+								...(isMobile && {
+									[attachLongPress]: fromAction(longpress, () => ({
+										onLongPress: e => {
+											// currentTarget is already null when the press timer
+											// fires, so walk up from the pressed element instead.
+											const row = (e.target as Element).closest('li');
+											if (row) openMenu(actorId, profile, row);
+										},
+									})),
+								}),
+							}}
 							title={profile.name}
 							chevron={false}
 						>
@@ -185,21 +178,16 @@
 								/>
 							{/snippet}
 							{#snippet after()}
-								{#if blocked}
-									<span class="quiet me-2 text-xs">{m.blocked()}</span>
+								{#if !isMobile}
+									<span class="hover-reveal">
+										<IconButton
+											icon={mdiDotsVertical}
+											label={m.contactMenu()}
+											testid="contact-menu-button"
+											onClick={e => openMenu(actorId, profile, e.currentTarget)}
+										/>
+									</span>
 								{/if}
-								<button
-									class="p-1"
-									onclick={e => {
-										e.preventDefault();
-										e.stopPropagation();
-										openMenu(actorId, profile, blocked);
-									}}
-									aria-label={m.block()}
-									data-testid="contact-menu-button"
-								>
-									<wa-icon src={wrapPathInSvg(mdiDotsVertical)}></wa-icon>
-								</button>
 							{/snippet}
 						</TitleTruncatedListItem>
 					{:else}
@@ -211,36 +199,12 @@
 	</div>
 </div>
 
-<Actions opened={menuFor !== null} onBackdropClick={() => (menuFor = null)}>
-	<ActionsGroup>
-		{#if menuFor}
-			<ActionsLabel>{fullName(menuFor.profile)}</ActionsLabel>
-		{/if}
-		<ActionsButton
-			bold
-			onClick={requestBlockToggle}
-			data-testid="contact-block-toggle"
-		>
-			{menuIsBlocked ? m.unblock() : m.block()}
-		</ActionsButton>
-	</ActionsGroup>
-	<ActionsGroup>
-		<ActionsButton onClick={() => (menuFor = null)}>
-			{m.cancel()}
-		</ActionsButton>
-	</ActionsGroup>
-</Actions>
-
-{#if dialogFor}
-	<BlockContactDialog
-		opened={showBlockDialog}
-		name={fullName(dialogFor.profile)}
-		blocked={menuIsBlocked}
-		onConfirm={confirmBlockToggle}
-		onClose={() => {
-			showBlockDialog = false;
-			dialogFor = null;
-		}}
+{#if menuFor}
+	<ContactActionsMenu
+		anchor={menuFor.anchor}
+		agentId={menuFor.agentId}
+		name={menuFor.name}
+		onClose={() => (menuFor = null)}
 	/>
 {/if}
 

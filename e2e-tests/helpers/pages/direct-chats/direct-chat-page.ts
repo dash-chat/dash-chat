@@ -25,6 +25,7 @@ export class DirectChatPage extends TestHelper {
 	unblockButton = this.el(tid('direct-chat-unblock-btn'));
 	blockedBanner = this.el(tid('direct-chat-blocked-banner'));
 	blockConfirm = this.el(tid('block-contact-confirm'));
+	unblockConfirm = this.el(tid('unblock-contact-confirm'));
 	blockedNameIcon = this.el(tid('blocked-name-icon'));
 	messageStatus = this.el(tid('message-status'));
 	readMore = this.el(tid('message-read-more'));

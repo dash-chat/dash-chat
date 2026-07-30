@@ -88,6 +88,20 @@ wa-icon[slot='end'] {
 	font-size: 20px;
 }
 
+/* A `.hover-reveal` control shows only while its `.hover-scope` container is
+   hovered. Only the hiding is scoped, so a control with no scope above it —
+   or one on a pointer-less device — stays visible. */
+@media (hover: hover) {
+	.hover-scope .hover-reveal {
+		opacity: 0;
+		transition: opacity 150ms;
+	}
+	.hover-scope:hover .hover-reveal,
+	.hover-scope .hover-reveal:focus-within {
+		opacity: 1;
+	}
+}
+
 .quiet {
 	color: #64748b;
 }

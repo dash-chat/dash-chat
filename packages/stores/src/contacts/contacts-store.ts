@@ -107,6 +107,12 @@ export class ContactsStore {
 		return blocked;
 	});
 
+	isBlocked = reactive(async (agentId: AgentId) => {
+		const blocked = await this.blockedContactAgentIds();
+
+		return blocked.has(agentId);
+	});
+
 	/**
 	 * Outgoing contact requests we've sent but whose ack hasn't arrived yet.
 	 * A pending marker is dropped once its device pubkey resolves to an
@@ -301,6 +307,27 @@ export class ContactsStore {
 		);
 
 		const profilesWithContacts: Array<[AgentId, Profile]> = contacts
+			.map(
+				(contact, i) =>
+					[contact, profiles[i]] as [AgentId, Profile | undefined],
+			)
+			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
+
+		return profilesWithContacts;
+	});
+
+	profilesForUnblockedContacts = reactive(async () => {
+		const [contacts, blocked] = await Promise.all([
+			this.contactsAgentIds(),
+			this.blockedContactAgentIds(),
+		]);
+		const unblocked = contacts.filter(contact => !blocked.has(contact));
+
+		const profiles = await Promise.all(
+			unblocked.map(contact => this.profiles(contact)),
+		);
+
+		const profilesWithContacts: Array<[AgentId, Profile]> = unblocked
 			.map(
 				(contact, i) =>
 					[contact, profiles[i]] as [AgentId, Profile | undefined],
