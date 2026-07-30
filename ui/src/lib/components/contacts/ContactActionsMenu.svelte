@@ -5,7 +5,6 @@
 	import { getContext } from 'svelte';
 	import type { AgentId, ContactsStore } from 'dash-chat-stores';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { isMobile } from '$lib/utils/environment';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import BlockContactDialog from './block/BlockContactDialog.svelte';
 	import UnblockContactDialog from './block/UnblockContactDialog.svelte';
@@ -29,27 +28,23 @@
 </script>
 
 {#await $blocked then isBlocked}
-	<div
-		class="contents {isMobile ? '' : '[&>div:not(.k-popover)]:!bg-transparent'}"
+	<Popover
+		opened={phase === 'menu'}
+		target={anchor}
+		backdrop
+		onBackdropClick={onClose}
+		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
 	>
-		<Popover
-			opened={phase === 'menu'}
-			target={anchor}
-			backdrop
-			onBackdropClick={onClose}
-			class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
-		>
-			<List nested data-testid="contact-actions-menu">
-				<ListAction
-					title={isBlocked ? m.unblock() : m.block()}
-					icon={mdiCancel}
-					actionType={isBlocked ? 'normal' : 'danger'}
-					onClick={() => (phase = 'dialog')}
-					data-testid="contact-block-toggle"
-				/>
-			</List>
-		</Popover>
-	</div>
+		<List nested data-testid="contact-actions-menu">
+			<ListAction
+				title={isBlocked ? m.unblock() : m.block()}
+				icon={mdiCancel}
+				actionType={isBlocked ? 'normal' : 'danger'}
+				onClick={() => (phase = 'dialog')}
+				data-testid="contact-block-toggle"
+			/>
+		</List>
+	</Popover>
 
 	{#if isBlocked}
 		<UnblockContactDialog

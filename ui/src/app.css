@@ -88,6 +88,14 @@ wa-icon[slot='end'] {
 	font-size: 20px;
 }
 
+/* On the desktop layout a popover is a small menu anchored to its trigger, so
+   its backdrop only needs to catch outside clicks — dimming the whole app
+   behind it is too heavy. Konsta gives the backdrop no class of its own and
+   renders it immediately before the popover. */
+.wide-layout div:has(+ .k-popover) {
+	background-color: transparent;
+}
+
 /* A `.hover-reveal` control shows only while its `.hover-scope` container is
    hovered. Only the hiding is scoped, so a control with no scope above it —
    or one on a pointer-less device — stays visible. */
