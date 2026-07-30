@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use sentry::protocol::{Attachment, EnvelopeItem, Event, Exception, Level};
@@ -6,10 +7,9 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager, Runtime};
 
 use crate::state::SentryState;
-use crate::{capture, redaction};
+use crate::{client, redaction};
 
 const MAX_ATTACHED_LOG_BYTES: usize = 1024 * 1024;
-const LOG_ATTACHMENT_NAME: &str = "dashchat.log";
 
 /// The thrown value, split into the parts Sentry needs.
 #[derive(Debug, Deserialize)]
@@ -56,7 +56,7 @@ pub(crate) async fn send_error_report<R: Runtime>(
 
 /// Enriches, redacts and transmits the report. The only path to the network.
 fn send(state: &SentryState, event: Event<'static>) {
-    let event = capture::enrich(event, state.client());
+    let event = client::enrich(event, state.client());
 
     let event = match redaction::redact_event(&state.redact, event) {
         Ok(event) => event,
@@ -74,11 +74,10 @@ fn send(state: &SentryState, event: Event<'static>) {
 }
 
 fn read_log_attachment(state: &SentryState) -> Option<Attachment> {
-    let logs_dir = state.logs_dir.get()?;
-    match redaction::redacted_log_tail(&state.redact, logs_dir, MAX_ATTACHED_LOG_BYTES) {
+    match redaction::redacted_log_tail(&state.redact, &state.logs_dir, MAX_ATTACHED_LOG_BYTES) {
         Ok(text) => Some(Attachment {
             buffer: text.into_bytes(),
-            filename: LOG_ATTACHMENT_NAME.into(),
+            filename: log_file_name(&state.logs_dir),
             content_type: Some("text/plain".into()),
             ty: None,
         }),
@@ -86,5 +85,34 @@ fn read_log_attachment(state: &SentryState) -> Option<Attachment> {
             log::warn!("sentry-reporting: could not attach the log: {err}");
             None
         }
+    }
+}
+
+/// Names the attachment after the log it was tailed from, e.g. `Dash Chat.log`.
+fn log_file_name(logs_dir: &Path) -> String {
+    redaction::list_log_files_oldest_first(logs_dir)
+        .ok()
+        .and_then(|files| Some(files.last()?.file_name()?.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "app.log".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_the_attachment_after_the_newest_log() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Dash Chat.log.old"), "a\n").unwrap();
+        std::fs::write(dir.path().join("Dash Chat.log"), "b\n").unwrap();
+
+        assert_eq!(log_file_name(dir.path()), "Dash Chat.log");
+    }
+
+    #[test]
+    fn falls_back_when_the_directory_has_no_logs() {
+        let dir = tempfile::tempdir().unwrap();
+
+        assert_eq!(log_file_name(dir.path()), "app.log");
     }
 }

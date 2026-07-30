@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use regex::Regex;
 
@@ -8,16 +7,19 @@ pub struct SentryState {
     /// dropping it at shutdown is the point: `close` flushes the transport queue.
     guard: sentry::ClientInitGuard,
     pub redact: Vec<Regex>,
-    /// Arrives from `set_logs_dir`, which the app calls after this state exists.
-    pub logs_dir: OnceLock<PathBuf>,
+    pub logs_dir: PathBuf,
 }
 
 impl SentryState {
-    pub(crate) fn new(guard: sentry::ClientInitGuard, redact: Vec<Regex>) -> Self {
+    pub(crate) fn new(
+        guard: sentry::ClientInitGuard,
+        redact: Vec<Regex>,
+        logs_dir: PathBuf,
+    ) -> Self {
         Self {
             guard,
             redact,
-            logs_dir: OnceLock::new(),
+            logs_dir,
         }
     }
 

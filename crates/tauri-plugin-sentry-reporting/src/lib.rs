@@ -1,19 +1,17 @@
 //! Sentry error reporting on a strict rule: **nothing leaves the device unless
 //! the user explicitly presses Send.**
 //!
-//! The SDK is configured so it cannot transmit anything by itself ([`capture`]);
+//! The SDK is configured so it cannot transmit anything by itself ([`client`]);
 //! a report is assembled and sent from a user-initiated command and nowhere else.
 //!
 //! ```ignore
-//! if let Some(config) = sentry::config() {
-//!     builder = builder.plugin(tauri_plugin_sentry_reporting::init(config));
+//! // once `tauri-plugin-log` owns the log files, so a report can attach them:
+//! if let Some(config) = sentry::config(fs.logs_dir()) {
+//!     handle.plugin(tauri_plugin_sentry_reporting::init(config))?;
 //! }
-//!
-//! // once tauri-plugin-log is registered, so a report can attach the log:
-//! tauri_plugin_sentry_reporting::set_logs_dir(handle, fs.logs_dir());
 //! ```
 
-mod capture;
+mod client;
 mod commands;
 mod redaction;
 mod state;
@@ -22,7 +20,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::plugin::{Builder, TauriPlugin};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{Manager, Runtime};
 
 pub use redaction::{redact, redacted_log_tail};
 pub use sentry::types::Dsn;
@@ -37,16 +35,20 @@ pub struct Config {
     pub environment: String,
     /// Redaction patterns to be applied to logs before sending them
     pub redact: Vec<regex::Regex>,
+    /// Where the log files a report attaches live.
+    pub logs_dir: PathBuf,
 }
 
 /// Register only when the app has a DSN. The frontend gates its report action on
 /// the same build-time flag, so it never offers what this cannot deliver.
 ///
-/// `sentry::init` runs here, at builder time, before any thread inherits a `Hub`.
+/// Register once the log files have an owner: [`Config::logs_dir`] is resolved
+/// from an `AppHandle`, and a report is only as useful as the log it carries.
 pub fn init<R: Runtime>(config: Config) -> TauriPlugin<R> {
     let state = Arc::new(SentryState::new(
-        sentry::init(capture::client_options(&config)),
+        sentry::init(client::options(&config)),
         config.redact,
+        config.logs_dir,
     ));
 
     Builder::<R>::new("sentry-reporting")
@@ -56,12 +58,4 @@ pub fn init<R: Runtime>(config: Config) -> TauriPlugin<R> {
             Ok(())
         })
         .build()
-}
-
-/// Tells the plugin where to find the log files a report attaches. Call once
-/// `tauri-plugin-log` owns them. Inert when reporting is disabled.
-pub fn set_logs_dir<R: Runtime>(app: &AppHandle<R>, logs_dir: PathBuf) {
-    if let Some(state) = app.try_state::<Arc<SentryState>>() {
-        let _ = state.logs_dir.set(logs_dir);
-    }
 }

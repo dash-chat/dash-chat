@@ -159,8 +159,10 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
             .build(),
     )?;
 
-    // Now that the log files have an owner, point error reports at them.
-    tauri_plugin_sentry_reporting::set_logs_dir(handle, fs.logs_dir());
+    // Now that the log files have an owner, a report can attach them.
+    if let Some(config) = crate::sentry::config(fs.logs_dir()) {
+        handle.plugin(tauri_plugin_sentry_reporting::init(config))?;
+    }
 
     // Now that the log plugin is registered, route panics through it.
     crate::utils::install_panic_hook();

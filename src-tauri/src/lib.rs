@@ -38,11 +38,6 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default();
 
-    if let Some(config) = sentry::config() {
-        // Registered first so `sentry::init` runs before any thread touches Sentry.
-        builder = builder.plugin(tauri_plugin_sentry_reporting::init(config));
-    }
-
     #[cfg(mobile)]
     {
         builder = builder
