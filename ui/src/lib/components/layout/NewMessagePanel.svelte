@@ -12,8 +12,7 @@
 		type ContactsStore,
 		type Profile,
 	} from 'dash-chat-stores';
-	import { createAttachmentKey, fromAction } from 'svelte/attachments';
-	import { longpress } from '$lib/actions/longpress';
+	import { longPressHandlers } from '$lib/actions/longpress';
 	import { isMobile } from '$lib/utils/environment';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -49,8 +48,6 @@
 		name: string;
 		anchor: HTMLElement;
 	} | null>(null);
-
-	const attachLongPress = createAttachmentKey();
 
 	function openMenu(agentId: AgentId, profile: Profile, anchor: HTMLElement) {
 		menuFor = { agentId, name: fullName(profile), anchor };
@@ -157,16 +154,13 @@
 							class="hover-scope"
 							linkProps={{
 								href: `/direct-chats/${actorId}`,
-								...(isMobile && {
-									[attachLongPress]: fromAction(longpress, () => ({
+								...(isMobile &&
+									longPressHandlers({
 										onLongPress: e => {
-											// currentTarget is already null when the press timer
-											// fires, so walk up from the pressed element instead.
 											const row = (e.target as Element).closest('li');
 											if (row) openMenu(actorId, profile, row);
 										},
 									})),
-								}),
 							}}
 							title={profile.name}
 							chevron={false}

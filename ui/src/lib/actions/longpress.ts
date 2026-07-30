@@ -5,58 +5,83 @@ interface LongPressParams {
 	duration?: number;
 }
 
+// Shared, not per handler set: only one press runs at a time, and
+// `longPressHandlers` is called again on every re-render.
+let timer: ReturnType<typeof setTimeout> | undefined;
+let triggered = false;
+
+/** Stops iOS from answering the press with its own selection and link UI. */
+function suppressNativeLongPress(target: EventTarget | null) {
+	if (!(target instanceof HTMLElement)) return;
+	target.style.setProperty('-webkit-user-select', 'none');
+	target.style.setProperty('user-select', 'none');
+	target.style.setProperty('-webkit-touch-callout', 'none');
+}
+
+/**
+ * Long-press handlers for hosts that take props instead of an element, like
+ * Konsta's `linkProps`.
+ */
+export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
+	return {
+		ontouchstart(e: TouchEvent) {
+			suppressNativeLongPress(e.currentTarget);
+			triggered = false;
+			timer = setTimeout(() => {
+				triggered = true;
+				window.getSelection()?.removeAllRanges();
+				if ((e.target as Element).isConnected) onLongPress(e);
+			}, duration ?? 500);
+		},
+		ontouchmove() {
+			clearTimeout(timer);
+		},
+		ontouchend(e: TouchEvent) {
+			clearTimeout(timer);
+			if (triggered) e.preventDefault();
+		},
+		oncontextmenu(e: MouseEvent) {
+			e.preventDefault();
+			onLongPress(e);
+		},
+	};
+}
+
 export const longpress: Action<HTMLElement, LongPressParams> = (
 	node,
 	params,
 ) => {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	let triggered = false;
+	suppressNativeLongPress(node);
 
-	// Prevent iOS from showing native text selection UI on long-press
-	node.style.setProperty('-webkit-user-select', 'none');
-	node.style.setProperty('user-select', 'none');
-	node.style.setProperty('-webkit-touch-callout', 'none');
+	let handlers = longPressHandlers(params);
 
-	function onTouchStart(e: TouchEvent) {
-		triggered = false;
-		timer = setTimeout(() => {
-			triggered = true;
-			window.getSelection()?.removeAllRanges();
-			params.onLongPress(e);
-		}, params.duration ?? 500);
+	function attach() {
+		node.addEventListener('touchstart', handlers.ontouchstart, {
+			passive: true,
+		});
+		node.addEventListener('touchmove', handlers.ontouchmove, { passive: true });
+		node.addEventListener('touchend', handlers.ontouchend);
+		node.addEventListener('contextmenu', handlers.oncontextmenu);
 	}
 
-	function onTouchMove() {
-		clearTimeout(timer);
+	function detach() {
+		node.removeEventListener('touchstart', handlers.ontouchstart);
+		node.removeEventListener('touchmove', handlers.ontouchmove);
+		node.removeEventListener('touchend', handlers.ontouchend);
+		node.removeEventListener('contextmenu', handlers.oncontextmenu);
 	}
 
-	function onTouchEnd(e: TouchEvent) {
-		clearTimeout(timer);
-		if (triggered) {
-			e.preventDefault();
-		}
-	}
-
-	function onContextMenu(e: MouseEvent) {
-		e.preventDefault();
-		params.onLongPress(e);
-	}
-
-	node.addEventListener('touchstart', onTouchStart, { passive: true });
-	node.addEventListener('touchmove', onTouchMove, { passive: true });
-	node.addEventListener('touchend', onTouchEnd);
-	node.addEventListener('contextmenu', onContextMenu);
+	attach();
 
 	return {
 		update(newParams: LongPressParams) {
-			params = newParams;
+			detach();
+			handlers = longPressHandlers(newParams);
+			attach();
 		},
 		destroy() {
 			clearTimeout(timer);
-			node.removeEventListener('touchstart', onTouchStart);
-			node.removeEventListener('touchmove', onTouchMove);
-			node.removeEventListener('touchend', onTouchEnd);
-			node.removeEventListener('contextmenu', onContextMenu);
+			detach();
 		},
 	};
 };
