@@ -51,7 +51,7 @@ pub enum DeleteError {
 /// anything but the tip is rejected with [`DeleteError::NotLatestEdit`].
 ///
 /// This is the author-side helper that builds the hash set for a
-/// `DeleteMessage` payload. Note that the set is unordered.
+/// `DeleteMessage` payload.
 pub fn collect_deletable_edit_chain(
     valid_ops: &HashMap<Hash, ChatOp>,
     target: &Hash,
@@ -124,6 +124,9 @@ impl DeleteCandidate {
     ///
     /// See the test `delete_cannot_censor_unsynced_message_from_another_author` for
     /// an example of this vulnerability.
+    ///
+    /// TODO: don't use this function until DeleteMessage is partially ordered wrt to targets.
+    ///       the unused method warning is intentional for visibility
     fn check_deleter_is_author(&self, valid_ops: &ValidChatOps) -> Result<(), DeleteError> {
         let Some(hash) = self.self_hash else {
             return Ok(());
@@ -413,6 +416,26 @@ mod tests {
             }
             .validate(&ops),
             Err(DeleteError::IncompleteChain)
+        );
+    }
+
+    #[test]
+    fn delete_of_partial_chain_plus_junk_hash_is_rejected() {
+        let alice = device(1);
+        let ops = ValidChatOps::new([
+            (hash(1), message(alice, 1000, 0)),
+            (hash(2), edit(alice, 2000, 1, hash(1))),
+        ]);
+        // The set covers the original and a junk hash but not its edit.
+        assert_eq!(
+            DeleteCandidate {
+                hashes: btreeset![hash(1), hash(99)],
+                deleter: alice,
+                delete_timestamp: 3000,
+                self_hash: Some(hash(11)),
+            }
+            .validate(&ops),
+            Err(DeleteError::TargetNotFound)
         );
     }
 

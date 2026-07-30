@@ -364,21 +364,25 @@ impl OpProjection {
         // authorship check above.
         let chat_id = ChatId::from_topic_id(topic)?;
         let valid_ops = node.valid_chat_ops(chat_id).await?;
-        if payload.iter().all(|h| valid_ops.contains_key(h)) {
-            let delete_ts: u64 = header.timestamp.into();
-            if let Err(err) = (DeleteCandidate {
-                hashes: payload.clone(),
-                deleter: author,
-                delete_timestamp: delete_ts,
-                self_hash: Some(hash),
-            })
-            .validate(&valid_ops)
-            {
-                tracing::warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
-                return Err(ProjectionError::invalid(format!(
-                    "invalid delete message: {err}"
-                )));
-            }
+        let all_targets_valid = payload.iter().all(|h| valid_ops.contains_key(h));
+        if !all_targets_valid {
+            return Err(anyhow::anyhow!(
+                "All targets must have been processed already. This is a bug in dash chat / p2panda."
+            ).into());
+        }
+        let delete_ts: u64 = header.timestamp.into();
+        if let Err(err) = (DeleteCandidate {
+            hashes: payload.clone(),
+            deleter: author,
+            delete_timestamp: delete_ts,
+            self_hash: Some(hash),
+        })
+        .validate(&valid_ops)
+        {
+            tracing::warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
+            return Err(ProjectionError::invalid(format!(
+                "invalid delete message: {err}"
+            )));
         }
 
         Ok(())
