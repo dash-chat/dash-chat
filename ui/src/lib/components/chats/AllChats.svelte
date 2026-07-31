@@ -1,11 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import '@awesome.me/webawesome/dist/components/button/button.js';
-	import {
-		ChatsStore,
-		type ContactsStore,
-		type AgentId,
-	} from 'dash-chat-stores';
+	import { ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { List } from 'konsta/svelte';
@@ -14,17 +10,12 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import ErrorPlaceholder from '../ErrorPlaceholder.svelte';
 	import ChatSummary from './ChatSummary.svelte';
-	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 
 	let { class: className = '' }: { class?: string } = $props();
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
-
-	const contactsStore: ContactsStore = getContext('contacts-store');
-	const blockedAgentIds = useReactiveValue(
-		contactsStore.blockedContactAgentIds,
-	);
 
 	const chatHref = (summary: { type: string; chatId: string }) =>
 		summary.type === 'GroupChat'
@@ -47,14 +38,8 @@
 				inset={isWideScreen.value && theme === 'ios'}
 				data-testid="all-chats-list"
 			>
-				{#each summaries as summary}
-					{@const blockedSet = $blockedAgentIds ?? new Set<AgentId>()}
-					<ChatSummary
-						{summary}
-						active={isActive(summary)}
-						blocked={summary.type === 'DirectChat' &&
-							blockedSet.has(summary.chatId)}
-					/>
+				{#each summaries as summary (summary.chatId)}
+					<ChatSummary {summary} active={isActive(summary)} />
 				{/each}
 			</List>
 		{:else}

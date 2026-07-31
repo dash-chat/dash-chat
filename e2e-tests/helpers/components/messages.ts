@@ -28,10 +28,6 @@ export class Messages extends TestHelper {
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
-	/** The delete confirmation dialog's buttons live in the composer, shared by
-	 * both delete-for-everyone and delete-for-me. */
-	deleteForEveryoneConfirmButton = this.el(tid('composer-delete-confirm'));
-	deleteForMeConfirmButton = this.el(tid('composer-delete-for-me-confirm'));
 
 	/** The rendered message whose text contains `text`, as a `Message` helper
 	 * scoped to it (by its message hash), or null if none is rendered. */
@@ -273,6 +269,27 @@ export class Message extends TestHelper {
 		return this.wrapper.$(tid('message-deleted-placeholder'));
 	}
 
+	/** The delete confirmation. It is mounted only while it is up, and only by
+	 * the message being deleted, so it resolves at agent level. */
+	get deleteDialog() {
+		return this.agent.$(tid('delete-message-dialog'));
+	}
+
+	get deleteDialogCancel() {
+		return this.agent.$(tid('delete-message-cancel'));
+	}
+
+	/** Confirms delete-for-everyone. Offered only on my own messages, within the
+	 * delete window. */
+	get deleteDialogConfirm() {
+		return this.agent.$(tid('delete-message-confirm'));
+	}
+
+	/** Confirms delete-for-me, offered on every message. */
+	get deleteDialogForMeConfirm() {
+		return this.agent.$(tid('delete-message-for-me-confirm'));
+	}
+
 	/** Open this message's actions menu with the gesture its platform uses — a
 	 * long-press on mobile, which opens the spotlight overlay, or the hover
 	 * toolbar's ⋯ button on desktop — and wait for it to actually open. */
@@ -455,15 +472,15 @@ export class Message extends TestHelper {
 	/** Open the actions menu, tap Delete, and confirm "Delete for everyone". */
 	async deleteForEveryone(): Promise<void> {
 		await this.openDeleteDialog();
-		await this.messages.deleteForEveryoneConfirmButton.waitForClickable();
-		await this.messages.deleteForEveryoneConfirmButton.click();
+		await this.deleteDialogConfirm.waitForClickable();
+		await this.deleteDialogConfirm.click();
 	}
 
 	/** Open the actions menu, tap Delete, and confirm "Delete for me". */
 	async deleteForMe(): Promise<void> {
 		await this.openDeleteDialog();
-		await this.messages.deleteForMeConfirmButton.waitForClickable();
-		await this.messages.deleteForMeConfirmButton.click();
+		await this.deleteDialogForMeConfirm.waitForClickable();
+		await this.deleteDialogForMeConfirm.click();
 	}
 
 	/** Open the actions menu and tap Delete, leaving the confirmation dialog open
@@ -472,8 +489,8 @@ export class Message extends TestHelper {
 		await this.openActions();
 		await this.deleteAction.waitForClickable();
 		await this.deleteAction.click();
+		await this.deleteDialog.waitForDisplayed();
 	}
-
 
 	/** Wait for this message to render the deleted-for-everyone placeholder
 	 * reading `text`. A delete tombstones the original message rather than

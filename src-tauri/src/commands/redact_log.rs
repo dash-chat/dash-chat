@@ -1,15 +1,12 @@
 use regex::Regex;
-use std::io::Read;
-use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
-use std::time::SystemTime;
 use tauri::{AppHandle, Manager};
 
 use crate::filesystem::FileSystem;
 
 const MAX_LOG_BYTES: usize = 5 * 1024 * 1024;
 
-static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
         // FCM tokens — alphanumeric with colons, hyphens, underscores (100+ chars)
         r"[A-Za-z0-9_:\-]{100,}",
@@ -69,84 +66,21 @@ static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     .collect()
 });
 
-/// Read `paths` in order, concatenate their contents, and tail the result
-/// to at most `max_bytes`. When truncation happens, the first partial line
-/// is dropped so the output starts on a clean log line.
-fn read_concat_tail(paths: &[PathBuf], max_bytes: usize) -> std::io::Result<String> {
-    let mut buf = String::new();
-    for path in paths {
-        let mut file = std::fs::File::open(path)?;
-        file.read_to_string(&mut buf)?;
-        if !buf.is_empty() && !buf.ends_with('\n') {
-            buf.push('\n');
-        }
-    }
-    if buf.len() > max_bytes {
-        let mut start = buf.len() - max_bytes;
-        while start < buf.len() && !buf.is_char_boundary(start) {
-            start += 1;
-        }
-        buf.drain(..start);
-        if let Some(pos) = buf.find('\n') {
-            buf.drain(..=pos);
-        }
-    }
-    Ok(buf)
-}
-
-/// List every `*.log` file in `log_dir`, sorted by modification time
-/// ascending (oldest first). `tauri-plugin-log` with KeepOne rotation
-/// leaves a date-stamped older sibling alongside the live file; this
-/// returns both so the caller can stitch the full history back together.
-fn list_log_files_oldest_first(log_dir: &Path) -> std::io::Result<Vec<PathBuf>> {
-    let mut entries: Vec<(SystemTime, PathBuf)> = std::fs::read_dir(log_dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("log"))
-        .filter_map(|e| {
-            let mtime = e.metadata().and_then(|m| m.modified()).ok()?;
-            Some((mtime, e.path()))
-        })
-        .collect();
-    entries.sort_by_key(|(mtime, _)| *mtime);
-    Ok(entries.into_iter().map(|(_, p)| p).collect())
-}
-
-pub fn redact(content: &str) -> String {
-    let mut redacted = content.to_owned();
-    for re in REDACTION_REGEXES.iter() {
-        redacted = re.replace_all(&redacted, "[REDACTED]").into_owned();
-    }
-    redacted
-}
-
+/// Returns the path to a redacted copy of the log, for attaching to a support
+/// email. The redaction itself lives in `tauri-plugin-sentry-reporting`, which
+/// applies these same patterns to everything it sends.
 #[tauri::command]
 pub fn get_redacted_log(app_handle: AppHandle) -> Result<String, String> {
     let log_dir = FileSystem::new(&app_handle)
         .map_err(|e| format!("Failed to resolve log dir: {e:?}"))?
         .logs_dir();
-    // tauri-plugin-log rotates `<package_name>.log` into a date-stamped
-    // sibling under KeepOne, so the directory can hold one rotated file
-    // plus the live one. Read both (oldest first) so the report covers
-    // the full retained history, not just the post-rotation tail.
-    let log_files = list_log_files_oldest_first(&log_dir)
-        .map_err(|e| format!("Failed to list log dir {}: {e:?}", log_dir.display()))?;
-    if log_files.is_empty() {
-        return Err(format!("No *.log file in {}", log_dir.display()));
-    }
 
-    log::info!(
-        "Redacting log files: {}",
-        log_files
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-
-    let content = read_concat_tail(&log_files, MAX_LOG_BYTES)
-        .map_err(|e| format!("Failed to read logs in {}: {e:?}", log_dir.display()))?;
-
-    let redacted = redact(&content);
+    let redacted = tauri_plugin_sentry_reporting::redacted_log_tail(
+        &REDACTION_REGEXES,
+        &log_dir,
+        MAX_LOG_BYTES,
+    )
+    .map_err(|e| format!("Failed to read logs in {}: {e:?}", log_dir.display()))?;
 
     let cache_dir = app_handle
         .path()
@@ -165,6 +99,11 @@ pub fn get_redacted_log(app_handle: AppHandle) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Assert the patterns through the same function that runs at egress.
+    fn redact(input: &str) -> String {
+        tauri_plugin_sentry_reporting::redact(&REDACTION_REGEXES, input)
+    }
 
     #[test]
     fn redacts_hex_strings() {
@@ -465,83 +404,6 @@ mod tests {
     fn preserves_non_sensitive_log_lines() {
         let input = "2024-02-15T10:30:00 INFO stream processing loop cancelled";
         assert_eq!(redact(input), input);
-    }
-
-    #[test]
-    fn read_concat_tail_small_single_file() {
-        let dir = std::env::temp_dir().join("dashchat_test_concat_small");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("small.log");
-        std::fs::write(&path, "line1\nline2\nline3\n").unwrap();
-        let result = read_concat_tail(&[path], 1024).unwrap();
-        assert_eq!(result, "line1\nline2\nline3\n");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn read_concat_tail_truncates_large_single_file() {
-        let dir = std::env::temp_dir().join("dashchat_test_concat_truncate");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("large.log");
-        let padding = "x".repeat(90) + "\n";
-        let tail = "line_a\nline_b\nline_c\n";
-        std::fs::write(&path, format!("{padding}{tail}")).unwrap();
-        let result = read_concat_tail(&[path], 30).unwrap();
-        assert!(
-            !result.contains('x'),
-            "padding should be truncated: {result}"
-        );
-        assert!(result.contains("line_b"), "should contain line_b: {result}");
-        assert!(result.contains("line_c"), "should contain line_c: {result}");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn read_concat_tail_joins_files_in_order() {
-        let dir = std::env::temp_dir().join("dashchat_test_concat_join");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let older = dir.join("rotated.log");
-        let newer = dir.join("live.log");
-        std::fs::write(&older, "older1\nolder2\n").unwrap();
-        std::fs::write(&newer, "newer1\nnewer2\n").unwrap();
-        let result = read_concat_tail(&[older, newer], 1024).unwrap();
-        assert_eq!(result, "older1\nolder2\nnewer1\nnewer2\n");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn read_concat_tail_inserts_newline_between_files() {
-        let dir = std::env::temp_dir().join("dashchat_test_concat_newline");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let a = dir.join("a.log");
-        let b = dir.join("b.log");
-        std::fs::write(&a, "tail_of_a").unwrap();
-        std::fs::write(&b, "head_of_b\n").unwrap();
-        let result = read_concat_tail(&[a, b], 1024).unwrap();
-        assert_eq!(result, "tail_of_a\nhead_of_b\n");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn list_log_files_orders_by_mtime_ascending() {
-        let dir = std::env::temp_dir().join("dashchat_test_list_logs");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let older = dir.join("older.log");
-        let newer = dir.join("newer.log");
-        let ignored = dir.join("notes.txt");
-        std::fs::write(&older, "x\n").unwrap();
-        std::fs::write(&ignored, "ignore\n").unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        std::fs::write(&newer, "y\n").unwrap();
-
-        let result = list_log_files_oldest_first(&dir).unwrap();
-        assert_eq!(result, vec![older, newer]);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -16,14 +16,7 @@
 		Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
-	import {
-		Navbar,
-		NavbarBackLink,
-		Link,
-		Dialog,
-		DialogButton,
-		useTheme,
-	} from 'konsta/svelte';
+	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -37,10 +30,7 @@
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import {
-		canDeleteMessageForEveryone,
-		messagePosition,
-	} from '$lib/components/messages/message-helpers';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -281,14 +271,6 @@
 														{chatId}
 														searchQuery=""
 														onEdit={() => composer?.editMessage(message)}
-														onDelete={() =>
-															composer?.deleteMessage(
-																message,
-																canDeleteMessageForEveryone(
-																	message,
-																	myDeviceId,
-																),
-															)}
 													/>
 												</div>
 											{:else}
@@ -312,8 +294,6 @@
 														showSenderName={position === 'first' ||
 															position === 'single'}
 														showAvatar
-														onDelete={() =>
-															composer?.deleteMessage(message, false)}
 													/>
 												</div>
 											{/if}

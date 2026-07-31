@@ -5,9 +5,12 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import {
 		type ChatSummary,
+		type ContactsStore,
 		type MediaAttachment,
 		hasBody,
 	} from 'dash-chat-stores';
+	import { getContext } from 'svelte';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
@@ -22,11 +25,12 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCancel } from '@mdi/js';
 
-	let {
-		summary,
-		active,
-		blocked = false,
-	}: { summary: ChatSummary; active: boolean; blocked?: boolean } = $props();
+	let { summary, active }: { summary: ChatSummary; active: boolean } = $props();
+
+	const contactsStore: ContactsStore = getContext('contacts-store');
+	const blocked = $derived(
+		useReactivePromise(contactsStore.isBlocked, summary.chatId),
+	);
 
 	const chatHref = (s: ChatSummary) =>
 		s.type === 'GroupChat'
@@ -46,32 +50,14 @@
 </script>
 
 <TitleTruncatedListItem
+	title={summary.waitingForProfile ? m.waitingForProfile() : summary.name}
+	titleWrapClass={summary.waitingForProfile ? 'quiet' : ''}
 	link
 	class={active ? 'active' : ''}
 	linkProps={{ href: chatHref(summary) }}
 	chevron={false}
 	data-testid="all-chats-row"
 >
-	{#snippet title()}
-		<span
-			class="flex min-w-0 flex-row items-center gap-1 {summary.waitingForProfile
-				? 'quiet'
-				: ''}"
-		>
-			{#if blocked}
-				<wa-icon
-					class="small-icon quiet shrink-0"
-					src={wrapPathInSvg(mdiCancel)}
-					data-testid="blocked-row-icon"
-				></wa-icon>
-			{/if}
-			<span class="truncate min-w-0"
-				>{summary.waitingForProfile
-					? m.waitingForProfile()
-					: summary.name}</span
-			>
-		</span>
-	{/snippet}
 	{#snippet media()}
 		<Avatar image={summary.avatar} initials={summary.name.slice(0, 2)} />
 	{/snippet}
@@ -107,26 +93,37 @@
 	{#snippet subtitle()}
 		<div class="row items-center">
 			<span class="flex-1 min-w-0 truncate text-black/70 dark:text-white/70">
-				{#if summary.lastEvent.kind === 'contact_request'}
-					{m.messageRequest()}
-				{:else if summary.lastEvent.kind === 'contact_added'}
-					{m.contactAccepted()}
-				{:else if summary.lastEvent.kind === 'message'}
-					{#if summary.type === 'GroupChat'}
-						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
-						{#if hasBody(summary.lastEvent.content)}
+				{#await $blocked then isBlocked}
+					{#if isBlocked && summary.type === 'DirectChat'}
+						<span class="inline-flex items-center gap-1 italic">
+							<wa-icon
+								class="small-icon shrink-0"
+								src={wrapPathInSvg(mdiCancel)}
+								data-testid="blocked-row-icon"
+							></wa-icon>
+							{m.blocked()}
+						</span>
+					{:else if summary.lastEvent.kind === 'contact_request'}
+						{m.messageRequest()}
+					{:else if summary.lastEvent.kind === 'contact_added'}
+						{m.contactAccepted()}
+					{:else if summary.lastEvent.kind === 'message'}
+						{#if summary.type === 'GroupChat'}
+							<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
+							{#if hasBody(summary.lastEvent.content)}
+								{summarizeMessage(summary.lastEvent.content)}
+							{:else}
+								<span class="italic">{m.messageDeleted()}</span>
+							{/if}
+						{:else if hasBody(summary.lastEvent.content)}
 							{summarizeMessage(summary.lastEvent.content)}
 						{:else}
 							<span class="italic">{m.messageDeleted()}</span>
 						{/if}
-					{:else if hasBody(summary.lastEvent.content)}
-						{summarizeMessage(summary.lastEvent.content)}
 					{:else}
-						<span class="italic">{m.messageDeleted()}</span>
+						{groupEventText(summary.lastEvent)}
 					{/if}
-				{:else}
-					{groupEventText(summary.lastEvent)}
-				{/if}
+				{/await}
 			</span>
 			{#if summary.unreadMessages !== 0}
 				<Badge>{summary.unreadMessages}</Badge>

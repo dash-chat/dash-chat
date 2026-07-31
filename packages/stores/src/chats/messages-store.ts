@@ -200,23 +200,14 @@ export class MessagesStore {
 /** Reconcile the built message map with the backend's tombstone set.
  *
  * A `DeletedForMe` op (and any of its edits) is removed outright — following
- * Signal, a delete-for-me leaves no placeholder. A `DeletedForEveryone` edit
- * that slipped through as a raw body-less placeholder (rather than the
- * chain-collapsed `'deleted-for-everyone'` root that `applyDeletes` produces
- * from the `DeleteMessage` op) is removed too, so only the root placeholder
- * remains. Body-less ops that are *not* tombstoned stay as `'body-unavailable'`
- * — a genuinely unfetched message, which the tombstone set lets us tell apart
- * from a deletion. */
+ * Signal, a delete-for-me leaves no placeholder. `DeletedForEveryone` ops keep
+ * the `'deleted-for-everyone'` placeholder `deletedMessages` built for them. */
 function applyTombstones(
 	messages: Record<Hash, Message>,
 	tombstones: Tombstone[],
 ): void {
 	for (const { hash, reason } of tombstones) {
-		const message = messages[hash];
-		if (message === undefined) continue;
-		if (reason === 'DeletedForMe' || message.content === 'body-unavailable') {
-			delete messages[hash];
-		}
+		if (reason === 'DeletedForMe') delete messages[hash];
 	}
 }
 

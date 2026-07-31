@@ -427,50 +427,43 @@ impl OpProjection {
         // same agent as the deleter. Check every *target* op (the hashes in the
         // payload), not the delete op itself. Body-less/tombstoned copies still
         // carry the author's key in their header, so late joiners can enforce
-        // this too. Targets we haven't synced yet can't be checked here; they
-        // are tombstoned regardless so their body is dropped on arrival.
-        let deleter_agent = self.lookup_contact_by_device_id(author).await?;
+        // this too.
+        //
+        // TODO: Targets we haven't synced yet can't be checked here.
+        // This is only applicable for cross-device deletes,
+        // and is fixed once we have custom processors for partial ordering.
+        //
+        // TODO: Needs to be multi-device aware
         for target in payload.iter() {
             let Some(target_op) = node.op_store.get_operation(target).await? else {
                 continue;
             };
-            let target_agent = self
-                .lookup_contact_by_device_id(DeviceId::from(target_op.header.verifying_key))
-                .await?;
-            if target_agent != deleter_agent {
+            let target_device = DeviceId::from(target_op.header.verifying_key);
+            if target_device != author {
                 tracing::warn!(op = ?hash.aliased(), target = ?target.aliased(), "delete references another author's operation; skipping");
                 return Err(ProjectionError::invalid(format!(
                     "delete references another author's operation: {:?} != {:?}",
-                    target_agent.aliased(),
-                    deleter_agent.aliased()
+                    target_device.aliased(),
+                    author.aliased()
                 )));
             }
         }
 
-        // Mirror the author-side validation: a delete that breaks the
-        // chain-completeness / window rules is ignored (not applied) with a
-        // warning. Full validation needs every referenced op as a valid chat
-        // op; when some are already gone (a partially-applied replay, or a
-        // member that joined after the delete and synced body-less copies) the
-        // chain can't be reconstructed, so we fall back to the per-target
-        // authorship check above.
         let chat_id = ChatId::from_topic_id(topic)?;
         let valid_ops = node.valid_chat_ops(chat_id).await?;
-        if payload.iter().all(|h| valid_ops.contains_key(h)) {
-            let delete_ts: u64 = header.timestamp.into();
-            if let Err(err) = (DeleteCandidate {
-                hashes: payload.clone(),
-                deleter: author,
-                delete_timestamp: delete_ts,
-                self_hash: Some(hash),
-            })
-            .validate(&valid_ops)
-            {
-                tracing::warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
-                return Err(ProjectionError::invalid(format!(
-                    "invalid delete message: {err}"
-                )));
-            }
+        let delete_ts: u64 = header.timestamp.into();
+        if let Err(err) = (DeleteCandidate {
+            hashes: payload.clone(),
+            deleter: author,
+            delete_timestamp: delete_ts,
+            self_hash: Some(hash),
+        })
+        .validate(&valid_ops)
+        {
+            tracing::warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
+            return Err(ProjectionError::invalid(format!(
+                "invalid delete message: {err}"
+            )));
         }
 
         Ok(())
