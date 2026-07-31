@@ -1,7 +1,7 @@
 import type { Action } from 'svelte/action';
 
 interface LongPressParams {
-	onLongPress: (e: MouseEvent | TouchEvent) => void;
+	onLongPress: (e: MouseEvent | TouchEvent, element: HTMLElement) => void;
 	duration?: number;
 }
 
@@ -9,8 +9,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let triggered = false;
 
 /** Stops iOS from answering the press with its own selection and link UI. */
-function suppressNativeLongPress(target: EventTarget | null) {
-	if (!(target instanceof HTMLElement)) return;
+function suppressNativeLongPress(target: HTMLElement) {
 	target.style.setProperty('-webkit-user-select', 'none');
 	target.style.setProperty('user-select', 'none');
 	target.style.setProperty('-webkit-touch-callout', 'none');
@@ -19,12 +18,15 @@ function suppressNativeLongPress(target: EventTarget | null) {
 export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
 	return {
 		ontouchstart(e: TouchEvent) {
-			suppressNativeLongPress(e.currentTarget);
+			// `currentTarget` is nulled once dispatch ends, so it must be read before the timer.
+			const element = e.currentTarget;
+			if (!(element instanceof HTMLElement)) return;
+			suppressNativeLongPress(element);
 			triggered = false;
 			timer = setTimeout(() => {
 				triggered = true;
 				window.getSelection()?.removeAllRanges();
-				if ((e.target as Element).isConnected) onLongPress(e);
+				if (element.isConnected) onLongPress(e, element);
 			}, duration ?? 500);
 		},
 		ontouchmove() {
@@ -35,8 +37,9 @@ export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
 			if (triggered) e.preventDefault();
 		},
 		oncontextmenu(e: MouseEvent) {
+			if (!(e.currentTarget instanceof HTMLElement)) return;
 			e.preventDefault();
-			onLongPress(e);
+			onLongPress(e, e.currentTarget);
 		},
 	};
 }

@@ -685,7 +685,9 @@
 					<div bind:clientHeight={bottomBarHeight}>
 						{#if searchMode}
 							<div class="bg-page-surface">
-								<Divider />
+								<div class="mx-4">
+									<Divider />
+								</div>
 								<div
 									class="row items-center gap-2 px-4 py-3"
 									style="margin: 0 auto"
@@ -740,7 +742,9 @@
 							</div>
 						{:else if isPendingChat}
 							<div class="bg-page-surface">
-								<Divider />
+								<div class="mx-4">
+									<Divider />
+								</div>
 								<p
 									class="px-6 py-4 text-center text-sm text-gray-600 dark:text-gray-400"
 									data-testid="direct-chat-pending-note"
@@ -760,7 +764,9 @@
 									/>
 								{:else if contactRequest}
 									<div class="bg-page-surface">
-										<Divider />
+										<div class="mx-4">
+											<Divider />
+										</div>
 										<div
 											class="flex flex-col items-center gap-3 px-6 py-3"
 											style="margin: 0 auto"

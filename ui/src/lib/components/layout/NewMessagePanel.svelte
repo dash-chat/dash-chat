@@ -156,10 +156,7 @@
 								href: `/direct-chats/${actorId}`,
 								...(isMobile &&
 									longPressHandlers({
-										onLongPress: e => {
-											const row = (e.target as Element).closest('li');
-											if (row) openMenu(actorId, profile, row);
-										},
+										onLongPress: (_, row) => openMenu(actorId, profile, row),
 									})),
 							}}
 							title={profile.name}
