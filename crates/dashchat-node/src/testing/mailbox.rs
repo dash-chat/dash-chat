@@ -130,6 +130,16 @@ impl TestMailbox {
         }
     }
 
+    /// A standalone client for inspecting the mailbox's contents in tests,
+    /// independent of any node's registered client.
+    pub async fn client(&self) -> TestMailboxClient {
+        match self {
+            Self::Mem(mb) => TestMailboxClient::Mem(mb.client()),
+            Self::Cloud { url } => TestMailboxClient::Toy(inspection_client(url).await),
+            Self::Local(local) => TestMailboxClient::Toy(inspection_client(&local.url).await),
+        }
+    }
+
     /// Registers this mailbox on a node the way the production app does: for a
     /// served mailbox, resolve its id from `/health`, add its dialing address
     /// to the node's address book, and register the node's own address back so
@@ -144,6 +154,16 @@ impl TestMailbox {
             }
         }
     }
+}
+
+async fn inspection_client(url: &str) -> ToyMailboxClient<MailboxOperation> {
+    let health = fetch_mailbox_health(url).await.unwrap();
+    ToyMailboxClient::new(
+        health.mailbox_id,
+        url,
+        iroh::SecretKey::generate().public(),
+        Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+    )
 }
 
 async fn register_served_mailbox(node: &crate::Node, url: &str) {

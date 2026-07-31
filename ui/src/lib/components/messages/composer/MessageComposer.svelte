@@ -15,7 +15,12 @@
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
 	} from '$lib/utils/media';
-	import type { Hash, Message, MessagesStore } from 'dash-chat-stores';
+	import {
+		type Hash,
+		type Message,
+		type MessagesStore,
+		hasBody,
+	} from 'dash-chat-stores';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
@@ -82,6 +87,7 @@
 	}
 
 	function startEdit(message: Message) {
+		if (!hasBody(message.content)) return;
 		editing = message;
 		value = message.content.message;
 	}
@@ -98,7 +104,7 @@
 
 	async function submitEdit() {
 		const target = editing;
-		if (!target || sending) return;
+		if (!target || sending || !hasBody(target.content)) return;
 		const text = value.trim();
 		if (!text || text === target.content.message) {
 			cancelEdit();

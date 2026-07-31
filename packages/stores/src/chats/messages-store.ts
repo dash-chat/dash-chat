@@ -7,9 +7,11 @@ import { DeviceId, Hash } from '../p2panda/types';
 import {
 	ChatId,
 	ChatReaction,
-	MediaAttachment,
+	MessageDisplay,
+	MessageVersion,
 	OutgoingMedia,
 	Payload,
+	hasBody,
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
@@ -19,23 +21,21 @@ import { type IMessagesClient } from './messages-client';
  * UNIX epoch (the backend serializes them as such), so this is 24h in ms. */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-export interface MessageVersion {
-	hash: string;
-	text: string;
-	timestamp: number;
-}
+/** The window during which a message may be deleted for everyone, measured
+ * from the original message timestamp. Deleting a message for yourself is
+ * always allowed. Mirrors `DELETE_WINDOW_MICROS` in
+ * `crates/dashchat-node/src/chat/validation/delete.rs` (frontend timestamps
+ * are ms). */
+export const DELETE_FOR_EVERYONE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export interface Message {
 	hash: string;
-	content: {
-		message: string;
-		media: MediaAttachment | null;
-	};
+	/** The message payload with its reactions and edit history, or
+	 * `'deleted-for-everyone'` once deleted. */
+	content: MessageDisplay;
 	timestamp: number;
 	author: DeviceId;
 	seqNum: number;
-	reactions: Record<DeviceId, string>;
-	editHistory: MessageVersion[];
 }
 
 // The messages of a single chat, direct or group alike: the message log with
@@ -54,21 +54,34 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget, editsByTarget } =
-			collectMessageActionsByType(logs);
+		const {
+			messages,
+			bodylessOps,
+			reactionsByTarget,
+			editsByTarget,
+			deleteTargets,
+		} = collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
-			if (message) {
-				message.reactions = byAuthor;
-			} else {
-				console.warn('reaction for missing message');
+			if (message === undefined) {
+				// A reaction on a tombstoned op is moot, not a missing target.
+				if (bodylessOps[target] === undefined) {
+					console.warn('reaction for missing message');
+				}
+			} else if (hasBody(message.content)) {
+				message.content.reactions = byAuthor;
 			}
 		}
 
 		for (const [hash, message] of Object.entries(messages)) {
 			messages[hash] = applyEdits(message, editsByTarget);
 		}
+
+		Object.assign(
+			messages,
+			deletedMessages(deleteTargets, messages, bodylessOps),
+		);
 
 		return messages;
 	});
@@ -147,35 +160,56 @@ export class MessagesStore {
 		const current = currentVersion(fresh);
 		return this.client.editMessage(chatId, current.hash, newText);
 	}
+
+	async deleteMessage(message: Message): Promise<Hash> {
+		const chatId = await this.chatId();
+		// Same staleness concern as `editMessage`: the caller's snapshot may
+		// predate an edit that arrived since.
+		const fresh = (await this.messages())[message.hash] ?? message;
+		const current = currentVersion(fresh);
+		return this.client.deleteMessage(chatId, current.hash);
+	}
 }
 
 function collectMessageActionsByType(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;
+	// Operations whose payload is gone, keyed by hash
+	bodylessOps: Record<Hash, SimplifiedOperation<void>>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
+	/** One entry per delete: every hash it covers — the original message and its
+	 * edits. */
+	deleteTargets: Hash[][];
 } {
 	const messages: Record<Hash, Message> = {};
+	const bodylessOps: Record<Hash, SimplifiedOperation<void>> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
+	const deleteTargets: Hash[][] = [];
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
 			const body = operation.body;
-			if (body?.type !== 'Chat') continue;
+			if (!body) {
+				if (operation.header.auth) continue;
+				bodylessOps[operation.hash] = { ...operation, body: undefined };
+				continue;
+			}
+			if (body.type !== 'Chat') continue;
 			if (body.payload.type === 'Message') {
 				messages[operation.hash] = {
 					hash: operation.hash,
 					content: {
 						message: body.payload.payload.message,
 						media: mediaBundleToAttachment(body.payload.payload.media),
+						reactions: {},
+						editHistory: [],
 					},
 					author,
 					seqNum: operation.header.seq_num,
 					timestamp: operation.header.timestamp,
-					reactions: {},
-					editHistory: [],
 				};
 			} else if (body.payload.type === 'Reaction') {
 				const { target, emoji } = body.payload.payload;
@@ -197,14 +231,76 @@ function collectMessageActionsByType(
 					text: body.payload.payload.message,
 					timestamp: operation.header.timestamp,
 				};
+			} else if (body.payload.type === 'DeleteMessage') {
+				deleteTargets.push(body.payload.payload.hashes);
 			}
 		}
 	}
 
 	return {
 		messages,
+		bodylessOps,
 		reactionsByTarget,
 		editsByTarget,
+		deleteTargets,
+	};
+}
+
+/** The placeholder each delete leaves behind, keyed by the hash it stands in
+ * for. Merged over `messages` these replace the original's live entry, the only
+ * covered op that can be there — edits live in `editsByTarget`. */
+function deletedMessages(
+	deleteTargets: Hash[][],
+	messages: Record<Hash, Message>,
+	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
+): Record<Hash, Message> {
+	const deleted: Record<Hash, Message> = {};
+	for (const hashes of deleteTargets) {
+		const original = earliestOp(hashes, messages, bodylessOps);
+		if (original === undefined) continue;
+		deleted[original.hash] = { ...original, content: 'deleted-for-everyone' };
+	}
+	return deleted;
+}
+
+/** The earliest of `hashes` this peer has — the original message, since its
+ * edits are authored after it. Ordered by timestamp, as the message list itself
+ * is, so the placeholder lands in the slot the original occupied. `seq_num`
+ * can't be used: once devices are linked an edit may come from another device,
+ * and positions in different logs aren't comparable. The hash breaks ties so
+ * every peer eventually picks the same op. */
+function earliestOp(
+	hashes: Hash[],
+	messages: Record<Hash, Message>,
+	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
+): Message | undefined {
+	let earliest: Message | undefined;
+	for (const hash of hashes) {
+		const bodyless = bodylessOps[hash];
+		const op =
+			messages[hash] ??
+			(bodyless === undefined ? undefined : placeholderFor(bodyless));
+		if (op === undefined) continue;
+		if (
+			earliest === undefined ||
+			op.timestamp < earliest.timestamp ||
+			(op.timestamp === earliest.timestamp && op.hash < earliest.hash)
+		) {
+			earliest = op;
+		}
+	}
+	return earliest;
+}
+
+/** The placeholder a tombstoned operation renders as, built from its header
+ * since its payload is gone. */
+function placeholderFor(op: SimplifiedOperation<void>): Message {
+	return {
+		hash: op.hash,
+		content: 'deleted-for-everyone',
+		author: op.header.verifying_key,
+		seqNum: op.header.seq_num,
+		timestamp: op.header.timestamp,
 	};
 }
 
@@ -224,6 +320,8 @@ function applyEdits(
 	message: Message,
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>,
 ): Message {
+	// Deletes are applied after edits, so live content is always present here.
+	if (!hasBody(message.content)) return message;
 	const versions: MessageVersion[] = [];
 	const seen = new Set<Hash>([message.hash]);
 	const pending = Object.values(editsByTarget[message.hash] ?? {});
@@ -240,14 +338,21 @@ function applyEdits(
 	const latest = versions[versions.length - 1];
 	return {
 		...message,
-		content: { ...message.content, message: latest.text },
-		editHistory: versions,
+		content: {
+			...message.content,
+			message: latest.text,
+			editHistory: versions,
+		},
 	};
 }
 
 function currentVersion(message: Message): MessageVersion {
-	if (message.editHistory.length > 0) {
-		return message.editHistory[message.editHistory.length - 1];
+	if (!hasBody(message.content)) {
+		return { hash: message.hash, text: '', timestamp: message.timestamp };
+	}
+	const { editHistory } = message.content;
+	if (editHistory.length > 0) {
+		return editHistory[editHistory.length - 1];
 	}
 	return {
 		hash: message.hash,

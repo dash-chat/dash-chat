@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { condenseReactions } from '$lib/utils/emojis';
 	import { Sheet, Block, Button, Chip } from 'konsta/svelte';
-	import type { Message, DeviceId } from 'dash-chat-stores';
+	import { type Message, type DeviceId, hasBody } from 'dash-chat-stores';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import EmojiPickerWrapper from './EmojiPickerWrapper.svelte';
 
@@ -14,7 +14,12 @@
 
 	let { message, myDeviceId, opened, onReact }: Props = $props();
 
-	const condensed = $derived(condenseReactions(message.reactions, myDeviceId));
+	const condensed = $derived(
+		condenseReactions(
+			hasBody(message.content) ? message.content.reactions : {},
+			myDeviceId,
+		),
+	);
 </script>
 
 <Sheet class="pb-safe text-lg" {opened} backdrop={false}>

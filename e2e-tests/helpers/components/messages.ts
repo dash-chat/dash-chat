@@ -219,6 +219,29 @@ export class Message extends TestHelper {
 		return this.wrapper.$(tid('message-action-copy'));
 	}
 
+	get deleteAction() {
+		return this.wrapper.$(tid('message-action-delete'));
+	}
+
+	/** The deleted-for-everyone placeholder that replaces this message's body. */
+	get deletedPlaceholder() {
+		return this.wrapper.$(tid('message-deleted-placeholder'));
+	}
+
+	/** The delete confirmation. It is mounted only while it is up, and only by
+	 * the message being deleted, so it resolves at agent level. */
+	get deleteDialog() {
+		return this.agent.$(tid('delete-message-dialog'));
+	}
+
+	get deleteDialogCancel() {
+		return this.agent.$(tid('delete-message-cancel'));
+	}
+
+	get deleteDialogConfirm() {
+		return this.agent.$(tid('delete-message-confirm'));
+	}
+
 	/** Open this message's actions menu with the gesture its platform uses — a
 	 * long-press on mobile, which opens the spotlight overlay, or the hover
 	 * toolbar's ⋯ button on desktop — and wait for it to actually open. */
@@ -396,5 +419,29 @@ export class Message extends TestHelper {
 		);
 		await this.composer.type(newText);
 		await this.composer.send();
+	}
+
+	/** Open the actions menu, tap Delete, and confirm deleting for everyone. */
+	async delete(): Promise<void> {
+		await this.openActions();
+		await this.deleteAction.waitForClickable();
+		await this.deleteAction.click();
+		await this.deleteDialogConfirm.waitForClickable();
+		await this.deleteDialogConfirm.click();
+	}
+
+	/** Wait for this message to render the deleted-for-everyone placeholder
+	 * reading `text`. A delete tombstones the original message rather than
+	 * replacing it, so the hash — and this helper — stays valid across it. */
+	async waitForDeleted(text: string, timeout = SYNC_TIMEOUT): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				(await this.deletedPlaceholder.isExisting()) &&
+				(await this.deletedPlaceholder.getText()).trim() === text,
+			{
+				timeout,
+				timeoutMsg: `Message ${this.hash} does not show the deleted placeholder "${text}"`,
+			},
+		);
 	}
 }

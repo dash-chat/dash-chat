@@ -59,4 +59,16 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 			_seq: number,
 		): Promise<MailboxId[]> => [MOCK_MAILBOX_ID],
 	);
+
+	connectionStatus = reactive(async () => ({
+		connectedToCloudMailboxServer: true,
+		connectedLocalMailboxCount: 0,
+	}));
+
+	syncStatusForOp = reactive(
+		async (_topicId: TopicId, _author: DeviceId, _seq: number) => ({
+			syncedWithCloudMailbox: true,
+			syncedWithAnyLocalMailbox: false,
+		}),
+	);
 }

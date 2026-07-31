@@ -28,16 +28,19 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
-use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps};
+use crate::chat::{
+    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
+    collect_deletable_edit_chain,
+};
 use crate::contact::{InboxTopic, QrCode, ShareIntent};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile,
-    OutgoingMedia,
+    AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
+    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetaKind,
+    MediaMetadata, OutgoingFile, OutgoingMedia,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -1022,12 +1025,13 @@ impl Node {
         let topic = topic.into();
         let valid_ops = self.valid_chat_ops(topic).await?;
         let now = u64::from(p2panda_core::Timestamp::now());
-        valid_ops.validate_edit(&EditCandidate {
+        EditCandidate {
             target: edit_hash,
             editor: self.device_id(),
             timestamp: now,
             self_hash: None,
-        })?;
+        }
+        .validate(&valid_ops)?;
 
         let header = self
             .publish(
@@ -1067,6 +1071,62 @@ impl Node {
         Ok(header)
     }
 
+    /// Delete a previously-sent message for everyone in the chat.
+    ///
+    /// `target` must be the most recent edit of the message (or the message
+    /// itself when unedited), authored by us, within the delete window, and not
+    /// already deleted. The full edit chain is collected and published in a
+    /// `DeleteMessage` payload; processing it tombstones every operation in the
+    /// chain. See [`DeleteError`](crate::chat::DeleteError).
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let topic = topic.into();
+        let ops = self.valid_chat_ops(topic).await?;
+        let hashes = collect_deletable_edit_chain(&ops, &target)?;
+        let now = u64::from(p2panda_core::Timestamp::now());
+        DeleteCandidate {
+            hashes: hashes.clone(),
+            deleter: self.device_id(),
+            delete_timestamp: now,
+            self_hash: None,
+        }
+        .validate(&ops)?;
+
+        let header = self
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Publish a delete without validating it. For testing the receiving-side
+    /// handling of invalid deletes, which the author-side validation would
+    /// otherwise prevent from ever being created.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn delete_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
+        hashes: BTreeSet<Hash>,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(
+                topic.into(),
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
     /// Collect all chat operations in a topic, reduced to the fields edit
     /// validation needs, keyed by operation hash.
     //
@@ -1089,6 +1149,7 @@ impl Node {
                 let kind = match chat {
                     ChatPayload::Message(_) => ChatOpKind::Message,
                     ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+                    ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
                     _ => ChatOpKind::Other,
                 };
                 ops.insert(
@@ -1190,33 +1251,6 @@ impl Node {
             }
         }
         Ok(latest.map(|(_, d)| d))
-    }
-
-    /// Tombstone an operation: record its hash in the topic's persisted
-    /// tombstone set so its payload is never stored or synced again, and
-    /// immediately drop any payload already stored for it.
-    ///
-    /// This has the effect that when the operation is played back, it will
-    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
-    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
-    /// so that they leave behind no traces in local state.
-    pub async fn tombstone_operation(
-        &self,
-        topic: TopicId,
-        operation: &Operation,
-    ) -> anyhow::Result<()> {
-        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
-            return Ok(());
-        };
-        if self.is_tombstoneable(&payload) {
-            let hash = operation.hash;
-            self.local_store.add_tombstone(topic, hash.clone()).await?;
-            self.unprocess_app(operation).await?;
-            self.op_store.delete_body(&hash).await?;
-        } else {
-            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
-        }
-        Ok(())
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
