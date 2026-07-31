@@ -77,6 +77,8 @@
             libsoup_3
             libayatana-appindicator
             pango
+            # libatk-1.0
+            at-spi2-core
           ];
           nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
           # One toolchain (host + android targets) shared by the default and
