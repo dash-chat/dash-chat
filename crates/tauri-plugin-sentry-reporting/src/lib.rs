@@ -6,6 +6,7 @@
 
 mod attachment;
 mod client;
+mod crash;
 mod envelope;
 mod error;
 mod logs;
@@ -38,13 +39,21 @@ pub struct Config {
     pub redact: Vec<regex::Regex>,
     /// Where the log files a report attaches live.
     pub logs_dir: PathBuf,
+    /// This crate's own folder, holding a crash kept for the next launch.
+    pub data_dir: PathBuf,
 }
 
 pub fn init<R: Runtime>(config: Config) -> TauriPlugin<R> {
     let state = SentryState::new(config, Arc::new(ConsentGate::default()));
+    crash::install_hook(Arc::downgrade(&state));
 
     Builder::<R>::new("sentry-reporting")
-        .invoke_handler(tauri::generate_handler![error::send_error_report])
+        .invoke_handler(tauri::generate_handler![
+            error::send_error_report,
+            crash::pending_crash_report,
+            crash::send_pending_crash_report,
+            crash::discard_pending_crash_report,
+        ])
         .setup(move |app, _api| {
             app.manage(state);
             Ok(())

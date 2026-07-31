@@ -50,7 +50,7 @@ mod tests {
     fn a_report_carries_the_event_the_logs_and_the_log_file() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("app.log"), "a line\n").unwrap();
-        let (state, recorder) = plugin(dir.path().to_path_buf());
+        let (state, recorder) = plugin(dir.path());
 
         let envelope = build_envelope(&state, Event::default(), vec![log_saying("connecting")])
             .expect("before_send dropped the event");
@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn the_logs_share_the_events_trace() {
         let dir = tempfile::tempdir().unwrap();
-        let (state, recorder) = plugin(dir.path().to_path_buf());
+        let (state, recorder) = plugin(dir.path());
 
         let envelope = build_envelope(&state, Event::default(), vec![log_saying("connecting")])
             .expect("before_send dropped the event");

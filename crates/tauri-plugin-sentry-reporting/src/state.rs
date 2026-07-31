@@ -16,6 +16,7 @@ pub struct SentryState {
     pub(crate) client: sentry::ClientInitGuard,
     pub(crate) redact: Vec<Regex>,
     pub(crate) logs_dir: PathBuf,
+    pub(crate) data_dir: PathBuf,
     pub(crate) pending: Arc<Pending>,
     pub(crate) gate: Arc<ConsentGate>,
 }
@@ -27,6 +28,7 @@ impl SentryState {
             client: sentry::init(client::options(&config, pending.clone(), gate.clone())),
             redact: config.redact,
             logs_dir: config.logs_dir,
+            data_dir: config.data_dir,
             pending,
             gate,
         })

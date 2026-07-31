@@ -317,6 +317,9 @@
 	"errorReportExplanation": "This sends the error details and a debug log to Dash Chat. Personal information and messages are removed before sending.",
 	"haveYouReadOurFaq": "Have you read our FAQ yet?",
 	"sendErrorReport": "Send Error Report",
+	"appClosedUnexpectedly": "Dash Chat closed unexpectedly",
+	"crashReportExplanation": "Sending the crash details and a debug log to us helps us fix this. Personal information and messages are removed before sending.",
+	"dontSend": "Don't send",
 
 	"updateAvailable": "Update available",
 	"updateDownloading": "Downloading update...",

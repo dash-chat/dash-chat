@@ -66,7 +66,7 @@ pub(crate) fn options(
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
+    use std::path::Path;
 
     use sentry::protocol::Event;
     use sentry::Client;
@@ -75,7 +75,7 @@ mod tests {
 
     fn options_keeping(pending: Arc<Pending>) -> ClientOptions {
         let (gate, _) = recording_gate();
-        options(&config(PathBuf::new()), pending, Arc::new(gate))
+        options(&config(Path::new("")), pending, Arc::new(gate))
     }
 
     fn prepared(event: Event<'static>) -> Event<'static> {

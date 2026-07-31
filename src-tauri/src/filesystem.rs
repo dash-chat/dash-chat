@@ -79,6 +79,11 @@ impl FileSystem {
         self.app_root_dir.join("logs")
     }
 
+    /// Error reporting's own folder, holding a crash kept for the next launch.
+    pub fn error_reporting_dir(&self) -> PathBuf {
+        self.app_root_dir.join("error-reporting")
+    }
+
     pub fn settings_path(&self) -> PathBuf {
         self.app_data_dir.join(SETTINGS_FILE_NAME)
     }
