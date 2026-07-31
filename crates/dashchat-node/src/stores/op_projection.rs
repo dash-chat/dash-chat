@@ -335,8 +335,11 @@ impl OpProjection {
         // same agent as the deleter. Check every *target* op (the hashes in the
         // payload), not the delete op itself. Body-less/tombstoned copies still
         // carry the author's key in their header, so late joiners can enforce
-        // this too. Targets we haven't synced yet can't be checked here; they
-        // are tombstoned regardless so their body is dropped on arrival.
+        // this too.
+        //
+        // TODO: Targets we haven't synced yet can't be checked here.
+        // This is only applicable for cross-device deletes,
+        // and is fixed once we have custom processors for partial ordering.
         //
         // TODO: Needs to be multi-device aware
         for target in payload.iter() {
