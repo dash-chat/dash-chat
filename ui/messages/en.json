@@ -10,7 +10,6 @@
 	"blockContactDescription": "Blocked people won't be able to send you messages.",
 	"unblockContactTitle": "Unblock {{name}}?",
 	"unblockContactDescription": "You will be able to message each other.",
-	"youBlockedThisPerson": "You blocked this person.",
 	"blocked": "Blocked",
 	"contactMenu": "Contact menu",
 	"contactBlockedToast": "{{name}} has been blocked.",

@@ -52,13 +52,6 @@ export class MockContactsClient implements IContactsClient {
 		});
 	}
 
-	async rejectContactRequest(agentId: AgentId): Promise<void> {
-		await this.logsClient.create(this.deviceGroupTopicId, {
-			type: 'DeviceGroupPayload',
-			payload: { type: 'RejectContactRequest', payload: agentId },
-		});
-	}
-
 	async blockContact(agentId: AgentId): Promise<void> {
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',

@@ -117,21 +117,6 @@
 		}
 	}
 
-	async function rejectContactRequest(contactRequest: ContactRequest) {
-		try {
-			await contactsStore.client.rejectContactRequest(contactRequest.agentId);
-			// Defer navigation so the rejection operation propagates before the home page renders
-			setTimeout(() => {
-				showToast(m.contactRequestRejected());
-
-				goto('/');
-			});
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
-
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
