@@ -7,12 +7,10 @@ use crate::commands::redact_log::REDACTION_REGEXES;
 /// is unaffected.
 pub fn config(logs_dir: PathBuf) -> Option<tauri_plugin_sentry_reporting::Config> {
     // Parsed here rather than in the plugin so that registering it cannot fail.
-    // The logger is not installed yet, hence `eprintln!`.
     let dsn = option_env!("SENTRY_DSN")
         .filter(|dsn| !dsn.is_empty())?
         .parse()
-        .inspect_err(|err| eprintln!("invalid SENTRY_DSN, error reporting disabled: {err}"))
-        .ok()?;
+        .expect("build.rs fails the build on a SENTRY_DSN that does not parse");
 
     // Sentry keys regression detection off the release, so identify the build.
     let release = match option_env!("VERGEN_GIT_SHA") {

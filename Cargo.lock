@@ -1932,6 +1932,7 @@ dependencies = [
  "push-notifications-client",
  "regex",
  "rustls 0.23.42",
+ "sentry-types",
  "serde",
  "serde_json",
  "sonix-i18n",
