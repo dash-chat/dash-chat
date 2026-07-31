@@ -43,13 +43,7 @@
 	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { showToast } from '$lib/utils/toasts';
-	import {
-		isIos,
-		isAndroid,
-		isMobile,
-		isTauriEnv,
-	} from '$lib/utils/environment';
-	import { startService } from 'tauri-plugin-background-service';
+	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 	import {
 		listenForDeepLinks,
@@ -158,12 +152,6 @@
 		invokeAfterSetup('log_webview_info', {
 			userAgent: navigator.userAgent,
 		}).catch(() => {});
-
-		if (isAndroid) {
-			startService({ serviceLabel: 'Dash Chat' }).catch(e => {
-				console.error('[background-service] startService failed:', e);
-			});
-		}
 	}
 
 	setContext('settings-store', settingsStore);
