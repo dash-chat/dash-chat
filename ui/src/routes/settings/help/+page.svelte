@@ -49,7 +49,7 @@
 					<ListItem
 						link
 						chevron={false}
-						title="Start offline mode"
+						title={m.startOfflineMode()}
 						data-testid="help-start-offline-mode"
 						onClick={() =>
 							startService({ serviceLabel: 'Dash Chat' }).catch(e => {
