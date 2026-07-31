@@ -8,6 +8,7 @@ export class ChatSettingsPage extends TestHelper {
 	searchButton = this.el(tid('chat-settings-search-btn'));
 	blockToggle = this.el(tid('chat-settings-block-toggle'));
 	blockConfirm = this.el(tid('block-contact-confirm'));
+	unblockConfirm = this.el(tid('unblock-contact-confirm'));
 
 	async ready() {
 		await this.peerHeader.waitForExist();

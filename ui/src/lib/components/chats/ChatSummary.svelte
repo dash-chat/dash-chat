@@ -46,32 +46,14 @@
 </script>
 
 <TitleTruncatedListItem
+	title={summary.waitingForProfile ? m.waitingForProfile() : summary.name}
+	titleWrapClass={summary.waitingForProfile ? 'quiet' : ''}
 	link
 	class={active ? 'active' : ''}
 	linkProps={{ href: chatHref(summary) }}
 	chevron={false}
 	data-testid="all-chats-row"
 >
-	{#snippet title()}
-		<span
-			class="flex min-w-0 flex-row items-center gap-1 {summary.waitingForProfile
-				? 'quiet'
-				: ''}"
-		>
-			{#if blocked}
-				<wa-icon
-					class="small-icon quiet shrink-0"
-					src={wrapPathInSvg(mdiCancel)}
-					data-testid="blocked-row-icon"
-				></wa-icon>
-			{/if}
-			<span class="truncate min-w-0"
-				>{summary.waitingForProfile
-					? m.waitingForProfile()
-					: summary.name}</span
-			>
-		</span>
-	{/snippet}
 	{#snippet media()}
 		<Avatar image={summary.avatar} initials={summary.name.slice(0, 2)} />
 	{/snippet}
@@ -107,7 +89,16 @@
 	{#snippet subtitle()}
 		<div class="row items-center">
 			<span class="flex-1 min-w-0 truncate text-black/70 dark:text-white/70">
-				{#if summary.lastEvent.kind === 'contact_request'}
+				{#if blocked}
+					<span class="inline-flex items-center gap-1 italic">
+						<wa-icon
+							class="small-icon shrink-0"
+							src={wrapPathInSvg(mdiCancel)}
+							data-testid="blocked-row-icon"
+						></wa-icon>
+						{m.blocked()}
+					</span>
+				{:else if summary.lastEvent.kind === 'contact_request'}
 					{m.messageRequest()}
 				{:else if summary.lastEvent.kind === 'contact_added'}
 					{m.contactAccepted()}

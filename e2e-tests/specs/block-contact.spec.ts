@@ -37,8 +37,8 @@ describe('block contact', () => {
 		await agent1.homePage.chatRow.click();
 		await agent1.directChatPage.ready();
 		await agent1.directChatPage.unblockButton.click();
-		await agent1.directChatPage.blockConfirm.waitForDisplayed();
-		await agent1.directChatPage.blockConfirm.click();
+		await agent1.directChatPage.unblockConfirm.waitForDisplayed();
+		await agent1.directChatPage.unblockConfirm.click();
 		await agent1.directChatPage.blockedBanner.waitForDisplayed({
 			reverse: true,
 		});
