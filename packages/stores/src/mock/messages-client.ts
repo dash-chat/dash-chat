@@ -1,7 +1,16 @@
 import type { IMessagesClient } from '../chats/messages-client';
+import type { SimplifiedOperation } from '../p2panda/simplified-types';
 import type { Hash, TopicId } from '../p2panda/types';
-import type { ChatId, ChatReaction, OutgoingMedia, Tombstone } from '../types';
+import type {
+	ChatId,
+	ChatReaction,
+	OutgoingMedia,
+	Payload,
+	Tombstone,
+} from '../types';
 import { type LocalStorageLogsClient } from './client';
+
+type Op = SimplifiedOperation<Payload>;
 
 export class MockMessagesClient implements IMessagesClient {
 	constructor(
@@ -97,59 +106,14 @@ export class MockMessagesClient implements IMessagesClient {
 
 	async getTombstones(chatId: ChatId): Promise<Tombstone[]> {
 		const chatOps = await this.allOps(chatId);
-		const tombstones: Tombstone[] = [];
-
-		// Delete-for-everyone: the DeleteMessage op already lists its whole chain.
-		for (const op of chatOps) {
-			const body = op.body;
-			if (body?.type === 'Chat' && body.payload?.type === 'DeleteMessage') {
-				for (const hash of body.payload.payload.hashes) {
-					tombstones.push({ hash, reason: 'DeletedForEveryone' });
-				}
-			}
-		}
-
-		// target hash -> the edits pointing at it, for walking a message's chain.
-		const editChildren: Record<Hash, Hash[]> = {};
-		for (const op of chatOps) {
-			const body = op.body;
-			if (body?.type === 'Chat' && body.payload?.type === 'EditMessage') {
-				const target = body.payload.payload.edit_hash;
-				(editChildren[target] ??= []).push(op.hash);
-			}
-		}
-
-		// Delete-for-me: each DeleteForMe names the original message; tombstone it
-		// and everything reachable forward through the edit graph.
 		const deviceGroupOps = await this.allOps(this.deviceGroupTopicId);
-		for (const op of deviceGroupOps) {
-			const body = op.body;
-			if (
-				body?.payload?.type === 'DeleteForMe' &&
-				body.payload.payload.chat_id === chatId
-			) {
-				const root: Hash = body.payload.payload.message_hash;
-				const closure = new Set<Hash>([root]);
-				const pending = [root];
-				while (pending.length > 0) {
-					const hash = pending.pop() as Hash;
-					for (const child of editChildren[hash] ?? []) {
-						if (!closure.has(child)) {
-							closure.add(child);
-							pending.push(child);
-						}
-					}
-				}
-				closure.forEach(hash =>
-					tombstones.push({ hash, reason: 'DeletedForMe' }),
-				);
-			}
-		}
-
-		return tombstones;
+		return [
+			...deletedForEveryoneTombstones(chatOps),
+			...deletedForMeTombstones(chatId, chatOps, deviceGroupOps),
+		];
 	}
 
-	private async allOps(topicId: TopicId) {
+	private async allOps(topicId: TopicId): Promise<Op[]> {
 		const authors = await this.logsClient.getAuthorsForTopic(topicId);
 		const ops = [];
 		for (const author of authors) {
@@ -157,4 +121,74 @@ export class MockMessagesClient implements IMessagesClient {
 		}
 		return ops;
 	}
+}
+
+/** A `DeleteMessage` already names its whole chain, so its hashes are the
+ * tombstones. */
+function deletedForEveryoneTombstones(chatOps: Op[]): Tombstone[] {
+	const tombstones: Tombstone[] = [];
+	for (const op of chatOps) {
+		const body = op.body;
+		if (body?.type === 'Chat' && body.payload.type === 'DeleteMessage') {
+			for (const hash of body.payload.payload.hashes) {
+				tombstones.push({ hash, reason: 'DeletedForEveryone' });
+			}
+		}
+	}
+	return tombstones;
+}
+
+/** A `DeleteForMe` names one message; it and every edit reachable forward from
+ * it are tombstoned, mirroring the backend's `forward_edit_closure`. */
+function deletedForMeTombstones(
+	chatId: ChatId,
+	chatOps: Op[],
+	deviceGroupOps: Op[],
+): Tombstone[] {
+	const editChildren = editChildrenIndex(chatOps);
+	const tombstones: Tombstone[] = [];
+	for (const op of deviceGroupOps) {
+		const body = op.body;
+		if (body?.type !== 'DeviceGroupPayload') continue;
+		if (body.payload.type !== 'DeleteForMe') continue;
+		if (body.payload.payload.chat_id !== chatId) continue;
+		for (const hash of forwardEditClosure(
+			editChildren,
+			body.payload.payload.message_hash,
+		)) {
+			tombstones.push({ hash, reason: 'DeletedForMe' });
+		}
+	}
+	return tombstones;
+}
+
+/** Target hash -> the hashes of the edits pointing at it. */
+function editChildrenIndex(chatOps: Op[]): Record<Hash, Hash[]> {
+	const editChildren: Record<Hash, Hash[]> = {};
+	for (const op of chatOps) {
+		const body = op.body;
+		if (body?.type === 'Chat' && body.payload.type === 'EditMessage') {
+			(editChildren[body.payload.payload.edit_hash] ??= []).push(op.hash);
+		}
+	}
+	return editChildren;
+}
+
+/** `root` plus every edit that transitively points at it. */
+function forwardEditClosure(
+	editChildren: Record<Hash, Hash[]>,
+	root: Hash,
+): Hash[] {
+	const closure = new Set<Hash>([root]);
+	const pending = [root];
+	while (pending.length > 0) {
+		const hash = pending.pop() as Hash;
+		for (const child of editChildren[hash] ?? []) {
+			if (!closure.has(child)) {
+				closure.add(child);
+				pending.push(child);
+			}
+		}
+	}
+	return Array.from(closure);
 }

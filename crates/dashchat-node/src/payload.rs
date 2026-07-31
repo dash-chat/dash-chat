@@ -145,9 +145,11 @@ pub struct ReadMessagesPayload {
 /// delete-for-me may target another author's message, who can keep editing it
 /// afterwards, so no hash set captured at delete time stays complete. Instead
 /// the receiver tombstones the named operation and walks its edits forward, and
-/// any edit arriving afterwards is tombstoned transitively — which also means a
-/// non-root hash still works, as [`Node::delete_message_for_me`](crate::Node::delete_message_for_me) falls back to
-/// its raw target when the chain can't be resolved. `chat_id` identifies the chat topic
+/// any edit arriving afterwards is tombstoned transitively.
+/// [`Node::delete_message_for_me`](crate::Node::delete_message_for_me) resolves
+/// whatever hash the caller names back to the root, falling back to that raw
+/// hash only when the op is unknown locally — in which case it has no chain to
+/// belong to yet. `chat_id` identifies the chat topic
 /// the message lives in, since the delete itself is stored in a different
 /// topic. Processing never scrubs the shared chat mailbox — the message remains
 /// visible to the other chat participants.

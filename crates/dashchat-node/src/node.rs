@@ -1124,7 +1124,9 @@ impl Node {
         // Resolve to the original message when we can, but fall back to the raw
         // target when its body is gone (already deleted for everyone) or never
         // fetched — such an op isn't in `valid_chat_ops`, and delete-for-me should
-        // still just remove it locally instead of erroring.
+        // still just remove it locally instead of erroring. Pruning guarantees
+        // every edit in `ops` has its target, so resolution fails only when
+        // `target` itself is absent, leaving nothing to walk back through.
         //
         // TODO: ACID: this is something to tighten up when revisiting tombstone logic.
         let message_hash = resolve_message_root(&ops, &target).unwrap_or(target);
