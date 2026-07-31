@@ -109,38 +109,9 @@ impl DeleteCandidate {
     /// - the delete must fall within [`DELETE_WINDOW_MICROS`] of the original
     ///   message.
     pub fn validate(&self, valid_ops: &ValidChatOps) -> Result<(), DeleteError> {
-        // TODO: Uncomment this once p2panda allows custom processors
-        // self.check_deleter_is_author(valid_ops)?;
         self.check_hashes_form_complete_chain(valid_ops)?;
         self.check_not_already_deleted(valid_ops)?;
         self.check_within_delete_window(valid_ops)?;
-        Ok(())
-    }
-
-    /// Authorship cannot be deterministically validated until p2panda allows
-    /// custom header extensions for specifying partial ordering dependencies.
-    /// Our delete messages need to be partially ordered after the targets they delete
-    /// in order to be able to validate the authorship of those targets.
-    ///
-    /// See the test `delete_cannot_censor_unsynced_message_from_another_author` for
-    /// an example of this vulnerability.
-    ///
-    /// TODO: don't use this function until DeleteMessage is partially ordered wrt to targets.
-    ///       the unused method warning is intentional for visibility
-    fn check_deleter_is_author(&self, valid_ops: &ValidChatOps) -> Result<(), DeleteError> {
-        let Some(hash) = self.self_hash else {
-            return Ok(());
-        };
-
-        if self.deleter
-            != valid_ops
-                .get(&hash)
-                .ok_or(DeleteError::TargetNotFound)?
-                .author
-        {
-            return Err(DeleteError::NotAuthor);
-        }
-
         Ok(())
     }
 
