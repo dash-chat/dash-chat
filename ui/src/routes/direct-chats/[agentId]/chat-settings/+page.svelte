@@ -146,27 +146,42 @@
 
 				{#await $blocked then isBlocked}
 					<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
-						<ListItem
-							link
-							chevron={false}
-							title={isBlocked ? m.unblock() : m.block()}
-							colors={isBlocked
-								? {}
-								: {
-										primaryTextIos: 'text-red-500',
-										primaryTextMaterial: 'text-red-500',
-									}}
-							onClick={() => (showBlockDialog = true)}
-							data-testid="chat-settings-block-toggle"
-						>
-							{#snippet media()}
-								<wa-icon
-									class={isBlocked ? '' : 'text-red-500'}
-									style="font-size: 1.5rem;"
-									src={wrapPathInSvg(mdiCancel)}
-								></wa-icon>
-							{/snippet}
-						</ListItem>
+						{#if !isBlocked}
+							<ListItem
+								link
+								chevron={false}
+								title={m.block()}
+								colors={{
+									primaryTextIos: 'text-red-500',
+									primaryTextMaterial: 'text-red-500',
+								}}
+								onClick={() => (showBlockDialog = true)}
+								data-testid="chat-settings-block-toggle"
+							>
+								{#snippet media()}
+									<wa-icon
+										class="text-red-500"
+										style="font-size: 1.5rem;"
+										src={wrapPathInSvg(mdiCancel)}
+									></wa-icon>
+								{/snippet}
+							</ListItem>
+						{:else}
+							<ListItem
+								link
+								chevron={false}
+								title={m.unblock()}
+								onClick={() => (showBlockDialog = true)}
+								data-testid="chat-settings-block-toggle"
+							>
+								{#snippet media()}
+									<wa-icon
+										style="font-size: 1.5rem;"
+										src={wrapPathInSvg(mdiCancel)}
+									></wa-icon>
+								{/snippet}
+							</ListItem>
+						{/if}
 					</List>
 				{/await}
 

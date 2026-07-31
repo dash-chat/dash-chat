@@ -22,6 +22,9 @@ describe('block contact', () => {
 		await agent1.chatSettingsPage.blockToggle.click();
 		await agent1.chatSettingsPage.blockConfirm.waitForDisplayed();
 		await agent1.chatSettingsPage.blockConfirm.click();
+		await agent1.chatSettingsPage.blockConfirm.waitForDisplayed({
+			reverse: true,
+		});
 
 		await agent1.chatSettingsPage.back.click();
 		await agent1.directChatPage.ready();
