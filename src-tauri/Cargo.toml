@@ -37,8 +37,6 @@ tauri-plugin-mailto = { git = "https://github.com/dash-chat/tauri-plugin-mailto"
 tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "push-notifications", features = [
   "push-notifications-fcm",
 ] }
-tauri-plugin-background-service = "1.0"
-
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }
@@ -107,6 +105,7 @@ tauri-plugin-android-fs = { version = "28.2" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos
 # strip. JS bindings ship as `@universalappfactory/tauri-plugin-medialibrary`.
 tauri-plugin-medialibrary = "=0.13"
+tauri-plugin-background-service = "1.0"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"

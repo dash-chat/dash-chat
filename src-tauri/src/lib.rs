@@ -2,6 +2,7 @@
 use crate::background::ExampleBackgroundService;
 
 mod app_node;
+#[cfg(target_os = "android")]
 mod background;
 mod blob_protocol;
 mod commands;
