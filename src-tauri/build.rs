@@ -10,6 +10,13 @@ fn main() {
     // and can't read the dev shell's runtime env, so bake the compile host's
     // LAN IP + port into the binary. With neither var set, the consumers fall
     // through to the production URLs.
+    // An absent or empty SENTRY_DSN disables Sentry reporting entirely; ENV
+    // becomes the Sentry environment, so one DSN serves every environment and
+    // staging and local runs stay out of production's issues.
+    println!("cargo:rerun-if-env-changed=SENTRY_DSN");
+    println!("cargo:rerun-if-env-changed=ENV");
+    reject_unparseable_sentry_dsn();
+
     println!("cargo:rerun-if-env-changed=MAILBOX_URL");
     println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
     println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_URL");
@@ -21,6 +28,22 @@ fn main() {
     );
 
     tauri_build::build()
+}
+
+/// A DSN that is set but unparseable would disable reporting in the backend
+/// while the frontend, which only checks that `SENTRY_DSN` is non-empty, still
+/// offers the report action — a button that can only ever fail. Fail the build
+/// so the two gates cannot disagree.
+fn reject_unparseable_sentry_dsn() {
+    let Ok(dsn) = std::env::var("SENTRY_DSN") else {
+        return;
+    };
+    if dsn.is_empty() {
+        return;
+    }
+    if let Err(err) = dsn.parse::<sentry_types::Dsn>() {
+        println!("cargo::error=SENTRY_DSN is set but is not a valid DSN: {err}");
+    }
 }
 
 fn synthesize_url_from_port(url_var: &str, port_var: &str) {

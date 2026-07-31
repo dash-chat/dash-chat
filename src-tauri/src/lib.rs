@@ -9,6 +9,7 @@ mod mailbox;
 #[cfg(desktop)]
 mod media_drop;
 mod notifications;
+mod sentry;
 mod settings;
 mod setup;
 mod utils;
