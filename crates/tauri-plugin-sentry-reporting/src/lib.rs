@@ -4,10 +4,12 @@
 //! The SDK captures freely; [`transport::ConsentGate`] is what holds every
 //! envelope until a report is sent.
 
+mod attachment;
 mod client;
+mod envelope;
+mod error;
 mod logs;
 mod redaction;
-mod report;
 mod state;
 #[cfg(test)]
 mod testing;
@@ -42,7 +44,7 @@ pub fn init<R: Runtime>(config: Config) -> TauriPlugin<R> {
     let state = SentryState::new(config, Arc::new(ConsentGate::default()));
 
     Builder::<R>::new("sentry-reporting")
-        .invoke_handler(tauri::generate_handler![report::send_error_report])
+        .invoke_handler(tauri::generate_handler![error::send_error_report])
         .setup(move |app, _api| {
             app.manage(state);
             Ok(())
