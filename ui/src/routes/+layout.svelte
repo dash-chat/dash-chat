@@ -160,9 +160,6 @@
 		}).catch(() => {});
 
 		if (isAndroid) {
-			console.error(
-				'[background-service] about to startService from the frontend',
-			);
 			startService({ serviceLabel: 'Dash Chat' }).catch(e => {
 				console.error('[background-service] startService failed:', e);
 			});

@@ -178,7 +178,6 @@ pub fn run() {
 
     #[cfg(target_os = "android")]
     {
-        eprintln!("[background-service] registering background service");
         builder = builder.plugin(tauri_plugin_background_service::init_with_service(|| {
             ExampleBackgroundService::new()
         }));

@@ -102,7 +102,6 @@ tauri-plugin-view = "0.0.5"
 jni = "0.21"
 ndk-sys = "0.6"
 ndk-context = "0.1"
-android_logger = "0.14"
 # Saves photos to the shared gallery (MediaStore).
 tauri-plugin-android-fs = { version = "28.2" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos

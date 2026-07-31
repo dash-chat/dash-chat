@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use tauri::{Emitter, Runtime};
+use tauri::Runtime;
 use tauri_plugin_background_service::{BackgroundService, ServiceContext, ServiceError};
 
 pub struct ExampleBackgroundService {
@@ -15,12 +15,6 @@ impl ExampleBackgroundService {
 #[async_trait]
 impl<R: Runtime> BackgroundService<R> for ExampleBackgroundService {
     async fn init(&mut self, _ctx: &ServiceContext<R>) -> Result<(), ServiceError> {
-        #[cfg(target_os = "android")]
-        android_logger::init_once(
-            android_logger::Config::default()
-                .with_tag("dashchat-bg")
-                .with_max_level(log::LevelFilter::Debug),
-        );
         log::warn!("[background-service] init");
         Ok(())
     }

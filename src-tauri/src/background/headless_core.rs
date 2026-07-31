@@ -11,23 +11,9 @@
 //! runs. A real headless core would bootstrap the node here so the service keeps
 //! working after the main process is killed.
 
-use std::sync::Once;
-
 use jni::objects::{JClass, JString};
 use jni::sys::jstring;
 use jni::JNIEnv;
-
-static LOGGER_ONCE: Once = Once::new();
-
-fn init_logger() {
-    LOGGER_ONCE.call_once(|| {
-        android_logger::init_once(
-            android_logger::Config::default()
-                .with_tag("dashchat-bg")
-                .with_max_level(log::LevelFilter::Debug),
-        );
-    });
-}
 
 fn accepted_report(state: &str) -> String {
     format!(r#"{{"ok":true,"state":"{state}","recoverable":false}}"#)
@@ -47,7 +33,6 @@ pub extern "C" fn Java_app_tauri_backgroundservice_HeadlessBridge_startCore<'loc
     _data_dir: JString<'local>,
     _reason: JString<'local>,
 ) -> jstring {
-    init_logger();
     log::warn!("[headless-core] startCore");
     new_report(&env, accepted_report("running"))
 }
@@ -59,7 +44,6 @@ pub extern "C" fn Java_app_tauri_backgroundservice_HeadlessBridge_stopCore<'loca
     _data_dir: JString<'local>,
     _reason: JString<'local>,
 ) -> jstring {
-    init_logger();
     log::warn!("[headless-core] stopCore");
     new_report(&env, accepted_report("stopped"))
 }
@@ -69,7 +53,6 @@ pub extern "C" fn Java_app_tauri_backgroundservice_HeadlessBridge_notifyNetworkC
     env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jstring {
-    init_logger();
     log::warn!("[headless-core] notifyNetworkChanged");
     new_report(&env, accepted_report("running"))
 }
@@ -81,7 +64,6 @@ pub extern "C" fn Java_app_tauri_backgroundservice_HeadlessBridge_callAction<'lo
     _call_id: JString<'local>,
     _action: JString<'local>,
 ) -> jstring {
-    init_logger();
     log::warn!("[headless-core] callAction");
     new_report(&env, accepted_report("running"))
 }
@@ -96,7 +78,6 @@ pub extern "C" fn Java_app_tauri_backgroundservice_HeadlessBridge_notificationAc
     _message_id: JString<'local>,
     _reply_text: JString<'local>,
 ) -> jstring {
-    init_logger();
     log::warn!("[headless-core] notificationAction");
     new_report(&env, accepted_report("running"))
 }
