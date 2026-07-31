@@ -5,8 +5,6 @@ interface LongPressParams {
 	duration?: number;
 }
 
-// Shared, not per handler set: only one press runs at a time, and
-// `longPressHandlers` is called again on every re-render.
 let timer: ReturnType<typeof setTimeout> | undefined;
 let triggered = false;
 
@@ -18,10 +16,6 @@ function suppressNativeLongPress(target: EventTarget | null) {
 	target.style.setProperty('-webkit-touch-callout', 'none');
 }
 
-/**
- * Long-press handlers for hosts that take props instead of an element, like
- * Konsta's `linkProps`.
- */
 export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
 	return {
 		ontouchstart(e: TouchEvent) {
