@@ -22,13 +22,11 @@
 	"edit": "Edit",
 	"edited": "Edited",
 	"editingMessage": "Edit message",
-	"editMessageHistory": "Edit history",
 	"deleteMessageTitle": "Delete message?",
 	"deleteForEveryone": "Delete for everyone",
 	"youDeletedThisMessage": "You deleted this message.",
 	"someoneDeletedThisMessage": "{{name}} deleted this message.",
 	"messageDeleted": "Message deleted",
-	"originalMessage": "Original",
 	"discardDraftTitle": "Discard draft?",
 	"discardDraftDescription": "This action can't be undone.",
 	"discard": "Discard",
@@ -316,6 +314,7 @@
 	"help": "Help",
 	"contactUs": "Contact us",
 	"version": "Version",
+	"startOfflineMode": "Start offline mode",
 	"previewFeatures": "Preview features",
 	"tellUsWhatsGoingOn": "Tell us what's going on",
 	"tellUsWhyReachingOut": "Tell us why you're reaching out.",
@@ -333,7 +332,7 @@
 	"includeDebugLog": "Include debug log.",
 	"whatsThis": "What's this?",
 	"debugLogExplanation": "Debug logs help us diagnose issues. They may contain metadata about your app usage but no message content.",
-	"errorReportExplanation": "This will open your email app with the error details. If you include the debug log, public keys, profiles and message contents are removed before sending.",
+	"errorReportExplanation": "This sends the error details and a debug log to our error tracking service (Sentry). Public keys, profiles and message contents are removed before sending.",
 	"haveYouReadOurFaq": "Have you read our FAQ yet?",
 	"sendErrorReport": "Send Error Report",
 
@@ -345,5 +344,6 @@
 	"updateTapToRestart": "Tap to restart and apply update.",
 	"updateTapToRetry": "Tap to retry.",
 	"testBanner": "Early access test",
-	"feedback": "Feedback"
+	"feedback": "Feedback",
+	"reportSent": "Report sent. Thank you!"
 }

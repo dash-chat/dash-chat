@@ -51,7 +51,7 @@ pub enum DeleteError {
 /// anything but the tip is rejected with [`DeleteError::NotLatestEdit`].
 ///
 /// This is the author-side helper that builds the hash set for a
-/// `DeleteMessage` payload. Note that the set is unordered.
+/// `DeleteMessage` payload.
 pub fn collect_deletable_edit_chain(
     valid_ops: &HashMap<Hash, ChatOp>,
     target: &Hash,
@@ -143,6 +143,7 @@ impl DeleteCandidate {
                     return Err(DeleteError::TargetNotDeletable);
                 }
             }
+            // TODO: Needs to be multi-device aware
             if op.author != self.deleter {
                 return Err(DeleteError::NotAuthor);
             }
@@ -208,52 +209,9 @@ impl DeleteCandidate {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_common::*;
     use super::*;
     use maplit::btreeset;
-
-    fn device(n: u8) -> DeviceId {
-        DeviceId::from(p2panda::SigningKey::from_bytes(&[n; 32]).verifying_key())
-    }
-
-    fn hash(n: u8) -> Hash {
-        Hash::from_bytes([n; 32])
-    }
-
-    fn message(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Message,
-        }
-    }
-
-    fn edit(author: DeviceId, timestamp: u64, seq_num: u64, target: Hash) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Edit(target),
-        }
-    }
-
-    fn delete(author: DeviceId, timestamp: u64, seq_num: u64, hashes: BTreeSet<Hash>) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Delete(hashes),
-        }
-    }
-
-    fn other(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Other,
-        }
-    }
 
     #[test]
     fn collect_chain_of_unedited_message() {
@@ -387,6 +345,26 @@ mod tests {
             }
             .validate(&ops),
             Err(DeleteError::IncompleteChain)
+        );
+    }
+
+    #[test]
+    fn delete_of_partial_chain_plus_junk_hash_is_rejected() {
+        let alice = device(1);
+        let ops = ValidChatOps::new([
+            (hash(1), message(alice, 1000, 0)),
+            (hash(2), edit(alice, 2000, 1, hash(1))),
+        ]);
+        // The set covers the original and a junk hash but not its edit.
+        assert_eq!(
+            DeleteCandidate {
+                hashes: btreeset![hash(1), hash(99)],
+                deleter: alice,
+                delete_timestamp: 3000,
+                self_hash: Some(hash(11)),
+            }
+            .validate(&ops),
+            Err(DeleteError::TargetNotFound)
         );
     }
 

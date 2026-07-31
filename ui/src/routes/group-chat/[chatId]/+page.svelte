@@ -16,14 +16,7 @@
 		Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
-	import {
-		Navbar,
-		NavbarBackLink,
-		Link,
-		Dialog,
-		DialogButton,
-		useTheme,
-	} from 'konsta/svelte';
+	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -278,7 +271,6 @@
 														{chatId}
 														searchQuery=""
 														onEdit={() => composer?.editMessage(message)}
-														onDelete={() => composer?.deleteMessage(message)}
 													/>
 												</div>
 											{:else}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Block, useTheme, Dialog, DialogButton } from 'konsta/svelte';
+	import { Sheet, Block, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
@@ -72,8 +72,6 @@
 	let showMediaPanel = $state(false);
 
 	let editing = $state<Message | null>(null);
-	/** Message awaiting delete-for-everyone confirmation. */
-	let deleting = $state<Message | null>(null);
 	let discardDialog: ReturnType<typeof DiscardDraftDialog> | undefined =
 		$state();
 
@@ -121,23 +119,6 @@
 			console.error('Failed to edit message', e);
 		} finally {
 			sending = false;
-		}
-	}
-
-	/** Open the delete-for-everyone confirmation dialog for `message`. */
-	export function deleteMessage(message: Message) {
-		deleting = message;
-	}
-
-	async function confirmDelete() {
-		const target = deleting;
-		deleting = null;
-		if (!target) return;
-		try {
-			await store.deleteMessage(target);
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to delete message', e);
 		}
 	}
 
@@ -365,25 +346,6 @@
 {/if}
 
 <DiscardDraftDialog bind:this={discardDialog} onConfirm={discardDraftAndEdit} />
-
-<Dialog
-	opened={deleting !== null}
-	onBackdropClick={() => (deleting = null)}
-	title={m.deleteMessageTitle()}
-	data-testid="composer-delete-message-dialog"
->
-	{#snippet buttons()}
-		<DialogButton
-			data-testid="composer-delete-cancel"
-			onClick={() => (deleting = null)}
-		>
-			{m.cancel()}
-		</DialogButton>
-		<DialogButton data-testid="composer-delete-confirm" onClick={confirmDelete}>
-			{m.deleteForEveryone()}
-		</DialogButton>
-	{/snippet}
-</Dialog>
 
 <Sheet
 	class="pb-safe text-lg"

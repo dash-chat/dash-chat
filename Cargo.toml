@@ -25,6 +25,7 @@ tracing = "0.1"
 dashchat-compat = { path = "crates/dashchat-compat" }
 dashchat-utils = { path = "crates/dashchat-utils" }
 mailbox-client = { path = "crates/mailbox-client" }
+tauri-plugin-sentry-reporting = { path = "crates/tauri-plugin-sentry-reporting" }
 mailbox-server = { path = "crates/mailbox-server" }
 mailbox-local-server = { path = "crates/mailbox-local-server" }
 
@@ -49,6 +50,7 @@ iroh-blobs = "0.103.0"
 
 [patch.crates-io]
 iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "push-notifications" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
