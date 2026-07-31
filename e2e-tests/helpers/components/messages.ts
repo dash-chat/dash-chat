@@ -281,12 +281,12 @@ export class Message extends TestHelper {
 
 	/** Confirms delete-for-everyone. Offered only on my own messages, within the
 	 * delete window. */
-	get deleteDialogConfirm() {
+	get deleteForEveryoneDialogConfirm() {
 		return this.agent.$(tid('delete-message-confirm'));
 	}
 
 	/** Confirms delete-for-me, offered on every message. */
-	get deleteDialogForMeConfirm() {
+	get deleteForMeDialogConfirm() {
 		return this.agent.$(tid('delete-message-for-me-confirm'));
 	}
 
@@ -472,15 +472,15 @@ export class Message extends TestHelper {
 	/** Open the actions menu, tap Delete, and confirm "Delete for everyone". */
 	async deleteForEveryone(): Promise<void> {
 		await this.openDeleteDialog();
-		await this.deleteDialogConfirm.waitForClickable();
-		await this.deleteDialogConfirm.click();
+		await this.deleteForEveryoneDialogConfirm.waitForClickable();
+		await this.deleteForEveryoneDialogConfirm.click();
 	}
 
 	/** Open the actions menu, tap Delete, and confirm "Delete for me". */
 	async deleteForMe(): Promise<void> {
 		await this.openDeleteDialog();
-		await this.deleteDialogForMeConfirm.waitForClickable();
-		await this.deleteDialogForMeConfirm.click();
+		await this.deleteForMeDialogConfirm.waitForClickable();
+		await this.deleteForMeDialogConfirm.click();
 	}
 
 	/** Open the actions menu and tap Delete, leaving the confirmation dialog open

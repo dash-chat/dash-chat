@@ -65,10 +65,10 @@ describe('Deleting group messages', () => {
 		await message.openDeleteDialog();
 
 		// Only "Delete for me" is available for another member's message.
-		await message.deleteDialogForMeConfirm.waitForExist();
-		expect(await message.deleteDialogConfirm.isExisting()).toBe(false);
+		await message.deleteForMeDialogConfirm.waitForExist();
+		expect(await message.deleteForEveryoneDialogConfirm.isExisting()).toBe(false);
 
-		await message.deleteDialogForMeConfirm.click();
+		await message.deleteForMeDialogConfirm.click();
 
 		await agent1.groupChatPage.messages.waitForMessageGone(
 			"Bob's group message",
