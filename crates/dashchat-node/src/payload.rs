@@ -140,12 +140,14 @@ pub struct ReadMessagesPayload {
 ///
 /// Unlike `DeleteMessage` (delete for everyone), this lives in the private
 /// device group topic, so it is only ever seen by the author's own devices and
-/// syncs the deletion between them. It references only the *original* message
-/// (`message_hash`), not the whole edit chain: because a delete-for-me may
-/// target another author's message, the full chain can't be captured reliably
-/// at delete time (a later edit would be missed). Instead the receiver
-/// tombstones the message and walks its edits forward, and any edit arriving
-/// afterwards is tombstoned transitively. `chat_id` identifies the chat topic
+/// syncs the deletion between them. It names the *original* message
+/// (`message_hash`), not the whole edit chain as `DeleteMessage` does: a
+/// delete-for-me may target another author's message, who can keep editing it
+/// afterwards, so no hash set captured at delete time stays complete. Instead
+/// the receiver tombstones the named operation and walks its edits forward, and
+/// any edit arriving afterwards is tombstoned transitively — which also means a
+/// non-root hash still works, as [`Node::delete_message_for_me`](crate::Node::delete_message_for_me) falls back to
+/// its raw target when the chain can't be resolved. `chat_id` identifies the chat topic
 /// the message lives in, since the delete itself is stored in a different
 /// topic. Processing never scrubs the shared chat mailbox — the message remains
 /// visible to the other chat participants.

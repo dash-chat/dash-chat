@@ -90,8 +90,8 @@ pub fn collect_deletable_edit_chain(
 /// `Message` operation and return its hash. Unlike
 /// [`collect_deletable_edit_chain`] this imposes no "must be the latest edit"
 /// restriction — `target` may be any operation in the chain — because
-/// delete-for-me deletes a whole message chain regardless of which edit the caller
-/// happened to point at.
+/// delete-for-me deletes the whole chain, so every member of it identifies the
+/// same message.
 pub fn resolve_message_root(
     valid_ops: &HashMap<Hash, ChatOp>,
     target: &Hash,

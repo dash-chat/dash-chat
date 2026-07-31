@@ -1109,10 +1109,10 @@ impl Node {
 
     /// Delete a previously-sent message only for my own device group.
     ///
-    /// Unlike [`Self::delete_message_for_everyone`], the `target` here
-    /// may be any operation in the message's edit chain (typically the
-    /// latest edit shown in the UI); it is resolved back to the original message
-    /// so the whole chain is captured.
+    /// Unlike [`Self::delete_message_for_everyone`], which requires the tip of
+    /// the edit chain, `target` here may be any operation in the chain — it is
+    /// resolved back to the original message before publishing, so the whole
+    /// chain is captured whichever version the caller names.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn delete_message_for_me(
         &self,
@@ -1125,6 +1125,8 @@ impl Node {
         // target when its body is gone (already deleted for everyone) or never
         // fetched — such an op isn't in `valid_chat_ops`, and delete-for-me should
         // still just remove it locally instead of erroring.
+        //
+        // TODO: ACID: this is something to tighten up when revisiting tombstone logic.
         let message_hash = resolve_message_root(&ops, &target).unwrap_or(target);
 
         let header = self
