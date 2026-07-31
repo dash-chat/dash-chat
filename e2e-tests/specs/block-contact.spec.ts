@@ -13,16 +13,17 @@ describe('block contact', () => {
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 		await exchangeContacts(agent1, agent2);
+		await agent1.directChatPage.peerName.waitForDisplayed();
 	});
 
 	it('blocks from chat settings and shows the indicators', async () => {
 		await agent1.directChatPage.settingsLink.click();
 		await agent1.chatSettingsPage.ready();
 
-		await agent1.chatSettingsPage.blockToggle.click();
-		await agent1.chatSettingsPage.blockConfirm.waitForDisplayed();
+		await agent1.chatSettingsPage.blockButton.click();
+		await agent1.chatSettingsPage.blockConfirm.waitForClickable();
 		await agent1.chatSettingsPage.blockConfirm.click();
-		await agent1.chatSettingsPage.blockConfirm.waitForDisplayed({
+		await agent1.chatSettingsPage.blockConfirm.waitForClickable({
 			reverse: true,
 		});
 
@@ -40,7 +41,7 @@ describe('block contact', () => {
 		await agent1.homePage.chatRow.click();
 		await agent1.directChatPage.ready();
 		await agent1.directChatPage.unblockButton.click();
-		await agent1.directChatPage.unblockConfirm.waitForDisplayed();
+		await agent1.directChatPage.unblockConfirm.waitForClickable();
 		await agent1.directChatPage.unblockConfirm.click();
 		await agent1.directChatPage.blockedBanner.waitForDisplayed({
 			reverse: true,

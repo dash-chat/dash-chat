@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import {
+		chatKeyAgentId,
 		fullName,
 		type ChatsStore,
 		type ContactsStore,
@@ -38,6 +39,7 @@
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	let agentId = page.params.agentId!;
+	const peerAgentId = chatKeyAgentId(agentId);
 
 	const theme = $derived(useTheme());
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -145,44 +147,50 @@
 				{/if}
 
 				{#await $blocked then isBlocked}
-					<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
-						{#if !isBlocked}
-							<ListItem
-								link
-								chevron={false}
-								title={m.block()}
-								colors={{
-									primaryTextIos: 'text-red-500',
-									primaryTextMaterial: 'text-red-500',
-								}}
-								onClick={() => (showBlockDialog = true)}
-								data-testid="chat-settings-block-toggle"
-							>
-								{#snippet media()}
-									<wa-icon
-										class="text-red-500"
-										style="font-size: 1.5rem;"
-										src={wrapPathInSvg(mdiCancel)}
-									></wa-icon>
-								{/snippet}
-							</ListItem>
-						{:else}
-							<ListItem
-								link
-								chevron={false}
-								title={m.unblock()}
-								onClick={() => (showBlockDialog = true)}
-								data-testid="chat-settings-block-toggle"
-							>
-								{#snippet media()}
-									<wa-icon
-										style="font-size: 1.5rem;"
-										src={wrapPathInSvg(mdiCancel)}
-									></wa-icon>
-								{/snippet}
-							</ListItem>
-						{/if}
-					</List>
+					{#if peerAgentId !== undefined}
+						<List
+							nested
+							strongIos
+							inset={isWideScreen.value || theme === 'ios'}
+						>
+							{#if !isBlocked}
+								<ListItem
+									link
+									chevron={false}
+									title={m.block()}
+									colors={{
+										primaryTextIos: 'text-red-500',
+										primaryTextMaterial: 'text-red-500',
+									}}
+									onClick={() => (showBlockDialog = true)}
+									data-testid="chat-settings-block-btn"
+								>
+									{#snippet media()}
+										<wa-icon
+											class="text-red-500"
+											style="font-size: 1.5rem;"
+											src={wrapPathInSvg(mdiCancel)}
+										></wa-icon>
+									{/snippet}
+								</ListItem>
+							{:else}
+								<ListItem
+									link
+									chevron={false}
+									title={m.unblock()}
+									onClick={() => (showBlockDialog = true)}
+									data-testid="chat-settings-unblock-btn"
+								>
+									{#snippet media()}
+										<wa-icon
+											style="font-size: 1.5rem;"
+											src={wrapPathInSvg(mdiCancel)}
+										></wa-icon>
+									{/snippet}
+								</ListItem>
+							{/if}
+						</List>
+					{/if}
 				{/await}
 
 				<!-- TODO: Coming soon - chat color/wallpaper and groups in common -->
@@ -239,19 +247,21 @@
 		{/if}
 
 		{#await $blocked then isBlocked}
-			{@const peerName = profile ? fullName(profile) : ''}
-			{#if isBlocked}
-				<UnblockContactDialog
-					bind:opened={showBlockDialog}
-					{agentId}
-					name={peerName}
-				/>
-			{:else}
-				<BlockContactDialog
-					bind:opened={showBlockDialog}
-					{agentId}
-					name={peerName}
-				/>
+			{#if peerAgentId !== undefined}
+				{@const peerName = profile ? fullName(profile) : ''}
+				{#if isBlocked}
+					<UnblockContactDialog
+						bind:opened={showBlockDialog}
+						agentId={peerAgentId}
+						name={peerName}
+					/>
+				{:else}
+					<BlockContactDialog
+						bind:opened={showBlockDialog}
+						agentId={peerAgentId}
+						name={peerName}
+					/>
+				{/if}
 			{/if}
 		{/await}
 	{/await}
