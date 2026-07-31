@@ -8,8 +8,7 @@ use serde_json::Value;
 
 const PLACEHOLDER: &str = "[REDACTED]";
 
-/// Public so the app can assert its patterns against the real implementation
-/// rather than a copy of it.
+/// Replaces every match of `patterns` in `text` with `[REDACTED]`.
 pub fn redact(patterns: &[Regex], text: &str) -> String {
     let mut out = text.to_owned();
     for re in patterns {
@@ -49,31 +48,27 @@ pub(crate) fn redact_event(
     Ok(serde_json::from_value(value)?)
 }
 
-/// Tails to `max_bytes`, dropping the leading partial line.
-pub(crate) fn read_concat_tail(paths: &[PathBuf], max_bytes: usize) -> std::io::Result<String> {
+/// Newline-terminated, so the boundary between two files is always a line break.
+pub(crate) fn concat_files(paths: &[PathBuf]) -> std::io::Result<String> {
     let mut buf = String::new();
     for path in paths {
-        let mut file = std::fs::File::open(path)?;
-        file.read_to_string(&mut buf)?;
+        std::fs::File::open(path)?.read_to_string(&mut buf)?;
         if !buf.is_empty() && !buf.ends_with('\n') {
             buf.push('\n');
-        }
-    }
-    if buf.len() > max_bytes {
-        let mut start = buf.len() - max_bytes;
-        while start < buf.len() && !buf.is_char_boundary(start) {
-            start += 1;
-        }
-        buf.drain(..start);
-        if let Some(pos) = buf.find('\n') {
-            buf.drain(..=pos);
         }
     }
     Ok(buf)
 }
 
-/// Oldest first. KeepOne rotation leaves a date-stamped sibling next to the live
-/// file, and the report wants both.
+pub(crate) fn last_whole_lines(text: &str, max_bytes: usize) -> &str {
+    let start = std::iter::once(0)
+        .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+        .find(|&start| text.len() - start <= max_bytes)
+        .unwrap_or(text.len());
+    &text[start..]
+}
+
+/// Every `*.log` in `dir`, oldest first by mtime; rotation can leave several date-stamped files.
 pub(crate) fn list_log_files_oldest_first(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     let mut entries: Vec<(SystemTime, PathBuf)> = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok())
@@ -87,7 +82,7 @@ pub(crate) fn list_log_files_oldest_first(dir: &Path) -> std::io::Result<Vec<Pat
     Ok(entries.into_iter().map(|(_, p)| p).collect())
 }
 
-/// Public so the app's debug-log export shares this one implementation.
+/// Redacted last `max_bytes` of the logs in `logs_dir`, concatenated oldest first.
 pub fn redacted_log_tail(
     patterns: &[Regex],
     logs_dir: &Path,
@@ -97,7 +92,8 @@ pub fn redacted_log_tail(
     if files.is_empty() {
         anyhow::bail!("no log files in {}", logs_dir.display());
     }
-    Ok(redact(patterns, &read_concat_tail(&files, max_bytes)?))
+    let text = concat_files(&files)?;
+    Ok(redact(patterns, last_whole_lines(&text, max_bytes)))
 }
 
 #[cfg(test)]
@@ -172,21 +168,32 @@ mod tests {
 
     #[test]
     fn tail_drops_the_first_partial_line() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("a.log");
-        std::fs::write(&path, "first line\nsecond line\nthird line\n").unwrap();
-
-        let tail = read_concat_tail(&[path], 20).unwrap();
+        let tail = last_whole_lines("first line\nsecond line\nthird line\n", 20);
         assert!(!tail.contains("first"));
         assert!(tail.ends_with("third line\n"));
     }
 
     #[test]
     fn tail_returns_everything_when_under_the_cap() {
+        assert_eq!(last_whole_lines("only line\n", 4096), "only line\n");
+    }
+
+    #[test]
+    fn tail_never_cuts_into_a_line_that_does_not_fit() {
+        let attachment = format!(r#"data: [{}]"#, "1, ".repeat(50));
+        assert_eq!(last_whole_lines(&attachment, 20), "");
+    }
+
+    #[test]
+    fn concat_separates_files_that_lack_a_trailing_newline() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("a.log");
-        std::fs::write(&path, "only line\n").unwrap();
-        assert_eq!(read_concat_tail(&[path], 4096).unwrap(), "only line\n");
+        let first = dir.path().join("a.log");
+        let second = dir.path().join("b.log");
+        std::fs::write(&first, "no trailing newline").unwrap();
+        std::fs::write(&second, "next file\n").unwrap();
+
+        let text = concat_files(&[first, second]).unwrap();
+        assert_eq!(text, "no trailing newline\nnext file\n");
     }
 
     #[test]
