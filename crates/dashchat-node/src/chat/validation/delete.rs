@@ -237,52 +237,9 @@ impl DeleteCandidate {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_common::*;
     use super::*;
     use maplit::btreeset;
-
-    fn device(n: u8) -> DeviceId {
-        DeviceId::from(p2panda::SigningKey::from_bytes(&[n; 32]).verifying_key())
-    }
-
-    fn hash(n: u8) -> Hash {
-        Hash::from_bytes([n; 32])
-    }
-
-    fn message(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Message,
-        }
-    }
-
-    fn edit(author: DeviceId, timestamp: u64, seq_num: u64, target: Hash) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Edit(target),
-        }
-    }
-
-    fn delete(author: DeviceId, timestamp: u64, seq_num: u64, hashes: BTreeSet<Hash>) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Delete(hashes),
-        }
-    }
-
-    fn other(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Other,
-        }
-    }
 
     #[test]
     fn collect_chain_of_unedited_message() {
