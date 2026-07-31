@@ -1,29 +1,34 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use regex::Regex;
+use tauri::State;
+
+use crate::logs::Pending;
+use crate::transport::ConsentGate;
+use crate::{client, Config};
+
+pub(crate) type Sentry<'a> = State<'a, Arc<SentryState>>;
 
 pub struct SentryState {
-    /// Dropping this disposes the client, so it lives as long as the app — and
-    /// dropping it at shutdown is the point: `close` flushes the transport queue.
-    guard: sentry::ClientInitGuard,
-    pub redact: Vec<Regex>,
-    pub logs_dir: PathBuf,
+    /// A guard rather than a `Client` because dropping it at shutdown is the
+    /// point: `close` flushes the transport queue. Derefs to the client.
+    pub(crate) client: sentry::ClientInitGuard,
+    pub(crate) redact: Vec<Regex>,
+    pub(crate) logs_dir: PathBuf,
+    pub(crate) pending: Arc<Pending>,
+    pub(crate) gate: Arc<ConsentGate>,
 }
 
 impl SentryState {
-    pub(crate) fn new(
-        guard: sentry::ClientInitGuard,
-        redact: Vec<Regex>,
-        logs_dir: PathBuf,
-    ) -> Self {
-        Self {
-            guard,
-            redact,
-            logs_dir,
-        }
-    }
-
-    pub fn client(&self) -> &sentry::Client {
-        &self.guard
+    pub(crate) fn new(config: Config, gate: Arc<ConsentGate>) -> Arc<Self> {
+        let pending = Arc::new(Pending::default());
+        Arc::new(Self {
+            client: sentry::init(client::options(&config, pending.clone(), gate.clone())),
+            redact: config.redact,
+            logs_dir: config.logs_dir,
+            pending,
+            gate,
+        })
     }
 }

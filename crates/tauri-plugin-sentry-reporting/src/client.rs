@@ -1,49 +1,65 @@
 use std::sync::Arc;
 
-use sentry::integrations::contexts::utils::{device_context, os_context, rust_context};
-use sentry::protocol::Event;
-use sentry::{Client, ClientOptions};
+use sentry::integrations::backtrace::ProcessStacktraceIntegration;
+use sentry::integrations::contexts::ContextIntegration;
+use sentry::integrations::debug_images::DebugImagesIntegration;
+use sentry::ClientOptions;
 
+use crate::logs::Pending;
+use crate::redaction;
+use crate::transport::{ConsentGate, ConsentGateFactory};
 use crate::Config;
 
-/// Sentry options that cannot transmit anything on their own.
-///
-/// `before_send` rejects unconditionally, so everything the SDK captures by
-/// itself — panics above all — is dropped. A report leaves through
-/// [`Client::send_envelope`], which does not consult it.
-pub(crate) fn options(config: &Config) -> ClientOptions {
-    ClientOptions {
-        dsn: Some(config.dsn.clone()),
-        release: Some(config.release.clone().into()),
-        environment: Some(config.environment.clone().into()),
-        before_send: Some(Arc::new(|_| None)),
-        ..Default::default()
-    }
-}
+/// Sentry's own pipeline, minus everything that would transmit unasked.
+pub(crate) fn options(
+    config: &Config,
+    pending: Arc<Pending>,
+    gate: Arc<ConsentGate>,
+) -> ClientOptions {
+    let patterns = config.redact.clone();
+    let log_patterns = config.redact.clone();
 
-/// Adds what sentry's own pipeline would have, minus anything naming the
-/// machine: its `prepare_event` fills `server_name` from the OS hostname, which
-/// on a personal machine is often the owner's real name.
-pub(crate) fn enrich(mut event: Event<'static>, client: &Client) -> Event<'static> {
-    let options = client.options();
-    event.release.clone_from(&options.release);
-    event.environment.clone_from(&options.environment);
-    // Sentry picks how to render the issue from this; the default is "other".
-    event.platform = "native".into();
-
-    if let Some(os) = os_context() {
-        event.contexts.entry("os".into()).or_insert(os);
-    }
-    event
-        .contexts
-        .entry("rust".into())
-        .or_insert_with(rust_context);
-    event
-        .contexts
-        .entry("device".into())
-        .or_insert_with(device_context);
-
-    event
+    let mut options = ClientOptions::new()
+        .release(config.release.clone())
+        .environment(config.environment.clone())
+        // `ContextIntegration` fills this from the OS hostname when it is unset,
+        // which on a personal machine is often the owner's real name.
+        .server_name("")
+        // Stacktraces are captured from inside a hook, so these frames sit above
+        // the code that raised them; 0.49 dropped the trimming that cut them.
+        .in_app_exclude([
+            "tauri_plugin_sentry_reporting::",
+            "sentry_panic::",
+            "__rustc::",
+        ])
+        // `PanicIntegration` is the only default integration that captures by itself.
+        .default_integrations(false)
+        .add_integration(ProcessStacktraceIntegration)
+        .add_integration(DebugImagesIntegration::default())
+        .add_integration(ContextIntegration::default())
+        // The last step of `prepare_event`, so nothing escapes unredacted.
+        .before_send(move |mut event| {
+            event.server_name = None;
+            redaction::redact_serialized(&patterns, event)
+                .inspect_err(|err| log::error!("sentry-reporting: dropping unredactable: {err}"))
+                .ok()
+        })
+        // Without this `capture_log` never reaches `before_send_log`.
+        .enable_logs(true)
+        // `None` keeps the batcher from ever being handed a log, so it never
+        // flushes on its own; a report carries what was kept here instead.
+        .before_send_log(move |log| {
+            match redaction::redact_serialized(&log_patterns, log) {
+                Ok(log) => pending.push(log),
+                // Not `log::error!`: this is reached from inside the logger.
+                Err(err) => eprintln!("sentry-reporting: dropping unredactable log: {err}"),
+            }
+            None
+        })
+        .transport(ConsentGateFactory(gate));
+    // `ClientOptions::dsn` takes a `&str` and panics on a bad parse.
+    options.dsn = Some(config.dsn.clone());
+    options
 }
 
 #[cfg(test)]
@@ -52,28 +68,54 @@ mod tests {
 
     use std::path::PathBuf;
 
-    fn config() -> Config {
-        Config {
-            dsn: "https://key@example.invalid/1".parse().unwrap(),
-            release: "dash-chat@0.0.0".into(),
-            environment: "test".into(),
-            redact: vec![],
-            logs_dir: PathBuf::new(),
-        }
+    use sentry::protocol::Event;
+    use sentry::Client;
+
+    use crate::testing::{config, log_saying, recording_gate};
+
+    fn options_keeping(pending: Arc<Pending>) -> ClientOptions {
+        let (gate, _) = recording_gate();
+        options(&config(PathBuf::new()), pending, Arc::new(gate))
+    }
+
+    fn prepared(event: Event<'static>) -> Event<'static> {
+        Client::from(options_keeping(Arc::new(Pending::default())))
+            .prepare_event(event, None)
+            .expect("before_send dropped the event")
     }
 
     #[test]
-    fn the_sdk_can_never_transmit_on_its_own() {
-        let before_send = options(&config()).before_send.unwrap();
+    fn no_installed_integration_captures_on_its_own() {
+        let options = options_keeping(Arc::new(Pending::default()));
 
-        assert!(before_send(Event::default()).is_none());
+        assert!(!options.default_integrations);
+        let names: Vec<_> = options.integrations.iter().map(|i| i.name()).collect();
+        assert_eq!(names, ["process-stacktrace", "debug-images", "contexts"]);
     }
 
     #[test]
-    fn enriching_adds_context_but_never_the_hostname() {
-        let client = Client::from(options(&config()));
+    fn a_captured_log_is_kept_rather_than_queued_for_sending() {
+        let pending = Arc::new(Pending::default());
+        let client = Client::from(options_keeping(pending.clone()));
 
-        let event = enrich(Event::default(), &client);
+        client.capture_log(log_saying("connecting"), &Default::default());
+
+        assert_eq!(pending.snapshot().len(), 1);
+    }
+
+    #[test]
+    fn a_kept_log_is_already_redacted() {
+        let pending = Arc::new(Pending::default());
+        let client = Client::from(options_keeping(pending.clone()));
+
+        client.capture_log(log_saying("token secret-abc123"), &Default::default());
+
+        assert_eq!(pending.snapshot()[0].body, "token [REDACTED]");
+    }
+
+    #[test]
+    fn preparing_adds_context_but_never_the_hostname() {
+        let event = prepared(Event::default());
 
         assert_eq!(event.server_name, None);
         assert_eq!(event.platform, "native");
@@ -82,5 +124,15 @@ mod tests {
         for context in ["os", "rust", "device"] {
             assert!(event.contexts.contains_key(context), "missing {context}");
         }
+    }
+
+    #[test]
+    fn preparing_redacts_the_event() {
+        let event = prepared(Event {
+            message: Some("failed for secret-abc123".into()),
+            ..Default::default()
+        });
+
+        assert_eq!(event.message.as_deref(), Some("failed for [REDACTED]"));
     }
 }

@@ -117,6 +117,15 @@ mod tests {
         assert_eq!(redact(input), "code=abcdef12");
     }
 
+    /// A report ties its logs to its issue with a trace id carried by both. It
+    /// is 32 hex characters, eight short of the pattern above — pinned here so
+    /// that lowering the threshold cannot quietly sever the link instead.
+    #[test]
+    fn preserves_a_sentry_trace_id() {
+        let trace_id = "a3f1c2d4e5b6a7c8d9e0f1a2b3c4d5e6";
+        assert_eq!(redact(trace_id), trace_id);
+    }
+
     #[test]
     fn redacts_base64_blobs() {
         let input = "data=SGVsbG8gV29ybGQgdGhpcyBpcyBhIGxvbmcgYmFzZTY0IHN0cmluZw==";
