@@ -1,19 +1,13 @@
 <script lang="ts">
-	import { Button, useTheme } from 'konsta/svelte';
+	import { Button } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import Divider from '$lib/components/Divider.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { boldToHtml, escapeHtml } from '$lib/utils/banner-text';
 
 	let { name, onUnblock }: { name: string; onUnblock: () => void } = $props();
-
-	const theme = $derived(useTheme());
 </script>
 
 <div class="pb-safe bg-page-surface">
-	{#if theme === 'material'}
-		<Divider />
-	{/if}
 	<div
 		class="flex flex-col items-center gap-3 px-6 py-3"
 		data-testid="direct-chat-blocked-banner"

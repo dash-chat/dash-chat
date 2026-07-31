@@ -9,6 +9,8 @@
 	import BlockContactDialog from './block/BlockContactDialog.svelte';
 	import UnblockContactDialog from './block/UnblockContactDialog.svelte';
 
+	type ContactDialog = 'block';
+
 	interface Props {
 		/** Element the menu hangs off. */
 		anchor: HTMLElement;
@@ -24,12 +26,16 @@
 		useReactivePromise(contactsStore.isBlocked, agentId),
 	);
 
-	let phase = $state<'menu' | 'dialog'>('menu');
+	let openDialog = $state<ContactDialog | null>(null);
+
+	function closeOnDismiss(opened: boolean) {
+		if (!opened) onClose();
+	}
 </script>
 
 {#await $blocked then isBlocked}
 	<Popover
-		opened={phase === 'menu'}
+		opened={openDialog === null}
 		target={anchor}
 		backdrop
 		onBackdropClick={onClose}
@@ -40,7 +46,7 @@
 				title={isBlocked ? m.unblock() : m.block()}
 				icon={mdiCancel}
 				actionType={isBlocked ? 'normal' : 'danger'}
-				onClick={() => (phase = 'dialog')}
+				onClick={() => (openDialog = 'block')}
 				data-testid="contact-block-toggle"
 			/>
 		</List>
@@ -48,13 +54,13 @@
 
 	{#if isBlocked}
 		<UnblockContactDialog
-			bind:opened={() => phase === 'dialog', opened => opened || onClose()}
+			bind:opened={() => openDialog === 'block', closeOnDismiss}
 			{agentId}
 			{name}
 		/>
 	{:else}
 		<BlockContactDialog
-			bind:opened={() => phase === 'dialog', opened => opened || onClose()}
+			bind:opened={() => openDialog === 'block', closeOnDismiss}
 			{agentId}
 			{name}
 		/>

@@ -221,22 +221,23 @@
 				onClose={() => (showPeerProfile = false)}
 				{profile}
 			/>
-
-			{#await $blocked then isBlocked}
-				{#if isBlocked}
-					<UnblockContactDialog
-						bind:opened={showBlockDialog}
-						{agentId}
-						name={fullName(profile)}
-					/>
-				{:else}
-					<BlockContactDialog
-						bind:opened={showBlockDialog}
-						{agentId}
-						name={fullName(profile)}
-					/>
-				{/if}
-			{/await}
 		{/if}
+
+		{#await $blocked then isBlocked}
+			{@const peerName = profile ? fullName(profile) : ''}
+			{#if isBlocked}
+				<UnblockContactDialog
+					bind:opened={showBlockDialog}
+					{agentId}
+					name={peerName}
+				/>
+			{:else}
+				<BlockContactDialog
+					bind:opened={showBlockDialog}
+					{agentId}
+					name={peerName}
+				/>
+			{/if}
+		{/await}
 	{/await}
 </Page>

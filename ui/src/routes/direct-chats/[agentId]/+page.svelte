@@ -751,6 +751,9 @@
 						{:else}
 							{#await $blocked then isBlocked}
 								{#if isBlocked}
+									{#if theme === 'material'}
+										<Divider />
+									{/if}
 									<BlockedActionsBar
 										name={profile ? fullName(profile) : ''}
 										onUnblock={() => (showBlockDialog = true)}
