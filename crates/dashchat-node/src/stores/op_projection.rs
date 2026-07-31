@@ -337,39 +337,25 @@ impl OpProjection {
         // carry the author's key in their header, so late joiners can enforce
         // this too. Targets we haven't synced yet can't be checked here; they
         // are tombstoned regardless so their body is dropped on arrival.
-        let deleter_agent = self.lookup_contact_by_device_id(author).await?;
+        //
+        // TODO: Needs to be multi-device aware
         for target in payload.iter() {
             let Some(target_op) = node.op_store.get_operation(target).await? else {
                 continue;
             };
-            let target_agent = self
-                .lookup_contact_by_device_id(DeviceId::from(target_op.header.verifying_key))
-                .await?;
-            if target_agent != deleter_agent {
+            let target_device = DeviceId::from(target_op.header.verifying_key);
+            if target_device != author {
                 tracing::warn!(op = ?hash.aliased(), target = ?target.aliased(), "delete references another author's operation; skipping");
                 return Err(ProjectionError::invalid(format!(
                     "delete references another author's operation: {:?} != {:?}",
-                    target_agent.aliased(),
-                    deleter_agent.aliased()
+                    target_device.aliased(),
+                    author.aliased()
                 )));
             }
         }
 
-        // Mirror the author-side validation: a delete that breaks the
-        // chain-completeness / window rules is ignored (not applied) with a
-        // warning. Full validation needs every referenced op as a valid chat
-        // op; when some are already gone (a partially-applied replay, or a
-        // member that joined after the delete and synced body-less copies) the
-        // chain can't be reconstructed, so we fall back to the per-target
-        // authorship check above.
         let chat_id = ChatId::from_topic_id(topic)?;
         let valid_ops = node.valid_chat_ops(chat_id).await?;
-        let all_targets_valid = payload.iter().all(|h| valid_ops.contains_key(h));
-        if !all_targets_valid {
-            return Err(anyhow::anyhow!(
-                "All targets must have been processed already. This is a bug in dash chat / p2panda."
-            ).into());
-        }
         let delete_ts: u64 = header.timestamp.into();
         if let Err(err) = (DeleteCandidate {
             hashes: payload.clone(),

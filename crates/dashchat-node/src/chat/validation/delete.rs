@@ -172,6 +172,7 @@ impl DeleteCandidate {
                     return Err(DeleteError::TargetNotDeletable);
                 }
             }
+            // TODO: Needs to be multi-device aware
             if op.author != self.deleter {
                 return Err(DeleteError::NotAuthor);
             }
