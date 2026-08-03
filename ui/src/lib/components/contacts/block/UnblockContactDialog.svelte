@@ -20,8 +20,10 @@
 	async function confirm() {
 		try {
 			await contactsStore.client.unblockContact(agentId);
+			// Closing can unmount whatever owns `name`, so resolve the toast first.
+			const toast = m.contactUnblockedToast({ name });
 			opened = false;
-			showToast(m.contactUnblockedToast({ name }));
+			showToast(toast);
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);

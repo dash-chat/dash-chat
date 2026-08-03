@@ -6,9 +6,11 @@ import { tid } from '../selectors';
 export class SelectableContactList extends TestHelper {
 	emptyMessage = this.el(tid('selectable-contacts-empty'));
 
+	contactItemSelector(name: string) {
+		return `[data-testid="selectable-contact-item"][data-contact-name="${name}"]`;
+	}
+
 	contactItem(name: string) {
-		return this.agent.$(
-			`[data-testid="selectable-contact-item"][data-contact-name="${name}"]`,
-		);
+		return this.agent.$(this.contactItemSelector(name));
 	}
 }

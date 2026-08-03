@@ -38,13 +38,24 @@ describe('block contact', () => {
 		});
 	});
 
-	it('hides blocked contacts from the group member pickers', async () => {
-		await blockAgent(agent1);
+	it('blocks from the new-message contact menu', async () => {
 		await agent1.directChatPage.back.click();
 		await agent1.homePage.ready();
-
 		await agent1.homePage.newMessageButton.click();
 		await agent1.newMessagePage.ready();
+
+		await agent1.newMessagePage.openContactMenu('Bob');
+		await agent1.newMessagePage.contactActionsMenu.block.click();
+		await agent1.newMessagePage.contactActionsMenu.blockConfirm.waitForClickable();
+		await agent1.newMessagePage.contactActionsMenu.blockConfirm.click();
+
+		await agent1.toast.expectMessage(
+			await agent1.tr('contactBlockedToast', { name: 'Bob Test' }),
+		);
+		await expect(agent1.newMessagePage.contactItem('Bob')).not.toBeExisting();
+	});
+
+	it('hides blocked contacts from the group member pickers', async () => {
 		await agent1.newMessagePage.newGroup.click();
 		await agent1.newGroupPage.addMembersStep.ready();
 

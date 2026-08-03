@@ -4,6 +4,7 @@
 
 	interface Props extends ListItemProps {
 		'data-testid'?: string;
+		'data-contact-name'?: string;
 		titleWrapClass?: string;
 	}
 

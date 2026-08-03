@@ -9,7 +9,7 @@
 	import BlockContactDialog from './block/BlockContactDialog.svelte';
 	import UnblockContactDialog from './block/UnblockContactDialog.svelte';
 
-	type ContactDialog = 'block';
+	type ContactDialog = 'block' | 'unblock';
 
 	interface Props {
 		/** Element the menu hangs off. */
@@ -42,27 +42,33 @@
 		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
 	>
 		<List nested data-testid="contact-actions-menu">
-			<ListAction
-				title={isBlocked ? m.unblock() : m.block()}
-				icon={mdiCancel}
-				actionType={isBlocked ? 'normal' : 'danger'}
-				onClick={() => (openDialog = 'block')}
-				data-testid="contact-block-toggle"
-			/>
+			{#if isBlocked}
+				<ListAction
+					title={m.unblock()}
+					icon={mdiCancel}
+					onClick={() => (openDialog = 'unblock')}
+					data-testid="contact-unblock"
+				/>
+			{:else}
+				<ListAction
+					title={m.block()}
+					icon={mdiCancel}
+					actionType="danger"
+					onClick={() => (openDialog = 'block')}
+					data-testid="contact-block"
+				/>
+			{/if}
 		</List>
 	</Popover>
 
-	{#if isBlocked}
-		<UnblockContactDialog
-			bind:opened={() => openDialog === 'block', closeOnDismiss}
-			{agentId}
-			{name}
-		/>
-	{:else}
-		<BlockContactDialog
-			bind:opened={() => openDialog === 'block', closeOnDismiss}
-			{agentId}
-			{name}
-		/>
-	{/if}
+	<UnblockContactDialog
+		bind:opened={() => openDialog === 'unblock', closeOnDismiss}
+		{agentId}
+		{name}
+	/>
+	<BlockContactDialog
+		bind:opened={() => openDialog === 'block', closeOnDismiss}
+		{agentId}
+		{name}
+	/>
 {/await}
