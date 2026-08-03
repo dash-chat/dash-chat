@@ -62,8 +62,6 @@ fn read_pending_crash(data_dir: &Path) -> Option<Envelope> {
     Envelope::from_path(pending_crash_path(data_dir)).ok()
 }
 
-/// What cannot be read is no report: a death mid-write leaves half a file, which
-/// must neither be offered nor stand in the way of the next crash.
 fn has_pending_crash(data_dir: &Path) -> bool {
     read_pending_crash(data_dir).is_some()
 }
