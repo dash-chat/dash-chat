@@ -37,8 +37,6 @@ pub(crate) fn redact_json_leaves(patterns: &[Regex], value: &mut Value) {
     }
 }
 
-/// Round-trips through JSON so every string the value carries is covered — an
-/// event's named fields, a log's attributes, and free-form maps alike.
 pub(crate) fn redact_serialized<T>(patterns: &[Regex], value: T) -> anyhow::Result<T>
 where
     T: Serialize + DeserializeOwned,
