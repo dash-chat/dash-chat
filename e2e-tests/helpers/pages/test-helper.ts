@@ -13,6 +13,15 @@ export abstract class TestHelper {
 		});
 	}
 
+	/** Whether the app is rendering its mobile UI. Read from the user agent
+	 * because that is exactly what the app's own `isMobile` branches on, so a
+	 * test gesture can never drift from the UI that is actually mounted. */
+	protected isMobileBuild(): Promise<boolean> {
+		return this.agent.execute(() =>
+			/iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
+		);
+	}
+
 	protected async typeInto(selector: string, value: string): Promise<void> {
 		await this.agent.$(selector).waitForExist();
 		await this.agent.execute(
