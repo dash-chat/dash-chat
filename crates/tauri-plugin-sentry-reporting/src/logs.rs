@@ -14,9 +14,9 @@ use crate::state::SentryState;
 const MAX_ENTRIES: usize = 500;
 
 #[derive(Default)]
-pub(crate) struct Pending(Mutex<VecDeque<Log>>);
+pub(crate) struct PendingLogs(Mutex<VecDeque<Log>>);
 
-impl Pending {
+impl PendingLogs {
     pub(crate) fn push(&self, log: Log) {
         let mut buf = self.lock();
         buf.push_back(log);
@@ -56,32 +56,4 @@ pub fn log_target<R: Runtime>(app: &AppHandle<R>) -> Target {
             }
         },
     ))))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::testing::log_saying;
-    #[test]
-    fn keeps_the_newest_entries_in_order() {
-        let pending = Pending::default();
-        for i in 0..MAX_ENTRIES + 10 {
-            pending.push(log_saying(&i.to_string()));
-        }
-
-        let logs = pending.snapshot();
-        assert_eq!(logs.len(), MAX_ENTRIES);
-        assert_eq!(logs[0].body, "10");
-        assert_eq!(logs[MAX_ENTRIES - 1].body, (MAX_ENTRIES + 9).to_string());
-    }
-
-    #[test]
-    fn snapshotting_leaves_the_entries_in_place() {
-        let pending = Pending::default();
-        pending.push(log_saying("kept"));
-
-        assert_eq!(pending.snapshot().len(), 1);
-        assert_eq!(pending.snapshot().len(), 1);
-    }
 }

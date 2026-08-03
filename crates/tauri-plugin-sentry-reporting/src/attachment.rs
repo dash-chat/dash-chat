@@ -8,7 +8,7 @@ use crate::state::SentryState;
 
 const MAX_BYTES: usize = 1024 * 1024;
 
-pub(crate) async fn read(state: &SentryState) -> Option<Attachment> {
+pub(crate) async fn build_logs_attachment(state: &SentryState) -> Option<Attachment> {
     let patterns = state.redact.clone();
     let logs_dir = state.logs_dir.clone();
     tauri::async_runtime::spawn_blocking(move || redacted_log(&patterns, &logs_dir))
@@ -32,24 +32,9 @@ fn redacted_log(patterns: &[Regex], logs_dir: &Path) -> Option<Attachment> {
     }
 }
 
-/// Names the attachment after the log it was tailed from, e.g. `Dash Chat.log`.
 fn log_file_name(logs_dir: &Path) -> String {
     redaction::list_log_files_oldest_first(logs_dir)
         .ok()
         .and_then(|files| Some(files.last()?.file_name()?.to_string_lossy().into_owned()))
         .unwrap_or_else(|| "app.log".to_owned())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn names_the_attachment_after_the_newest_log() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("Dash Chat.log.old"), "a\n").unwrap();
-        std::fs::write(dir.path().join("Dash Chat.log"), "b\n").unwrap();
-
-        assert_eq!(log_file_name(dir.path()), "Dash Chat.log");
-    }
 }

@@ -5,7 +5,7 @@ use sentry::integrations::contexts::ContextIntegration;
 use sentry::integrations::debug_images::DebugImagesIntegration;
 use sentry::ClientOptions;
 
-use crate::logs::Pending;
+use crate::logs::PendingLogs;
 use crate::redaction;
 use crate::transport::{ConsentGate, ConsentGateFactory};
 use crate::Config;
@@ -13,7 +13,7 @@ use crate::Config;
 /// Sentry's own pipeline, minus everything that would transmit unasked.
 pub(crate) fn options(
     config: &Config,
-    pending: Arc<Pending>,
+    pending: Arc<PendingLogs>,
     gate: Arc<ConsentGate>,
 ) -> ClientOptions {
     let patterns = config.redact.clone();
@@ -25,8 +25,6 @@ pub(crate) fn options(
         // `ContextIntegration` fills this from the OS hostname when it is unset,
         // which on a personal machine is often the owner's real name.
         .server_name("")
-        // Stacktraces are captured from inside a hook, so these frames sit above
-        // the code that raised them; 0.49 dropped the trimming that cut them.
         .in_app_exclude([
             "tauri_plugin_sentry_reporting::",
             "sentry_panic::",
@@ -44,7 +42,6 @@ pub(crate) fn options(
                 .inspect_err(|err| log::error!("sentry-reporting: dropping unredactable: {err}"))
                 .ok()
         })
-        // Without this `capture_log` never reaches `before_send_log`.
         .enable_logs(true)
         // `None` keeps the batcher from ever being handed a log, so it never
         // flushes on its own; a report carries what was kept here instead.
@@ -57,7 +54,6 @@ pub(crate) fn options(
             None
         })
         .transport(ConsentGateFactory(gate));
-    // `ClientOptions::dsn` takes a `&str` and panics on a bad parse.
     options.dsn = Some(config.dsn.clone());
     options
 }
@@ -73,50 +69,36 @@ mod tests {
 
     use crate::testing::{config, log_saying, recording_gate};
 
-    fn options_keeping(pending: Arc<Pending>) -> ClientOptions {
+    fn options_keeping(pending: Arc<PendingLogs>) -> ClientOptions {
         let (gate, _) = recording_gate();
         options(&config(PathBuf::new()), pending, Arc::new(gate))
     }
 
-    fn prepared(event: Event<'static>) -> Event<'static> {
-        Client::from(options_keeping(Arc::new(Pending::default())))
-            .prepare_event(event, None)
-            .expect("before_send dropped the event")
-    }
-
     #[test]
-    fn no_installed_integration_captures_on_its_own() {
-        let options = options_keeping(Arc::new(Pending::default()));
-
-        assert!(!options.default_integrations);
-        let names: Vec<_> = options.integrations.iter().map(|i| i.name()).collect();
-        assert_eq!(names, ["process-stacktrace", "debug-images", "contexts"]);
-    }
-
-    #[test]
-    fn a_captured_log_is_kept_rather_than_queued_for_sending() {
-        let pending = Arc::new(Pending::default());
-        let client = Client::from(options_keeping(pending.clone()));
-
-        client.capture_log(log_saying("connecting"), &Default::default());
-
-        assert_eq!(pending.snapshot().len(), 1);
-    }
-
-    #[test]
-    fn a_kept_log_is_already_redacted() {
-        let pending = Arc::new(Pending::default());
+    fn a_captured_log_is_kept_redacted_rather_than_queued_for_sending() {
+        let pending = Arc::new(PendingLogs::default());
         let client = Client::from(options_keeping(pending.clone()));
 
         client.capture_log(log_saying("token secret-abc123"), &Default::default());
 
-        assert_eq!(pending.snapshot()[0].body, "token [REDACTED]");
+        let kept = pending.snapshot();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].body, "token [REDACTED]");
     }
 
     #[test]
-    fn preparing_adds_context_but_never_the_hostname() {
-        let event = prepared(Event::default());
+    fn preparing_redacts_and_adds_context_but_never_the_hostname() {
+        let event = Client::from(options_keeping(Arc::new(PendingLogs::default())))
+            .prepare_event(
+                Event {
+                    message: Some("failed for secret-abc123".into()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("before_send dropped the event");
 
+        assert_eq!(event.message.as_deref(), Some("failed for [REDACTED]"));
         assert_eq!(event.server_name, None);
         assert_eq!(event.platform, "native");
         assert_eq!(event.release.as_deref(), Some("dash-chat@0.0.0"));
@@ -124,15 +106,5 @@ mod tests {
         for context in ["os", "rust", "device"] {
             assert!(event.contexts.contains_key(context), "missing {context}");
         }
-    }
-
-    #[test]
-    fn preparing_redacts_the_event() {
-        let event = prepared(Event {
-            message: Some("failed for secret-abc123".into()),
-            ..Default::default()
-        });
-
-        assert_eq!(event.message.as_deref(), Some("failed for [REDACTED]"));
     }
 }

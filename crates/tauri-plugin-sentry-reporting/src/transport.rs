@@ -5,15 +5,13 @@ use sentry::protocol::Envelope;
 use sentry::transports::DefaultTransportFactory;
 use sentry::{Transport, TransportFactory, TransportOptions};
 
-/// Sentry's own pipeline transmits on its schedule rather than ours.
 #[derive(Default)]
 pub(crate) struct ConsentGate {
     pub(crate) inner: OnceLock<Arc<dyn Transport>>,
 }
 
 impl ConsentGate {
-    /// The only call in the crate that reaches the network — unlike the
-    /// identically-shaped `Transport::send_envelope` below, which drops.
+    /// The only call in the crate that reaches the network
     pub(crate) fn send(&self, envelope: Envelope) {
         if let Some(inner) = self.inner.get() {
             inner.send_envelope(envelope);
