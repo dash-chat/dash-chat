@@ -4,7 +4,7 @@ use std::sync::Arc;
 use regex::Regex;
 use tauri::State;
 
-use crate::logs::Pending;
+use crate::logs::PendingLogs;
 use crate::transport::ConsentGate;
 use crate::{client, Config};
 
@@ -17,13 +17,13 @@ pub struct SentryState {
     pub(crate) redact: Vec<Regex>,
     pub(crate) logs_dir: PathBuf,
     pub(crate) data_dir: PathBuf,
-    pub(crate) pending: Arc<Pending>,
+    pub(crate) pending: Arc<PendingLogs>,
     pub(crate) gate: Arc<ConsentGate>,
 }
 
 impl SentryState {
     pub(crate) fn new(config: Config, gate: Arc<ConsentGate>) -> Arc<Self> {
-        let pending = Arc::new(Pending::default());
+        let pending = Arc::new(PendingLogs::default());
         Arc::new(Self {
             client: sentry::init(client::options(&config, pending.clone(), gate.clone())),
             redact: config.redact,

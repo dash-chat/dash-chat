@@ -32,7 +32,7 @@ pub(crate) fn build_envelope(
 /// The only path to the network. The logs and the log file overlap on purpose:
 /// the logs are searchable but recent, the file reaches further back.
 pub(crate) async fn send(state: &SentryState, mut envelope: Envelope) {
-    if let Some(attachment) = attachment::read(state).await {
+    if let Some(attachment) = attachment::build_logs_attachment(state).await {
         envelope.add_item(EnvelopeItem::Attachment(attachment));
     }
     state.gate.send(envelope);
@@ -66,8 +66,6 @@ mod tests {
             .any(|item| matches!(item, EnvelopeItem::Attachment(_))));
     }
 
-    /// Without a shared trace Sentry files the logs on their own rather than
-    /// against the issue.
     #[test]
     fn the_logs_share_the_events_trace() {
         let dir = tempfile::tempdir().unwrap();

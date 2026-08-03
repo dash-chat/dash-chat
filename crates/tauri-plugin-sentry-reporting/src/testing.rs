@@ -32,23 +32,23 @@ pub(crate) fn log_saying(body: &str) -> Log {
     }
 }
 
-pub(crate) fn recording_gate() -> (ConsentGate, Arc<Recorder>) {
-    let recorder = Arc::new(Recorder::default());
+pub(crate) fn recording_gate() -> (ConsentGate, Arc<TestRecorderTransport>) {
+    let recorder = Arc::new(TestRecorderTransport::default());
     let gate = ConsentGate::default();
     let _ = gate.inner.set(recorder.clone());
     (gate, recorder)
 }
 
 /// A plugin wired exactly as `init` wires one, but recording instead of sending.
-pub(crate) fn plugin(dir: &Path) -> (Arc<SentryState>, Arc<Recorder>) {
+pub(crate) fn plugin(dir: &Path) -> (Arc<SentryState>, Arc<TestRecorderTransport>) {
     let (gate, recorder) = recording_gate();
     (SentryState::new(config(dir), Arc::new(gate)), recorder)
 }
 
 #[derive(Default)]
-pub(crate) struct Recorder(Mutex<Vec<Envelope>>);
+pub(crate) struct TestRecorderTransport(Mutex<Vec<Envelope>>);
 
-impl Recorder {
+impl TestRecorderTransport {
     pub(crate) fn sent(&self) -> Vec<Envelope> {
         self.0.lock().unwrap().clone()
     }
@@ -60,7 +60,7 @@ impl Recorder {
     }
 }
 
-impl Transport for Recorder {
+impl Transport for TestRecorderTransport {
     fn send_envelope(&self, envelope: Envelope) {
         self.0.lock().unwrap().push(envelope);
     }
