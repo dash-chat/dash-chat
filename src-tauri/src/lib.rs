@@ -141,7 +141,6 @@ pub fn run() {
             commands::contacts::add_contact,
             commands::contacts::accept_contact,
             commands::contacts::active_inbox_topics,
-            commands::contacts::reject_contact_request,
             commands::contacts::block_contact,
             commands::contacts::unblock_contact,
             commands::direct_chats::direct_chat_id,
