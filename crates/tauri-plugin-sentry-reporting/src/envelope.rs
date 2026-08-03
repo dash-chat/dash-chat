@@ -62,8 +62,10 @@ mod tests {
             .any(|item| matches!(item, EnvelopeItem::Attachment(_))));
 
         let event = envelope.event().expect("no event in the envelope");
-        let sentry::protocol::Context::Trace(event_trace) =
-            event.contexts.get("trace").expect("no trace context on the event")
+        let sentry::protocol::Context::Trace(event_trace) = event
+            .contexts
+            .get("trace")
+            .expect("no trace context on the event")
         else {
             panic!("the trace context is not a trace");
         };
