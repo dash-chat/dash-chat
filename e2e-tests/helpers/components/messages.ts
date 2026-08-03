@@ -1,3 +1,4 @@
+import { simulateLongpress } from '../long-press';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
@@ -140,48 +141,22 @@ export class Messages extends TestHelper {
 	}
 }
 
-/** Comfortably past the 500ms threshold in the app's `longpress` action. */
-const LONG_PRESS_MS = 700;
-
-type BubbleGesture = 'contextmenu' | 'touchstart' | 'touchend';
-
 /**
- * Dispatch one gesture event at the centre of a message's bubble. Serialized
- * into the page by `execute`, so it has to stay self-contained — and `execute`
- * widens its arguments to `string`, so the gesture is narrowed by the
- * `pressBubble` caller rather than here.
- *
- * A long-press is the caller's job to compose: `touchstart`, a hold, then
- * `touchend` — the app starts its own timer off `touchstart`.
+ * Dispatch a right-click at the centre of a message's bubble. Serialized into
+ * the page by `execute`, so it has to stay self-contained.
  */
-function dispatchBubbleGesture(wrapperSel: string, gesture: string) {
+function dispatchBubbleContextMenu(wrapperSel: string) {
 	const wrapper = document.querySelector<HTMLElement>(wrapperSel);
 	if (!wrapper) return;
 	const msg = wrapper.querySelector('.message') as HTMLElement | null;
 	const el = msg ?? wrapper;
 	const rect = el.getBoundingClientRect();
-	const clientX = rect.left + rect.width / 2;
-	const clientY = rect.top + rect.height / 2;
-	if (gesture === 'contextmenu') {
-		el.dispatchEvent(
-			new MouseEvent('contextmenu', {
-				bubbles: true,
-				cancelable: true,
-				clientX,
-				clientY,
-			}),
-		);
-		return;
-	}
-	const touch = new Touch({ identifier: 1, target: el, clientX, clientY });
-	const down = gesture === 'touchstart';
 	el.dispatchEvent(
-		new TouchEvent(gesture, {
+		new MouseEvent('contextmenu', {
 			bubbles: true,
 			cancelable: true,
-			touches: down ? [touch] : [],
-			targetTouches: down ? [touch] : [],
-			changedTouches: [touch],
+			clientX: rect.left + rect.width / 2,
+			clientY: rect.top + rect.height / 2,
 		}),
 	);
 }
@@ -270,34 +245,17 @@ export class Message extends TestHelper {
 	 * rather than the hover toolbar's popover. Desktop only: on mobile the
 	 * gesture belongs to the spotlight overlay instead. */
 	async openActionsByRightClick() {
-		await this.pressBubble('contextmenu');
+		await this.agent.execute(dispatchBubbleContextMenu, this.wrapperSelector);
 		await this.contextMenu.waitForDisplayed();
 	}
 
-	/** Whether the app is rendering its mobile UI. Read from the user agent
-	 * because that is exactly what the app's own `isMobile` branches on to
-	 * choose between the spotlight overlay and the desktop popovers, so the
-	 * gesture can never drift from the UI that is actually mounted. */
-	private isMobileBuild(): Promise<boolean> {
-		return this.agent.execute(() =>
-			/iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
-		);
-	}
-
-	private pressBubble(gesture: BubbleGesture): Promise<void> {
-		return this.agent.execute(
-			dispatchBubbleGesture,
-			this.wrapperSelector,
-			gesture,
-		);
-	}
-
-	/** Hold a touch on the bubble past the long-press threshold, then lift it,
-	 * the way a mobile user opens the actions menu. */
+	/** Long-press the bubble the way a mobile user opens the actions menu. */
 	private async longPressBubble() {
-		await this.pressBubble('touchstart');
-		await this.agent.pause(LONG_PRESS_MS);
-		await this.pressBubble('touchend');
+		const bubble = this.wrapper.$('.message');
+		await simulateLongpress(
+			this.agent,
+			(await bubble.isExisting()) ? bubble : this.wrapper,
+		);
 	}
 
 	/** Open this message's quick-reaction bar with the gesture its platform

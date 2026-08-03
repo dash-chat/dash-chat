@@ -17,8 +17,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
  *  Linux/WebKitGTK (see the GTK/XDG env in beforeSession). tauri-driver has no
  *  macOS backend — it exits with "not supported on this platform" — so a desktop
  *  agent can't run on a Mac; pair iOS agents with each other (PLATFORMS=ios,ios)
- *  or run desktop on Linux. Fail early with the real reason instead of a bare
- *  10s "port not listening" timeout mid-session. */
+ *  or run desktop on Linux. */
 function assertTauriDriverAvailable() {
 	if (process.platform === 'darwin') {
 		throw new Error(
@@ -80,11 +79,6 @@ export class DesktopPlatform implements AgentPlatform {
 		execSync('pnpm tauri build --debug --no-bundle --features e2e-tests', {
 			cwd: ROOT,
 			stdio: 'inherit',
-			// VITE_E2E reaches the frontend as import.meta.env.VITE_E2E, which
-			// compiles development-only chrome out of the binary under test.
-			// cleanBuildEnv keeps pnpm working when spawned from the harness in a
-			// plain shell (e.g. a mixed ios,desktop run). Drop debuginfo to keep the
-			// build small — it isn't needed, and a mixed run builds two targets.
 			env: cleanBuildEnv({ VITE_E2E: 'true', CARGO_PROFILE_DEV_DEBUG: '0' }),
 		});
 		// Kill any leftover processes from previous interrupted runs.

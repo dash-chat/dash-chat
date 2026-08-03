@@ -37,8 +37,7 @@ function assertIosToolsAvailable() {
 	}
 }
 
-/** Host IPv4 the device reaches the mailbox at (no adb reverse on iOS). Prefers
- *  en0; `E2E_HOST_IP` overrides when auto-detection picks the wrong interface. */
+// Host IPv4 the device reaches the mailbox at
 function detectHostIp(): string {
 	const override = process.env.E2E_HOST_IP;
 	if (override !== undefined && override !== '') return override;
@@ -62,11 +61,7 @@ function connectedDevices(): string[] {
 		.filter(Boolean);
 }
 
-/**
- * Claim one connected iPhone per slot. `IOS_UDID{slot}` overrides the claim for
- * that slot. Pinned via `_WDIO_IOS_UDID{slot}` so the launcher and worker config
- * loads agree on the udid->slot mapping even if `idevice_id` ordering changes.
- */
+// Claim one connected iPhone per slot
 function claimDevices(slots: number[]): Map<number, string> {
 	const pool = connectedDevices();
 	const udids = new Map<number, string>();
@@ -95,8 +90,7 @@ function claimDevices(slots: number[]): Map<number, string> {
 }
 
 /** The xcuitest driver lives in APPIUM_HOME (not node_modules); install it on
- *  first run. Invoke the local appium binary directly rather than via
- *  `pnpm exec` — the plain shell's global pnpm trips over the repo pnpmfile. */
+ *  first run. */
 function ensureXcuitestDriver() {
 	const installed = execSync(
 		`"${APPIUM_BIN}" driver list --installed 2>&1 || true`,
@@ -131,8 +125,7 @@ function builtIpa(): string {
 	return ipa;
 }
 
-/** Tail the app's device console and echo it with an agent prefix. Best-effort:
- *  a missing idevicesyslog just means no on-device logs, not a failed run. */
+// Tail the app's device console and echo it with an agent prefix
 function startSyslogLogger(agent: string, udid: string): ChildProcess | null {
 	try {
 		const proc = spawn(
@@ -221,11 +214,7 @@ export class IosPlatform implements AgentPlatform {
 
 		ensureXcuitestDriver();
 
-		// Bake the LAN-reachable mailbox URL (no adb reverse on iOS) into the
-		// build: persist it into .xcode.env.local via the shared helper — the same
-		// logic `just ios sync-xcode-env` runs, where the "Build Rust Code" phase
-		// sources it — then build directly. The harness owns its build rather than
-		// shelling back into the just module.
+		// Bake the LAN-reachable mailbox URL into the build
 		const mailboxUrl = `http://${detectHostIp()}:${ctx.mailboxPort}`;
 		syncXcodeEnv({ MAILBOX_URL: mailboxUrl });
 		execSync('pnpm tauri ios build --debug --features e2e-tests', {
@@ -234,11 +223,7 @@ export class IosPlatform implements AgentPlatform {
 			// cleanBuildEnv lets pnpm run as it does from a plain shell (see there).
 			env: cleanBuildEnv({
 				MAILBOX_URL: mailboxUrl,
-				// Reaches the frontend as import.meta.env.VITE_E2E (like the desktop
-				// build) — compiles out dev-only chrome and skips the mobile
-				// notification-permission prompt that would block the session.
 				VITE_E2E: 'true',
-				// Deployment target: canonical value is the export in scripts/ios.just.
 				IPHONEOS_DEPLOYMENT_TARGET: '17.0',
 				// Drop debuginfo (a full-debug iOS build is >10GB and fills the disk;
 				// this is compile-time, so it can't break signing). Unlike android,
@@ -251,8 +236,7 @@ export class IosPlatform implements AgentPlatform {
 		this.ipaPath = builtIpa();
 
 		// Uninstall any prior install so the session installs the fresh build
-		// instead of failing on a signature or version mismatch. ideviceinstaller
-		// isn't available; devicectl handles it.
+		// instead of failing on a signature or version mismatch
 		for (const udid of this.udids.values()) {
 			try {
 				execSync(
