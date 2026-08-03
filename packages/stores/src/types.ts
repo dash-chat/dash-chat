@@ -157,10 +157,17 @@ export interface EditMessagePayload {
 	edit_hash: Hash;
 }
 
+export interface DeleteMessagePayload {
+	/** The complete edit chain being deleted: the original message plus every
+	 * edit (a single hash when the message was never edited). */
+	hashes: Hash[];
+}
+
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
 	| { type: 'Reaction'; payload: ChatReaction }
 	| { type: 'EditMessage'; payload: EditMessagePayload }
+	| { type: 'DeleteMessage'; payload: DeleteMessagePayload }
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo };
 
@@ -251,10 +258,44 @@ export type GroupControlEvent =
 			timestamp: number;
 	  };
 
+/** A single version of a message's text, with the time it was authored. */
+export interface MessageVersion {
+	hash: string;
+	text: string;
+	timestamp: number;
+}
+
+/** The live, renderable body of a message: its text, media, reactions and edit
+ * history. */
+export interface MessageBody {
+	message: string;
+	media: MediaAttachment | null;
+	reactions: Record<DeviceId, string>;
+	editHistory: MessageVersion[];
+}
+
+/** The renderable content of a message, or `'deleted-for-everyone'` once a
+ * delete op replaces the body entirely — dropping text, media, reactions and
+ * edits — and it renders as the deleted placeholder. */
+export type MessageDisplay = MessageBody | 'deleted-for-everyone';
+
+/** Whether a message still has a live body. Written as a type guard so the
+ * `true` branch narrows `content` to `MessageBody`. */
+export function hasBody(content: MessageDisplay): content is MessageBody {
+	return typeof content !== 'string';
+}
+
+/** Whether a message was deleted for everyone. */
+export function isDeleted(
+	content: MessageDisplay,
+): content is 'deleted-for-everyone' {
+	return content === 'deleted-for-everyone';
+}
+
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			content: { message: string; media: MediaAttachment | null };
+			content: MessageDisplay;
 			authorName?: string;
 			timestamp: number;
 	  }

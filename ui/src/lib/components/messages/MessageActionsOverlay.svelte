@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { getContext } from 'svelte';
-	import type { Message, DeviceId, MessagesStore } from 'dash-chat-stores';
-	import { canEditMessage } from './message-helpers';
+	import {
+		type Message,
+		type DeviceId,
+		type MessagesStore,
+		hasBody,
+	} from 'dash-chat-stores';
 	import SpotlightOverlay from '$lib/components/SpotlightOverlay.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
@@ -18,6 +22,7 @@
 		target: HTMLElement | undefined;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		onDelete?: () => void;
 	}
 
 	let {
@@ -26,13 +31,10 @@
 		target,
 		myDeviceId,
 		onEdit,
+		onDelete,
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
-
-	// Depends on `opened` so the 24h edit window is re-checked each time the
-	// overlay opens, not once at mount.
-	const canEdit = $derived(opened && canEditMessage(message, myDeviceId));
 
 	let expanded = $state(false);
 
@@ -55,8 +57,14 @@
 		onEdit?.();
 	}
 
+	function del() {
+		close();
+		onDelete?.();
+	}
+
 	async function copy() {
 		close();
+		if (!hasBody(message.content)) return;
 		await writeText(message.content.message);
 		showToast(m.copiedMessageToClipboard());
 	}
@@ -72,7 +80,13 @@
 		/>
 	{/snippet}
 	{#snippet below()}
-		<MessageActionsMenu {canEdit} onEdit={edit} onCopy={copy} />
+		<MessageActionsMenu
+			{message}
+			{myDeviceId}
+			onEdit={edit}
+			onCopy={copy}
+			onDelete={del}
+		/>
 	{/snippet}
 </SpotlightOverlay>
 

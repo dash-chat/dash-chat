@@ -11,6 +11,7 @@ export interface IMessagesClient {
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
 	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
 	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash>;
+	deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash>;
 }
 
 export class MessagesClient implements IMessagesClient {
@@ -45,6 +46,13 @@ export class MessagesClient implements IMessagesClient {
 			chatId,
 			editHash,
 			message,
+		});
+	}
+
+	deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash> {
+		return invokeAfterSetup('delete_message', {
+			chatId,
+			targetHash,
 		});
 	}
 }
