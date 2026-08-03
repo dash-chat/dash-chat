@@ -1,4 +1,5 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -111,13 +112,17 @@ function ensureXcuitestDriver() {
 	}
 }
 
-/** Locate the .ipa produced by `tauri ios build` (the export subdir is named
- *  after the arch/config, so search rather than hardcode it). */
-function builtIpa(): string {
+// First .ipa under the build dir, or undefined if none is built yet
+function findIpa(): string | undefined {
+	if (!existsSync(IOS_BUILD_DIR)) return undefined;
 	const out = execSync(`find "${IOS_BUILD_DIR}" -maxdepth 3 -name '*.ipa'`, {
 		encoding: 'utf8',
 	}).trim();
-	const ipa = out.split('\n').filter(Boolean)[0];
+	return out.split('\n').filter(Boolean)[0];
+}
+
+function builtIpa(): string {
+	const ipa = findIpa();
 	if (ipa === undefined) {
 		throw new Error(
 			`No .ipa found under ${IOS_BUILD_DIR} after 'tauri ios build'`,
@@ -177,7 +182,7 @@ export class IosPlatform implements AgentPlatform {
 				'appium:udid': udid,
 				// ipaPath is set in onPrepare (launcher); worker config loads read
 				// the same build output, so recompute it lazily if unset.
-				'appium:app': this.ipaPath ?? builtIpa(),
+				'appium:app': this.ipaPath ?? findIpa(),
 				'appium:bundleId': APP_BUNDLE_ID,
 				'appium:autoWebview': true,
 				'appium:autoWebviewTimeout': 30_000,
@@ -195,6 +200,8 @@ export class IosPlatform implements AgentPlatform {
 				'appium:xcodeSigningId': 'Apple Development',
 				'appium:updatedWDABundleId': WDA_BUNDLE_ID,
 				'appium:derivedDataPath': path.join(E2E_DIR, '.appium', 'wda'),
+				'appium:wdaLocalPort': allocatePinnedPort(`_WDIO_WDA_PORT${slot}`),
+				'appium:mjpegServerPort': allocatePinnedPort(`_WDIO_MJPEG_PORT${slot}`),
 				'appium:wdaLaunchTimeout': 120_000,
 				'appium:newCommandTimeout': 240,
 				// Surface the WDA xcodebuild output so signing/config failures are
