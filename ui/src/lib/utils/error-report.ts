@@ -19,7 +19,6 @@ export async function sendErrorReport(report: ErrorReport): Promise<void> {
 	});
 }
 
-/** Whether a previous run died with a panic the user has yet to see. */
 export async function hasPendingCrashReport(): Promise<boolean> {
 	return invokeAfterSetup('plugin:sentry-reporting|pending_crash_report');
 }

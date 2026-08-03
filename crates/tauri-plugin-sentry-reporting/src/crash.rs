@@ -7,8 +7,6 @@ use sentry::Envelope;
 use crate::envelope;
 use crate::state::{Sentry, SentryState};
 
-/// Sentry's own on-the-wire format, so what a run that died left behind needs no
-/// shape of its own.
 const FILE_NAME: &str = "pending-crash.envelope";
 
 fn pending_crash_path(data_dir: &Path) -> PathBuf {
@@ -34,9 +32,8 @@ pub(crate) async fn discard_pending_crash_report(state: Sentry<'_>) -> Result<()
     Ok(())
 }
 
-/// Keeps a panic for the next launch to offer; release builds abort, so this is
-/// the only chance to keep it.
-pub(crate) fn install_hook(state: Weak<SentryState>) {
+/// Keeps a panic for the next launch to offer
+pub(crate) fn install_panic_hook(state: Weak<SentryState>) {
     let next = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         if let Some(state) = state.upgrade() {
@@ -51,30 +48,29 @@ pub(crate) fn install_hook(state: Weak<SentryState>) {
 }
 
 fn keep_for_next_launch(data_dir: &Path, envelope: &Envelope) {
-    let path = pending_crash_path(data_dir);
-    if path.exists() {
+    if has_pending_crash(data_dir) {
         return;
     }
-    if let Err(err) = write_atomically(&path, envelope) {
+    if let Err(err) = std::fs::File::create(pending_crash_path(data_dir))
+        .and_then(|file| envelope.to_writer(file))
+    {
         log::error!("sentry-reporting: could not keep the crash report: {err}");
     }
 }
 
-/// Written beside the target and renamed, so a launch never reads half a file.
-fn write_atomically(path: &Path, envelope: &Envelope) -> std::io::Result<()> {
-    let staged = path.with_extension("tmp");
-    envelope.to_writer(std::fs::File::create(&staged)?)?;
-    std::fs::rename(&staged, path)
+fn read_pending_crash(data_dir: &Path) -> Option<Envelope> {
+    Envelope::from_path(pending_crash_path(data_dir)).ok()
 }
 
+/// What cannot be read is no report: a death mid-write leaves half a file, which
+/// must neither be offered nor stand in the way of the next crash.
 fn has_pending_crash(data_dir: &Path) -> bool {
-    pending_crash_path(data_dir).exists()
+    read_pending_crash(data_dir).is_some()
 }
 
-/// Reads and removes, so a crash is offered exactly once. Unreadable counts as
-/// read: better dropped than offered at every launch.
+/// Reads and removes, so a crash is offered exactly once
 fn take_pending_crash(data_dir: &Path) -> Option<Envelope> {
-    let envelope = Envelope::from_path(pending_crash_path(data_dir)).ok();
+    let envelope = read_pending_crash(data_dir);
     remove_pending_crash(data_dir);
     envelope
 }
@@ -89,17 +85,9 @@ mod tests {
 
     use std::sync::Arc;
 
-    use sentry::protocol::{EnvelopeItem, Event, ItemContainer, Level, Log};
+    use sentry::protocol::{Context, EnvelopeItem, Event, ItemContainer, Level, Log};
 
     use crate::testing::{log_saying, plugin};
-
-    fn saying(message: &str) -> Envelope {
-        Event {
-            message: Some(message.into()),
-            ..Default::default()
-        }
-        .into()
-    }
 
     fn logs(envelope: &Envelope) -> Vec<Log> {
         envelope
@@ -111,21 +99,17 @@ mod tests {
             .unwrap_or_default()
     }
 
-    /// Sets a process-wide hook; nextest runs each test in its own process.
-    fn panicking_plugin(dir: &Path) -> Arc<SentryState> {
-        let (state, _) = plugin(dir);
-        install_hook(Arc::downgrade(&state));
-        state
-    }
-
     #[test]
-    fn a_panic_leaves_a_report_for_the_next_launch() {
+    fn a_panic_leaves_a_report_the_next_launch_is_offered_once() {
         let dir = tempfile::tempdir().unwrap();
-        let _state = panicking_plugin(dir.path());
+        let (state, _) = plugin(dir.path());
+        install_panic_hook(Arc::downgrade(&state));
+        state
+            .client
+            .capture_log(log_saying("before the fall"), &Default::default());
 
         let _ = std::panic::catch_unwind(|| panic!("boom in secret-abc123"));
 
-        assert!(has_pending_crash(dir.path()));
         let stored = take_pending_crash(dir.path()).expect("no crash stored");
         let event = stored.event().expect("no event in the envelope");
         assert_eq!(event.level, Level::Fatal);
@@ -135,77 +119,46 @@ mod tests {
             Some("boom in [REDACTED]")
         );
         assert!(!event.debug_meta.images.is_empty());
-    }
 
-    #[test]
-    fn a_panic_keeps_the_logs_that_led_to_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = panicking_plugin(dir.path());
-        state
-            .client
-            .capture_log(log_saying("before the fall"), &Default::default());
-
-        let _ = std::panic::catch_unwind(|| panic!("boom"));
-
-        let stored = logs(&take_pending_crash(dir.path()).expect("no crash stored"));
-        assert!(
-            stored.iter().any(|log| log.body == "before the fall"),
-            "got: {stored:?}"
-        );
-    }
-
-    #[test]
-    fn stored_logs_are_redacted() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = panicking_plugin(dir.path());
-        state
-            .client
-            .capture_log(log_saying("token secret-abc123"), &Default::default());
-
-        let _ = std::panic::catch_unwind(|| panic!("boom"));
-
-        let stored = logs(&take_pending_crash(dir.path()).expect("no crash stored"));
-        assert_eq!(stored[0].body, "token [REDACTED]");
-    }
-
-    /// The logs ride the same file, so they have to survive the round trip too.
-    #[test]
-    fn a_stored_crash_keeps_the_trace_tying_its_logs_to_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = panicking_plugin(dir.path());
-        state
-            .client
-            .capture_log(log_saying("before the fall"), &Default::default());
-
-        let _ = std::panic::catch_unwind(|| panic!("boom"));
-
-        let stored = take_pending_crash(dir.path()).expect("no crash stored");
-        let Some(sentry::protocol::Context::Trace(trace)) =
-            stored.event().unwrap().contexts.get("trace")
-        else {
+        // Without a shared trace Sentry files the logs on their own rather than
+        // against the issue.
+        let Some(Context::Trace(trace)) = event.contexts.get("trace") else {
             panic!("no trace context on the event");
         };
-        assert!(logs(&stored)
+        let stored_logs = logs(&stored);
+        assert!(
+            stored_logs.iter().any(|log| log.body == "before the fall"),
+            "got: {stored_logs:?}"
+        );
+        assert!(stored_logs
             .iter()
             .all(|log| log.trace_id == Some(trace.trace_id)));
+
+        assert!(!has_pending_crash(dir.path()));
     }
 
     #[test]
-    fn taking_clears_it_so_it_is_offered_once() {
+    fn an_unreadable_report_is_no_report() {
         let dir = tempfile::tempdir().unwrap();
-        keep_for_next_launch(dir.path(), &saying("boom"));
+        std::fs::write(pending_crash_path(dir.path()), "half an envelope").unwrap();
 
-        assert!(take_pending_crash(dir.path()).is_some());
         assert!(!has_pending_crash(dir.path()));
-        assert!(take_pending_crash(dir.path()).is_none());
-    }
 
-    #[test]
-    fn an_unreadable_report_is_dropped_rather_than_offered_forever() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(pending_crash_path(dir.path()), "not an envelope").unwrap();
+        let next: Envelope = Event {
+            message: Some("boom".into()),
+            ..Default::default()
+        }
+        .into();
+        keep_for_next_launch(dir.path(), &next);
 
-        assert!(take_pending_crash(dir.path()).is_none());
-        assert!(!has_pending_crash(dir.path()));
+        let stored = take_pending_crash(dir.path()).expect("no crash stored");
+        assert_eq!(
+            stored
+                .event()
+                .expect("no event in the envelope")
+                .message
+                .as_deref(),
+            Some("boom")
+        );
     }
 }

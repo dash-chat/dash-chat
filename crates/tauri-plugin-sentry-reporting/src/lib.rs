@@ -45,7 +45,7 @@ pub struct Config {
 
 pub fn init<R: Runtime>(config: Config) -> TauriPlugin<R> {
     let state = SentryState::new(config, Arc::new(ConsentGate::default()));
-    crash::install_hook(Arc::downgrade(&state));
+    crash::install_panic_hook(Arc::downgrade(&state));
 
     Builder::<R>::new("sentry-reporting")
         .invoke_handler(tauri::generate_handler![

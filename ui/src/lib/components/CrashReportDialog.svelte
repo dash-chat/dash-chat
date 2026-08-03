@@ -15,8 +15,6 @@
 		opened = await hasPendingCrashReport();
 	});
 
-	// Discarded on every way out, so a crash is offered once rather than at
-	// every launch until the user acts on it.
 	async function discard() {
 		opened = false;
 		await discardPendingCrashReport();
