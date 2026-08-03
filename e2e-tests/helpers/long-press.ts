@@ -5,8 +5,7 @@ const LONG_PRESS_MS = 700;
 
 /**
  * Dispatch one touch event at the centre of `element`. Serialized into the
- * page by `execute`, so it has to stay self-contained — and `execute` widens
- * its arguments, so the gesture is narrowed by the caller rather than here.
+ * page by `execute`, so it has to stay self-contained.
  */
 function dispatchTouch(element: HTMLElement, gesture: string) {
 	const rect = element.getBoundingClientRect();
