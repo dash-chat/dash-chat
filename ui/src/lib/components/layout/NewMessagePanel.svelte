@@ -143,7 +143,10 @@
 				data-testid="new-message-contact-list"
 			>
 				{#if contacts.length === 0}
-					<ListItem title={m.noContactsYet()} />
+					<ListItem
+						title={m.noContactsYet()}
+						data-testid="new-message-contacts-empty"
+					/>
 				{:else}
 					{@const filteredContacts = contacts.filter(([_, profile]) =>
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -161,6 +164,8 @@
 							}}
 							title={profile.name}
 							chevron={false}
+							data-testid="new-message-contact-item"
+							data-contact-name={profile.name}
 						>
 							{#snippet media()}
 								<Avatar

@@ -1,3 +1,4 @@
+import { blockAgent } from '../helpers/flows/block-agent';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
@@ -17,18 +18,7 @@ describe('block contact', () => {
 	});
 
 	it('blocks from chat settings and shows the indicators', async () => {
-		await agent1.directChatPage.settingsLink.click();
-		await agent1.chatSettingsPage.ready();
-
-		await agent1.chatSettingsPage.blockButton.click();
-		await agent1.chatSettingsPage.blockConfirm.waitForClickable();
-		await agent1.chatSettingsPage.blockConfirm.click();
-		await agent1.chatSettingsPage.blockConfirm.waitForClickable({
-			reverse: true,
-		});
-
-		await agent1.chatSettingsPage.back.click();
-		await agent1.directChatPage.ready();
+		await blockAgent(agent1);
 		await agent1.directChatPage.blockedBanner.waitForDisplayed();
 		await agent1.directChatPage.blockedNameIcon.waitForDisplayed();
 
@@ -46,5 +36,53 @@ describe('block contact', () => {
 		await agent1.directChatPage.blockedBanner.waitForDisplayed({
 			reverse: true,
 		});
+	});
+
+	it('blocks from the new-message contact menu', async () => {
+		await agent1.directChatPage.back.click();
+		await agent1.homePage.ready();
+		await agent1.homePage.newMessageButton.click();
+		await agent1.newMessagePage.ready();
+
+		await agent1.newMessagePage.openContactMenu('Bob');
+		await agent1.newMessagePage.contactActionsMenu.block.click();
+		await agent1.newMessagePage.contactActionsMenu.blockConfirm.waitForClickable();
+		await agent1.newMessagePage.contactActionsMenu.blockConfirm.click();
+
+		await agent1.toast.expectMessage(
+			await agent1.tr('contactBlockedToast', { name: 'Bob Test' }),
+		);
+		await expect(agent1.newMessagePage.contactItem('Bob')).not.toBeExisting();
+	});
+
+	it('hides blocked contacts from the group member pickers', async () => {
+		await agent1.newMessagePage.newGroup.click();
+		await agent1.newGroupPage.addMembersStep.ready();
+
+		const noContacts = await agent1.tr('noContactsYet');
+		await expect(
+			agent1.newGroupPage.addMembersStep.contactList.emptyMessage,
+		).toHaveText(noContacts);
+		await expect(
+			agent1.newGroupPage.addMembersStep.contactList.contactItem('Bob'),
+		).not.toBeExisting();
+
+		await agent1.newGroupPage.addMembersStep.nextButton.click();
+		await agent1.newGroupPage.groupInfoStep.ready();
+		await agent1.newGroupPage.groupInfoStep.setName('Blocked Picker Group');
+		await agent1.newGroupPage.groupInfoStep.createButton.click();
+		await agent1.groupChatPage.ready();
+
+		await agent1.groupChatPage.infoLink.click();
+		await agent1.groupInfoPage.ready();
+		await agent1.groupInfoPage.addMembersLink.click();
+		await agent1.addMembersPage.ready();
+
+		await expect(agent1.addMembersPage.contactList.emptyMessage).toHaveText(
+			noContacts,
+		);
+		await expect(
+			agent1.addMembersPage.contactList.contactItem('Bob'),
+		).not.toBeExisting();
 	});
 });

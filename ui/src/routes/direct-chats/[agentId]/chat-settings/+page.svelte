@@ -47,7 +47,10 @@
 	const store = chatsStore.directChats(agentId);
 
 	const peerProfile = useReactivePromise(store.peerProfile);
-	const blocked = useReactivePromise(contactsStore.isBlocked, agentId);
+	const blocked =
+		peerAgentId === undefined
+			? undefined
+			: useReactivePromise(contactsStore.isBlocked, peerAgentId);
 
 	let showPeerProfile = $state(false);
 	let showBlockDialog = $state(false);
@@ -146,8 +149,8 @@
 					</div>
 				{/if}
 
-				{#await $blocked then isBlocked}
-					{#if peerAgentId !== undefined}
+				{#if peerAgentId !== undefined}
+					{#await $blocked then isBlocked}
 						<List
 							nested
 							strongIos
@@ -190,8 +193,8 @@
 								</ListItem>
 							{/if}
 						</List>
-					{/if}
-				{/await}
+					{/await}
+				{/if}
 
 				<!-- TODO: Coming soon - chat color/wallpaper and groups in common -->
 				{#if false}
@@ -246,8 +249,8 @@
 			/>
 		{/if}
 
-		{#await $blocked then isBlocked}
-			{#if peerAgentId !== undefined}
+		{#if peerAgentId !== undefined}
+			{#await $blocked then isBlocked}
 				{@const peerName = profile ? fullName(profile) : ''}
 				{#if isBlocked}
 					<UnblockContactDialog
@@ -262,7 +265,7 @@
 						name={peerName}
 					/>
 				{/if}
-			{/if}
-		{/await}
+			{/await}
+		{/if}
 	{/await}
 </Page>

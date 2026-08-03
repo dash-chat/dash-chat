@@ -2,14 +2,9 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { List, Popover } from 'konsta/svelte';
 	import { mdiCancel } from '@mdi/js';
-	import { getContext } from 'svelte';
-	import type { AgentId, ContactsStore } from 'dash-chat-stores';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import type { AgentId } from 'dash-chat-stores';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import BlockContactDialog from './block/BlockContactDialog.svelte';
-	import UnblockContactDialog from './block/UnblockContactDialog.svelte';
-
-	type ContactDialog = 'block';
 
 	interface Props {
 		/** Element the menu hangs off. */
@@ -21,48 +16,33 @@
 
 	let { anchor, agentId, name, onClose }: Props = $props();
 
-	const contactsStore: ContactsStore = getContext('contacts-store');
-	const blocked = $derived(
-		useReactivePromise(contactsStore.isBlocked, agentId),
-	);
-
-	let openDialog = $state<ContactDialog | null>(null);
+	let blockDialogOpen = $state(false);
 
 	function closeOnDismiss(opened: boolean) {
 		if (!opened) onClose();
 	}
 </script>
 
-{#await $blocked then isBlocked}
-	<Popover
-		opened={openDialog === null}
-		target={anchor}
-		backdrop
-		onBackdropClick={onClose}
-		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
-	>
-		<List nested data-testid="contact-actions-menu">
-			<ListAction
-				title={isBlocked ? m.unblock() : m.block()}
-				icon={mdiCancel}
-				actionType={isBlocked ? 'normal' : 'danger'}
-				onClick={() => (openDialog = 'block')}
-				data-testid="contact-block-toggle"
-			/>
-		</List>
-	</Popover>
+<Popover
+	opened={!blockDialogOpen}
+	target={anchor}
+	backdrop
+	onBackdropClick={onClose}
+	class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
+>
+	<List nested data-testid="contact-actions-menu">
+		<ListAction
+			title={m.block()}
+			icon={mdiCancel}
+			actionType="danger"
+			onClick={() => (blockDialogOpen = true)}
+			data-testid="contact-block"
+		/>
+	</List>
+</Popover>
 
-	{#if isBlocked}
-		<UnblockContactDialog
-			bind:opened={() => openDialog === 'block', closeOnDismiss}
-			{agentId}
-			{name}
-		/>
-	{:else}
-		<BlockContactDialog
-			bind:opened={() => openDialog === 'block', closeOnDismiss}
-			{agentId}
-			{name}
-		/>
-	{/if}
-{/await}
+<BlockContactDialog
+	bind:opened={() => blockDialogOpen, closeOnDismiss}
+	{agentId}
+	{name}
+/>

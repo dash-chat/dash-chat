@@ -5,9 +5,6 @@ interface LongPressParams {
 	duration?: number;
 }
 
-let timer: ReturnType<typeof setTimeout> | undefined;
-let triggered = false;
-
 /** Stops iOS from answering the press with its own selection and link UI. */
 function suppressNativeLongPress(target: HTMLElement) {
 	target.style.setProperty('-webkit-user-select', 'none');
@@ -16,12 +13,16 @@ function suppressNativeLongPress(target: HTMLElement) {
 }
 
 export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let triggered = false;
+
 	return {
 		ontouchstart(e: TouchEvent) {
 			// `currentTarget` is nulled once dispatch ends, so it must be read before the timer.
 			const element = e.currentTarget;
 			if (!(element instanceof HTMLElement)) return;
 			suppressNativeLongPress(element);
+			clearTimeout(timer);
 			triggered = false;
 			timer = setTimeout(() => {
 				triggered = true;
@@ -34,7 +35,10 @@ export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
 		},
 		ontouchend(e: TouchEvent) {
 			clearTimeout(timer);
-			if (triggered) e.preventDefault();
+			if (triggered) {
+				triggered = false;
+				e.preventDefault();
+			}
 		},
 		oncontextmenu(e: MouseEvent) {
 			if (!(e.currentTarget instanceof HTMLElement)) return;
@@ -77,7 +81,6 @@ export const longpress: Action<HTMLElement, LongPressParams> = (
 			attach();
 		},
 		destroy() {
-			clearTimeout(timer);
 			detach();
 		},
 	};
