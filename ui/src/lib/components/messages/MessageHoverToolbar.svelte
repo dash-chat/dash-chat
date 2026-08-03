@@ -5,8 +5,12 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { Popover } from 'konsta/svelte';
 	import { getContext } from 'svelte';
-	import type { Message, DeviceId, MessagesStore } from 'dash-chat-stores';
-	import { canEditMessage } from './message-helpers';
+	import {
+		type Message,
+		type DeviceId,
+		type MessagesStore,
+		hasBody,
+	} from 'dash-chat-stores';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
@@ -19,21 +23,23 @@
 		message: Message;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		onDelete?: () => void;
 		/** Flip the visual order so the ⋯ button sits away from the bubble. */
 		reverse?: boolean;
 	}
 
-	let { message, myDeviceId, onEdit, reverse = false }: Props = $props();
+	let {
+		message,
+		myDeviceId,
+		onEdit,
+		onDelete,
+		reverse = false,
+	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
 
 	let open = $state<'reactions' | 'menu' | null>(null);
 
-	// Depends on `open` so the 24h edit window is re-checked each time the
-	// menu opens, not once at mount.
-	const canEdit = $derived(
-		open !== null && canEditMessage(message, myDeviceId),
-	);
 	let expanded = $state(false);
 	let reactEl = $state<HTMLElement>();
 	let menuEl = $state<HTMLElement>();
@@ -76,8 +82,14 @@
 		onEdit?.();
 	}
 
+	function del() {
+		close();
+		onDelete?.();
+	}
+
 	async function copy() {
 		close();
+		if (!hasBody(message.content)) return;
 		await writeText(message.content.message);
 		showToast(m.copiedMessageToClipboard());
 	}
@@ -148,7 +160,13 @@
 		onBackdropClick={close}
 		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
 	>
-		<MessageActionsMenu {canEdit} onEdit={edit} onCopy={copy} />
+		<MessageActionsMenu
+			{message}
+			{myDeviceId}
+			onEdit={edit}
+			onCopy={copy}
+			onDelete={del}
+		/>
 	</Popover>
 </div>
 

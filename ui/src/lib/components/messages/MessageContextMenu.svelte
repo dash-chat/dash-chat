@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { Popover } from 'konsta/svelte';
-	import type { Message, DeviceId } from 'dash-chat-stores';
-	import { canEditMessage } from './message-helpers';
+	import { type Message, type DeviceId, hasBody } from 'dash-chat-stores';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
 	import { writeText } from '$lib/utils/clipboard';
 	import { showToast } from '$lib/utils/toasts';
@@ -11,18 +10,19 @@
 		message: Message;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		onDelete?: () => void;
 		/** Viewport point to anchor the menu at; undefined = closed. Bindable so
 		 * the caller opens it from its own right-click/long-press handler. */
 		point?: { x: number; y: number };
 	}
 
-	let { message, myDeviceId, onEdit, point = $bindable() }: Props = $props();
-
-	// Depends on `point` so the 24h edit window is re-checked each time the
-	// menu opens, not once at mount.
-	const canEdit = $derived(
-		point !== undefined && canEditMessage(message, myDeviceId),
-	);
+	let {
+		message,
+		myDeviceId,
+		onEdit,
+		onDelete,
+		point = $bindable(),
+	}: Props = $props();
 
 	let pointAnchorEl = $state<HTMLElement>();
 
@@ -59,8 +59,14 @@
 		onEdit?.();
 	}
 
+	function del() {
+		close();
+		onDelete?.();
+	}
+
 	async function copy() {
 		close();
+		if (!hasBody(message.content)) return;
 		await writeText(message.content.message);
 		showToast(m.copiedMessageToClipboard());
 	}
@@ -90,9 +96,11 @@
 		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
 	>
 		<MessageActionsMenu
-			{canEdit}
+			{message}
+			{myDeviceId}
 			onEdit={edit}
 			onCopy={copy}
+			onDelete={del}
 			testid="message-context-menu"
 		/>
 	</Popover>
