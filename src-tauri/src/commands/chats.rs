@@ -99,6 +99,20 @@ pub async fn edit_message(
 }
 
 #[tauri::command]
+pub async fn delete_message(
+    chat_id: ChatId,
+    target_hash: Hash,
+    app_node: State<'_, AppNode>,
+) -> Result<Hash, String> {
+    let node = app_node.get().await?;
+    let header = node
+        .delete_message(chat_id, target_hash)
+        .await
+        .map_err(|err| format!("{err:?}"))?;
+    Ok(header.hash())
+}
+
+#[tauri::command]
 pub async fn send_reaction(
     chat_id: ChatId,
     content: ChatReaction,

@@ -45,4 +45,24 @@ export class MockMessagesClient implements IMessagesClient {
 			},
 		});
 	}
+
+	async deleteMessage(chatId: ChatId, targetHash: Hash): Promise<Hash> {
+		const author = await this.logsClient.myPubKey();
+		const log = await this.logsClient.getLog(chatId, author);
+		// Walk the edit chain from the target back to the original message so
+		// the delete covers the whole chain, mirroring the backend.
+		const hashes = [targetHash];
+		let current = targetHash;
+		for (let i = 0; i < log.length; i++) {
+			const op = log.find(o => o.hash === current);
+			const body = op?.body;
+			if (body?.type !== 'Chat' || body.payload.type !== 'EditMessage') break;
+			current = body.payload.payload.edit_hash;
+			hashes.push(current);
+		}
+		return this.logsClient.create(chatId, {
+			type: 'Chat',
+			payload: { type: 'DeleteMessage', payload: { hashes } },
+		});
+	}
 }

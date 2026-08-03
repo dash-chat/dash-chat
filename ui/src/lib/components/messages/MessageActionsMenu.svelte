@@ -1,14 +1,20 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiContentCopy, mdiPencilOutline } from '@mdi/js';
+	import { mdiContentCopy, mdiDeleteOutline, mdiPencilOutline } from '@mdi/js';
 	import { List } from 'konsta/svelte';
+	import type { DeviceId, Message } from 'dash-chat-stores';
+	import {
+		canDeleteMessageForEveryone,
+		canEditMessage,
+	} from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 
 	interface Props {
-		/** Whether to offer an edit action (author, within the edit window). */
-		canEdit?: boolean;
+		message: Message;
+		myDeviceId: DeviceId;
 		onEdit?: () => void;
 		onCopy: () => void;
+		onDelete?: () => void;
 		/** Names this mount. A desktop message hosts two of these menus at once —
 		 * the hover toolbar's and the right-click one — so they need distinct
 		 * ids for tests to resolve the one that is actually open. */
@@ -16,11 +22,16 @@
 	}
 
 	let {
-		canEdit = false,
+		message,
+		myDeviceId,
 		onEdit,
 		onCopy,
+		onDelete,
 		testid = 'message-actions-menu',
 	}: Props = $props();
+
+	const canEdit = $derived(canEditMessage(message, myDeviceId));
+	const canDelete = $derived(canDeleteMessageForEveryone(message, myDeviceId));
 </script>
 
 <List nested data-testid={testid}>
@@ -38,4 +49,13 @@
 		onClick={onCopy}
 		data-testid="message-action-copy"
 	/>
+	{#if canDelete}
+		<ListAction
+			title={m.delete()}
+			icon={mdiDeleteOutline}
+			actionType="danger"
+			onClick={() => onDelete?.()}
+			data-testid="message-action-delete"
+		/>
+	{/if}
 </List>
