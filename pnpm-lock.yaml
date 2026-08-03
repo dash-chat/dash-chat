@@ -5,12 +5,8 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  konsta@5.0.6:
-    hash: e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f
-    path: patches/konsta@5.0.6.patch
-  signalium@3.0.1:
-    hash: 9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106
-    path: patches/signalium@3.0.1.patch
+  konsta@5.0.6: e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f
+  signalium@3.0.1: 9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106
 
 importers:
 
@@ -1120,7 +1116,7 @@ packages:
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
   '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9':
-    resolution: {tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9}
     version: 0.3.0
 
   '@holo-host/identicon@0.1.0':
@@ -5199,7 +5195,7 @@ packages:
     resolution: {integrity: sha512-W5Q3eGT1qQSUUkdoZ4nKlr52GhNtfSQA+4jXi/JlwFizhOTAbbMLa2vTGvOVjq8tVzpFmx9qYU7JBeWFXwacxA==}
 
   tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547:
-    resolution: {tarball: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547}
     version: 0.1.0
     peerDependencies:
       signalium: ^3

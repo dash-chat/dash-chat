@@ -2,9 +2,9 @@
  * Unified e2e config. The PLATFORMS env var lists the agents to launch as an
  * unordered multiset of platforms (default `desktop,desktop`) — `desktop`
  * (tauri-driver against the built binary), `android` (physical device via
- * Appium) or `android-emulator` (running emulator via Appium) — so any combo
- * runs through this one config, e.g.
- * `PLATFORMS=android,desktop just test e2e send-messages`.
+ * Appium), `android-emulator` (running emulator via Appium), or `ios`
+ * (connected iPhone via Appium/XCUITest) — so any combo runs through this one
+ * config, e.g. `PLATFORMS=ios,desktop just test e2e send-messages`.
  */
 import { type ChildProcess, spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -16,6 +16,7 @@ import { killLeftoverMailboxServers } from './setup/cleanup';
 import { startLocalMailboxServer } from './setup/mailbox-server';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
 import { DesktopPlatform } from './setup/platforms/desktop';
+import { IosPlatform } from './setup/platforms/ios';
 import type { AgentPlatform } from './setup/platforms/platform';
 import {
 	type AgentPlatformName,
@@ -34,9 +35,13 @@ const nameBySlot = new Map<number, AgentPlatformName>(
 const desktopSlots = [...nameBySlot]
 	.filter(([, name]) => name === 'desktop')
 	.map(([slot]) => slot);
+const iosSlots = [...nameBySlot]
+	.filter(([, name]) => name === 'ios')
+	.map(([slot]) => slot);
 const androidKinds = new Map<number, AndroidKind>(
 	[...nameBySlot].filter(
-		(entry): entry is [number, AndroidKind] => entry[1] !== 'desktop',
+		(entry): entry is [number, AndroidKind] =>
+			entry[1] !== 'desktop' && entry[1] !== 'ios',
 	),
 );
 
@@ -64,11 +69,17 @@ mailboxBuild?.catch(() => {});
 
 const android =
 	androidKinds.size > 0 ? new AndroidPlatform(androidKinds) : null;
+const ios = iosSlots.length > 0 ? new IosPlatform(iosSlots) : null;
 const desktop =
 	desktopSlots.length > 0 ? new DesktopPlatform(desktopSlots) : null;
 const platforms: AgentPlatform[] = [];
 if (desktop !== null) platforms.push(desktop);
 if (android !== null) platforms.push(android);
+if (ios !== null) platforms.push(ios);
+
+// Android and iOS both drive their devices through Appium (uiautomator2 /
+// xcuitest); they share one server on the same pinned port.
+const appiumPort = android?.appiumPort ?? ios?.appiumPort ?? null;
 
 function agentEntry(slot: number) {
 	const platform = platforms.find(p => p.slots.includes(slot))!;
@@ -128,8 +139,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	),
 
 	services:
-		android !== null
-			? [['appium', { args: { port: android.appiumPort } }]]
+		appiumPort !== null
+			? [['appium', { args: { port: appiumPort } }]]
 			: [],
 
 	logLevel: 'warn',
