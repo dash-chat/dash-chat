@@ -77,6 +77,42 @@ export class ContactsStore {
 		return Array.from(contacts);
 	});
 
+	blockedContactAgentIds = reactive(async () => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const latestByAgent: Record<
+			AgentId,
+			{ blocked: boolean; timestamp: number }
+		> = {};
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				const payload = op.body?.payload;
+				if (payload?.type !== 'BlockAgent' && payload?.type !== 'UnblockAgent')
+					continue;
+				const agentId = payload.payload;
+				const existing = latestByAgent[agentId];
+				if (!existing || op.header.timestamp > existing.timestamp) {
+					latestByAgent[agentId] = {
+						blocked: payload.type === 'BlockAgent',
+						timestamp: op.header.timestamp,
+					};
+				}
+			}
+		}
+
+		const blocked = new Set<AgentId>();
+		for (const [agentId, v] of Object.entries(latestByAgent)) {
+			if (v.blocked) blocked.add(agentId as AgentId);
+		}
+		return blocked;
+	});
+
+	isBlocked = reactive(async (agentId: AgentId) => {
+		const blocked = await this.blockedContactAgentIds();
+
+		return blocked.has(agentId);
+	});
+
 	/**
 	 * Outgoing contact requests we've sent but whose ack hasn't arrived yet.
 	 * A pending marker is dropped once its device pubkey resolves to an
@@ -271,6 +307,27 @@ export class ContactsStore {
 		);
 
 		const profilesWithContacts: Array<[AgentId, Profile]> = contacts
+			.map(
+				(contact, i) =>
+					[contact, profiles[i]] as [AgentId, Profile | undefined],
+			)
+			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
+
+		return profilesWithContacts;
+	});
+
+	profilesForUnblockedContacts = reactive(async () => {
+		const [contacts, blocked] = await Promise.all([
+			this.contactsAgentIds(),
+			this.blockedContactAgentIds(),
+		]);
+		const unblocked = contacts.filter(contact => !blocked.has(contact));
+
+		const profiles = await Promise.all(
+			unblocked.map(contact => this.profiles(contact)),
+		);
+
+		const profilesWithContacts: Array<[AgentId, Profile]> = unblocked
 			.map(
 				(contact, i) =>
 					[contact, profiles[i]] as [AgentId, Profile | undefined],
