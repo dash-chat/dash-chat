@@ -24,7 +24,7 @@ async fn two_friends(mailbox: &MemMailbox<MailboxOperation>) -> (TestNode, TestN
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 

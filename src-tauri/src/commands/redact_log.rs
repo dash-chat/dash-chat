@@ -43,6 +43,8 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
         r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
+        // JSON format: "profile_name":"..." — contact request QR placeholder.
+        r#""profile_name"\s*:\s*"[^"]*""#,
         // JSON format: "content":"..."
         r#""content"\s*:\s*"[^"]*""#,
         // JSON format: "message":"..." — chat message text and edit text
@@ -199,6 +201,26 @@ mod tests {
         assert!(
             !result.contains("Hello world"),
             "about not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_profile_name_field_debug() {
+        let input = r#"PendingContactRequest { device_pubkey: VerifyingKey([1, 2, 3]), profile_name: "Alice" }"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("Alice"),
+            "profile_name not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_profile_name_field_json() {
+        let input = r#"{"type":"PendingContactRequest","payload":{"device_pubkey":[1,2,3],"profile_name":"Alice"}}"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("Alice"),
+            "profile_name not redacted: {result}"
         );
     }
 
