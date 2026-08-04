@@ -54,6 +54,7 @@ impl Behavior {
         let mut watcher = self.watcher.lock().await;
         let agent_id = watcher
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
+                let n = n.op()?;
                 tracing::debug!(
                     hash = ?n.header.hash(),
                     "checking for contact invitation"
@@ -80,6 +81,7 @@ impl Behavior {
             .lock()
             .await
             .watch_mapped(Duration::from_secs(15), |n: &Notification| {
+                let n = n.op()?;
                 tracing::debug!(
                     hash = ?n.header.hash(),
                     "checking for group invitation"

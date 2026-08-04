@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use dashchat_node::Node;
+use dashchat_node::{Node, Notification};
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, watch, RwLock};
@@ -41,7 +41,7 @@ pub struct AppNode {
     #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
     data_path: PathBuf,
     #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
-    notification_tx: mpsc::Sender<dashchat_node::Notification>,
+    notification_tx: mpsc::Sender<Notification>,
     #[cfg(mobile)]
     topic_subscribed_tx: mpsc::Sender<dashchat_node::topic::TopicId>,
     /// App-lifetime record of already-notified operations, shared with the push
@@ -256,39 +256,44 @@ impl AppNode {
 /// spawned once (detached) rather than tracked in a node's task set.
 async fn notification_loop(
     app_handle: AppHandle,
-    mut notification_rx: mpsc::Receiver<dashchat_node::Notification>,
+    mut notification_rx: mpsc::Receiver<Notification>,
 ) {
     while let Some(notification) = notification_rx.recv().await {
         log::info!("Received notification: {:?}", notification);
 
-        let body = match notification.payload.as_ref() {
-            Some(payload) => match encode_cbor(payload) {
-                Ok(bytes) => Some(Body::new(&bytes[..])),
-                Err(err) => {
-                    log::error!("Failed to serialize payload: {err:?}");
-                    continue;
+        match notification {
+            Notification::Op(n) => {
+                let body = match n.payload.as_ref() {
+                    Some(payload) => match encode_cbor(payload) {
+                        Ok(bytes) => Some(Body::new(&bytes[..])),
+                        Err(err) => {
+                            log::error!("Failed to serialize payload: {err:?}");
+                            continue;
+                        }
+                    },
+                    None => None,
+                };
+                let simplified_operation =
+                    match simplify(n.topic, n.header.hash(), n.header.clone(), body) {
+                        Ok(o) => o,
+                        Err(err) => {
+                            log::error!("Failed to simplify operation: {err:?}");
+                            continue;
+                        }
+                    };
+
+                if let Err(err) = app_handle.emit("p2panda://new-operation", simplified_operation) {
+                    log::error!("Failed to emit operation: {err:?}");
                 }
-            },
-            None => None,
-        };
-        let simplified_operation = match simplify(
-            notification.topic,
-            notification.header.hash(),
-            notification.header.clone(),
-            body,
-        ) {
-            Ok(o) => o,
-            Err(err) => {
-                log::error!("Failed to simplify operation: {err:?}");
-                continue;
+
+                crate::notifications::show_sync_notification(&app_handle, &n).await;
             }
-        };
-
-        if let Err(err) = app_handle.emit("p2panda://new-operation", simplified_operation) {
-            log::error!("Failed to emit operation: {err:?}");
+            Notification::System(n) => {
+                if let Err(err) = app_handle.emit("dashchat://system-event", n) {
+                    log::error!("Failed to emit system event: {err:?}");
+                }
+            }
         }
-
-        crate::notifications::show_sync_notification(&app_handle, &notification).await;
 
         // Small delay between emissions to avoid overwhelming the WebKitGTK
         // event loop with rapid-fire events (which can freeze the webview).

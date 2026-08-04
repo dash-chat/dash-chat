@@ -44,7 +44,7 @@ use crate::{
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
-pub use app_processing::Notification;
+pub use app_processing::{Notification, OpNotification, SystemNotification};
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
