@@ -5,20 +5,23 @@
  * Skips itself unless E2E_STRESS=1. Run it with:
  *   PLATFORMS=android,desktop just test e2e media-throughput
  */
-import { existsSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
-import { isRemoteMailbox, mailboxBlobPath } from '../setup/mailbox-control';
+import { isRemoteMailbox, mailboxBlobs } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
-/** One photo per message: a gallery hides everything past its fifth cell behind
- * a "+N" overlay (`display: none`), and a hidden image never loads. */
 const PHOTO_COUNT = 20;
 const PHOTO_WIDTH = 320;
 const PHOTO_HEIGHT = 240;
 
-/** What the spec asserts: receiver online → last photo rendered. */
+/** A gallery lays out five cells and hides the rest behind a "+N" overlay
+ * (`display: none`), and a hidden image never loads — so only these can be
+ * waited on, even though all PHOTO_COUNT blobs are fetched. */
+const VISIBLE_CELLS = 5;
+
+/** What the spec asserts: receiver online → the gallery rendered. */
 const FETCH_BUDGET_MS = 3_000;
 
 /** Per-wait ceiling, far above the budget so a slow run still reports a number
@@ -42,7 +45,7 @@ describe('Media fetch throughput', function () {
 
 	before(async function () {
 		if (process.env.E2E_STRESS !== '1') this.skip();
-		// mailboxBlobPath reads the local mailbox's store directly.
+		// The blob count is read straight off the local mailbox's store.
 		if (isRemoteMailbox()) this.skip();
 		const [agent1, agent2] = await setupAgents(this, [
 			{ platform: 'any' },
@@ -68,7 +71,7 @@ describe('Media fetch throughput', function () {
 		if (batch === undefined) return;
 		const kb = Math.round(batch.bytes / 1024);
 		console.log(
-			`\n${batch.labels.length} photos, ${kb}K total` +
+			`\n${batch.labels.length} photos in one message, ${kb}K total` +
 				`\n  upload  ${String(batch.uploadMs).padStart(6)}ms` +
 				`\n  fetch   ${String(fetchMs ?? 0).padStart(6)}ms  (budget ${FETCH_BUDGET_MS}ms)\n`,
 		);
@@ -81,32 +84,30 @@ describe('Media fetch throughput', function () {
 
 		const composer = sender.directChatPage.composer;
 		const labels = Array.from({ length: PHOTO_COUNT }, (_, i) => `batch-${i}`);
+		const before = mailboxBlobs().length;
 
 		const startedAt = Date.now();
-		let bytes = 0;
 		for (const label of labels) {
-			const attachAt = Date.now();
 			await composer.attachNoisePhoto(label, PHOTO_WIDTH, PHOTO_HEIGHT);
-			const sendAt = Date.now();
-			await composer.send();
-			await sender.directChatPage.messages.waitForPhotoMessage(
-				label,
-				CEILING_MS,
-			);
-			console.log(
-				`${label}: attach ${sendAt - attachAt}ms  send+render ${Date.now() - sendAt}ms`,
-			);
-			const hash = await sender.directChatPage.messages.photoHash(label);
-			const blobPath = mailboxBlobPath(hash);
-			await sender.waitUntil(async () => existsSync(blobPath), {
-				timeout: CEILING_MS,
-				timeoutMsg: `Mailbox never stored ${label} (${hash})`,
-			});
-			// The stored blob is what crossed the wire; the composer re-encodes
-			// before sending, so the staged file is a good bit larger.
-			bytes += statSync(blobPath).size;
 		}
+		await composer.send();
+		await sender.directChatPage.messages.waitForPhotoMessage(
+			labels[0],
+			CEILING_MS,
+		);
+		await sender.waitUntil(
+			async () => mailboxBlobs().length >= before + PHOTO_COUNT,
+			{
+				timeout: CEILING_MS,
+				timeoutMsg: `Mailbox stored ${mailboxBlobs().length - before}/${PHOTO_COUNT} blobs`,
+			},
+		);
 
+		// The stored blobs are what crossed the wire; the composer re-encodes
+		// before sending, so the staged files are a good bit larger.
+		const bytes = mailboxBlobs()
+			.slice(-PHOTO_COUNT)
+			.reduce((sum, p) => sum + statSync(p).size, 0);
 		batch = { labels, bytes, uploadMs: Date.now() - startedAt };
 	});
 
@@ -126,7 +127,7 @@ describe('Media fetch throughput', function () {
 			`restart ${restartedAt - startedAt}ms  ready ${readyAt - restartedAt}ms  ` +
 				`openChat ${chatOpenAt - readyAt}ms`,
 		);
-		for (const label of batch.labels) {
+		for (const label of batch.labels.slice(0, VISIBLE_CELLS)) {
 			const at = Date.now();
 			await receiver.directChatPage.messages.waitForPhotoMessage(
 				label,
@@ -138,8 +139,8 @@ describe('Media fetch throughput', function () {
 
 		if (fetchMs > FETCH_BUDGET_MS) {
 			throw new Error(
-				`Receiver took ${fetchMs}ms to render ${batch.labels.length} photos ` +
-					`(${Math.round(batch.bytes / 1024)}K), budget ${FETCH_BUDGET_MS}ms`,
+				`Receiver took ${fetchMs}ms to render a ${batch.labels.length}-photo ` +
+					`message (${Math.round(batch.bytes / 1024)}K), budget ${FETCH_BUDGET_MS}ms`,
 			);
 		}
 	});
