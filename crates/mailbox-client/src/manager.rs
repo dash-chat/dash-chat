@@ -118,10 +118,18 @@ impl MailboxConnectionState {
         self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
     }
 
+    /// Treat this mailbox as healthy again and poll it immediately
     fn wakeup(&mut self) {
         self.status = SyncStatus::Active;
         self.consecutive_errors = 0;
         self.next_poll = Instant::now();
+    }
+
+    /// Become due immediately unless this mailbox has stopped retrying
+    fn mark_due_now_unless_stopped(&mut self) {
+        if self.status != SyncStatus::Stopped {
+            self.next_poll = Instant::now();
+        }
     }
 }
 
@@ -172,6 +180,11 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
 
     fn wakeup(&self) {
         self.connection_state.send_modify(|t| t.wakeup());
+    }
+
+    fn mark_due_now_unless_stopped(&self) {
+        self.connection_state
+            .send_modify(|t| t.mark_due_now_unless_stopped());
     }
 }
 
@@ -251,9 +264,10 @@ where
         if let Some(tm) = mailboxes.get(&id).cloned() {
             drop(mailboxes);
             // Re-registering the same id (e.g. mDNS re-resolution producing a
-            // new URL): swap the client in place and reset any Stopped/Degraded
-            // backoff. Keeping the existing TrackedMailbox preserves its
-            // connection_state watch::Sender so UI subscribers stay attached.
+            // new URL): swap the client in place and poll it right away, so a
+            // backed-off mailbox recovers as soon as the new URL works. Keeping
+            // the existing TrackedMailbox preserves its connection_state
+            // watch::Sender so UI subscribers stay attached.
             tm.replace_client(new_client).await;
             tm.wakeup();
             self.trigger_sync();
@@ -310,6 +324,14 @@ where
     /// Immediately activate and sync a specific mailbox, resetting any backoff.
     pub fn wakeup(&self, id: MailboxId) {
         _ = self.trigger.try_send(Some(id));
+    }
+
+    /// Sync now instead of at the next scheduled poll
+    pub async fn attempt_immediate_sync(&self) {
+        for tracked_mailbox in self.mailboxes.lock().await.values() {
+            tracked_mailbox.mark_due_now_unless_stopped();
+        }
+        self.trigger_sync();
     }
 
     /// Immediately activate and sync every registered mailbox, resetting any backoff.
@@ -375,7 +397,7 @@ where
                                     Ok(Some(Some(triggered_id))) => {
                                         manager.wakeup_mailbox(&triggered_id).await;
                                     }
-                                    Ok(Some(None)) => {} // general wakeup, re-evaluate
+                                    Ok(Some(None)) => {} // general nudge, re-evaluate
                                     Err(_) => {}         // timeout elapsed
                                 }
                                 // Re-evaluate which mailbox is actually due now
@@ -1056,7 +1078,7 @@ mod tests {
         }
 
         // Re-register with a different client carrying the same id — the loop
-        // should poll the *new* client immediately thanks to the wakeup.
+        // should poll the *new* client immediately thanks to being marked due.
         let mut client_b = TrackingClient::new(false).0;
         client_b.id = id.clone();
         let count_b = client_b.poll_count.clone();
@@ -1113,6 +1135,55 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn attempt_immediate_sync_leaves_stopped_on_its_schedule() {
+        let config = test_config();
+        let mgr = test_mailboxes(config.clone());
+
+        let degraded = MemMailbox::<Msg>::new();
+        let degraded_id = degraded.client().id();
+        mgr.register(degraded.client()).await;
+
+        let stopped = MemMailbox::<Msg>::new();
+        let stopped_id = stopped.client().id();
+        mgr.register(stopped.client()).await;
+
+        {
+            let mm = mgr.mailboxes.lock().await;
+            let d = mm.get(&degraded_id).unwrap();
+            d.record_error(&config, "x".into());
+            d.record_error(&config, "x".into());
+            assert_eq!(d.connection_state().borrow().status, SyncStatus::Degraded);
+
+            let s = mm.get(&stopped_id).unwrap();
+            s.record_error(&config, "x".into());
+            s.record_error(&config, "x".into());
+            s.record_error(&config, "x".into());
+            assert_eq!(s.connection_state().borrow().status, SyncStatus::Stopped);
+        }
+
+        mgr.attempt_immediate_sync().await;
+
+        let mm = mgr.mailboxes.lock().await;
+        let now = Instant::now();
+        assert_eq!(
+            mm.get(&degraded_id)
+                .unwrap()
+                .connection_state()
+                .borrow()
+                .next_poll,
+            now
+        );
+        assert!(
+            mm.get(&stopped_id)
+                .unwrap()
+                .connection_state()
+                .borrow()
+                .next_poll
+                > now
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn wakeup_polls_stopped_mailbox_immediately() {
         let config = MailboxesConfig {
             active_interval: Duration::from_secs(100),
@@ -1129,7 +1200,7 @@ mod tests {
         let id = client.id.clone();
         mgr.register(client).await;
 
-        // Let the initial poll (triggered by register's wakeup) complete
+        // Let the initial poll (triggered by register) complete
         for _ in 0..10 {
             tokio::task::yield_now().await;
         }
@@ -1146,7 +1217,7 @@ mod tests {
             });
         }
 
-        // Without wakeup, no poll should happen (time is paused)
+        // Without an immediate-sync request, no poll should happen (time is paused)
         for _ in 0..5 {
             tokio::task::yield_now().await;
         }
