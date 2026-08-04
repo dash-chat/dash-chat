@@ -4,22 +4,42 @@ use chrono::{DateTime, Utc};
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{DeviceId, Topic, topic::kind};
 
 const QR_CODE_ENCODING_ENGINE: base64::engine::GeneralPurpose = URL_SAFE_NO_PAD;
 
-/// Maximum number of characters stored in an [`AddContactQrCode`]'s
+/// Maximum number of UTF-8 bytes stored in an [`AddContactQrCode`]'s
 /// `profile_name`.
-const PROFILE_NAME_MAX_LENGTH: usize = 16;
+const PROFILE_NAME_MAX_BYTES: usize = 16;
 
 /// Truncate a visible profile name for inclusion in an [`AddContactQrCode`].
+///
+/// Truncation is done on Unicode grapheme clusters, not scalar values, and
+/// stops before the next grapheme would exceed [`PROFILE_NAME_MAX_BYTES`]
+/// UTF-8 bytes. The first grapheme is always kept, even if it alone exceeds
+/// the budget, so the result is never empty for a non-empty name.
 fn truncate_profile_name(name: &str) -> String {
-    if name.chars().count() <= PROFILE_NAME_MAX_LENGTH {
-        name.to_string()
-    } else {
-        name.chars().take(PROFILE_NAME_MAX_LENGTH).collect()
+    if name.len() <= PROFILE_NAME_MAX_BYTES {
+        return name.to_string();
     }
+
+    let mut budget = PROFILE_NAME_MAX_BYTES;
+    let mut result = String::new();
+    let mut first = true;
+
+    for grapheme in name.graphemes(true) {
+        let len = grapheme.len();
+        if !first && budget < len {
+            break;
+        }
+        result.push_str(grapheme);
+        budget = budget.saturating_sub(len);
+        first = false;
+    }
+
+    result
 }
 
 /// An 8-byte nonce used to derive an inbox topic ID.
@@ -206,6 +226,37 @@ mod tests {
             "this is a very long name indeed",
         );
         assert_eq!(long.profile_name, "this is a very l");
+        assert_eq!(long.profile_name.len(), PROFILE_NAME_MAX_BYTES);
+
+        let family_emoji = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}";
+        let emoji = AddContactQrCode::new(
+            device_pubkey,
+            InboxNonce(nonce),
+            format!("{family_emoji}{family_emoji}"),
+        );
+        // Each ZWJ family emoji is 25 UTF-8 bytes, larger than the budget.
+        // The first grapheme is still kept, so we get one intact family emoji.
+        assert_eq!(emoji.profile_name, family_emoji);
+        assert_eq!(emoji.profile_name.graphemes(true).count(), 1);
+
+        let astronaut = "\u{1F469}\u{200D}\u{1F680}";
+        let mixed = AddContactQrCode::new(
+            device_pubkey,
+            InboxNonce(nonce),
+            format!("Ada {astronaut} Lovelace"),
+        );
+        // "Ada " is 4 bytes; the ZWJ astronaut is 11 bytes; the trailing space
+        // is 1 byte. All 16 bytes fit exactly, so "Lovelace" is omitted.
+        assert_eq!(mixed.profile_name, format!("Ada {astronaut} "));
+
+        let combining = AddContactQrCode::new(
+            device_pubkey,
+            InboxNonce(nonce),
+            "A\u{030A}stro\u{0308}m is my name",
+        );
+        // "Åström" plus " is my" fits exactly in 16 bytes; truncation should
+        // not leave a bare combining mark.
+        assert_eq!(combining.profile_name, "A\u{030A}stro\u{0308}m is my");
     }
 
     #[test]
