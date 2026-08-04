@@ -2,7 +2,6 @@ pub(crate) mod actor;
 mod app_processing;
 pub(crate) mod publish;
 
-use core::panic;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
