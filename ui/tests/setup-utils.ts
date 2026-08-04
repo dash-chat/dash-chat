@@ -60,6 +60,24 @@ export interface TestFileSpec {
 	 * array doesn't have to cross the WebDriver bridge. */
 	bytes?: number[];
 	size?: number;
+	/** With `size`, fill with a PRNG seeded by this value instead of zeros. Two
+	 * zero-filled files of the same size share a blake3 hash, so a transfer
+	 * measurement would silently resolve from the receiver's blob store. */
+	fillSeed?: number;
+}
+
+/** xorshift32 over `buf`. Deterministic per seed, and incompressible enough
+ * that a measured payload size is the size that actually crosses the wire. */
+function fillPseudoRandom(buf: Uint8Array | Uint8ClampedArray, seed: number) {
+	let x = seed >>> 0 || 1;
+	for (let i = 0; i < buf.length; i++) {
+		x ^= x << 13;
+		x >>>= 0;
+		x ^= x >>> 17;
+		x ^= x << 5;
+		x >>>= 0;
+		buf[i] = x & 0xff;
+	}
 }
 
 function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
@@ -68,17 +86,15 @@ function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
 		const data = spec.bytes
 			? new Uint8Array(spec.bytes)
 			: new Uint8Array(spec.size ?? 0);
+		if (!spec.bytes && spec.fillSeed !== undefined) {
+			fillPseudoRandom(data, spec.fillSeed);
+		}
 		dt.items.add(new File([data], spec.name, { type: spec.mimeType }));
 	}
 	return dt;
 }
 
-/**
- * Dispatch a synthetic paste of the given files onto the composer textarea.
- * WebKit drops constructor-init clipboardData, so it is attached via
- * defineProperty.
- */
-function pasteFiles(specs: TestFileSpec[]) {
+function dispatchPaste(dt: DataTransfer) {
 	const textarea = document.querySelector(
 		'[data-testid="message-input-textarea"]',
 	);
@@ -87,10 +103,53 @@ function pasteFiles(specs: TestFileSpec[]) {
 		bubbles: true,
 		cancelable: true,
 	});
-	Object.defineProperty(event, 'clipboardData', {
-		value: specsToDataTransfer(specs),
-	});
+	Object.defineProperty(event, 'clipboardData', { value: dt });
 	textarea.dispatchEvent(event);
+}
+
+export interface NoisePhotoSpec {
+	name: string;
+	width: number;
+	height: number;
+	quality?: number;
+}
+
+/**
+ * Paste a synthesized noise JPEG of the given pixel size, resolving with the
+ * bytes it encoded to. Noise rather than flat colour so JPEG can't compress the
+ * payload away and every call yields a distinct blob — a repeated identical
+ * photo would resolve from the receiver's blob store and measure nothing.
+ */
+async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
+	const canvas = document.createElement('canvas');
+	canvas.width = spec.width;
+	canvas.height = spec.height;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('canvas context failed');
+	const image = ctx.createImageData(spec.width, spec.height);
+	fillPseudoRandom(image.data, Date.now() & 0xffffffff);
+	for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
+	ctx.putImageData(image, 0, 0);
+	const blob = await new Promise<Blob>((resolve, reject) =>
+		canvas.toBlob(
+			b => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))),
+			'image/jpeg',
+			spec.quality ?? 0.9,
+		),
+	);
+	const dt = new DataTransfer();
+	dt.items.add(new File([blob], spec.name, { type: 'image/jpeg' }));
+	dispatchPaste(dt);
+	return blob.size;
+}
+
+/**
+ * Dispatch a synthetic paste of the given files onto the composer textarea.
+ * WebKit drops constructor-init clipboardData, so it is attached via
+ * defineProperty.
+ */
+function pasteFiles(specs: TestFileSpec[]) {
+	dispatchPaste(specsToDataTransfer(specs));
 }
 
 /**
@@ -112,6 +171,7 @@ export const testUtils = {
 	hasText,
 	disableP2p,
 	pasteFiles,
+	pasteNoisePhoto,
 	dropFiles,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
