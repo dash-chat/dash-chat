@@ -1,5 +1,5 @@
 #[cfg(feature = "e2e-tests")]
-use dashchat_node::Node;
+use crate::app_node::AppNode;
 #[cfg(feature = "e2e-tests")]
 use tauri::State;
 
@@ -9,6 +9,7 @@ use tauri::State;
 /// without racing a direct p2p connection between two agents on one machine.
 #[tauri::command]
 #[cfg(feature = "e2e-tests")]
-pub async fn close_iroh_endpoint(node: State<'_, Node>) -> Result<(), String> {
+pub async fn close_iroh_endpoint(app_node: State<'_, AppNode>) -> Result<(), String> {
+    let node = app_node.get().await?;
     node.close_iroh_endpoint().await.map_err(|e| e.to_string())
 }

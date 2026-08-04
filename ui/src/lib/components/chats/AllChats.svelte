@@ -38,7 +38,7 @@
 				inset={isWideScreen.value && theme === 'ios'}
 				data-testid="all-chats-list"
 			>
-				{#each summaries as summary}
+				{#each summaries as summary (summary.chatId)}
 					<ChatSummary {summary} active={isActive(summary)} />
 				{/each}
 			</List>

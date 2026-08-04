@@ -29,7 +29,7 @@ export function getSpecFileRetries(): number {
 	return retries;
 }
 
-const AGENT_PLATFORMS = ['desktop', 'android', 'android-emulator'] as const;
+const AGENT_PLATFORMS = ['desktop', 'android', 'android-emulator', 'ios'] as const;
 export type AgentPlatformName = (typeof AGENT_PLATFORMS)[number];
 
 /**

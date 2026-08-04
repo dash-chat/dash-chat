@@ -17,6 +17,7 @@ export class HomePage extends TestHelper {
 	chatList = this.el(tid('all-chats-list'));
 	chatRow = this.el(tid('all-chats-row'));
 	emptyState = this.el(tid('all-chats-empty'));
+	blockedRowIcon = this.el(tid('blocked-row-icon'));
 
 	async ready() {
 		await this.agent.waitUntil(() => this.isLoaded(), {
