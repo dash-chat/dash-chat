@@ -103,10 +103,13 @@ export class Messages extends TestHelper {
 							(el as HTMLImageElement).alt.includes(name),
 						) as HTMLImageElement | undefined;
 						if (img === undefined) return false;
+						if (img.complete && img.naturalWidth > 0) return true;
 						// Attachments render with loading="lazy", so one that is
 						// scrolled out of view never decodes and naturalWidth stays 0.
+						// Only scroll when it still needs decoding — scrolling on
+						// every poll forces a layout over the whole message list.
 						img.scrollIntoView({ block: 'center' });
-						return img.complete && img.naturalWidth > 0;
+						return false;
 					},
 					this.messagesSelector,
 					tid('message-attachment-photos'),

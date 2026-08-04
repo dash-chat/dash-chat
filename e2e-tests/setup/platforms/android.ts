@@ -12,7 +12,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const E2E_DIR = path.resolve(__dirname, '..', '..');
 
 const APK_DIR = path.join(ROOT, 'src-tauri/gen/android/app/build/outputs/apk');
-const APP_PACKAGE = 'studio.darksoil.dashchat';
+export const APP_PACKAGE = 'studio.darksoil.dashchat';
 
 // ABIs the e2e APK build covers (--split-per-abi): the gradle flavor that
 // names each APK and the rust target passed to tauri.
