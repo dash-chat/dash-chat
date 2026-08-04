@@ -10,9 +10,8 @@ use crate::{DeviceId, Topic, topic::kind};
 const QR_CODE_ENCODING_ENGINE: base64::engine::GeneralPurpose = URL_SAFE_NO_PAD;
 
 /// Maximum number of characters stored in an [`AddContactQrCode`]'s
-/// `profile_name`. When the displayed value reaches this length the receiver
-/// knows it was truncated and can show an ellipsis.
-const PROFILE_NAME_MAX_LENGTH: usize = 17;
+/// `profile_name`.
+const PROFILE_NAME_MAX_LENGTH: usize = 16;
 
 /// Truncate a visible profile name for inclusion in an [`AddContactQrCode`].
 fn truncate_profile_name(name: &str) -> String {
