@@ -63,7 +63,7 @@ pub(crate) fn options(
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
+    use std::path::Path;
 
     use sentry::protocol::Event;
     use sentry::Client;
@@ -71,7 +71,7 @@ mod tests {
     use crate::testing::{config, log_saying, recording_transport};
 
     fn options_keeping(pending: Arc<PendingLogs>) -> ClientOptions {
-        let config = config(PathBuf::new());
+        let config = config(Path::new(""));
         let (transport, _) = recording_transport(&config);
         options(&config, pending, Arc::new(transport))
     }

@@ -41,7 +41,7 @@ mod tests {
     fn a_report_carries_the_event_the_logs_on_its_trace_and_the_log_file() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("app.log"), "a line\n").unwrap();
-        let (state, recorder) = plugin(dir.path().to_path_buf());
+        let (state, recorder) = plugin(dir.path());
 
         let envelope = build_envelope(&state, Event::default(), vec![log_saying("connecting")])
             .expect("before_send dropped the event");

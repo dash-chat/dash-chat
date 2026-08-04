@@ -133,7 +133,9 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
 
     crate::utils::install_panic_hook();
 
-    if let Some(config) = crate::sentry::config(fs.logs_dir()) {
+    let error_reporting_dir = fs.error_reporting_dir();
+    if let Some(config) = crate::sentry::config(fs.logs_dir(), error_reporting_dir.clone()) {
+        std::fs::create_dir_all(&error_reporting_dir)?;
         handle.plugin(tauri_plugin_sentry_reporting::init(config))?;
     }
 
