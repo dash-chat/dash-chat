@@ -14,6 +14,7 @@ import {
 	groupEventsInDays,
 } from '../utils/group-events-in-days';
 import { type IDirectChatClient } from './direct-chat-client';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 
 // Store tied to a specific direct chat
 export class DirectChatStore {
@@ -22,6 +23,7 @@ export class DirectChatStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		public client: IDirectChatClient,
 		public peer: AgentId,
 		messagesClient: IMessagesClient,
@@ -29,6 +31,7 @@ export class DirectChatStore {
 		this.messages = new MessagesStore(
 			logsStore,
 			contactsStore,
+			tombstoneStore,
 			this.chatId,
 			messagesClient,
 		);

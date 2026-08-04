@@ -19,6 +19,7 @@ import { memo } from '../utils/memo';
 import { pendingChatKey } from './chat-key';
 import { type IChatsClient } from './chats-client';
 import { type IMessagesClient, MessagesClient } from './messages-client';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 
 export class ChatsStore {
 	private groupChatVersion = signal(0);
@@ -26,6 +27,7 @@ export class ChatsStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		public client: IChatsClient,
 	) {
 		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
@@ -79,6 +81,7 @@ export class ChatsStore {
 			new GroupChatStore(
 				this.logsStore,
 				this.contactsStore,
+				this.tombstoneStore,
 				this.groupChatClient(),
 				chatId,
 				this.messagesClient(),
@@ -90,6 +93,7 @@ export class ChatsStore {
 			new DirectChatStore(
 				this.logsStore,
 				this.contactsStore,
+				this.tombstoneStore,
 				this.directChatClient(),
 				peer,
 				this.messagesClient(),

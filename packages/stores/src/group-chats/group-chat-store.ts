@@ -20,6 +20,7 @@ import {
 	groupEventsInDays,
 } from '../utils/group-events-in-days';
 import { type IGroupChatClient } from './group-chat-client';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 
 export type ChatEvent =
 	| { kind: 'message'; message: Message }
@@ -41,6 +42,7 @@ export class GroupChatStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		public client: IGroupChatClient,
 		public chatId: ChatId,
 		messagesClient: IMessagesClient,
@@ -48,6 +50,7 @@ export class GroupChatStore {
 		this.messages = new MessagesStore(
 			logsStore,
 			contactsStore,
+			tombstoneStore,
 			reactive(async () => chatId),
 			messagesClient,
 		);
