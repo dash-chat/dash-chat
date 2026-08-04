@@ -4,13 +4,15 @@ use regex::Regex;
 use sentry::protocol::Attachment;
 
 use crate::redaction;
-use crate::state::SentryState;
 
 const MAX_BYTES: usize = 1024 * 1024;
 
-pub(crate) async fn build_logs_attachment(state: &SentryState) -> Option<Attachment> {
-    let patterns = state.redact.clone();
-    let logs_dir = state.logs_dir.clone();
+pub(crate) async fn build_logs_attachment(
+    patterns: &[Regex],
+    logs_dir: &Path,
+) -> Option<Attachment> {
+    let patterns = patterns.to_vec();
+    let logs_dir = logs_dir.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || redacted_log(&patterns, &logs_dir))
         .await
         .ok()
