@@ -197,15 +197,15 @@ mod tests {
         let short = AddContactQrCode::new(device_pubkey, InboxNonce(nonce), "short");
         assert_eq!(short.profile_name, "short");
 
-        let exact = AddContactQrCode::new(device_pubkey, InboxNonce(nonce), "exactlyseventeen!");
-        assert_eq!(exact.profile_name, "exactlyseventeen!");
+        let exact = AddContactQrCode::new(device_pubkey, InboxNonce(nonce), "exactlysixteen!!");
+        assert_eq!(exact.profile_name, "exactlysixteen!!");
 
         let long = AddContactQrCode::new(
             device_pubkey,
             InboxNonce(nonce),
             "this is a very long name indeed",
         );
-        assert_eq!(long.profile_name, "this is a very lo");
+        assert_eq!(long.profile_name, "this is a very l");
     }
 
     #[test]
