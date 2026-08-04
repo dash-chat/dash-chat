@@ -12,9 +12,15 @@ interface ErrorReport {
 	error?: ReportedError;
 }
 
+export type FeedbackReason =
+	| 'bug'
+	| 'feature'
+	| 'question'
+	| 'feedback'
+	| 'other';
+
 interface Feedback {
-	/** What prompted it — a bug, a question, a feature request. */
-	reason: string;
+	reason: FeedbackReason;
 	message: string;
 	screenshot?: File;
 	includeLogs: boolean;
