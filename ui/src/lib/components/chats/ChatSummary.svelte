@@ -37,6 +37,8 @@
 			? `/group-chat/${s.chatId}`
 			: `/direct-chats/${s.chatId}`;
 
+	const title = $derived(summary.name || m.waitingForProfile());
+
 	function summarizeMessage(content: {
 		message: string;
 		media: MediaAttachment | null;
@@ -50,8 +52,7 @@
 </script>
 
 <TitleTruncatedListItem
-	title={summary.waitingForProfile ? m.waitingForProfile() : summary.name}
-	titleWrapClass={summary.waitingForProfile ? 'quiet' : ''}
+	{title}
 	link
 	class={active ? 'active' : ''}
 	linkProps={{ href: chatHref(summary) }}
@@ -59,7 +60,11 @@
 	data-testid="all-chats-row"
 >
 	{#snippet media()}
-		<Avatar image={summary.avatar} initials={summary.name.slice(0, 2)} />
+		<Avatar
+			image={summary.avatar}
+			initials={summary.name.slice(0, 2)}
+			waitingForProfile={summary.waitingForProfile}
+		/>
 	{/snippet}
 	{#snippet after()}
 		<span class="text-xs">

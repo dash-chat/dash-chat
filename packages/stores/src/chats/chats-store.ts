@@ -156,7 +156,7 @@ export class ChatsStore {
 			return pending.map(request => ({
 				type: 'DirectChat',
 				chatId: pendingChatKey(request.devicePubkey),
-				name: '',
+				name: request.profileName,
 				avatar: undefined,
 				waitingForProfile: true as const,
 				lastEvent: {

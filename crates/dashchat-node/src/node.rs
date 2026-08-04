@@ -461,10 +461,15 @@ impl Node {
             .await
             .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
 
-        Ok(AddContactQrCode {
-            device_pubkey: self.device_id(),
-            inbox_nonce: nonce,
-        })
+        let profile_name = self
+            .my_profile()
+            .await
+            .ok()
+            .flatten()
+            .map(|profile| profile.full_name())
+            .unwrap_or_default();
+
+        Ok(AddContactQrCode::new(self.device_id(), nonce, profile_name))
     }
 
     pub fn agent_id(&self) -> AgentId {
@@ -1490,6 +1495,7 @@ impl Node {
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
                 device_pubkey: contact.device_pubkey,
+                profile_name: contact.profile_name,
             }),
             Some(&format!(
                 "add_contact/pending({:?})",
