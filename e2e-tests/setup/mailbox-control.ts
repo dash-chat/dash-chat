@@ -8,7 +8,12 @@
  *
  * Unix-only — relies on POSIX signal semantics.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -71,13 +76,25 @@ function localInfo(): {
  * mailbox actually holds it.
  */
 export function mailboxBlobPath(hash: string): string {
+	return path.join(mailboxBlobsDir(), `${hash}.data`);
+}
+
+function mailboxBlobsDir(): string {
 	const { dbPath } = localInfo();
-	return path.join(
-		path.dirname(dbPath),
-		'mailbox_blobs',
-		'data',
-		`${hash}.data`,
-	);
+	return path.join(path.dirname(dbPath), 'mailbox_blobs', 'data');
+}
+
+/**
+ * Absolute paths of every blob the local mailbox holds, for specs that care how
+ * many landed rather than which. Note iroh-blobs keeps blobs below its inline
+ * threshold in the database instead, so small ones never appear here.
+ */
+export function mailboxBlobs(): string[] {
+	const dir = mailboxBlobsDir();
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir)
+		.filter(f => f.endsWith('.data'))
+		.map(f => path.join(dir, f));
 }
 
 function signalGroup(pid: number, sig: NodeJS.Signals): void {
