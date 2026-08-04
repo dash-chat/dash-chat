@@ -21,7 +21,7 @@ pub(crate) async fn pending_crash_report(state: Sentry<'_>) -> Result<bool, Stri
 #[tauri::command]
 pub(crate) async fn send_pending_crash_report(state: Sentry<'_>) -> Result<(), String> {
     if let Some(envelope) = take_pending_crash(&state.data_dir) {
-        envelope::send(&state, envelope).await;
+        state.transport.send(envelope).await;
     }
     Ok(())
 }

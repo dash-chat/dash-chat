@@ -1,9 +1,9 @@
-use sentry::protocol::{EnvelopeItem, Event, Log, TraceContext};
+use sentry::protocol::{Event, Log, TraceContext};
 use sentry::types::protocol::latest::TraceId;
 use sentry::Envelope;
 
+use crate::logs;
 use crate::state::SentryState;
-use crate::{attachment, logs};
 
 pub(crate) fn build_envelope(
     state: &SentryState,
@@ -29,20 +29,11 @@ pub(crate) fn build_envelope(
     Some(envelope)
 }
 
-/// The only path to the network. The logs and the log file overlap on purpose:
-/// the logs are searchable but recent, the file reaches further back.
-pub(crate) async fn send(state: &SentryState, mut envelope: Envelope) {
-    if let Some(attachment) = attachment::build_logs_attachment(state).await {
-        envelope.add_item(EnvelopeItem::Attachment(attachment));
-    }
-    state.gate.send(envelope);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use sentry::protocol::ItemContainer;
+    use sentry::protocol::{EnvelopeItem, ItemContainer};
 
     use crate::testing::{log_saying, plugin};
 
@@ -54,7 +45,7 @@ mod tests {
 
         let envelope = build_envelope(&state, Event::default(), vec![log_saying("connecting")])
             .expect("before_send dropped the event");
-        tauri::async_runtime::block_on(send(&state, envelope));
+        tauri::async_runtime::block_on(state.transport.send(envelope));
 
         let envelope = recorder.only();
         assert!(envelope

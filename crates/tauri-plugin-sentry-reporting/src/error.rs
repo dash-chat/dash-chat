@@ -38,7 +38,7 @@ pub(crate) async fn send_error_report(
 
     let logs = state.pending.snapshot();
     if let Some(envelope) = envelope::build_envelope(&state, event, logs) {
-        envelope::send(&state, envelope).await;
+        state.transport.send(envelope).await;
     }
     Ok(())
 }
