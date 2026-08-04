@@ -10,7 +10,6 @@
  * multiset can't fulfill the requirements.
  */
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
-import { APP_PACKAGE } from './platforms/android';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
 import { CreateProfilePage } from '../helpers/pages/create-profile-page';
@@ -36,6 +35,7 @@ import { EditPhotoPage } from '../helpers/pages/settings/profile/edit-photo-page
 import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { checkOverflow } from '../helpers/review/checks';
+import { APP_PACKAGE } from './platforms/android';
 import { type AgentPlatformName, platformNames } from './test-env';
 
 export type Agent = WebdriverIO.Browser & {
@@ -225,7 +225,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 		}
 		await waitForTestUtils(b);
 		attachPages(agent, b);
-		await agent.setWideScreen(false);
+		if (agent.platform === 'desktop') await agent.setWideScreen(false);
 	};
 
 	return agent;
@@ -327,9 +327,10 @@ function matchSlots(
  * from a `before(async function () { ... })` hook (not an arrow function —
  * `this` must be the mocha context so the suite can be skipped).
  */
-export async function setupAgents<
-	const T extends readonly AgentRequirement[],
->(ctx: Mocha.Context, requirements: T): Promise<{ [K in keyof T]: Agent }> {
+export async function setupAgents<const T extends readonly AgentRequirement[]>(
+	ctx: Mocha.Context,
+	requirements: T,
+): Promise<{ [K in keyof T]: Agent }> {
 	const platforms = platformNames();
 	const slots = matchSlots(
 		requirements.map(r => r.platform),
