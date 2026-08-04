@@ -71,9 +71,8 @@ mod tests {
     use crate::testing::{config, log_saying, recording_transport};
 
     fn options_keeping(pending: Arc<PendingLogs>) -> ClientOptions {
-        let config = config(Path::new(""));
-        let (transport, _) = recording_transport(&config);
-        options(&config, pending, Arc::new(transport))
+        let (transport, _) = recording_transport();
+        options(&config(Path::new("")), pending, Arc::new(transport))
     }
 
     #[test]

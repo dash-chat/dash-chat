@@ -2,10 +2,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Weak;
 
 use sentry::integrations::panic::PanicIntegration;
+use sentry::protocol::EnvelopeItem;
 use sentry::Envelope;
 
-use crate::envelope;
 use crate::state::{Sentry, SentryState};
+use crate::{attachment, envelope};
 
 const FILE_NAME: &str = "pending-crash.envelope";
 
@@ -20,9 +21,14 @@ pub(crate) async fn pending_crash_report(state: Sentry<'_>) -> Result<bool, Stri
 
 #[tauri::command]
 pub(crate) async fn send_pending_crash_report(state: Sentry<'_>) -> Result<(), String> {
-    if let Some(envelope) = take_pending_crash(&state.data_dir) {
-        state.transport.send(envelope).await;
+    let Some(mut envelope) = take_pending_crash(&state.data_dir) else {
+        return Ok(());
+    };
+    if let Some(log_file) = attachment::build_logs_attachment(&state.redact, &state.logs_dir).await
+    {
+        envelope.add_item(EnvelopeItem::Attachment(log_file));
     }
+    state.transport.send(envelope);
     Ok(())
 }
 

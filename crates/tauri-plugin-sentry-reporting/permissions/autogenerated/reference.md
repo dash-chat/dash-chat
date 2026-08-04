@@ -1,10 +1,11 @@
 ## Default Permission
 
-Allows submitting error reports to Sentry.
+Allows submitting error reports and feedback to Sentry.
 
 #### This default permission set includes the following:
 
 - `allow-send-error-report`
+- `allow-send-feedback`
 - `allow-pending-crash-report`
 - `allow-send-pending-crash-report`
 - `allow-discard-pending-crash-report`
@@ -92,6 +93,32 @@ Enables the send_error_report command without any pre-configured scope.
 <td>
 
 Denies the send_error_report command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`sentry-reporting:allow-send-feedback`
+
+</td>
+<td>
+
+Enables the send_feedback command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`sentry-reporting:deny-send-feedback`
+
+</td>
+<td>
+
+Denies the send_feedback command without any pre-configured scope.
 
 </td>
 </tr>

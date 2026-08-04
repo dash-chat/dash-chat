@@ -38,19 +38,12 @@ mod tests {
     use crate::testing::{log_saying, plugin};
 
     #[test]
-    fn a_report_carries_the_event_the_logs_on_its_trace_and_the_log_file() {
+    fn a_report_carries_the_event_and_the_logs_on_its_trace() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("app.log"), "a line\n").unwrap();
-        let (state, recorder) = plugin(dir.path());
+        let (state, _) = plugin(dir.path());
 
         let envelope = build_envelope(&state, Event::default(), vec![log_saying("connecting")])
             .expect("before_send dropped the event");
-        tauri::async_runtime::block_on(state.transport.send(envelope));
-
-        let envelope = recorder.only();
-        assert!(envelope
-            .items()
-            .any(|item| matches!(item, EnvelopeItem::Attachment(_))));
 
         let event = envelope.event().expect("no event in the envelope");
         let sentry::protocol::Context::Trace(event_trace) = event
