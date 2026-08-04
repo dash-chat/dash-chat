@@ -16,7 +16,7 @@ pub fn config(
         .expect("build.rs fails the build on a SENTRY_DSN that does not parse");
 
     // Sentry keys regression detection off the release, so identify the build.
-    let release = match option_env!("VERGEN_GIT_SHA") {
+    let release = match crate::device_info::build::short_git_sha() {
         Some(sha) => format!("dash-chat@{}+{sha}", env!("CARGO_PKG_VERSION")),
         None => format!("dash-chat@{}", env!("CARGO_PKG_VERSION")),
     };
