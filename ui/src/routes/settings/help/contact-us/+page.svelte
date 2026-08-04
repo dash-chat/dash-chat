@@ -4,7 +4,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import ImageInput from '$lib/components/ImageInput.svelte';
 	import { compressImage } from '$lib/utils/compress';
-	import { sendFeedback } from '$lib/utils/error-report';
+	import { sendFeedback, type FeedbackReason } from '$lib/utils/error-report';
 	import { showToast } from '$lib/utils/toasts';
 	import {
 		BlockTitle,
@@ -25,7 +25,7 @@
 	const canSend = import.meta.env.VITE_SENTRY_ENABLED;
 
 	let message = $state('');
-	let reason = $state('');
+	let reason = $state<FeedbackReason | undefined>();
 	let includeDebugLog = $state(true);
 	let screenshot = $state<File | null>(null);
 
@@ -38,9 +38,10 @@
 	};
 
 	async function handleSubmit() {
+		if (!reason) return;
 		try {
 			await sendFeedback({
-				reason: reason ? reasonLabels[reason]() : '',
+				reason,
 				message,
 				screenshot: screenshot ? await compressImage(screenshot) : undefined,
 				includeLogs: includeDebugLog,
@@ -79,7 +80,9 @@
 				>
 					{#snippet input()}
 						<select bind:value={reason}>
-							<option value="" disabled>{m.pleaseSelectAnOption()}</option>
+							<option value={undefined} disabled>
+								{m.pleaseSelectAnOption()}
+							</option>
 							<option value="bug">{m.reasonBugReport()}</option>
 							<option value="feature">{m.reasonFeatureRequest()}</option>
 							<option value="question">{m.reasonQuestion()}</option>
@@ -143,7 +146,7 @@
 
 	<FixedActionButton
 		onClick={handleSubmit}
-		disabled={!message || !canSend}
+		disabled={!message || !reason || !canSend}
 		testId="contact-us-send-btn"
 	>
 		{m.send()}

@@ -12,7 +12,6 @@ use crate::state::{Sentry, SentryState};
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Feedback {
-    /// What prompted it — a bug, a question, a feature request.
     pub reason: String,
     pub message: String,
     pub screenshot: Option<Screenshot>,
@@ -42,9 +41,7 @@ async fn build_feedback(state: &SentryState, feedback: Feedback) -> anyhow::Resu
         level: Level::Info,
         ..Default::default()
     };
-    if !feedback.reason.is_empty() {
-        event.tags.insert("reason".into(), feedback.reason);
-    }
+    event.tags.insert("reason".into(), feedback.reason);
     let event = state
         .client
         .prepare_event(event, None)
