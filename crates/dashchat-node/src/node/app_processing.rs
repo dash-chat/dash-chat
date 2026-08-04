@@ -10,7 +10,7 @@ use tracing::{debug, warn};
 
 use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
-use crate::stores::{BadUseOfNode, ProjectionError};
+use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
@@ -47,7 +47,15 @@ pub struct OpNotification {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum SystemNotification {}
+#[serde(tag = "type", content = "payload")]
+pub enum SystemNotification {
+    /// A new tombstone has been created.
+    Tombstones {
+        topic: Topic,
+        hashes: BTreeSet<Hash>,
+        reason: TombstoneReason,
+    },
+}
 
 impl Node {
     /// Register a topic as subscribed in the database, and initialize it.
@@ -460,7 +468,11 @@ impl Node {
             .await
         {
             // Continue processing.
-            Ok(_) => (),
+            Ok(event) => {
+                if let Some(event) = event {
+                    self.notify_system_event(event).await?;
+                }
+            }
 
             // Don't process but allow the log to proceed.
             Err(ProjectionError::InvalidOp(msg)) => {
@@ -773,6 +785,16 @@ impl Node {
                     }
                     .into(),
                 )
+                .await
+                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
+        }
+        Ok(())
+    }
+
+    async fn notify_system_event(&self, event: SystemNotification) -> anyhow::Result<()> {
+        if let Some(notification_tx) = self.notification_tx.clone() {
+            notification_tx
+                .send(event.into())
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }

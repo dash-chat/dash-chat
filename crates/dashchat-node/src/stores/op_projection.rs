@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{BTreeSet, HashMap};
 
-use crate::{AgentId, DeleteCandidate, DeviceId, Profile, TopicId, forward_edit_closure};
+use crate::{
+    AgentId, DeleteCandidate, DeviceId, Profile, SystemNotification, TopicId, forward_edit_closure,
+};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
@@ -262,18 +264,19 @@ impl OpProjection {
         // XXX: once refined operation logs (e.g. `all_valid_ops`) are moved
         //      to the projection layer, this Node injection must be removed.
         node: BadUseOfNode,
-    ) -> Result<(), ProjectionError> {
+    ) -> Result<Option<SystemNotification>, ProjectionError> {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
         let topic = operation.topic();
 
         self.enforce_blocklist(operation).await?;
 
-        match &payload {
+        let event = match &payload {
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
                 }
+                None
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
@@ -283,6 +286,11 @@ impl OpProjection {
                     self.add_tombstone(topic.into(), *hash, TombstoneReason::DeletedForEveryone)
                         .await?;
                 }
+                Some(SystemNotification::Tombstones {
+                    topic: topic.into(),
+                    hashes: hashes.clone(),
+                    reason: TombstoneReason::DeletedForEveryone,
+                })
             }
 
             Payload::Chat(ChatPayload::EditMessage { edit_hash, .. }) => {
@@ -292,14 +300,16 @@ impl OpProjection {
                 // arrive after the delete, and it keeps a delete-for-everyone's
                 // late edits from lingering too. Edits of live messages are
                 // validated later in `process_app`.
-                //
-                // It is not valid for an Edit to be applied to an operation which
-                // was DeletedForEveryone, but that validation lives elsewhere, and
-                // it's simpler to just unconditionally apply this transitive
-                // tombstoning here.
                 if let Some(reason) = self.tombstone_reason(topic.into(), *edit_hash).await? {
                     let self_hash = operation.event.operation.header().hash();
                     self.add_tombstone(topic.into(), self_hash, reason).await?;
+                    Some(SystemNotification::Tombstones {
+                        topic: topic.into(),
+                        hashes: BTreeSet::from_iter([*edit_hash]),
+                        reason,
+                    })
+                } else {
+                    None
                 }
             }
 
@@ -313,24 +323,28 @@ impl OpProjection {
                 tracing::info!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
                 self.save_profile(agent_id, profile.clone()).await?;
+                None
             }
 
-            Payload::DeviceGroup(p) => match p {
-                DeviceGroupPayload::AddContact { agent_id } => {
-                    self.save_agent_mapping(author, *agent_id).await?;
-                }
-                DeviceGroupPayload::BlockAgent(agent_id) => {
-                    self.block_agent(*agent_id).await?;
-                }
-                DeviceGroupPayload::UnblockAgent(agent_id) => {
-                    self.unblock_agent(*agent_id).await?;
-                }
-                DeviceGroupPayload::DeleteForMe(delete) => {
-                    self.tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
-                        .await?;
-                }
-                _ => (),
-            },
+            Payload::DeviceGroup(p) => {
+                match p {
+                    DeviceGroupPayload::AddContact { agent_id } => {
+                        self.save_agent_mapping(author, *agent_id).await?;
+                    }
+                    DeviceGroupPayload::BlockAgent(agent_id) => {
+                        self.block_agent(*agent_id).await?;
+                    }
+                    DeviceGroupPayload::UnblockAgent(agent_id) => {
+                        self.unblock_agent(*agent_id).await?;
+                    }
+                    DeviceGroupPayload::DeleteForMe(delete) => {
+                        self.tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
+                            .await?;
+                    }
+                    _ => (),
+                };
+                None
+            }
 
             // ACID: TODO: it's not correct to unconditionally save contact info here.
             //             This needs to be limited to only accepted requests.
@@ -340,6 +354,7 @@ impl OpProjection {
             | Payload::Inbox(InboxPayload::ContactRequestAck { agent_id, profile }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
+                None
             }
 
             // We define group chats as topics which contain a CreateGroup that makes at least
@@ -349,25 +364,29 @@ impl OpProjection {
             // meaning nobody will ever have admin access.
             //
             // TODO: this needs to be much more clearly defined, see https://hackmd.io/1S2xtZfXTo6N5WinzCnqWw
-            Payload::GroupControl(GroupsArgs { action, .. }) => match action {
-                GroupAction::Create { initial_members } => {
-                    for (_, access) in initial_members {
-                        if *access == p2panda_auth::Access::manage() {
-                            self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
-                                .await?;
-                            break;
+            Payload::GroupControl(GroupsArgs { action, .. }) => {
+                match action {
+                    GroupAction::Create { initial_members } => {
+                        for (_, access) in initial_members {
+                            if *access == p2panda_auth::Access::manage() {
+                                self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
+                                    .await?;
+                                break;
+                            }
                         }
                     }
-                }
-                _ => (),
-            },
+                    _ => (),
+                };
+                None
+            }
 
             _ => {
                 // Nothing to do.
+                None
             }
-        }
+        };
 
-        Ok(())
+        Ok(event)
     }
 
     // === helpers === //
