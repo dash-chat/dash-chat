@@ -81,7 +81,7 @@ pub(crate) fn list_log_files_oldest_first(dir: &Path) -> std::io::Result<Vec<Pat
 }
 
 /// Redacted last `max_bytes` of the logs in `logs_dir`, concatenated oldest first.
-pub fn redacted_log_tail(
+pub(crate) fn redacted_log_tail(
     patterns: &[Regex],
     logs_dir: &Path,
     max_bytes: usize,

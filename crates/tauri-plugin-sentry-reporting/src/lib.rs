@@ -24,7 +24,7 @@ use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
 
 pub use logs::log_target;
-pub use redaction::{redact, redacted_log_tail};
+pub use redaction::redact;
 pub use sentry::types::Dsn;
 
 use crate::state::SentryState;
