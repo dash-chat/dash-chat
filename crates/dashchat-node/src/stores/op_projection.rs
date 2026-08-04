@@ -326,25 +326,30 @@ impl OpProjection {
                 None
             }
 
-            Payload::DeviceGroup(p) => {
-                match p {
-                    DeviceGroupPayload::AddContact { agent_id } => {
-                        self.save_agent_mapping(author, *agent_id).await?;
-                    }
-                    DeviceGroupPayload::BlockAgent(agent_id) => {
-                        self.block_agent(*agent_id).await?;
-                    }
-                    DeviceGroupPayload::UnblockAgent(agent_id) => {
-                        self.unblock_agent(*agent_id).await?;
-                    }
-                    DeviceGroupPayload::DeleteForMe(delete) => {
-                        self.tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
-                            .await?;
-                    }
-                    _ => (),
-                };
-                None
-            }
+            Payload::DeviceGroup(p) => match p {
+                DeviceGroupPayload::AddContact { agent_id } => {
+                    self.save_agent_mapping(author, *agent_id).await?;
+                    None
+                }
+                DeviceGroupPayload::BlockAgent(agent_id) => {
+                    self.block_agent(*agent_id).await?;
+                    None
+                }
+                DeviceGroupPayload::UnblockAgent(agent_id) => {
+                    self.unblock_agent(*agent_id).await?;
+                    None
+                }
+                DeviceGroupPayload::DeleteForMe(delete) => {
+                    self.tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
+                        .await?;
+                    Some(SystemNotification::Tombstones {
+                        topic: delete.chat_id.into(),
+                        hashes: BTreeSet::from_iter([delete.message_hash]),
+                        reason: TombstoneReason::DeletedForMe,
+                    })
+                }
+                _ => None,
+            },
 
             // ACID: TODO: it's not correct to unconditionally save contact info here.
             //             This needs to be limited to only accepted requests.

@@ -1,4 +1,4 @@
-use dashchat_node::{DeviceId, Payload, Topic};
+use dashchat_node::{DeviceId, Payload, Topic, TopicId};
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::processor::GroupsArgs;
@@ -61,7 +61,7 @@ pub struct SimplifiedHeader {
     /// author has been observed yet.
     previous: Vec<Hash>,
 
-    topic_id: Topic,
+    topic_id: TopicId,
 
     /// p2panda-auth group-control extension, when this operation is a group action
     /// (Create / Add / Remove / Promote / Demote) rather than a chat payload.
@@ -74,7 +74,7 @@ impl SimplifiedHeader {
     ///
     /// As a p2panda::Header does not contain the raw topic (only the hashed representation in the
     /// form of a LogId) we need to pass this in as a separate argument.
-    pub fn from_header(topic: Topic, header: Header) -> Self {
+    pub fn from_header(topic: TopicId, header: Header) -> Self {
         // Only operations contain groups args in their extension have dependency requirements.
         let previous = header
             .extensions
@@ -128,7 +128,7 @@ impl SimplifiedHeader {
 // }
 
 pub fn simplify(
-    topic: Topic,
+    topic: TopicId,
     hash: Hash,
     header: Header,
     body: Option<p2panda_core::Body>,
