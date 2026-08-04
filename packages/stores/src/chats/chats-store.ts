@@ -14,12 +14,12 @@ import {
 import { GroupChatStore } from '../group-chats/group-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, VerifyingKey } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
 import { pendingChatKey } from './chat-key';
 import { type IChatsClient } from './chats-client';
 import { type IMessagesClient, MessagesClient } from './messages-client';
-import { TombstoneStore } from '../tombstones/tombstone-store';
 
 export class ChatsStore {
 	private groupChatVersion = signal(0);

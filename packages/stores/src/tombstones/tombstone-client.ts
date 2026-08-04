@@ -1,14 +1,13 @@
 import { listen } from '@tauri-apps/api/event';
 import { UnsubscribeFunction } from 'emittery';
 
-import { TopicId as chatId } from '../p2panda/types';
 import { ChatId, SystemEvent, Tombstone } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface ITombstoneClient {
-	getTombstones(chatId: chatId): Promise<Tombstone[]>;
+	getTombstones(chatId: ChatId): Promise<Tombstone[]>;
 	onNewTombstones(
-		chatId: chatId,
+		chatId: ChatId,
 		handler: (tombstone: Tombstone) => void,
 	): UnsubscribeFunction;
 }
@@ -19,7 +18,7 @@ export class TombstoneClient implements ITombstoneClient {
 	}
 
 	onNewTombstones(
-		chatId: chatId,
+		chatId: ChatId,
 		handler: (tombstone: Tombstone) => void,
 	): UnsubscribeFunction {
 		let unsubs: (() => void) | undefined;

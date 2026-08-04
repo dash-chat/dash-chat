@@ -4,6 +4,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { DeviceId, Hash } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
 	ChatReaction,
@@ -16,7 +17,6 @@ import {
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
-import { TombstoneStore } from '../tombstones/tombstone-store';
 
 /** The window during which a message may be edited, measured from the original
  * message timestamp. Frontend operation timestamps are milliseconds since the
@@ -90,7 +90,6 @@ export class MessagesStore {
 
 		return messages;
 	});
-
 
 	lastMessage = reactive(async () => {
 		const messages = await this.messages();

@@ -63,5 +63,4 @@ export class MessagesClient implements IMessagesClient {
 			targetHash,
 		});
 	}
-
 }

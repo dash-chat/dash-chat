@@ -7,6 +7,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
 	ChatSummary,
@@ -20,7 +21,6 @@ import {
 	groupEventsInDays,
 } from '../utils/group-events-in-days';
 import { type IGroupChatClient } from './group-chat-client';
-import { TombstoneStore } from '../tombstones/tombstone-store';
 
 export type ChatEvent =
 	| { kind: 'message'; message: Message }

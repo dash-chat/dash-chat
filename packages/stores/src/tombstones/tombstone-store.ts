@@ -1,37 +1,38 @@
 import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import type { TopicId } from '../p2panda/types';
-import type { ITombstoneClient } from './tombstone-client';
-import { pollingRequired } from '../utils/polling-required';
 import { Tombstone } from '../types';
+import { pollingRequired } from '../utils/polling-required';
+import type { ITombstoneClient } from './tombstone-client';
 
 const POLL_INTERVAL_MS = 1_000;
 const POLLING_ENABLED = pollingRequired();
 
-
 export class TombstoneStore {
-    constructor(public client: ITombstoneClient) { }
-    
-    tombstones = reactive((topic: TopicId): ReactivePromise<Tombstone[]> => relay(state => {
-        const fetchTombstones = async () => {            
-            let tombstones = await this.client.getTombstones(topic);
-            if (tombstones.length > 0) {
-                state.value = tombstones;
-            }
-        }
+	constructor(public client: ITombstoneClient) {}
 
-        fetchTombstones();
-        const interval = POLLING_ENABLED
-            ? setInterval(fetchTombstones, POLL_INTERVAL_MS)
-            : undefined;
+	tombstones = reactive(
+		(topic: TopicId): ReactivePromise<Tombstone[]> =>
+			relay(state => {
+				state.value = [];
+				const fetchTombstones = async () => {
+					const tombstones = await this.client.getTombstones(topic);
+					state.value = tombstones;
+				};
 
-        const unsub = this.client.onNewTombstones(topic, (tombstone) => {
-            state.value = [...(state.value || []), tombstone];
-        });
+				fetchTombstones();
+				const interval = POLLING_ENABLED
+					? setInterval(fetchTombstones, POLL_INTERVAL_MS)
+					: undefined;
 
-        return () => {
-            clearInterval(interval);
-            unsub();
-        }
-    }))
+				const unsub = this.client.onNewTombstones(topic, tombstone => {
+					state.value = [...(state.value || []), tombstone];
+				});
+
+				return () => {
+					clearInterval(interval);
+					unsub();
+				};
+			}),
+	);
 }

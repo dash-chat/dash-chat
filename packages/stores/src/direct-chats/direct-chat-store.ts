@@ -8,13 +8,13 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import { ChatSummary, Payload } from '../types';
 import {
 	EventWithProvenance,
 	groupEventsInDays,
 } from '../utils/group-events-in-days';
 import { type IDirectChatClient } from './direct-chat-client';
-import { TombstoneStore } from '../tombstones/tombstone-store';
 
 // Store tied to a specific direct chat
 export class DirectChatStore {

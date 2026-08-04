@@ -18,3 +18,5 @@ procs:
   ios:
     shell: just ios dev
     autostart: false
+  stores:
+    shell: pnpm --filter dash-chat-stores dev
