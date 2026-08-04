@@ -230,7 +230,7 @@ async function setupAgent(
 }
 
 /** What a spec requires of one agent's platform. 'android' is fulfilled by a
- *  physical device or an emulator; no platform fulfills 'ios' yet. */
+ *  physical device or an emulator; 'ios' by a connected iPhone. */
 export type PlatformRequirement = 'desktop' | 'android' | 'ios' | 'any';
 
 /** What a spec requires of one agent. */
@@ -247,6 +247,7 @@ function fulfills(
 	if (requirement === 'android') {
 		return platform === 'android' || platform === 'android-emulator';
 	}
+	if (requirement === 'ios') return platform === 'ios';
 	return false;
 }
 

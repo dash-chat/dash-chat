@@ -12,7 +12,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
+	const contacts = useReactiveValue(contactsStore.profilesForUnblockedContacts);
 	const resolvedContacts = $derived($contacts ?? []);
 
 	let currentPage: 'members' | 'group-info' = $state('members');
