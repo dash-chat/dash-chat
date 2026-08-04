@@ -73,7 +73,7 @@ async fn test_block_and_unblock_contact() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -235,12 +235,12 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     alice
         .behavior()
-        .initiate_and_establish_contact(&cammy, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&cammy)
         .await
         .unwrap();
 

@@ -1,8 +1,19 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiAccountMultiplePlus, mdiAccountPlus } from '@mdi/js';
-	import type { ContactsStore } from 'dash-chat-stores';
+	import {
+		mdiAccountMultiplePlus,
+		mdiAccountPlus,
+		mdiDotsVertical,
+	} from '@mdi/js';
+	import {
+		fullName,
+		type AgentId,
+		type ContactsStore,
+		type Profile,
+	} from 'dash-chat-stores';
+	import { longPressHandlers } from '$lib/actions/longpress';
+	import { isMobile } from '$lib/utils/environment';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
@@ -21,12 +32,26 @@
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '../profiles/Avatar.svelte';
+	import IconButton from '../IconButton.svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
+	import ContactActionsMenu from '$lib/components/contacts/ContactActionsMenu.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
-	const contacts = useReactivePromise(contactsStore.profilesForAllContacts);
+	const contacts = useReactivePromise(
+		contactsStore.profilesForUnblockedContacts,
+	);
 	const theme = $derived(useTheme());
+
+	let menuFor = $state<{
+		agentId: AgentId;
+		name: string;
+		anchor: HTMLElement;
+	} | null>(null);
+
+	function openMenu(agentId: AgentId, profile: Profile, anchor: HTMLElement) {
+		menuFor = { agentId, name: fullName(profile), anchor };
+	}
 
 	const isAddContact = $derived(
 		page.url.pathname === '/new-message/add-contact',
@@ -118,7 +143,10 @@
 				data-testid="new-message-contact-list"
 			>
 				{#if contacts.length === 0}
-					<ListItem title={m.noContactsYet()} />
+					<ListItem
+						title={m.noContactsYet()}
+						data-testid="new-message-contacts-empty"
+					/>
 				{:else}
 					{@const filteredContacts = contacts.filter(([_, profile]) =>
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -126,15 +154,36 @@
 					{#each filteredContacts as [actorId, profile]}
 						<TitleTruncatedListItem
 							link
-							linkProps={{ href: `/direct-chats/${actorId}` }}
+							class="hover-scope"
+							linkProps={{
+								href: `/direct-chats/${actorId}`,
+								...(isMobile &&
+									longPressHandlers({
+										onLongPress: (_, row) => openMenu(actorId, profile, row),
+									})),
+							}}
 							title={profile.name}
 							chevron={false}
+							data-testid="new-message-contact-item"
+							data-contact-name={profile.name}
 						>
 							{#snippet media()}
 								<Avatar
 									image={profile.avatar}
 									initials={profile.name.slice(0, 2)}
 								/>
+							{/snippet}
+							{#snippet after()}
+								{#if !isMobile}
+									<span class="hover-reveal">
+										<IconButton
+											icon={mdiDotsVertical}
+											label={m.contactMenu()}
+											testid="contact-menu-button"
+											onClick={e => openMenu(actorId, profile, e.currentTarget)}
+										/>
+									</span>
+								{/if}
 							{/snippet}
 						</TitleTruncatedListItem>
 					{:else}
@@ -145,6 +194,15 @@
 		{/await}
 	</div>
 </div>
+
+{#if menuFor}
+	<ContactActionsMenu
+		anchor={menuFor.anchor}
+		agentId={menuFor.agentId}
+		name={menuFor.name}
+		onClose={() => (menuFor = null)}
+	/>
+{/if}
 
 <style>
 	.new-message-panel {

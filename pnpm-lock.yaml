@@ -1120,7 +1120,7 @@ packages:
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
   '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9':
-    resolution: {tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9}
     version: 0.3.0
 
   '@holo-host/identicon@0.1.0':
@@ -5199,7 +5199,7 @@ packages:
     resolution: {integrity: sha512-W5Q3eGT1qQSUUkdoZ4nKlr52GhNtfSQA+4jXi/JlwFizhOTAbbMLa2vTGvOVjq8tVzpFmx9qYU7JBeWFXwacxA==}
 
   tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547:
-    resolution: {tarball: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547}
     version: 0.1.0
     peerDependencies:
       signalium: ^3
