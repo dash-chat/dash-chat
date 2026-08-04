@@ -2,6 +2,7 @@ pub(crate) mod actor;
 mod app_processing;
 pub(crate) mod publish;
 
+use core::panic;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -32,7 +33,7 @@ use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
     collect_deletable_edit_chain,
 };
-use crate::contact::{InboxTopic, QrCode, ShareIntent};
+use crate::contact::{AddContactQrCode, AddDeviceQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
@@ -448,7 +449,7 @@ impl Node {
 
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
-    pub async fn new_qr_code(&self, share_intent: ShareIntent) -> Result<QrCode, crate::Error> {
+    pub async fn create_add_contact_qr_code(&self) -> Result<AddContactQrCode, crate::Error> {
         let (inbox_topic, nonce) = InboxTopic::new_random(
             &self.device_id(),
             Utc::now() + self.config.contact_code_expiry,
@@ -461,11 +462,14 @@ impl Node {
             .await
             .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
 
-        Ok(QrCode {
+        Ok(AddContactQrCode {
             device_pubkey: self.device_id(),
-            share_intent,
             inbox_nonce: nonce,
         })
+    }
+
+    pub async fn create_add_device_qr_code(&self) -> Result<AddDeviceQrCode, crate::Error> {
+        panic!("AddDeviceQrCode is not yet implemented");
     }
 
     pub fn agent_id(&self) -> AgentId {
@@ -1370,7 +1374,7 @@ impl Node {
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
+    pub async fn add_contact(&self, contact: AddContactQrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
             "adding contact",

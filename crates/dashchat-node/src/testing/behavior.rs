@@ -27,7 +27,7 @@ impl Behavior {
         other: &TestNode,
         share_intent: ShareIntent,
     ) -> anyhow::Result<()> {
-        let qr = self.new_qr_code(share_intent).await?;
+        let qr = self.create_add_contact_qr_code().await?;
         other.add_contact(qr).await?;
         self.accept_next_contact().await?;
 
