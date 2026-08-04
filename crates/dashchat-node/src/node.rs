@@ -33,7 +33,7 @@ use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
     collect_deletable_edit_chain,
 };
-use crate::contact::{AddContactQrCode, AddDeviceQrCode, InboxTopic};
+use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
@@ -466,10 +466,6 @@ impl Node {
             device_pubkey: self.device_id(),
             inbox_nonce: nonce,
         })
-    }
-
-    pub async fn create_add_device_qr_code(&self) -> Result<AddDeviceQrCode, crate::Error> {
-        panic!("AddDeviceQrCode is not yet implemented");
     }
 
     pub fn agent_id(&self) -> AgentId {

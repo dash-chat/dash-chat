@@ -40,15 +40,6 @@ pub struct AddContactQrCode {
     pub inbox_nonce: InboxNonce,
 }
 
-/// The content for a QR code or deep link for adding a device.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AddDeviceQrCode {
-    /// Pubkey of this node: allows adding this node to groups.
-    pub device_pubkey: DeviceId,
-    /// 8-byte nonce used with `derive_inbox_topic` to reconstruct the inbox topic.
-    pub inbox_nonce: InboxNonce,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct InboxTopic {
     // NOTE: order of these fields matters! expires_at, then topic.
