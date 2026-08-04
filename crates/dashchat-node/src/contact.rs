@@ -3,7 +3,6 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::str::FromStr;
 
 use crate::{DeviceId, Topic, topic::kind};
@@ -32,22 +31,13 @@ pub fn derive_inbox_topic(device_pubkey: &DeviceId, nonce: &[u8; 8]) -> [u8; 32]
     *hasher.finalize().as_bytes()
 }
 
-/// The content for a QR code or deep link.
+/// The content for a QR code or deep link for adding a contact.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct QrCode {
+pub struct AddContactQrCode {
     /// Pubkey of this node: allows adding this node to groups.
     pub device_pubkey: DeviceId,
-    /// The intent of the QR code: whether to add this node as a contact or a device.
-    pub share_intent: ShareIntent,
     /// 8-byte nonce used with `derive_inbox_topic` to reconstruct the inbox topic.
     pub inbox_nonce: InboxNonce,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-#[repr(u8)]
-pub enum ShareIntent {
-    AddDevice = 0,
-    AddContact = 1,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -102,50 +92,45 @@ mod expires_at_minutes {
     }
 }
 
-impl std::fmt::Display for QrCode {
+impl std::fmt::Display for AddContactQrCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let bytes = encode_cbor(&(
             serde_bytes::Bytes::new(self.device_pubkey.as_bytes()),
             serde_bytes::Bytes::new(&self.inbox_nonce.as_bytes()),
-            &self.share_intent,
         ))
         .map_err(|_| std::fmt::Error)?;
         write!(f, "{}", QR_CODE_ENCODING_ENGINE.encode(bytes))
     }
 }
 
-impl FromStr for QrCode {
+impl FromStr for AddContactQrCode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use p2panda::VerifyingKey;
         let bytes = QR_CODE_ENCODING_ENGINE.decode(s)?;
-        let (device_pubkey_bytes, inbox_nonce_bytes, share_intent): (
-            serde_bytes::ByteBuf,
-            serde_bytes::ByteBuf,
-            ShareIntent,
-        ) = decode_cbor(bytes.as_slice())?;
+        let (device_pubkey_bytes, inbox_nonce_bytes): (serde_bytes::ByteBuf, serde_bytes::ByteBuf) =
+            decode_cbor(bytes.as_slice())?;
         let device_pubkey = DeviceId::from(VerifyingKey::from_bytes(
             device_pubkey_bytes.as_ref().try_into()?,
         )?);
         let inbox_nonce: [u8; 8] = inbox_nonce_bytes.as_ref().try_into()?;
-        Ok(QrCode {
+        Ok(AddContactQrCode {
             device_pubkey,
-            share_intent,
             inbox_nonce: InboxNonce(inbox_nonce),
         })
     }
 }
 
-impl From<QrCode> for String {
-    fn from(code: QrCode) -> Self {
+impl From<AddContactQrCode> for String {
+    fn from(code: AddContactQrCode) -> Self {
         code.to_string()
     }
 }
 
-impl TryFrom<String> for QrCode {
+impl TryFrom<String> for AddContactQrCode {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        QrCode::from_str(&value)
+        AddContactQrCode::from_str(&value)
     }
 }
 
@@ -157,39 +142,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_contact_roundtrip_add_device() {
-        let pubkey = VerifyingKey::from_bytes(&[11; 32]).unwrap();
-        let device_pubkey = DeviceId::from(pubkey);
-        let nonce: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
-        let contact = QrCode {
-            device_pubkey,
-            share_intent: ShareIntent::AddDevice,
-            inbox_nonce: InboxNonce(nonce),
-        };
-        let encoded = contact.to_string();
-        let decoded = QrCode::from_str(&encoded).unwrap();
-        assert_eq!(contact, decoded);
-    }
-
-    #[test]
     fn test_contact_roundtrip_add_contact() {
         let pubkey = VerifyingKey::from_bytes(&[22; 32]).unwrap();
         let device_pubkey = DeviceId::from(pubkey);
         let nonce: [u8; 8] = [8, 7, 6, 5, 4, 3, 2, 1];
-        let contact = QrCode {
+        let contact = AddContactQrCode {
             device_pubkey,
-            share_intent: ShareIntent::AddContact,
             inbox_nonce: InboxNonce(nonce),
         };
         let encoded = contact.to_string();
-        let decoded = QrCode::from_str(&encoded).unwrap();
+        let decoded = AddContactQrCode::from_str(&encoded).unwrap();
         assert_eq!(contact, decoded);
     }
 
     #[test]
     fn test_from_str_rejects_garbage() {
-        assert!(QrCode::from_str("not-a-valid-code").is_err());
-        assert!(QrCode::from_str("").is_err());
-        assert!(QrCode::from_str("!!!").is_err());
+        assert!(AddContactQrCode::from_str("not-a-valid-code").is_err());
+        assert!(AddContactQrCode::from_str("").is_err());
+        assert!(AddContactQrCode::from_str("!!!").is_err());
     }
 }
