@@ -46,7 +46,12 @@ export function isRemoteMailbox(): boolean {
 	return readInfo().remote === true;
 }
 
-function localInfo(): { pid: number; port: number; url: string; dbPath: string } {
+function localInfo(): {
+	pid: number;
+	port: number;
+	url: string;
+	dbPath: string;
+} {
 	const { remote, pid, port, url, dbPath } = readInfo();
 	if (
 		remote === true ||
@@ -59,6 +64,20 @@ function localInfo(): { pid: number; port: number; url: string; dbPath: string }
 		);
 	}
 	return { pid, port, url, dbPath };
+}
+
+/**
+ * Where the local mailbox stores a blob's bytes, so a spec can tell whether the
+ * mailbox actually holds it.
+ */
+export function mailboxBlobPath(hash: string): string {
+	const { dbPath } = localInfo();
+	return path.join(
+		path.dirname(dbPath),
+		'mailbox_blobs',
+		'data',
+		`${hash}.data`,
+	);
 }
 
 function signalGroup(pid: number, sig: NodeJS.Signals): void {
@@ -93,6 +112,9 @@ export async function restartMailbox(): Promise<void> {
 	const info = localInfo();
 	const server = spawnMailboxServer(info.port, info.dbPath);
 	server.unref();
-	writeFileSync(MAILBOX_INFO_PATH, JSON.stringify({ ...info, pid: server.pid }));
+	writeFileSync(
+		MAILBOX_INFO_PATH,
+		JSON.stringify({ ...info, pid: server.pid }),
+	);
 	await waitForMailboxReady(info.url);
 }
