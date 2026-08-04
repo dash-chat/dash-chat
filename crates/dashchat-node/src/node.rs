@@ -1495,6 +1495,7 @@ impl Node {
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
                 device_pubkey: contact.device_pubkey,
+                profile_name: contact.profile_name,
             }),
             Some(&format!(
                 "add_contact/pending({:?})",

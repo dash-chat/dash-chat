@@ -50,8 +50,7 @@
 </script>
 
 <TitleTruncatedListItem
-	title={summary.waitingForProfile ? m.waitingForProfile() : summary.name}
-	titleWrapClass={summary.waitingForProfile ? 'quiet' : ''}
+	title={summary.name}
 	link
 	class={active ? 'active' : ''}
 	linkProps={{ href: chatHref(summary) }}
@@ -59,7 +58,11 @@
 	data-testid="all-chats-row"
 >
 	{#snippet media()}
-		<Avatar image={summary.avatar} initials={summary.name.slice(0, 2)} />
+		<Avatar
+			image={summary.avatar}
+			initials={summary.name.slice(0, 2)}
+			waitingForProfile={summary.waitingForProfile}
+		/>
 	{/snippet}
 	{#snippet after()}
 		<span class="text-xs">
