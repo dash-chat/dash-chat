@@ -109,6 +109,9 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
     let log_plugin = tauri_plugin_log::Builder::default()
         .level(log::LevelFilter::Warn)
         .level_for("dashchat_node", log::LevelFilter::Debug)
+        // Blob download outcomes live here; without this they fall to the Warn
+        // default and a fetch that fails fast is invisible.
+        .level_for("dashchat_utils", log::LevelFilter::Debug)
         .level_for("mailbox_client", log::LevelFilter::Debug)
         .level_for("mailbox_server", log::LevelFilter::Debug)
         .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate

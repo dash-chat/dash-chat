@@ -99,12 +99,14 @@ export class Messages extends TestHelper {
 							document
 								.querySelector(messagesSel)
 								?.querySelectorAll(`${photosSel} img`) ?? [];
-						return Array.from(imgs).some(el => {
-							const img = el as HTMLImageElement;
-							return (
-								img.alt.includes(name) && img.complete && img.naturalWidth > 0
-							);
-						});
+						const img = Array.from(imgs).find(el =>
+							(el as HTMLImageElement).alt.includes(name),
+						) as HTMLImageElement | undefined;
+						if (img === undefined) return false;
+						// Attachments render with loading="lazy", so one that is
+						// scrolled out of view never decodes and naturalWidth stays 0.
+						img.scrollIntoView({ block: 'center' });
+						return img.complete && img.naturalWidth > 0;
 					},
 					this.messagesSelector,
 					tid('message-attachment-photos'),
