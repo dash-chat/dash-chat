@@ -38,8 +38,9 @@ impl Node {
         // Now we await the operation being published and processed on the system layer.
         let event = warn_if_slow("awaiting process_fut", process_fut).await?;
 
-        // Trigger sync with all mailboxes.
-        self.mailboxes.trigger_sync();
+        // Immediately attempt to sync, skipping mailboxes that have stopped
+        // retrying so a dead one can't stall the reachable ones on every send.
+        self.mailboxes.attempt_immediate_sync().await;
         // Re-announce any still-unfetched blobs now that we've published.
         self.notify_unfetched_blob_followup();
 
