@@ -21,6 +21,17 @@ pub struct Profile {
     pub about: Option<String>,
 }
 
+impl Profile {
+    /// Return the display name as "<name> <surname>" when a non-empty surname
+    /// exists, otherwise just "<name>".
+    pub fn full_name(&self) -> String {
+        match self.surname {
+            Some(ref surname) if !surname.is_empty() => format!("{} {}", self.name, surname),
+            _ => self.name.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {

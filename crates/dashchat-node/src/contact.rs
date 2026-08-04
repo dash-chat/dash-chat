@@ -9,6 +9,20 @@ use crate::{DeviceId, Topic, topic::kind};
 
 const QR_CODE_ENCODING_ENGINE: base64::engine::GeneralPurpose = URL_SAFE_NO_PAD;
 
+/// Maximum number of characters stored in an [`AddContactQrCode`]'s
+/// `profile_name`. When the displayed value reaches this length the receiver
+/// knows it was truncated and can show an ellipsis.
+const PROFILE_NAME_MAX_LENGTH: usize = 17;
+
+/// Truncate a visible profile name for inclusion in an [`AddContactQrCode`].
+fn truncate_profile_name(name: &str) -> String {
+    if name.chars().count() <= PROFILE_NAME_MAX_LENGTH {
+        name.to_string()
+    } else {
+        name.chars().take(PROFILE_NAME_MAX_LENGTH).collect()
+    }
+}
+
 /// An 8-byte nonce used to derive an inbox topic ID.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InboxNonce(pub [u8; 8]);
@@ -38,6 +52,24 @@ pub struct AddContactQrCode {
     pub device_pubkey: DeviceId,
     /// 8-byte nonce used with `derive_inbox_topic` to reconstruct the inbox topic.
     pub inbox_nonce: InboxNonce,
+    /// Visible profile name of the code owner, truncated for compactness.
+    pub profile_name: String,
+}
+
+impl AddContactQrCode {
+    /// Create a new contact QR code. `profile_name` is truncated to
+    /// [`PROFILE_NAME_MAX_LENGTH`] characters before being stored.
+    pub fn new(
+        device_pubkey: DeviceId,
+        inbox_nonce: InboxNonce,
+        profile_name: impl AsRef<str>,
+    ) -> Self {
+        Self {
+            device_pubkey,
+            inbox_nonce,
+            profile_name: truncate_profile_name(profile_name.as_ref()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -97,6 +129,7 @@ impl std::fmt::Display for AddContactQrCode {
         let bytes = encode_cbor(&(
             serde_bytes::Bytes::new(self.device_pubkey.as_bytes()),
             serde_bytes::Bytes::new(&self.inbox_nonce.as_bytes()),
+            self.profile_name.as_str(),
         ))
         .map_err(|_| std::fmt::Error)?;
         write!(f, "{}", QR_CODE_ENCODING_ENGINE.encode(bytes))
@@ -108,8 +141,11 @@ impl FromStr for AddContactQrCode {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use p2panda::VerifyingKey;
         let bytes = QR_CODE_ENCODING_ENGINE.decode(s)?;
-        let (device_pubkey_bytes, inbox_nonce_bytes): (serde_bytes::ByteBuf, serde_bytes::ByteBuf) =
-            decode_cbor(bytes.as_slice())?;
+        let (device_pubkey_bytes, inbox_nonce_bytes, profile_name): (
+            serde_bytes::ByteBuf,
+            serde_bytes::ByteBuf,
+            String,
+        ) = decode_cbor(bytes.as_slice())?;
         let device_pubkey = DeviceId::from(VerifyingKey::from_bytes(
             device_pubkey_bytes.as_ref().try_into()?,
         )?);
@@ -117,6 +153,7 @@ impl FromStr for AddContactQrCode {
         Ok(AddContactQrCode {
             device_pubkey,
             inbox_nonce: InboxNonce(inbox_nonce),
+            profile_name,
         })
     }
 }
@@ -146,13 +183,30 @@ mod tests {
         let pubkey = VerifyingKey::from_bytes(&[22; 32]).unwrap();
         let device_pubkey = DeviceId::from(pubkey);
         let nonce: [u8; 8] = [8, 7, 6, 5, 4, 3, 2, 1];
-        let contact = AddContactQrCode {
-            device_pubkey,
-            inbox_nonce: InboxNonce(nonce),
-        };
+        let contact = AddContactQrCode::new(device_pubkey, InboxNonce(nonce), "Ada Lovelace");
         let encoded = contact.to_string();
         let decoded = AddContactQrCode::from_str(&encoded).unwrap();
         assert_eq!(contact, decoded);
+    }
+
+    #[test]
+    fn test_constructor_truncates_profile_name() {
+        let pubkey = VerifyingKey::from_bytes(&[22; 32]).unwrap();
+        let device_pubkey = DeviceId::from(pubkey);
+        let nonce: [u8; 8] = [8, 7, 6, 5, 4, 3, 2, 1];
+
+        let short = AddContactQrCode::new(device_pubkey, InboxNonce(nonce), "short");
+        assert_eq!(short.profile_name, "short");
+
+        let exact = AddContactQrCode::new(device_pubkey, InboxNonce(nonce), "exactlyseventeen!");
+        assert_eq!(exact.profile_name, "exactlyseventeen!");
+
+        let long = AddContactQrCode::new(
+            device_pubkey,
+            InboxNonce(nonce),
+            "this is a very long name indeed",
+        );
+        assert_eq!(long.profile_name, "this is a very lo");
     }
 
     #[test]
