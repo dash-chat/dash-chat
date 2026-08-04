@@ -172,7 +172,7 @@ impl FromStr for AddContactQrCode {
         Ok(AddContactQrCode {
             device_pubkey,
             inbox_nonce: InboxNonce(inbox_nonce),
-            profile_name,
+            profile_name: truncate_profile_name(&profile_name),
         })
     }
 }
@@ -257,6 +257,22 @@ mod tests {
         // "Åström" plus " is my" fits exactly in 16 bytes; truncation should
         // not leave a bare combining mark.
         assert_eq!(combining.profile_name, "A\u{030A}stro\u{0308}m is my");
+    }
+
+    #[test]
+    fn test_from_str_truncates_profile_name() {
+        let pubkey = VerifyingKey::from_bytes(&[22; 32]).unwrap();
+        let device_pubkey = DeviceId::from(pubkey);
+        let nonce: [u8; 8] = [8, 7, 6, 5, 4, 3, 2, 1];
+
+        let mut code = AddContactQrCode::new(device_pubkey, InboxNonce(nonce), "short");
+        code.profile_name = "this is a very long name indeed".to_string();
+
+        let encoded = code.to_string();
+        let decoded = AddContactQrCode::from_str(&encoded).unwrap();
+
+        assert_eq!(decoded.profile_name, "this is a very l");
+        assert_eq!(decoded.profile_name.len(), PROFILE_NAME_MAX_BYTES);
     }
 
     #[test]
