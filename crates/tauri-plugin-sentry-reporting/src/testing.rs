@@ -1,6 +1,6 @@
 //! Scaffolding shared by the crate's tests.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -12,13 +12,14 @@ use crate::state::SentryState;
 use crate::transport::UserInitiatedTransport;
 use crate::Config;
 
-pub(crate) fn config(logs_dir: PathBuf) -> Config {
+pub(crate) fn config(dir: &Path) -> Config {
     Config {
         dsn: "https://key@example.invalid/1".parse().unwrap(),
         release: "dash-chat@0.0.0".into(),
         environment: "test".into(),
         redact: vec![regex::Regex::new(r"secret-\w+").unwrap()],
-        logs_dir,
+        logs_dir: dir.to_path_buf(),
+        data_dir: dir.to_path_buf(),
     }
 }
 
@@ -43,8 +44,8 @@ pub(crate) fn recording_transport(
 }
 
 /// A plugin wired exactly as `init` wires one, but recording instead of sending.
-pub(crate) fn plugin(logs_dir: PathBuf) -> (Arc<SentryState>, Arc<TestRecorderTransport>) {
-    let config = config(logs_dir);
+pub(crate) fn plugin(dir: &Path) -> (Arc<SentryState>, Arc<TestRecorderTransport>) {
+    let config = config(dir);
     let (transport, recorder) = recording_transport(&config);
     (SentryState::new(config, Arc::new(transport)), recorder)
 }

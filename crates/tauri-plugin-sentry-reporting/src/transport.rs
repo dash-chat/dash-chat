@@ -66,6 +66,8 @@ impl TransportFactory for UserInitiatedTransportFactory {
 mod tests {
     use super::*;
 
+    use std::path::Path;
+
     use sentry::protocol::Event;
     use tauri::async_runtime::block_on;
 
@@ -73,7 +75,7 @@ mod tests {
 
     #[test]
     fn what_the_sdk_sends_by_itself_goes_nowhere() {
-        let (transport, recorder) = recording_transport(&config(PathBuf::new()));
+        let (transport, recorder) = recording_transport(&config(Path::new("")));
 
         transport.send_envelope(Event::default().into());
 
@@ -82,7 +84,7 @@ mod tests {
 
     #[test]
     fn sending_is_what_transmits() {
-        let (transport, recorder) = recording_transport(&config(PathBuf::new()));
+        let (transport, recorder) = recording_transport(&config(Path::new("")));
 
         block_on(transport.send(Event::default().into()));
 
@@ -91,7 +93,7 @@ mod tests {
 
     #[test]
     fn closing_drains_a_report_sent_just_before_it() {
-        let (transport, recorder) = recording_transport(&config(PathBuf::new()));
+        let (transport, recorder) = recording_transport(&config(Path::new("")));
 
         block_on(transport.send(Event::default().into()));
 
@@ -101,7 +103,7 @@ mod tests {
 
     #[test]
     fn flushing_drains_a_report_sent_just_before_it() {
-        let (transport, recorder) = recording_transport(&config(PathBuf::new()));
+        let (transport, recorder) = recording_transport(&config(Path::new("")));
 
         block_on(transport.send(Event::default().into()));
 
@@ -111,7 +113,7 @@ mod tests {
 
     #[test]
     fn closing_before_anything_could_have_been_sent_is_fine() {
-        let transport = UserInitiatedTransport::new(&config(PathBuf::new()));
+        let transport = UserInitiatedTransport::new(&config(Path::new("")));
 
         assert!(transport.shutdown(Duration::from_secs(2)));
     }
