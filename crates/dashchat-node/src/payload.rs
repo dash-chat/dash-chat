@@ -161,7 +161,7 @@ pub enum DeviceGroupPayload {
     /// the device -> agent mapping is known.
     PendingContactRequest {
         device_pubkey: DeviceId,
-
+        #[serde(default)]
         profile_name: String,
     },
     RejectContactRequest(AgentId),

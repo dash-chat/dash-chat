@@ -37,6 +37,8 @@
 			? `/group-chat/${s.chatId}`
 			: `/direct-chats/${s.chatId}`;
 
+	const title = $derived(summary.name || m.waitingForProfile());
+
 	function summarizeMessage(content: {
 		message: string;
 		media: MediaAttachment | null;
@@ -50,7 +52,7 @@
 </script>
 
 <TitleTruncatedListItem
-	title={summary.name}
+	{title}
 	link
 	class={active ? 'active' : ''}
 	linkProps={{ href: chatHref(summary) }}
