@@ -9,8 +9,9 @@ use tauri_plugin_log::{Target, TargetKind};
 
 use crate::state::SentryState;
 
-/// The attachment holds the whole history, so this only has to span the window
-/// worth indexing
+/// Recent app logs that to be transmitted as Sentry Logs
+///
+/// The rest of the app logs will be sent as an attachment to the Sentry envelope
 const MAX_ENTRIES: usize = 500;
 
 #[derive(Default)]

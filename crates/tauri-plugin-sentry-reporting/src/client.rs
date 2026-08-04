@@ -7,14 +7,15 @@ use sentry::ClientOptions;
 
 use crate::logs::PendingLogs;
 use crate::redaction;
-use crate::transport::{ConsentGate, ConsentGateFactory};
+use crate::transport::{UserInitiatedTransport, UserInitiatedTransportFactory};
 use crate::Config;
 
-/// Sentry's own pipeline, minus everything that would transmit unasked.
+/// We use Sentry's own pipeline, except we only transmit logs when the user
+/// manually accepts to do so via UserInitiatedTransport::send()
 pub(crate) fn options(
     config: &Config,
     pending: Arc<PendingLogs>,
-    gate: Arc<ConsentGate>,
+    transport: Arc<UserInitiatedTransport>,
 ) -> ClientOptions {
     let patterns = config.redact.clone();
     let log_patterns = config.redact.clone();
@@ -53,7 +54,7 @@ pub(crate) fn options(
             }
             None
         })
-        .transport(ConsentGateFactory(gate));
+        .transport(UserInitiatedTransportFactory(transport));
     options.dsn = Some(config.dsn.clone());
     options
 }
@@ -67,11 +68,12 @@ mod tests {
     use sentry::protocol::Event;
     use sentry::Client;
 
-    use crate::testing::{config, log_saying, recording_gate};
+    use crate::testing::{config, log_saying, recording_transport};
 
     fn options_keeping(pending: Arc<PendingLogs>) -> ClientOptions {
-        let (gate, _) = recording_gate();
-        options(&config(PathBuf::new()), pending, Arc::new(gate))
+        let config = config(PathBuf::new());
+        let (transport, _) = recording_transport(&config);
+        options(&config, pending, Arc::new(transport))
     }
 
     #[test]

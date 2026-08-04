@@ -1,8 +1,8 @@
 //! Sentry error reporting on a strict rule: **nothing leaves the device unless
 //! the user explicitly presses Send.**
 //!
-//! The SDK captures freely; [`transport::ConsentGate`] is what holds every
-//! envelope until a report is sent.
+//! The SDK captures freely; [`transport::UserInitiatedTransport`] is what holds
+//! every envelope until a report is sent.
 
 mod attachment;
 mod client;
@@ -26,7 +26,7 @@ pub use redaction::{redact, redacted_log_tail};
 pub use sentry::types::Dsn;
 
 use crate::state::SentryState;
-use crate::transport::ConsentGate;
+use crate::transport::UserInitiatedTransport;
 
 pub struct Config {
     /// Parsed by the caller, so registering the plugin cannot fail.
@@ -41,7 +41,8 @@ pub struct Config {
 }
 
 pub fn init<R: Runtime>(config: Config) -> TauriPlugin<R> {
-    let state = SentryState::new(config, Arc::new(ConsentGate::default()));
+    let transport = Arc::new(UserInitiatedTransport::new(&config));
+    let state = SentryState::new(config, transport);
 
     Builder::<R>::new("sentry-reporting")
         .invoke_handler(tauri::generate_handler![error::send_error_report])
