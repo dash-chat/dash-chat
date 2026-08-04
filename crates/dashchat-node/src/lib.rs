@@ -21,7 +21,7 @@ pub mod testing;
 pub use aliased::Aliasing;
 
 pub use chat::*;
-pub use contact::{AddContactQrCode, ShareIntent};
+pub use contact::AddContactQrCode;
 pub use error::{
     AddContactError, DeleteMessageError, EditMessageError, Error, RemoveGroupMemberError,
 };

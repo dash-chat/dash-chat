@@ -3,7 +3,6 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::str::FromStr;
 
 use crate::{DeviceId, Topic, topic::kind};
@@ -48,13 +47,6 @@ pub struct AddDeviceQrCode {
     pub device_pubkey: DeviceId,
     /// 8-byte nonce used with `derive_inbox_topic` to reconstruct the inbox topic.
     pub inbox_nonce: InboxNonce,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
-#[repr(u8)]
-pub enum ShareIntent {
-    AddDevice = 0,
-    AddContact = 1,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

@@ -40,7 +40,7 @@ async fn mailbox_late_join() {
     //
     // alice
     //     .behavior()
-    //     .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+    //     .initiate_and_establish_contact(&bobbi)
     //     .await
     //     .unwrap();
 
@@ -229,13 +229,13 @@ async fn test_multiple_mailboxes_group_pivot() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
     carol
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 

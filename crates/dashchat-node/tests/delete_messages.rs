@@ -109,7 +109,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -268,7 +268,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
         .await;
     carol
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     bobbi
@@ -373,7 +373,7 @@ async fn invalid_deletes_are_rejected() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
@@ -451,7 +451,7 @@ async fn mixed_hash_delete_cannot_censor_another_author() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
@@ -523,7 +523,7 @@ async fn delete_cannot_censor_unsynced_message_from_another_author() {
     for peer in [&bobbi, &mallory] {
         alice
             .behavior()
-            .initiate_and_establish_contact(peer, ShareIntent::AddContact)
+            .initiate_and_establish_contact(peer)
             .await
             .unwrap();
     }
@@ -650,7 +650,7 @@ async fn junk_hash_in_payload_cannot_disable_delete_chain_validation() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
