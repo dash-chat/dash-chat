@@ -370,7 +370,7 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 
 ### E2E Tests (WebdriverIO)
 
-The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (tauri-driver against the built binary), `android` (physical device via Appium in the webview context), or `android-emulator` (headless emulator, booted automatically). Page objects and specs work unchanged across platforms.
+The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (tauri-driver against the built binary), `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
 
 ```bash
 # Build the Tauri binary and run the e2e suite (recommended)
@@ -384,6 +384,11 @@ PLATFORMS=android,desktop just test e2e send-messages
 PLATFORMS=android,android just test e2e send-messages
 PLATFORMS=android-emulator,android-emulator just test e2e send-messages
 PLATFORMS=desktop just test e2e settings-pages
+
+# Connected iPhone; pair two iPhones for two-agent specs (desktop needs Linux,
+# so it can't share a Mac host with an iOS agent)
+PLATFORMS=ios,ios just test e2e send-messages
+PLATFORMS=ios just test e2e settings-pages
 ```
 
 **Key details:**

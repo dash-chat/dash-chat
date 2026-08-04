@@ -17,20 +17,9 @@ dev:
 dev-sim device="iPhone 16":
     pnpm tauri ios dev "{{device}}"
 
-# Persist the ENV-loaded vars into Xcode's `.xcode.env.local`. Xcode compiles
-# the Rust in its own environment (not this shell), so the `.env.${ENV}` vars
-# just loaded here won't reach the `option_env!` reads baked in at compile time.
-# The "Build Rust Code" phase sources `.xcode.env.local`, so persist them there.
-# Drop any prior values for these vars first so switching ENV doesn't leave stale
-# exports; other lines (e.g. manual PATH overrides) are left untouched.
+# Persist the ENV-loaded vars into Xcode's `.xcode.env.local`
 sync-xcode-env:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ENV_LOCAL="src-tauri/gen/apple/.xcode.env.local"
-    touch "$ENV_LOCAL"
-    sed -i '' '/^export MAILBOX_URL=/d; /^export PUSH_NOTIFICATIONS_SERVER_URL=/d' "$ENV_LOCAL"
-    [ -n "${MAILBOX_URL:-}" ] && echo "export MAILBOX_URL=\"$MAILBOX_URL\"" >> "$ENV_LOCAL"
-    [ -n "${PUSH_NOTIFICATIONS_SERVER_URL:-}" ] && echo "export PUSH_NOTIFICATIONS_SERVER_URL=\"$PUSH_NOTIFICATIONS_SERVER_URL\"" >> "$ENV_LOCAL"
+    node scripts/sync-xcode-env.cli.ts
 
 # build the app
 build: sync-xcode-env

@@ -16,7 +16,7 @@
 	let { selectedContacts = $bindable(), onNext }: Props = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
+	const contacts = useReactiveValue(contactsStore.profilesForUnblockedContacts);
 	const loading = $derived($contacts === undefined);
 	const resolvedContacts = $derived($contacts ?? []);
 

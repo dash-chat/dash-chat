@@ -35,7 +35,9 @@
 		image?.startsWith('data:image') ? image : undefined,
 	);
 	const avatarInitials = $derived(
-		textAvatarData?.text || initials || undefined,
+		waitingForProfile
+			? undefined
+			: textAvatarData?.text || initials || undefined,
 	);
 	const sizeValue = $derived(
 		size !== undefined

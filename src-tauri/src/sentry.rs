@@ -5,7 +5,10 @@ use crate::commands::redact_log::REDACTION_REGEXES;
 /// `SENTRY_DSN` is set by CI at build time — one DSN for every environment, with
 /// `ENV` telling them apart in Sentry. Absent means nothing is reported; logging
 /// is unaffected.
-pub fn config(logs_dir: PathBuf) -> Option<tauri_plugin_sentry_reporting::Config> {
+pub fn config(
+    logs_dir: PathBuf,
+    data_dir: PathBuf,
+) -> Option<tauri_plugin_sentry_reporting::Config> {
     // Parsed here rather than in the plugin so that registering it cannot fail.
     let dsn = option_env!("SENTRY_DSN")
         .filter(|dsn| !dsn.is_empty())?
@@ -26,5 +29,6 @@ pub fn config(logs_dir: PathBuf) -> Option<tauri_plugin_sentry_reporting::Config
         environment: option_env!("ENV").unwrap_or("development").to_string(),
         redact: REDACTION_REGEXES.clone(),
         logs_dir,
+        data_dir,
     })
 }

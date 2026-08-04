@@ -66,9 +66,6 @@ export async function addContactFromCode(
 			case 'InvalidContactCode':
 				showToast(m.errorAddContactInvalidLink(), 'error');
 				break;
-			case 'AddDeviceNotSupported':
-				showToast(m.errorAddContactDeviceLinkingNotSupported(), 'error');
-				break;
 			case 'InitializeTopic':
 			case 'AuthorOperation':
 			case 'CreateQrCode':

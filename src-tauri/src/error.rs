@@ -8,9 +8,6 @@ pub enum Error {
     #[error("NodeNotReady")]
     NodeNotReady,
 
-    #[error("Device linking is not yet supported")]
-    AddDeviceNotSupported,
-
     #[error(transparent)]
     #[serde(untagged)]
     Node(#[from] dashchat_node::Error),
