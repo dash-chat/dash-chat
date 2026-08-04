@@ -76,8 +76,8 @@ pub struct AddContactQrCode {
 }
 
 impl AddContactQrCode {
-    /// Create a new contact QR code. `profile_name` is truncated to
-    /// [`PROFILE_NAME_MAX_LENGTH`] characters before being stored.
+    /// Create a new contact QR code. `profile_name` is truncated avoid the code
+    /// being too large.
     pub fn new(
         device_pubkey: DeviceId,
         inbox_nonce: InboxNonce,
