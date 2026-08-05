@@ -9,6 +9,7 @@ mod client;
 mod crash;
 mod envelope;
 mod error;
+mod feedback;
 mod logs;
 mod redaction;
 mod state;
@@ -23,7 +24,7 @@ use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
 
 pub use logs::log_target;
-pub use redaction::{redact, redacted_log_tail};
+pub use redaction::redact;
 pub use sentry::types::Dsn;
 
 use crate::state::SentryState;
@@ -44,13 +45,14 @@ pub struct Config {
 }
 
 pub fn init<R: Runtime>(config: Config) -> TauriPlugin<R> {
-    let transport = Arc::new(UserInitiatedTransport::new(&config));
+    let transport = Arc::new(UserInitiatedTransport::default());
     let state = SentryState::new(config, transport);
     crash::install_panic_hook(Arc::downgrade(&state));
 
     Builder::<R>::new("sentry-reporting")
         .invoke_handler(tauri::generate_handler![
             error::send_error_report,
+            feedback::send_feedback,
             crash::pending_crash_report,
             crash::send_pending_crash_report,
             crash::discard_pending_crash_report,

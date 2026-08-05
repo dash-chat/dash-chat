@@ -19,7 +19,7 @@ const PHOTO_WIDTH = 320;
 const PHOTO_HEIGHT = 240;
 
 /** What the spec asserts, per photo: the webview issuing the blob request to
- * its last byte. Relaunching the app and opening the chat is not part of it. */
+ * its last byte. */
 const DOWNLOAD_BUDGET_MS = 3_000;
 
 /** Per-wait ceiling, far above the budget so a slow run still reports a number
@@ -126,25 +126,27 @@ describe('Media stress', function () {
 			const labels = roundLabels(round);
 			const before = new Set(mailboxBlobs());
 
-			const startedAt = Date.now();
 			for (const label of labels) {
 				await composer.attachNoisePhoto(label, PHOTO_WIDTH, PHOTO_HEIGHT);
 			}
-			await composer.send();
-			await sender.directChatPage.messages.waitForPhotoMessage(
-				labels[0],
-				CEILING_MS,
-			);
+
 			const stored = () => mailboxBlobs().filter(p => !before.has(p));
+			const startedAt = Date.now();
+			await composer.send();
 			await sender.waitUntil(async () => stored().length >= PHOTO_COUNT, {
 				timeout: CEILING_MS,
 				timeoutMsg: `Mailbox stored ${stored().length}/${PHOTO_COUNT} blobs`,
 			});
+			const uploadMs = Date.now() - startedAt;
 
+			await sender.directChatPage.messages.waitForPhotoMessage(
+				labels[0],
+				CEILING_MS,
+			);
 			// The stored blobs are what crossed the wire; the composer re-encodes
 			// before sending, so the staged files are a good bit larger.
 			const bytes = stored().reduce((sum, p) => sum + statSync(p).size, 0);
-			rounds.set(round, { labels, bytes, uploadMs: Date.now() - startedAt });
+			rounds.set(round, { labels, bytes, uploadMs });
 		});
 
 		it(`round ${round}: serves the batch to a receiver that comes online with the sender gone`, async () => {
@@ -156,10 +158,9 @@ describe('Media stress', function () {
 
 			await reopenChat(receiver, 'receiver', senderName);
 			const messages = receiver.directChatPage.messages;
-			// The gallery lays out five cells and hides the rest behind a "+N"
-			// overlay, and a hidden image never loads. The lightbox filmstrip is
-			// where every photo in the message actually gets requested.
 			await messages.waitForPhotoMessage(current.labels[0], CEILING_MS);
+			// The gallery lays out only five cells, so the filmstrip is where the
+			// rest of the photos get requested.
 			await messages.openPhoto(current.labels[0]);
 			await messages.lightbox.waitForStripLoaded();
 

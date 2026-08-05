@@ -93,10 +93,6 @@ export interface TestFileSpec {
 	 * array doesn't have to cross the WebDriver bridge. */
 	bytes?: number[];
 	size?: number;
-	/** With `size`, fill with a PRNG seeded by this value instead of zeros. Two
-	 * zero-filled files of the same size share a blake3 hash, so a transfer
-	 * measurement would silently resolve from the receiver's blob store. */
-	fillSeed?: number;
 }
 
 /** xorshift32 over `buf`. Deterministic per seed, and incompressible enough
@@ -119,9 +115,6 @@ function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
 		const data = spec.bytes
 			? new Uint8Array(spec.bytes)
 			: new Uint8Array(spec.size ?? 0);
-		if (!spec.bytes && spec.fillSeed !== undefined) {
-			fillPseudoRandom(data, spec.fillSeed);
-		}
 		dt.items.add(new File([data], spec.name, { type: spec.mimeType }));
 	}
 	return dt;
@@ -160,7 +153,14 @@ async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
 	const ctx = canvas.getContext('2d');
 	if (!ctx) throw new Error('canvas context failed');
 	const image = ctx.createImageData(spec.width, spec.height);
-	fillPseudoRandom(image.data, Date.now() & 0xffffffff);
+	// Seeded by name as well as the clock: on the clock alone, two attaches
+	// landing in the same millisecond encode to identical bytes and collapse into
+	// one blob.
+	let seed = Date.now() & 0xffffffff;
+	for (let i = 0; i < spec.name.length; i++) {
+		seed = (seed * 31 + spec.name.charCodeAt(i)) | 0;
+	}
+	fillPseudoRandom(image.data, seed);
 	for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
 	ctx.putImageData(image, 0, 0);
 	const blob = await new Promise<Blob>((resolve, reject) =>

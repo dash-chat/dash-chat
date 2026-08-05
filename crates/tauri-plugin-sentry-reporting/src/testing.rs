@@ -34,20 +34,17 @@ pub(crate) fn log_saying(body: &str) -> Log {
     }
 }
 
-pub(crate) fn recording_transport(
-    config: &Config,
-) -> (UserInitiatedTransport, Arc<TestRecorderTransport>) {
+pub(crate) fn recording_transport() -> (UserInitiatedTransport, Arc<TestRecorderTransport>) {
     let recorder = Arc::new(TestRecorderTransport::default());
-    let transport = UserInitiatedTransport::new(config);
+    let transport = UserInitiatedTransport::default();
     let _ = transport.inner.set(recorder.clone());
     (transport, recorder)
 }
 
 /// A plugin wired exactly as `init` wires one, but recording instead of sending.
 pub(crate) fn plugin(dir: &Path) -> (Arc<SentryState>, Arc<TestRecorderTransport>) {
-    let config = config(dir);
-    let (transport, recorder) = recording_transport(&config);
-    (SentryState::new(config, Arc::new(transport)), recorder)
+    let (transport, recorder) = recording_transport();
+    (SentryState::new(config(dir), Arc::new(transport)), recorder)
 }
 
 #[derive(Default)]
@@ -59,12 +56,6 @@ pub(crate) struct TestRecorderTransport {
 impl TestRecorderTransport {
     pub(crate) fn sent(&self) -> Vec<Envelope> {
         self.envelopes.lock().unwrap().clone()
-    }
-
-    pub(crate) fn only(&self) -> Envelope {
-        let mut sent = self.sent();
-        assert_eq!(sent.len(), 1, "expected one envelope");
-        sent.remove(0)
     }
 
     pub(crate) fn drained(&self) -> bool {

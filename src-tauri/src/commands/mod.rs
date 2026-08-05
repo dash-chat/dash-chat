@@ -1,5 +1,4 @@
 pub mod logs;
-pub mod redact_log;
 
 pub mod account;
 pub mod contacts;
