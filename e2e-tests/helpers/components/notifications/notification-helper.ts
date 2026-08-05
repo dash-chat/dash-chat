@@ -1,29 +1,20 @@
 /**
- * Cross-platform push-notification observation for real-device e2e tests. iOS
- * and Android both drive their device through Appium but read notifications
- * differently (SpringBoard cells vs the notification shade), so the spec talks
- * to this interface and a factory picks the implementation by platform.
+ * Cross-platform push-notification observation for real-device e2e tests: iOS
+ * and Android read notifications differently (SpringBoard cells vs the
+ * notification shade), so a factory picks the implementation by platform.
  */
 export interface NotificationHelper {
-	/** Send the app to the background so an incoming push is handled by the OS
-	 * (the NSE on iOS) and posted as a notification, not delivered to the
-	 * foreground webview. Also records the webview context to return to. */
-	background(): Promise<void>;
-	/** Wait for a delivered notification whose text contains `textIncludes` and
-	 * return its full text (title + body). Opens the notification surface as
-	 * needed. The default timeout allows for FCM→APNs delivery + the op fetch. */
+	/** Wait for a delivered notification whose text contains `textIncludes`;
+	 * returns its full text (title + body). */
 	waitForNotification(textIncludes: string, timeout?: number): Promise<string>;
-	/** Tap the matching notification, foregrounding the app to its route. */
+	/** Tap the matching notification. */
 	tapNotification(textIncludes: string): Promise<void>;
-	/** Return to the app's webview context so page objects work again. */
+	/** Return to the app's webview context. */
 	returnToApp(): Promise<void>;
 }
 
-/**
- * Shared Appium plumbing: switching between the app's WebView context (where
- * page objects operate) and the NATIVE_APP context (where the OS notification
- * UI lives). Subclasses implement the platform-specific gestures/queries.
- */
+/** Shared Appium plumbing for switching between the app's WebView and the
+ * NATIVE_APP context. */
 export abstract class AppiumNotificationHelper implements NotificationHelper {
 	protected webviewContext: string | undefined;
 
@@ -38,9 +29,7 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 		await this.agent.switchContext('NATIVE_APP');
 	}
 
-	/** Switch back to the app's WebView, waiting for it to (re)appear — after a
-	 * background/foreground round-trip the context can briefly vanish or be
-	 * renamed. */
+	/** Switch back to the app's WebView, waiting for it to (re)appear. */
 	protected async switchToWebview(): Promise<void> {
 		await this.agent.waitUntil(
 			async () => {
@@ -69,7 +58,6 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 		await this.switchToWebview();
 	}
 
-	abstract background(): Promise<void>;
 	abstract waitForNotification(
 		textIncludes: string,
 		timeout?: number,

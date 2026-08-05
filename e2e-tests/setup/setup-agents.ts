@@ -37,6 +37,9 @@ import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { checkOverflow } from '../helpers/review/checks';
 import { type AgentPlatformName, platformNames } from './test-env';
 
+/** App bundle/package id. */
+const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
+
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
 	platform: AgentPlatformName;
@@ -96,6 +99,8 @@ export type Agent = WebdriverIO.Browser & {
 	 *  One-way for the life of the process; the agent still reads/writes
 	 *  locally and talks to a mailbox. */
 	disableP2p(): Promise<void>;
+	/** Fully terminate the app (mobile only). */
+	terminate(): Promise<void>;
 };
 
 /** (Re)build every page object against `b`. Called on first setup and again
@@ -189,6 +194,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 		await b.executeAsync((done: () => void) =>
 			window.__test.disableP2p().then(done, done),
 		);
+	};
+	agent.terminate = async () => {
+		await b.terminateApp(APP_BUNDLE_ID);
 	};
 	agent.restart = async () => {
 		await b.reloadSession();

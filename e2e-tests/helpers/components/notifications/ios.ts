@@ -1,16 +1,7 @@
 import { AppiumNotificationHelper } from './notification-helper';
 
-/**
- * iOS (XCUITest) notification observation via SpringBoard. The top-edge swipe
- * and the `XCUIElementTypeCell … label CONTAINS` predicate target iOS 17+
- * Notification Center and are the parts most likely to need per-version tuning.
- */
+/** iOS (XCUITest) notification observation via SpringBoard Notification Center. */
 export class IosNotifications extends AppiumNotificationHelper {
-	async background(): Promise<void> {
-		await this.switchToNative();
-		await this.agent.execute('mobile: pressButton', { name: 'home' });
-	}
-
 	/** Pull Notification Center down from the top edge of the screen. */
 	private async openNotificationCenter(): Promise<void> {
 		const { width, height } = await this.agent.getWindowSize();
@@ -36,12 +27,12 @@ export class IosNotifications extends AppiumNotificationHelper {
 		await this.agent.releaseActions();
 	}
 
-	/** A notification cell whose combined label (title + body + app + time)
-	 * contains `textIncludes`. */
+	/** Any SpringBoard element whose label or value contains `textIncludes` — the
+	 * lock-screen banner or Notification Center cell. */
 	private cellFor(textIncludes: string) {
 		const escaped = textIncludes.replace(/"/g, '\\"');
 		return this.agent.$(
-			`-ios predicate string:type == "XCUIElementTypeCell" AND label CONTAINS "${escaped}"`,
+			`-ios predicate string:label CONTAINS "${escaped}" OR value CONTAINS "${escaped}"`,
 		);
 	}
 
