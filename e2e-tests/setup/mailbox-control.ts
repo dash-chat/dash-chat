@@ -77,9 +77,9 @@ function mailboxBlobsDir(): string {
 }
 
 /**
- * Absolute paths of every blob the local mailbox holds, for specs that care how
- * many landed rather than which. Note iroh-blobs keeps blobs below its inline
- * threshold in the database instead, so small ones never appear here.
+ * Absolute paths of every blob the local mailbox holds. Note iroh-blobs keeps
+ * blobs below its inline threshold in the database instead, so small ones never
+ * appear here.
  */
 export function mailboxBlobs(): string[] {
 	const dir = mailboxBlobsDir();

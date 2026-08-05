@@ -260,6 +260,14 @@ export class AndroidPlatform implements AgentPlatform {
 					`_WDIO_CHROMEDRIVER_PORT${slot}`,
 				),
 				'appium:chromedriverExecutableDir': CHROMEDRIVERS_DIR,
+				// Costs a devtools round trip per getContexts call, which `startApp`
+				// polls after every relaunch. It also refines the chromedriver pick out
+				// of CHROMEDRIVERS_DIR, so if a device's WebView major stops matching,
+				// restore it first.
+				'appium:enableWebviewDetailsCollection': false,
+				// terminateApp destroys the webview, so a merely suspended chromedriver
+				// session gets handed back stale on the next context switch.
+				'appium:recreateChromeDriverSessions': true,
 				'appium:adbExecTimeout': 60_000,
 				'appium:newCommandTimeout': 240,
 			} as WebdriverIO.Capabilities,
