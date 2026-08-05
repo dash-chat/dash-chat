@@ -123,29 +123,17 @@ export class Composer extends TestHelper {
 		await this.waitForStagedMedia();
 	}
 
-	/** Attach a file of exactly `sizeBytes`. Zero-filled by default; pass
-	 * `fillSeed` for unique, incompressible contents when the transfer itself is
-	 * under test. */
-	async attachFileOfSize(
-		sizeBytes: number,
-		name = 'big.bin',
-		fillSeed?: number,
-	): Promise<void> {
+	/** Attach a zero-filled file of exactly `sizeBytes`. */
+	async attachFileOfSize(sizeBytes: number, name = 'big.bin'): Promise<void> {
 		await this.messageInput.waitForExist();
 		await this.agent.execute(
-			(size: number, n: string, seed: number) => {
+			(size: number, n: string) => {
 				window.__test.pasteFiles([
-					{
-						name: n,
-						mimeType: 'application/octet-stream',
-						size,
-						fillSeed: seed < 0 ? undefined : seed,
-					},
+					{ name: n, mimeType: 'application/octet-stream', size },
 				]);
 			},
 			sizeBytes,
 			name,
-			fillSeed ?? -1,
 		);
 		await this.waitForStagedMedia();
 	}

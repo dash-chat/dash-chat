@@ -93,10 +93,6 @@ export interface TestFileSpec {
 	 * array doesn't have to cross the WebDriver bridge. */
 	bytes?: number[];
 	size?: number;
-	/** With `size`, fill with a PRNG seeded by this value instead of zeros. Two
-	 * zero-filled files of the same size share a blake3 hash, so a transfer
-	 * measurement would silently resolve from the receiver's blob store. */
-	fillSeed?: number;
 }
 
 /** xorshift32 over `buf`. Deterministic per seed, and incompressible enough
@@ -119,9 +115,6 @@ function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
 		const data = spec.bytes
 			? new Uint8Array(spec.bytes)
 			: new Uint8Array(spec.size ?? 0);
-		if (!spec.bytes && spec.fillSeed !== undefined) {
-			fillPseudoRandom(data, spec.fillSeed);
-		}
 		dt.items.add(new File([data], spec.name, { type: spec.mimeType }));
 	}
 	return dt;
