@@ -8,12 +8,7 @@
  *
  * Unix-only — relies on POSIX signal semantics.
  */
-import {
-	existsSync,
-	readdirSync,
-	readFileSync,
-	writeFileSync,
-} from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,6 +31,7 @@ interface MailboxInfo {
 	pid?: number;
 	port?: number;
 	dbPath?: string;
+	pushNotificationsUrl?: string;
 }
 
 function readInfo(): MailboxInfo {
@@ -56,8 +52,9 @@ function localInfo(): {
 	port: number;
 	url: string;
 	dbPath: string;
+	pushNotificationsUrl?: string;
 } {
-	const { remote, pid, port, url, dbPath } = readInfo();
+	const { remote, pid, port, url, dbPath, pushNotificationsUrl } = readInfo();
 	if (
 		remote === true ||
 		pid === undefined ||
@@ -68,7 +65,7 @@ function localInfo(): {
 			'mailbox lifecycle control is unavailable against a remote environment mailbox (MAILBOX_URL)',
 		);
 	}
-	return { pid, port, url, dbPath };
+	return { pid, port, url, dbPath, pushNotificationsUrl };
 }
 
 function mailboxBlobsDir(): string {
@@ -119,7 +116,11 @@ export function killMailbox(): void {
  */
 export async function restartMailbox(): Promise<void> {
 	const info = localInfo();
-	const server = spawnMailboxServer(info.port, info.dbPath);
+	const server = spawnMailboxServer(
+		info.port,
+		info.dbPath,
+		info.pushNotificationsUrl,
+	);
 	server.unref();
 	writeFileSync(
 		MAILBOX_INFO_PATH,

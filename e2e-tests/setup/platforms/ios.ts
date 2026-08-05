@@ -223,15 +223,22 @@ export class IosPlatform implements AgentPlatform {
 
 		ensureXcuitestDriver();
 
-		// Bake the LAN-reachable mailbox URL into the build
-		const mailboxUrl = `http://${detectHostIp()}:${ctx.mailboxPort}`;
-		syncXcodeEnv({ MAILBOX_URL: mailboxUrl });
+		// Bake the LAN-reachable mailbox URL into the build, plus — for the
+		// real-device push spec — the push-notifications server URL so the device
+		// registers its FCM token with the host's local push server.
+		const hostIp = detectHostIp();
+		const mailboxUrl = `http://${hostIp}:${ctx.mailboxPort}`;
+		const bakedEnv: Record<string, string> = { MAILBOX_URL: mailboxUrl };
+		if (ctx.pushPort !== null) {
+			bakedEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://${hostIp}:${ctx.pushPort}`;
+		}
+		syncXcodeEnv(bakedEnv);
 		execSync('pnpm tauri ios build --debug --features e2e-tests', {
 			cwd: ROOT,
 			stdio: 'inherit',
 			// cleanBuildEnv lets pnpm run as it does from a plain shell (see there).
 			env: cleanBuildEnv({
-				MAILBOX_URL: mailboxUrl,
+				...bakedEnv,
 				VITE_E2E: 'true',
 				IPHONEOS_DEPLOYMENT_TARGET: '17.0',
 				// Drop debuginfo (a full-debug iOS build is >10GB and fills the disk;
