@@ -130,7 +130,10 @@
 
 		<!-- Avatar preview with remove button -->
 		<div class="column" style="align-items: center; padding: 16px 0 24px;">
-			<div style="position: relative; display: inline-block;">
+			<div
+				style="position: relative; display: inline-block;"
+				data-testid="avatar-preview"
+			>
 				<Avatar size={140} image={avatar} />
 				{#if avatar}
 					<button

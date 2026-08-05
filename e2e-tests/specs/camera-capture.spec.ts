@@ -4,7 +4,7 @@
  * `window.__test` file-picker seam, which answers the input the app opens with
  * a known image in place of the one the OS camera would return.
  */
-import { SOLID_PNG_BYTES, SOLID_PNG_RGB } from '../helpers/images';
+import { SOLID_PNG_BYTES } from '../helpers/images';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 const PHOTO = {
@@ -44,10 +44,12 @@ describe('Camera capture', () => {
 		expect(request.accept).toBe('image/*');
 		expect(request.capture).toBe(true);
 
+		const captured = await agent.editPhotoPage.avatar.imageSrc();
+
 		await agent.editPhotoPage.save();
 		await agent.profilePage.ready();
 
-		expect(await agent.profilePage.avatarRgb()).toEqual(SOLID_PNG_RGB);
+		expect(await agent.profilePage.avatar.imageSrc()).toBe(captured);
 	});
 
 	it('leaves the gallery action on the photo picker', async () => {

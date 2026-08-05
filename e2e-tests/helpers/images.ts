@@ -12,12 +12,9 @@ export const TINY_PNG_DATA_URL =
 /** The same 1×1 PNG as a byte array, for APIs that take raw bytes. */
 export const TINY_PNG_BYTES = dataUrlToBytes(TINY_PNG_DATA_URL);
 
-/** RGB of every pixel in {@link SOLID_PNG_DATA_URL}. */
-export const SOLID_PNG_RGB = { r: 0xe8, g: 0x59, b: 0x0c };
-
 /**
- * A 2×2 PNG filled with {@link SOLID_PNG_RGB}, for tests that follow one
- * specific image through the app and assert on its pixels at the far end.
+ * A 2×2 PNG of one solid colour, for tests that follow one specific image
+ * through the app and assert on it at the far end.
  */
 export const SOLID_PNG_DATA_URL =
 	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGN4EckDRAwQCgAn6gU1/7HHIQAAAABJRU5ErkJggg==';

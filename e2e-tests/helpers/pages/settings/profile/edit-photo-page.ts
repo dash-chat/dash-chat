@@ -2,11 +2,13 @@ import type {
 	FilePickerRequest,
 	TestFileSpec,
 } from '../../../../../ui/tests/setup-utils';
+import { Avatar } from '../../../components/avatar';
 import { tid } from '../../../selectors';
 import { TestHelper } from '../../test-helper';
 
 export class EditPhotoPage extends TestHelper {
 	back = this.el(tid('edit-photo-back'));
+	avatar = new Avatar(this.agent, 'avatar-preview');
 	close = this.el(tid('edit-photo-close'));
 	saveButton = this.el(tid('edit-photo-save-btn'));
 	cameraButton = this.el(tid('edit-photo-camera'));
