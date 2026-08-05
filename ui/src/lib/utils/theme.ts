@@ -34,5 +34,6 @@ export async function applyThemeSystemBars() {
 export async function applyDarkMode(dark: boolean) {
 	document.documentElement.classList.toggle('dark', dark);
 	document.documentElement.classList.toggle('wa-dark', dark);
+	document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
 	await applyThemeSystemBars();
 }

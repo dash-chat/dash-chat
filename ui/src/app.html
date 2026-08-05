@@ -12,6 +12,10 @@
 		/>
 		<title>Dash Chat</title>
 
+		<!-- Must precede every stylesheet: the webview can only paint its canvas
+		     in the right scheme, rather than white, before the CSS has parsed. -->
+		<meta name="color-scheme" content="light dark" />
+
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link
