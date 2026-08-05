@@ -197,10 +197,8 @@ function claimDevices(
 	return udids;
 }
 
-/**
- * Tail the app's logcat output on a device and echo it with an agent prefix.
- * Waits on-device for the app process to exist, then follows its pid.
- */
+/** Tail the app's logcat output on a device and echo it with an agent prefix.
+ *  Filters by uid, not pid, so logs survive the app being killed. */
 function startLogcatLogger(agent: string, udid: string): ChildProcess {
 	const proc = spawn(
 		'adb',
@@ -208,12 +206,23 @@ function startLogcatLogger(agent: string, udid: string): ChildProcess {
 			'-s',
 			udid,
 			'shell',
-			`until pid=$(pidof -s ${APP_PACKAGE}); do sleep 1; done; logcat -T 1 --pid=$pid`,
+			`until uid=$(pm list packages -U ${APP_PACKAGE} | sed -n 's/.*uid://p') && ` +
+				'[ -n "$uid" ]; do sleep 1; done; logcat -T 1 --uid=$uid',
 		],
 		{ stdio: ['ignore', 'pipe', 'ignore'] },
 	);
 	echoLinesWithPrefix(agent, proc.stdout!);
 	return proc;
+}
+
+/** Kill the app on `udid` and wait for its process to die. Unlike
+ *  `force-stop`, `stop-app` leaves the package eligible for FCM delivery. */
+export function stopAndroidApp(udid: string): void {
+	execSync(
+		`adb -s ${udid} shell "am stop-app ${APP_PACKAGE} && ` +
+			`until ! pidof ${APP_PACKAGE} >/dev/null; do sleep 0.2; done"`,
+		{ stdio: 'ignore', timeout: 30_000 },
+	);
 }
 
 /**

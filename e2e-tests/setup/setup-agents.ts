@@ -35,7 +35,7 @@ import { EditPhotoPage } from '../helpers/pages/settings/profile/edit-photo-page
 import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { checkOverflow } from '../helpers/review/checks';
-import { APP_PACKAGE } from './platforms/android';
+import { APP_PACKAGE, stopAndroidApp } from './platforms/android';
 import { type AgentPlatformName, platformNames } from './test-env';
 
 export type Agent = WebdriverIO.Browser & {
@@ -105,6 +105,15 @@ export type Agent = WebdriverIO.Browser & {
 	 *  locally and talks to a mailbox. */
 	disableP2p(): Promise<void>;
 };
+
+/** The device serial this Appium session was launched against. */
+function androidUdid(b: WebdriverIO.Browser): string {
+	const udid = b.requestedCapabilities['appium:udid'];
+	if (udid === undefined) {
+		throw new Error('Android session is missing its appium:udid capability');
+	}
+	return udid;
+}
 
 /** (Re)build every page object against `b`. Called on first setup and again
  *  after a restart so the new session never reuses stale element ids. */
@@ -212,7 +221,11 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 		// Leave the webview first: the session drives it through chromedriver, so
 		// tearing it down underneath the session invalidates the session itself.
 		await b.switchContext('NATIVE_APP');
-		await b.terminateApp(APP_PACKAGE);
+		if (agent.platform === 'ios') {
+			await b.terminateApp(APP_PACKAGE);
+			return;
+		}
+		stopAndroidApp(androidUdid(b));
 	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
