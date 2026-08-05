@@ -72,10 +72,9 @@ pub(crate) async fn show_sync_notification(
     let Ok(node) = app_node.get().await else {
         return;
     };
-    let topic = *notification.topic;
     let data = build_notification_data(
         &node,
-        topic.into(),
+        notification.topic,
         &notification.header,
         notification.payload.as_ref(),
     )

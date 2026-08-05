@@ -191,8 +191,17 @@ export class IosPlatform implements AgentPlatform {
 				// WDA build + signing under the app's team.
 				'appium:xcodeOrgId': DEV_TEAM,
 				'appium:xcodeSigningId': 'Apple Development',
+				// Let xcodebuild register a not-yet-provisioned device on the dev
+				// portal during the WDA build, instead of failing with 'provisioning
+				// profile … doesn't include the currently selected device' — a freshly
+				// connected iPhone isn't in the team profile yet.
+				'appium:allowProvisioningDeviceRegistration': true,
 				'appium:updatedWDABundleId': WDA_BUNDLE_ID,
-				'appium:derivedDataPath': path.join(E2E_DIR, '.appium', 'wda'),
+				// Per-slot DerivedData: a two-device run (PLATFORMS=ios,ios) starts both
+				// sessions at once, and two xcodebuilds sharing one DerivedData collide
+				// (WDA "xcodebuild failed with code 65"). Same reason as the per-slot
+				// ports above.
+				'appium:derivedDataPath': path.join(E2E_DIR, '.appium', `wda-${slot}`),
 				'appium:wdaLocalPort': allocatePinnedPort(`_WDIO_WDA_PORT${slot}`),
 				'appium:mjpegServerPort': allocatePinnedPort(`_WDIO_MJPEG_PORT${slot}`),
 				'appium:wdaLaunchTimeout': 120_000,
