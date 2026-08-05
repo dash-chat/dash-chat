@@ -33,6 +33,20 @@ impl NodeContext {
         }
     }
 
+    /// Context used when the app is running in the foreground (or resuming from
+    /// background on iOS): full networking and notification channels enabled.
+    pub fn for_app(
+        notification_tx: mpsc::Sender<dashchat_node::Notification>,
+        topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
+    ) -> Self {
+        Self {
+            p2p_enabled: true,
+            blob_sync_enabled: true,
+            notification_tx: Some(notification_tx),
+            topic_subscribed_tx,
+        }
+    }
+
     /// Build a [`dashchat_node::NodeConfig`] from this context.
     pub fn node_config(&self) -> dashchat_node::NodeConfig {
         let mut config = if cfg!(feature = "e2e-tests") {
@@ -43,8 +57,15 @@ impl NodeContext {
             dashchat_node::NodeConfig::default()
         };
 
-        if !self.p2p_enabled {
+        if !self.p2p_enabled || std::env::var_os("DASHCHAT_NO_P2P").is_some() {
             config = config.no_p2p();
+
+            if self.p2p_enabled {
+                // Dev/testing escape hatch: force all communication through mailbox
+                // servers so peers can't sync directly over p2p. Keeps blob sync so
+                // media still flows over the mailbox.
+                log::warn!("DASHCHAT_NO_P2P set: disabling peer-to-peer connectivity");
+            }
         }
 
         if !self.blob_sync_enabled {

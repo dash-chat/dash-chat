@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::{AbortOnDropHandle, TaskTracker};
 
 use crate::commands::logs::simplify;
+use crate::node::node_context::NodeContext;
 use crate::notifications::NotifiedOperationsStore;
 
 struct Inner {
@@ -100,35 +101,15 @@ impl AppNode {
         Ok(app_node)
     }
 
-    /// Build the [`NodeConfig`](dashchat_node::NodeConfig) for a node.
-    ///
-    /// `no_p2p` disables discovery and the relay: the iOS push extension shares
-    /// the device identity and database with the main app but runs as a separate
-    /// process, and if both connect to the relay with the same endpoint id they
-    /// continuously tear down each other's sync sessions and cancel in-flight
-    /// ingest transactions — poisoning the shared SQLite store. The extension
-    /// only needs the mailbox to fetch the operation, so it uses `no_p2p`. It
-    /// also disables blob sync: opening the iroh-blobs store would deadlock on
-    /// the exclusive `redb` lock the main app's process already holds.
-    pub(crate) fn node_config(no_p2p: bool) -> dashchat_node::NodeConfig {
-        let config = if cfg!(feature = "e2e-tests") {
-            let mut config = dashchat_node::NodeConfig::default();
-            config.mdns_mode = p2panda::network::MdnsDiscoveryMode::Disabled;
-            config
-        } else {
-            dashchat_node::NodeConfig::default()
-        };
-        if no_p2p {
-            config.no_p2p().no_blob_sync()
-        } else if std::env::var_os("DASHCHAT_NO_P2P").is_some() {
-            // Dev/testing escape hatch: force all communication through mailbox
-            // servers so peers can't sync directly over p2p. Keeps blob sync so
-            // media still flows over the mailbox.
-            log::warn!("DASHCHAT_NO_P2P set: disabling peer-to-peer connectivity");
-            config.no_p2p()
-        } else {
-            config
-        }
+    /// Build the [`NodeContext`](crate::node::node_context::NodeContext) for the
+    /// running app: full networking and notification channels enabled.
+    fn app_context(&self) -> NodeContext {
+        #[cfg(mobile)]
+        let topic_subscribed_tx = Some(self.topic_subscribed_tx.clone());
+        #[cfg(not(mobile))]
+        let topic_subscribed_tx = None;
+
+        NodeContext::for_app(self.notification_tx.clone(), topic_subscribed_tx)
     }
 
     /// Snapshot the live node, or a retryable "not ready" error when paused.
@@ -203,15 +184,12 @@ impl AppNode {
         }
         log::info!("Rebuilding node on iOS foreground");
 
-        #[cfg(mobile)]
-        let topic_subscribed_tx = Some(self.topic_subscribed_tx.clone());
-        #[cfg(not(mobile))]
-        let topic_subscribed_tx = None;
+        let context = self.app_context();
         let node = Node::new(
             self.data_path.clone(),
-            Self::node_config(false),
-            Some(self.notification_tx.clone()),
-            topic_subscribed_tx,
+            context.node_config(),
+            context.notification_tx.clone(),
+            context.topic_subscribed_tx.clone(),
         )
         .await?;
 
