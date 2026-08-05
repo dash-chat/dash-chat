@@ -22,14 +22,26 @@ async fn current_node() -> Option<(NodeContext, Node)> {
     SLOT.lock().await.clone()
 }
 
+/// The result of acquiring a Node from the slot.
+pub struct AcquiredNode {
+    /// The acquired Node.
+    pub node: Node,
+    /// Whether the Node was newly built for this request (as opposed to reused
+    /// from the slot).
+    pub is_new: bool,
+}
+
 /// Get a Node for handling a push notification.
 ///
 /// Resolution order:
 /// 1. The app's managed state (authoritative Node with notification channels).
 ///    When found, the cache is cleared since it's no longer needed.
-/// 2. A previously cached Node with a matching context.
+/// 2. A previously cached Node with a compatible context.
 /// 3. Build a new Node for the requested context and cache it.
-pub async fn get_or_build_node(data_path: &PathBuf, context: NodeContext) -> anyhow::Result<Node> {
+pub async fn get_or_build_node(
+    data_path: &PathBuf,
+    context: NodeContext,
+) -> anyhow::Result<AcquiredNode> {
     // Try the app's managed state first. If the app is running but its node is
     // paused (backgrounded on iOS), fall through and build the extension's own
     // node so we never hold two live p2p endpoints on the shared identity.
@@ -39,7 +51,10 @@ pub async fn get_or_build_node(data_path: &PathBuf, context: NodeContext) -> any
                 // The app is fully running — clear any stale cached node
                 clear().await;
                 log::info!("The app is opened: reuse the currently running node.");
-                return Ok(node);
+                return Ok(AcquiredNode {
+                    node,
+                    is_new: false,
+                });
             }
         }
     }
@@ -48,7 +63,10 @@ pub async fn get_or_build_node(data_path: &PathBuf, context: NodeContext) -> any
     // blocking on any in-flight build.
     if let Some((cached_context, node)) = current_node().await {
         if cached_context.is_compatible_with(&context) {
-            return Ok(node);
+            return Ok(AcquiredNode {
+                node,
+                is_new: false,
+            });
         }
     }
 
@@ -58,7 +76,10 @@ pub async fn get_or_build_node(data_path: &PathBuf, context: NodeContext) -> any
     let _build_guard = BUILD_LOCK.lock().await;
     if let Some((cached_context, node)) = current_node().await {
         if cached_context.is_compatible_with(&context) {
-            return Ok(node);
+            return Ok(AcquiredNode {
+                node,
+                is_new: false,
+            });
         }
     }
 
@@ -96,7 +117,7 @@ pub async fn get_or_build_node(data_path: &PathBuf, context: NodeContext) -> any
 
     *SLOT.lock().await = Some((context, node.clone()));
 
-    Ok(node)
+    Ok(AcquiredNode { node, is_new: true })
 }
 
 /// Drop the cached node.

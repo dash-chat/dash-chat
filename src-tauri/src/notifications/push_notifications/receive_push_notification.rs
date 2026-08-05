@@ -153,9 +153,11 @@ async fn handle_push_notification(
         app_data_dir
     );
 
-    let node = node_slot::get_or_build_node(app_data_dir, NodeContext::for_push_notifications())
-        .await
-        .context("failed to get node")?;
+    let acquired =
+        node_slot::get_or_build_node(app_data_dir, NodeContext::for_push_notifications())
+            .await
+            .context("failed to get node")?;
+    let node = acquired.node;
 
     log::info!("dashchat node built successfully.");
 
