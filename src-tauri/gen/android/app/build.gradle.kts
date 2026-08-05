@@ -14,6 +14,14 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Kotlin locates Rust's settings.json to theme the window before the webview
+// exists. Reading the version from the Rust source keeps the two from drifting:
+// a rename fails the build here instead of silently disabling the override.
+val databaseVersion = Regex("DATABASE_VERSION: &str = \"([^\"]+)\"")
+    .find(file("../../../src/filesystem.rs").readText())
+    ?.groupValues?.get(1)
+    ?: throw GradleException("DATABASE_VERSION not found in src-tauri/src/filesystem.rs")
+
 android {
     compileSdk = 36
     namespace = "studio.darksoil.dashchat"
@@ -24,6 +32,7 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        buildConfigField("String", "DATABASE_VERSION", "\"$databaseVersion\"")
     }
 
     signingConfigs {

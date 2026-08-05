@@ -1,3 +1,8 @@
+#[cfg(target_os = "ios")]
+mod ios;
+#[cfg(target_os = "macos")]
+mod macos;
+
 use dashchat_node::mailbox::fetch_mailbox_health;
 use dashchat_node::Node;
 use tauri::AppHandle;
@@ -53,11 +58,21 @@ pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(unused_variables)]
+fn platform_setup(app_handle: &AppHandle) {
+    #[cfg(target_os = "ios")]
+    ios::setup(app_handle);
+    #[cfg(target_os = "macos")]
+    macos::setup(app_handle);
+}
+
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     install_logger(&app_handle)?;
     crate::device_info::log_device_info(&app_handle);
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
+
+    platform_setup(&app_handle);
 
     let mdns = mdns_sd::ServiceDaemon::new()?;
     if let Err(err) = mdns.set_ip_check_interval(1) {
@@ -74,9 +89,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         crate::menu::install_menu(&app_handle)?;
         app_handle.manage(crate::mailbox::server::LocalMailboxMutex::default());
         crate::tray::setup_tray(&app_handle)?;
-
-        #[cfg(target_os = "macos")]
-        crate::macos::install_termination_guard();
 
         // Hide the main window when launched with --minimized (autostart)
         if std::env::args().any(|a| a == "--minimized") {

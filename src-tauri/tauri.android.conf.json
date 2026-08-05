@@ -1,0 +1,12 @@
+{
+	"app": {
+		"windows": [
+			{
+				"title": "Dash Chat",
+				"width": 850,
+				"height": 650,
+				"transparent": true
+			}
+		]
+	}
+}
