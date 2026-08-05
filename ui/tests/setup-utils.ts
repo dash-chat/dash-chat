@@ -46,6 +46,39 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
+const mediaDownloads = new Map<string, number>();
+let mediaObserver: PerformanceObserver | undefined;
+
+/** Start recording how long each blob request takes. An observer rather than a
+ * read of `performance.getEntriesByType` at the end: the resource-timing buffer
+ * holds a few hundred entries and a media-heavy chat overruns it. */
+function recordMediaDownloads() {
+	if (mediaObserver !== undefined) return;
+	mediaObserver = new PerformanceObserver(list => {
+		for (const entry of list.getEntries()) {
+			// First request only: a blob rendered on a second surface (gallery cell,
+			// filmstrip thumb, lightbox stage) re-requests the same URL and is served
+			// from cache, which would otherwise overwrite the real download with ~0.
+			if (!mediaDownloads.has(entry.name)) {
+				mediaDownloads.set(entry.name, entry.duration);
+			}
+		}
+	});
+	mediaObserver.observe({ type: 'resource', buffered: true });
+}
+
+/** Milliseconds the photo whose alt contains `label` spent downloading — the
+ * webview issuing the `irohblob://` request to its last byte — or null while it
+ * is still in flight. Needs `recordMediaDownloads` to have run first. */
+function photoDownloadMs(label: string): number | null {
+	const img = Array.from(document.querySelectorAll('img')).find(i =>
+		i.alt.includes(label),
+	);
+	if (img === undefined) return null;
+	const ms = mediaDownloads.get(img.src);
+	return ms === undefined ? null : Math.round(ms);
+}
+
 /** Close this agent's iroh endpoint so it can no longer sync with peers over
  * p2p. Backed by the `close_iroh_endpoint` command (only registered under the
  * `e2e-tests` feature). One-way — the agent stays p2p-disconnected until it
@@ -173,6 +206,8 @@ export const testUtils = {
 	pasteFiles,
 	pasteNoisePhoto,
 	dropFiles,
+	recordMediaDownloads,
+	photoDownloadMs,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,

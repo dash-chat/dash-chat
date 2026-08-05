@@ -140,6 +140,53 @@ export class Messages extends TestHelper {
 		);
 	}
 
+	/** Open the lightbox on the photo labelled `label`. Clicked in-page because
+	 * the cell is identified by its image's alt, which a CSS selector can't reach
+	 * from the enclosing button. */
+	async openPhoto(label: string): Promise<void> {
+		const clicked = await this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const imgs =
+					document
+						.querySelector(messagesSel)
+						?.querySelectorAll(`${photosSel} img`) ?? [];
+				const img = Array.from(imgs).find(el =>
+					(el as HTMLImageElement).alt.includes(name),
+				);
+				const button = img?.closest('button');
+				if (!button) return false;
+				button.click();
+				return true;
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
+		);
+		if (!clicked) throw new Error(`No photo cell showing "${label}"`);
+		await this.lightbox.root.waitForExist();
+	}
+
+	/** How long the photo labelled `label` spent downloading: the webview issuing
+	 * the blob request to its last byte. The agent must have called
+	 * `window.__test.recordMediaDownloads()` before the photo rendered. */
+	async photoDownloadMs(
+		label: string,
+		timeout = MEDIA_SYNC_TIMEOUT,
+	): Promise<number> {
+		let ms: number | null = null;
+		await this.agent.waitUntil(
+			async () => {
+				ms = await this.agent.execute(
+					(name: string) => window.__test.photoDownloadMs(name),
+					label,
+				);
+				return ms !== null;
+			},
+			{ timeout, timeoutMsg: `No download timing recorded for "${label}"` },
+		);
+		return ms!;
+	}
+
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
