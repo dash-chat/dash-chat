@@ -35,7 +35,7 @@ import { EditPhotoPage } from '../helpers/pages/settings/profile/edit-photo-page
 import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { checkOverflow } from '../helpers/review/checks';
-import { APP_PACKAGE } from './platforms/android';
+import { APP_PACKAGE, stopAndroidApp } from './platforms/android';
 import { type AgentPlatformName, platformNames } from './test-env';
 
 export type Agent = WebdriverIO.Browser & {
@@ -105,6 +105,15 @@ export type Agent = WebdriverIO.Browser & {
 	 *  locally and talks to a mailbox. */
 	disableP2p(): Promise<void>;
 };
+
+/** The device serial this Appium session was launched against. */
+function androidUdid(b: WebdriverIO.Browser): string {
+	const udid = b.requestedCapabilities['appium:udid'];
+	if (udid === undefined) {
+		throw new Error('Android session is missing its appium:udid capability');
+	}
+	return udid;
+}
 
 /** (Re)build every page object against `b`. Called on first setup and again
  *  after a restart so the new session never reuses stale element ids. */
@@ -212,7 +221,11 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 		// Leave the webview first: the session drives it through chromedriver, so
 		// tearing it down underneath the session invalidates the session itself.
 		await b.switchContext('NATIVE_APP');
-		await b.terminateApp(APP_PACKAGE);
+		if (agent.platform === 'ios') {
+			await b.terminateApp(APP_PACKAGE);
+			return;
+		}
+		stopAndroidApp(androidUdid(b));
 	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
@@ -277,12 +290,26 @@ async function setupAgent(
 }
 
 /** What a spec requires of one agent's platform. 'android' is fulfilled by a
- *  physical device or an emulator; 'ios' by a connected iPhone. */
-export type PlatformRequirement = 'desktop' | 'android' | 'ios' | 'any';
+ *  physical device or an emulator; 'ios' by a connected iPhone; 'mobile' by any
+ *  of those (an iOS or Android device); 'any' by any launched platform. */
+export type PlatformRequirement =
+	| 'desktop'
+	| 'android'
+	| 'ios'
+	| 'mobile'
+	| 'any';
 
 /** What a spec requires of one agent. */
 export interface AgentRequirement {
 	platform: PlatformRequirement;
+}
+
+function isMobile(platform: AgentPlatformName): boolean {
+	return (
+		platform === 'ios' ||
+		platform === 'android' ||
+		platform === 'android-emulator'
+	);
 }
 
 function fulfills(
@@ -290,6 +317,7 @@ function fulfills(
 	platform: AgentPlatformName,
 ): boolean {
 	if (requirement === 'any') return true;
+	if (requirement === 'mobile') return isMobile(platform);
 	if (requirement === 'desktop') return platform === 'desktop';
 	if (requirement === 'android') {
 		return platform === 'android' || platform === 'android-emulator';
@@ -298,9 +326,18 @@ function fulfills(
 	return false;
 }
 
-/** Assign each requirement a distinct launched slot — specific requirements
- *  first so 'any' takes the leftovers, ascending slot order for determinism —
- *  or null when the launched platforms can't fulfill them all. */
+/** How narrow a requirement is: exact platform > 'mobile' > 'any'. Match the
+ *  narrowest first so a broad requirement never steals the only slot a narrow
+ *  one could have used. */
+function specificity(requirement: PlatformRequirement): number {
+	if (requirement === 'any') return 0;
+	if (requirement === 'mobile') return 1;
+	return 2;
+}
+
+/** Assign each requirement a distinct launched slot — narrowest requirements
+ *  first so broader ones take the leftovers, ascending slot order for
+ *  determinism — or null when the launched platforms can't fulfill them all. */
 function matchSlots(
 	requirements: readonly PlatformRequirement[],
 	platforms: AgentPlatformName[],
@@ -308,8 +345,7 @@ function matchSlots(
 	const free = platforms.map((platform, i) => ({ slot: i + 1, platform }));
 	const slots: number[] = [];
 	const order = [...requirements.keys()].sort(
-		(a, b) =>
-			Number(requirements[a] === 'any') - Number(requirements[b] === 'any'),
+		(a, b) => specificity(requirements[b]) - specificity(requirements[a]),
 	);
 	for (const i of order) {
 		const j = free.findIndex(f => fulfills(requirements[i], f.platform));
