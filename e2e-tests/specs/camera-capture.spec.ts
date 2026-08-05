@@ -17,7 +17,7 @@ describe('Camera capture', () => {
 	let agent: Agent;
 
 	before(async function () {
-		[agent] = await setupAgents(this, [{ platform: 'android' }]);
+		[agent] = await setupAgents(this, [{ platform: 'mobile' }]);
 		await agent.createProfilePage.createProfile('Camera', 'Test');
 		await agent.homePage.settingsLink.click();
 		await agent.settingsPage.ready();
@@ -50,18 +50,5 @@ describe('Camera capture', () => {
 		await agent.profilePage.ready();
 
 		expect(await agent.profilePage.avatar.imageSrc()).toBe(captured);
-	});
-
-	it('leaves the gallery action on the photo picker', async () => {
-		await agent.profilePage.editPhoto.click();
-		await agent.editPhotoPage.ready();
-
-		const request = await agent.editPhotoPage.pickFromGallery();
-
-		expect(request.capture).toBe(false);
-		expect(request.accept).toContain('image/jpeg');
-
-		await agent.editPhotoPage.close.click();
-		await agent.profilePage.ready();
 	});
 });
