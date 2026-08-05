@@ -126,25 +126,27 @@ describe('Media stress', function () {
 			const labels = roundLabels(round);
 			const before = new Set(mailboxBlobs());
 
-			const startedAt = Date.now();
 			for (const label of labels) {
 				await composer.attachNoisePhoto(label, PHOTO_WIDTH, PHOTO_HEIGHT);
 			}
-			await composer.send();
-			await sender.directChatPage.messages.waitForPhotoMessage(
-				labels[0],
-				CEILING_MS,
-			);
+
 			const stored = () => mailboxBlobs().filter(p => !before.has(p));
+			const startedAt = Date.now();
+			await composer.send();
 			await sender.waitUntil(async () => stored().length >= PHOTO_COUNT, {
 				timeout: CEILING_MS,
 				timeoutMsg: `Mailbox stored ${stored().length}/${PHOTO_COUNT} blobs`,
 			});
+			const uploadMs = Date.now() - startedAt;
 
+			await sender.directChatPage.messages.waitForPhotoMessage(
+				labels[0],
+				CEILING_MS,
+			);
 			// The stored blobs are what crossed the wire; the composer re-encodes
 			// before sending, so the staged files are a good bit larger.
 			const bytes = stored().reduce((sum, p) => sum + statSync(p).size, 0);
-			rounds.set(round, { labels, bytes, uploadMs: Date.now() - startedAt });
+			rounds.set(round, { labels, bytes, uploadMs });
 		});
 
 		it(`round ${round}: serves the batch to a receiver that comes online with the sender gone`, async () => {
