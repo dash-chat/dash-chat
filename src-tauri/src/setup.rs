@@ -103,69 +103,75 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Build & register `tauri-plugin-log` once we have an `AppHandle` to log in the correct path
 fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
     let fs = FileSystem::new(handle)?;
-    handle.plugin(
-        tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Warn)
-            .level_for("dashchat_node", log::LevelFilter::Debug)
-            .level_for("mailbox_client", log::LevelFilter::Debug)
-            .level_for("mailbox_server", log::LevelFilter::Debug)
-            .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
-            .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
-            // This is the default formatter for desktop, also use it in mobile platforms to record time
-            // in the log file, as the logcat timestamp does not get included there
-            .format(move |out, message, record| {
-                let format = time::macros::format_description!(
-                    "[[[year]-[month]-[day]][[[hour]:[minute]:[second]]"
-                );
-                let args = if let (Some(file), Some(line)) = (record.file(), record.line()) {
-                    format_args!(
-                        "{}[{} {}:{}][{}] {}",
-                        tauri_plugin_log::TimezoneStrategy::UseUtc
-                            .get_now()
-                            .format(&format)
-                            .unwrap(),
-                        record.target(),
-                        file.to_string(),
-                        line.to_string(),
-                        record.level(),
-                        message
-                    )
-                } else {
-                    format_args!(
-                        "{}[{}][{}] {}",
-                        tauri_plugin_log::TimezoneStrategy::UseUtc
-                            .get_now()
-                            .format(&format)
-                            .unwrap(),
-                        record.target(),
-                        record.level(),
-                        message
-                    )
-                };
-                out.finish(args)
-            })
-            .clear_targets()
-            .max_file_size(5 * 1024 * 1024)
-            .targets([
-                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-                    path: fs.logs_dir(),
-                    file_name: None,
-                }),
-            ])
-            .build(),
-    )?;
 
-    // Now that the log files have an owner, a report can attach them.
-    if let Some(config) = crate::sentry::config(fs.logs_dir()) {
+    let log_plugin = tauri_plugin_log::Builder::default()
+        .level(log::LevelFilter::Warn)
+        .level_for("dashchat_node", log::LevelFilter::Debug)
+        .level_for("mailbox_client", log::LevelFilter::Debug)
+        .level_for("mailbox_server", log::LevelFilter::Debug)
+        .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
+        .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
+        .format(|out, message, _record| out.finish(format_args!("{message}")))
+        .clear_targets()
+        .max_file_size(5 * 1024 * 1024)
+        .targets([
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
+                .format(format_record),
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                path: fs.logs_dir(),
+                file_name: None,
+            })
+            .format(format_record),
+            tauri_plugin_sentry_reporting::log_target(handle),
+        ])
+        .build();
+
+    crate::utils::install_panic_hook();
+
+    let error_reporting_dir = fs.error_reporting_dir();
+    if let Some(config) = crate::sentry::config(fs.logs_dir(), error_reporting_dir.clone()) {
+        std::fs::create_dir_all(&error_reporting_dir)?;
         handle.plugin(tauri_plugin_sentry_reporting::init(config))?;
     }
 
-    // Now that the log plugin is registered, route panics through it.
-    crate::utils::install_panic_hook();
+    handle.plugin(log_plugin)?;
 
     Ok(())
+}
+
+fn format_record(
+    out: tauri_plugin_log::fern::FormatCallback,
+    message: &std::fmt::Arguments,
+    record: &log::Record,
+) {
+    let format =
+        time::macros::format_description!("[[[year]-[month]-[day]][[[hour]:[minute]:[second]]");
+    let args = if let (Some(file), Some(line)) = (record.file(), record.line()) {
+        format_args!(
+            "{}[{} {}:{}][{}] {}",
+            tauri_plugin_log::TimezoneStrategy::UseUtc
+                .get_now()
+                .format(&format)
+                .unwrap(),
+            record.target(),
+            file.to_string(),
+            line.to_string(),
+            record.level(),
+            message
+        )
+    } else {
+        format_args!(
+            "{}[{}][{}] {}",
+            tauri_plugin_log::TimezoneStrategy::UseUtc
+                .get_now()
+                .format(&format)
+                .unwrap(),
+            record.target(),
+            record.level(),
+            message
+        )
+    };
+    out.finish(args)
 }

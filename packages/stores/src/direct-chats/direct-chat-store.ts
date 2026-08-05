@@ -122,10 +122,16 @@ export class DirectChatStore {
 						(await this.contactsStore.contactAddedTimestamp(this.peer)) ?? 0,
 				};
 
+		const pendingName = this.isPending
+			? (await this.contactsStore.outgoingPendingRequests()).find(
+					request => request.devicePubkey === pendingChatKeyDevice(this.peer),
+				)?.profileName
+			: undefined;
+
 		return {
 			type: 'DirectChat',
 			chatId: this.peer,
-			name: profile ? fullName(profile) : '',
+			name: profile ? fullName(profile) : (pendingName ?? ''),
 			avatar: profile?.avatar,
 			lastEvent,
 			unreadMessages: unreadCount,

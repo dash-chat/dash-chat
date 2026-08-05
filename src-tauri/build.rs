@@ -73,7 +73,7 @@ fn local_ip() -> Option<String> {
 
 fn capture_git_commit() {
     let mut gitcl = match vergen_gitcl::GitclBuilder::default()
-        .sha(true)
+        .sha(false)
         .branch(true)
         .dirty(true)
         .build()

@@ -39,6 +39,7 @@
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
+	import CrashReportDialog from '$lib/components/CrashReportDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
@@ -254,5 +255,8 @@
 			</div>
 		{/if}
 		<ToastManager />
+		{#if import.meta.env.VITE_SENTRY_ENABLED}
+			<CrashReportDialog />
+		{/if}
 	</App>
 </KonstaProvider>

@@ -1,4 +1,4 @@
-use dashchat_node::{DeviceId, Payload, Topic, TopicId};
+use dashchat_node::{DeviceId, Payload, TopicId};
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::processor::GroupsArgs;
@@ -176,14 +176,14 @@ pub fn simplify(
 
 #[tauri::command]
 pub async fn get_log(
-    topic_id: Topic,
+    topic_id: TopicId,
     author: DeviceId,
     app_node: State<'_, AppNode>,
 ) -> Result<Vec<SimplifiedOperation>, String> {
     let node = app_node.get().await?;
     let log = node
         .op_store
-        .get_log(&author, &LogId::from(topic_id), None)
+        .get_log(&author, &LogId::from_topic(topic_id), None)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
 
@@ -198,13 +198,13 @@ pub async fn get_log(
 
 #[tauri::command]
 pub async fn get_authors(
-    topic_id: Topic,
+    topic_id: TopicId,
     app_node: State<'_, AppNode>,
 ) -> Result<std::collections::HashSet<DeviceId>, String> {
     let node = app_node.get().await?;
     let authors = node
         .op_store
-        .get_authors(LogId::from(topic_id))
+        .get_authors(LogId::from_topic(topic_id))
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
     Ok(authors)

@@ -19,8 +19,8 @@ dashchat-node *ARGS:
 # run the whole suite. Pass `--no-rerun` to skip WebdriverIO's spec retry on
 # failures. The PLATFORMS env var lists the agents to launch as an unordered
 # multiset of platforms (default `desktop,desktop`): desktop, android
-# (physical device), or android-emulator (booted automatically), e.g.
-# `PLATFORMS=android,desktop just test e2e send-messages`.
+# (physical device), android-emulator (booted automatically), or ios (connected
+# iPhone).
 e2e NAME='' *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail

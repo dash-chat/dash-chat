@@ -205,7 +205,10 @@ export interface Tombstone {
 
 export type DeviceGroupPayload =
 	| { type: 'AddContact'; payload: { agent_id: AgentId } }
-	| { type: 'PendingContactRequest'; payload: { device_pubkey: DeviceId } }
+	| {
+			type: 'PendingContactRequest';
+			payload: { device_pubkey: DeviceId; profile_name: string };
+	  }
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'BlockAgent'; payload: AgentId }
 	| { type: 'UnblockAgent'; payload: AgentId }

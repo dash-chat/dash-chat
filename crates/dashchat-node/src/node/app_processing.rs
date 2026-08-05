@@ -392,9 +392,12 @@ impl Node {
         //
         // @TODO: once group control messages are properly ordered we could send a
         // membership diff here instead of relying on the frontend to refetch.
-        let topic = operation.topic();
-        self.notify_payload(topic, operation.processed().header(), operation.message())
-            .await?;
+        self.notify_payload(
+            operation.topic(),
+            operation.processed().header(),
+            operation.message(),
+        )
+        .await?;
 
         Ok(())
     }
@@ -674,7 +677,6 @@ impl Node {
         // processing resulted in an error. It might be required that the frontend is also
         // informed of any errors or these events are not even forwarded.
 
-        // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
         self.notify_payload(topic, &operation.processed().header(), &payload)
             .await?;
 

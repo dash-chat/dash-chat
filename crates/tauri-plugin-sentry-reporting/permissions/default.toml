@@ -2,4 +2,9 @@
 
 [default]
 description = "Allows submitting error reports to Sentry."
-permissions = ["allow-send-error-report"]
+permissions = [
+  "allow-send-error-report",
+  "allow-pending-crash-report",
+  "allow-send-pending-crash-report",
+  "allow-discard-pending-crash-report",
+]
