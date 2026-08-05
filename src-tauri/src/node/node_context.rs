@@ -1,18 +1,47 @@
 use tokio::sync::mpsc;
 
+/// The role a Node is playing in the current process.
+///
+/// Roles determine both the capabilities a Node is built with and whether a
+/// Node built for one role can be reused to satisfy a request for another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeRole {
+    /// The main app is running with full networking and notification channels.
+    App,
+    /// A background task is running, possibly with reduced capabilities.
+    BackgroundTask,
+    /// A push notification is being handled in a limited time window, typically
+    /// without P2P or blob sync.
+    PushNotification,
+}
+
+impl NodeRole {
+    /// Whether peer-to-peer discovery and relay are enabled for this role.
+    pub fn p2p_enabled(&self) -> bool {
+        match self {
+            Self::App => true,
+            Self::BackgroundTask | Self::PushNotification => false,
+        }
+    }
+
+    /// Whether blob (media) sync is enabled for this role.
+    pub fn blob_sync_enabled(&self) -> bool {
+        match self {
+            Self::App => true,
+            Self::BackgroundTask | Self::PushNotification => false,
+        }
+    }
+}
+
 /// The capabilities and wiring with which a Node is built.
 ///
 /// A `NodeContext` describes what a Node is allowed to do and which external
-/// channels it participates in. Callers build a Node by supplying a context, and
-/// different contexts can enforce different constraints (for example, disabling
-/// peer-to-peer networking when running in an extension that shares an identity
-/// with another process).
+/// channels it participates in. The concrete capabilities are determined by the
+/// [`NodeRole`]; callers supply the role and any role-specific channels.
 #[derive(Clone)]
 pub struct NodeContext {
-    /// Whether peer-to-peer discovery and relay are enabled.
-    pub p2p_enabled: bool,
-    /// Whether blob (media) sync is enabled.
-    pub blob_sync_enabled: bool,
+    /// The role this Node is playing.
+    pub role: NodeRole,
     /// Channel for forwarding node notifications to the app (webview + system
     /// notifications). None when running outside the main app process.
     pub notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
@@ -26,8 +55,7 @@ impl NodeContext {
     /// no P2P, no blob sync, and no app-lifetime channels.
     pub fn for_push_notifications() -> Self {
         Self {
-            p2p_enabled: false,
-            blob_sync_enabled: false,
+            role: NodeRole::PushNotification,
             notification_tx: None,
             topic_subscribed_tx: None,
         }
@@ -40,22 +68,26 @@ impl NodeContext {
         topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
     ) -> Self {
         Self {
-            p2p_enabled: true,
-            blob_sync_enabled: true,
+            role: NodeRole::App,
             notification_tx: Some(notification_tx),
             topic_subscribed_tx,
         }
     }
 
-    /// Whether this context is compatible with another for reusing a Node.
-    ///
-    /// Channels are compared by presence, not identity: a Node built with a
-    /// notification sender can satisfy any caller that needs one.
-    pub fn is_compatible_with(&self, other: &Self) -> bool {
-        self.p2p_enabled == other.p2p_enabled
-            && self.blob_sync_enabled == other.blob_sync_enabled
-            && self.notification_tx.is_some() == other.notification_tx.is_some()
-            && self.topic_subscribed_tx.is_some() == other.topic_subscribed_tx.is_some()
+    /// Whether a Node built for this context can be reused to satisfy a request
+    /// for the `requested` context.
+    pub fn is_compatible_with(&self, requested: &Self) -> bool {
+        if self.role == requested.role {
+            return true;
+        }
+
+        match (self.role, requested.role) {
+            // A full app Node can satisfy push notification handling.
+            (NodeRole::App, NodeRole::PushNotification) => true,
+            // A background task Node can satisfy push notification handling.
+            (NodeRole::BackgroundTask, NodeRole::PushNotification) => true,
+            _ => false,
+        }
     }
 
     /// Build a [`dashchat_node::NodeConfig`] from this context.
@@ -68,10 +100,10 @@ impl NodeContext {
             dashchat_node::NodeConfig::default()
         };
 
-        if !self.p2p_enabled || std::env::var_os("DASHCHAT_NO_P2P").is_some() {
+        if !self.role.p2p_enabled() || std::env::var_os("DASHCHAT_NO_P2P").is_some() {
             config = config.no_p2p();
 
-            if self.p2p_enabled {
+            if self.role.p2p_enabled() {
                 // Dev/testing escape hatch: force all communication through mailbox
                 // servers so peers can't sync directly over p2p. Keeps blob sync so
                 // media still flows over the mailbox.
@@ -79,7 +111,7 @@ impl NodeContext {
             }
         }
 
-        if !self.blob_sync_enabled {
+        if !self.role.blob_sync_enabled() {
             config = config.no_blob_sync();
         }
 
