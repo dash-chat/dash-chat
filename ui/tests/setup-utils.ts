@@ -200,7 +200,7 @@ function dropFiles(specs: TestFileSpec[]) {
 }
 
 /** What a file input the app opened was configured to ask the OS for. */
-export interface FilePickerAttempt {
+export interface FilePickerRequest {
 	accept: string;
 	/** `false` when the input asks for a stored file rather than a fresh capture. */
 	capture: boolean;
@@ -208,7 +208,7 @@ export interface FilePickerAttempt {
 }
 
 const nativeInputClick = HTMLInputElement.prototype.click;
-let filePickerAttempts: FilePickerAttempt[] | undefined;
+let filePickerRequests: FilePickerRequest[] | undefined;
 
 /**
  * Record the file inputs the app opens instead of letting them reach the OS,
@@ -216,13 +216,13 @@ let filePickerAttempts: FilePickerAttempt[] | undefined;
  * if the user had dismissed the dialog.
  */
 function interceptFilePickers(files: TestFileSpec[] = []): void {
-	filePickerAttempts = [];
+	filePickerRequests = [];
 	HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
 		if (this.type !== 'file') {
 			nativeInputClick.call(this);
 			return;
 		}
-		filePickerAttempts?.push({
+		filePickerRequests?.push({
 			accept: this.accept,
 			capture: this.hasAttribute('capture'),
 			multiple: this.multiple,
@@ -240,11 +240,11 @@ function interceptFilePickers(files: TestFileSpec[] = []): void {
 }
 
 /** Restore file inputs and return what `interceptFilePickers` recorded. */
-function collectFilePickers(): FilePickerAttempt[] {
+function collectFilePickers(): FilePickerRequest[] {
 	HTMLInputElement.prototype.click = nativeInputClick;
-	const attempts = filePickerAttempts ?? [];
-	filePickerAttempts = undefined;
-	return attempts;
+	const requests = filePickerRequests ?? [];
+	filePickerRequests = undefined;
+	return requests;
 }
 
 export const testUtils = {

@@ -40,12 +40,9 @@ describe('Camera capture', () => {
 		await agent.profilePage.editPhoto.click();
 		await agent.editPhotoPage.ready();
 
-		const picker = await agent.editPhotoPage.pickerOpenedBy(
-			() => agent.editPhotoPage.cameraButton.click(),
-			[PHOTO],
-		);
-		expect(picker.accept).toBe('image/*');
-		expect(picker.capture).toBe(true);
+		const request = await agent.editPhotoPage.takePhoto(PHOTO);
+		expect(request.accept).toBe('image/*');
+		expect(request.capture).toBe(true);
 
 		await agent.editPhotoPage.save();
 		await agent.profilePage.ready();
@@ -57,12 +54,10 @@ describe('Camera capture', () => {
 		await agent.profilePage.editPhoto.click();
 		await agent.editPhotoPage.ready();
 
-		const picker = await agent.editPhotoPage.pickerOpenedBy(() =>
-			agent.editPhotoPage.galleryButton.click(),
-		);
+		const request = await agent.editPhotoPage.pickFromGallery();
 
-		expect(picker.capture).toBe(false);
-		expect(picker.accept).toContain('image/jpeg');
+		expect(request.capture).toBe(false);
+		expect(request.accept).toContain('image/jpeg');
 
 		await agent.editPhotoPage.close.click();
 		await agent.profilePage.ready();

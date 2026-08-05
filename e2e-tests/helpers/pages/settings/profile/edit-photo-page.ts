@@ -1,5 +1,5 @@
 import type {
-	FilePickerAttempt,
+	FilePickerRequest,
 	TestFileSpec,
 } from '../../../../../ui/tests/setup-utils';
 import { tid } from '../../../selectors';
@@ -20,30 +20,14 @@ export class EditPhotoPage extends TestHelper {
 		await this.saveButton.click();
 	}
 
-	/**
-	 * Run `open`, answer the file input it opens with `files`, and report what
-	 * that input asked the OS for. No native picker or camera appears; with no
-	 * `files` the input is dismissed instead.
-	 */
-	async pickerOpenedBy(
-		open: () => Promise<void>,
-		files: TestFileSpec[] = [],
-	): Promise<FilePickerAttempt> {
-		await this.agent.execute(
-			(specs: TestFileSpec[]) => window.__test.interceptFilePickers(specs),
-			files,
-		);
-		let failure: unknown;
-		try {
-			await open();
-		} catch (error) {
-			failure = error;
-		}
-		const attempts = await this.agent.execute(() =>
-			window.__test.collectFilePickers(),
-		);
-		if (failure) throw failure;
-		expect(attempts).toHaveLength(1);
-		return attempts[0];
+	/** Shoot `photo` with the camera action, reporting what it asked the OS for. */
+	takePhoto(photo: TestFileSpec): Promise<FilePickerRequest> {
+		return this.answerFilePicker(this.cameraButton, [photo]);
+	}
+
+	/** Choose `photo` from the gallery action — dismissing it when there is no
+	 * photo — and report what it asked the OS for. */
+	pickFromGallery(photo?: TestFileSpec): Promise<FilePickerRequest> {
+		return this.answerFilePicker(this.galleryButton, photo ? [photo] : []);
 	}
 }
