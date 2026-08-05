@@ -4,18 +4,21 @@ use dashchat_node::Node;
 use tauri::Manager;
 use tokio::sync::Mutex;
 
-/// The single Node built when receiving a push notification in the background.
+use crate::node::node_context::NodeContext;
+
+/// The single Node built when receiving a push notification in the background,
+/// together with the context it was built for.
 /// Only to be reused when multiple notifications are processed sequentially.
-static SLOT: Mutex<Option<Node>> = Mutex::const_new(None);
+static SLOT: Mutex<Option<(NodeContext, Node)>> = Mutex::const_new(None);
 
 /// Serializes the (slow) node build so two pushes racing in the same extension
 /// process don't open two SQLite pools on the same database. Deliberately
-/// separate from `NODE`: the cache lookup must never block behind an in-flight
+/// separate from `SLOT`: the cache lookup must never block behind an in-flight
 /// build, or a slow `build_node` + mailbox handshake starves every other push and
 /// they all miss iOS's ~30s budget.
 static BUILD_LOCK: Mutex<()> = Mutex::const_new(());
 
-async fn current_node() -> Option<Node> {
+async fn current_node() -> Option<(NodeContext, Node)> {
     SLOT.lock().await.clone()
 }
 
@@ -41,8 +44,10 @@ pub async fn get_or_build_node(data_path: &PathBuf) -> anyhow::Result<Node> {
         }
     }
 
+    let context = NodeContext::for_push_notifications();
+
     // Fast path: return a cached node without blocking on any in-flight build.
-    if let Some(node) = current_node().await {
+    if let Some((_, node)) = current_node().await {
         return Ok(node);
     }
 
@@ -50,7 +55,7 @@ pub async fn get_or_build_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     // lock across it. A push that arrives mid-build waits here, then finds the
     // just-built node on this re-check instead of building a second one.
     let _build_guard = BUILD_LOCK.lock().await;
-    if let Some(node) = current_node().await {
+    if let Some((_, node)) = current_node().await {
         return Ok(node);
     }
 
@@ -58,9 +63,9 @@ pub async fn get_or_build_node(data_path: &PathBuf) -> anyhow::Result<Node> {
 
     let node = Node::new(
         data_path.clone(),
-        crate::node::AppNode::node_config(true),
-        None,
-        None,
+        context.node_config(),
+        context.notification_tx.clone(),
+        context.topic_subscribed_tx.clone(),
     )
     .await?;
 
@@ -74,7 +79,7 @@ pub async fn get_or_build_node(data_path: &PathBuf) -> anyhow::Result<Node> {
         log::warn!("failed to track cloud mailbox in push extension: {err:?}");
     }
 
-    *SLOT.lock().await = Some(node.clone());
+    *SLOT.lock().await = Some((context, node.clone()));
 
     Ok(node)
 }
