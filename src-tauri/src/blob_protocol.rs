@@ -1,4 +1,4 @@
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 use tauri::{Manager, Runtime, UriSchemeContext, UriSchemeResponder};
 
 /// Handle an `irohblob://{hash}` request by loading the blob's bytes from the

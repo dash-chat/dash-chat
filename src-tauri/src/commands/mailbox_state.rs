@@ -8,7 +8,7 @@ use serde::Serialize;
 use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
 
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 
 /// The current node, or the next one built after a swap. Returns `None` only when
 /// the app is shutting down (the generation sender was dropped).

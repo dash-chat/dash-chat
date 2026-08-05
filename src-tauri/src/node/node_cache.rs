@@ -36,7 +36,7 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     // paused (backgrounded on iOS), fall through and build the extension's own
     // node so we never hold two live p2p endpoints on the shared identity.
     if let Some(handle) = crate::APP_HANDLE.get() {
-        if let Some(app_node) = handle.try_state::<crate::app_node::AppNode>() {
+        if let Some(app_node) = handle.try_state::<crate::node::AppNode>() {
             if let Ok(node) = app_node.get().await {
                 // The app is fully running — clear any stale cached nodes
                 clear().await;
@@ -63,7 +63,7 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
 
     let node = Node::new(
         data_path.clone(),
-        crate::app_node::AppNode::node_config(true),
+        crate::node::AppNode::node_config(true),
         None,
         None,
     )

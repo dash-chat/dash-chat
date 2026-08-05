@@ -2,8 +2,8 @@ use dashchat_node::{topic::kind::Inbox, AddContactQrCode, AgentId, DeviceId, Top
 use std::{collections::BTreeSet, str::FromStr};
 use tauri::State;
 
-use crate::app_node::AppNode;
 use crate::error::Error;
+use crate::node::AppNode;
 
 #[tauri::command]
 pub async fn create_contact_code(app_node: State<'_, AppNode>) -> Result<String, Error> {

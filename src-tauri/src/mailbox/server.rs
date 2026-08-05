@@ -1,4 +1,4 @@
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 use mailbox_local_server::LocalMailboxServer;
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};

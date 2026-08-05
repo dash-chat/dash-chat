@@ -7,7 +7,7 @@ use p2panda_core::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
 
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 
 /// Serialize a `Timestamp` (microseconds) as milliseconds since the UNIX epoch
 /// so JS can pass it straight to `new Date(ms)`.

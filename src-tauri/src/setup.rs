@@ -90,7 +90,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     // iOS app is backgrounded (releasing SQLite locks) and rebuilt on foreground.
     // AppNode::spawn owns the notification and topic-subscribed channels and wires
     // up the notification loop and push notifications internally.
-    let app_node = crate::app_node::AppNode::spawn(&app_handle, local_data_path).await?;
+    let app_node = crate::node::AppNode::spawn(&app_handle, local_data_path).await?;
     app_handle.manage(app_node);
 
     // Start the local mailbox server after the node is managed so it can

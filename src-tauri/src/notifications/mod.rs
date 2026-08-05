@@ -1,4 +1,5 @@
 mod notified_operations_store;
+
 #[cfg(mobile)]
 pub mod push_notifications;
 
@@ -9,6 +10,8 @@ use dashchat_node::{DeviceId, Node, Payload, Topic, TopicId};
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
+
+use crate::node::AppNode;
 
 /// Returns `true` iff the user has both enabled notifications in app settings
 /// and granted OS-level permission. On desktop the permission state is always
@@ -33,7 +36,7 @@ pub(crate) async fn show_sync_notification(
         return;
     }
 
-    let Some(app_node) = app_handle.try_state::<crate::app_node::AppNode>() else {
+    let Some(app_node) = app_handle.try_state::<AppNode>() else {
         return;
     };
 

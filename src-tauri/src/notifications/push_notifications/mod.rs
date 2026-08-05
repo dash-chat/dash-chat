@@ -8,10 +8,10 @@ use push_notifications_client::types::{FcmToken, TopicId as PushTopicId, Verifyi
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
-use crate::app_node::AppNode;
+use crate::node::node_cache;
+use crate::node::AppNode;
 use crate::notifications::are_notifications_enabled;
 
-mod node_cache;
 mod receive_push_notification;
 
 #[cfg(target_os = "android")]

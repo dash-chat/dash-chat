@@ -1,5 +1,5 @@
 #[cfg(feature = "e2e-tests")]
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 #[cfg(feature = "e2e-tests")]
 use tauri::State;
 

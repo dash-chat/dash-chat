@@ -10,6 +10,7 @@ use p2panda::operation::LogId;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
+use crate::node::node_cache;
 use crate::notifications;
 
 #[cfg(target_os = "android")]
@@ -151,7 +152,7 @@ async fn handle_push_notification(
         app_data_dir
     );
 
-    let node = super::node_cache::get_node(app_data_dir)
+    let node = node_cache::get_node(app_data_dir)
         .await
         .context("failed to get node")?;
 

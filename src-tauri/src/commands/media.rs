@@ -1,7 +1,7 @@
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 
 /// Load a blob from the node's local store and write it to a file in the app
 /// cache directory, returning the absolute path.

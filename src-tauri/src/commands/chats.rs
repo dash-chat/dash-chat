@@ -7,7 +7,7 @@ use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]

@@ -1,7 +1,7 @@
 use dashchat_node::Profile;
 use tauri::State;
 
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 use crate::error::Error;
 
 #[tauri::command]

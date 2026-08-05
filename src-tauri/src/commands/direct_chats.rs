@@ -1,7 +1,7 @@
 use dashchat_node::{topic::kind::Chat, AgentId, Topic};
 use tauri::State;
 
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 
 #[tauri::command]
 pub async fn direct_chat_id(

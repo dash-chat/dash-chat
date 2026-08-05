@@ -3,7 +3,7 @@ use dashchat_node::Node;
 use tauri::Manager;
 use tauri::{AppHandle, State};
 
-use crate::app_node::AppNode;
+use crate::node::AppNode;
 
 #[tauri::command]
 pub async fn delete_account(app: AppHandle, app_node: State<'_, AppNode>) -> Result<(), String> {
