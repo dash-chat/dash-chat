@@ -159,7 +159,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	};
 	agent.tr = async (key: string, params?: Record<string, unknown>) =>
 		await b.execute(
-			async (k: string, p: Record<string, unknown> | undefined) => {
+			(k: string, p: Record<string, unknown> | undefined) => {
 				type Key = Parameters<Window['__test']['tr']>[0];
 				type Params = Parameters<Window['__test']['tr']>[1];
 				return window.__test.tr(k as Key, p as Params);
