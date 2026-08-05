@@ -28,8 +28,11 @@ async fn current_node() -> Option<(NodeContext, Node)> {
 /// 1. The app's managed state (authoritative Node with notification channels).
 ///    When found, the cache is cleared since it's no longer needed.
 /// 2. A previously cached Node.
-/// 3. Build a new Node without channels and cache it.
-pub async fn get_or_build_node(data_path: &PathBuf) -> anyhow::Result<Node> {
+/// 3. Build a new Node for the requested context and cache it.
+pub async fn get_or_build_node(
+    data_path: &PathBuf,
+    context: NodeContext,
+) -> anyhow::Result<Node> {
     // Try the app's managed state first. If the app is running but its node is
     // paused (backgrounded on iOS), fall through and build the extension's own
     // node so we never hold two live p2p endpoints on the shared identity.
@@ -43,8 +46,6 @@ pub async fn get_or_build_node(data_path: &PathBuf) -> anyhow::Result<Node> {
             }
         }
     }
-
-    let context = NodeContext::for_push_notifications();
 
     // Fast path: return a cached node without blocking on any in-flight build.
     if let Some((_, node)) = current_node().await {

@@ -11,6 +11,7 @@ use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
 use crate::node::node_slot;
+use crate::node::NodeContext;
 use crate::notifications;
 
 #[cfg(target_os = "android")]
@@ -152,7 +153,7 @@ async fn handle_push_notification(
         app_data_dir
     );
 
-    let node = node_slot::get_or_build_node(app_data_dir)
+    let node = node_slot::get_or_build_node(app_data_dir, NodeContext::for_push_notifications())
         .await
         .context("failed to get node")?;
 
