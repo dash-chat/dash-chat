@@ -123,7 +123,7 @@ export class Composer extends TestHelper {
 		await this.waitForStagedMedia();
 	}
 
-	/** Attach a zero-filled file of exactly `sizeBytes` to test the size cap. */
+	/** Attach a zero-filled file of exactly `sizeBytes`. */
 	async attachFileOfSize(sizeBytes: number, name = 'big.bin'): Promise<void> {
 		await this.messageInput.waitForExist();
 		await this.agent.execute(
@@ -134,6 +134,26 @@ export class Composer extends TestHelper {
 			},
 			sizeBytes,
 			name,
+		);
+		await this.waitForStagedMedia();
+	}
+
+	/** Stage a synthesized noise JPEG named `${label}.jpg` at the given pixel
+	 * size. Encoding is async in the page, so the staged-media wait is what
+	 * confirms the paste actually landed. */
+	async attachNoisePhoto(
+		label: string,
+		width: number,
+		height: number,
+	): Promise<void> {
+		await this.messageInput.waitForExist();
+		await this.agent.execute(
+			async (name: string, w: number, h: number) => {
+				await window.__test.pasteNoisePhoto({ name, width: w, height: h });
+			},
+			`${label}.jpg`,
+			width,
+			height,
 		);
 		await this.waitForStagedMedia();
 	}

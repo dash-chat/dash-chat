@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::commands::redact_log::REDACTION_REGEXES;
+use crate::redaction::REDACTION_REGEXES;
 
 /// `SENTRY_DSN` is set by CI at build time — one DSN for every environment, with
 /// `ENV` telling them apart in Sentry. Absent means nothing is reported; logging
