@@ -140,29 +140,6 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Blob hash of a rendered photo, read off the `irohblob://` URL its `<img>`
-	 * is served from — the hash is the URL's last path segment. */
-	async photoHash(label: string): Promise<string> {
-		const src = await this.agent.execute(
-			(messagesSel: string, photosSel: string, name: string) => {
-				const imgs =
-					document
-						.querySelector(messagesSel)
-						?.querySelectorAll(`${photosSel} img`) ?? [];
-				const img = Array.from(imgs).find(el =>
-					(el as HTMLImageElement).alt.includes(name),
-				);
-				return (img as HTMLImageElement | undefined)?.src ?? '';
-			},
-			this.messagesSelector,
-			tid('message-attachment-photos'),
-			label,
-		);
-		const hash = src.split('?')[0].split('/').pop() ?? '';
-		if (hash === '') throw new Error(`No photo hash found for "${label}"`);
-		return hash;
-	}
-
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
