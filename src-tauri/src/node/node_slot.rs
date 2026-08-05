@@ -27,12 +27,9 @@ async fn current_node() -> Option<(NodeContext, Node)> {
 /// Resolution order:
 /// 1. The app's managed state (authoritative Node with notification channels).
 ///    When found, the cache is cleared since it's no longer needed.
-/// 2. A previously cached Node.
+/// 2. A previously cached Node with a matching context.
 /// 3. Build a new Node for the requested context and cache it.
-pub async fn get_or_build_node(
-    data_path: &PathBuf,
-    context: NodeContext,
-) -> anyhow::Result<Node> {
+pub async fn get_or_build_node(data_path: &PathBuf, context: NodeContext) -> anyhow::Result<Node> {
     // Try the app's managed state first. If the app is running but its node is
     // paused (backgrounded on iOS), fall through and build the extension's own
     // node so we never hold two live p2p endpoints on the shared identity.
@@ -47,20 +44,37 @@ pub async fn get_or_build_node(
         }
     }
 
-    // Fast path: return a cached node without blocking on any in-flight build.
-    if let Some((_, node)) = current_node().await {
-        return Ok(node);
+    // Fast path: return a cached node with a compatible context without
+    // blocking on any in-flight build.
+    if let Some((cached_context, node)) = current_node().await {
+        if cached_context.is_compatible_with(&context) {
+            return Ok(node);
+        }
     }
 
     // Serialize the build (one SQLite pool per DB) — but never hold the cache
     // lock across it. A push that arrives mid-build waits here, then finds the
     // just-built node on this re-check instead of building a second one.
     let _build_guard = BUILD_LOCK.lock().await;
-    if let Some((_, node)) = current_node().await {
-        return Ok(node);
+    if let Some((cached_context, node)) = current_node().await {
+        if cached_context.is_compatible_with(&context) {
+            return Ok(node);
+        }
     }
 
-    log::info!("No nodes in the cache, building node from scratch.");
+    // A Node built for a different context is already in the slot. Evict and
+    // shut it down before building the new one so two Nodes are never alive at
+    // the same time in this process. The slot is left empty during shutdown and
+    // build so a concurrent caller cannot observe a Node whose context disagrees
+    // with its actual behavior.
+    let maybe_old_node = SLOT.lock().await.take().map(|(_, node)| node);
+    if let Some(old_node) = maybe_old_node {
+        if let Err(err) = old_node.shutdown().await {
+            log::warn!("failed to shut down evicted node: {err:?}");
+        }
+    }
+
+    log::info!("No compatible node in the cache, building node from scratch.");
 
     let node = Node::new(
         data_path.clone(),

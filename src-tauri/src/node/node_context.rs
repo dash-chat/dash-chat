@@ -47,6 +47,17 @@ impl NodeContext {
         }
     }
 
+    /// Whether this context is compatible with another for reusing a Node.
+    ///
+    /// Channels are compared by presence, not identity: a Node built with a
+    /// notification sender can satisfy any caller that needs one.
+    pub fn is_compatible_with(&self, other: &Self) -> bool {
+        self.p2p_enabled == other.p2p_enabled
+            && self.blob_sync_enabled == other.blob_sync_enabled
+            && self.notification_tx.is_some() == other.notification_tx.is_some()
+            && self.topic_subscribed_tx.is_some() == other.topic_subscribed_tx.is_some()
+    }
+
     /// Build a [`dashchat_node::NodeConfig`] from this context.
     pub fn node_config(&self) -> dashchat_node::NodeConfig {
         let mut config = if cfg!(feature = "e2e-tests") {
