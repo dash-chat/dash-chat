@@ -8,7 +8,7 @@ use push_notifications_client::types::{FcmToken, TopicId as PushTopicId, Verifyi
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
-use crate::node::node_cache;
+use crate::node::node_slot;
 use crate::node::AppNode;
 use crate::notifications::are_notifications_enabled;
 
@@ -49,7 +49,7 @@ pub fn setup_push_notifications(
 ) -> anyhow::Result<()> {
     // Clear any temporary nodes that were created by push notifications before
     // the app fully started. The authoritative Node is now managed by Tauri.
-    tauri::async_runtime::spawn(node_cache::clear());
+    tauri::async_runtime::spawn(node_slot::clear());
 
     handle.manage(PushNotificationsClient::new(push_notifications_url())?);
 

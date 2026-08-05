@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 /// The single Node built when receiving a push notification in the background.
 /// Only to be reused when multiple notifications are processed sequentially.
-static NODE: Mutex<Option<Node>> = Mutex::const_new(None);
+static SLOT: Mutex<Option<Node>> = Mutex::const_new(None);
 
 /// Serializes the (slow) node build so two pushes racing in the same extension
 /// process don't open two SQLite pools on the same database. Deliberately
@@ -15,8 +15,8 @@ static NODE: Mutex<Option<Node>> = Mutex::const_new(None);
 /// they all miss iOS's ~30s budget.
 static BUILD_LOCK: Mutex<()> = Mutex::const_new(());
 
-async fn cached_node() -> Option<Node> {
-    NODE.lock().await.clone()
+async fn current_node() -> Option<Node> {
+    SLOT.lock().await.clone()
 }
 
 /// Get a Node for handling a push notification.
@@ -26,14 +26,14 @@ async fn cached_node() -> Option<Node> {
 ///    When found, the cache is cleared since it's no longer needed.
 /// 2. A previously cached Node.
 /// 3. Build a new Node without channels and cache it.
-pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
+pub async fn get_or_build_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     // Try the app's managed state first. If the app is running but its node is
     // paused (backgrounded on iOS), fall through and build the extension's own
     // node so we never hold two live p2p endpoints on the shared identity.
     if let Some(handle) = crate::APP_HANDLE.get() {
         if let Some(app_node) = handle.try_state::<crate::node::AppNode>() {
             if let Ok(node) = app_node.get().await {
-                // The app is fully running — clear any stale cached nodes
+                // The app is fully running — clear any stale cached node
                 clear().await;
                 log::info!("The app is opened: reuse the currently running node.");
                 return Ok(node);
@@ -42,7 +42,7 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     }
 
     // Fast path: return a cached node without blocking on any in-flight build.
-    if let Some(node) = cached_node().await {
+    if let Some(node) = current_node().await {
         return Ok(node);
     }
 
@@ -50,7 +50,7 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     // lock across it. A push that arrives mid-build waits here, then finds the
     // just-built node on this re-check instead of building a second one.
     let _build_guard = BUILD_LOCK.lock().await;
-    if let Some(node) = cached_node().await {
+    if let Some(node) = current_node().await {
         return Ok(node);
     }
 
@@ -74,12 +74,12 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
         log::warn!("failed to track cloud mailbox in push extension: {err:?}");
     }
 
-    *NODE.lock().await = Some(node.clone());
+    *SLOT.lock().await = Some(node.clone());
 
     Ok(node)
 }
 
 /// Drop the cached node.
 pub async fn clear() {
-    *NODE.lock().await = None;
+    *SLOT.lock().await = None;
 }
