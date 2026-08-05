@@ -12,11 +12,47 @@ interface ErrorReport {
 	error?: ReportedError;
 }
 
+export type FeedbackReason =
+	| 'bug'
+	| 'feature'
+	| 'question'
+	| 'feedback'
+	| 'other';
+
+interface Feedback {
+	reason: FeedbackReason;
+	message: string;
+	screenshot?: File;
+	includeLogs: boolean;
+}
+
 export async function sendErrorReport(report: ErrorReport): Promise<void> {
 	return invokeAfterSetup('plugin:sentry-reporting|send_error_report', {
 		message: report.message,
 		error: report.error,
 	});
+}
+
+export async function sendFeedback(feedback: Feedback): Promise<void> {
+	return invokeAfterSetup('plugin:sentry-reporting|send_feedback', {
+		feedback: {
+			reason: feedback.reason,
+			message: feedback.message,
+			screenshot: feedback.screenshot
+				? await describeScreenshot(feedback.screenshot)
+				: undefined,
+			includeLogs: feedback.includeLogs,
+		},
+	});
+}
+
+/** Bytes rather than a path, so the image never has to be staged to disk. */
+async function describeScreenshot(file: File) {
+	return {
+		name: file.name,
+		contentType: file.type,
+		bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+	};
 }
 
 export async function hasPendingCrashReport(): Promise<boolean> {
