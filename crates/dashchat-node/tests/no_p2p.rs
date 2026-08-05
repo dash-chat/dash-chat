@@ -26,7 +26,7 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -132,7 +132,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
     // Establish contact while both are online (no media exchanged yet).
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -285,7 +285,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 

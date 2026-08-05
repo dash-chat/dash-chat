@@ -41,7 +41,7 @@ impl Notification {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpNotification {
-    pub topic: Topic,
+    pub topic: TopicId,
     pub header: Header,
     pub payload: Option<Payload>,
 }
@@ -384,10 +384,8 @@ impl Node {
         //
         // @TODO: once group control messages are properly ordered we could send a
         // membership diff here instead of relying on the frontend to refetch.
-        let dashchat_topic =
-            crate::Topic::<crate::topic::kind::Untyped>::new(*operation.topic().as_bytes());
         self.notify_payload(
-            dashchat_topic,
+            operation.topic(),
             operation.processed().header(),
             operation.message(),
         )
@@ -449,7 +447,6 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
         let topic = operation.topic();
-        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
 
         // If an operation is invalidated by the projection layer, we don't process it,
@@ -481,7 +478,7 @@ impl Node {
             .await?
         {
             // The payload is tombstoned, so we must not process it. Return early.
-            self.notify_header(dashchat_topic, header).await?;
+            self.notify_header(topic, header).await?;
             return Ok(());
         }
 
@@ -668,8 +665,7 @@ impl Node {
         // processing resulted in an error. It might be required that the frontend is also
         // informed of any errors or these events are not even forwarded.
 
-        // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
-        self.notify_payload(dashchat_topic, &operation.processed().header(), &payload)
+        self.notify_payload(topic, &operation.processed().header(), &payload)
             .await?;
 
         Ok(())
@@ -740,7 +736,7 @@ impl Node {
     /// op's body has been tombstoned: the frontend must learn the op exists (so
     /// it refetches and renders the body-less op) but must never receive the
     /// deleted content.
-    pub async fn notify_header(&self, topic: Topic, header: &Header) -> anyhow::Result<()> {
+    pub async fn notify_header(&self, topic: TopicId, header: &Header) -> anyhow::Result<()> {
         if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx
                 .send(
@@ -759,7 +755,7 @@ impl Node {
 
     pub async fn notify_payload(
         &self,
-        topic: Topic,
+        topic: TopicId,
         header: &Header,
         payload: &Payload,
     ) -> anyhow::Result<()> {

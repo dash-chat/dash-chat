@@ -185,9 +185,10 @@ impl OpProjection {
     }
 
     pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
-        let rows: Vec<(Topic,)> = sqlx::query_as("SELECT chat_id FROM group_chats")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows: Vec<(Topic<crate::topic::kind::Untyped>,)> =
+            sqlx::query_as("SELECT chat_id FROM group_chats")
+                .fetch_all(&self.pool)
+                .await?;
         rows.into_iter()
             .map(|(id,)| Topic::<crate::topic::kind::Chat>::from_topic_id(crate::TopicId::from(id)))
             .collect()

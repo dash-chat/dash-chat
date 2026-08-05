@@ -9,16 +9,16 @@ tauri-plugin = { version = "2", features = ["build"] }
 
 [dependencies]
 tauri = { version = "2", default-features = false }
-# `Target` / `TargetKind` only — the app still owns logger registration.
-sentry = { version = "0.42", default-features = false, features = [
+tauri-plugin-log = "2"
+sentry = { version = "0.49", default-features = false, features = [
   "backtrace",
   "contexts",
   "panic",
   "debug-images",
-  # rustls rather than the default native-tls: no OpenSSL on Android or iOS,
-  # and the ring provider is already installed at startup.
+  "log",
+  "logs",
   "reqwest",
-  "rustls",
+  "rustls-no-provider",
 ] }
 serde = { workspace = true }
 serde_json = { workspace = true }

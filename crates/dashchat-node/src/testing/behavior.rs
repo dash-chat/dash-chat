@@ -22,12 +22,8 @@ impl Behavior {
     /// Simulate sending a contact a QR code and them using it to add me as a contact,
     /// and sending me an Inbox message with their contact info so I can add them too.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
-    pub async fn initiate_and_establish_contact(
-        &mut self,
-        other: &TestNode,
-        share_intent: ShareIntent,
-    ) -> anyhow::Result<()> {
-        let qr = self.new_qr_code(share_intent).await?;
+    pub async fn initiate_and_establish_contact(&mut self, other: &TestNode) -> anyhow::Result<()> {
+        let qr = self.create_add_contact_qr_code().await?;
         other.add_contact(qr).await?;
         self.accept_next_contact().await?;
 

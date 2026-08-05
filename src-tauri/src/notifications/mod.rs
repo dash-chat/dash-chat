@@ -37,45 +37,27 @@ pub(crate) async fn show_sync_notification(
         return;
     };
 
-    // On iOS the foreground sync path is the only one that can show a banner:
-    // `willPresent` unconditionally drops the NSE's push while the app is
-    // foregrounded, and a backgrounded app is suspended so this loop isn't
-    // running. Sharing the dedup token with the NSE here would let the NSE win
-    // the race and silence this banner (push suppressed + sync skipped = nothing
-    // shown), so on iOS we always show and leave push/sync dedup to `willPresent`.
-    // Other platforms can display both paths, so they keep the cross-path dedup.
-    //
-    // TODO(usernotifications.filtering entitlement): once Apple grants
-    // `com.apple.developer.usernotifications.filtering`, the NSE can suppress its
-    // own push when the main app is alive, so the foreground push/sync collision
-    // goes away. At that point delete this iOS bypass *and* the unconditional
-    // push-suppression in the plugin's `willPresent` (NotificationHandler.swift),
-    // and let every platform share the single cross-path dedup again.
-    #[cfg(not(target_os = "ios"))]
+    match app_node
+        .notified_operations_store()
+        .record_notified_operation(notification.header.hash())
+        .await
     {
-        match app_node
-            .notified_operations_store()
-            .record_notified_operation(notification.header.hash())
-            .await
-        {
-            Ok(false) => {
-                log::debug!("Skipping sync notification: op already notified");
-                return;
-            }
-            Ok(true) => {}
-            Err(err) => {
-                log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
-            }
+        Ok(false) => {
+            log::debug!("Skipping sync notification: op already notified");
+            return;
+        }
+        Ok(true) => {}
+        Err(err) => {
+            log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
         }
     }
 
     let Ok(node) = app_node.get().await else {
         return;
     };
-    let topic = *notification.topic;
     let data = build_notification_data(
         &node,
-        topic.into(),
+        notification.topic,
         &notification.header,
         notification.payload.as_ref(),
     )
@@ -407,26 +389,6 @@ async fn auth_control_op_notification(
 pub fn new_message_generic_notification() -> NotificationData {
     NotificationData {
         title: Some(sonix_i18n::t!("youHaveANewMessage")),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        ..Default::default()
-    }
-}
-
-#[cfg(target_os = "ios")]
-pub fn synced_generic_notification() -> NotificationData {
-    NotificationData {
-        title: Some(sonix_i18n::t!("syncedWithServer")),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        ..Default::default()
-    }
-}
-
-#[cfg(target_os = "ios")]
-pub fn may_have_new_messages_generic_notification() -> NotificationData {
-    NotificationData {
-        title: Some(sonix_i18n::t!("mayHaveNewMessages")),
         body: None,
         icon: Some("ic_stat_icon".to_string()),
         ..Default::default()

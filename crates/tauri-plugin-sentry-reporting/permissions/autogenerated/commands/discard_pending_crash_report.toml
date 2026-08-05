@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-discard-pending-crash-report"
+description = "Enables the discard_pending_crash_report command without any pre-configured scope."
+commands.allow = ["discard_pending_crash_report"]
+
+[[permission]]
+identifier = "deny-discard-pending-crash-report"
+description = "Denies the discard_pending_crash_report command without any pre-configured scope."
+commands.deny = ["discard_pending_crash_report"]

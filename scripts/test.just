@@ -19,8 +19,9 @@ dashchat-node *ARGS:
 # run the whole suite. Pass `--no-rerun` to skip WebdriverIO's spec retry on
 # failures. The PLATFORMS env var lists the agents to launch as an unordered
 # multiset of platforms (default `desktop,desktop`): desktop, android
-# (physical device), or android-emulator (booted automatically), e.g.
-# `PLATFORMS=android,desktop just test e2e send-messages`.
+# (physical device), android-emulator (booted automatically), or ios (connected
+# iPhone). Set E2E_STRESS=1 to include the stress specs that otherwise skip
+# themselves.
 e2e NAME='' *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -37,6 +38,9 @@ e2e NAME='' *ARGS:
     done
     if [[ -n "$spec" ]]; then
         wdio_args+=(--spec "specs/${spec}.spec.ts")
+        # Naming a spec means running it whatever it is, including the stress
+        # specs that otherwise skip themselves.
+        export E2E_STRESS=1
     fi
     # wdio itself needs the androidDev shell's tools (adb, appium
     # chromedrivers, boot-emulator, SDK/NDK for the APK build); it layers

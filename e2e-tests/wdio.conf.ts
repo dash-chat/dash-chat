@@ -2,21 +2,32 @@
  * Unified e2e config. The PLATFORMS env var lists the agents to launch as an
  * unordered multiset of platforms (default `desktop,desktop`) — `desktop`
  * (tauri-driver against the built binary), `android` (physical device via
- * Appium) or `android-emulator` (running emulator via Appium) — so any combo
- * runs through this one config, e.g.
- * `PLATFORMS=android,desktop just test e2e send-messages`.
+ * Appium), `android-emulator` (running emulator via Appium), or `ios`
+ * (connected iPhone via Appium/XCUITest) — so any combo runs through this one
+ * config, e.g. `PLATFORMS=ios,ios just test e2e send-messages`. Combos are bound
+ * by host OS, though: `desktop` needs Linux (tauri-driver/WebKitGTK), `ios` needs
+ * macOS + a device, so they can't share one host.
  */
-import { type ChildProcess, spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { UI_TIMEOUT } from './helpers/timeouts';
 import { killLeftoverMailboxServers } from './setup/cleanup';
-import { startLocalMailboxServer } from './setup/mailbox-server';
+import {
+	buildMailboxServer,
+	startLocalMailboxServer,
+} from './setup/mailbox-server';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
 import { DesktopPlatform } from './setup/platforms/desktop';
+import { IosPlatform } from './setup/platforms/ios';
 import type { AgentPlatform } from './setup/platforms/platform';
+import {
+	buildPushServer,
+	pushTestingEnabled,
+	startLocalPushServer,
+} from './setup/push-server';
 import {
 	type AgentPlatformName,
 	getSpecFileRetries,
@@ -34,9 +45,13 @@ const nameBySlot = new Map<number, AgentPlatformName>(
 const desktopSlots = [...nameBySlot]
 	.filter(([, name]) => name === 'desktop')
 	.map(([slot]) => slot);
+const iosSlots = [...nameBySlot]
+	.filter(([, name]) => name === 'ios')
+	.map(([slot]) => slot);
 const androidKinds = new Map<number, AndroidKind>(
 	[...nameBySlot].filter(
-		(entry): entry is [number, AndroidKind] => entry[1] !== 'desktop',
+		(entry): entry is [number, AndroidKind] =>
+			entry[1] !== 'desktop' && entry[1] !== 'ios',
 	),
 );
 
@@ -45,30 +60,33 @@ const androidKinds = new Map<number, AndroidKind>(
  * Awaited in onPrepare. */
 const mailboxBuild =
 	process.env.WDIO_WORKER_ID === undefined && remoteMailboxUrl() === null
-		? new Promise<void>((resolve, reject) => {
-				const proc = spawn('cargo', ['build', '-p', 'mailbox-server'], {
-					cwd: ROOT,
-					stdio: 'inherit',
-				});
-				proc.on('error', reject);
-				proc.on('exit', code => {
-					if (code === 0) resolve();
-					else
-						reject(new Error(`cargo build -p mailbox-server exited ${code}`));
-				});
-			})
+		? buildMailboxServer()
 		: null;
 // Register a handler now so a build failure before onPrepare awaits the
 // promise doesn't crash node with an unhandled rejection.
 mailboxBuild?.catch(() => {});
 
+/** The push-notifications-server build, only when FCM_SERVICE_ACCOUNT_KEY is set
+ * (the real-device push spec). Gated on the env var (not the throwing
+ * pushServiceAccountKey()) so a bad path surfaces in onPrepare, not at load. */
+const pushEnabled =
+	process.env.WDIO_WORKER_ID === undefined && pushTestingEnabled();
+const pushServerBuild = pushEnabled ? buildPushServer() : null;
+pushServerBuild?.catch(() => {});
+
 const android =
 	androidKinds.size > 0 ? new AndroidPlatform(androidKinds) : null;
+const ios = iosSlots.length > 0 ? new IosPlatform(iosSlots) : null;
 const desktop =
 	desktopSlots.length > 0 ? new DesktopPlatform(desktopSlots) : null;
 const platforms: AgentPlatform[] = [];
 if (desktop !== null) platforms.push(desktop);
 if (android !== null) platforms.push(android);
+if (ios !== null) platforms.push(ios);
+
+// Android and iOS both drive their devices through Appium (uiautomator2 /
+// xcuitest); they share one server on the same pinned port.
+const appiumPort = android?.appiumPort ?? ios?.appiumPort ?? null;
 
 function agentEntry(slot: number) {
 	const platform = platforms.find(p => p.slots.includes(slot))!;
@@ -77,21 +95,25 @@ function agentEntry(slot: number) {
 
 let mailboxServer: ChildProcess | undefined;
 let mailboxLogger: ChildProcess | undefined;
+let pushServer: ChildProcess | undefined;
+let pushLogger: ChildProcess | undefined;
 
 async function teardown() {
-	if (mailboxServer?.pid) {
-		// Negative PID = signal the entire process group the detached
-		// mailbox server runs in.
-		try {
-			process.kill(-mailboxServer.pid, 'SIGTERM');
-		} catch {
-			/* already gone */
+	for (const server of [mailboxServer, pushServer]) {
+		if (server?.pid) {
+			// Negative PID = signal the entire detached process group.
+			try {
+				process.kill(-server.pid, 'SIGTERM');
+			} catch {
+				/* already gone */
+			}
 		}
 	}
 	for (const platform of platforms) {
 		await platform.onComplete();
 	}
 	mailboxLogger?.kill();
+	pushLogger?.kill();
 }
 
 /** Save a per-agent screenshot of the current webview to .dbs/e2e/failures/. */
@@ -128,9 +150,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	),
 
 	services:
-		android !== null
-			? [['appium', { args: { port: android.appiumPort } }]]
-			: [],
+		appiumPort !== null ? [['appium', { args: { port: appiumPort } }]] : [],
 
 	logLevel: 'warn',
 	waitforTimeout: UI_TIMEOUT,
@@ -172,6 +192,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			// isRemoteMailbox().
 			const remoteUrl = remoteMailboxUrl();
 			let mailboxPort: number | null = null;
+			let pushPort: number | null = null;
 			if (remoteUrl !== null) {
 				process.env.MAILBOX_URL = remoteUrl;
 				mkdirSync(path.dirname(mailboxInfoPath), { recursive: true });
@@ -181,17 +202,30 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				);
 				console.log(`Using remote mailbox at ${remoteUrl}`);
 			} else {
+				// Real-device push tests: start the push-notifications server first
+				// so the mailbox can be spawned pointing at it. Only meaningful with
+				// a local mailbox — a remote cloud mailbox can't reach our host.
+				let pushUrl: string | undefined;
+				if (pushEnabled) {
+					await pushServerBuild;
+					const push = await startLocalPushServer();
+					if (push !== null) {
+						({ proc: pushServer, logger: pushLogger, port: pushPort } = push);
+						pushUrl = push.url;
+					}
+				}
+
 				await mailboxBuild;
 				// Start a local mailbox server so e2e tests don't hit the internet.
 				({
 					proc: mailboxServer,
 					logger: mailboxLogger,
 					port: mailboxPort,
-				} = await startLocalMailboxServer());
+				} = await startLocalMailboxServer(pushUrl));
 			}
 
 			for (const platform of platforms) {
-				await platform.onPrepare({ mailboxPort });
+				await platform.onPrepare({ mailboxPort, pushPort });
 			}
 		} catch (err) {
 			console.error('onPrepare failed, aborting run:', err);

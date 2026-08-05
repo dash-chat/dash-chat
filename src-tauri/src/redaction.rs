@@ -1,11 +1,9 @@
 use regex::Regex;
 use std::sync::LazyLock;
-use tauri::{AppHandle, Manager};
 
-use crate::filesystem::FileSystem;
-
-const MAX_LOG_BYTES: usize = 5 * 1024 * 1024;
-
+/// What counts as sensitive. `tauri-plugin-sentry-reporting` applies these to
+/// everything on its way off the device, so any feature carrying private or
+/// user-generated data needs a pattern here.
 pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
         // FCM tokens — alphanumeric with colons, hyphens, underscores (100+ chars)
@@ -43,6 +41,8 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
         r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
+        // JSON format: "profile_name":"..." — contact request QR placeholder.
+        r#""profile_name"\s*:\s*"[^"]*""#,
         // JSON format: "content":"..."
         r#""content"\s*:\s*"[^"]*""#,
         // JSON format: "message":"..." — chat message text and edit text
@@ -65,36 +65,6 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     .map(|p| Regex::new(p).expect("invalid redaction pattern"))
     .collect()
 });
-
-/// Returns the path to a redacted copy of the log, for attaching to a support
-/// email. The redaction itself lives in `tauri-plugin-sentry-reporting`, which
-/// applies these same patterns to everything it sends.
-#[tauri::command]
-pub fn get_redacted_log(app_handle: AppHandle) -> Result<String, String> {
-    let log_dir = FileSystem::new(&app_handle)
-        .map_err(|e| format!("Failed to resolve log dir: {e:?}"))?
-        .logs_dir();
-
-    let redacted = tauri_plugin_sentry_reporting::redacted_log_tail(
-        &REDACTION_REGEXES,
-        &log_dir,
-        MAX_LOG_BYTES,
-    )
-    .map_err(|e| format!("Failed to read logs in {}: {e:?}", log_dir.display()))?;
-
-    let cache_dir = app_handle
-        .path()
-        .app_cache_dir()
-        .map_err(|e| format!("Failed to resolve cache dir: {e:?}"))?;
-    std::fs::create_dir_all(&cache_dir)
-        .map_err(|e| format!("Failed to create cache dir: {e:?}"))?;
-
-    let redacted_path = cache_dir.join("redacted-log.txt");
-    std::fs::write(&redacted_path, redacted.as_bytes())
-        .map_err(|e| format!("Failed to write redacted log: {e:?}"))?;
-
-    Ok(redacted_path.to_string_lossy().into_owned())
-}
 
 #[cfg(test)]
 mod tests {
@@ -199,6 +169,26 @@ mod tests {
         assert!(
             !result.contains("Hello world"),
             "about not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_profile_name_field_debug() {
+        let input = r#"PendingContactRequest { device_pubkey: VerifyingKey([1, 2, 3]), profile_name: "Alice" }"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("Alice"),
+            "profile_name not redacted: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_profile_name_field_json() {
+        let input = r#"{"type":"PendingContactRequest","payload":{"device_pubkey":[1,2,3],"profile_name":"Alice"}}"#;
+        let result = redact(input);
+        assert!(
+            !result.contains("Alice"),
+            "profile_name not redacted: {result}"
         );
     }
 

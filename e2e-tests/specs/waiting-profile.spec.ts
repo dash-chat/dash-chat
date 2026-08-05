@@ -34,7 +34,10 @@ describe('Waiting-for-profile placeholder', () => {
 		// The placeholder window only exists while the mailbox is suspended,
 		// which is impossible against a remote environment mailbox.
 		if (isRemoteMailbox()) this.skip();
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 		await Promise.all([
 			agent1.createProfilePage.createProfile('Alice', 'Test'),
 			agent2.createProfilePage.createProfile('Bob', 'Test'),
@@ -91,11 +94,11 @@ describe('Waiting-for-profile placeholder', () => {
 		);
 	});
 
-	it('shows the placeholder on the home chat-list row', async () => {
+	it('shows the QR code profile name on the home chat-list row', async () => {
 		await agent2.chatSettingsPage.back.click();
 		await agent2.directChatPage.ready();
 		await agent2.directChatPage.back.click();
 		await agent2.homePage.ready();
-		await waitForTextContent(agent2, tid('all-chats-row'), waitingText);
+		await waitForTextContent(agent2, tid('all-chats-row'), 'Alice Test');
 	});
 });
