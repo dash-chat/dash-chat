@@ -84,7 +84,7 @@ describe('Media fetch throughput', function () {
 
 		const composer = sender.directChatPage.composer;
 		const labels = Array.from({ length: PHOTO_COUNT }, (_, i) => `batch-${i}`);
-		const before = mailboxBlobs().length;
+		const before = new Set(mailboxBlobs());
 
 		const startedAt = Date.now();
 		for (const label of labels) {
@@ -95,19 +95,15 @@ describe('Media fetch throughput', function () {
 			labels[0],
 			CEILING_MS,
 		);
-		await sender.waitUntil(
-			async () => mailboxBlobs().length >= before + PHOTO_COUNT,
-			{
-				timeout: CEILING_MS,
-				timeoutMsg: `Mailbox stored ${mailboxBlobs().length - before}/${PHOTO_COUNT} blobs`,
-			},
-		);
+		const stored = () => mailboxBlobs().filter(p => !before.has(p));
+		await sender.waitUntil(async () => stored().length >= PHOTO_COUNT, {
+			timeout: CEILING_MS,
+			timeoutMsg: `Mailbox stored ${stored().length}/${PHOTO_COUNT} blobs`,
+		});
 
 		// The stored blobs are what crossed the wire; the composer re-encodes
 		// before sending, so the staged files are a good bit larger.
-		const bytes = mailboxBlobs()
-			.slice(-PHOTO_COUNT)
-			.reduce((sum, p) => sum + statSync(p).size, 0);
+		const bytes = stored().reduce((sum, p) => sum + statSync(p).size, 0);
 		batch = { labels, bytes, uploadMs: Date.now() - startedAt };
 	});
 

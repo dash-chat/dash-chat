@@ -71,14 +71,6 @@ function localInfo(): {
 	return { pid, port, url, dbPath };
 }
 
-/**
- * Where the local mailbox stores a blob's bytes, so a spec can tell whether the
- * mailbox actually holds it.
- */
-export function mailboxBlobPath(hash: string): string {
-	return path.join(mailboxBlobsDir(), `${hash}.data`);
-}
-
 function mailboxBlobsDir(): string {
 	const { dbPath } = localInfo();
 	return path.join(path.dirname(dbPath), 'mailbox_blobs', 'data');
