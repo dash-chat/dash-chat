@@ -5,11 +5,6 @@ import type { NotificationHelper } from './notification-helper';
 
 export type { NotificationHelper } from './notification-helper';
 
-/**
- * Build the notification helper for the given agent's platform. Throws for
- * desktop, which has no OS notification surface these specs drive — callers
- * should ensure the agent is a real iOS/Android device first.
- */
 export function notificationHelperFor(agent: Agent): NotificationHelper {
 	switch (agent.platform) {
 		case 'ios':
