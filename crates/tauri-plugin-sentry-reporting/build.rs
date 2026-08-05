@@ -1,5 +1,6 @@
 const COMMANDS: &[&str] = &[
     "send_error_report",
+    "send_feedback",
     "pending_crash_report",
     "send_pending_crash_report",
     "discard_pending_crash_report",

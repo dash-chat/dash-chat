@@ -1,8 +1,8 @@
-use sentry::protocol::{Event, Exception, Level};
+use sentry::protocol::{EnvelopeItem, Event, Exception, Level};
 use serde::Deserialize;
 
-use crate::envelope;
 use crate::state::Sentry;
+use crate::{attachment, envelope};
 
 /// The thrown value, split into the parts Sentry needs.
 #[derive(Debug, Deserialize)]
@@ -37,8 +37,13 @@ pub(crate) async fn send_error_report(
     }
 
     let logs = state.pending.snapshot();
-    if let Some(envelope) = envelope::build_envelope(&state, event, logs) {
-        state.transport.send(envelope).await;
+    let Some(mut envelope) = envelope::build_envelope(&state, event, logs) else {
+        return Ok(());
+    };
+    if let Some(log_file) = attachment::build_logs_attachment(&state.redact, &state.logs_dir).await
+    {
+        envelope.add_item(EnvelopeItem::Attachment(log_file));
     }
+    state.transport.send(envelope);
     Ok(())
 }
