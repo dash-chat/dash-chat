@@ -27,16 +27,12 @@ import { allocatePort } from './allocate-port';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 
-/** In-repo default location of the Firebase service-account key (gitignored).
- * When present, real-device push tests run with no env var needed. */
+// In-repo default location of the Firebase service-account key (gitignored)
 const DEFAULT_SERVICE_ACCOUNT_KEY =
 	'crates/push-notifications-server/service-account-key.json';
 
 /** The service-account key path to try: the `FCM_SERVICE_ACCOUNT_KEY` override
- * when set, otherwise the in-repo default. Relative paths resolve against the
- * repo root and the result is absolute (so the existence check and the push
- * server — spawned with cwd=ROOT — agree regardless of the worker's cwd). The
- * returned path may not exist. */
+ * when set, otherwise the in-repo default. */
 function serviceAccountKeyPath(): string {
 	const override = process.env.FCM_SERVICE_ACCOUNT_KEY;
 	const rel =
@@ -53,9 +49,7 @@ function pushOptIn(): boolean {
 }
 
 /** Whether the real-device push spec + push server should run: opted in via
- * `E2E_PUSH=1` AND a service-account key present (override or in-repo default).
- * Shared by the spec's skip guard and the harness build gate so they never
- * disagree. */
+ * `E2E_PUSH=1` AND a service-account key present  */
 export function pushTestingEnabled(): boolean {
 	return pushOptIn() && existsSync(serviceAccountKeyPath());
 }

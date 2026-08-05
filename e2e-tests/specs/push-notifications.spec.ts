@@ -16,10 +16,7 @@ import { type Agent, setupAgents } from '../setup/setup-agents';
  * appeared) is what catches the failure mode where the op can't be fetched in
  * time and the receiver falls back to a generic "You have a new message".
  *
- * Runs on either an iOS or an Android receiver (the notification helper switches
- * on platform). Only runs when `FCM_SERVICE_ACCOUNT_KEY` points at a Firebase
- * service-account JSON (so the harness spawns the push-server) and PLATFORMS
- * includes a mobile device; otherwise it skips.
+ * Runs on either an iOS or an Android receiver. Only runs when `E2E_PUSH=1`
  */
 describe('Push notifications (real device, end-to-end)', () => {
 	let receiver: Agent;
@@ -47,7 +44,6 @@ describe('Push notifications (real device, end-to-end)', () => {
 		const marker = `PUSH_${Date.now()}`;
 		const message = `hi ${marker}`;
 
-		// Stop the app so only the NSE processes the push.
 		await receiver.pause(5_000);
 		await receiver.stopApp();
 
