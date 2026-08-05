@@ -3,7 +3,8 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import ImageInput from '$lib/components/ImageInput.svelte';
-	import { sendMailto } from '$lib/utils/mailto';
+	import { compressImage } from '$lib/utils/compress';
+	import { sendFeedback, type FeedbackReason } from '$lib/utils/error-report';
 	import { showToast } from '$lib/utils/toasts';
 	import {
 		BlockTitle,
@@ -20,8 +21,11 @@
 
 	const theme = $derived(useTheme());
 
+	// Without SENTRY_DSN there is nowhere for a submission to go.
+	const canSend = import.meta.env.VITE_SENTRY_ENABLED;
+
 	let message = $state('');
-	let reason = $state('');
+	let reason = $state<FeedbackReason | undefined>();
 	let includeDebugLog = $state(true);
 	let screenshot = $state<File | null>(null);
 
@@ -34,23 +38,18 @@
 	};
 
 	async function handleSubmit() {
-		const subjectParts: string[] = [];
-		if (reason) subjectParts.push(reasonLabels[reason]());
-		const subject =
-			subjectParts.length > 0
-				? `Dash Chat: ${subjectParts.join(' - ')}`
-				: 'Dash Chat';
-
+		if (!reason) return;
 		try {
-			await sendMailto({
-				subject,
-				body: message,
-				includeDebugLog,
-				attachments: screenshot ? [screenshot] : undefined,
+			await sendFeedback({
+				reason,
+				message,
+				screenshot: screenshot ? await compressImage(screenshot) : undefined,
+				includeLogs: includeDebugLog,
 			});
+			showToast(m.reportSent());
 			goto('/settings/help');
 		} catch (e) {
-			console.error('Error sending contact email', e);
+			console.error('Error sending feedback', e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
@@ -81,7 +80,9 @@
 				>
 					{#snippet input()}
 						<select bind:value={reason}>
-							<option value="" disabled>{m.pleaseSelectAnOption()}</option>
+							<option value={undefined} disabled>
+								{m.pleaseSelectAnOption()}
+							</option>
 							<option value="bug">{m.reasonBugReport()}</option>
 							<option value="feature">{m.reasonFeatureRequest()}</option>
 							<option value="question">{m.reasonQuestion()}</option>
@@ -103,6 +104,7 @@
 					placeholder={m.tellUsWhatsGoingOn()}
 					bind:value={message}
 					inputClass="!h-32 resize-none"
+					maxlength={4096}
 					data-testid="contact-us-message-input"
 				/>
 			</List>
@@ -135,14 +137,18 @@
 					{#snippet after()}{/snippet}
 				</ListItem>
 			</List>
+
+			{#if !canSend}
+				<p class="px-4 pt-4 text-sm opacity-60">{m.feedbackUnavailable()}</p>
+			{/if}
 		</div>
 	</div>
 
 	<FixedActionButton
 		onClick={handleSubmit}
-		disabled={!message}
-		testId="contact-us-next-btn"
+		disabled={!message || !reason || !canSend}
+		testId="contact-us-send-btn"
 	>
-		{m.next()}
+		{m.send()}
 	</FixedActionButton>
 </Page>

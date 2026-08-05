@@ -12,7 +12,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const E2E_DIR = path.resolve(__dirname, '..', '..');
 
 const APK_DIR = path.join(ROOT, 'src-tauri/gen/android/app/build/outputs/apk');
-const APP_PACKAGE = 'studio.darksoil.dashchat';
+export const APP_PACKAGE = 'studio.darksoil.dashchat';
 
 // ABIs the e2e APK build covers (--split-per-abi): the gradle flavor that
 // names each APK and the rust target passed to tauri.
@@ -264,6 +264,14 @@ export class AndroidPlatform implements AgentPlatform {
 					`_WDIO_CHROMEDRIVER_PORT${slot}`,
 				),
 				'appium:chromedriverExecutableDir': CHROMEDRIVERS_DIR,
+				// Costs a devtools round trip per getContexts call, which `startApp`
+				// polls after every relaunch. It also refines the chromedriver pick out
+				// of CHROMEDRIVERS_DIR, so if a device's WebView major stops matching,
+				// restore it first.
+				'appium:enableWebviewDetailsCollection': false,
+				// terminateApp destroys the webview, so a merely suspended chromedriver
+				// session gets handed back stale on the next context switch.
+				'appium:recreateChromeDriverSessions': true,
 				'appium:adbExecTimeout': 60_000,
 				'appium:newCommandTimeout': 240,
 			} as WebdriverIO.Capabilities,

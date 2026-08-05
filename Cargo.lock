@@ -1952,7 +1952,6 @@ dependencies = [
  "tauri-plugin-ios-photos",
  "tauri-plugin-keepawake",
  "tauri-plugin-log",
- "tauri-plugin-mailto",
  "tauri-plugin-mcp-bridge",
  "tauri-plugin-medialibrary",
  "tauri-plugin-notification",
@@ -4910,25 +4909,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "is-docker"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "928bae27f42bc99b60d9ac7334e3a21d10ad8f1835a4e12ec3ec0464765ed1b3"
-dependencies = [
- "once_cell",
-]
-
-[[package]]
-name = "is-wsl"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "173609498df190136aa7dea1a91db051746d339e18476eed5ca40521f02d7aa5"
-dependencies = [
- "is-docker",
- "once_cell",
-]
-
-[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6836,16 +6816,6 @@ name = "opaque-debug"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
-
-[[package]]
-name = "open"
-version = "5.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0b3d059e795d52b8a72fef45658620edd4d9c359b338564aa14391ffa511ed5"
-dependencies = [
- "is-wsl",
- "libc",
-]
 
 [[package]]
 name = "opener"
@@ -10500,19 +10470,6 @@ dependencies = [
  "thiserror 2.0.19",
  "time",
  "tracing",
-]
-
-[[package]]
-name = "tauri-plugin-mailto"
-version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-mailto?branch=main#0338bcefae60bdaf2fa7a3e433205b78dbe931a7"
-dependencies = [
- "open",
- "serde",
- "serde_json",
- "tauri",
- "tauri-plugin",
- "thiserror 2.0.19",
 ]
 
 [[package]]

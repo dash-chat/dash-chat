@@ -35,6 +35,7 @@ import { EditPhotoPage } from '../helpers/pages/settings/profile/edit-photo-page
 import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { checkOverflow } from '../helpers/review/checks';
+import { APP_PACKAGE } from './platforms/android';
 import { type AgentPlatformName, platformNames } from './test-env';
 
 /** App bundle/package id. */
@@ -89,6 +90,13 @@ export type Agent = WebdriverIO.Browser & {
 	 *  Rust node re-hydrates from persisted state), re-attach fresh page objects
 	 *  to the new session, and restore narrow layout. */
 	restart(): Promise<void>;
+	/** Close the app, leaving its on-disk state intact so [`startApp`] brings
+	 *  the same user back. Android keeps the WebDriver session alive: tearing it
+	 *  down there reinstalls the APK on the next session, so the app would
+	 *  return as a fresh install with no profile. */
+	stopApp(): Promise<void>;
+	/** Relaunch after [`stopApp`] and wait until the app is interactive again. */
+	startApp(): Promise<void>;
 	/** Switch the Konsta theme. */
 	setTheme(theme: 'material' | 'ios'): Promise<void>;
 	/** Force dark mode on/off via the test event. */
@@ -204,8 +212,47 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 		attachPages(agent, b);
 		await agent.setWideScreen(false);
 	};
+	agent.stopApp = async () => {
+		if (agent.platform === 'desktop') {
+			await b.deleteSession();
+			return;
+		}
+		// Leave the webview first: the session drives it through chromedriver, so
+		// tearing it down underneath the session invalidates the session itself.
+		await b.switchContext('NATIVE_APP');
+		await b.terminateApp(APP_PACKAGE);
+	};
+	agent.startApp = async () => {
+		if (agent.platform === 'desktop') {
+			await b.reloadSession();
+		} else {
+			await b.activateApp(APP_PACKAGE);
+			// A relaunch drops back to the native context; only the session's
+			// initial `autoWebview` does this for us.
+			await switchToWebview(b);
+		}
+		await waitForTestUtils(b);
+		attachPages(agent, b);
+		if (agent.platform === 'desktop') await agent.setWideScreen(false);
+	};
 
 	return agent;
+}
+
+/** Attach to the app's webview context, which a relaunch drops out of. */
+async function switchToWebview(agent: WebdriverIO.Browser): Promise<void> {
+	let webview: string | undefined;
+	await agent.waitUntil(
+		async () => {
+			const contexts = await agent.getContexts();
+			webview = contexts
+				.map(context => (typeof context === 'string' ? context : context.id))
+				.find(id => id.startsWith('WEBVIEW'));
+			return webview !== undefined;
+		},
+		{ timeoutMsg: 'no WEBVIEW context after relaunch' },
+	);
+	await agent.switchContext(webview!);
 }
 
 /** Wait for window.__test to be registered on a single agent. */

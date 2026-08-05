@@ -20,7 +20,8 @@ dashchat-node *ARGS:
 # failures. The PLATFORMS env var lists the agents to launch as an unordered
 # multiset of platforms (default `desktop,desktop`): desktop, android
 # (physical device), android-emulator (booted automatically), or ios (connected
-# iPhone).
+# iPhone). Set E2E_STRESS=1 to include the stress specs that otherwise skip
+# themselves.
 e2e NAME='' *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -37,6 +38,9 @@ e2e NAME='' *ARGS:
     done
     if [[ -n "$spec" ]]; then
         wdio_args+=(--spec "specs/${spec}.spec.ts")
+        # Naming a spec means running it whatever it is, including the stress
+        # specs that otherwise skip themselves.
+        export E2E_STRESS=1
     fi
     # wdio itself needs the androidDev shell's tools (adb, appium
     # chromedrivers, boot-emulator, SDK/NDK for the APK build); it layers
