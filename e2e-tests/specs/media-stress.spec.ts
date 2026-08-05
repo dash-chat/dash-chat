@@ -19,7 +19,7 @@ const PHOTO_WIDTH = 320;
 const PHOTO_HEIGHT = 240;
 
 /** What the spec asserts, per photo: the webview issuing the blob request to
- * its last byte. Relaunching the app and opening the chat is not part of it. */
+ * its last byte. */
 const DOWNLOAD_BUDGET_MS = 3_000;
 
 /** Per-wait ceiling, far above the budget so a slow run still reports a number
@@ -158,10 +158,9 @@ describe('Media stress', function () {
 
 			await reopenChat(receiver, 'receiver', senderName);
 			const messages = receiver.directChatPage.messages;
-			// The gallery lays out five cells and hides the rest behind a "+N"
-			// overlay, and a hidden image never loads. The lightbox filmstrip is
-			// where every photo in the message actually gets requested.
 			await messages.waitForPhotoMessage(current.labels[0], CEILING_MS);
+			// The gallery lays out only five cells, so the filmstrip is where the
+			// rest of the photos get requested.
 			await messages.openPhoto(current.labels[0]);
 			await messages.lightbox.waitForStripLoaded();
 

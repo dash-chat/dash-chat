@@ -160,7 +160,14 @@ async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
 	const ctx = canvas.getContext('2d');
 	if (!ctx) throw new Error('canvas context failed');
 	const image = ctx.createImageData(spec.width, spec.height);
-	fillPseudoRandom(image.data, Date.now() & 0xffffffff);
+	// Seeded by name as well as the clock: on the clock alone, two attaches
+	// landing in the same millisecond encode to identical bytes and collapse into
+	// one blob.
+	let seed = Date.now() & 0xffffffff;
+	for (let i = 0; i < spec.name.length; i++) {
+		seed = (seed * 31 + spec.name.charCodeAt(i)) | 0;
+	}
+	fillPseudoRandom(image.data, seed);
 	for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
 	ctx.putImageData(image, 0, 0);
 	const blob = await new Promise<Blob>((resolve, reject) =>
