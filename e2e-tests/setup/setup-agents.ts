@@ -230,12 +230,26 @@ async function setupAgent(
 }
 
 /** What a spec requires of one agent's platform. 'android' is fulfilled by a
- *  physical device or an emulator; 'ios' by a connected iPhone. */
-export type PlatformRequirement = 'desktop' | 'android' | 'ios' | 'any';
+ *  physical device or an emulator; 'ios' by a connected iPhone; 'mobile' by any
+ *  of those (an iOS or Android device); 'any' by any launched platform. */
+export type PlatformRequirement =
+	| 'desktop'
+	| 'android'
+	| 'ios'
+	| 'mobile'
+	| 'any';
 
 /** What a spec requires of one agent. */
 export interface AgentRequirement {
 	platform: PlatformRequirement;
+}
+
+function isMobile(platform: AgentPlatformName): boolean {
+	return (
+		platform === 'ios' ||
+		platform === 'android' ||
+		platform === 'android-emulator'
+	);
 }
 
 function fulfills(
@@ -243,6 +257,7 @@ function fulfills(
 	platform: AgentPlatformName,
 ): boolean {
 	if (requirement === 'any') return true;
+	if (requirement === 'mobile') return isMobile(platform);
 	if (requirement === 'desktop') return platform === 'desktop';
 	if (requirement === 'android') {
 		return platform === 'android' || platform === 'android-emulator';
@@ -251,9 +266,18 @@ function fulfills(
 	return false;
 }
 
-/** Assign each requirement a distinct launched slot — specific requirements
- *  first so 'any' takes the leftovers, ascending slot order for determinism —
- *  or null when the launched platforms can't fulfill them all. */
+/** How narrow a requirement is: exact platform > 'mobile' > 'any'. Match the
+ *  narrowest first so a broad requirement never steals the only slot a narrow
+ *  one could have used. */
+function specificity(requirement: PlatformRequirement): number {
+	if (requirement === 'any') return 0;
+	if (requirement === 'mobile') return 1;
+	return 2;
+}
+
+/** Assign each requirement a distinct launched slot — narrowest requirements
+ *  first so broader ones take the leftovers, ascending slot order for
+ *  determinism — or null when the launched platforms can't fulfill them all. */
 function matchSlots(
 	requirements: readonly PlatformRequirement[],
 	platforms: AgentPlatformName[],
@@ -261,8 +285,7 @@ function matchSlots(
 	const free = platforms.map((platform, i) => ({ slot: i + 1, platform }));
 	const slots: number[] = [];
 	const order = [...requirements.keys()].sort(
-		(a, b) =>
-			Number(requirements[a] === 'any') - Number(requirements[b] === 'any'),
+		(a, b) => specificity(requirements[b]) - specificity(requirements[a]),
 	);
 	for (const i of order) {
 		const j = free.findIndex(f => fulfills(requirements[i], f.platform));
@@ -280,9 +303,10 @@ function matchSlots(
  * from a `before(async function () { ... })` hook (not an arrow function —
  * `this` must be the mocha context so the suite can be skipped).
  */
-export async function setupAgents<
-	const T extends readonly AgentRequirement[],
->(ctx: Mocha.Context, requirements: T): Promise<{ [K in keyof T]: Agent }> {
+export async function setupAgents<const T extends readonly AgentRequirement[]>(
+	ctx: Mocha.Context,
+	requirements: T,
+): Promise<{ [K in keyof T]: Agent }> {
 	const platforms = platformNames();
 	const slots = matchSlots(
 		requirements.map(r => r.platform),

@@ -50,7 +50,17 @@ iroh-blobs = "0.103.0"
 
 [patch.crates-io]
 iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "push-notifications" }
+# Local iteration on the notification-plugin fork: builds tauri-plugin-notification
+# (and, via its path dep, notification-macros) from the working copy at
+# ../plugins-workspace instead of the pushed `push-notifications` branch. Both the
+# crates-io consumers (tauri-plugin-background-service) and the direct git dep must
+# resolve to the SAME local path to unify, so patch both sources. To ship: revert
+# both back to `{ git = "...", branch = "push-notifications" }`, push the fork, and
+# bump Cargo.lock.
+tauri-plugin-notification = { path = "../plugins-workspace/plugins/notification" }
+
+[patch."https://github.com/guillemcordoba/plugins-workspace"]
+tauri-plugin-notification = { path = "../plugins-workspace/plugins/notification" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback

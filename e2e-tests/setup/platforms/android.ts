@@ -26,6 +26,10 @@ const ABIS: Record<string, { flavor: string; target: string }> = {
 // bridges it to the host's mailbox via adb reverse.
 const DEVICE_MAILBOX_PORT = 3200;
 
+// The device's loopback port baked as PUSH_NOTIFICATIONS_SERVER_URL for the
+// real-device push spec; bridged to the host's push server via adb reverse.
+const DEVICE_PUSH_PORT = 3201;
+
 /** `android` = physical device, `android-emulator` = running emulator. */
 export type AndroidKind = 'android' | 'android-emulator';
 
@@ -282,19 +286,21 @@ export class AndroidPlatform implements AgentPlatform {
 		const targets = new Set(
 			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
 		);
+		const buildEnv: NodeJS.ProcessEnv = {
+			...process.env,
+			MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
+			CARGO_PROFILE_DEV_DEBUG: '0',
+			CARGO_PROFILE_DEV_STRIP: 'symbols',
+		};
+		// Real-device push spec: bake the push-server URL so the device registers
+		// its FCM token with the host's local push server (bridged below).
+		if (ctx.pushPort !== null) {
+			buildEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://127.0.0.1:${DEVICE_PUSH_PORT}`;
+		}
 		execSync(
 			'pnpm tauri android build --debug --apk --split-per-abi ' +
 				`--features e2e-tests -t ${[...targets].join(' ')}`,
-			{
-				cwd: ROOT,
-				stdio: 'inherit',
-				env: {
-					...process.env,
-					MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
-					CARGO_PROFILE_DEV_DEBUG: '0',
-					CARGO_PROFILE_DEV_STRIP: 'symbols',
-				},
-			},
+			{ cwd: ROOT, stdio: 'inherit', env: buildEnv },
 		);
 
 		for (const udid of this.udids.values()) {
@@ -323,6 +329,12 @@ export class AndroidPlatform implements AgentPlatform {
 			execSync(
 				`adb -s ${udid} reverse tcp:${DEVICE_MAILBOX_PORT} tcp:${ctx.mailboxPort}`,
 			);
+			// Same for the push server, when the real-device push spec is enabled.
+			if (ctx.pushPort !== null) {
+				execSync(
+					`adb -s ${udid} reverse tcp:${DEVICE_PUSH_PORT} tcp:${ctx.pushPort}`,
+				);
+			}
 		}
 	}
 
@@ -342,10 +354,12 @@ export class AndroidPlatform implements AgentPlatform {
 
 	async onComplete() {
 		for (const udid of this.udids.values()) {
-			try {
-				execSync(`adb -s ${udid} reverse --remove tcp:${DEVICE_MAILBOX_PORT}`);
-			} catch {
-				/* device gone or reverse already removed */
+			for (const port of [DEVICE_MAILBOX_PORT, DEVICE_PUSH_PORT]) {
+				try {
+					execSync(`adb -s ${udid} reverse --remove tcp:${port}`);
+				} catch {
+					/* device gone or reverse already removed */
+				}
 			}
 		}
 		for (const logger of this.loggers.values()) {

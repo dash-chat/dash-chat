@@ -1,6 +1,9 @@
 export interface PrepareContext {
 	/** Port of the local mailbox server, or null when running against a remote one. */
 	mailboxPort: number | null;
+	/** Port of the local push-notifications server, or null when push testing is
+	 * disabled (FCM_SERVICE_ACCOUNT_KEY unset). */
+	pushPort: number | null;
 }
 
 /**
