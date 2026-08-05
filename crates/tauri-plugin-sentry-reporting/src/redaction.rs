@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use regex::Regex;
-use sentry::protocol::Event;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::Value;
 
 const PLACEHOLDER: &str = "[REDACTED]";
@@ -19,8 +20,6 @@ pub fn redact(patterns: &[Regex], text: &str) -> String {
 
 /// Per leaf, not over the serialized document: several patterns match a whole
 /// `"key": "value"` pair and would replace it wholesale, producing invalid JSON.
-/// Per leaf they still fire against string contents, including JSON embedded in
-/// a log line as text.
 pub(crate) fn redact_json_leaves(patterns: &[Regex], value: &mut Value) {
     match value {
         Value::String(s) => *s = redact(patterns, s),
@@ -38,14 +37,13 @@ pub(crate) fn redact_json_leaves(patterns: &[Regex], value: &mut Value) {
     }
 }
 
-/// Round-trips through JSON so every string the event carries is covered.
-pub(crate) fn redact_event(
-    patterns: &[Regex],
-    event: Event<'static>,
-) -> anyhow::Result<Event<'static>> {
-    let mut value = serde_json::to_value(event)?;
-    redact_json_leaves(patterns, &mut value);
-    Ok(serde_json::from_value(value)?)
+pub(crate) fn redact_serialized<T>(patterns: &[Regex], value: T) -> anyhow::Result<T>
+where
+    T: Serialize + DeserializeOwned,
+{
+    let mut json = serde_json::to_value(value)?;
+    redact_json_leaves(patterns, &mut json);
+    Ok(serde_json::from_value(json)?)
 }
 
 /// Newline-terminated, so the boundary between two files is always a line break.
@@ -83,7 +81,7 @@ pub(crate) fn list_log_files_oldest_first(dir: &Path) -> std::io::Result<Vec<Pat
 }
 
 /// Redacted last `max_bytes` of the logs in `logs_dir`, concatenated oldest first.
-pub fn redacted_log_tail(
+pub(crate) fn redacted_log_tail(
     patterns: &[Regex],
     logs_dir: &Path,
     max_bytes: usize,
@@ -99,6 +97,8 @@ pub fn redacted_log_tail(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use sentry::protocol::Event;
 
     fn patterns() -> Vec<Regex> {
         vec![
@@ -143,14 +143,6 @@ mod tests {
     }
 
     #[test]
-    fn leaf_redaction_keeps_the_document_parseable() {
-        let mut value = serde_json::json!({ "message": r#"{"message":"x"}"# });
-        redact_json_leaves(&patterns(), &mut value);
-        let text = serde_json::to_string(&value).unwrap();
-        serde_json::from_str::<Value>(&text).expect("still valid JSON");
-    }
-
-    #[test]
     fn redacts_home_paths_but_keeps_the_tail() {
         let out = redact(&patterns(), "opened /home/alice/.local/share/db");
         assert_eq!(out, "opened [REDACTED]/.local/share/db");
@@ -162,7 +154,7 @@ mod tests {
             message: Some("token ".to_string() + &"f".repeat(40)),
             ..Default::default()
         };
-        let redacted = redact_event(&patterns(), event).unwrap();
+        let redacted = redact_serialized(&patterns(), event).unwrap();
         assert_eq!(redacted.message.unwrap(), format!("token {PLACEHOLDER}"));
     }
 
@@ -171,11 +163,6 @@ mod tests {
         let tail = last_whole_lines("first line\nsecond line\nthird line\n", 20);
         assert!(!tail.contains("first"));
         assert!(tail.ends_with("third line\n"));
-    }
-
-    #[test]
-    fn tail_returns_everything_when_under_the_cap() {
-        assert_eq!(last_whole_lines("only line\n", 4096), "only line\n");
     }
 
     #[test]

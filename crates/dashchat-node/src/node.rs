@@ -32,7 +32,7 @@ use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
     collect_deletable_edit_chain, resolve_message_root,
 };
-use crate::contact::{InboxTopic, QrCode, ShareIntent};
+use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
@@ -448,7 +448,7 @@ impl Node {
 
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
-    pub async fn new_qr_code(&self, share_intent: ShareIntent) -> Result<QrCode, crate::Error> {
+    pub async fn create_add_contact_qr_code(&self) -> Result<AddContactQrCode, crate::Error> {
         let (inbox_topic, nonce) = InboxTopic::new_random(
             &self.device_id(),
             Utc::now() + self.config.contact_code_expiry,
@@ -461,11 +461,15 @@ impl Node {
             .await
             .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
 
-        Ok(QrCode {
-            device_pubkey: self.device_id(),
-            share_intent,
-            inbox_nonce: nonce,
-        })
+        let profile_name = self
+            .my_profile()
+            .await
+            .ok()
+            .flatten()
+            .map(|profile| profile.full_name())
+            .unwrap_or_default();
+
+        Ok(AddContactQrCode::new(self.device_id(), nonce, profile_name))
     }
 
     pub fn agent_id(&self) -> AgentId {
@@ -1420,7 +1424,7 @@ impl Node {
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
+    pub async fn add_contact(&self, contact: AddContactQrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
             "adding contact",
@@ -1541,6 +1545,7 @@ impl Node {
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
                 device_pubkey: contact.device_pubkey,
+                profile_name: contact.profile_name,
             }),
             Some(&format!(
                 "add_contact/pending({:?})",

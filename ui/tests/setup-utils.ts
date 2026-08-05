@@ -46,6 +46,39 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
+const mediaDownloads = new Map<string, number>();
+let mediaObserver: PerformanceObserver | undefined;
+
+/** Start recording how long each blob request takes. An observer rather than a
+ * read of `performance.getEntriesByType` at the end: the resource-timing buffer
+ * holds a few hundred entries and a media-heavy chat overruns it. */
+function recordMediaDownloads() {
+	if (mediaObserver !== undefined) return;
+	mediaObserver = new PerformanceObserver(list => {
+		for (const entry of list.getEntries()) {
+			// First request only: a blob rendered on a second surface (gallery cell,
+			// filmstrip thumb, lightbox stage) re-requests the same URL and is served
+			// from cache, which would otherwise overwrite the real download with ~0.
+			if (!mediaDownloads.has(entry.name)) {
+				mediaDownloads.set(entry.name, entry.duration);
+			}
+		}
+	});
+	mediaObserver.observe({ type: 'resource', buffered: true });
+}
+
+/** Milliseconds the photo whose alt contains `label` spent downloading — the
+ * webview issuing the `irohblob://` request to its last byte — or null while it
+ * is still in flight. Needs `recordMediaDownloads` to have run first. */
+function photoDownloadMs(label: string): number | null {
+	const img = Array.from(document.querySelectorAll('img')).find(i =>
+		i.alt.includes(label),
+	);
+	if (img === undefined) return null;
+	const ms = mediaDownloads.get(img.src);
+	return ms === undefined ? null : Math.round(ms);
+}
+
 /** Close this agent's iroh endpoint so it can no longer sync with peers over
  * p2p. Backed by the `close_iroh_endpoint` command (only registered under the
  * `e2e-tests` feature). One-way — the agent stays p2p-disconnected until it
@@ -62,6 +95,20 @@ export interface TestFileSpec {
 	size?: number;
 }
 
+/** xorshift32 over `buf`. Deterministic per seed, and incompressible enough
+ * that a measured payload size is the size that actually crosses the wire. */
+function fillPseudoRandom(buf: Uint8Array | Uint8ClampedArray, seed: number) {
+	let x = seed >>> 0 || 1;
+	for (let i = 0; i < buf.length; i++) {
+		x ^= x << 13;
+		x >>>= 0;
+		x ^= x >>> 17;
+		x ^= x << 5;
+		x >>>= 0;
+		buf[i] = x & 0xff;
+	}
+}
+
 function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
 	const dt = new DataTransfer();
 	for (const spec of specs) {
@@ -73,12 +120,7 @@ function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
 	return dt;
 }
 
-/**
- * Dispatch a synthetic paste of the given files onto the composer textarea.
- * WebKit drops constructor-init clipboardData, so it is attached via
- * defineProperty.
- */
-function pasteFiles(specs: TestFileSpec[]) {
+function dispatchPaste(dt: DataTransfer) {
 	const textarea = document.querySelector(
 		'[data-testid="message-input-textarea"]',
 	);
@@ -87,10 +129,60 @@ function pasteFiles(specs: TestFileSpec[]) {
 		bubbles: true,
 		cancelable: true,
 	});
-	Object.defineProperty(event, 'clipboardData', {
-		value: specsToDataTransfer(specs),
-	});
+	Object.defineProperty(event, 'clipboardData', { value: dt });
 	textarea.dispatchEvent(event);
+}
+
+export interface NoisePhotoSpec {
+	name: string;
+	width: number;
+	height: number;
+	quality?: number;
+}
+
+/**
+ * Paste a synthesized noise JPEG of the given pixel size, resolving with the
+ * bytes it encoded to. Noise rather than flat colour so JPEG can't compress the
+ * payload away and every call yields a distinct blob — a repeated identical
+ * photo would resolve from the receiver's blob store and measure nothing.
+ */
+async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
+	const canvas = document.createElement('canvas');
+	canvas.width = spec.width;
+	canvas.height = spec.height;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('canvas context failed');
+	const image = ctx.createImageData(spec.width, spec.height);
+	// Seeded by name as well as the clock: on the clock alone, two attaches
+	// landing in the same millisecond encode to identical bytes and collapse into
+	// one blob.
+	let seed = Date.now() & 0xffffffff;
+	for (let i = 0; i < spec.name.length; i++) {
+		seed = (seed * 31 + spec.name.charCodeAt(i)) | 0;
+	}
+	fillPseudoRandom(image.data, seed);
+	for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
+	ctx.putImageData(image, 0, 0);
+	const blob = await new Promise<Blob>((resolve, reject) =>
+		canvas.toBlob(
+			b => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))),
+			'image/jpeg',
+			spec.quality ?? 0.9,
+		),
+	);
+	const dt = new DataTransfer();
+	dt.items.add(new File([blob], spec.name, { type: 'image/jpeg' }));
+	dispatchPaste(dt);
+	return blob.size;
+}
+
+/**
+ * Dispatch a synthetic paste of the given files onto the composer textarea.
+ * WebKit drops constructor-init clipboardData, so it is attached via
+ * defineProperty.
+ */
+function pasteFiles(specs: TestFileSpec[]) {
+	dispatchPaste(specsToDataTransfer(specs));
 }
 
 /**
@@ -112,7 +204,10 @@ export const testUtils = {
 	hasText,
 	disableP2p,
 	pasteFiles,
+	pasteNoisePhoto,
 	dropFiles,
+	recordMediaDownloads,
+	photoDownloadMs,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,

@@ -1,5 +1,6 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
+import { MEDIA_SYNC_TIMEOUT } from '../timeouts';
 
 /** The global photo viewer overlay. */
 export class Lightbox extends TestHelper {
@@ -37,6 +38,44 @@ export class Lightbox extends TestHelper {
 		await this.agent.execute((a: string) => {
 			window.__test.forceBlobError(a);
 		}, alt);
+	}
+
+	/** Wait until the filmstrip's thumbnails have decoded — all of them, or
+	 * exactly `count` when the caller knows how many to expect. Thumbs render
+	 * lazily inside a horizontally scrolling strip, so the ones off-strip never
+	 * decode on their own — each poll scrolls the first undecoded one in. */
+	async waitForStripLoaded(
+		count?: number,
+		timeout = MEDIA_SYNC_TIMEOUT,
+	): Promise<void> {
+		let expected = count ?? 0;
+		let loaded = 0;
+		await this.agent.waitUntil(
+			async () => {
+				const strip = await this.agent.execute((stripSel: string) => {
+					const imgs = Array.from(
+						document.querySelectorAll<HTMLImageElement>(`${stripSel} img`),
+					);
+					const pending = imgs.filter(
+						img => !(img.complete && img.naturalWidth > 0),
+					);
+					pending[0]?.scrollIntoView({ inline: 'center', block: 'nearest' });
+					return {
+						// Thumbs that failed render a retry button with no image, so the
+						// buttons are what says how many photos the strip is showing.
+						total: document.querySelectorAll(`${stripSel} button`).length,
+						loaded: imgs.length - pending.length,
+					};
+				}, tid('lightbox-filmstrip'));
+				expected = count ?? strip.total;
+				loaded = strip.loaded;
+				return expected > 0 && loaded === expected;
+			},
+			{
+				timeout,
+				timeoutMsg: `Only ${loaded}/${expected} filmstrip thumbnails loaded`,
+			},
+		);
 	}
 
 	/** Index of the currently active photo (based on the selected filmstrip thumb). */

@@ -4,7 +4,13 @@
  * kills it), so the spawn command lives in exactly one place.
  */
 import { type ChildProcess, spawn } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
+import {
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,8 +25,29 @@ export function mailboxLogFile(dbPath: string): string {
 	return path.join(path.dirname(dbPath), 'mailbox.log');
 }
 
-/** Spawn the mailbox server in its own process group on the given port + db. */
-export function spawnMailboxServer(port: number, dbPath: string): ChildProcess {
+/** Run `cargo build -p mailbox-server`, resolving when the binary is built. */
+export function buildMailboxServer(): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		const proc = spawn('cargo', ['build', '-p', 'mailbox-server'], {
+			cwd: ROOT,
+			stdio: 'inherit',
+		});
+		proc.on('error', reject);
+		proc.on('exit', code => {
+			if (code === 0) resolve();
+			else reject(new Error(`cargo build -p mailbox-server exited ${code}`));
+		});
+	});
+}
+
+/** Spawn the mailbox server in its own process group on the given port + db.
+ * When `pushNotificationsUrl` is given, the server forwards blob arrivals to
+ * that push-notifications server (real end-to-end push tests). */
+export function spawnMailboxServer(
+	port: number,
+	dbPath: string,
+	pushNotificationsUrl?: string,
+): ChildProcess {
 	// The prebuilt binary (built by wdio.conf's onPrepare) is spawned
 	// directly: `cargo run` here would rebuild with whatever toolchain is on
 	// PATH — under the androidDev shell of an Android combo that means
@@ -36,13 +63,17 @@ export function spawnMailboxServer(port: number, dbPath: string): ChildProcess {
 	// stdout, and a respawned server (restartMailbox) outlives the spec worker
 	// that spawned it — a pipe with no reader would eventually block its writes.
 	const logFd = openSync(mailboxLogFile(dbPath), 'a');
+	const args = ['--db-path', dbPath, '--addr', `0.0.0.0:${port}`];
+	if (pushNotificationsUrl !== undefined) {
+		args.push('--push-notifications-url', pushNotificationsUrl);
+	}
 	// `detached: true` puts it in its own process group so lifecycle helpers
 	// can signal -pid without touching the test runner.
-	const server = spawn(
-		bin,
-		['--db-path', dbPath, '--addr', `0.0.0.0:${port}`],
-		{ cwd: ROOT, stdio: ['ignore', logFd, logFd], detached: true },
-	);
+	const server = spawn(bin, args, {
+		cwd: ROOT,
+		stdio: ['ignore', logFd, logFd],
+		detached: true,
+	});
 	closeSync(logFd);
 	return server;
 }
@@ -53,7 +84,9 @@ export function spawnMailboxServer(port: number, dbPath: string): ChildProcess {
  * its URL via process.env.MAILBOX_URL, and persist mailbox-info.json so specs
  * can drive its lifecycle. Shared by the desktop and Android wdio configs.
  */
-export async function startLocalMailboxServer(): Promise<{
+export async function startLocalMailboxServer(
+	pushNotificationsUrl?: string,
+): Promise<{
 	proc: ChildProcess;
 	logger: ChildProcess;
 	port: number;
@@ -68,7 +101,7 @@ export async function startLocalMailboxServer(): Promise<{
 	// Tail the server's log file (its tracing output, redirected there by
 	// spawnMailboxServer) and echo it with a prefix, like the agent logs.
 	const logger = startAgentLogger('mailbox-server', mailboxLogFile(dbPath));
-	const proc = spawnMailboxServer(port, dbPath);
+	const proc = spawnMailboxServer(port, dbPath, pushNotificationsUrl);
 	console.log(`[mailbox-server] spawned (pid=${proc.pid})`);
 	proc.on('exit', (code, signal) => {
 		console.error(
@@ -85,7 +118,7 @@ export async function startLocalMailboxServer(): Promise<{
 
 	writeFileSync(
 		path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json'),
-		JSON.stringify({ pid: proc.pid, port, url, dbPath }),
+		JSON.stringify({ pid: proc.pid, port, url, dbPath, pushNotificationsUrl }),
 	);
 
 	return { proc, logger, port, url };
