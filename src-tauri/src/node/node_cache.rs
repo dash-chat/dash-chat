@@ -1,27 +1,22 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use dashchat_node::Node;
 use tauri::Manager;
 use tokio::sync::Mutex;
 
-/// Cache for Node instances built when receiving a push notification in the background.
+/// The single Node built when receiving a push notification in the background.
 /// Only to be reused when multiple notifications are processed sequentially.
-static NODES: Mutex<Option<HashMap<PathBuf, Node>>> = Mutex::const_new(None);
+static NODE: Mutex<Option<Node>> = Mutex::const_new(None);
 
 /// Serializes the (slow) node build so two pushes racing in the same extension
 /// process don't open two SQLite pools on the same database. Deliberately
-/// separate from `NODES`: the cache lookup must never block behind an in-flight
+/// separate from `NODE`: the cache lookup must never block behind an in-flight
 /// build, or a slow `build_node` + mailbox handshake starves every other push and
 /// they all miss iOS's ~30s budget.
 static BUILD_LOCK: Mutex<()> = Mutex::const_new(());
 
-async fn cached_node(data_path: &PathBuf) -> Option<Node> {
-    NODES
-        .lock()
-        .await
-        .as_ref()
-        .and_then(|map| map.get(data_path).cloned())
+async fn cached_node() -> Option<Node> {
+    NODE.lock().await.clone()
 }
 
 /// Get a Node for handling a push notification.
@@ -29,7 +24,7 @@ async fn cached_node(data_path: &PathBuf) -> Option<Node> {
 /// Resolution order:
 /// 1. The app's managed state (authoritative Node with notification channels).
 ///    When found, the cache is cleared since it's no longer needed.
-/// 2. A previously cached Node for this data path.
+/// 2. A previously cached Node.
 /// 3. Build a new Node without channels and cache it.
 pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     // Try the app's managed state first. If the app is running but its node is
@@ -47,7 +42,7 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     }
 
     // Fast path: return a cached node without blocking on any in-flight build.
-    if let Some(node) = cached_node(data_path).await {
+    if let Some(node) = cached_node().await {
         return Ok(node);
     }
 
@@ -55,7 +50,7 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
     // lock across it. A push that arrives mid-build waits here, then finds the
     // just-built node on this re-check instead of building a second one.
     let _build_guard = BUILD_LOCK.lock().await;
-    if let Some(node) = cached_node(data_path).await {
+    if let Some(node) = cached_node().await {
         return Ok(node);
     }
 
@@ -79,17 +74,12 @@ pub async fn get_node(data_path: &PathBuf) -> anyhow::Result<Node> {
         log::warn!("failed to track cloud mailbox in push extension: {err:?}");
     }
 
-    NODES
-        .lock()
-        .await
-        .get_or_insert_with(HashMap::new)
-        .insert(data_path.clone(), node.clone());
+    *NODE.lock().await = Some(node.clone());
 
     Ok(node)
 }
 
-/// Drop all cached nodes.
+/// Drop the cached node.
 pub async fn clear() {
-    let mut guard = NODES.lock().await;
-    *guard = None;
+    *NODE.lock().await = None;
 }
