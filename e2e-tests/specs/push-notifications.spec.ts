@@ -47,9 +47,9 @@ describe('Push notifications (real device, end-to-end)', () => {
 		const marker = `PUSH_${Date.now()}`;
 		const message = `hi ${marker}`;
 
-		// Terminate (not background) so only the NSE processes the push.
+		// Stop the app so only the NSE processes the push.
 		await receiver.pause(5_000);
-		await receiver.terminate();
+		await receiver.stopApp();
 
 		await sender.directChatPage.composer.sendMessage(message);
 
