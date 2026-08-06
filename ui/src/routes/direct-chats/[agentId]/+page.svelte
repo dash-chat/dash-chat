@@ -86,6 +86,7 @@
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const chatId = useReactivePromise(store.chatId);
 	const peerProfile = useReactivePromise(store.peerProfile);
+	const peerName = useReactivePromise(store.peerName);
 	const contactRequest = useReactivePromise(store.contactRequest);
 	const messageGroups = useReactivePromise(store.groupedMessages);
 	const readMessageHashes = useReactivePromise(
@@ -373,16 +374,23 @@
 												/>
 											{/await}
 										{:else}
-											<span
-												class="flex w-full min-w-0 flex-row items-center gap-2"
-											>
-												<span class="shrink-0">
-													<Avatar waitingForProfile size="2.5rem" />
+											{#await $peerName then peerName}
+												<span
+													class="flex w-full min-w-0 flex-row items-center gap-2"
+												>
+													<span class="shrink-0">
+														<Avatar waitingForProfile size="2.5rem" />
+													</span>
+													<span
+														class="flex-1 min-w-0 truncate {peerName
+															? ''
+															: 'quiet'}"
+														data-testid="direct-chat-peer-name"
+													>
+														{peerName || m.waitingForProfile()}
+													</span>
 												</span>
-												<span class="quiet flex-1 min-w-0 truncate">
-													{m.waitingForProfile()}
-												</span>
-											</span>
+											{/await}
 										{/if}
 									</Link>
 								{/snippet}
@@ -402,10 +410,18 @@
 								data-testid="direct-chat-peer-header"
 							>
 								<div class="column my-6 gap-2 items-center">
-									<Avatar waitingForProfile size={80} />
-									<span class="quiet text-xl">
-										{m.waitingForProfile()}
-									</span>
+									<Avatar
+										waitingForProfile
+										size={80}
+										testId="direct-chat-peer-avatar"
+									/>
+									{#await $peerName then peerName}
+										<span
+											class="text-xl {peerName ? 'font-semibold' : 'quiet'}"
+										>
+											{peerName || m.waitingForProfile()}
+										</span>
+									{/await}
 								</div>
 							</div>
 						</div>
@@ -435,6 +451,7 @@
 													image={profile.avatar}
 													initials={profile.name.slice(0, 2)}
 													size={80}
+													testId="direct-chat-peer-avatar"
 												/>
 												<div class="flex items-center gap-1 max-w-full">
 													<span
@@ -449,7 +466,11 @@
 											</Link>
 										{:else}
 											<div class="column my-6 gap-2 items-center">
-												<Avatar waitingForProfile size={80} />
+												<Avatar
+													waitingForProfile
+													size={80}
+													testId="direct-chat-peer-avatar"
+												/>
 												<span class="quiet text-xl">
 													{m.waitingForProfile()}
 												</span>

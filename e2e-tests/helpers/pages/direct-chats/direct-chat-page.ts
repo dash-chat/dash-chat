@@ -17,6 +17,7 @@ export class DirectChatPage extends TestHelper {
 	settingsLink = this.el(tid('direct-chat-settings-link'));
 	peerName = this.el(tid('direct-chat-peer-name'));
 	peerHeader = this.el(tid('direct-chat-peer-header'));
+	peerAvatar = this.el(tid('direct-chat-peer-avatar'));
 	acceptButton = this.el(tid('direct-chat-accept-btn'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
 	blockButton = this.el(tid('direct-chat-block-btn'));
@@ -90,8 +91,26 @@ export class DirectChatPage extends TestHelper {
 		return this.peerName.isExisting();
 	}
 
+	/** Whether the peer-header avatar is the profile placeholder (person icon,
+	 * shown while the full profile is still syncing) rather than a real one. */
+	peerAvatarIsPlaceholder(): Promise<boolean> {
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector(sel)?.getAttribute('data-waiting') === 'true',
+			tid('direct-chat-peer-avatar'),
+		);
+	}
+
 	isContactRequestBannerVisible(): Promise<boolean> {
 		return this.acceptButton.isExisting();
+	}
+
+	/** Accept an incoming contact request (open the confirm dialog, confirm).
+	 * Uses DOM clicks: a WDA native tap on these Konsta buttons doesn't reliably
+	 * fire on iOS (same limitation as the composer send button). */
+	async acceptContactRequest(): Promise<void> {
+		await this.domClick(tid('direct-chat-accept-btn'));
+		await this.domClick(tid('direct-chat-accept-confirm'));
 	}
 
 	/** Returns descriptions of any direct-chat navbar overflow issues. */

@@ -1,13 +1,13 @@
-import type { ChainablePromiseElement } from 'webdriverio';
-
 /** Comfortably past the 500ms threshold in the app's `longpress` action. */
 const LONG_PRESS_MS = 700;
 
 /**
- * Dispatch one touch event at the centre of `element`. Serialized into the
- * page by `execute`, so it has to stay self-contained.
+ * Dispatch one touch event at the centre of the element matching `selector`.
+ * Serialized into the page by `execute`, so it has to stay self-contained.
  */
-function dispatchTouch(element: HTMLElement, gesture: string) {
+function dispatchTouch(selector: string, gesture: string) {
+	const element = document.querySelector<HTMLElement>(selector);
+	if (!element) throw new Error(`No element matching ${selector}`);
 	const rect = element.getBoundingClientRect();
 	const clientX = rect.left + rect.width / 2;
 	const clientY = rect.top + rect.height / 2;
@@ -25,15 +25,17 @@ function dispatchTouch(element: HTMLElement, gesture: string) {
 }
 
 /**
- * Hold a touch on `element` past the app's long-press threshold, then lift it
- * — the gesture a mobile user makes to open a context menu. The app starts its
- * own timer off `touchstart`, so the hold has to happen between the two events.
+ * Hold a touch on the element matching `selector` past the app's long-press
+ * threshold, then lift it — the gesture a mobile user makes to open a context
+ * menu. The app starts its own timer off `touchstart`, so the hold has to
+ * happen between the two events. A selector rather than an element: the page
+ * can re-render during the hold, and a resolved handle would go stale.
  */
 export async function simulateLongpress(
 	agent: WebdriverIO.Browser,
-	element: ChainablePromiseElement,
+	selector: string,
 ): Promise<void> {
-	await agent.execute(dispatchTouch, element, 'touchstart');
+	await agent.execute(dispatchTouch, selector, 'touchstart');
 	await agent.pause(LONG_PRESS_MS);
-	await agent.execute(dispatchTouch, element, 'touchend');
+	await agent.execute(dispatchTouch, selector, 'touchend');
 }

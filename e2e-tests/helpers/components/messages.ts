@@ -351,10 +351,11 @@ export class Message extends TestHelper {
 
 	/** Long-press the bubble the way a mobile user opens the actions menu. */
 	private async longPressBubble() {
-		const bubble = this.wrapper.$('.message');
+		const bubbleSelector = `${this.wrapperSelector} .message`;
+		const hasBubble = await this.agent.$(bubbleSelector).isExisting();
 		await simulateLongpress(
 			this.agent,
-			(await bubble.isExisting()) ? bubble : this.wrapper,
+			hasBubble ? bubbleSelector : this.wrapperSelector,
 		);
 	}
 
@@ -472,7 +473,7 @@ export class Message extends TestHelper {
 		// with the message being edited.
 		await this.composer.editingBanner.waitForExist();
 		await this.agent.waitUntil(
-			async () => (await this.composer.messageInput.getValue()) === oldText,
+			async () => (await this.composer.inputText()) === oldText,
 			{ timeoutMsg: 'Editing input is not prefilled with the original text' },
 		);
 		await this.composer.type(newText);
