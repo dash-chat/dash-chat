@@ -16,7 +16,6 @@ allowBuilds:
   "@gbyte/tauri-plugin-ios-photos": true
   # Builds dist via its `prepare` script when installed from the git repo.
   tauri-plugin-virtual-keyboard: true
-  # Builds dist via its `prepare` script when installed from the git repo.
   tauri-plugin-system-theme: true
   appium: true
   sharp: true
