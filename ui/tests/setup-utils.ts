@@ -120,16 +120,25 @@ function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
 	return dt;
 }
 
-function dispatchPaste(dt: DataTransfer) {
+function specsToFiles(specs: TestFileSpec[]): File[] {
+	return specs.map(spec => {
+		const data = spec.bytes
+			? new Uint8Array(spec.bytes)
+			: new Uint8Array(spec.size ?? 0);
+		return new File([data], spec.name, { type: spec.mimeType });
+	});
+}
+
+function dispatchPaste(files: File[]) {
 	const textarea = document.querySelector(
 		'[data-testid="message-input-textarea"]',
 	);
 	if (!textarea) throw new Error('Composer textarea not found');
-	const event = new ClipboardEvent('paste', {
-		bubbles: true,
-		cancelable: true,
-	});
-	Object.defineProperty(event, 'clipboardData', { value: dt });
+	const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+	// A synthetic DataTransfer reports an empty `.files` in WKWebView (iOS), so the
+	// composer's paste handler (which reads `clipboardData.files`) sees nothing.
+	// Expose a plain FileList-like that every engine reads correctly.
+	Object.defineProperty(event, 'clipboardData', { value: { files } });
 	textarea.dispatchEvent(event);
 }
 
@@ -170,9 +179,7 @@ async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
 			spec.quality ?? 0.9,
 		),
 	);
-	const dt = new DataTransfer();
-	dt.items.add(new File([blob], spec.name, { type: 'image/jpeg' }));
-	dispatchPaste(dt);
+	dispatchPaste([new File([blob], spec.name, { type: 'image/jpeg' })]);
 	return blob.size;
 }
 
@@ -182,7 +189,7 @@ async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
  * defineProperty.
  */
 function pasteFiles(specs: TestFileSpec[]) {
-	dispatchPaste(specsToDataTransfer(specs));
+	dispatchPaste(specsToFiles(specs));
 }
 
 /**
@@ -199,6 +206,52 @@ function dropFiles(specs: TestFileSpec[]) {
 	}
 }
 
+/** What a file input the app opened was configured to ask the OS for. */
+export interface FilePickerRequest {
+	accept: string;
+	/** `false` when the input asks for a stored file rather than a fresh capture. */
+	capture: boolean;
+	multiple: boolean;
+}
+
+const nativeInputClick = HTMLInputElement.prototype.click;
+let filePickerRequests: FilePickerRequest[] = [];
+
+/**
+ * Record the file inputs the app opens instead of letting them reach the OS,
+ * answering each with `files` — or, when there are none, backing out of it as
+ * if the user had dismissed the dialog.
+ */
+function interceptFilePickers(files: TestFileSpec[] = []): void {
+	filePickerRequests = [];
+	HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
+		if (this.type !== 'file') {
+			nativeInputClick.call(this);
+			return;
+		}
+		filePickerRequests.push({
+			accept: this.accept,
+			capture: this.hasAttribute('capture'),
+			multiple: this.multiple,
+		});
+		if (files.length === 0) {
+			this.dispatchEvent(new Event('cancel'));
+			return;
+		}
+		Object.defineProperty(this, 'files', {
+			value: specsToDataTransfer(files).files,
+			configurable: true,
+		});
+		this.dispatchEvent(new Event('change'));
+	};
+}
+
+/** Restore file inputs and return what `interceptFilePickers` recorded. */
+function collectFilePickers(): FilePickerRequest[] {
+	HTMLInputElement.prototype.click = nativeInputClick;
+	return filePickerRequests;
+}
+
 export const testUtils = {
 	simulateUpdate,
 	hasText,
@@ -208,6 +261,8 @@ export const testUtils = {
 	dropFiles,
 	recordMediaDownloads,
 	photoDownloadMs,
+	interceptFilePickers,
+	collectFilePickers,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,
