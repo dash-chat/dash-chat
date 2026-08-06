@@ -46,8 +46,8 @@ pub async fn get_node_for_push_notification(
     // paused (backgrounded on iOS), fall through and build the extension's own
     // node so we never hold two live p2p endpoints on the shared identity.
     if let Some(handle) = crate::APP_HANDLE.get() {
-        if let Some(app_node) = handle.try_state::<crate::node::AppNode>() {
-            if let Ok(node) = app_node.get().await {
+        if let Some(app_node_manager) = handle.try_state::<crate::node::AppNodeManager>() {
+            if let Ok(node) = app_node_manager.get().await {
                 // The app is fully running — clear any stale cached node
                 clear().await;
                 log::info!("The app is opened: reuse the currently running node.");

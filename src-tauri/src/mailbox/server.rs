@@ -1,4 +1,4 @@
-use crate::node::AppNode;
+use crate::node::AppNodeManager;
 use mailbox_local_server::LocalMailboxServer;
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
@@ -21,7 +21,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     }
 
     let node = handle
-        .state::<AppNode>()
+        .state::<AppNodeManager>()
         .get()
         .await
         .map_err(|e| anyhow::anyhow!(e))?;

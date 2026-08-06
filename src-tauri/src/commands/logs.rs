@@ -7,7 +7,7 @@ use p2panda_core::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
 
-use crate::node::AppNode;
+use crate::node::AppNodeManager;
 
 /// Serialize a `Timestamp` (microseconds) as milliseconds since the UNIX epoch
 /// so JS can pass it straight to `new Date(ms)`.
@@ -178,9 +178,9 @@ pub fn simplify(
 pub async fn get_log(
     topic_id: TopicId,
     author: DeviceId,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Vec<SimplifiedOperation>, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let log = node
         .op_store
         .get_log(&author, &LogId::from_topic(topic_id), None)
@@ -199,9 +199,9 @@ pub async fn get_log(
 #[tauri::command]
 pub async fn get_authors(
     topic_id: TopicId,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<std::collections::HashSet<DeviceId>, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let authors = node
         .op_store
         .get_authors(LogId::from_topic(topic_id))

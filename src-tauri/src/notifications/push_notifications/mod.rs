@@ -9,7 +9,7 @@ use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
 use crate::node::node_slot;
-use crate::node::AppNode;
+use crate::node::AppNodeManager;
 use crate::notifications::are_notifications_enabled;
 
 mod receive_push_notification;
@@ -111,7 +111,7 @@ pub fn setup_push_notifications(
 /// If they're not, unregister the FCM token from the server
 async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Result<()> {
     let node = handle
-        .try_state::<AppNode>()
+        .try_state::<AppNodeManager>()
         .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
         .get()
         .await
@@ -145,7 +145,7 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
 /// If they're not, remove all topic subscriptions from it.
 async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let node = app_handle
-        .try_state::<AppNode>()
+        .try_state::<AppNodeManager>()
         .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
         .get()
         .await
@@ -187,7 +187,7 @@ async fn subscribe_to_topics(
     }
 
     let node = app_handle
-        .try_state::<AppNode>()
+        .try_state::<AppNodeManager>()
         .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
         .get()
         .await

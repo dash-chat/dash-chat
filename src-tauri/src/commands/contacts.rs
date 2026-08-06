@@ -3,32 +3,34 @@ use std::{collections::BTreeSet, str::FromStr};
 use tauri::State;
 
 use crate::error::Error;
-use crate::node::AppNode;
+use crate::node::AppNodeManager;
 
 #[tauri::command]
-pub async fn create_contact_code(app_node: State<'_, AppNode>) -> Result<String, Error> {
-    let node = app_node.get().await?;
+pub async fn create_contact_code(
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<String, Error> {
+    let node = app_node_manager.get().await?;
     Ok(node.create_add_contact_qr_code().await?.to_string())
 }
 
 #[tauri::command]
-pub async fn my_agent_id(app_node: State<'_, AppNode>) -> Result<AgentId, String> {
-    let node = app_node.get().await?;
+pub async fn my_agent_id(app_node_manager: State<'_, AppNodeManager>) -> Result<AgentId, String> {
+    let node = app_node_manager.get().await?;
     Ok(node.agent_id())
 }
 
 #[tauri::command]
-pub async fn my_device_id(app_node: State<'_, AppNode>) -> Result<DeviceId, String> {
-    let node = app_node.get().await?;
+pub async fn my_device_id(app_node_manager: State<'_, AppNodeManager>) -> Result<DeviceId, String> {
+    let node = app_node_manager.get().await?;
     Ok(node.device_id())
 }
 
 #[tauri::command]
 pub async fn agent_for_device(
     device_pubkey: DeviceId,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Option<AgentId>, Error> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     Ok(node
         .lookup_contact(device_pubkey)
         .await
@@ -38,28 +40,31 @@ pub async fn agent_for_device(
 #[tauri::command]
 pub async fn add_contact(
     contact_code: String,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<DeviceId, Error> {
     let qr = AddContactQrCode::from_str(&contact_code)
         .map_err(|e| dashchat_node::AddContactError::InvalidContactCode(e.to_string()))?;
     let device_pubkey = qr.device_pubkey;
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     node.add_contact(qr).await?;
     Ok(device_pubkey)
 }
 
 #[tauri::command]
-pub async fn accept_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> Result<(), Error> {
-    let node = app_node.get().await?;
+pub async fn accept_contact(
+    agent_id: AgentId,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<(), Error> {
+    let node = app_node_manager.get().await?;
     node.accept_contact(agent_id).await?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn active_inbox_topics(
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<BTreeSet<Topic<Inbox>>, Error> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let topics = node.get_active_inbox_topics().await?;
     let topics_ids = topics.clone().into_iter().map(|t| t.topic).collect();
 
@@ -67,14 +72,20 @@ pub async fn active_inbox_topics(
 }
 
 #[tauri::command]
-pub async fn block_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> Result<(), Error> {
-    let node = app_node.get().await?;
+pub async fn block_contact(
+    agent_id: AgentId,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<(), Error> {
+    let node = app_node_manager.get().await?;
     Ok(node.block_contact(agent_id).await?)
 }
 
 #[tauri::command]
-pub async fn report_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> Result<(), Error> {
-    let node = app_node.get().await?;
+pub async fn report_contact(
+    agent_id: AgentId,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<(), Error> {
+    let node = app_node_manager.get().await?;
     node.report_contact(agent_id)
         .await
         .map_err(|e| dashchat_node::Error::AuthorOperation(e.to_string()))?;
@@ -82,8 +93,11 @@ pub async fn report_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> 
 }
 
 #[tauri::command]
-pub async fn unblock_contact(agent_id: AgentId, app_node: State<'_, AppNode>) -> Result<(), Error> {
-    let node = app_node.get().await?;
+pub async fn unblock_contact(
+    agent_id: AgentId,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<(), Error> {
+    let node = app_node_manager.get().await?;
     Ok(node.unblock_contact(agent_id).await?)
 }
 

@@ -15,9 +15,9 @@ use crate::notifications::NotifiedOperationsStore;
 
 struct Inner {
     node: Option<Node>,
-    /// Cloud-mailbox registration retry, tracked so [`AppNode::pause`] can cancel
+    /// Cloud-mailbox registration retry, tracked so [`AppNodeManager::pause`] can cancel
     /// the token and wait for it to drain before the node is torn down. A fresh
-    /// tracker+token pair is installed per node generation in [`AppNode::resume`]
+    /// tracker+token pair is installed per node generation in [`AppNodeManager::resume`]
     /// (`TaskTracker`/`CancellationToken` from `tokio-util`).
     tracker: TaskTracker,
     token: CancellationToken,
@@ -34,10 +34,10 @@ struct Inner {
 /// SQLite connection pools hold file locks and iOS SIGKILLs the suspended
 /// process (`0xdead10cc`). Keeping the `Node` behind this container lets
 /// [`pause`](Self::pause) drop it (releasing every lock) and [`resume`](Self::resume)
-/// rebuild a fresh one on foreground, all while the managed `AppNode` itself
+/// rebuild a fresh one on foreground, all while the managed `AppNodeManager` itself
 /// stays put. On desktop the node is built once and never paused.
 #[derive(Clone)]
-pub struct AppNode {
+pub struct AppNodeManager {
     inner: Arc<RwLock<Inner>>,
     // Read only by `resume` (rebuild on foreground), which is iOS-only.
     #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
@@ -59,7 +59,7 @@ pub struct AppNode {
 // `pause`/`resume` are driven by the iOS lifecycle plugin; they are unused on
 // desktop/Android.
 #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
-impl AppNode {
+impl AppNodeManager {
     /// Build the node and wrap it in the container. Delegates to [`resume`](Self::resume),
     /// which is where node construction actually happens (startup and, on iOS,
     /// foreground both go through it).
@@ -76,7 +76,7 @@ impl AppNode {
         )
         .await?;
         let (generation_tx, _) = watch::channel(0u64);
-        let app_node = Self {
+        let app_node_manager = Self {
             inner: Arc::new(RwLock::new(Inner {
                 node: None,
                 tracker: TaskTracker::new(),
@@ -98,8 +98,8 @@ impl AppNode {
             app.clone(),
             topic_subscribed_rx,
         )?;
-        app_node.resume(app).await?;
-        Ok(app_node)
+        app_node_manager.resume(app).await?;
+        Ok(app_node_manager)
     }
 
     /// Build the [`NodeContext`](crate::node::node_context::NodeContext) for the

@@ -11,7 +11,7 @@ use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
 
-use crate::node::AppNode;
+use crate::node::AppNodeManager;
 
 /// Returns `true` iff the user has both enabled notifications in app settings
 /// and granted OS-level permission. On desktop the permission state is always
@@ -36,11 +36,11 @@ pub(crate) async fn show_sync_notification(
         return;
     }
 
-    let Some(app_node) = app_handle.try_state::<AppNode>() else {
+    let Some(app_node_manager) = app_handle.try_state::<AppNodeManager>() else {
         return;
     };
 
-    match app_node
+    match app_node_manager
         .notified_operations_store()
         .record_notified_operation(notification.header.hash())
         .await
@@ -55,7 +55,7 @@ pub(crate) async fn show_sync_notification(
         }
     }
 
-    let Ok(node) = app_node.get().await else {
+    let Ok(node) = app_node_manager.get().await else {
         return;
     };
     let data = build_notification_data(
@@ -104,7 +104,7 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
 /// Build the system notification for a freshly-processed p2panda operation.
 ///
 /// Shared between the FCM/APNs entry point (`receive_push_notification`) and the
-/// foreground sync loop (`notification_loop` in `app_node.rs`). Returns `None`
+/// foreground sync loop (`notification_loop` in `app_node_manager.rs`). Returns `None`
 /// when the op should not produce a user-facing notification (own message, payload
 /// variant we don't surface, etc.).
 pub async fn build_notification_data(
