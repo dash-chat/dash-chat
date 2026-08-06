@@ -104,15 +104,6 @@ export class MockMessagesClient implements IMessagesClient {
 		});
 	}
 
-	async getTombstones(chatId: ChatId): Promise<Tombstone[]> {
-		const chatOps = await this.allOps(chatId);
-		const deviceGroupOps = await this.allOps(this.deviceGroupTopicId);
-		return [
-			...deletedForEveryoneTombstones(chatOps),
-			...deletedForMeTombstones(chatId, chatOps, deviceGroupOps),
-		];
-	}
-
 	private async allOps(topicId: TopicId): Promise<Op[]> {
 		const authors = await this.logsClient.getAuthorsForTopic(topicId);
 		const ops = [];

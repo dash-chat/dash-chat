@@ -189,6 +189,15 @@ export interface DeleteForMePayload {
  * message; a delete-for-me vanishes with no trace. */
 export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
 
+export type SystemEvent = {
+	type: 'Tombstones';
+	payload: {
+		topic: TopicId;
+		hashes: Hash[];
+		reason: TombstoneReason;
+	};
+};
+
 export interface Tombstone {
 	hash: Hash;
 	reason: TombstoneReason;

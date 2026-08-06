@@ -13,7 +13,6 @@ export interface IMessagesClient {
 	editMessage(chatId: ChatId, editHash: Hash, message: string): Promise<Hash>;
 	deleteMessageForEveryone(chatId: ChatId, targetHash: Hash): Promise<Hash>;
 	deleteMessageForMe(chatId: ChatId, targetHash: Hash): Promise<Hash>;
-	getTombstones(chatId: ChatId): Promise<Tombstone[]>;
 }
 
 export class MessagesClient implements IMessagesClient {
@@ -63,9 +62,5 @@ export class MessagesClient implements IMessagesClient {
 			chatId,
 			targetHash,
 		});
-	}
-
-	getTombstones(chatId: ChatId): Promise<Tombstone[]> {
-		return invokeAfterSetup('get_tombstones', { chatId });
 	}
 }

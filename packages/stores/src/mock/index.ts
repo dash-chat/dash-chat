@@ -7,5 +7,6 @@ export * from './direct-chat-client.js';
 export * from './group-chat-client.js';
 export * from './messages-client.js';
 export * from './settings-client.js';
+export * from './tombstone-client.js';
 export * from './mailbox-tracker-store.js';
 export * from './seed-demo-data.js';
