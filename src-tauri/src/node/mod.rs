@@ -1,3 +1,4 @@
+mod app_node;
 mod app_node_manager;
 mod node_context;
 pub mod node_slot;

@@ -4,12 +4,15 @@ use dashchat_node::Node;
 use tauri::Manager;
 use tokio::sync::Mutex;
 
+use crate::node::app_node::AppNode;
 use crate::node::node_context::NodeContext;
 
-/// The single Node built when receiving a push notification in the background,
-/// together with the context it was built for.
-/// Only to be reused when multiple notifications are processed sequentially.
-static SLOT: Mutex<Option<(NodeContext, Node)>> = Mutex::const_new(None);
+/// The single Node owned by this process, together with the context it was
+/// built for.
+///
+/// Reused across sequential push notifications, and also holds the main app
+/// Node when the app is running.
+static SLOT: Mutex<Option<AppNode>> = Mutex::const_new(None);
 
 /// Serializes the (slow) node build so two pushes racing in the same extension
 /// process don't open two SQLite pools on the same database. Deliberately
@@ -18,7 +21,7 @@ static SLOT: Mutex<Option<(NodeContext, Node)>> = Mutex::const_new(None);
 /// they all miss iOS's ~30s budget.
 static BUILD_LOCK: Mutex<()> = Mutex::const_new(());
 
-async fn current_node() -> Option<(NodeContext, Node)> {
+async fn current_node() -> Option<AppNode> {
     SLOT.lock().await.clone()
 }
 
@@ -88,10 +91,10 @@ pub async fn get_or_build_node(
 ) -> anyhow::Result<AcquiredNode> {
     // Fast path: return a cached node with a compatible context without
     // blocking on any in-flight build.
-    if let Some((cached_context, node)) = current_node().await {
-        if cached_context.is_compatible_with(&context) {
+    if let Some(app_node) = current_node().await {
+        if app_node.is_compatible_with(&context) {
             return Ok(AcquiredNode {
-                node,
+                node: app_node.node,
                 is_new: false,
             });
         }
@@ -101,10 +104,10 @@ pub async fn get_or_build_node(
     // lock across it. A push that arrives mid-build waits here, then finds the
     // just-built node on this re-check instead of building a second one.
     let _build_guard = BUILD_LOCK.lock().await;
-    if let Some((cached_context, node)) = current_node().await {
-        if cached_context.is_compatible_with(&context) {
+    if let Some(app_node) = current_node().await {
+        if app_node.is_compatible_with(&context) {
             return Ok(AcquiredNode {
-                node,
+                node: app_node.node,
                 is_new: false,
             });
         }
@@ -115,7 +118,7 @@ pub async fn get_or_build_node(
     // the same time in this process. The slot is left empty during shutdown and
     // build so a concurrent caller cannot observe a Node whose context disagrees
     // with its actual behavior.
-    let maybe_old_node = SLOT.lock().await.take().map(|(_, node)| node);
+    let maybe_old_node = SLOT.lock().await.take().map(|app_node| app_node.node);
     if let Some(old_node) = maybe_old_node {
         if let Err(err) = old_node.shutdown().await {
             log::warn!("failed to shut down evicted node: {err:?}");
@@ -132,7 +135,7 @@ pub async fn get_or_build_node(
     )
     .await?;
 
-    *SLOT.lock().await = Some((context, node.clone()));
+    *SLOT.lock().await = Some(AppNode::new(context, node.clone()));
 
     Ok(AcquiredNode { node, is_new: true })
 }
