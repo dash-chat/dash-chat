@@ -1,3 +1,10 @@
+import type { ChainablePromiseElement } from 'webdriverio';
+
+import type {
+	FilePickerRequest,
+	TestFileSpec,
+} from '../../../ui/tests/setup-utils';
+
 export abstract class TestHelper {
 	constructor(protected agent: WebdriverIO.Browser) {}
 
@@ -20,6 +27,47 @@ export abstract class TestHelper {
 		return this.agent.execute(() =>
 			/iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
 		);
+	}
+
+	/**
+	 * Click `trigger` and answer the file input it opens with `files`, or back
+	 * out of that input when there are none, reporting what it asked the OS for.
+	 * No native picker or camera appears.
+	 */
+	protected async answerFilePicker(
+		trigger: ChainablePromiseElement,
+		files: TestFileSpec[] = [],
+	): Promise<FilePickerRequest> {
+		await this.agent.execute(
+			(specs: TestFileSpec[]) => window.__test.interceptFilePickers(specs),
+			files,
+		);
+		let failure: unknown;
+		try {
+			await trigger.click();
+		} catch (error) {
+			failure = error;
+		}
+		const requests = await this.agent.execute(() =>
+			window.__test.collectFilePickers(),
+		);
+		if (failure) throw failure;
+		expect(requests).toHaveLength(1);
+		return requests[0];
+	}
+
+	/** Click a standard `onclick` control by invoking its DOM click handler
+	 * directly. Use for buttons inside a virtual-keyboard-composited surface
+	 * (e.g. the staged-media page): the native compositor moves them off their DOM
+	 * rect, so a WDA native tap (appium:nativeWebTap) misses. NOT for Konsta /
+	 * touch-handler elements, which only respond to a real tap. */
+	protected async domClick(selector: string): Promise<void> {
+		await this.agent.$(selector).waitForExist();
+		await this.agent.execute((sel: string) => {
+			const el = document.querySelector(sel) as HTMLElement | null;
+			if (!el) throw new Error(`domClick: element not found: ${sel}`);
+			el.click();
+		}, selector);
 	}
 
 	protected async typeInto(selector: string, value: string): Promise<void> {
