@@ -208,7 +208,7 @@ export interface FilePickerRequest {
 }
 
 const nativeInputClick = HTMLInputElement.prototype.click;
-let filePickerRequests: FilePickerRequest[] | undefined;
+let filePickerRequests: FilePickerRequest[] = [];
 
 /**
  * Record the file inputs the app opens instead of letting them reach the OS,
@@ -222,7 +222,7 @@ function interceptFilePickers(files: TestFileSpec[] = []): void {
 			nativeInputClick.call(this);
 			return;
 		}
-		filePickerRequests?.push({
+		filePickerRequests.push({
 			accept: this.accept,
 			capture: this.hasAttribute('capture'),
 			multiple: this.multiple,
@@ -242,9 +242,7 @@ function interceptFilePickers(files: TestFileSpec[] = []): void {
 /** Restore file inputs and return what `interceptFilePickers` recorded. */
 function collectFilePickers(): FilePickerRequest[] {
 	HTMLInputElement.prototype.click = nativeInputClick;
-	const requests = filePickerRequests ?? [];
-	filePickerRequests = undefined;
-	return requests;
+	return filePickerRequests;
 }
 
 export const testUtils = {

@@ -26,10 +26,4 @@ export class EditPhotoPage extends TestHelper {
 	takePhoto(photo: TestFileSpec): Promise<FilePickerRequest> {
 		return this.answerFilePicker(this.cameraButton, [photo]);
 	}
-
-	/** Choose `photo` from the gallery action — dismissing it when there is no
-	 * photo — and report what it asked the OS for. */
-	pickFromGallery(photo?: TestFileSpec): Promise<FilePickerRequest> {
-		return this.answerFilePicker(this.galleryButton, photo ? [photo] : []);
-	}
 }
