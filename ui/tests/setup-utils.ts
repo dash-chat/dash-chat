@@ -199,6 +199,52 @@ function dropFiles(specs: TestFileSpec[]) {
 	}
 }
 
+/** What a file input the app opened was configured to ask the OS for. */
+export interface FilePickerRequest {
+	accept: string;
+	/** `false` when the input asks for a stored file rather than a fresh capture. */
+	capture: boolean;
+	multiple: boolean;
+}
+
+const nativeInputClick = HTMLInputElement.prototype.click;
+let filePickerRequests: FilePickerRequest[] = [];
+
+/**
+ * Record the file inputs the app opens instead of letting them reach the OS,
+ * answering each with `files` — or, when there are none, backing out of it as
+ * if the user had dismissed the dialog.
+ */
+function interceptFilePickers(files: TestFileSpec[] = []): void {
+	filePickerRequests = [];
+	HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
+		if (this.type !== 'file') {
+			nativeInputClick.call(this);
+			return;
+		}
+		filePickerRequests.push({
+			accept: this.accept,
+			capture: this.hasAttribute('capture'),
+			multiple: this.multiple,
+		});
+		if (files.length === 0) {
+			this.dispatchEvent(new Event('cancel'));
+			return;
+		}
+		Object.defineProperty(this, 'files', {
+			value: specsToDataTransfer(files).files,
+			configurable: true,
+		});
+		this.dispatchEvent(new Event('change'));
+	};
+}
+
+/** Restore file inputs and return what `interceptFilePickers` recorded. */
+function collectFilePickers(): FilePickerRequest[] {
+	HTMLInputElement.prototype.click = nativeInputClick;
+	return filePickerRequests;
+}
+
 export const testUtils = {
 	simulateUpdate,
 	hasText,
@@ -208,6 +254,8 @@ export const testUtils = {
 	dropFiles,
 	recordMediaDownloads,
 	photoDownloadMs,
+	interceptFilePickers,
+	collectFilePickers,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,
