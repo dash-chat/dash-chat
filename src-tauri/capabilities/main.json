@@ -15,8 +15,8 @@
 		"sharekit:allow-share-text",
 		"sharekit:allow-share-file",
 		"fs:allow-appcache-write-recursive",
-		"mailto:default",
 		"core:path:default",
-		"virtual-keyboard:default"
+		"virtual-keyboard:default",
+		"sentry-reporting:default"
 	]
 }

@@ -6,9 +6,19 @@ export class ContactUsPage extends TestHelper {
 	messageInput = this.el(tid('contact-us-message-input'));
 	reasonSelect = this.el(tid('contact-us-reason-select'));
 	includeDebugLog = this.el(tid('contact-us-include-debug-log'));
-	nextButton = this.el(tid('contact-us-next-btn'));
+	sendButton = this.el(tid('contact-us-send-btn'));
 
 	async ready() {
 		await this.messageInput.waitForExist();
+	}
+
+	async selectReason(reason: string) {
+		await this.agent
+			.$(`${tid('contact-us-reason-select')} select`)
+			.selectByAttribute('value', reason);
+	}
+
+	async enterMessage(message: string) {
+		await this.typeInto(`${tid('contact-us-message-input')} textarea`, message);
 	}
 }

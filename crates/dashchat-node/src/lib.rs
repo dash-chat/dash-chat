@@ -22,12 +22,12 @@ pub mod testing;
 pub use aliased::Aliasing;
 
 pub use chat::*;
-pub use contact::{QrCode, ShareIntent};
+pub use contact::AddContactQrCode;
 pub use error::{
     AddContactError, DeleteMessageError, EditMessageError, Error, RemoveGroupMemberError,
 };
 pub use id::*;
-pub use node::{Node, NodeConfig, Notification};
+pub use node::{Node, NodeConfig, Notification, OpNotification, SystemNotification};
 pub use p2panda::SigningKey;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;

@@ -43,9 +43,6 @@ export interface IContactsClient {
 	// Accept an incoming contact request
 	acceptContact(agentId: AgentId): Promise<void>;
 
-	// Reject contact request
-	rejectContactRequest(agentId: AgentId): Promise<void>;
-
 	// Block a contact
 	blockContact(agentId: AgentId): Promise<void>;
 
@@ -109,10 +106,6 @@ export class ContactsClient implements IContactsClient {
 
 	async acceptContact(agentId: AgentId): Promise<void> {
 		await invokeAfterSetup('accept_contact', { agentId });
-	}
-
-	async rejectContactRequest(agentId: AgentId): Promise<void> {
-		await invokeAfterSetup('reject_contact_request', { agentId });
 	}
 
 	async blockContact(agentId: AgentId): Promise<void> {

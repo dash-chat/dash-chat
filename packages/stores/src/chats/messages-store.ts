@@ -4,6 +4,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { DeviceId, Hash } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
 	ChatReaction,
@@ -45,6 +46,7 @@ export class MessagesStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		/** Resolves to '' while a pending direct chat has no topic yet. */
 		public chatId: ReactiveFn<Promise<ChatId>, []>,
 		public client: IMessagesClient,
@@ -84,25 +86,12 @@ export class MessagesStore {
 			deletedMessages(deleteTargets, messages, bodylessOps),
 		);
 
-		applyTombstones(messages, await this.tombstones());
-
+		// Completely remove any message with a DeletedForMe tombstone.
+		const tombstones = await this.tombstoneStore.tombstones(chatId);
+		for (const { hash, reason } of tombstones) {
+			if (reason === 'DeletedForMe') delete messages[hash];
+		}
 		return messages;
-	});
-
-	// The backend's tombstone set for this chat (each hash tagged with why it was
-	// tombstoned). Re-fetched whenever the chat log or the device-group log
-	// changes, since that's when a delete — or a transitively-tombstoned edit —
-	// gets recorded. Delete-for-me can't be derived from the raw ops the way
-	// reads are: the backend drops the tombstoned edits' bodies, so their
-	// edit-chain pointers are gone and only the backend knows the full set.
-	tombstones = reactive(async () => {
-		const chatId = await this.chatId();
-		if (chatId === '') return [];
-		// Establish reactive dependencies on the logs so this recomputes when a
-		// delete or a tombstoned edit is processed into either topic.
-		await this.logsStore.logsForAllAuthors(chatId);
-		await this.contactsStore.devicesStore.myDeviceGroupTopic();
-		return this.client.getTombstones(chatId);
 	});
 
 	lastMessage = reactive(async () => {
@@ -194,29 +183,6 @@ export class MessagesStore {
 		// The whole message is deleted regardless of which version is shown, so
 		// target the original op; the backend tombstones its edit chain.
 		return this.client.deleteMessageForMe(chatId, message.hash);
-	}
-}
-
-/** Reconcile the built message map with the backend's tombstone set.
- *
- * A `DeletedForMe` op (and any of its edits) is removed outright — following
- * Signal, a delete-for-me leaves no placeholder. A `DeletedForEveryone` edit
- * that slipped through as a raw body-less placeholder (rather than the
- * chain-collapsed `'deleted-for-everyone'` root that `applyDeletes` produces
- * from the `DeleteMessage` op) is removed too, so only the root placeholder
- * remains. Body-less ops that are *not* tombstoned stay as `'body-unavailable'`
- * — a genuinely unfetched message, which the tombstone set lets us tell apart
- * from a deletion. */
-function applyTombstones(
-	messages: Record<Hash, Message>,
-	tombstones: Tombstone[],
-): void {
-	for (const { hash, reason } of tombstones) {
-		const message = messages[hash];
-		if (message === undefined) continue;
-		if (reason === 'DeletedForMe' || message.content === 'body-unavailable') {
-			delete messages[hash];
-		}
 	}
 }
 

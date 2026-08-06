@@ -8,7 +8,7 @@
  *
  * Unix-only — relies on POSIX signal semantics.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,6 +31,7 @@ interface MailboxInfo {
 	pid?: number;
 	port?: number;
 	dbPath?: string;
+	pushNotificationsUrl?: string;
 }
 
 function readInfo(): MailboxInfo {
@@ -46,8 +47,14 @@ export function isRemoteMailbox(): boolean {
 	return readInfo().remote === true;
 }
 
-function localInfo(): { pid: number; port: number; url: string; dbPath: string } {
-	const { remote, pid, port, url, dbPath } = readInfo();
+function localInfo(): {
+	pid: number;
+	port: number;
+	url: string;
+	dbPath: string;
+	pushNotificationsUrl?: string;
+} {
+	const { remote, pid, port, url, dbPath, pushNotificationsUrl } = readInfo();
 	if (
 		remote === true ||
 		pid === undefined ||
@@ -58,7 +65,25 @@ function localInfo(): { pid: number; port: number; url: string; dbPath: string }
 			'mailbox lifecycle control is unavailable against a remote environment mailbox (MAILBOX_URL)',
 		);
 	}
-	return { pid, port, url, dbPath };
+	return { pid, port, url, dbPath, pushNotificationsUrl };
+}
+
+function mailboxBlobsDir(): string {
+	const { dbPath } = localInfo();
+	return path.join(path.dirname(dbPath), 'mailbox_blobs', 'data');
+}
+
+/**
+ * Absolute paths of every blob the local mailbox holds. Note iroh-blobs keeps
+ * blobs below its inline threshold in the database instead, so small ones never
+ * appear here.
+ */
+export function mailboxBlobs(): string[] {
+	const dir = mailboxBlobsDir();
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir)
+		.filter(f => f.endsWith('.data'))
+		.map(f => path.join(dir, f));
 }
 
 function signalGroup(pid: number, sig: NodeJS.Signals): void {
@@ -91,8 +116,15 @@ export function killMailbox(): void {
  */
 export async function restartMailbox(): Promise<void> {
 	const info = localInfo();
-	const server = spawnMailboxServer(info.port, info.dbPath);
+	const server = spawnMailboxServer(
+		info.port,
+		info.dbPath,
+		info.pushNotificationsUrl,
+	);
 	server.unref();
-	writeFileSync(MAILBOX_INFO_PATH, JSON.stringify({ ...info, pid: server.pid }));
+	writeFileSync(
+		MAILBOX_INFO_PATH,
+		JSON.stringify({ ...info, pid: server.pid }),
+	);
 	await waitForMailboxReady(info.url);
 }

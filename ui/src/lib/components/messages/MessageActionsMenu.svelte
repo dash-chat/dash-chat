@@ -3,20 +3,15 @@
 	import { mdiContentCopy, mdiDeleteOutline, mdiPencilOutline } from '@mdi/js';
 	import { List } from 'konsta/svelte';
 	import type { DeviceId, Message } from 'dash-chat-stores';
-	import {
-		canDeleteMessageForEveryone,
-		canEditMessage,
-	} from './message-helpers';
+	import { canEditMessage } from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
+	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 
 	interface Props {
 		message: Message;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
 		onCopy: () => void;
-		/** Opens the delete dialog. Offered on every message, since delete-for-me
-		 * is always allowed; the dialog decides whether delete-for-everyone is
-		 * also on offer. */
 		onDelete?: () => void;
 		/** Names this mount. A desktop message hosts two of these menus at once —
 		 * the hover toolbar's and the right-click one — so they need distinct
@@ -34,7 +29,7 @@
 	}: Props = $props();
 
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
-	const canDelete = $derived(canDeleteMessageForEveryone(message, myDeviceId));
+	let confirmingDelete = $state(false);
 </script>
 
 <List nested data-testid={testid}>
@@ -52,13 +47,16 @@
 		onClick={onCopy}
 		data-testid="message-action-copy"
 	/>
-	{#if onDelete}
-		<ListAction
-			title={m.delete()}
-			icon={mdiDeleteOutline}
-			actionType="danger"
-			onClick={onDelete}
-			data-testid="message-action-delete"
-		/>
-	{/if}
+	<ListAction
+		title={m.delete()}
+		icon={mdiDeleteOutline}
+		actionType="danger"
+		onClick={() => {
+			confirmingDelete = true;
+			onDelete?.();
+		}}
+		data-testid="message-action-delete"
+	/>
 </List>
+
+<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />

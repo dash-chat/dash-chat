@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Block, useTheme, Dialog, DialogButton } from 'konsta/svelte';
+	import { Sheet, Block, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
@@ -72,12 +72,6 @@
 	let showMediaPanel = $state(false);
 
 	let editing = $state<Message | null>(null);
-	/** Message awaiting delete-for-everyone confirmation. */
-	let deleting = $state<Message | null>(null);
-	/** Whether the pending delete may also be deleted for everyone (my own
-	 * message, within the delete window); otherwise only delete-for-me is
-	 * offered. */
-	let deletingForEveryone = $state(false);
 	let discardDialog: ReturnType<typeof DiscardDraftDialog> | undefined =
 		$state();
 
@@ -125,40 +119,6 @@
 			console.error('Failed to edit message', e);
 		} finally {
 			sending = false;
-		}
-	}
-
-	/** Open the delete confirmation dialog for `message`. Delete-for-me is
-	 * always offered; delete-for-everyone only when `canDeleteForEveryone`. */
-	export function deleteMessage(
-		message: Message,
-		canDeleteForEveryone: boolean,
-	) {
-		deleting = message;
-		deletingForEveryone = canDeleteForEveryone;
-	}
-
-	async function confirmDeleteForEveryone() {
-		const target = deleting;
-		deleting = null;
-		if (!target) return;
-		try {
-			await store.deleteMessageForEveryone(target);
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to delete message', e);
-		}
-	}
-
-	async function confirmDeleteForMe() {
-		const target = deleting;
-		deleting = null;
-		if (!target) return;
-		try {
-			await store.deleteMessageForMe(target);
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to delete message for me', e);
 		}
 	}
 
@@ -386,54 +346,6 @@
 {/if}
 
 <DiscardDraftDialog bind:this={discardDialog} onConfirm={discardDraftAndEdit} />
-
-<Dialog
-	opened={deleting !== null}
-	onBackdropClick={() => (deleting = null)}
-	title={m.deleteMessageTitle()}
-	data-testid="composer-delete-message-dialog"
->
-	{#snippet buttons()}
-		{#if deletingForEveryone}
-			<div class="flex flex-col w-full">
-				<DialogButton
-					class="!text-red-500"
-					data-testid="composer-delete-confirm"
-					onClick={confirmDeleteForEveryone}
-				>
-					{m.deleteForEveryone()}
-				</DialogButton>
-				<DialogButton
-					class="!text-red-500"
-					data-testid="composer-delete-for-me-confirm"
-					onClick={confirmDeleteForMe}
-				>
-					{m.deleteForMe()}
-				</DialogButton>
-				<DialogButton
-					data-testid="composer-delete-cancel"
-					onClick={() => (deleting = null)}
-				>
-					{m.cancel()}
-				</DialogButton>
-			</div>
-		{:else}
-			<DialogButton
-				data-testid="composer-delete-cancel"
-				onClick={() => (deleting = null)}
-			>
-				{m.cancel()}
-			</DialogButton>
-			<DialogButton
-				class="!text-red-500"
-				data-testid="composer-delete-for-me-confirm"
-				onClick={confirmDeleteForMe}
-			>
-				{m.deleteForMe()}
-			</DialogButton>
-		{/if}
-	{/snippet}
-</Dialog>
 
 <Sheet
 	class="pb-safe text-lg"

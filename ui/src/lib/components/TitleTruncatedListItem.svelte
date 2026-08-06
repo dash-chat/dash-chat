@@ -1,15 +1,11 @@
 <script lang="ts">
 	import { ListItem } from 'konsta/svelte';
-	import type { Snippet } from 'svelte';
 	type ListItemProps = InstanceType<typeof ListItem>['$$prop_def'];
 
-	// Omit + redeclare `title`: ListItemProps also pulls in the native HTML
-	// `title` attribute (string), which collides with Konsta's `title` slot
-	// prop and blocks passing a Snippet.
-	interface Props extends Omit<ListItemProps, 'title'> {
+	interface Props extends ListItemProps {
 		'data-testid'?: string;
+		'data-contact-name'?: string;
 		titleWrapClass?: string;
-		title?: Snippet | string;
 	}
 
 	let { titleWrapClass = '', children, ...rest }: Props = $props();
@@ -20,7 +16,7 @@
 		.filter(Boolean)
 		.join(' ')}
 	innerClass="min-w-0"
-	{...rest as ListItemProps}
+	{...rest}
 >
 	{#if children}{@render children()}{/if}
 </ListItem>

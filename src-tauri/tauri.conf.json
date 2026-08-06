@@ -76,6 +76,9 @@
 			"iconColor": "#6E7BFF",
 			"vibrationPattern": [0, 250, 250, 250],
 			"lightColor": "#6E7BFF"
+		},
+		"background-service": {
+			"androidForegroundServiceTypes": ["remoteMessaging"]
 		}
 	}
 }

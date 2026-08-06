@@ -1,4 +1,9 @@
+#[cfg(target_os = "android")]
+use crate::background::ExampleBackgroundService;
+
 mod app_node;
+#[cfg(target_os = "android")]
+mod background;
 mod blob_protocol;
 mod commands;
 mod device_info;
@@ -9,6 +14,8 @@ mod mailbox;
 #[cfg(desktop)]
 mod media_drop;
 mod notifications;
+mod redaction;
+mod sentry;
 mod settings;
 mod setup;
 mod utils;
@@ -118,13 +125,12 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }
 
-    builder
+    builder = builder
         .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
             commands::logs::get_log,
             commands::logs::get_authors,
-            commands::redact_log::get_redacted_log,
             commands::profile::set_profile,
             commands::account::delete_account,
             commands::devices::my_device_group_topic,
@@ -135,7 +141,6 @@ pub fn run() {
             commands::contacts::add_contact,
             commands::contacts::accept_contact,
             commands::contacts::active_inbox_topics,
-            commands::contacts::reject_contact_request,
             commands::contacts::block_contact,
             commands::contacts::unblock_contact,
             commands::direct_chats::direct_chat_id,
@@ -173,9 +178,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_sharekit::init())
-        .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_os::init());
+
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.plugin(tauri_plugin_background_service::init_with_service(|| {
+            ExampleBackgroundService::new()
+        }));
+    }
+
+    builder
         .on_window_event(|window, event| match event {
             #[cfg(desktop)]
             tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {

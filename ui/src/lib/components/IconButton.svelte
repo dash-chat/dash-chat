@@ -6,7 +6,7 @@
 
 	interface Props {
 		icon?: string;
-		onClick: () => void;
+		onClick: (event: MouseEvent & { currentTarget: HTMLElement }) => void;
 		label: string;
 		testid?: string;
 		/** For toggle buttons: announced as aria-expanded. Omit for plain buttons. */
@@ -33,12 +33,19 @@
 			? '!bg-black/10 hover:!bg-black/15 dark:!bg-white/10 dark:hover:!bg-white/20'
 			: '',
 	);
+
+	function click(event: MouseEvent & { currentTarget: HTMLElement }) {
+		event.preventDefault();
+		event.stopPropagation();
+		onClick(event);
+	}
 </script>
 
 <Button
 	clear
 	inline
-	{onClick}
+	onClick={click}
+	onpointerdowncapture={(e: PointerEvent) => e.stopPropagation()}
 	aria-label={label}
 	aria-expanded={expanded}
 	data-testid={testid}

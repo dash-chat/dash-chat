@@ -23,6 +23,7 @@ export interface ContactRequest {
 export interface OutgoingContactRequest {
 	devicePubkey: DeviceId;
 	timestamp: number;
+	profileName: string;
 }
 
 export class ContactsStore {
@@ -107,6 +108,12 @@ export class ContactsStore {
 		return blocked;
 	});
 
+	isBlocked = reactive(async (agentId: AgentId) => {
+		const blocked = await this.blockedContactAgentIds();
+
+		return blocked.has(agentId);
+	});
+
 	/**
 	 * Outgoing contact requests we've sent but whose ack hasn't arrived yet.
 	 * A pending marker is dropped once its device pubkey resolves to an
@@ -116,14 +123,23 @@ export class ContactsStore {
 	outgoingPendingRequests = reactive(async () => {
 		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
 
-		const latestByDevice: Record<DeviceId, number> = {};
+		const latestByDevice: Record<
+			DeviceId,
+			{ timestamp: number; profileName: string }
+		> = {};
 		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
 			for (const op of ops) {
 				if (op.body?.payload?.type !== 'PendingContactRequest') continue;
-				const { device_pubkey } = op.body.payload.payload;
+				const { device_pubkey, profile_name } = op.body.payload.payload;
 				const existing = latestByDevice[device_pubkey];
-				if (existing === undefined || op.header.timestamp > existing) {
-					latestByDevice[device_pubkey] = op.header.timestamp;
+				if (
+					existing === undefined ||
+					op.header.timestamp > existing.timestamp
+				) {
+					latestByDevice[device_pubkey] = {
+						timestamp: op.header.timestamp,
+						profileName: profile_name ?? '',
+					};
 				}
 			}
 		}
@@ -138,7 +154,8 @@ export class ContactsStore {
 			if (resolved[i] !== undefined) continue;
 			pending.push({
 				devicePubkey: devices[i],
-				timestamp: latestByDevice[devices[i]],
+				timestamp: latestByDevice[devices[i]].timestamp,
+				profileName: latestByDevice[devices[i]].profileName,
 			});
 		}
 		return pending;
@@ -301,6 +318,27 @@ export class ContactsStore {
 		);
 
 		const profilesWithContacts: Array<[AgentId, Profile]> = contacts
+			.map(
+				(contact, i) =>
+					[contact, profiles[i]] as [AgentId, Profile | undefined],
+			)
+			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
+
+		return profilesWithContacts;
+	});
+
+	profilesForUnblockedContacts = reactive(async () => {
+		const [contacts, blocked] = await Promise.all([
+			this.contactsAgentIds(),
+			this.blockedContactAgentIds(),
+		]);
+		const unblocked = contacts.filter(contact => !blocked.has(contact));
+
+		const profiles = await Promise.all(
+			unblocked.map(contact => this.profiles(contact)),
+		);
+
+		const profilesWithContacts: Array<[AgentId, Profile]> = unblocked
 			.map(
 				(contact, i) =>
 					[contact, profiles[i]] as [AgentId, Profile | undefined],

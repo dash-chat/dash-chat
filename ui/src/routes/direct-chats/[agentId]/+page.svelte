@@ -18,11 +18,11 @@
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { onActivate } from '$lib/utils/keyboard';
+	import { boldToHtml, escapeHtml } from '$lib/utils/banner-text';
 	import {
 		mdiAlert,
 		mdiAccountQuestion,
 		mdiAccountGroup,
-		mdiCancel,
 		mdiChevronDown,
 		mdiChevronRight,
 		mdiChevronUp,
@@ -48,27 +48,24 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
-	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
+	import BlockContactDialog from '$lib/components/contacts/block/BlockContactDialog.svelte';
+	import UnblockContactDialog from '$lib/components/contacts/block/UnblockContactDialog.svelte';
+	import BlockedActionsBar from '$lib/components/contacts/block/BlockedActionsBar.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
+	import Divider from '$lib/components/Divider.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
-	import {
-		canDeleteMessageForEveryone,
-		messagePosition,
-	} from '$lib/components/messages/message-helpers';
+	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
-	const blockedAgentIds = useReactiveValue(
-		contactsStore.blockedContactAgentIds,
-	);
-	const isBlocked = $derived(($blockedAgentIds ?? new Set()).has(agentId));
+	const blocked = useReactivePromise(contactsStore.isBlocked, agentId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.directChats(agentId);
@@ -89,6 +86,7 @@
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 	const chatId = useReactivePromise(store.chatId);
 	const peerProfile = useReactivePromise(store.peerProfile);
+	const peerName = useReactivePromise(store.peerName);
 	const contactRequest = useReactivePromise(store.contactRequest);
 	const messageGroups = useReactivePromise(store.groupedMessages);
 	const readMessageHashes = useReactivePromise(
@@ -120,40 +118,10 @@
 		}
 	}
 
-	async function rejectContactRequest(contactRequest: ContactRequest) {
-		try {
-			await contactsStore.client.rejectContactRequest(contactRequest.agentId);
-			// Defer navigation so the rejection operation propagates before the home page renders
-			setTimeout(() => {
-				showToast(m.contactRequestRejected());
-
-				goto('/');
-			});
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
-
-	async function confirmBlock() {
-		showBlockDialog = false;
-		try {
-			if (isBlocked) {
-				await contactsStore.client.unblockContact(agentId);
-			} else {
-				await contactsStore.client.blockContact(agentId);
-			}
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
-
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
-	let showRejectDialog = $state(false);
 	let showBlockDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
 	// Initial value reserves space for the bottom bar before bind:clientHeight
@@ -398,22 +366,31 @@
 										data-testid="direct-chat-settings-link"
 									>
 										{#if profile}
-											<AvatarWithName
-												{profile}
-												blocked={isBlocked}
-												nameTestId="direct-chat-peer-name"
-											/>
+											{#await $blocked then isBlocked}
+												<AvatarWithName
+													{profile}
+													blocked={isBlocked}
+													nameTestId="direct-chat-peer-name"
+												/>
+											{/await}
 										{:else}
-											<span
-												class="flex w-full min-w-0 flex-row items-center gap-2"
-											>
-												<span class="shrink-0">
-													<Avatar waitingForProfile size="2.5rem" />
+											{#await $peerName then peerName}
+												<span
+													class="flex w-full min-w-0 flex-row items-center gap-2"
+												>
+													<span class="shrink-0">
+														<Avatar waitingForProfile size="2.5rem" />
+													</span>
+													<span
+														class="flex-1 min-w-0 truncate {peerName
+															? ''
+															: 'quiet'}"
+														data-testid="direct-chat-peer-name"
+													>
+														{peerName || m.waitingForProfile()}
+													</span>
 												</span>
-												<span class="quiet flex-1 min-w-0 truncate">
-													{m.waitingForProfile()}
-												</span>
-											</span>
+											{/await}
 										{/if}
 									</Link>
 								{/snippet}
@@ -433,10 +410,18 @@
 								data-testid="direct-chat-peer-header"
 							>
 								<div class="column my-6 gap-2 items-center">
-									<Avatar waitingForProfile size={80} />
-									<span class="quiet text-xl">
-										{m.waitingForProfile()}
-									</span>
+									<Avatar
+										waitingForProfile
+										size={80}
+										testId="direct-chat-peer-avatar"
+									/>
+									{#await $peerName then peerName}
+										<span
+											class="text-xl {peerName ? 'font-semibold' : 'quiet'}"
+										>
+											{peerName || m.waitingForProfile()}
+										</span>
+									{/await}
 								</div>
 							</div>
 						</div>
@@ -466,6 +451,7 @@
 													image={profile.avatar}
 													initials={profile.name.slice(0, 2)}
 													size={80}
+													testId="direct-chat-peer-avatar"
 												/>
 												<div class="flex items-center gap-1 max-w-full">
 													<span
@@ -480,7 +466,11 @@
 											</Link>
 										{:else}
 											<div class="column my-6 gap-2 items-center">
-												<Avatar waitingForProfile size={80} />
+												<Avatar
+													waitingForProfile
+													size={80}
+													testId="direct-chat-peer-avatar"
+												/>
 												<span class="quiet text-xl">
 													{m.waitingForProfile()}
 												</span>
@@ -589,14 +579,6 @@
 																		searchQuery={searchMode ? searchQuery : ''}
 																		onEdit={() =>
 																			composer?.editMessage(message)}
-																		onDelete={() =>
-																			composer?.deleteMessage(
-																				message,
-																				canDeleteMessageForEveryone(
-																					message,
-																					myDeviceId,
-																				),
-																			)}
 																	/>
 																{/await}
 															</div>
@@ -616,8 +598,6 @@
 																		{chatId}
 																		searchQuery={searchMode ? searchQuery : ''}
 																		sender={profile}
-																		onDelete={() =>
-																			composer?.deleteMessage(message, false)}
 																	/>
 																{/await}
 															</div>
@@ -631,67 +611,6 @@
 							{/await}
 						{/await}
 					{/if}
-					{#if contactRequest}
-						<Dialog
-							opened={showAcceptDialog}
-							onBackdropClick={() => (showAcceptDialog = false)}
-							title={m.acceptRequestTitle()}
-						>
-							<span>{m.acceptRequestDescription()}</span>
-							{#snippet buttons()}
-								<DialogButton onClick={() => (showAcceptDialog = false)}>
-									{m.cancel()}
-								</DialogButton>
-								<DialogButton
-									data-testid="direct-chat-accept-confirm"
-									onClick={() => {
-										showAcceptDialog = false;
-										acceptContactRequest(contactRequest);
-									}}
-								>
-									{m.accept()}
-								</DialogButton>
-							{/snippet}
-						</Dialog>
-						<Dialog
-							opened={showRejectDialog}
-							onBackdropClick={() => (showRejectDialog = false)}
-							title={m.rejectRequestTitle()}
-						>
-							<span>{m.rejectRequestDescription()}</span>
-							{#snippet buttons()}
-								<DialogButton onClick={() => (showRejectDialog = false)}>
-									{m.cancel()}
-								</DialogButton>
-								<DialogButton
-									data-testid="direct-chat-reject-confirm"
-									onClick={() => {
-										showRejectDialog = false;
-										rejectContactRequest(contactRequest);
-									}}
-								>
-									{m.reject()}
-								</DialogButton>
-							{/snippet}
-						</Dialog>
-					{/if}
-					<BlockContactDialog
-						opened={showBlockDialog}
-						name={profile ? fullName(profile) : ''}
-						blocked={isBlocked}
-						onConfirm={confirmBlock}
-						onClose={() => (showBlockDialog = false)}
-					/>
-					<SafetyTipsSheet
-						opened={showSecurityTips}
-						onClose={() => (showSecurityTips = false)}
-					/>
-
-					<PeerProfileSheet
-						opened={showPeerProfile}
-						onClose={() => (showPeerProfile = false)}
-						{profile}
-					/>
 				</ReverseScrollPage>
 
 				{#if contactRequest}
@@ -716,28 +635,23 @@
 							</DialogButton>
 						{/snippet}
 					</Dialog>
-					<Dialog
-						opened={showRejectDialog}
-						onBackdropClick={() => (showRejectDialog = false)}
-						title={m.rejectRequestTitle()}
-					>
-						<span>{m.rejectRequestDescription()}</span>
-						{#snippet buttons()}
-							<DialogButton onClick={() => (showRejectDialog = false)}>
-								{m.cancel()}
-							</DialogButton>
-							<DialogButton
-								data-testid="direct-chat-reject-confirm"
-								onClick={() => {
-									showRejectDialog = false;
-									rejectContactRequest(contactRequest);
-								}}
-							>
-								{m.reject()}
-							</DialogButton>
-						{/snippet}
-					</Dialog>
 				{/if}
+
+				{#await $blocked then isBlocked}
+					{#if isBlocked}
+						<UnblockContactDialog
+							bind:opened={showBlockDialog}
+							{agentId}
+							name={profile ? fullName(profile) : ''}
+						/>
+					{:else}
+						<BlockContactDialog
+							bind:opened={showBlockDialog}
+							{agentId}
+							name={profile ? fullName(profile) : ''}
+						/>
+					{/if}
+				{/await}
 
 				<SafetyTipsSheet
 					opened={showSecurityTips}
@@ -776,10 +690,9 @@
 					<div bind:clientHeight={bottomBarHeight}>
 						{#if searchMode}
 							<div class="bg-page-surface">
-								<div
-									class="mx-4 border-t border-gray-300 dark:border-gray-600"
-									style="margin: 0 auto"
-								></div>
+								<div class="mx-4">
+									<Divider />
+								</div>
 								<div
 									class="row items-center gap-2 px-4 py-3"
 									style="margin: 0 auto"
@@ -834,10 +747,9 @@
 							</div>
 						{:else if isPendingChat}
 							<div class="bg-page-surface">
-								<div
-									class="mx-4 border-t border-gray-300 dark:border-gray-600"
-									style="margin: 0 auto"
-								></div>
+								<div class="mx-4">
+									<Divider />
+								</div>
 								<p
 									class="px-6 py-4 text-center text-sm text-gray-600 dark:text-gray-400"
 									data-testid="direct-chat-pending-note"
@@ -845,88 +757,74 @@
 									{m.waitingForProfile()}
 								</p>
 							</div>
-						{:else if isBlocked}
-							<div class="pb-safe bg-page-surface">
-								<div
-									class="mx-4 border-t border-gray-300 dark:border-gray-600"
-									style="margin: 0 auto"
-								></div>
-								<div
-									class="flex flex-col items-center gap-3 px-6 py-3"
-									data-testid="direct-chat-blocked-banner"
-								>
-									<p
-										class="flex items-center gap-2 text-center text-sm text-gray-600 dark:text-gray-400"
-									>
-										<wa-icon
-											class="small-icon quiet shrink-0"
-											src={wrapPathInSvg(mdiCancel)}
-										></wa-icon>
-										{m.youBlockedThisPerson()}
-									</p>
-									<Button
-										class="neutral-tonal-button flex-1"
-										rounded
-										tonal
-										data-testid="direct-chat-unblock-btn"
-										onClick={() => (showBlockDialog = true)}
-										>{m.unblock()}</Button
-									>
-								</div>
-							</div>
-						{:else if contactRequest}
-							<div class="bg-page-surface">
-								<div
-									class="mx-4 border-t border-gray-300 dark:border-gray-600"
-									style="margin: 0 auto"
-								></div>
-								<div
-									class="flex flex-col items-center gap-3 px-6 py-3"
-									style="margin: 0 auto"
-								>
-									<p
-										class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
-									>
-										{@html m
-											.contactRequestBanner({
-												name: contactRequest.profile.name
-													.replace(/&/g, '&amp;')
-													.replace(/</g, '&lt;')
-													.replace(/>/g, '&gt;')
-													.replace(/"/g, '&quot;'),
-											})
-											.replace(
-												/\*\*(.*?)\*\*/g,
-												'<strong class="text-black dark:text-white">$1</strong>',
-											)}
-									</p>
-									<div class="flex w-full gap-2">
-										<Button
-											class="neutral-tonal-button text-red-500 flex-1"
-											rounded
-											tonal
-											data-testid="direct-chat-block-btn"
-											onClick={() => (showBlockDialog = true)}
-											>{m.block()}</Button
-										>
-										<Button
-											class="neutral-tonal-button flex-1"
-											rounded
-											tonal
-											data-testid="direct-chat-accept-btn"
-											onClick={() => (showAcceptDialog = true)}
-											>{m.accept()}</Button
-										>
-									</div>
-								</div>
-							</div>
 						{:else}
-							<MessageComposer
-								bind:this={composer}
-								store={store.messages}
-								destinationName={profile ? fullName(profile) : undefined}
-								onSent={onMessageSent}
-							/>
+							{#await $blocked then isBlocked}
+								{#if isBlocked}
+									<div class="mx-4">
+										<Divider />
+									</div>
+									<BlockedActionsBar
+										name={profile ? fullName(profile) : ''}
+										onUnblock={() => (showBlockDialog = true)}
+									/>
+								{:else if contactRequest}
+									<div class="bg-page-surface">
+										<div class="mx-4">
+											<Divider />
+										</div>
+										<div
+											class="flex flex-col items-center gap-3 px-6 py-3"
+											style="margin: 0 auto"
+										>
+											<p
+												class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
+											>
+												{@html boldToHtml(
+													m.contactRequestBanner({
+														name: escapeHtml(contactRequest.profile.name),
+													}),
+												)}
+											</p>
+											<div
+												class="flex gap-2"
+												class:w-full={!isWideScreen.value}
+											>
+												<Button
+													class="neutral-tonal-button {isWideScreen.value
+														? ''
+														: 'flex-1'}"
+													rounded
+													tonal
+													colors={{
+														tonalTextIos: 'text-red-500',
+														tonalTextMaterial: 'text-red-500',
+													}}
+													data-testid="direct-chat-block-btn"
+													onClick={() => (showBlockDialog = true)}
+													>{m.block()}</Button
+												>
+												<Button
+													class="neutral-tonal-button {isWideScreen.value
+														? ''
+														: 'flex-1'}"
+													rounded
+													tonal
+													data-testid="direct-chat-accept-btn"
+													onClick={() => (showAcceptDialog = true)}
+													>{m.accept()}</Button
+												>
+											</div>
+										</div>
+									</div>
+								{:else}
+									<MessageComposer
+										bind:this={composer}
+										store={store.messages}
+										destinationName={profile ? fullName(profile) : undefined}
+										onSent={onMessageSent}
+									/>
+								{/if}
+							{/await}
 						{/if}
 					</div>
 				</div>

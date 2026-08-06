@@ -8,6 +8,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import { ChatSummary, Payload } from '../types';
 import {
 	EventWithProvenance,
@@ -22,6 +23,7 @@ export class DirectChatStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		public client: IDirectChatClient,
 		public peer: AgentId,
 		messagesClient: IMessagesClient,
@@ -29,6 +31,7 @@ export class DirectChatStore {
 		this.messages = new MessagesStore(
 			logsStore,
 			contactsStore,
+			tombstoneStore,
 			this.chatId,
 			messagesClient,
 		);
@@ -58,6 +61,16 @@ export class DirectChatStore {
 		const request = await this.contactRequest();
 		if (request) return request.profile;
 		return await this.contactsStore.profiles(this.peer);
+	});
+
+	peerName = reactive(async (): Promise<string> => {
+		const profile = await this.peerProfile();
+		if (profile) return fullName(profile);
+		if (!this.isPending) return '';
+		const pending = (await this.contactsStore.outgoingPendingRequests()).find(
+			request => request.devicePubkey === pendingChatKeyDevice(this.peer),
+		);
+		return pending?.profileName ?? '';
 	});
 
 	contactRequest = reactive(async () => {
@@ -122,7 +135,7 @@ export class DirectChatStore {
 		return {
 			type: 'DirectChat',
 			chatId: this.peer,
-			name: profile ? fullName(profile) : '',
+			name: await this.peerName(),
 			avatar: profile?.avatar,
 			lastEvent,
 			unreadMessages: unreadCount,

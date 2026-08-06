@@ -10,7 +10,7 @@
 		"build": "rimraf dist && tsc && babel ./src --extensions \".ts\" --out-dir ./dist",
 		"dev": "concurrently -k \"tsc -w --preserveWatchOutput\" \"babel --watch ./src --extensions \".ts\" --out-dir ./dist\"",
 		"format": "prettier --write 'src/**/*.ts'",
-		"check": "prettier --check 'src/**/*.ts'"
+		"check": "tsc --noEmit && prettier --check 'src/**/*.ts'"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2",

@@ -189,6 +189,15 @@ export interface DeleteForMePayload {
  * message; a delete-for-me vanishes with no trace. */
 export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
 
+export type SystemEvent = {
+	type: 'Tombstones';
+	payload: {
+		topic: TopicId;
+		hashes: Hash[];
+		reason: TombstoneReason;
+	};
+};
+
 export interface Tombstone {
 	hash: Hash;
 	reason: TombstoneReason;
@@ -196,7 +205,10 @@ export interface Tombstone {
 
 export type DeviceGroupPayload =
 	| { type: 'AddContact'; payload: { agent_id: AgentId } }
-	| { type: 'PendingContactRequest'; payload: { device_pubkey: DeviceId } }
+	| {
+			type: 'PendingContactRequest';
+			payload: { device_pubkey: DeviceId; profile_name: string };
+	  }
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'BlockAgent'; payload: AgentId }
 	| { type: 'UnblockAgent'; payload: AgentId }

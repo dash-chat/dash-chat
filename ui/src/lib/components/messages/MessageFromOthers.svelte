@@ -20,6 +20,7 @@
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
+	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -37,7 +38,6 @@
 		sender,
 		showSenderName = false,
 		showAvatar = false,
-		onDelete,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -47,7 +47,6 @@
 		sender: Profile | undefined;
 		showSenderName?: boolean;
 		showAvatar?: boolean;
-		onDelete?: () => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -114,7 +113,7 @@
 <div class="group flex justify-start" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile && hasBody(message.content)}
-			<MessageHoverToolbar {message} {myDeviceId} {onDelete} />
+			<MessageHoverToolbar {message} {myDeviceId} />
 		{/if}
 		<div class="row items-end gap-2">
 			{#if showAvatar}
@@ -167,15 +166,9 @@
 	<MessageActionsOverlay
 		{message}
 		{myDeviceId}
-		{onDelete}
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
 {:else}
-	<MessageContextMenu
-		{message}
-		{myDeviceId}
-		{onDelete}
-		bind:point={contextMenuPoint}
-	/>
+	<MessageContextMenu {message} {myDeviceId} bind:point={contextMenuPoint} />
 {/if}
