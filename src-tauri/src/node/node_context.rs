@@ -88,6 +88,13 @@ impl NodeContext {
         self.role == NodeRole::App && self.app_handle.is_some()
     }
 
+    /// Whether the cloud-mailbox registration retry should run for a Node built
+    /// in this context. Only the main app registers itself as a blob source; the
+    /// push extension merely tracks the mailbox as a fetch source.
+    pub fn enable_cloud_mailbox_registration(&self) -> bool {
+        self.role == NodeRole::App
+    }
+
     /// Whether a Node built for this context can be reused to satisfy a request
     /// for the `requested` context.
     pub fn is_compatible_with(&self, requested: &Self) -> bool {

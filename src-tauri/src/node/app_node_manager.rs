@@ -5,8 +5,6 @@ use dashchat_node::{Node, Notification};
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, watch, RwLock};
-use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
 
 use crate::commands::logs::simplify;
 use crate::node::node_context::NodeContext;
@@ -15,12 +13,6 @@ use crate::notifications::NotifiedOperationsStore;
 
 struct Inner {
     node: Option<Node>,
-    /// Cloud-mailbox registration retry, tracked so [`AppNodeManager::pause`] can cancel
-    /// the token and wait for it to drain before the node is torn down. A fresh
-    /// tracker+token pair is installed per node generation in [`AppNodeManager::resume`]
-    /// (`TaskTracker`/`CancellationToken` from `tokio-util`).
-    tracker: TaskTracker,
-    token: CancellationToken,
 }
 
 /// A swappable container for the app's [`Node`].
@@ -73,11 +65,7 @@ impl AppNodeManager {
         .await?;
         let (generation_tx, _) = watch::channel(0u64);
         let app_node_manager = Self {
-            inner: Arc::new(RwLock::new(Inner {
-                node: None,
-                tracker: TaskTracker::new(),
-                token: CancellationToken::new(),
-            })),
+            inner: Arc::new(RwLock::new(Inner { node: None })),
             data_path,
             notification_tx,
             #[cfg(mobile)]
@@ -141,21 +129,15 @@ impl AppNodeManager {
     pub async fn pause(&self) {
         log::info!("Quiescing node for iOS background suspension");
         let mut inner = self.inner.write().await;
-        let Some(node) = inner.node.take() else {
+        let Some(_node) = inner.node.take() else {
             // Still building or already paused; a still-building node keeps
             // running in the background (0xdead10cc risk).
             log::warn!("Backgrounded with no live node to quiesce");
             return;
         };
-        // Cancel the tracked cloud-mailbox retry and wait for it to drain, and
-        // abort mDNS discovery, so nothing still touches the node's SQLite pools
-        // when iOS suspends the process.
-        inner.token.cancel();
-        inner.tracker.close();
-        inner.tracker.wait().await;
-
-        // Clear the slot and tear down its AppNode, aborting app-specific
-        // tasks and shutting the Node down.
+        // Clear the slot and tear down its AppNode, cancelling and draining the
+        // cloud-mailbox retry, aborting mDNS discovery, and shutting the Node
+        // down so nothing still touches its SQLite pools when iOS suspends.
         if let Some(app_node) = node_slot::current_node().await {
             app_node.teardown().await;
         }
@@ -192,30 +174,10 @@ impl AppNodeManager {
             return Ok(());
         }
 
-        // Cloud-mailbox registration retry, tracked so `pause` can cancel and
-        // drain it with the node. A fresh tracker+token pair is installed per
-        // generation (a `TaskTracker` can't be reused after `close`, a token
-        // can't be un-cancelled).
-        let tracker = TaskTracker::new();
-        let token = CancellationToken::new();
-        let cloud_node = node.clone();
-        tracker.spawn(
-            token
-                .clone()
-                .run_until_cancelled_owned(dashchat_utils::retry_with_backoff(
-                    None,
-                    std::time::Duration::from_secs(2),
-                    std::time::Duration::from_secs(10),
-                    "register cloud mailbox",
-                    move || {
-                        let node = cloud_node.clone();
-                        async move { crate::setup::register_cloud_mailbox(&node).await }
-                    },
-                )),
-        );
+        // A freshly built app Node already spawned its cloud-mailbox registration
+        // retry in `AppNode::new`; it will be cancelled and drained by the slot's
+        // teardown on the next pause.
         inner.node = Some(node);
-        inner.tracker = tracker;
-        inner.token = token;
         // Wake forwarders so they re-bind to the fresh node.
         drop(inner);
         self.bump_generation();

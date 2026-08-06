@@ -12,7 +12,10 @@ use crate::node::AppNodeManager;
 
 /// The current node, or the next one built after a swap. Returns `None` only when
 /// the app is shutting down (the generation sender was dropped).
-async fn wait_for_node(app_node_manager: &AppNodeManager, generation: &mut watch::Receiver<u64>) -> Option<Node> {
+async fn wait_for_node(
+    app_node_manager: &AppNodeManager,
+    generation: &mut watch::Receiver<u64>,
+) -> Option<Node> {
     loop {
         if let Ok(node) = app_node_manager.get().await {
             return Some(node);
@@ -34,8 +37,11 @@ async fn wait_for_node(app_node_manager: &AppNodeManager, generation: &mut watch
 /// `subscribe` future *may* hold a node clone transiently while it waits for a
 /// resource to (re)appear, but it is raced against the generation signal, so a
 /// pause aborts it and releases the clone.
-fn spawn_watch_forwarder<T, F, Fut>(app_node_manager: AppNodeManager, on_event: Channel<T>, subscribe: F)
-where
+fn spawn_watch_forwarder<T, F, Fut>(
+    app_node_manager: AppNodeManager,
+    on_event: Channel<T>,
+    subscribe: F,
+) where
     T: Serialize + Clone + Send + Sync + 'static,
     F: Fn(Node) -> Fut + Send + 'static,
     Fut: Future<Output = anyhow::Result<watch::Receiver<T>>> + Send,
@@ -113,9 +119,11 @@ pub async fn mailbox_subscribe_active_ids(
     on_event: Channel<BTreeSet<MailboxId>>,
     app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    spawn_watch_forwarder(app_node_manager.inner().clone(), on_event, |node| async move {
-        Ok(node.mailboxes.active_mailbox_ids())
-    });
+    spawn_watch_forwarder(
+        app_node_manager.inner().clone(),
+        on_event,
+        |node| async move { Ok(node.mailboxes.active_mailbox_ids()) },
+    );
     Ok(())
 }
 
@@ -165,9 +173,11 @@ pub async fn mailbox_subscribe_all_ids(
     on_event: Channel<BTreeSet<MailboxId>>,
     app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    spawn_watch_forwarder(app_node_manager.inner().clone(), on_event, |node| async move {
-        Ok(node.mailboxes.sync_tracker().all_mailbox_ids())
-    });
+    spawn_watch_forwarder(
+        app_node_manager.inner().clone(),
+        on_event,
+        |node| async move { Ok(node.mailboxes.sync_tracker().all_mailbox_ids()) },
+    );
     Ok(())
 }
 
