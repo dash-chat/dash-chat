@@ -33,7 +33,10 @@ export async function simulateLongpress(
 	agent: WebdriverIO.Browser,
 	element: ChainablePromiseElement,
 ): Promise<void> {
-	await agent.execute(dispatchTouch, element, 'touchstart');
+	// `execute` only turns an argument into a page node when it is a resolved
+	// element; the chainable promise serializes to `{}` instead.
+	const target = await element.getElement();
+	await agent.execute(dispatchTouch, target, 'touchstart');
 	await agent.pause(LONG_PRESS_MS);
-	await agent.execute(dispatchTouch, element, 'touchend');
+	await agent.execute(dispatchTouch, target, 'touchend');
 }
