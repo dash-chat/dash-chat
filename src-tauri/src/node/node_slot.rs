@@ -38,7 +38,7 @@ pub struct AcquiredNode {
 ///    When found, the cache is cleared since it's no longer needed.
 /// 2. A previously cached Node with a compatible context.
 /// 3. Build a new Node for the requested context and cache it.
-pub async fn get_or_build_node(
+pub async fn get_app_node_or_cached_node(
     data_path: &PathBuf,
     context: NodeContext,
 ) -> anyhow::Result<AcquiredNode> {
@@ -59,6 +59,18 @@ pub async fn get_or_build_node(
         }
     }
 
+    get_or_build_node(data_path, context).await
+}
+
+/// Get a Node
+///
+/// Resolution order:
+/// 1. A previously cached Node with a compatible context.
+/// 2. Build a new Node for the requested context and cache it.
+pub async fn get_or_build_node(
+    data_path: &PathBuf,
+    context: NodeContext,
+) -> anyhow::Result<AcquiredNode> {
     // Fast path: return a cached node with a compatible context without
     // blocking on any in-flight build.
     if let Some((cached_context, node)) = current_node().await {

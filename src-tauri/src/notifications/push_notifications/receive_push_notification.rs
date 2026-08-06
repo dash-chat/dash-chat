@@ -154,7 +154,7 @@ async fn handle_push_notification(
     );
 
     let acquired =
-        node_slot::get_or_build_node(app_data_dir, NodeContext::for_push_notifications())
+        node_slot::get_app_node_or_cached_node(app_data_dir, NodeContext::for_push_notifications())
             .await
             .context("failed to get node")?;
     let node = acquired.node;
