@@ -31,6 +31,17 @@ export class Composer extends TestHelper {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
 	}
 
+	/** The text currently in the composer. Read off the DOM property rather
+	 * than with `getValue()`: on a mobile session that reads the `value`
+	 * attribute, which a `<textarea>` does not have. */
+	inputText(): Promise<string> {
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector<HTMLTextAreaElement>(sel)?.value ?? '',
+			tid('message-input-textarea'),
+		);
+	}
+
 	/** Wait for the staged-media UI: the inline preview on desktop, the
 	 * full-screen staged-media page on mobile. */
 	async waitForStagedMedia(): Promise<void> {

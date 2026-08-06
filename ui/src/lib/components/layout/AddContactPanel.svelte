@@ -292,7 +292,7 @@
 										>
 											<ListInput
 												floatingLabel
-												label="Paste contact link or code (dev only)"
+												label="Paste code (dev only)"
 												type="text"
 												outline
 												data-testid="add-contact-code-input"
