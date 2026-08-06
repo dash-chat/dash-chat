@@ -60,6 +60,16 @@ export class DirectChatStore {
 		return await this.contactsStore.profiles(this.peer);
 	});
 
+	peerName = reactive(async (): Promise<string> => {
+		const profile = await this.peerProfile();
+		if (profile) return fullName(profile);
+		if (!this.isPending) return '';
+		const pending = (await this.contactsStore.outgoingPendingRequests()).find(
+			request => request.devicePubkey === pendingChatKeyDevice(this.peer),
+		);
+		return pending?.profileName ?? '';
+	});
+
 	contactRequest = reactive(async () => {
 		const contactRequests = await this.contactsStore.contactRequests();
 		return contactRequests.find(cr => cr.agentId === this.peer);
@@ -122,7 +132,7 @@ export class DirectChatStore {
 		return {
 			type: 'DirectChat',
 			chatId: this.peer,
-			name: profile ? fullName(profile) : '',
+			name: await this.peerName(),
 			avatar: profile?.avatar,
 			lastEvent,
 			unreadMessages: unreadCount,

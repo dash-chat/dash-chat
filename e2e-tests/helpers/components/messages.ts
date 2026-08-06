@@ -1,3 +1,4 @@
+import { simulateLongpress } from '../long-press';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
@@ -98,12 +99,17 @@ export class Messages extends TestHelper {
 							document
 								.querySelector(messagesSel)
 								?.querySelectorAll(`${photosSel} img`) ?? [];
-						return Array.from(imgs).some(el => {
-							const img = el as HTMLImageElement;
-							return (
-								img.alt.includes(name) && img.complete && img.naturalWidth > 0
-							);
-						});
+						const img = Array.from(imgs).find(el =>
+							(el as HTMLImageElement).alt.includes(name),
+						) as HTMLImageElement | undefined;
+						if (img === undefined) return false;
+						if (img.complete && img.naturalWidth > 0) return true;
+						// Attachments render with loading="lazy", so one that is
+						// scrolled out of view never decodes and naturalWidth stays 0.
+						// Only scroll when it still needs decoding — scrolling on
+						// every poll forces a layout over the whole message list.
+						img.scrollIntoView({ block: 'center' });
+						return false;
 					},
 					this.messagesSelector,
 					tid('message-attachment-photos'),
@@ -134,54 +140,75 @@ export class Messages extends TestHelper {
 		);
 	}
 
+	/** Open the lightbox on the photo labelled `label`. Clicked in-page because
+	 * the cell is identified by its image's alt, which a CSS selector can't reach
+	 * from the enclosing button. */
+	async openPhoto(label: string): Promise<void> {
+		const clicked = await this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const imgs =
+					document
+						.querySelector(messagesSel)
+						?.querySelectorAll(`${photosSel} img`) ?? [];
+				const img = Array.from(imgs).find(el =>
+					(el as HTMLImageElement).alt.includes(name),
+				);
+				const button = img?.closest('button');
+				if (!button) return false;
+				button.click();
+				return true;
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
+		);
+		if (!clicked) throw new Error(`No photo cell showing "${label}"`);
+		await this.lightbox.root.waitForExist();
+	}
+
+	/** How long the photo labelled `label` spent downloading: the webview issuing
+	 * the blob request to its last byte. The agent must have called
+	 * `window.__test.recordMediaDownloads()` before the photo rendered. */
+	async photoDownloadMs(
+		label: string,
+		timeout = MEDIA_SYNC_TIMEOUT,
+	): Promise<number> {
+		let ms: number | null = null;
+		await this.agent.waitUntil(
+			async () => {
+				ms = await this.agent.execute(
+					(name: string) => window.__test.photoDownloadMs(name),
+					label,
+				);
+				return ms !== null;
+			},
+			{ timeout, timeoutMsg: `No download timing recorded for "${label}"` },
+		);
+		return ms!;
+	}
+
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
 	}
 }
 
-/** Comfortably past the 500ms threshold in the app's `longpress` action. */
-const LONG_PRESS_MS = 700;
-
-type BubbleGesture = 'contextmenu' | 'touchstart' | 'touchend';
-
 /**
- * Dispatch one gesture event at the centre of a message's bubble. Serialized
- * into the page by `execute`, so it has to stay self-contained — and `execute`
- * widens its arguments to `string`, so the gesture is narrowed by the
- * `pressBubble` caller rather than here.
- *
- * A long-press is the caller's job to compose: `touchstart`, a hold, then
- * `touchend` — the app starts its own timer off `touchstart`.
+ * Dispatch a right-click at the centre of a message's bubble. Serialized into
+ * the page by `execute`, so it has to stay self-contained.
  */
-function dispatchBubbleGesture(wrapperSel: string, gesture: string) {
+function dispatchBubbleContextMenu(wrapperSel: string) {
 	const wrapper = document.querySelector<HTMLElement>(wrapperSel);
 	if (!wrapper) return;
 	const msg = wrapper.querySelector('.message') as HTMLElement | null;
 	const el = msg ?? wrapper;
 	const rect = el.getBoundingClientRect();
-	const clientX = rect.left + rect.width / 2;
-	const clientY = rect.top + rect.height / 2;
-	if (gesture === 'contextmenu') {
-		el.dispatchEvent(
-			new MouseEvent('contextmenu', {
-				bubbles: true,
-				cancelable: true,
-				clientX,
-				clientY,
-			}),
-		);
-		return;
-	}
-	const touch = new Touch({ identifier: 1, target: el, clientX, clientY });
-	const down = gesture === 'touchstart';
 	el.dispatchEvent(
-		new TouchEvent(gesture, {
+		new MouseEvent('contextmenu', {
 			bubbles: true,
 			cancelable: true,
-			touches: down ? [touch] : [],
-			targetTouches: down ? [touch] : [],
-			changedTouches: [touch],
+			clientX: rect.left + rect.width / 2,
+			clientY: rect.top + rect.height / 2,
 		}),
 	);
 }
@@ -219,6 +246,29 @@ export class Message extends TestHelper {
 		return this.wrapper.$(tid('message-action-copy'));
 	}
 
+	get deleteAction() {
+		return this.wrapper.$(tid('message-action-delete'));
+	}
+
+	/** The deleted-for-everyone placeholder that replaces this message's body. */
+	get deletedPlaceholder() {
+		return this.wrapper.$(tid('message-deleted-placeholder'));
+	}
+
+	/** The delete confirmation. It is mounted only while it is up, and only by
+	 * the message being deleted, so it resolves at agent level. */
+	get deleteDialog() {
+		return this.agent.$(tid('delete-message-dialog'));
+	}
+
+	get deleteDialogCancel() {
+		return this.agent.$(tid('delete-message-cancel'));
+	}
+
+	get deleteDialogConfirm() {
+		return this.agent.$(tid('delete-message-confirm'));
+	}
+
 	/** Open this message's actions menu with the gesture its platform uses — a
 	 * long-press on mobile, which opens the spotlight overlay, or the hover
 	 * toolbar's ⋯ button on desktop — and wait for it to actually open. */
@@ -247,34 +297,18 @@ export class Message extends TestHelper {
 	 * rather than the hover toolbar's popover. Desktop only: on mobile the
 	 * gesture belongs to the spotlight overlay instead. */
 	async openActionsByRightClick() {
-		await this.pressBubble('contextmenu');
+		await this.agent.execute(dispatchBubbleContextMenu, this.wrapperSelector);
 		await this.contextMenu.waitForDisplayed();
 	}
 
-	/** Whether the app is rendering its mobile UI. Read from the user agent
-	 * because that is exactly what the app's own `isMobile` branches on to
-	 * choose between the spotlight overlay and the desktop popovers, so the
-	 * gesture can never drift from the UI that is actually mounted. */
-	private isMobileBuild(): Promise<boolean> {
-		return this.agent.execute(() =>
-			/iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
-		);
-	}
-
-	private pressBubble(gesture: BubbleGesture): Promise<void> {
-		return this.agent.execute(
-			dispatchBubbleGesture,
-			this.wrapperSelector,
-			gesture,
-		);
-	}
-
-	/** Hold a touch on the bubble past the long-press threshold, then lift it,
-	 * the way a mobile user opens the actions menu. */
+	/** Long-press the bubble the way a mobile user opens the actions menu. */
 	private async longPressBubble() {
-		await this.pressBubble('touchstart');
-		await this.agent.pause(LONG_PRESS_MS);
-		await this.pressBubble('touchend');
+		const bubbleSelector = `${this.wrapperSelector} .message`;
+		const hasBubble = await this.agent.$(bubbleSelector).isExisting();
+		await simulateLongpress(
+			this.agent,
+			hasBubble ? bubbleSelector : this.wrapperSelector,
+		);
 	}
 
 	/** Open this message's quick-reaction bar with the gesture its platform
@@ -391,10 +425,34 @@ export class Message extends TestHelper {
 		// with the message being edited.
 		await this.composer.editingBanner.waitForExist();
 		await this.agent.waitUntil(
-			async () => (await this.composer.messageInput.getValue()) === oldText,
+			async () => (await this.composer.inputText()) === oldText,
 			{ timeoutMsg: 'Editing input is not prefilled with the original text' },
 		);
 		await this.composer.type(newText);
 		await this.composer.send();
+	}
+
+	/** Open the actions menu, tap Delete, and confirm deleting for everyone. */
+	async delete(): Promise<void> {
+		await this.openActions();
+		await this.deleteAction.waitForClickable();
+		await this.deleteAction.click();
+		await this.deleteDialogConfirm.waitForClickable();
+		await this.deleteDialogConfirm.click();
+	}
+
+	/** Wait for this message to render the deleted-for-everyone placeholder
+	 * reading `text`. A delete tombstones the original message rather than
+	 * replacing it, so the hash — and this helper — stays valid across it. */
+	async waitForDeleted(text: string, timeout = SYNC_TIMEOUT): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				(await this.deletedPlaceholder.isExisting()) &&
+				(await this.deletedPlaceholder.getText()).trim() === text,
+			{
+				timeout,
+				timeoutMsg: `Message ${this.hash} does not show the deleted placeholder "${text}"`,
+			},
+		);
 	}
 }

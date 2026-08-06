@@ -119,7 +119,7 @@ pub type TopicId = p2panda::Topic;
 
 // -- SQLite encoding for TopicId --
 
-impl sqlx::Type<Sqlite> for Topic {
+impl<K: TopicKind> sqlx::Type<Sqlite> for Topic<K> {
     fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
         <Vec<u8> as sqlx::Type<Sqlite>>::type_info()
     }
@@ -161,7 +161,7 @@ impl<K: TopicKind> From<Topic<K>> for LogId {
 )]
 #[display("{}", self.id.to_hex())]
 #[debug("{}", self)]
-pub struct Topic<K: TopicKind = kind::Untyped> {
+pub struct Topic<K: TopicKind> {
     #[deref]
     id: TopicId,
 
@@ -282,7 +282,7 @@ impl<K: TopicKind> From<Topic<K>> for String {
     }
 }
 
-impl TryFrom<String> for Topic {
+impl TryFrom<String> for Topic<kind::Untyped> {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(std::str::FromStr::from_str(&value)?)

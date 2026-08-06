@@ -17,10 +17,15 @@ export class DirectChatPage extends TestHelper {
 	settingsLink = this.el(tid('direct-chat-settings-link'));
 	peerName = this.el(tid('direct-chat-peer-name'));
 	peerHeader = this.el(tid('direct-chat-peer-header'));
+	peerAvatar = this.el(tid('direct-chat-peer-avatar'));
 	acceptButton = this.el(tid('direct-chat-accept-btn'));
-	rejectButton = this.el(tid('direct-chat-reject-btn'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
-	rejectConfirm = this.el(tid('direct-chat-reject-confirm'));
+	blockButton = this.el(tid('direct-chat-block-btn'));
+	unblockButton = this.el(tid('direct-chat-unblock-btn'));
+	blockedBanner = this.el(tid('direct-chat-blocked-banner'));
+	blockConfirm = this.el(tid('block-contact-confirm'));
+	unblockConfirm = this.el(tid('unblock-contact-confirm'));
+	blockedNameIcon = this.el(tid('blocked-name-icon'));
 	messageStatus = this.el(tid('message-status'));
 	readMore = this.el(tid('message-read-more'));
 	composer = new Composer(this.agent);
@@ -86,8 +91,26 @@ export class DirectChatPage extends TestHelper {
 		return this.peerName.isExisting();
 	}
 
+	/** Whether the peer-header avatar is the profile placeholder (person icon,
+	 * shown while the full profile is still syncing) rather than a real one. */
+	peerAvatarIsPlaceholder(): Promise<boolean> {
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector(sel)?.getAttribute('data-waiting') === 'true',
+			tid('direct-chat-peer-avatar'),
+		);
+	}
+
 	isContactRequestBannerVisible(): Promise<boolean> {
 		return this.acceptButton.isExisting();
+	}
+
+	/** Accept an incoming contact request (open the confirm dialog, confirm).
+	 * Uses DOM clicks: a WDA native tap on these Konsta buttons doesn't reliably
+	 * fire on iOS (same limitation as the composer send button). */
+	async acceptContactRequest(): Promise<void> {
+		await this.domClick(tid('direct-chat-accept-btn'));
+		await this.domClick(tid('direct-chat-accept-confirm'));
 	}
 
 	/** Returns descriptions of any direct-chat navbar overflow issues. */

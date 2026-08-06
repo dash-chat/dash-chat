@@ -21,8 +21,10 @@ pub mod testing;
 pub use aliased::Aliasing;
 
 pub use chat::*;
-pub use contact::{QrCode, ShareIntent};
-pub use error::{AddContactError, EditMessageError, Error, RemoveGroupMemberError};
+pub use contact::AddContactQrCode;
+pub use error::{
+    AddContactError, DeleteMessageError, EditMessageError, Error, RemoveGroupMemberError,
+};
 pub use id::*;
 pub use node::{Node, NodeConfig, Notification};
 pub use p2panda::SigningKey;

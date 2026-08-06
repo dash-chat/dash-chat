@@ -101,24 +101,11 @@ async fn handle_push_notifications_with_fallback_messages(
                 log::info!(
                     "Successfully processed push notification, no actual notification needs to be shown.",
                 );
-                // On iOS, alert notifications must be shown. If we return None here,
-                // iOS will display a notification with title = topic_id, and body = author:seq_num
-                // Show a generic notification instead
-                // TODO: apply for the exception to Apple that allows apps to not need to show a notification
-                // https://developer.apple.com/contact/request/notification-service
-                #[cfg(target_os = "ios")]
-                return Some(notifications::synced_generic_notification());
             }
             result
         }
         Err(err) => {
             log::error!("Failed to handle push notification: {err:?}");
-            // On iOS, returning None here would let iOS fall back to the
-            // raw APNS payload (topic_id as title, author:seq as body).
-            // Show a generic fallback so the user sees something readable.
-            #[cfg(target_os = "ios")]
-            return Some(notifications::may_have_new_messages_generic_notification());
-            #[cfg(not(target_os = "ios"))]
             None
         }
     }
@@ -217,18 +204,8 @@ async fn handle_push_notification(
         .await
     {
         Ok(false) => {
-            // On iOS the NSE must return some content; the main app's
-            // local notification has the same stable id, so iOS will
-            // collapse them into a single banner and the plugin's
-            // `willPresent` callback suppresses it when the user is on
-            // the notification's route.
-            #[cfg(not(target_os = "ios"))]
-            {
-                log::info!("Skipping push notification for op {op_id}: already notified");
-                return Ok(None);
-            }
-            #[cfg(target_os = "ios")]
-            log::info!("op {op_id} was already notified by the main app; building the same notification so iOS dedups by id");
+            log::info!("Skipping push notification for op {op_id}: already notified");
+            return Ok(None);
         }
         Ok(true) => {}
         Err(err) => {

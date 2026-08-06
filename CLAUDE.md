@@ -370,7 +370,7 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 
 ### E2E Tests (WebdriverIO)
 
-The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (tauri-driver against the built binary), `android` (physical device via Appium in the webview context), or `android-emulator` (headless emulator, booted automatically). Page objects and specs work unchanged across platforms.
+The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (tauri-driver against the built binary), `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
 
 ```bash
 # Build the Tauri binary and run the e2e suite (recommended)
@@ -384,6 +384,11 @@ PLATFORMS=android,desktop just test e2e send-messages
 PLATFORMS=android,android just test e2e send-messages
 PLATFORMS=android-emulator,android-emulator just test e2e send-messages
 PLATFORMS=desktop just test e2e settings-pages
+
+# Connected iPhone; pair two iPhones for two-agent specs (desktop needs Linux,
+# so it can't share a Mac host with an iOS agent)
+PLATFORMS=ios,ios just test e2e send-messages
+PLATFORMS=ios just test e2e settings-pages
 ```
 
 **Key details:**
@@ -425,7 +430,8 @@ The `tauri-plugin-virtual-keyboard` plugin (source: `https://github.com/dash-cha
 
 ## Important Notes
 
-- **Log redaction**: The `get_redacted_log` command in `src-tauri/src/commands/logs.rs` strips sensitive data from log files before they are sent as error report attachments. This includes: hex strings, base64 blobs, public key byte arrays, hashes, signatures, device/agent IDs, timestamps, profile fields (name, surname, about), chat message content, and reactions. **When adding any new feature that introduces private or user-generated data, you must also update the redaction patterns in `get_redacted_log` to ensure that data never leaves the device in error reports.**
+- **Log redaction**: `REDACTION_REGEXES` in `src-tauri/src/commands/redact_log.rs` lists what counts as sensitive: hex strings, base64 blobs, public key byte arrays, hashes, signatures, device/agent IDs, timestamps, profile fields (name, surname, about), chat message content, and reactions. `tauri-plugin-sentry-reporting` applies those patterns to everything on its way off the device — whole-string over the attached log tail, and per string leaf over serialized Sentry events. **When adding any new feature that introduces private or user-generated data, you must add a pattern to `REDACTION_REGEXES` so that data never leaves the device in a report.**
+- **Error reporting**: error reports go to Sentry via `crates/tauri-plugin-sentry-reporting`, on the rule that **nothing leaves the device until the user presses Send**. Capture is local-only; a user-initiated command redacts and POSTs. `SENTRY_DSN` is set by CI at build time — one DSN across environments, with `ENV` distinguishing them in Sentry. With no DSN the whole path is inert and logging is unaffected.
 - **Rust edition**: Uses Rust edition 2021 (src-tauri) and 2024 (dashchat-node)
 - **Rust toolchain**: Pinned to stable 1.94.0 via `rust-toolchain.toml` (one toolchain including the Android and iOS targets).
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)

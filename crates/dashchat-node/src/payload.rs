@@ -5,7 +5,7 @@ use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chat::ChatId;
 use crate::topic::{Topic, kind};
@@ -19,6 +19,17 @@ pub struct Profile {
     pub avatar: Option<String>,
     #[serde(default)]
     pub about: Option<String>,
+}
+
+impl Profile {
+    /// Return the display name as "<name> <surname>" when a non-empty surname
+    /// exists, otherwise just "<name>".
+    pub fn full_name(&self) -> String {
+        match self.surname {
+            Some(ref surname) if !surname.is_empty() => format!("{} {}", self.name, surname),
+            _ => self.name.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +101,18 @@ pub enum ChatPayload {
         edit_hash: Hash,
     },
 
+    /// Deletes a previously-sent message for everyone.
+    ///
+    /// `hashes` is the complete edit chain of the message being deleted: the
+    /// original `Message` operation plus every `EditMessage` in its chain (a
+    /// single hash when the message was never edited). Processing a delete
+    /// tombstones every referenced operation so its payload is dropped and
+    /// never stored or synced again. Deletes are validated on both sides; see
+    /// [`DeleteError`](crate::chat::DeleteError).
+    DeleteMessage {
+        hashes: BTreeSet<Hash>,
+    },
+
     Reaction(ChatReaction),
 
     GroupInfo(GroupInfo),
@@ -138,6 +161,8 @@ pub enum DeviceGroupPayload {
     /// the device -> agent mapping is known.
     PendingContactRequest {
         device_pubkey: DeviceId,
+        #[serde(default)]
+        profile_name: String,
     },
     RejectContactRequest(AgentId),
     BlockAgent(AgentId),
