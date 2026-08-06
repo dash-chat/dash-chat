@@ -10652,7 +10652,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-system-theme"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/tauri-plugin-system-bars-styles?rev=ce6e762f816bdffeaa0bd56078995bda21cdb68b#ce6e762f816bdffeaa0bd56078995bda21cdb68b"
+source = "git+https://github.com/dash-chat/tauri-plugin-system-theme?rev=ce6e762f816bdffeaa0bd56078995bda21cdb68b#ce6e762f816bdffeaa0bd56078995bda21cdb68b"
 dependencies = [
  "log",
  "objc2 0.6.4",

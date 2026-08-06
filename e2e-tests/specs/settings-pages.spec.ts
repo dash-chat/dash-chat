@@ -64,12 +64,12 @@ describe('Settings pages', () => {
 
 		await agent.appearancePage.dark.click();
 		await agent.waitUntil(
-			async () => (await agent.appearancePage.getColorScheme()) === 'dark',
+			async () => (await agent.getColorScheme()) === 'dark',
 		);
 
 		await agent.appearancePage.light.click();
 		await agent.waitUntil(
-			async () => (await agent.appearancePage.getColorScheme()) === 'light',
+			async () => (await agent.getColorScheme()) === 'light',
 		);
 
 		await agent.appearancePage.system.click();
