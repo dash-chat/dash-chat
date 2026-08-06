@@ -23,18 +23,11 @@
 		message: Message;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
-		onDelete?: () => void;
 		/** Flip the visual order so the ⋯ button sits away from the bubble. */
 		reverse?: boolean;
 	}
 
-	let {
-		message,
-		myDeviceId,
-		onEdit,
-		onDelete,
-		reverse = false,
-	}: Props = $props();
+	let { message, myDeviceId, onEdit, reverse = false }: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
 
@@ -84,7 +77,6 @@
 
 	function del() {
 		close();
-		onDelete?.();
 	}
 
 	async function copy() {
