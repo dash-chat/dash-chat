@@ -11,9 +11,6 @@
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
 		onCopy: () => void;
-		/** Opens the delete dialog. Offered on every message, since delete-for-me
-		 * is always allowed; the dialog decides whether delete-for-everyone is
-		 * also on offer. */
 		onDelete?: () => void;
 		/** Names this mount. A desktop message hosts two of these menus at once —
 		 * the hover toolbar's and the right-click one — so they need distinct

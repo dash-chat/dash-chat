@@ -86,8 +86,11 @@ export class MessagesStore {
 			deletedMessages(deleteTargets, messages, bodylessOps),
 		);
 
-		applyTombstones(messages, await this.tombstoneStore.tombstones(chatId));
-
+		// Completely remove any message with a DeletedForMe tombstone.
+		const tombstones = await this.tombstoneStore.tombstones(chatId);
+		for (const { hash, reason } of tombstones) {
+			if (reason === 'DeletedForMe') delete messages[hash];
+		}
 		return messages;
 	});
 
@@ -180,20 +183,6 @@ export class MessagesStore {
 		// The whole message is deleted regardless of which version is shown, so
 		// target the original op; the backend tombstones its edit chain.
 		return this.client.deleteMessageForMe(chatId, message.hash);
-	}
-}
-
-/** Reconcile the built message map with the backend's tombstone set.
- *
- * A `DeletedForMe` op (and any of its edits) is removed outright — following
- * Signal, a delete-for-me leaves no placeholder. `DeletedForEveryone` ops keep
- * the `'deleted-for-everyone'` placeholder `deletedMessages` built for them. */
-function applyTombstones(
-	messages: Record<Hash, Message>,
-	tombstones: Tombstone[],
-): void {
-	for (const { hash, reason } of tombstones) {
-		if (reason === 'DeletedForMe') delete messages[hash];
 	}
 }
 
