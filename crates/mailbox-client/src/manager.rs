@@ -374,16 +374,11 @@ where
         self.trigger_sync();
     }
 
-    /// Send a `/report` to every currently-registered mailbox not in `skip`,
-    /// best-effort. Each mailbox is contacted independently; a failure against
-    /// one is logged and does not prevent the others from receiving the report.
-    /// Returns the ids of the mailboxes the report was successfully delivered
-    /// to (excluding the skipped ones, which are assumed already reported).
-    pub async fn report_all(
-        &self,
-        request: reporting::ReportRequest,
-        skip: &BTreeSet<MailboxId>,
-    ) -> Vec<MailboxId> {
+    /// Send a `/report` to every currently-registered mailbox, best-effort.
+    /// Each mailbox is contacted independently; a failure against one is logged
+    /// and does not prevent the others from receiving the report. Returns the
+    /// ids of the mailboxes the report was successfully delivered to.
+    pub async fn report_all(&self, request: reporting::ReportRequest) -> Vec<MailboxId> {
         let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
             .mailboxes
             .lock()
@@ -393,9 +388,6 @@ where
             .collect();
         let mut succeeded = Vec::new();
         for (id, tracked_mailbox) in mailboxes {
-            if skip.contains(&id) {
-                continue;
-            }
             let client = tracked_mailbox.client().await;
             match client.report(request.clone()).await {
                 Ok(()) => succeeded.push(id),

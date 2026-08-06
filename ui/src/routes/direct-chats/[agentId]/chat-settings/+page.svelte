@@ -16,12 +16,14 @@
 		mdiPlusCircle,
 		mdiChevronRight,
 		mdiCancel,
+		mdiAlertOctagonOutline,
 	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { onActivate } from '$lib/utils/keyboard';
 	import { showToast } from '$lib/utils/toasts';
 	import BlockContactDialog from '$lib/components/contacts/block/BlockContactDialog.svelte';
 	import UnblockContactDialog from '$lib/components/contacts/block/UnblockContactDialog.svelte';
+	import ReportContactDialog from '$lib/components/contacts/report/ReportContactDialog.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
@@ -54,6 +56,7 @@
 
 	let showPeerProfile = $state(false);
 	let showBlockDialog = $state(false);
+	let showReportDialog = $state(false);
 
 	function comingSoon() {
 		showToast(m.comingSoon());
@@ -192,6 +195,25 @@
 									{/snippet}
 								</ListItem>
 							{/if}
+							<ListItem
+								link
+								chevron={false}
+								title={m.report()}
+								colors={{
+									primaryTextIos: 'text-red-500',
+									primaryTextMaterial: 'text-red-500',
+								}}
+								onClick={() => (showReportDialog = true)}
+								data-testid="chat-settings-report-btn"
+							>
+								{#snippet media()}
+									<wa-icon
+										class="text-red-500"
+										style="font-size: 1.5rem;"
+										src={wrapPathInSvg(mdiAlertOctagonOutline)}
+									></wa-icon>
+								{/snippet}
+							</ListItem>
 						</List>
 					{/await}
 				{/if}
@@ -265,6 +287,11 @@
 						name={peerName}
 					/>
 				{/if}
+				<ReportContactDialog
+					bind:opened={showReportDialog}
+					agentId={peerAgentId}
+					name={peerName}
+				/>
 			{/await}
 		{/if}
 	{/await}

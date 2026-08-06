@@ -26,6 +26,7 @@ export class DirectChatPage extends TestHelper {
 	blockConfirm = this.el(tid('block-contact-confirm'));
 	unblockConfirm = this.el(tid('unblock-contact-confirm'));
 	blockedNameIcon = this.el(tid('blocked-name-icon'));
+	reportMessage = this.el(tid('direct-chat-report-message'));
 	messageStatus = this.el(tid('message-status'));
 	readMore = this.el(tid('message-read-more'));
 	composer = new Composer(this.agent);
@@ -85,6 +86,12 @@ export class DirectChatPage extends TestHelper {
 			tid('message-status'),
 			text,
 		);
+	}
+
+	/** How many report bubbles the chat currently shows. */
+	async reportMessageCount(): Promise<number> {
+		const bubbles = await this.agent.$$(tid('direct-chat-report-message'));
+		return bubbles.length;
 	}
 
 	isPeerNamePresent(): Promise<boolean> {

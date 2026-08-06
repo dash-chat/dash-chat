@@ -59,6 +59,7 @@
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
+	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	let agentId = page.params.agentId!;
@@ -272,8 +273,9 @@
 		) {
 			for (const day of messageGroupsInDays) {
 				for (const messageGroup of day.eventsGroups) {
-					for (const [hash, message] of messageGroup) {
-						if (message.author !== deviceId && !readHashes.has(hash)) {
+					for (const [hash, item] of messageGroup) {
+						if (item.kind !== 'message') continue;
+						if (item.message.author !== deviceId && !readHashes.has(hash)) {
 							capturedUnreadHash = hash;
 							break;
 						}
@@ -294,9 +296,14 @@
 		let found = false;
 		for (const day of messageGroupsInDays) {
 			for (const messageGroup of day.eventsGroups) {
-				for (const [hash, message] of messageGroup) {
+				for (const [hash, item] of messageGroup) {
 					if (hash === capturedUnreadHash) found = true;
-					if (found && message.author !== deviceId) count++;
+					if (
+						found &&
+						item.kind === 'message' &&
+						item.message.author !== deviceId
+					)
+						count++;
 				}
 			}
 		}
@@ -549,7 +556,7 @@
 
 											{#each messageGroupsInDay.eventsGroups as messageGroup}
 												<div class="column" style="gap: 1px">
-													{#each messageGroup as [hash, message], i (hash)}
+													{#each messageGroup as [hash, item], i (hash)}
 														{#if unreadDivider.hash === hash}
 															<div
 																class="unread-divider"
@@ -560,47 +567,58 @@
 																})}
 															</div>
 														{/if}
-														{@const position = messagePosition(
-															messageGroup.length,
-															i,
-														)}
-														{#if myDeviceId == message.author}
-															<div
-																class="w-full"
-																data-message-hash={hash}
-																use:scrollToBottomOnMount={hash}
-															>
-																{#await $chatId then chatId}
-																	<MessageFromMe
-																		{message}
-																		{position}
-																		{myDeviceId}
-																		{chatId}
-																		searchQuery={searchMode ? searchQuery : ''}
-																		onEdit={() =>
-																			composer?.editMessage(message)}
-																	/>
-																{/await}
-															</div>
+														{#if item.kind === 'report'}
+															<ReportMessage />
 														{:else}
-															<div
-																class="w-full"
-																data-message-hash={hash}
-																use:readMessageOnObserve={readHashes?.has(hash)
-																	? null
-																	: hash}
-															>
-																{#await $chatId then chatId}
-																	<MessageFromOthers
-																		{message}
-																		{position}
-																		{myDeviceId}
-																		{chatId}
-																		searchQuery={searchMode ? searchQuery : ''}
-																		sender={profile}
-																	/>
-																{/await}
-															</div>
+															{@const message = item.message}
+															{@const position = messagePosition(
+																messageGroup.length,
+																i,
+															)}
+															{#if myDeviceId == message.author}
+																<div
+																	class="w-full"
+																	data-message-hash={hash}
+																	use:scrollToBottomOnMount={hash}
+																>
+																	{#await $chatId then chatId}
+																		<MessageFromMe
+																			{message}
+																			{position}
+																			{myDeviceId}
+																			{chatId}
+																			searchQuery={searchMode
+																				? searchQuery
+																				: ''}
+																			onEdit={() =>
+																				composer?.editMessage(message)}
+																		/>
+																	{/await}
+																</div>
+															{:else}
+																<div
+																	class="w-full"
+																	data-message-hash={hash}
+																	use:readMessageOnObserve={readHashes?.has(
+																		hash,
+																	)
+																		? null
+																		: hash}
+																>
+																	{#await $chatId then chatId}
+																		<MessageFromOthers
+																			{message}
+																			{position}
+																			{myDeviceId}
+																			{chatId}
+																			searchQuery={searchMode
+																				? searchQuery
+																				: ''}
+																			sender={profile}
+																		/>
+																	{/await}
+																</div>
+															{/if}
 														{/if}
 													{/each}
 												</div>
