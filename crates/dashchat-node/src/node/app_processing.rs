@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use derive_more::derive::From;
 use futures::StreamExt;
 use p2panda::NodeId;
 use p2panda::operation::Header;
@@ -14,12 +15,39 @@ use crate::topic::AutoRegisteredTopic;
 
 use super::*;
 
+#[derive(Clone, Debug, Serialize, Deserialize, From)]
+pub enum Notification {
+    Op(OpNotification),
+    System(SystemNotification),
+}
+
+impl Notification {
+    pub fn op(&self) -> Option<&OpNotification> {
+        if let Notification::Op(operation) = self {
+            Some(operation)
+        } else {
+            None
+        }
+    }
+
+    pub fn system(&self) -> Option<&SystemNotification> {
+        if let Notification::System(system) = self {
+            Some(system)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Notification {
+pub struct OpNotification {
     pub topic: TopicId,
     pub header: Header,
     pub payload: Option<Payload>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum SystemNotification {}
 
 impl Node {
     /// Register a topic as subscribed in the database, and initialize it.
@@ -711,11 +739,14 @@ impl Node {
     pub async fn notify_header(&self, topic: TopicId, header: &Header) -> anyhow::Result<()> {
         if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx
-                .send(Notification {
-                    topic: topic.clone(),
-                    header: header.clone(),
-                    payload: None,
-                })
+                .send(
+                    OpNotification {
+                        topic: topic.clone(),
+                        header: header.clone(),
+                        payload: None,
+                    }
+                    .into(),
+                )
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }
@@ -730,11 +761,14 @@ impl Node {
     ) -> anyhow::Result<()> {
         if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
             notification_tx
-                .send(Notification {
-                    topic: topic.clone(),
-                    header: header.clone(),
-                    payload: Some(payload.clone()),
-                })
+                .send(
+                    OpNotification {
+                        topic: topic.clone(),
+                        header: header.clone(),
+                        payload: Some(payload.clone()),
+                    }
+                    .into(),
+                )
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }
