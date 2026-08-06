@@ -21,7 +21,7 @@ static SLOT: Mutex<Option<AppNode>> = Mutex::const_new(None);
 /// they all miss iOS's ~30s budget.
 static BUILD_LOCK: Mutex<()> = Mutex::const_new(());
 
-async fn current_node() -> Option<AppNode> {
+pub(crate) async fn current_node() -> Option<AppNode> {
     SLOT.lock().await.clone()
 }
 
@@ -118,11 +118,8 @@ pub async fn get_or_build_node(
     // the same time in this process. The slot is left empty during shutdown and
     // build so a concurrent caller cannot observe a Node whose context disagrees
     // with its actual behavior.
-    let maybe_old_node = SLOT.lock().await.take().map(|app_node| app_node.node);
-    if let Some(old_node) = maybe_old_node {
-        if let Err(err) = old_node.shutdown().await {
-            log::warn!("failed to shut down evicted node: {err:?}");
-        }
+    if let Some(old_app_node) = SLOT.lock().await.take() {
+        old_app_node.teardown().await;
     }
 
     log::info!("No compatible node in the cache, building node from scratch.");
@@ -135,12 +132,17 @@ pub async fn get_or_build_node(
     )
     .await?;
 
-    *SLOT.lock().await = Some(AppNode::new(context, node.clone()));
+    let app_node = AppNode::new(context, node.clone())?;
+    *SLOT.lock().await = Some(app_node);
 
     Ok(AcquiredNode { node, is_new: true })
 }
 
-/// Drop the cached node.
+/// Remove the cached node from the slot and tear it down, aborting app-specific
+/// tasks and shutting the Node down exactly once.
 pub async fn clear() {
-    *SLOT.lock().await = None;
+    let app_node = SLOT.lock().await.take();
+    if let Some(app_node) = app_node {
+        app_node.teardown().await;
+    }
 }

@@ -6,7 +6,7 @@ use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, watch, RwLock};
 use tokio_util::sync::CancellationToken;
-use tokio_util::task::{AbortOnDropHandle, TaskTracker};
+use tokio_util::task::TaskTracker;
 
 use crate::commands::logs::simplify;
 use crate::node::node_context::NodeContext;
@@ -21,10 +21,6 @@ struct Inner {
     /// (`TaskTracker`/`CancellationToken` from `tokio-util`).
     tracker: TaskTracker,
     token: CancellationToken,
-    /// Local-mailbox mDNS discovery for the current node generation. Held so it is
-    /// aborted (dropping the handle tears down its browse + interface-watcher
-    /// tasks) when the node is paused, rather than leaking against the dead node.
-    mdns_discovery: Option<AbortOnDropHandle<()>>,
 }
 
 /// A swappable container for the app's [`Node`].
@@ -81,7 +77,6 @@ impl AppNodeManager {
                 node: None,
                 tracker: TaskTracker::new(),
                 token: CancellationToken::new(),
-                mdns_discovery: None,
             })),
             data_path,
             notification_tx,
@@ -104,13 +99,13 @@ impl AppNodeManager {
 
     /// Build the [`NodeContext`](crate::node::node_context::NodeContext) for the
     /// running app: full networking and notification channels enabled.
-    fn app_context(&self) -> NodeContext {
+    fn app_context(&self, app: &AppHandle) -> NodeContext {
         #[cfg(mobile)]
         let topic_subscribed_tx = Some(self.topic_subscribed_tx.clone());
         #[cfg(not(mobile))]
         let topic_subscribed_tx = None;
 
-        NodeContext::for_app(self.notification_tx.clone(), topic_subscribed_tx)
+        NodeContext::for_app(app, self.notification_tx.clone(), topic_subscribed_tx)
     }
 
     /// Snapshot the live node, or a retryable "not ready" error when paused.
@@ -158,16 +153,14 @@ impl AppNodeManager {
         inner.token.cancel();
         inner.tracker.close();
         inner.tracker.wait().await;
-        if let Some(discovery) = inner.mdns_discovery.take() {
-            discovery.abort();
+
+        // Clear the slot and tear down its AppNode, aborting app-specific
+        // tasks and shutting the Node down.
+        if let Some(app_node) = node_slot::current_node().await {
+            app_node.teardown().await;
         }
-        // Full teardown closes every SQLite pool the node owns. `shutdown` is
-        // one-way for this `Node`, which is fine — `resume` builds a fresh one.
-        if let Err(err) = node.shutdown().await {
-            log::error!("Failed to shut down node on background: {err:?}");
-        }
-        // Release the slot so it doesn't hold a reference to a now-dead Node.
         node_slot::clear().await;
+
         // Also close our own store (reopens lazily on next use).
         self.notified_operations_store.close().await;
         // Wake forwarders so any mid-subscribe (holding a transient node clone)
@@ -187,7 +180,7 @@ impl AppNodeManager {
         }
         log::info!("Rebuilding node on iOS foreground");
 
-        let context = self.app_context();
+        let context = self.app_context(app);
         let acquired = node_slot::get_or_build_node(&self.data_path, context).await?;
         let node = acquired.node;
 
@@ -220,12 +213,7 @@ impl AppNodeManager {
                     },
                 )),
         );
-        // Local-mailbox mDNS discovery runs on its own tasks; the handle is held
-        // in `inner` so `pause` aborts it with the node generation.
-        let mdns_discovery = crate::mailbox::spawn_local_mailbox_mdns_discovery(app, node.clone())?;
-
         inner.node = Some(node);
-        inner.mdns_discovery = Some(mdns_discovery);
         inner.tracker = tracker;
         inner.token = token;
         // Wake forwarders so they re-bind to the fresh node.

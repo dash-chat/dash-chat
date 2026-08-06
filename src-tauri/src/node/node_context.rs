@@ -1,3 +1,4 @@
+use tauri::AppHandle;
 use tokio::sync::mpsc;
 
 /// The role a Node is playing in the current process.
@@ -48,6 +49,10 @@ pub struct NodeContext {
     /// Channel for tracking topic subscriptions for push notifications. None when
     /// push setup is not available in this context.
     pub topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
+    /// The Tauri app handle, available only when the Node is built for the main
+    /// app process (used to spawn app-lifetime tasks like local-mailbox mDNS
+    /// discovery).
+    pub app_handle: Option<AppHandle>,
 }
 
 impl NodeContext {
@@ -58,12 +63,14 @@ impl NodeContext {
             role: NodeRole::PushNotification,
             notification_tx: None,
             topic_subscribed_tx: None,
+            app_handle: None,
         }
     }
 
     /// Context used when the app is running in the foreground (or resuming from
     /// background on iOS): full networking and notification channels enabled.
     pub fn for_app(
+        app: &AppHandle,
         notification_tx: mpsc::Sender<dashchat_node::Notification>,
         topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
     ) -> Self {
@@ -71,7 +78,14 @@ impl NodeContext {
             role: NodeRole::App,
             notification_tx: Some(notification_tx),
             topic_subscribed_tx,
+            app_handle: Some(app.clone()),
         }
+    }
+
+    /// Whether local-mailbox mDNS discovery should be enabled for a Node built
+    /// in this context.
+    pub fn enable_mdns_mailbox(&self) -> bool {
+        self.role == NodeRole::App && self.app_handle.is_some()
     }
 
     /// Whether a Node built for this context can be reused to satisfy a request
