@@ -264,7 +264,12 @@ export class Composer extends TestHelper {
 	 * the way a desktop user sends. Composer must already have content. */
 	async send(): Promise<void> {
 		if (await this.stagedMediaPage.isExisting()) {
-			await this.stagedMediaPage.$(tid('message-input-send')).click();
+			// The staged-media page's send button (the composer's is covered by the
+			// overlay and shares its testid) sits in a virtual-keyboard-composited
+			// surface, so a WDA native tap misses it — click it via the DOM instead.
+			await this.domClick(
+				`${tid('staged-media-page')} ${tid('message-input-send')}`,
+			);
 			return;
 		}
 		if (await this.sendButton.isExisting()) {
