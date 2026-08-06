@@ -38,7 +38,7 @@ pub struct AcquiredNode {
 ///    When found, the cache is cleared since it's no longer needed.
 /// 2. A previously cached Node with a compatible context.
 /// 3. Build a new Node for the requested context and cache it.
-pub async fn get_app_node_or_cached_node(
+pub async fn get_node_for_push_notification(
     data_path: &PathBuf,
     context: NodeContext,
 ) -> anyhow::Result<AcquiredNode> {
@@ -59,7 +59,22 @@ pub async fn get_app_node_or_cached_node(
         }
     }
 
-    get_or_build_node(data_path, context).await
+    let acquired = get_or_build_node(data_path, context).await?;
+
+    // Best-effort: when we just built a fresh node, resolve and track the cloud
+    // mailbox once so the sync below can fetch. Cached nodes already did this
+    // when they were first built. Track it as a fetch source only — do NOT
+    // register ourselves back as a blob source here: `register_cloud_mailbox`'s
+    // up-to-10s `wait_endpoint_online` would eat the extension's ~30s budget
+    // before the operation poll can start, making iOS kill the extension and
+    // deliver the raw APNS fallback.
+    if acquired.is_new {
+        if let Err(err) = crate::setup::track_cloud_mailbox(&acquired.node).await {
+            log::warn!("failed to track cloud mailbox in push extension: {err:?}");
+        }
+    }
+
+    Ok(acquired)
 }
 
 /// Get a Node
@@ -116,16 +131,6 @@ pub async fn get_or_build_node(
         context.topic_subscribed_tx.clone(),
     )
     .await?;
-
-    // Best-effort: the extension only runs when a push arrives (network present),
-    // so resolve and track the cloud mailbox once so the sync below can fetch.
-    // Only track it as a fetch source — do NOT register ourselves back as a blob
-    // source here: `register_cloud_mailbox`'s up-to-10s `wait_endpoint_online`
-    // would eat the extension's ~30s budget before the operation poll can start,
-    // making iOS kill the extension and deliver the raw APNS fallback.
-    if let Err(err) = crate::setup::track_cloud_mailbox(&node).await {
-        log::warn!("failed to track cloud mailbox in push extension: {err:?}");
-    }
 
     *SLOT.lock().await = Some((context, node.clone()));
 
