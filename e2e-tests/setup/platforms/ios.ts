@@ -251,8 +251,15 @@ export class IosPlatform implements AgentPlatform {
 
 		this.ipaPath = builtIpa();
 
-		// Uninstall any prior install so the session installs the fresh build
-		// instead of failing on a signature or version mismatch
+		// Install the freshly-built app on each device up front — uninstall first
+		// for a clean slate, then install and let it settle — so the Appium session
+		// only has to *launch* it. Letting the session install the .ipa races the
+		// launch on real devices: the app is still "installing or uninstalling" when
+		// FrontBoard is asked to open it, which surfaces intermittently as
+		// "Application … is unknown to FrontBoard" (worse with two devices installing
+		// at once). See the XCUITest troubleshooting guide. Best-effort: if devicectl
+		// can't install (e.g. a device not yet registered in the provisioning
+		// profile), the session's own `appium:app` install still covers it.
 		for (const udid of this.udids.values()) {
 			try {
 				execSync(
@@ -261,6 +268,32 @@ export class IosPlatform implements AgentPlatform {
 				);
 			} catch {
 				/* not installed */
+			}
+			await this.installApp(udid);
+		}
+	}
+
+	/** Install the freshly-built app on a device, retrying a few times: CoreDevice
+	 * intermittently fails with a transient "unable to create bookmark data" /
+	 * "No such file" error even though the .ipa exists. Falls back to the
+	 * session's own `appium:app` install if every attempt fails. */
+	private async installApp(udid: string): Promise<void> {
+		for (let attempt = 1; attempt <= 3; attempt++) {
+			try {
+				execSync(
+					`xcrun devicectl device install app --device ${udid} "${this.ipaPath}"`,
+					{ stdio: 'inherit' },
+				);
+				return;
+			} catch (err) {
+				if (attempt === 3) {
+					console.warn(
+						`[ios] devicectl install failed for ${udid} after ${attempt} ` +
+							`attempts; falling back to the session's appium:app install: ${err}`,
+					);
+					return;
+				}
+				await new Promise(resolve => setTimeout(resolve, 2000));
 			}
 		}
 	}

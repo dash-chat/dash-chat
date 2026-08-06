@@ -56,6 +56,20 @@ export abstract class TestHelper {
 		return requests[0];
 	}
 
+	/** Click a standard `onclick` control by invoking its DOM click handler
+	 * directly. Use for buttons inside a virtual-keyboard-composited surface
+	 * (e.g. the staged-media page): the native compositor moves them off their DOM
+	 * rect, so a WDA native tap (appium:nativeWebTap) misses. NOT for Konsta /
+	 * touch-handler elements, which only respond to a real tap. */
+	protected async domClick(selector: string): Promise<void> {
+		await this.agent.$(selector).waitForExist();
+		await this.agent.execute((sel: string) => {
+			const el = document.querySelector(sel) as HTMLElement | null;
+			if (!el) throw new Error(`domClick: element not found: ${sel}`);
+			el.click();
+		}, selector);
+	}
+
 	protected async typeInto(selector: string, value: string): Promise<void> {
 		await this.agent.$(selector).waitForExist();
 		await this.agent.execute(

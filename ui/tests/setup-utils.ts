@@ -120,16 +120,25 @@ function specsToDataTransfer(specs: TestFileSpec[]): DataTransfer {
 	return dt;
 }
 
-function dispatchPaste(dt: DataTransfer) {
+function specsToFiles(specs: TestFileSpec[]): File[] {
+	return specs.map(spec => {
+		const data = spec.bytes
+			? new Uint8Array(spec.bytes)
+			: new Uint8Array(spec.size ?? 0);
+		return new File([data], spec.name, { type: spec.mimeType });
+	});
+}
+
+function dispatchPaste(files: File[]) {
 	const textarea = document.querySelector(
 		'[data-testid="message-input-textarea"]',
 	);
 	if (!textarea) throw new Error('Composer textarea not found');
-	const event = new ClipboardEvent('paste', {
-		bubbles: true,
-		cancelable: true,
-	});
-	Object.defineProperty(event, 'clipboardData', { value: dt });
+	const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+	// A synthetic DataTransfer reports an empty `.files` in WKWebView (iOS), so the
+	// composer's paste handler (which reads `clipboardData.files`) sees nothing.
+	// Expose a plain FileList-like that every engine reads correctly.
+	Object.defineProperty(event, 'clipboardData', { value: { files } });
 	textarea.dispatchEvent(event);
 }
 
@@ -170,9 +179,7 @@ async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
 			spec.quality ?? 0.9,
 		),
 	);
-	const dt = new DataTransfer();
-	dt.items.add(new File([blob], spec.name, { type: 'image/jpeg' }));
-	dispatchPaste(dt);
+	dispatchPaste([new File([blob], spec.name, { type: 'image/jpeg' })]);
 	return blob.size;
 }
 
@@ -182,7 +189,7 @@ async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
  * defineProperty.
  */
 function pasteFiles(specs: TestFileSpec[]) {
-	dispatchPaste(specsToDataTransfer(specs));
+	dispatchPaste(specsToFiles(specs));
 }
 
 /**
