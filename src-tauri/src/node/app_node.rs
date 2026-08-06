@@ -10,6 +10,7 @@ use tokio_util::task::{AbortOnDropHandle, TaskTracker};
 
 use crate::commands::logs::simplify;
 use crate::node::node_context::NodeContext;
+use crate::node::node_slot;
 use crate::notifications::NotifiedOperationsStore;
 
 struct Inner {
@@ -165,6 +166,8 @@ impl AppNode {
         if let Err(err) = node.shutdown().await {
             log::error!("Failed to shut down node on background: {err:?}");
         }
+        // Release the slot so it doesn't hold a reference to a now-dead Node.
+        node_slot::clear().await;
         // Also close our own store (reopens lazily on next use).
         self.notified_operations_store.close().await;
         // Wake forwarders so any mid-subscribe (holding a transient node clone)
@@ -185,13 +188,16 @@ impl AppNode {
         log::info!("Rebuilding node on iOS foreground");
 
         let context = self.app_context();
-        let node = Node::new(
-            self.data_path.clone(),
-            context.node_config(),
-            context.notification_tx.clone(),
-            context.topic_subscribed_tx.clone(),
-        )
-        .await?;
+        let acquired = node_slot::get_or_build_node(&self.data_path, context).await?;
+        let node = acquired.node;
+
+        if !acquired.is_new {
+            // A compatible Node is already running in the slot (e.g. a push
+            // extension built it, or a prior resume left it there). Just adopt
+            // it; its app-level setup is already in place.
+            inner.node = Some(node);
+            return Ok(());
+        }
 
         // Cloud-mailbox registration retry, tracked so `pause` can cancel and
         // drain it with the node. A fresh tracker+token pair is installed per
