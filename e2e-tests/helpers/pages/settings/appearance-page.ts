@@ -10,4 +10,11 @@ export class AppearancePage extends TestHelper {
 	async ready() {
 		await this.light.waitForExist();
 	}
+
+	/** The colour scheme the app currently has applied. */
+	getColorScheme(): Promise<'light' | 'dark'> {
+		return this.agent.execute(() =>
+			document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+		);
+	}
 }

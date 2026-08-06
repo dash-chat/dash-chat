@@ -154,6 +154,9 @@ importers:
       signalium:
         specifier: ^3.0.1
         version: 3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)
+      tauri-plugin-system-theme:
+        specifier: github:guillemcordoba/tauri-plugin-system-bars-styles#ce6e762f816bdffeaa0bd56078995bda21cdb68b
+        version: git+https://git@github.com:guillemcordoba/tauri-plugin-system-bars-styles.git#ce6e762f816bdffeaa0bd56078995bda21cdb68b(signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106))
       webbuf:
         specifier: ^3.0.28
         version: 3.0.28
@@ -260,6 +263,9 @@ importers:
       tauri-plugin-background-service:
         specifier: ^1.0.0
         version: 1.0.0
+      tauri-plugin-system-theme:
+        specifier: github:guillemcordoba/tauri-plugin-system-bars-styles#ce6e762f816bdffeaa0bd56078995bda21cdb68b
+        version: git+https://git@github.com:guillemcordoba/tauri-plugin-system-bars-styles.git#ce6e762f816bdffeaa0bd56078995bda21cdb68b(signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106))
       tauri-plugin-view-api:
         specifier: ^0.0.5
         version: 0.0.5
@@ -5194,6 +5200,12 @@ packages:
 
   tauri-plugin-background-service@1.0.0:
     resolution: {integrity: sha512-i3ANk6SLyTGInXJNQez1VrgnDYqlCptVtgjMO2neZQbH3lYnwKH9cfXKMAsqotTEAE/dTseCove+ielnuUQ2hg==}
+
+  tauri-plugin-system-theme@git+https://git@github.com:guillemcordoba/tauri-plugin-system-bars-styles.git#ce6e762f816bdffeaa0bd56078995bda21cdb68b:
+    resolution: {commit: ce6e762f816bdffeaa0bd56078995bda21cdb68b, repo: git@github.com:guillemcordoba/tauri-plugin-system-bars-styles.git, type: git}
+    version: 0.1.0
+    peerDependencies:
+      signalium: ^3
 
   tauri-plugin-view-api@0.0.5:
     resolution: {integrity: sha512-W5Q3eGT1qQSUUkdoZ4nKlr52GhNtfSQA+4jXi/JlwFizhOTAbbMLa2vTGvOVjq8tVzpFmx9qYU7JBeWFXwacxA==}
@@ -11101,6 +11113,11 @@ snapshots:
   tauri-plugin-background-service@1.0.0:
     dependencies:
       '@tauri-apps/api': 2.11.0
+
+  tauri-plugin-system-theme@git+https://git@github.com:guillemcordoba/tauri-plugin-system-bars-styles.git#ce6e762f816bdffeaa0bd56078995bda21cdb68b(signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)):
+    dependencies:
+      '@tauri-apps/api': 2.11.0
+      signalium: 3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)
 
   tauri-plugin-view-api@0.0.5:
     dependencies:

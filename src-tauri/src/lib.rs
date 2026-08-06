@@ -23,6 +23,8 @@ mod utils;
 #[cfg(target_os = "android")]
 mod android_init;
 
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(desktop)]
 mod menu;
 #[cfg(desktop)]
@@ -40,14 +42,13 @@ pub fn run() {
 
     i18n::init_i18n();
 
-    let mut builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_system_theme::init());
 
     #[cfg(mobile)]
     {
         builder = builder
             .plugin(tauri_plugin_barcode_scanner::init())
-            .plugin(tauri_plugin_view::init())
-            .plugin(tauri_plugin_system_bars_styles::init());
+            .plugin(tauri_plugin_view::init());
     }
     #[cfg(target_os = "android")]
     {

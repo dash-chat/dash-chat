@@ -19,6 +19,7 @@
 		"emittery": "^1.2.0",
 		"rimraf": "^6.1.0",
 		"signalium": "^3.0.1",
+		"tauri-plugin-system-theme": "github:guillemcordoba/tauri-plugin-system-bars-styles#ce6e762f816bdffeaa0bd56078995bda21cdb68b",
 		"webbuf": "^3.0.28"
 	},
 	"devDependencies": {

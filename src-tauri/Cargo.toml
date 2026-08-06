@@ -22,6 +22,7 @@ sentry-types = "0.42"
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
 
+tauri-plugin-system-theme = { git = "https://github.com/guillemcordoba/tauri-plugin-system-bars-styles", rev = "ce6e762f816bdffeaa0bd56078995bda21cdb68b" }
 tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
@@ -94,7 +95,6 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
-tauri-plugin-system-bars-styles = { git = "https://github.com/dash-chat/tauri-plugin-system-bars-styles", branch = "main" }
 tauri-plugin-view = "0.0.5"
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -110,16 +110,6 @@ tauri-plugin-background-service = "1.0"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"
-objc2 = "0.6"
-block2 = "0.6"
-objc2-ui-kit = { version = "0.3", features = [
-	"UIColor",
-	"UIResponder",
-	"UIScrollView",
-	"UITraitCollection",
-	"UIView",
-	"block2",
-] }
 # Fork: adds `limit`/`offset` (newest-first) to requestAlbumMedias and a
 # `requestMediasByIds` fetch-by-id command, so the recent-photos strip and
 # tap-to-send no longer render the entire album.
