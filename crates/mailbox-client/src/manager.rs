@@ -125,9 +125,8 @@ impl MailboxConnectionState {
         self.next_poll = Instant::now();
     }
 
-    /// Become due immediately unless this mailbox has stopped retrying
-    fn mark_due_now_unless_stopped(&mut self) {
-        if self.status != SyncStatus::Stopped {
+    fn mark_due_now_if_active(&mut self) {
+        if self.status == SyncStatus::Active {
             self.next_poll = Instant::now();
         }
     }
@@ -182,9 +181,9 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         self.connection_state.send_modify(|t| t.wakeup());
     }
 
-    fn mark_due_now_unless_stopped(&self) {
+    fn mark_due_now_if_active(&self) {
         self.connection_state
-            .send_modify(|t| t.mark_due_now_unless_stopped());
+            .send_modify(|t| t.mark_due_now_if_active());
     }
 }
 
@@ -264,10 +263,9 @@ where
         if let Some(tm) = mailboxes.get(&id).cloned() {
             drop(mailboxes);
             // Re-registering the same id (e.g. mDNS re-resolution producing a
-            // new URL): swap the client in place and poll it right away, so a
-            // backed-off mailbox recovers as soon as the new URL works. Keeping
-            // the existing TrackedMailbox preserves its connection_state
-            // watch::Sender so UI subscribers stay attached.
+            // new URL): swap the client in place and reset any Stopped/Degraded
+            // backoff. Keeping the existing TrackedMailbox preserves its
+            // connection_state watch::Sender so UI subscribers stay attached.
             tm.replace_client(new_client).await;
             tm.wakeup();
             self.trigger_sync();
@@ -326,10 +324,10 @@ where
         _ = self.trigger.try_send(Some(id));
     }
 
-    /// Sync now instead of at the next scheduled poll
-    pub async fn attempt_immediate_sync(&self) {
+    /// Sync every active mailbox now, leaving backed-off ones on their schedule
+    pub async fn sync_active_now(&self) {
         for tracked_mailbox in self.mailboxes.lock().await.values() {
-            tracked_mailbox.mark_due_now_unless_stopped();
+            tracked_mailbox.mark_due_now_if_active();
         }
         self.trigger_sync();
     }
@@ -1135,9 +1133,13 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn attempt_immediate_sync_leaves_stopped_on_its_schedule() {
+    async fn sync_active_now_leaves_backed_off_mailboxes_on_their_schedule() {
         let config = test_config();
         let mgr = test_mailboxes(config.clone());
+
+        let active = MemMailbox::<Msg>::new();
+        let active_id = active.client().id();
+        mgr.register(active.client()).await;
 
         let degraded = MemMailbox::<Msg>::new();
         let degraded_id = degraded.client().id();
@@ -1149,6 +1151,10 @@ mod tests {
 
         {
             let mm = mgr.mailboxes.lock().await;
+            let a = mm.get(&active_id).unwrap();
+            a.record_success(&config);
+            assert_eq!(a.connection_state().borrow().status, SyncStatus::Active);
+
             let d = mm.get(&degraded_id).unwrap();
             d.record_error(&config, "x".into());
             d.record_error(&config, "x".into());
@@ -1161,26 +1167,14 @@ mod tests {
             assert_eq!(s.connection_state().borrow().status, SyncStatus::Stopped);
         }
 
-        mgr.attempt_immediate_sync().await;
+        mgr.sync_active_now().await;
 
         let mm = mgr.mailboxes.lock().await;
         let now = Instant::now();
-        assert_eq!(
-            mm.get(&degraded_id)
-                .unwrap()
-                .connection_state()
-                .borrow()
-                .next_poll,
-            now
-        );
-        assert!(
-            mm.get(&stopped_id)
-                .unwrap()
-                .connection_state()
-                .borrow()
-                .next_poll
-                > now
-        );
+        let next_poll = |id| mm.get(id).unwrap().connection_state().borrow().next_poll;
+        assert_eq!(next_poll(&active_id), now);
+        assert!(next_poll(&degraded_id) > now);
+        assert!(next_poll(&stopped_id) > now);
     }
 
     #[tokio::test(start_paused = true)]
