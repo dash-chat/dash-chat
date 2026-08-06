@@ -50,6 +50,11 @@ iroh-blobs = "0.103.0"
 
 [patch.crates-io]
 iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
+# Fork of iroh 1.0.3 (dash-chat/iroh) with the iroh#4390 fix
+iroh = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
+iroh-base = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
+iroh-dns = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
+iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
