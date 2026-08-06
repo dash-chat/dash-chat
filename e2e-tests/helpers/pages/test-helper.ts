@@ -1,3 +1,10 @@
+import type { ChainablePromiseElement } from 'webdriverio';
+
+import type {
+	FilePickerRequest,
+	TestFileSpec,
+} from '../../../ui/tests/setup-utils';
+
 export abstract class TestHelper {
 	constructor(protected agent: WebdriverIO.Browser) {}
 
@@ -20,6 +27,33 @@ export abstract class TestHelper {
 		return this.agent.execute(() =>
 			/iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
 		);
+	}
+
+	/**
+	 * Click `trigger` and answer the file input it opens with `files`, or back
+	 * out of that input when there are none, reporting what it asked the OS for.
+	 * No native picker or camera appears.
+	 */
+	protected async answerFilePicker(
+		trigger: ChainablePromiseElement,
+		files: TestFileSpec[] = [],
+	): Promise<FilePickerRequest> {
+		await this.agent.execute(
+			(specs: TestFileSpec[]) => window.__test.interceptFilePickers(specs),
+			files,
+		);
+		let failure: unknown;
+		try {
+			await trigger.click();
+		} catch (error) {
+			failure = error;
+		}
+		const requests = await this.agent.execute(() =>
+			window.__test.collectFilePickers(),
+		);
+		if (failure) throw failure;
+		expect(requests).toHaveLength(1);
+		return requests[0];
 	}
 
 	protected async typeInto(selector: string, value: string): Promise<void> {
