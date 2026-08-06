@@ -2,6 +2,7 @@ use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Serializer};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::watch;
 use tokio::time::Instant;
 
@@ -17,6 +18,9 @@ pub struct MailboxesConfig {
     pub stopped_interval: Duration,
     /// Delay between consecutive mailbox polls
     pub between_polls_delay: Duration,
+    /// Delay before a requested sync runs, so a burst of requests coalesces
+    /// into a single poll
+    pub sync_debounce: Duration,
     /// Number of consecutive errors to enter Degraded status
     pub degraded_threshold: u32,
     /// Number of consecutive errors to enter Stopped status
@@ -30,6 +34,7 @@ impl Default for MailboxesConfig {
             degraded_interval: Duration::from_secs(5),
             stopped_interval: Duration::from_secs(10),
             between_polls_delay: Duration::from_millis(500),
+            sync_debounce: Duration::from_millis(100),
             degraded_threshold: 5,
             stopped_threshold: 10,
         }
@@ -124,12 +129,6 @@ impl MailboxConnectionState {
         self.consecutive_errors = 0;
         self.next_poll = Instant::now();
     }
-
-    fn mark_due_now_if_active(&mut self) {
-        if self.status == SyncStatus::Active {
-            self.next_poll = Instant::now();
-        }
-    }
 }
 
 /// Per-mailbox handle owning the client and its tracker. Held inside `Mailboxes`
@@ -140,14 +139,18 @@ impl MailboxConnectionState {
 pub struct TrackedMailbox<Item: MailboxItem> {
     pub(crate) client: Mutex<Arc<dyn MailboxClient<Item>>>,
     pub(crate) connection_state: watch::Sender<MailboxConnectionState>,
+    pending_sync_request: AtomicBool,
+    config: MailboxesConfig,
 }
 
 impl<Item: MailboxItem> TrackedMailbox<Item> {
-    fn new(client: Arc<dyn MailboxClient<Item>>) -> Self {
+    fn new(client: Arc<dyn MailboxClient<Item>>, config: MailboxesConfig) -> Self {
         let (connection_state, _) = watch::channel(MailboxConnectionState::new());
         Self {
             client: Mutex::new(client),
             connection_state,
+            pending_sync_request: AtomicBool::new(false),
+            config,
         }
     }
 
@@ -163,27 +166,55 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         self.connection_state.subscribe()
     }
 
-    fn record_success(&self, config: &MailboxesConfig) {
+    fn record_success(&self) {
         self.connection_state
-            .send_modify(|t| t.record_success(config));
+            .send_modify(|t| t.record_success(&self.config));
     }
 
-    fn record_error(&self, config: &MailboxesConfig, err: String) {
+    fn record_error(&self, err: String) {
         self.connection_state
-            .send_modify(|t| t.record_error(config, err));
+            .send_modify(|t| t.record_error(&self.config, err));
     }
 
-    fn reschedule(&self, config: &MailboxesConfig) {
-        self.connection_state.send_modify(|t| t.reschedule(config));
+    fn reschedule(&self) {
+        self.connection_state
+            .send_modify(|t| t.reschedule(&self.config));
     }
 
     fn wakeup(&self) {
         self.connection_state.send_modify(|t| t.wakeup());
     }
 
-    fn mark_due_now_if_active(&self) {
-        self.connection_state
-            .send_modify(|t| t.mark_due_now_if_active());
+    /// If active, sync after the debounce
+    fn request_sync_if_active(&self) {
+        if self.connection_state.borrow().status != SyncStatus::Active {
+            return;
+        }
+        // While a poll is in flight `next_poll` is already in the past, so the
+        // deadline below is a no-op and the flag is what carries the request
+        // past the reschedule that poll ends with.
+        self.pending_sync_request.store(true, Ordering::Relaxed);
+
+        let at = Instant::now() + self.config.sync_debounce;
+        self.connection_state.send_if_modified(|t| {
+            if at < t.next_poll {
+                t.next_poll = at;
+                true
+            } else {
+                false
+            }
+        });
+    }
+
+    fn poll_succeeded(&self) {
+        self.record_success();
+        if self.pending_sync_request.load(Ordering::Relaxed) {
+            self.request_sync_if_active();
+        }
+    }
+
+    fn clear_sync_request(&self) {
+        self.pending_sync_request.store(false, Ordering::Relaxed);
     }
 }
 
@@ -270,7 +301,10 @@ where
             tm.wakeup();
             self.trigger_sync();
         } else {
-            mailboxes.insert(id.clone(), Arc::new(TrackedMailbox::new(new_client)));
+            mailboxes.insert(
+                id.clone(),
+                Arc::new(TrackedMailbox::new(new_client, self.config.clone())),
+            );
             drop(mailboxes);
             self.publish_active_ids().await;
             self.trigger_sync();
@@ -324,10 +358,10 @@ where
         _ = self.trigger.try_send(Some(id));
     }
 
-    /// Sync every active mailbox now, leaving backed-off ones on their schedule
-    pub async fn sync_active_now(&self) {
+    /// Request a sync of every active mailbox
+    pub async fn request_sync(&self) {
         for tracked_mailbox in self.mailboxes.lock().await.values() {
-            tracked_mailbox.mark_due_now_if_active();
+            tracked_mailbox.request_sync_if_active();
         }
         self.trigger_sync();
     }
@@ -459,19 +493,24 @@ where
         let topics = self.subscribed_topics().await;
         if topics.is_empty() {
             tracing::trace!("no topics subscribed, skipping poll for {id}");
-            tracked_mailbox.reschedule(&self.config);
+            tracked_mailbox.reschedule();
             return;
         }
 
         tracing::debug!("polling mailbox {id}");
         let client = tracked_mailbox.client().await;
+        // Anything requested from here on is not covered by this poll.
+        tracked_mailbox.clear_sync_request();
         let result = self.sync_topics(topics.into_iter(), &client).await;
 
         match result {
-            Ok(()) => tracked_mailbox.record_success(&self.config),
+            Ok(()) => tracked_mailbox.poll_succeeded(),
             Err(err) => {
+                // A sync requested during a failed poll doesn't earn a quick
+                // retry: the request failed too, so backoff applies.
+                tracked_mailbox.clear_sync_request();
                 tracing::error!(?err, mailbox = %id, "mailbox sync error");
-                tracked_mailbox.record_error(&self.config, format!("{err:?}"));
+                tracked_mailbox.record_error(format!("{err:?}"));
                 let tracker = tracked_mailbox.connection_state();
                 let tracker = tracker.borrow();
                 tracing::info!(
@@ -643,6 +682,7 @@ mod tests {
             degraded_interval: Duration::from_secs(30),
             stopped_interval: Duration::from_secs(300),
             between_polls_delay: Duration::from_millis(500),
+            sync_debounce: Duration::from_millis(100),
             degraded_threshold: 2,
             stopped_threshold: 3,
         }
@@ -792,7 +832,7 @@ mod tests {
         // Simulate a successful poll so it gets scheduled into the future
         {
             let mm = mgr.mailboxes.lock().await;
-            mm.get(&id1).unwrap().record_success(&config);
+            mm.get(&id1).unwrap().record_success();
         }
 
         // Advance time a bit
@@ -824,7 +864,7 @@ mod tests {
         // Simulate a successful poll
         {
             let mm = mgr.mailboxes.lock().await;
-            mm.get(&id).unwrap().record_success(&config);
+            mm.get(&id).unwrap().record_success();
         }
 
         // Should need to wait active_interval + delay
@@ -857,8 +897,8 @@ mod tests {
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
-            t.record_error(&config, "x".into()); // 1 error: Active
-            t.record_error(&config, "x".into()); // 2 errors: Degraded
+            t.record_error("x".into()); // 1 error: Active
+            t.record_error("x".into()); // 2 errors: Degraded
         }
 
         let (_found_id, wait) = mgr.find_next_due().await.unwrap();
@@ -880,9 +920,9 @@ mod tests {
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
-            t.record_error(&config, "x".into());
-            t.record_error(&config, "x".into());
-            t.record_error(&config, "x".into());
+            t.record_error("x".into());
+            t.record_error("x".into());
+            t.record_error("x".into());
             assert_eq!(t.connection_state().borrow().status, SyncStatus::Stopped);
         }
 
@@ -903,7 +943,7 @@ mod tests {
         // Schedule into the future
         {
             let mm = mgr.mailboxes.lock().await;
-            mm.get(&id).unwrap().record_success(&config);
+            mm.get(&id).unwrap().record_success();
         }
 
         // Advance past interval + delay
@@ -942,14 +982,14 @@ mod tests {
         // A: Active (success), B: Degraded, C: Stopped
         {
             let mm = mgr.mailboxes.lock().await;
-            mm.get(&id_a).unwrap().record_success(&config);
+            mm.get(&id_a).unwrap().record_success();
             let b = mm.get(&id_b).unwrap();
-            b.record_error(&config, "x".into());
-            b.record_error(&config, "x".into());
+            b.record_error("x".into());
+            b.record_error("x".into());
             let c = mm.get(&id_c).unwrap();
-            c.record_error(&config, "x".into());
-            c.record_error(&config, "x".into());
-            c.record_error(&config, "x".into());
+            c.record_error("x".into());
+            c.record_error("x".into());
+            c.record_error("x".into());
         }
 
         // A has shortest effective interval, should be picked first
@@ -1035,7 +1075,7 @@ mod tests {
         // subscriber instead of erroring out with a closed channel.
         {
             let mm = mgr.mailboxes.lock().await;
-            mm.get(&id).unwrap().record_success(&config);
+            mm.get(&id).unwrap().record_success();
         }
         rx.changed().await.expect("subscriber channel closed");
         assert_eq!(rx.borrow().status, SyncStatus::Active);
@@ -1111,9 +1151,9 @@ mod tests {
         {
             let mm = mgr.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
-            t.record_error(&config, "x".into());
-            t.record_error(&config, "x".into());
-            t.record_error(&config, "x".into());
+            t.record_error("x".into());
+            t.record_error("x".into());
+            t.record_error("x".into());
             assert_eq!(t.connection_state().borrow().status, SyncStatus::Stopped);
         }
 
@@ -1133,7 +1173,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn sync_active_now_leaves_backed_off_mailboxes_on_their_schedule() {
+    async fn request_sync_leaves_backed_off_mailboxes_on_their_schedule() {
         let config = test_config();
         let mgr = test_mailboxes(config.clone());
 
@@ -1152,29 +1192,84 @@ mod tests {
         {
             let mm = mgr.mailboxes.lock().await;
             let a = mm.get(&active_id).unwrap();
-            a.record_success(&config);
+            a.record_success();
             assert_eq!(a.connection_state().borrow().status, SyncStatus::Active);
 
             let d = mm.get(&degraded_id).unwrap();
-            d.record_error(&config, "x".into());
-            d.record_error(&config, "x".into());
+            d.record_error("x".into());
+            d.record_error("x".into());
             assert_eq!(d.connection_state().borrow().status, SyncStatus::Degraded);
 
             let s = mm.get(&stopped_id).unwrap();
-            s.record_error(&config, "x".into());
-            s.record_error(&config, "x".into());
-            s.record_error(&config, "x".into());
+            s.record_error("x".into());
+            s.record_error("x".into());
+            s.record_error("x".into());
             assert_eq!(s.connection_state().borrow().status, SyncStatus::Stopped);
         }
 
-        mgr.sync_active_now().await;
+        mgr.request_sync().await;
 
         let mm = mgr.mailboxes.lock().await;
         let now = Instant::now();
         let next_poll = |id| mm.get(id).unwrap().connection_state().borrow().next_poll;
-        assert_eq!(next_poll(&active_id), now);
-        assert!(next_poll(&degraded_id) > now);
-        assert!(next_poll(&stopped_id) > now);
+        assert_eq!(next_poll(&active_id), now + config.sync_debounce);
+        assert!(next_poll(&degraded_id) > now + config.sync_debounce);
+        assert!(next_poll(&stopped_id) > now + config.sync_debounce);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn request_sync_coalesces_a_burst_onto_the_first_deadline() {
+        let config = test_config();
+        let mgr = test_mailboxes(config.clone());
+
+        let mb = MemMailbox::<Msg>::new();
+        let id = mb.client().id();
+        mgr.register(mb.client()).await;
+        mgr.mailboxes
+            .lock()
+            .await
+            .get(&id)
+            .unwrap()
+            .record_success();
+
+        let deadline = Instant::now() + config.sync_debounce;
+        mgr.request_sync().await;
+
+        tokio::time::advance(Duration::from_millis(20)).await;
+        mgr.request_sync().await;
+        tokio::time::advance(Duration::from_millis(20)).await;
+        mgr.request_sync().await;
+
+        let mm = mgr.mailboxes.lock().await;
+        assert_eq!(
+            mm.get(&id).unwrap().connection_state().borrow().next_poll,
+            deadline
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sync_requested_during_a_poll_survives_it() {
+        let config = test_config();
+        let tracked =
+            TrackedMailbox::new(Arc::new(MemMailbox::<Msg>::new().client()), config.clone());
+        let next_poll = || tracked.connection_state().borrow().next_poll;
+        let interval = config.active_interval + config.between_polls_delay;
+
+        // Requested before the poll started, so the poll covered it.
+        tracked.request_sync_if_active();
+        tracked.clear_sync_request();
+        tracked.poll_succeeded();
+        assert_eq!(next_poll(), Instant::now() + interval);
+
+        // Due again, so the next poll starts.
+        tokio::time::advance(interval).await;
+        tracked.clear_sync_request();
+
+        tracked.request_sync_if_active();
+        assert!(next_poll() <= Instant::now());
+
+        tracked.poll_succeeded();
+        assert_eq!(next_poll(), Instant::now() + config.sync_debounce);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1297,6 +1392,7 @@ mod tests {
             degraded_interval: Duration::from_millis(1500),
             stopped_interval: Duration::from_secs(2),
             between_polls_delay: Duration::from_millis(200),
+            sync_debounce: Duration::from_millis(50),
             // One error → Degraded. Stopped threshold set very high so
             // degraded clients never naturally transition to Stopped
             // during the test; stopped clients are forced manually.
