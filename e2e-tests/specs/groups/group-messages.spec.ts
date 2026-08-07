@@ -7,7 +7,10 @@ describe('Group messages', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 		await agent1.enablePreviewFeatures();
 		await agent2.enablePreviewFeatures();
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
@@ -44,9 +47,8 @@ describe('Group messages', () => {
 		await agent2.groupChatPage.composer.sendMessage('Hello from Bob!');
 		await agent2.groupChatPage.messages.waitForMessage('Hello from Bob!');
 
-		const message = await agent1.groupChatPage.messages.waitForMessage(
-			'Hello from Bob!',
-		);
+		const message =
+			await agent1.groupChatPage.messages.waitForMessage('Hello from Bob!');
 		await agent1.waitUntil(
 			async () => (await message.authorInitials()) === 'Bo',
 			{ timeoutMsg: 'Avatar initials "Bo" did not appear on Bob\'s message' },

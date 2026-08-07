@@ -14,7 +14,7 @@ describe('block contact', () => {
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 		await exchangeContacts(agent1, agent2);
-		await agent1.directChatPage.peerName.waitForDisplayed();
+		await agent1.directChatPage.waitForPeerProfile();
 	});
 
 	it('blocks from chat settings and shows the indicators', async () => {

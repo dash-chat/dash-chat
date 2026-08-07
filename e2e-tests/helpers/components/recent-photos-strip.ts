@@ -1,5 +1,5 @@
-import { TestHelper } from '../pages/test-helper';
 import { TINY_PNG_DATA_URL } from '../images';
+import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
 /**

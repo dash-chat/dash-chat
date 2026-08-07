@@ -25,8 +25,9 @@
 		"vite": "^4.5.14"
 	},
 	"type": "module",
+	"packageManager": "pnpm@11.18.0",
 	"engines": {
-		"node": ">=22 <23",
+		"node": ">=24 <25",
 		"pnpm": ">=11.0.0"
 	}
 }

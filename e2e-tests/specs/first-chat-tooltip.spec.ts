@@ -6,7 +6,6 @@
  *
  * Only needs one agent — uses agent1.
  */
-
 import {
 	type Agent,
 	setupAgents,

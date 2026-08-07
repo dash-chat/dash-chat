@@ -19,7 +19,10 @@ describe('Long name truncation', () => {
 	let agent2Code = '';
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 	});
 
 	it('creates profiles — agent1 with a very long name', async () => {
@@ -62,7 +65,7 @@ describe('Long name truncation', () => {
 		await agent2.addContactPage.enterAddContactLink(agent1Code);
 		await agent2.directChatPage.ready();
 
-		expect(await agent2.directChatPage.isPeerNamePresent()).toBe(true);
+		await agent2.directChatPage.waitForPeerProfile();
 		expect(await agent2.directChatPage.checkNavbarOverflow()).toEqual([]);
 		expect(await agent2.checkOverflow()).toEqual([]);
 	});
