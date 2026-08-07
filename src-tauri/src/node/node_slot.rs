@@ -14,12 +14,16 @@ use crate::node::node_context::{NodeContext, NodeRole};
 /// Node when the app is running.
 static SLOT: Mutex<Option<AppNode>> = Mutex::const_new(None);
 
-/// Serializes the (slow) node build so two pushes racing in the same extension
-/// process don't open two SQLite pools on the same database. Deliberately
-/// separate from `SLOT`: the cache lookup must never block behind an in-flight
-/// build, or a slow `build_node` + mailbox handshake starves every other push and
-/// they all miss iOS's ~30s budget.
-static BUILD_LOCK: Mutex<()> = Mutex::const_new(());
+/// Serializes every slot mutation that must not interleave: node builds and
+/// evictions ([`get_or_build_node`]) and teardown ([`clear`]). Holding it across
+/// a build stops two pushes racing in the same extension process from opening two
+/// SQLite pools on the same database; holding it across `clear` stops a
+/// background teardown from racing an in-flight foreground build (which would
+/// leave the caller believing it resumed a node that was just torn down).
+/// Deliberately separate from `SLOT`: the cache lookup must never block behind an
+/// in-flight build, or a slow `build_node` + mailbox handshake starves every
+/// other push and they all miss iOS's ~30s budget.
+static LIFECYCLE_LOCK: Mutex<()> = Mutex::const_new(());
 
 async fn current_node() -> Option<AppNode> {
     SLOT.lock().await.clone()
@@ -115,7 +119,7 @@ pub async fn get_or_build_node(
     // Serialize the build (one SQLite pool per DB) — but never hold the cache
     // lock across it. A push that arrives mid-build waits here, then finds the
     // just-built node on this re-check instead of building a second one.
-    let _build_guard = BUILD_LOCK.lock().await;
+    let _lifecycle_guard = LIFECYCLE_LOCK.lock().await;
     if let Some(app_node) = current_node().await {
         if app_node.is_compatible_with(&context) {
             return Ok(AcquiredNode {
@@ -151,8 +155,10 @@ pub async fn get_or_build_node(
 }
 
 /// Remove the cached node from the slot and tear it down, aborting app-specific
-/// tasks and shutting the Node down exactly once.
+/// tasks and shutting the Node down exactly once. Holds [`LIFECYCLE_LOCK`] across
+/// the teardown so it cannot interleave with an in-flight build.
 pub async fn clear() {
+    let _lifecycle_guard = LIFECYCLE_LOCK.lock().await;
     let app_node = SLOT.lock().await.take();
     if let Some(app_node) = app_node {
         app_node.teardown().await;
