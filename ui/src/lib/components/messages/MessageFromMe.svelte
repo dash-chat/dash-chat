@@ -58,6 +58,7 @@
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
+	let confirmingDelete = $state(false);
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (!hasBody(message.content)) return;
@@ -110,7 +111,13 @@
 <div class="group flex justify-end" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile && hasBody(message.content)}
-			<MessageHoverToolbar {message} {myDeviceId} {onEdit} reverse />
+			<MessageHoverToolbar
+				{message}
+				{myDeviceId}
+				{onEdit}
+				onDelete={() => (confirmingDelete = true)}
+				reverse
+			/>
 		{/if}
 		{#if deleted}
 			<DeletedMessage {message} {position} {myDeviceId} />
@@ -151,6 +158,7 @@
 		{message}
 		{myDeviceId}
 		{onEdit}
+		onDelete={() => (confirmingDelete = true)}
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
@@ -159,6 +167,9 @@
 		{message}
 		{myDeviceId}
 		{onEdit}
+		onDelete={() => (confirmingDelete = true)}
 		bind:point={contextMenuPoint}
 	/>
 {/if}
+
+<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />
