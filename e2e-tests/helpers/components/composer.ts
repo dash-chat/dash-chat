@@ -100,8 +100,7 @@ export class Composer extends TestHelper {
 				? 'message-input-attach-photos'
 				: 'message-input-attach-file';
 		return this.agent.execute(
-			(sel: string) =>
-				document.querySelector(sel)?.textContent?.trim() ?? '',
+			(sel: string) => document.querySelector(sel)?.textContent?.trim() ?? '',
 			tid(testid),
 		);
 	}

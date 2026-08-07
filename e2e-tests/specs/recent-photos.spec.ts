@@ -14,7 +14,10 @@ describe('Recent photos strip', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Recents');
 		await agent2.createProfilePage.createProfile('Bob', 'Recents');
 		await exchangeContacts(agent1, agent2);

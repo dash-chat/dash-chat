@@ -7,7 +7,10 @@ describe('Group chat list last-event summary', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 		await agent1.enablePreviewFeatures();
 		await agent2.enablePreviewFeatures();
 		await agent1.createProfilePage.createProfile('Alice', 'Test');

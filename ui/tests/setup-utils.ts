@@ -134,7 +134,10 @@ function dispatchPaste(files: File[]) {
 		'[data-testid="message-input-textarea"]',
 	);
 	if (!textarea) throw new Error('Composer textarea not found');
-	const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+	const event = new ClipboardEvent('paste', {
+		bubbles: true,
+		cancelable: true,
+	});
 	// A synthetic DataTransfer reports an empty `.files` in WKWebView (iOS), so the
 	// composer's paste handler (which reads `clipboardData.files`) sees nothing.
 	// Expose a plain FileList-like that every engine reads correctly.

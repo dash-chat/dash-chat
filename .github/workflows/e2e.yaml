@@ -34,7 +34,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
           cache: true
 
       - name: Setup Rust
@@ -69,7 +68,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-logs
-          path: e2e-tests/e2e-output.log
+          path: |
+            e2e-tests/e2e-output.log
+            .dbs/e2e/failures/
           retention-days: 7
 
       - name: Cleanup E2E data
