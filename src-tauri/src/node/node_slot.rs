@@ -1,8 +1,9 @@
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use dashchat_node::Node;
 use tauri::Manager;
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 
 use crate::node::app_node::AppNode;
 use crate::node::node_context::{NodeContext, NodeRole};
@@ -24,6 +25,20 @@ static SLOT: Mutex<Option<AppNode>> = Mutex::const_new(None);
 /// in-flight build, or a slow `build_node` + mailbox handshake starves every
 /// other push and they all miss iOS's ~30s budget.
 static LIFECYCLE_LOCK: Mutex<()> = Mutex::const_new(());
+
+/// Bumped on every swap of the node in [`SLOT`] (build, eviction, or teardown) so
+/// long-lived per-node subscriptions can re-bind to the current node. A plain
+/// counter, never the `Node`, so it can never keep a torn-down node alive.
+static GENERATION: LazyLock<watch::Sender<u64>> = LazyLock::new(|| watch::channel(0u64).0);
+
+/// A receiver that fires whenever the slot's node is swapped.
+pub(crate) fn subscribe_generation() -> watch::Receiver<u64> {
+    GENERATION.subscribe()
+}
+
+fn bump_generation() {
+    GENERATION.send_modify(|g| *g = g.wrapping_add(1));
+}
 
 async fn current_node() -> Option<AppNode> {
     SLOT.lock().await.clone()
@@ -136,6 +151,7 @@ pub async fn get_or_build_node(
     // with its actual behavior.
     if let Some(old_app_node) = SLOT.lock().await.take() {
         old_app_node.teardown().await;
+        bump_generation();
     }
 
     log::info!("No compatible node in the cache, building node from scratch.");
@@ -150,6 +166,7 @@ pub async fn get_or_build_node(
 
     let app_node = AppNode::new(context, node.clone())?;
     *SLOT.lock().await = Some(app_node);
+    bump_generation();
 
     Ok(AcquiredNode { node, is_new: true })
 }
@@ -162,5 +179,6 @@ pub async fn clear() {
     let app_node = SLOT.lock().await.take();
     if let Some(app_node) = app_node {
         app_node.teardown().await;
+        bump_generation();
     }
 }

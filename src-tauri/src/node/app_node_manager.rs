@@ -43,10 +43,6 @@ pub struct AppNodeManager {
     /// extension via the app-group container. Closed on background (releasing its
     /// file lock) and reopened lazily on next use.
     notified_operations_store: NotifiedOperationsStore,
-    /// Bumped on every node swap (pause tear-down / resume rebuild) so long-lived
-    /// per-node subscriptions can re-bind to the current node. A plain counter,
-    /// never the `Node`, so it can never keep a paused node alive.
-    generation_tx: Arc<watch::Sender<u64>>,
 }
 
 // `pause`/`resume` are driven by the iOS lifecycle plugin; they are unused on
@@ -68,7 +64,6 @@ impl AppNodeManager {
             &crate::filesystem::FileSystem::new(app)?.notified_operations_db_path(),
         )
         .await?;
-        let (generation_tx, _) = watch::channel(0u64);
         let app_node_manager = Self {
             inner: Arc::new(RwLock::new(Inner { resumed: false })),
             data_path,
@@ -76,7 +71,6 @@ impl AppNodeManager {
             #[cfg(mobile)]
             topic_subscribed_tx,
             notified_operations_store,
-            generation_tx: Arc::new(generation_tx),
         };
         // App-lifetime loop: it outlives node rebuilds, so it is started once here
         // and detached rather than tracked in a node's task set.
@@ -125,11 +119,7 @@ impl AppNodeManager {
     /// A receiver that fires whenever the node is swapped (paused or rebuilt), so
     /// a long-lived per-node subscription can re-bind to the current node.
     pub fn subscribe_generation(&self) -> watch::Receiver<u64> {
-        self.generation_tx.subscribe()
-    }
-
-    fn bump_generation(&self) {
-        self.generation_tx.send_modify(|g| *g = g.wrapping_add(1));
+        node_slot::subscribe_generation()
     }
 
     /// Tear the node down and release all SQLite locks so iOS can suspend the
@@ -152,10 +142,6 @@ impl AppNodeManager {
 
         // Also close our own store (reopens lazily on next use).
         self.notified_operations_store.close().await;
-        // Wake forwarders so any mid-subscribe (holding a transient node clone)
-        // aborts and releases it, and bound ones stop waiting on the dead node.
-        drop(inner);
-        self.bump_generation();
         log::info!("Node quiesced; SQLite locks released for background suspension");
     }
 
@@ -173,20 +159,11 @@ impl AppNodeManager {
         // extension already left a compatible node there its app-level setup is
         // in place; a freshly built one already spawned its cloud-mailbox
         // registration retry in `AppNode::new`, cancelled by the slot's teardown
-        // on the next pause.
+        // on the next pause. The slot bumps the generation on a fresh build so
+        // forwarders re-bind.
         let context = self.app_context(app);
-        let acquired = node_slot::get_or_build_node(&self.data_path, context).await?;
+        node_slot::get_or_build_node(&self.data_path, context).await?;
         inner.resumed = true;
-
-        if !acquired.is_new {
-            // A compatible node was already in the slot (e.g. a push extension
-            // built it); its forwarders are already bound, so don't bump.
-            return Ok(());
-        }
-
-        // Wake forwarders so they re-bind to the freshly built node.
-        drop(inner);
-        self.bump_generation();
         Ok(())
     }
 }
