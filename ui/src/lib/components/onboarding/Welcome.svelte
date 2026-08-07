@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Page } from 'konsta/svelte';
+	import { Button, Page } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 
 	let { onContinue, onTerms }: { onContinue: () => void; onTerms: () => void } =
@@ -7,10 +7,10 @@
 </script>
 
 <Page
-	class="flex flex-col"
+	class="flex flex-col font-[inherit] [&_*]:font-[inherit]"
 	style="background: linear-gradient(180deg, #6E7BFF 0.96%, #38369A 68.27%)"
 >
-	<div class="flex flex-1 flex-col items-center justify-center gap-20 px-8">
+	<div class="flex flex-1 flex-col items-center justify-center gap-16 px-8">
 		<img src="/welcome-logo.svg" alt="" class="w-24" />
 		<h1
 			class="max-w-[16rem] text-center text-2xl font-bold leading-8 text-white"
@@ -21,23 +21,31 @@
 	</div>
 
 	<div
-		class="flex flex-col items-center gap-7 px-11 pb-[calc(3rem+env(safe-area-inset-bottom))]"
+		class="flex w-full max-w-md flex-col gap-4 self-center px-11 pb-[calc(4rem+env(safe-area-inset-bottom))] mx-2"
 	>
-		<button
-			type="button"
-			class="text-sm text-white"
-			onclick={onTerms}
+		<Button
+			clear
+			large
+			class="font-normal"
+			colors={{ textIos: 'text-white', textMaterial: 'text-white' }}
+			onClick={onTerms}
 			data-testid="welcome-terms-link"
 		>
 			{m.termsAndPrivacyPolicy()}
-		</button>
-		<button
-			type="button"
-			class="w-full rounded-[10px] bg-white py-4 text-base font-medium text-black"
-			onclick={onContinue}
+		</Button>
+		<Button
+			large
+			class="!rounded-[10px]"
+			colors={{
+				fillBgIos: 'bg-white active:bg-white/90',
+				fillBgMaterial: 'bg-white',
+				fillTextIos: 'text-black',
+				fillTextMaterial: 'text-black',
+			}}
+			onClick={onContinue}
 			data-testid="welcome-continue-btn"
 		>
 			{m.welcomeContinue()}
-		</button>
+		</Button>
 	</div>
 </Page>
