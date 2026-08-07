@@ -11,7 +11,10 @@ describe('Group unread messages', () => {
 
 	before(async function () {
 		this.timeout(120_000);
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 
 		// The group arrives over p2p sync, which can be slow on real devices.
@@ -75,7 +78,9 @@ describe('Group unread messages', () => {
 
 	it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
 		await agent2.groupChatPage.scroll.scrollUp();
-		await agent1.groupChatPage.composer.sendMessage('unread badge precondition');
+		await agent1.groupChatPage.composer.sendMessage(
+			'unread badge precondition',
+		);
 		await agent2.groupChatPage.messages.waitForMessage(
 			'unread badge precondition',
 		);

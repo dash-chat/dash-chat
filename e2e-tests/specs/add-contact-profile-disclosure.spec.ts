@@ -86,15 +86,11 @@ describe('Contact profile disclosure', () => {
 
 		// Alice sees Bob's full profile (carried in the contact request).
 		await waitForTextContent(alice, tid('direct-chat-peer-header'), 'Bob Test');
-		await alice.waitUntil(async () =>
-			!(await alice.directChatPage.peerAvatarIsPlaceholder()),
-		);
+		await alice.directChatPage.waitForPeerProfile();
 
 		// Bob's view of Alice resolves from the QR placeholder to her real profile
 		// once the accept, contact establishment and Alice's announcements sync over
 		// p2p.
-		await bob.waitUntil(async () =>
-			!(await bob.directChatPage.peerAvatarIsPlaceholder()),
-		);
+		await bob.directChatPage.waitForPeerProfile();
 	});
 });

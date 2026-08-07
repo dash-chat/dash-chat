@@ -2,7 +2,9 @@
   description = "Dash Chat development flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
+
+    nixpkgs-pnpm.url = "github:nixos/nixpkgs/nixos-26.05";
 
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -64,6 +66,7 @@
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
+          pkgsPnpm = import inputs.nixpkgs-pnpm { inherit system; };
 
           tauriLibraries = with pkgs; [
             webkitgtk_4_1
@@ -97,7 +100,7 @@
             pkgs.mprocs
             pkgs.just
             pkgs."nodejs_${nodeVersion}"
-            pkgs.pnpm
+            pkgsPnpm.pnpm
             pkgs.cargo-nextest
             pkgs.doctl
             inputs'.tauri-driver.packages.tauri-driver

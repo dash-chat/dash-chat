@@ -21,7 +21,10 @@ describe('Chat scroll behavior', () => {
 
 	before(async function () {
 		this.timeout(120_000);
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 		await exchangeContacts(agent1, agent2);
@@ -49,7 +52,9 @@ describe('Chat scroll behavior', () => {
 		await agent1.directChatPage.scroll.scrollUp();
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(false);
 
-		await agent1.directChatPage.composer.sendMessage('self-send after scroll up');
+		await agent1.directChatPage.composer.sendMessage(
+			'self-send after scroll up',
+		);
 		await agent1.directChatPage.messages.waitForMessage(
 			'self-send after scroll up',
 		);
@@ -86,7 +91,9 @@ describe('Chat scroll behavior', () => {
 
 	it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
 		await agent1.directChatPage.scroll.scrollUp();
-		await agent2.directChatPage.composer.sendMessage('unread badge precondition');
+		await agent2.directChatPage.composer.sendMessage(
+			'unread badge precondition',
+		);
 		await agent1.directChatPage.messages.waitForMessage(
 			'unread badge precondition',
 		);

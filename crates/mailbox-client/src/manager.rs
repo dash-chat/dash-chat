@@ -551,6 +551,7 @@ where
                 tracing::trace!(topic = ?topic, "Syncing with mailbox: nothing to do");
             } else {
                 tracing::info!(
+                    topic = ?topic,
                     items = items.len(),
                     missing = missing.len(),
                     "fetched operations"

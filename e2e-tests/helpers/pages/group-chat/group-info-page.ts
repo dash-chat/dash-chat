@@ -9,9 +9,7 @@ export class GroupInfoPage extends TestHelper {
 	leaveSelfButton = this.el(tid('group-info-leave-self'));
 	leaveConfirmButton = this.el(tid('group-info-leave-confirm'));
 	removeMemberButton = this.el(tid('group-info-remove-member'));
-	removeMemberConfirmButton = this.el(
-		tid('group-info-remove-member-confirm'),
-	);
+	removeMemberConfirmButton = this.el(tid('group-info-remove-member-confirm'));
 
 	memberItem(name: string) {
 		return this.agent.$(tid(`group-info-member-${name}`));

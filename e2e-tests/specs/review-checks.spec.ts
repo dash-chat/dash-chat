@@ -4,7 +4,6 @@
  * Drives the agent through every page across all theme × layout × color ×
  * locale combinations, running overflow/dark-mode/RTL checks at each stop.
  */
-
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import {
 	assertNoIssues,
@@ -24,7 +23,10 @@ describe('Review checks', function () {
 	before(async function () {
 		this.timeout(180_000);
 
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 
 		wideSupported = await agent1.supportsWideScreen();
 

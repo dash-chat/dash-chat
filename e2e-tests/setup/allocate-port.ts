@@ -4,7 +4,7 @@ import { execSync } from 'node:child_process';
 export function allocatePort(): number {
 	return Number(
 		execSync(
-			"node -e \"const s=require('net').createServer();s.listen(0,()=>{process.stdout.write(String(s.address().port));s.close()})\"",
+			'node -e "const s=require(\'net\').createServer();s.listen(0,()=>{process.stdout.write(String(s.address().port));s.close()})"',
 		)
 			.toString()
 			.trim(),

@@ -32,7 +32,10 @@ describe('Local mailbox connection survives the mDNS announcement TTL', function
 		if (isRemoteMailbox()) this.skip();
 		// agent1 hosts the in-process local mailbox server, a desktop-only
 		// feature; discovery assumes both agents share the runner's LAN.
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'desktop' }, { platform: 'desktop' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'desktop' },
+			{ platform: 'desktop' },
+		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 
@@ -75,10 +78,10 @@ describe('Local mailbox connection survives the mDNS announcement TTL', function
 	// mailbox on top.
 	it('client shows the local mailbox icon once connected to the peer server', async () => {
 		const indicator = agent2.groupChatPage.connectionStatusIndicator;
-		await agent2.waitUntil(
-			async () => (await indicator.status()) === 'local',
-			{ timeout: 90_000, interval: 1_000 },
-		);
+		await agent2.waitUntil(async () => (await indicator.status()) === 'local', {
+			timeout: 90_000,
+			interval: 1_000,
+		});
 	});
 
 	it('keeps showing the local mailbox icon for 3 minutes, outliving the mDNS TTL', async () => {

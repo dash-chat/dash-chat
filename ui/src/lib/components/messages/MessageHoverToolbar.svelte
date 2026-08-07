@@ -52,9 +52,7 @@
 		if (open !== null && e.key === 'Escape') close();
 	}
 
-	// The popover anchors are fixed, so it would visibly detach from a
-	// scrolling message — dismiss instead, like Signal.
-	function onScroll() {
+	function onUserScroll() {
 		if (open !== null) close();
 	}
 
@@ -87,7 +85,11 @@
 	}
 </script>
 
-<svelte:window onkeydowncapture={onKeydown} onscrollcapture={onScroll} />
+<svelte:window
+	onkeydowncapture={onKeydown}
+	onwheelcapture={onUserScroll}
+	ontouchmovecapture={onUserScroll}
+/>
 
 <div
 	class="absolute {reverse
