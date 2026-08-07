@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, watch, RwLock};
 
 use crate::commands::logs::simplify;
-use crate::node::node_context::NodeContext;
+use crate::node::node_context::{NodeContext, NodeRole};
 use crate::node::node_slot;
 use crate::notifications::NotifiedOperationsStore;
 
@@ -112,9 +112,8 @@ impl AppNodeManager {
         if !self.inner.read().await.resumed {
             return Err(crate::error::Error::NodeNotReady);
         }
-        node_slot::current_node()
+        node_slot::current_node_for_role(NodeRole::App)
             .await
-            .map(|app_node| app_node.node)
             .ok_or(crate::error::Error::NodeNotReady)
     }
 
@@ -149,9 +148,6 @@ impl AppNodeManager {
         // Clear the slot and tear down its AppNode, cancelling and draining the
         // cloud-mailbox retry, aborting mDNS discovery, and shutting the Node
         // down so nothing still touches its SQLite pools when iOS suspends.
-        if let Some(app_node) = node_slot::current_node().await {
-            app_node.teardown().await;
-        }
         node_slot::clear().await;
 
         // Also close our own store (reopens lazily on next use).

@@ -32,6 +32,19 @@ impl NodeRole {
             Self::BackgroundTask | Self::PushNotification => false,
         }
     }
+
+    /// Whether a Node built for this role can be reused to satisfy a request for
+    /// the `requested` role.
+    pub fn can_satisfy(&self, requested: Self) -> bool {
+        if *self == requested {
+            return true;
+        }
+        matches!(
+            (*self, requested),
+            // A full app (or background-task) Node can satisfy push handling.
+            (Self::App, Self::PushNotification) | (Self::BackgroundTask, Self::PushNotification)
+        )
+    }
 }
 
 /// The capabilities and wiring with which a Node is built.
@@ -98,17 +111,7 @@ impl NodeContext {
     /// Whether a Node built for this context can be reused to satisfy a request
     /// for the `requested` context.
     pub fn is_compatible_with(&self, requested: &Self) -> bool {
-        if self.role == requested.role {
-            return true;
-        }
-
-        match (self.role, requested.role) {
-            // A full app Node can satisfy push notification handling.
-            (NodeRole::App, NodeRole::PushNotification) => true,
-            // A background task Node can satisfy push notification handling.
-            (NodeRole::BackgroundTask, NodeRole::PushNotification) => true,
-            _ => false,
-        }
+        self.role.can_satisfy(requested.role)
     }
 
     /// Build a [`dashchat_node::NodeConfig`] from this context.

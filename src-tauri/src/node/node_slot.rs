@@ -5,7 +5,7 @@ use tauri::Manager;
 use tokio::sync::Mutex;
 
 use crate::node::app_node::AppNode;
-use crate::node::node_context::NodeContext;
+use crate::node::node_context::{NodeContext, NodeRole};
 
 /// The single Node owned by this process, together with the context it was
 /// built for.
@@ -21,8 +21,20 @@ static SLOT: Mutex<Option<AppNode>> = Mutex::const_new(None);
 /// they all miss iOS's ~30s budget.
 static BUILD_LOCK: Mutex<()> = Mutex::const_new(());
 
-pub(crate) async fn current_node() -> Option<AppNode> {
+async fn current_node() -> Option<AppNode> {
     SLOT.lock().await.clone()
+}
+
+/// The slot's Node, but only if its role can satisfy `role`. Side-effect free:
+/// never builds, evicts, or registers anything, so it is safe on hot read paths
+/// (e.g. per-command `AppNodeManager::get`).
+pub(crate) async fn current_node_for_role(role: NodeRole) -> Option<Node> {
+    let app_node = current_node().await?;
+    app_node
+        .context
+        .role
+        .can_satisfy(role)
+        .then_some(app_node.node)
 }
 
 /// The result of acquiring a Node from the slot.
