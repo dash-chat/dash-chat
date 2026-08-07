@@ -16,12 +16,9 @@
 		{/snippet}
 	</Navbar>
 
-	<div
-		class="mx-auto max-w-[38rem] px-4 pt-6 pb-12 font-[inherit] text-[15px] leading-relaxed [&_*]:font-[inherit] [&_h1]:mb-1 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mt-8 [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_li]:mb-1 [&_p]:mb-3 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ps-5"
-		data-testid="eula-body"
-	>
+	<div class="eula" data-testid="eula-body">
 		<h1>Dash Chat Messenger — End User Licence Agreement</h1>
-		<p class="!mb-8 text-[13px] opacity-60">Last updated: 2026-08-07</p>
+		<p class="updated">Last updated: 2026-08-07</p>
 
 		<p>
 			This End User Licence Agreement ("Agreement") is between you and Darksoil
@@ -368,3 +365,44 @@
 		</p>
 	</div>
 </Page>
+
+<style>
+	.eula {
+		max-width: 38rem;
+		margin-inline: auto;
+		padding: 1.5rem 1rem 3rem;
+		font-size: 15px;
+		line-height: 1.625;
+	}
+	/* Konsta sets the theme font on an ancestor; without this the agreement's
+	   plain elements pick up the webawesome theme's font instead. */
+	.eula :is(h1, h2, p, ul, li, strong) {
+		font-family: inherit;
+	}
+	.eula h1 {
+		margin-bottom: 0.25rem;
+		font-size: 1.5rem;
+		font-weight: 700;
+	}
+	.eula h2 {
+		margin-block: 2rem 0.5rem;
+		font-size: 1.125rem;
+		font-weight: 600;
+	}
+	.eula p {
+		margin-bottom: 0.75rem;
+	}
+	.eula ul {
+		margin-bottom: 0.75rem;
+		list-style: disc;
+		padding-inline-start: 1.25rem;
+	}
+	.eula li {
+		margin-bottom: 0.25rem;
+	}
+	.eula .updated {
+		margin-bottom: 2rem;
+		font-size: 13px;
+		opacity: 0.6;
+	}
+</style>

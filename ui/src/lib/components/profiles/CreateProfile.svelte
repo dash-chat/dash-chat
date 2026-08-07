@@ -95,9 +95,7 @@
 
 	const NAME_INPUT_ID = 'create-profile-name-input';
 
-	// Reads no reactive state, so it focuses once on mount. The `autofocus`
-	// attribute is unreliable here: the page is mounted after load, when the
-	// step machine swaps it in.
+	// Focus name input when rendering the page
 	$effect(() => {
 		document.getElementById(NAME_INPUT_ID)?.focus();
 	});
