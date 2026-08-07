@@ -22,6 +22,7 @@ sentry-types = "0.42"
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
 
+tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "ce6e762f816bdffeaa0bd56078995bda21cdb68b" }
 tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
@@ -94,7 +95,6 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
-tauri-plugin-system-bars-styles = { git = "https://github.com/dash-chat/tauri-plugin-system-bars-styles", branch = "main" }
 tauri-plugin-view = "0.0.5"
 
 [target.'cfg(target_os = "android")'.dependencies]

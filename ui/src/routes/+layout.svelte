@@ -44,9 +44,8 @@
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
+	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
-	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 	import {
@@ -180,16 +179,14 @@
 	// when navigating back home from any page
 	useKeepAlive(chatsStore.allChatsSummaries);
 
-	const isDark = useSignal(settingsStore.isDark);
-
 	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
+	const applied = useSignal(settingsStore.colorScheme);
+
 	let darkOverride: boolean | null = $state(null);
-	const effectiveDark = $derived(darkOverride ?? !!$isDark);
+	const effectiveDark = $derived(darkOverride ?? $applied === 'dark');
 	$effect(() => {
-		applyDarkMode(effectiveDark).catch(e => {
-			showToast(m.errorApplyStyle(), 'error');
-		});
+		applyDarkMode(effectiveDark);
 	});
 
 	$effect(() => {

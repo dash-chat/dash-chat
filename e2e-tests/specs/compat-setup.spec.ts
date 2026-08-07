@@ -5,7 +5,6 @@
  * and sends messages. Saves test state to .dbs/compat/state.json so the
  * verify phase can check everything persisted correctly.
  */
-
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +28,10 @@ describe('Compat setup — create data with old version', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 	});
 
 	it('creates profiles on both agents', async () => {

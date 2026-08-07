@@ -5,7 +5,6 @@
  * version in the setup phase. Verifies that profiles, contacts, and messages
  * all persisted correctly, and that new messages can be sent.
  */
-
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +40,10 @@ describe('Compat verify — check data with current version', () => {
 		}
 		state = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
 
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 	});
 
 	it('both agents skip profile creation (profiles persisted)', async () => {

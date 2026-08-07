@@ -3,7 +3,8 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"check": "pnpm -F ui paraglide && tsc --noEmit -p tsconfig.json",
+		"check": "pnpm -F ui paraglide && tsc --noEmit -p tsconfig.json && prettier --check '**/*.ts'",
+		"format": "prettier --write '**/*.ts'",
 		"test": "wdio run wdio.conf.ts"
 	},
 	"devDependencies": {

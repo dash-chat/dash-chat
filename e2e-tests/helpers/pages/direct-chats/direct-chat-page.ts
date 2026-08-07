@@ -3,6 +3,7 @@ import { ConnectionStatusIndicator } from '../../components/connection-status-in
 import { Messages } from '../../components/messages';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
+import { SYNC_TIMEOUT } from '../../timeouts';
 import { TestHelper } from '../test-helper';
 
 export type MessageStatus = 'sending' | 'local' | 'cloud';
@@ -98,6 +99,27 @@ export class DirectChatPage extends TestHelper {
 
 	isPeerNamePresent(): Promise<boolean> {
 		return this.peerName.isExisting();
+	}
+	
+	/**
+	 * Wait until the peer's real profile is rendered: the chat has left the
+	 * pending state and the avatar is no longer the placeholder. Gate on this —
+	 * not on the peer name, which also renders for a pending chat from the name
+	 * carried in the scanned code — whenever a test needs an established
+	 * contact.
+	 */
+	async waitForPeerProfile(): Promise<void> {
+		// peerAvatarIsPlaceholder() reads an attribute off the avatar, so it
+		// answers "not a placeholder" while the header is still unmounted. Wait
+		// for the element first or the check below passes vacuously.
+		await this.peerAvatar.waitForExist();
+		await this.agent.waitUntil(
+			async () => !(await this.peerAvatarIsPlaceholder()),
+			{
+				timeout: SYNC_TIMEOUT,
+				timeoutMsg: "Peer's profile did not arrive",
+			},
+		);
 	}
 
 	/** Whether the peer-header avatar is the profile placeholder (person icon,

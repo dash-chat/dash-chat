@@ -8,4 +8,8 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="ic_launcher_background">#6E7BFF</color>
+
+    <!-- Konsta's md surfaces for our brand primary, i.e. the page background the
+         app paints. Shown through the transparent webview until the UI renders. -->
+    <color name="app_background">#FBF8FE</color>
 </resources>
