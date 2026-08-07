@@ -58,6 +58,25 @@ describe('Settings pages', () => {
 		await agent.settingsPage.ready();
 	});
 
+	it('applies the colour scheme picked on the appearance page', async () => {
+		await agent.settingsPage.appearanceLink.click();
+		await agent.appearancePage.ready();
+
+		await agent.appearancePage.dark.click();
+		await agent.waitUntil(
+			async () => (await agent.getColorScheme()) === 'dark',
+		);
+
+		await agent.appearancePage.light.click();
+		await agent.waitUntil(
+			async () => (await agent.getColorScheme()) === 'light',
+		);
+
+		await agent.appearancePage.system.click();
+		await agent.appearancePage.back.click();
+		await agent.settingsPage.ready();
+	});
+
 	it('opens the account page', async () => {
 		await agent.settingsPage.accountLink.click();
 		await agent.accountPage.ready();

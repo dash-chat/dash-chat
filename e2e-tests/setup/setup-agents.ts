@@ -102,6 +102,8 @@ export type Agent = WebdriverIO.Browser & {
 	setTheme(theme: 'material' | 'ios'): Promise<void>;
 	/** Force dark mode on/off via the test event. */
 	setDarkMode(value: boolean): Promise<void>;
+	/** The colour scheme the app currently has applied. */
+	getColorScheme(): Promise<'light' | 'dark'>;
 	/** Enable preview features so gated UI (e.g. new-group) becomes visible. */
 	enablePreviewFeatures(): Promise<void>;
 	/** Close this agent's iroh endpoint so it can no longer sync over p2p.
@@ -205,6 +207,10 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			value,
 		);
 	};
+	agent.getColorScheme = () =>
+		b.execute(() =>
+			document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+		);
 	agent.enablePreviewFeatures = async () => {
 		await b.execute(() => window.__test.enablePreviewFeatures());
 	};
