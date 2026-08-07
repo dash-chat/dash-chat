@@ -74,7 +74,9 @@ describe('Deleting messages', () => {
 
 		// Only "Delete for me" is available for a received message.
 		await message.deleteForMeDialogConfirm.waitForExist();
-		expect(await message.deleteForEveryoneDialogConfirm.isExisting()).toBe(false);
+		expect(await message.deleteForEveryoneDialogConfirm.isExisting()).toBe(
+			false,
+		);
 
 		await message.deleteForMeDialogConfirm.click();
 		await agent1.directChatPage.messages.waitForMessageGone("Bob's message");
