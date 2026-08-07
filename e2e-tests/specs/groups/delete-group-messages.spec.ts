@@ -66,7 +66,9 @@ describe('Deleting group messages', () => {
 
 		// Only "Delete for me" is available for another member's message.
 		await message.deleteForMeDialogConfirm.waitForExist();
-		expect(await message.deleteForEveryoneDialogConfirm.isExisting()).toBe(false);
+		expect(await message.deleteForEveryoneDialogConfirm.isExisting()).toBe(
+			false,
+		);
 
 		await message.deleteForMeDialogConfirm.click();
 
