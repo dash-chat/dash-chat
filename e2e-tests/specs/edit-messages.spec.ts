@@ -71,7 +71,7 @@ describe('Editing messages', () => {
 		await composer.discardDraftCancel.click();
 		await composer.discardDraftConfirm.waitForClickable({ reverse: true });
 		expect(await composer.editingBanner.isExisting()).toBe(false);
-		expect(await composer.messageInput.getValue()).toBe('Draft in progress');
+		expect(await composer.inputText()).toBe('Draft in progress');
 
 		// Discard drops the draft and enters edit mode prefilled.
 		await message.openActions();
@@ -81,7 +81,7 @@ describe('Editing messages', () => {
 		await composer.discardDraftConfirm.click();
 		await composer.editingBanner.waitForExist();
 		await browser.waitUntil(
-			async () => (await composer.messageInput.getValue()) === 'Hello world',
+			async () => (await composer.inputText()) === 'Hello world',
 			{ timeoutMsg: 'Editing input is not prefilled with the message text' },
 		);
 
