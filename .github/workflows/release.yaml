@@ -96,7 +96,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
+          version: 11.18.0
           cache: true
 
       - name: Install and prepare
@@ -288,7 +288,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
+          version: 11.18.0
           cache: true
 
       - uses: cachix/cachix-action@v15
