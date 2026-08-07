@@ -6,7 +6,6 @@
 	import { canEditMessage } from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
-	import { portal } from '$lib/actions/portal';
 
 	interface Props {
 		message: Message;
@@ -60,6 +59,4 @@
 	/>
 </List>
 
-<div use:portal>
-	<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />
-</div>
+<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />

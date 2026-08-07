@@ -22,6 +22,7 @@
 		target: HTMLElement | undefined;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		onDelete?: () => void;
 	}
 
 	let {
@@ -30,6 +31,7 @@
 		target,
 		myDeviceId,
 		onEdit,
+		onDelete,
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
@@ -57,6 +59,7 @@
 
 	function del() {
 		close();
+		onDelete?.();
 	}
 
 	async function copy() {

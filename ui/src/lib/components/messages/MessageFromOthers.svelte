@@ -20,6 +20,7 @@
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
+	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
