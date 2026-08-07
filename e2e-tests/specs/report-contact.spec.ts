@@ -1,4 +1,4 @@
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('report contact', () => {
@@ -12,11 +12,37 @@ describe('report contact', () => {
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
-		await agent1.directChatPage.peerName.waitForDisplayed();
+
+		// One-way add, so Alice lands on a chat showing Bob's contact request.
+		await navigateToAddContact(agent1);
+		const aliceLink = await agent1.addContactPage.getAddContactLink();
+		await navigateToAddContact(agent2);
+		await agent2.addContactPage.enterAddContactLink(aliceLink);
+		await agent2.directChatPage.ready();
+
+		await agent1.homePage.chatListItem('Bob Test').waitForExist();
+		await agent1.homePage.chatListItem('Bob Test').click();
+		await agent1.directChatPage.ready();
+		await agent1.directChatPage.acceptButton.waitForExist();
 	});
 
-	async function reportFromChatSettings() {
+	it('reports from the contact request banner', async () => {
+		await agent1.directChatPage.reportButton.click();
+		await agent1.directChatPage.reportConfirm.waitForClickable();
+		await agent1.directChatPage.reportConfirm.click();
+		await agent1.toast.expectMessage(
+			await agent1.tr('contactReportedToast', { name: 'Bob Test' }),
+		);
+
+		await agent1.directChatPage.reportMessage.waitForDisplayed();
+		await expect(agent1.directChatPage.reportMessage).toHaveText(
+			await agent1.tr('youReportedThisContact'),
+		);
+	});
+
+	it('keeps reporting available from chat settings and adds a bubble per report', async () => {
+		await agent1.directChatPage.acceptContactRequest();
+
 		await agent1.directChatPage.settingsLink.click();
 		await agent1.chatSettingsPage.ready();
 		await agent1.chatSettingsPage.reportButton.click();
@@ -27,19 +53,6 @@ describe('report contact', () => {
 		);
 		await agent1.chatSettingsPage.back.click();
 		await agent1.directChatPage.ready();
-	}
-
-	it('shows a report bubble in the chat after reporting', async () => {
-		await reportFromChatSettings();
-
-		await agent1.directChatPage.reportMessage.waitForDisplayed();
-		await expect(agent1.directChatPage.reportMessage).toHaveText(
-			await agent1.tr('youReportedThisContact'),
-		);
-	});
-
-	it('keeps reporting available and adds a bubble per report', async () => {
-		await reportFromChatSettings();
 
 		await agent1.waitUntil(
 			async () => (await agent1.directChatPage.reportMessageCount()) === 2,

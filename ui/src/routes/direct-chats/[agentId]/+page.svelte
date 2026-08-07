@@ -50,6 +50,7 @@
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import BlockContactDialog from '$lib/components/contacts/block/BlockContactDialog.svelte';
 	import UnblockContactDialog from '$lib/components/contacts/block/UnblockContactDialog.svelte';
+	import ReportContactDialog from '$lib/components/contacts/report/ReportContactDialog.svelte';
 	import BlockedActionsBar from '$lib/components/contacts/block/BlockedActionsBar.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import Divider from '$lib/components/Divider.svelte';
@@ -124,6 +125,7 @@
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
 	let showBlockDialog = $state(false);
+	let showReportDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
 	// Initial value reserves space for the bottom bar before bind:clientHeight
 	// has measured it, so the latest message doesn't flash under the input on
@@ -671,6 +673,12 @@
 					{/if}
 				{/await}
 
+				<ReportContactDialog
+					bind:opened={showReportDialog}
+					{agentId}
+					name={profile ? fullName(profile) : ''}
+				/>
+
 				<SafetyTipsSheet
 					opened={showSecurityTips}
 					onClose={() => (showSecurityTips = false)}
@@ -820,6 +828,20 @@
 													data-testid="direct-chat-block-btn"
 													onClick={() => (showBlockDialog = true)}
 													>{m.block()}</Button
+												>
+												<Button
+													class="neutral-tonal-button {isWideScreen.value
+														? ''
+														: 'flex-1'}"
+													rounded
+													tonal
+													colors={{
+														tonalTextIos: 'text-red-500',
+														tonalTextMaterial: 'text-red-500',
+													}}
+													data-testid="direct-chat-report-btn"
+													onClick={() => (showReportDialog = true)}
+													>{m.report()}</Button
 												>
 												<Button
 													class="neutral-tonal-button {isWideScreen.value
