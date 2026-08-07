@@ -41,9 +41,7 @@
 		if (point !== undefined && e.key === 'Escape') close();
 	}
 
-	// The popover anchor is fixed, so it would visibly detach from a
-	// scrolling message — dismiss instead, like Signal.
-	function onScroll() {
+	function onUserScroll() {
 		if (point !== undefined) close();
 	}
 
@@ -72,7 +70,11 @@
 	}
 </script>
 
-<svelte:window onkeydowncapture={onKeydown} onscrollcapture={onScroll} />
+<svelte:window
+	onkeydowncapture={onKeydown}
+	onwheelcapture={onUserScroll}
+	ontouchmovecapture={onUserScroll}
+/>
 
 {#if point}
 	<!-- Viewport-pixel anchor; --k-safe-area-top zeroes out the space above
