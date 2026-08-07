@@ -51,7 +51,7 @@ pub(crate) async fn current_node_for_role(role: NodeRole) -> Option<Node> {
     app_node
         .context
         .role
-        .can_satisfy(role)
+        .can_be_used_for(role)
         .then_some(app_node.node)
 }
 

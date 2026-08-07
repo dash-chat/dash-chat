@@ -34,9 +34,9 @@ impl NodeRole {
         }
     }
 
-    /// Whether a Node built for this role can be reused to satisfy a request for
+    /// Whether a Node built for this role can be used to satisfy a request for
     /// the `requested` role.
-    pub fn can_satisfy(&self, requested: Self) -> bool {
+    pub fn can_be_used_for(&self, requested: Self) -> bool {
         if *self == requested {
             return true;
         }
@@ -113,7 +113,7 @@ impl NodeContext {
     /// Whether a Node built for this context can be reused to satisfy a request
     /// for the `requested` context.
     pub fn is_compatible_with(&self, requested: &Self) -> bool {
-        self.role.can_satisfy(requested.role)
+        self.role.can_be_used_for(requested.role)
     }
 
     /// Build a [`dashchat_node::NodeConfig`] from this context.
@@ -142,5 +142,25 @@ impl NodeContext {
         }
 
         config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NodeRole;
+
+    // Underpins the removal of the startup `node_slot::clear()`: because a
+    // push-role node cannot satisfy an App request, `get_or_build_node(App)`
+    // evicts a stale push node from the slot before building the app node, so
+    // no separate startup teardown is needed.
+    #[test]
+    fn push_node_cannot_satisfy_app_request() {
+        assert!(!NodeRole::PushNotification.can_be_used_for(NodeRole::App));
+    }
+
+    #[test]
+    fn app_node_satisfies_push_and_app_requests() {
+        assert!(NodeRole::App.can_be_used_for(NodeRole::App));
+        assert!(NodeRole::App.can_be_used_for(NodeRole::PushNotification));
     }
 }
