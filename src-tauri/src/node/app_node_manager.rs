@@ -12,7 +12,11 @@ use crate::node::node_slot;
 use crate::notifications::NotifiedOperationsStore;
 
 struct Inner {
-    node: Option<Node>,
+    /// Whether the app is currently resumed and owns the process-wide node in
+    /// [`node_slot`]. The actual [`Node`] lives only in the slot; this flag is
+    /// what distinguishes "the app is driving the slot's node" from "a push
+    /// extension built a node into the slot while the app is paused".
+    resumed: bool,
 }
 
 /// A swappable container for the app's [`Node`].
@@ -20,10 +24,11 @@ struct Inner {
 /// Tauri managed state cannot be removed or replaced once set, but on iOS we
 /// must tear the node down when the app is backgrounded — otherwise its open
 /// SQLite connection pools hold file locks and iOS SIGKILLs the suspended
-/// process (`0xdead10cc`). Keeping the `Node` behind this container lets
-/// [`pause`](Self::pause) drop it (releasing every lock) and [`resume`](Self::resume)
-/// rebuild a fresh one on foreground, all while the managed `AppNodeManager` itself
-/// stays put. On desktop the node is built once and never paused.
+/// process (`0xdead10cc`). This container tracks whether the app is resumed;
+/// [`pause`](Self::pause) clears that (and tears the slot's node down, releasing
+/// every lock) and [`resume`](Self::resume) rebuilds a fresh one on foreground,
+/// all while the managed `AppNodeManager` itself stays put. On desktop the node
+/// is built once and never paused.
 #[derive(Clone)]
 pub struct AppNodeManager {
     inner: Arc<RwLock<Inner>>,
@@ -65,7 +70,7 @@ impl AppNodeManager {
         .await?;
         let (generation_tx, _) = watch::channel(0u64);
         let app_node_manager = Self {
-            inner: Arc::new(RwLock::new(Inner { node: None })),
+            inner: Arc::new(RwLock::new(Inner { resumed: false })),
             data_path,
             notification_tx,
             #[cfg(mobile)]
@@ -99,12 +104,17 @@ impl AppNodeManager {
     /// Snapshot the live node, or a retryable "not ready" error when paused.
     /// Returns immediately — the frontend retry loop covers the resume window,
     /// so we deliberately do not wait here.
+    ///
+    /// Reports "not ready" whenever the app isn't resumed, even if a push
+    /// extension has since built its own node into the slot — that node isn't
+    /// the app's to hand out.
     pub async fn get(&self) -> Result<Node, crate::error::Error> {
-        self.inner
-            .read()
+        if !self.inner.read().await.resumed {
+            return Err(crate::error::Error::NodeNotReady);
+        }
+        node_slot::current_node()
             .await
-            .node
-            .clone()
+            .map(|app_node| app_node.node)
             .ok_or(crate::error::Error::NodeNotReady)
     }
 
@@ -129,12 +139,13 @@ impl AppNodeManager {
     pub async fn pause(&self) {
         log::info!("Quiescing node for iOS background suspension");
         let mut inner = self.inner.write().await;
-        let Some(_node) = inner.node.take() else {
+        if !inner.resumed {
             // Still building or already paused; a still-building node keeps
             // running in the background (0xdead10cc risk).
             log::warn!("Backgrounded with no live node to quiesce");
             return;
-        };
+        }
+        inner.resumed = false;
         // Clear the slot and tear down its AppNode, cancelling and draining the
         // cloud-mailbox retry, aborting mDNS discovery, and shutting the Node
         // down so nothing still touches its SQLite pools when iOS suspends.
@@ -157,28 +168,27 @@ impl AppNodeManager {
     /// keep retrying via `invokeAfterSetup`) and the next foreground retries.
     pub async fn resume(&self, app: &AppHandle) -> anyhow::Result<()> {
         let mut inner = self.inner.write().await;
-        if inner.node.is_some() {
+        if inner.resumed {
             return Ok(());
         }
         log::info!("Rebuilding node on iOS foreground");
 
+        // Build (or adopt a compatible existing) node in the slot. If a push
+        // extension already left a compatible node there its app-level setup is
+        // in place; a freshly built one already spawned its cloud-mailbox
+        // registration retry in `AppNode::new`, cancelled by the slot's teardown
+        // on the next pause.
         let context = self.app_context(app);
         let acquired = node_slot::get_or_build_node(&self.data_path, context).await?;
-        let node = acquired.node;
+        inner.resumed = true;
 
         if !acquired.is_new {
-            // A compatible Node is already running in the slot (e.g. a push
-            // extension built it, or a prior resume left it there). Just adopt
-            // it; its app-level setup is already in place.
-            inner.node = Some(node);
+            // A compatible node was already in the slot (e.g. a push extension
+            // built it); its forwarders are already bound, so don't bump.
             return Ok(());
         }
 
-        // A freshly built app Node already spawned its cloud-mailbox registration
-        // retry in `AppNode::new`; it will be cancelled and drained by the slot's
-        // teardown on the next pause.
-        inner.node = Some(node);
-        // Wake forwarders so they re-bind to the fresh node.
+        // Wake forwarders so they re-bind to the freshly built node.
         drop(inner);
         self.bump_generation();
         Ok(())
