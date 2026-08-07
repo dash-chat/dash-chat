@@ -10,7 +10,7 @@ export async function setLightSystemBars() {
 	await overrideSystemBarsColorScheme('light');
 }
 
-/** Give the system bars back to the app's colour scheme. */
+/** Make the system bars match the app's colour scheme. */
 export async function applyThemeSystemBars() {
 	if (!isMobile || !isTauriEnv()) return;
 	await overrideSystemBarsColorScheme(null);
