@@ -81,9 +81,9 @@ describe('Offline UX', () => {
 				async () =>
 					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
 			);
-			expect(
-				await agent1.directChatPage.messageStatusFor('online hello'),
-			).toBe('cloud');
+			expect(await agent1.directChatPage.messageStatusFor('online hello')).toBe(
+				'cloud',
+			);
 			expect(
 				await agent1.directChatPage.connectionStatusIndicator.status(),
 			).toBe('connected');
@@ -237,7 +237,8 @@ describe('Offline UX', () => {
 			await agent1.homePage.openChat('Bob');
 			await agent1.directChatPage.ready();
 
-			let status = await agent1.directChatPage.messageStatusFor('restart hello');
+			let status =
+				await agent1.directChatPage.messageStatusFor('restart hello');
 			await agent1.waitUntil(
 				async () => {
 					status =

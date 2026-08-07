@@ -32,7 +32,10 @@ export class NewMessagePage extends TestHelper {
 		await row.waitForExist();
 
 		if (await this.isMobileBuild()) {
-			await simulateLongpress(this.agent, `${this.contactItemSelector(name)} a`);
+			await simulateLongpress(
+				this.agent,
+				`${this.contactItemSelector(name)} a`,
+			);
 		} else {
 			await this.agent.execute(
 				(sel: string) => {

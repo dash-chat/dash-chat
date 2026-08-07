@@ -4,7 +4,6 @@
 // - `browser` and `expect` are runtime globals injected by WDIO; we declare
 //   them ourselves so we can widen `browser` to MultiRemoteBrowser (these
 //   tests are always multiremote) and avoid pulling in @wdio/globals.
-
 import '../ui/tests/setup-utils';
 
 declare global {
