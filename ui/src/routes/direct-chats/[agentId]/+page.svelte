@@ -669,6 +669,7 @@
 							bind:opened={showBlockDialog}
 							{agentId}
 							name={profile ? fullName(profile) : ''}
+							onDone={() => goto('/')}
 						/>
 					{/if}
 				{/await}
@@ -677,6 +678,7 @@
 					bind:opened={showReportDialog}
 					{agentId}
 					name={profile ? fullName(profile) : ''}
+					onDone={() => goto('/')}
 				/>
 
 				<SafetyTipsSheet

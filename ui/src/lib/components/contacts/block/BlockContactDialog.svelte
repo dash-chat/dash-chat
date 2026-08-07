@@ -9,10 +9,13 @@
 		opened = $bindable(),
 		agentId,
 		name,
+		onDone,
 	}: {
 		opened: boolean;
 		agentId: AgentId;
 		name: string;
+		/** Called after the contact has been blocked. */
+		onDone?: () => void;
 	} = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -24,6 +27,7 @@
 			const toast = m.contactBlockedToast({ name });
 			opened = false;
 			showToast(toast);
+			onDone?.();
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);

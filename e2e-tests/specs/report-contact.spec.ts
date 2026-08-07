@@ -5,6 +5,16 @@ describe('report contact', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
+	/** Confirm the open report dialog and land back on the chat list. */
+	async function confirmReport() {
+		await agent1.chatSettingsPage.reportConfirm.waitForClickable();
+		await agent1.chatSettingsPage.reportConfirm.click();
+		await agent1.toast.expectMessage(
+			await agent1.tr('contactReportedToast', { name: 'Bob Test' }),
+		);
+		await agent1.homePage.ready();
+	}
+
 	before(async function () {
 		[agent1, agent2] = await setupAgents(this, [
 			{ platform: 'any' },
@@ -20,20 +30,15 @@ describe('report contact', () => {
 		await agent2.addContactPage.enterAddContactLink(aliceLink);
 		await agent2.directChatPage.ready();
 
-		await agent1.homePage.chatListItem('Bob Test').waitForExist();
-		await agent1.homePage.chatListItem('Bob Test').click();
-		await agent1.directChatPage.ready();
+		await agent1.homePage.openChat('Bob Test');
 		await agent1.directChatPage.acceptButton.waitForExist();
 	});
 
-	it('reports from the contact request banner', async () => {
+	it('reports from the contact request banner and returns to the chat list', async () => {
 		await agent1.directChatPage.reportButton.click();
-		await agent1.directChatPage.reportConfirm.waitForClickable();
-		await agent1.directChatPage.reportConfirm.click();
-		await agent1.toast.expectMessage(
-			await agent1.tr('contactReportedToast', { name: 'Bob Test' }),
-		);
+		await confirmReport();
 
+		await agent1.homePage.openChat('Bob Test');
 		await agent1.directChatPage.reportMessage.waitForDisplayed();
 		await expect(agent1.directChatPage.reportMessage).toHaveText(
 			await agent1.tr('youReportedThisContact'),
@@ -46,14 +51,9 @@ describe('report contact', () => {
 		await agent1.directChatPage.settingsLink.click();
 		await agent1.chatSettingsPage.ready();
 		await agent1.chatSettingsPage.reportButton.click();
-		await agent1.chatSettingsPage.reportConfirm.waitForClickable();
-		await agent1.chatSettingsPage.reportConfirm.click();
-		await agent1.toast.expectMessage(
-			await agent1.tr('contactReportedToast', { name: 'Bob Test' }),
-		);
-		await agent1.chatSettingsPage.back.click();
-		await agent1.directChatPage.ready();
+		await confirmReport();
 
+		await agent1.homePage.openChat('Bob Test');
 		await agent1.waitUntil(
 			async () => (await agent1.directChatPage.reportMessageCount()) === 2,
 		);

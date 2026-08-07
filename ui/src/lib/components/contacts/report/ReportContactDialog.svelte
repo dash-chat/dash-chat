@@ -9,10 +9,13 @@
 		opened = $bindable(),
 		agentId,
 		name,
+		onDone,
 	}: {
 		opened: boolean;
 		agentId: AgentId;
 		name: string;
+		/** Called after the contact has been reported. */
+		onDone?: () => void;
 	} = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -27,6 +30,7 @@
 				: m.contactReportedToast({ name });
 			opened = false;
 			showToast(toast);
+			onDone?.();
 		} catch (e) {
 			console.error(e);
 			opened = false;

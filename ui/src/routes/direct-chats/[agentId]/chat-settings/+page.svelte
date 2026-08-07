@@ -285,12 +285,14 @@
 						bind:opened={showBlockDialog}
 						agentId={peerAgentId}
 						name={peerName}
+						onDone={() => goto('/')}
 					/>
 				{/if}
 				<ReportContactDialog
 					bind:opened={showReportDialog}
 					agentId={peerAgentId}
 					name={peerName}
+					onDone={() => goto('/')}
 				/>
 			{/await}
 		{/if}
