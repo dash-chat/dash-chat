@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 /// Roles determine both the capabilities a Node is built with and whether a
 /// Node built for one role can be reused to satisfy a request for another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum NodeRole {
     /// The main app is running with full networking and notification channels.
     App,
@@ -71,6 +72,7 @@ pub struct NodeContext {
 impl NodeContext {
     /// Context used when handling push-notifications in a limited time window with the app closed:
     /// no P2P, no blob sync, and no app-lifetime channels.
+    #[cfg_attr(not(mobile), allow(dead_code))]
     pub fn for_push_notifications() -> Self {
         Self {
             role: NodeRole::PushNotification,

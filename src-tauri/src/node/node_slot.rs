@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use dashchat_node::Node;
-use tauri::Manager;
 use tokio::sync::{watch, Mutex};
 
 use crate::node::app_node::AppNode;
@@ -72,27 +71,11 @@ pub struct AcquiredNode {
 ///    When found, the cache is cleared since it's no longer needed.
 /// 2. A previously cached Node with a compatible context.
 /// 3. Build a new Node for the requested context and cache it.
+#[cfg_attr(not(mobile), allow(dead_code))]
 pub async fn get_node_for_push_notification(
     data_path: &PathBuf,
     context: NodeContext,
 ) -> anyhow::Result<AcquiredNode> {
-    // Try the app's managed state first. If the app is running but its node is
-    // paused (backgrounded on iOS), fall through and build the extension's own
-    // node so we never hold two live p2p endpoints on the shared identity.
-    if let Some(handle) = crate::APP_HANDLE.get() {
-        if let Some(app_node_manager) = handle.try_state::<crate::node::AppNodeManager>() {
-            if let Ok(node) = app_node_manager.get().await {
-                // The app is fully running — clear any stale cached node
-                clear().await;
-                log::info!("The app is opened: reuse the currently running node.");
-                return Ok(AcquiredNode {
-                    node,
-                    is_new: false,
-                });
-            }
-        }
-    }
-
     let acquired = get_or_build_node(data_path, context).await?;
 
     // Best-effort: when we just built a fresh node, resolve and track the cloud
