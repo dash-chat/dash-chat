@@ -5198,7 +5198,7 @@ packages:
     resolution: {integrity: sha512-i3ANk6SLyTGInXJNQez1VrgnDYqlCptVtgjMO2neZQbH3lYnwKH9cfXKMAsqotTEAE/dTseCove+ielnuUQ2hg==}
 
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/ce6e762f816bdffeaa0bd56078995bda21cdb68b:
-    resolution: {tarball: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/ce6e762f816bdffeaa0bd56078995bda21cdb68b}
+    resolution: {gitHosted: true, integrity: sha512-RQ8I4pVwVLuBHqekyWMulw6D5CQiRyinmWyZV1O9JUE671F1PFSAPOKw/dlgQGEzQ99XK6/bkxv9G4O8YNT5gA==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/ce6e762f816bdffeaa0bd56078995bda21cdb68b}
     version: 0.1.0
     peerDependencies:
       signalium: ^3
