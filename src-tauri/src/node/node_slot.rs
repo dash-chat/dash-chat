@@ -173,12 +173,17 @@ pub async fn get_or_build_node(
 
 /// Remove the cached node from the slot and tear it down, aborting app-specific
 /// tasks and shutting the Node down exactly once. Holds [`LIFECYCLE_LOCK`] across
-/// the teardown so it cannot interleave with an in-flight build.
-pub async fn clear() {
+/// the teardown so it cannot interleave with an in-flight build. Returns whether
+/// a node was actually torn down.
+pub async fn clear() -> bool {
     let _lifecycle_guard = LIFECYCLE_LOCK.lock().await;
     let app_node = SLOT.lock().await.take();
-    if let Some(app_node) = app_node {
-        app_node.teardown().await;
-        bump_generation();
+    match app_node {
+        Some(app_node) => {
+            app_node.teardown().await;
+            bump_generation();
+            true
+        }
+        None => false,
     }
 }
