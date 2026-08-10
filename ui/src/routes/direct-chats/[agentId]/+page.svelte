@@ -18,17 +18,13 @@
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { onActivate } from '$lib/utils/keyboard';
-	import { boldToHtml, escapeHtml } from '$lib/utils/banner-text';
 	import {
 		mdiAlert,
 		mdiAccountQuestion,
 		mdiAccountGroup,
-		mdiChevronDown,
 		mdiChevronRight,
-		mdiChevronUp,
 		mdiClose,
 		mdiMagnify,
-		mdiCalendarSearch,
 	} from '@mdi/js';
 	import {
 		Navbar,
@@ -52,7 +48,6 @@
 	import UnblockContactDialog from '$lib/components/contacts/block/UnblockContactDialog.svelte';
 	import BlockedActionsBar from '$lib/components/contacts/block/BlockedActionsBar.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import Divider from '$lib/components/Divider.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
@@ -61,6 +56,10 @@
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
+	import Divider from '$lib/components/Divider.svelte';
+	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
+	import PendingChatNote from '$lib/components/direct-chats/bottom-bar/PendingChatNote.svelte';
+	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -141,7 +140,6 @@
 	let searchQuery = $state('');
 	let currentMatchIndex = $state(0);
 	let matchingHashes: Hash[] = $state([]);
-	let dateInput = $state<HTMLInputElement>();
 
 	const focusOnMount: Action = node => {
 		node.focus();
@@ -683,149 +681,47 @@
 					{/await}
 				{/if}
 
-				<div
-					class="absolute bottom-0 inset-x-0 z-30"
-					class:bg-page-surface={theme === 'material'}
-				>
+				<div class="absolute bottom-0 inset-x-0 z-30 bg-page-surface">
 					<div bind:clientHeight={bottomBarHeight}>
-						{#if searchMode}
-							<div class="bg-page-surface">
+						{#await $blocked then isBlocked}
+							{@const showComposer =
+								!searchMode && !isPendingChat && !isBlocked && !contactRequest}
+							{#if !showComposer}
 								<div class="mx-4">
 									<Divider />
 								</div>
-								<div
-									class="row items-center gap-2 px-4 py-3"
-									style="margin: 0 auto"
-								>
-									<button
-										onclick={() => dateInput?.click()}
-										aria-label={m.jumpToDate()}
-									>
-										<wa-icon
-											class="quiet"
-											src={wrapPathInSvg(mdiCalendarSearch)}
-										></wa-icon>
-									</button>
-									<input
-										type="date"
-										class="absolute opacity-0 h-0 w-0"
-										bind:this={dateInput}
-										onchange={e => jumpToDate(e.currentTarget.value)}
-									/>
-									<span
-										class="flex-1 text-center text-sm quiet"
-										data-testid="search-results-count"
-									>
-										{#if !searchQuery}
-											<!-- empty -->
-										{:else if matchingHashes.length === 0}
-											{m.noResults()}
-										{:else}
-											{m.searchResultsCount({
-												current: String(currentMatchIndex + 1),
-												total: String(matchingHashes.length),
-											})}
-										{/if}
-									</span>
-									<button
-										disabled={!matchingHashes.length}
-										onclick={goToPreviousMatch}
-										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-										aria-label={m.previousResult()}
-									>
-										<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
-									</button>
-									<button
-										disabled={!matchingHashes.length}
-										onclick={goToNextMatch}
-										class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
-										aria-label={m.nextResult()}
-									>
-										<wa-icon src={wrapPathInSvg(mdiChevronDown)}></wa-icon>
-									</button>
-								</div>
-							</div>
-						{:else if isPendingChat}
-							<div class="bg-page-surface">
-								<div class="mx-4">
-									<Divider />
-								</div>
-								<p
-									class="px-6 py-4 text-center text-sm text-gray-600 dark:text-gray-400"
-									data-testid="direct-chat-pending-note"
-								>
-									{m.waitingForProfile()}
-								</p>
-							</div>
-						{:else}
-							{#await $blocked then isBlocked}
-								{#if isBlocked}
-									<div class="mx-4">
-										<Divider />
-									</div>
-									<BlockedActionsBar
-										name={profile ? fullName(profile) : ''}
-										onUnblock={() => (showBlockDialog = true)}
-									/>
-								{:else if contactRequest}
-									<div class="bg-page-surface">
-										<div class="mx-4">
-											<Divider />
-										</div>
-										<div
-											class="flex flex-col items-center gap-3 px-6 py-3"
-											style="margin: 0 auto"
-										>
-											<p
-												class="text-center text-sm text-gray-600 dark:text-gray-400 break-words min-w-0 max-w-full"
-											>
-												{@html boldToHtml(
-													m.contactRequestBanner({
-														name: escapeHtml(contactRequest.profile.name),
-													}),
-												)}
-											</p>
-											<div
-												class="flex gap-2"
-												class:w-full={!isWideScreen.value}
-											>
-												<Button
-													class="neutral-tonal-button {isWideScreen.value
-														? ''
-														: 'flex-1'}"
-													rounded
-													tonal
-													colors={{
-														tonalTextIos: 'text-red-500',
-														tonalTextMaterial: 'text-red-500',
-													}}
-													data-testid="direct-chat-block-btn"
-													onClick={() => (showBlockDialog = true)}
-													>{m.block()}</Button
-												>
-												<Button
-													class="neutral-tonal-button {isWideScreen.value
-														? ''
-														: 'flex-1'}"
-													rounded
-													tonal
-													data-testid="direct-chat-accept-btn"
-													onClick={() => (showAcceptDialog = true)}
-													>{m.accept()}</Button
-												>
-											</div>
-										</div>
-									</div>
-								{:else}
-									<MessageComposer
-										bind:this={composer}
-										store={store.messages}
-										destinationName={profile ? fullName(profile) : undefined}
-										onSent={onMessageSent}
-									/>
-								{/if}
-							{/await}
-						{/if}
+							{/if}
+							{#if searchMode}
+								<SearchNavBar
+									current={currentMatchIndex + 1}
+									total={matchingHashes.length}
+									hasQuery={searchQuery !== ''}
+									onPrevious={goToPreviousMatch}
+									onNext={goToNextMatch}
+									onJumpToDate={jumpToDate}
+								/>
+							{:else if isPendingChat}
+								<PendingChatNote />
+							{:else if isBlocked}
+								<BlockedActionsBar
+									name={profile ? fullName(profile) : ''}
+									onUnblock={() => (showBlockDialog = true)}
+								/>
+							{:else if contactRequest}
+								<ContactRequestBar
+									name={contactRequest.profile.name}
+									onBlock={() => (showBlockDialog = true)}
+									onAccept={() => (showAcceptDialog = true)}
+								/>
+							{:else}
+								<MessageComposer
+									bind:this={composer}
+									store={store.messages}
+									destinationName={profile ? fullName(profile) : undefined}
+									onSent={onMessageSent}
+								/>
+							{/if}
+						{/await}
 					</div>
 				</div>
 			{/await}
