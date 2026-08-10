@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import { envWithoutWdioLoader } from '../harness-env';
 import type { AgentPlatform, PrepareContext } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -128,12 +129,13 @@ function bootMissingEmulators(needed: number) {
 function ensureUiautomator2Driver() {
 	const installed = execSync(
 		'pnpm exec appium driver list --installed 2>&1 || true',
-		{ encoding: 'utf8', cwd: E2E_DIR },
+		{ encoding: 'utf8', cwd: E2E_DIR, env: envWithoutWdioLoader() },
 	);
 	if (!installed.includes('uiautomator2')) {
 		execSync('pnpm exec appium driver install uiautomator2@4.2.9', {
 			stdio: 'inherit',
 			cwd: E2E_DIR,
+			env: envWithoutWdioLoader(),
 		});
 	}
 }
@@ -303,12 +305,11 @@ export class AndroidPlatform implements AgentPlatform {
 		const targets = new Set(
 			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
 		);
-		const buildEnv: NodeJS.ProcessEnv = {
-			...process.env,
+		const buildEnv: NodeJS.ProcessEnv = envWithoutWdioLoader({
 			MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
-		};
+		});
 		// Real-device push spec: bake the push-server URL so the device registers
 		// its FCM token with the host's local push server (bridged below).
 		if (ctx.pushPort !== null) {
