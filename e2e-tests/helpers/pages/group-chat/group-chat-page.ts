@@ -24,15 +24,4 @@ export class GroupChatPage extends TestHelper {
 	async ready() {
 		await this.infoLink.waitForExist();
 	}
-
-	systemMessage(
-		kind:
-			| 'group_created'
-			| 'group_member_added'
-			| 'group_member_removed'
-			| 'group_member_promoted'
-			| 'group_member_demoted',
-	) {
-		return this.agent.$(tid(`group-chat-system-message-${kind}`));
-	}
 }

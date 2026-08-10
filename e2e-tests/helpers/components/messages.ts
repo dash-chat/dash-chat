@@ -5,6 +5,15 @@ import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
+export type SystemMessageKind =
+	| 'group_created'
+	| 'group_member_added'
+	| 'group_member_removed'
+	| 'group_member_promoted'
+	| 'group_member_demoted'
+	| 'contact_blocked'
+	| 'contact_unblocked';
+
 // Driver for a chat's rendered message list — the messages themselves plus the
 // scroll-to-bottom button and unread affordances around them.
 export class Messages extends TestHelper {
@@ -29,6 +38,11 @@ export class Messages extends TestHelper {
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
+
+	/** The system message of `kind` rendered in this message list. */
+	systemMessage(kind: SystemMessageKind) {
+		return this.el(`${this.messagesSelector} ${tid(`system-message-${kind}`)}`);
+	}
 
 	/** The rendered message whose text contains `text`, as a `Message` helper
 	 * scoped to it (by its message hash), or null if none is rendered. */

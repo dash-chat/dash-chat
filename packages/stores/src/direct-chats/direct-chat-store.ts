@@ -8,12 +8,16 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
-import { ChatSummary, Payload } from '../types';
+import { BlockEvent, ChatSummary, Payload } from '../types';
 import {
 	EventWithProvenance,
 	groupEventsInDays,
 } from '../utils/group-events-in-days';
 import { type IDirectChatClient } from './direct-chat-client';
+
+export type DirectChatEvent =
+	| { kind: 'message'; message: Message }
+	| { kind: 'block'; event: BlockEvent };
 
 // Store tied to a specific direct chat
 export class DirectChatStore {
@@ -75,29 +79,49 @@ export class DirectChatStore {
 		return contactRequests.find(cr => cr.agentId === this.peer);
 	});
 
-	groupedMessages = reactive(async () => {
+	groupedEvents = reactive(async () => {
 		const messages = await this.messages.messages();
+		const blockHistory = this.isPending
+			? {}
+			: await this.contactsStore.blockHistory(this.peer);
+		const peerName = await this.peerName();
 
-		const eventsWithProvenance: Record<Hash, EventWithProvenance<Message>> = {};
+		const eventsWithProvenance: Record<
+			Hash,
+			EventWithProvenance<DirectChatEvent>
+		> = {};
 		const devices = new Set<DeviceId>();
 
 		for (const [hash, message] of Object.entries(messages)) {
 			devices.add(message.author);
 			eventsWithProvenance[hash] = {
-				event: message,
+				event: { kind: 'message', message },
 				author: message.author,
 				timestamp: message.timestamp,
 				type: 'Message',
 			};
 		}
 
+		for (const [hash, block] of Object.entries(blockHistory)) {
+			devices.add(block.author);
+			eventsWithProvenance[hash] = {
+				event: {
+					kind: 'block',
+					event: {
+						kind: block.blocked ? 'contact_blocked' : 'contact_unblocked',
+						contactName: peerName === '' ? undefined : peerName,
+						timestamp: block.timestamp,
+					},
+				},
+				author: block.author,
+				timestamp: block.timestamp,
+				type: 'Block',
+			};
+		}
+
 		const agentsSets = Array.from(devices).map(a => [a]);
 
-		const messagesWithProvenance = groupEventsInDays(
-			eventsWithProvenance,
-			agentsSets,
-		);
-		return messagesWithProvenance;
+		return groupEventsInDays(eventsWithProvenance, agentsSets);
 	});
 
 	onNewMessage(

@@ -3,7 +3,7 @@ import { reactive, relay } from 'signalium';
 import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { AgentId, DeviceId, TopicId } from '../p2panda/types';
+import { AgentId, DeviceId, Hash, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
 import { AnnouncementPayload, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
@@ -106,6 +106,30 @@ export class ContactsStore {
 			if (v.blocked) blocked.add(agentId as AgentId);
 		}
 		return blocked;
+	});
+
+	/** Every block/unblock operation for `agentId`, keyed by operation hash. */
+	blockHistory = reactive(async (agentId: AgentId) => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const events: Record<
+			Hash,
+			{ blocked: boolean; timestamp: number; author: DeviceId }
+		> = {};
+		for (const ops of Object.values(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				const payload = op.body?.payload;
+				if (payload?.type !== 'BlockAgent' && payload?.type !== 'UnblockAgent')
+					continue;
+				if (payload.payload !== agentId) continue;
+				events[op.hash] = {
+					blocked: payload.type === 'BlockAgent',
+					timestamp: op.header.timestamp,
+					author: op.header.verifying_key,
+				};
+			}
+		}
+		return events;
 	});
 
 	isBlocked = reactive(async (agentId: AgentId) => {
