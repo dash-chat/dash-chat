@@ -1,8 +1,8 @@
 procs:
   agent1:
-    shell: DATA_DIR="$PWD/.dbs/dev/agent-1" just dev tauri 2>&1 | tee agent1.log
+    shell: DATA_DIR="$PWD/.dbs/dev/agent-1" just dev tauri
   agent2:
-    shell: DATA_DIR="$PWD/.dbs/dev/agent-2" just dev tauri 2>&1 | tee agent2.log
+    shell: DATA_DIR="$PWD/.dbs/dev/agent-2" just dev tauri
     autostart: false
   mailbox-server:
     shell: just mailbox server

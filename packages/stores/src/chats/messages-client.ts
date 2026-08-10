@@ -1,5 +1,5 @@
 import { Hash } from '../p2panda/types';
-import { ChatId, ChatReaction, OutgoingMedia, Tombstone } from '../types';
+import { ChatId, ChatReaction, OutgoingMedia } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface IMessagesClient {
