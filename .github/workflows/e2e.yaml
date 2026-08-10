@@ -71,6 +71,9 @@ jobs:
           path: |
             e2e-tests/e2e-output.log
             .dbs/e2e/failures/
+          # .dbs is a dotted directory, which upload-artifact skips by default,
+          # so the failure screenshots never reached the artifact.
+          include-hidden-files: true
           retention-days: 7
 
       - name: Cleanup E2E data
