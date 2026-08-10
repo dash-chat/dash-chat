@@ -19,6 +19,7 @@ export class DirectChatPage extends TestHelper {
 	peerName = this.el(tid('direct-chat-peer-name'));
 	peerHeader = this.el(tid('direct-chat-peer-header'));
 	peerAvatar = this.el(tid('direct-chat-peer-avatar'));
+	nameNotVerifiedPill = this.el(tid('direct-chat-name-not-verified'));
 	acceptButton = this.el(tid('direct-chat-accept-btn'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
 	blockButton = this.el(tid('direct-chat-block-btn'));

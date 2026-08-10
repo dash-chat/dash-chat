@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
-import { cleanBuildEnv } from '../build-env';
+import { envWithoutWdioLoader } from '../harness-env';
 import type { AgentPlatform, PrepareContext } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -236,8 +236,7 @@ export class IosPlatform implements AgentPlatform {
 		execSync('pnpm tauri ios build --debug --features e2e-tests', {
 			cwd: ROOT,
 			stdio: 'inherit',
-			// cleanBuildEnv lets pnpm run as it does from a plain shell (see there).
-			env: cleanBuildEnv({
+			env: envWithoutWdioLoader({
 				...bakedEnv,
 				VITE_E2E: 'true',
 				IPHONEOS_DEPLOYMENT_TARGET: '17.0',

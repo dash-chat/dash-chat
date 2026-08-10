@@ -5,7 +5,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { mdiAccountQuestion } from '@mdi/js';
+	import { mdiAccountOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { TextAvatarData } from './text-avatar-data-url';
 	import type { Snippet } from 'svelte';
@@ -81,7 +81,7 @@
 		{#if waitingForProfile}
 			<wa-icon
 				slot="icon"
-				src={wrapPathInSvg(mdiAccountQuestion)}
+				src={wrapPathInSvg(mdiAccountOutline)}
 				style="font-size: calc(var(--size, 3rem) * 0.5)"
 			></wa-icon>
 		{/if}
