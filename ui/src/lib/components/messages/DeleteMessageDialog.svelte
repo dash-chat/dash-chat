@@ -2,6 +2,7 @@
 	import { Actions, ActionsGroup, Dialog, DialogButton } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import ActionButton from '$lib/components/navigation/ActionButton.svelte';
+	import ActionsTitle from '$lib/components/navigation/ActionsTitle.svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { lazyMount } from '$lib/stores/lazy-mount.svelte';
 
@@ -25,10 +26,10 @@
 			onBackdropClick={onCancel}
 			data-testid="delete-message-dialog"
 		>
-			<ActionsGroup class="flex flex-col gap-3 p-2.5">
-				<div class="px-3.5 py-2 text-start text-xl text-black dark:text-white">
-					{m.deleteMessageTitle()}
-				</div>
+			<ActionsGroup
+				class="flex flex-col gap-2 !bg-white p-2.5 dark:!bg-neutral-900"
+			>
+				<ActionsTitle title={m.deleteMessageTitle()} />
 				<ActionButton
 					destructive
 					onClick={onConfirm}
