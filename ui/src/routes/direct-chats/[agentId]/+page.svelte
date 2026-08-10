@@ -58,6 +58,7 @@
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import PendingChatNote from '$lib/components/direct-chats/bottom-bar/PendingChatNote.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
+	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	let agentId = page.params.agentId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
@@ -171,7 +172,7 @@
 
 	onMount(() => {
 		if (page.url.searchParams.has('search')) {
-			goto(`/direct-chats/${agentId}`, { replaceState: true });
+			goto(`/direct-chats/${agentId}`, { replaceState: true, keepFocus: true });
 		}
 	});
 
@@ -670,40 +671,42 @@
 						{#await $blocked then isBlocked}
 							{@const showComposer =
 								!searchMode && !isPendingChat && !isBlocked && !contactRequest}
-							{#if !showComposer}
-								<div class="mx-4">
-									<Divider />
-								</div>
-							{/if}
-							{#if searchMode}
-								<SearchNavBar
-									current={currentMatchIndex + 1}
-									total={matchingHashes.length}
-									hasQuery={searchQuery !== ''}
-									onPrevious={goToPreviousMatch}
-									onNext={goToNextMatch}
-									onJumpToDate={jumpToDate}
-								/>
-							{:else if isPendingChat}
-								<PendingChatNote />
-							{:else if isBlocked}
-								<BlockedActionsBar
-									name={profile ? fullName(profile) : ''}
-									onUnblock={() => (showBlockDialog = true)}
-								/>
-							{:else if contactRequest}
-								<ContactRequestBar
-									name={contactRequest.profile.name}
-									onBlock={() => (showBlockDialog = true)}
-									onAccept={() => (showAcceptDialog = true)}
-								/>
-							{:else}
+							{#if showComposer}
 								<MessageComposer
 									bind:this={composer}
 									store={store.messages}
 									destinationName={profile ? fullName(profile) : undefined}
 									onSent={onMessageSent}
 								/>
+							{:else}
+								<div use:renderAboveKeyboard>
+									<div class="mx-4">
+										<Divider />
+									</div>
+									{#if searchMode}
+										<SearchNavBar
+											current={currentMatchIndex + 1}
+											total={matchingHashes.length}
+											hasQuery={searchQuery !== ''}
+											onPrevious={goToPreviousMatch}
+											onNext={goToNextMatch}
+											onJumpToDate={jumpToDate}
+										/>
+									{:else if isPendingChat}
+										<PendingChatNote />
+									{:else if isBlocked}
+										<BlockedActionsBar
+											name={profile ? fullName(profile) : ''}
+											onUnblock={() => (showBlockDialog = true)}
+										/>
+									{:else if contactRequest}
+										<ContactRequestBar
+											name={contactRequest.profile.name}
+											onBlock={() => (showBlockDialog = true)}
+											onAccept={() => (showAcceptDialog = true)}
+										/>
+									{/if}
+								</div>
 							{/if}
 						{/await}
 					</div>
