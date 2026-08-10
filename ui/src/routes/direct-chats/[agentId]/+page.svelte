@@ -17,9 +17,7 @@
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { onActivate } from '$lib/utils/keyboard';
 	import {
-		mdiAlert,
 		mdiAccountQuestion,
 		mdiAccountGroup,
 		mdiChevronRight,
@@ -436,82 +434,68 @@
 									style={`padding-bottom: ${bottomBarHeight}px`}
 								>
 									<div
-										class="column min-w-0"
-										style="align-items: center"
+										class="row justify-center mt-10 mb-4 px-4"
 										data-testid="direct-chat-peer-header"
 									>
-										{#if profile}
-											<Link
-												class="column my-6 gap-2 items-center max-w-full px-4"
-												onclick={() => (showPeerProfile = true)}
-											>
-												<Avatar
-													image={profile.avatar}
-													initials={profile.name.slice(0, 2)}
-													size={80}
-													testId="direct-chat-peer-avatar"
-												/>
-												<div class="flex items-center gap-1 max-w-full">
-													<span
-														class="text-xl font-semibold break-words text-center min-w-0"
-														>{fullName(profile)}</span
-													>
-													<wa-icon
-														class="small-icon quiet shrink-0"
-														src={wrapPathInSvg(mdiChevronRight)}
-													></wa-icon>
-												</div>
-											</Link>
-										{:else}
-											<div class="column my-6 gap-2 items-center">
-												<Avatar
-													waitingForProfile
-													size={80}
-													testId="direct-chat-peer-avatar"
-												/>
-												<span class="quiet text-xl">
-													{m.waitingForProfile()}
-												</span>
-											</div>
-										{/if}
-									</div>
-									<div class="row justify-center mb-4">
-										<div class="outline-card" style="border-radius: 0.75rem;">
+										<div
+											class="outline-card max-w-[min(20rem,100%)]"
+											style="border-radius: 2rem;"
+										>
 											<div
-												class="flex flex-col gap-1 items-center p-3 text-center"
+												class="column items-center gap-2 -mt-5 px-6 pb-5 text-center"
 											>
-												{#if contactRequest}
-													<div class="flex items-center gap-2 text-amber-600">
-														<wa-icon
-															class="small-icon"
-															src={wrapPathInSvg(mdiAlert)}
-														></wa-icon>
-														<span class="font-semibold"
-															>{m.reviewCarefully()}</span
-														>
+												{#if profile}
+													<Link
+														class="column gap-2 items-center max-w-full"
+														onclick={() => (showPeerProfile = true)}
+													>
+														<Avatar
+															image={profile.avatar}
+															initials={profile.name.slice(0, 2)}
+															size={80}
+															testId="direct-chat-peer-avatar"
+														/>
+														<div class="flex items-center gap-1 max-w-full">
+															<span
+																class="text-xl font-semibold break-words text-center min-w-0"
+																>{fullName(profile)}</span
+															>
+															<wa-icon
+																class="small-icon quiet shrink-0"
+																src={wrapPathInSvg(mdiChevronRight)}
+															></wa-icon>
+														</div>
+													</Link>
+												{:else}
+													<div class="column gap-2 items-center">
+														<Avatar
+															waitingForProfile
+															size={80}
+															testId="direct-chat-peer-avatar"
+														/>
+														<span class="quiet text-xl">
+															{m.waitingForProfile()}
+														</span>
 													</div>
 												{/if}
 												<div
-													class="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300"
+													class="flex flex-col items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
 												>
-													<div
-														class="flex items-center justify-center gap-2"
-														role="button"
-														tabindex="0"
-														onclick={() => (profileNamesSheetOpen = true)}
-														onkeydown={onActivate(
-															() => (profileNamesSheetOpen = true),
-														)}
+													<Button
+														rounded
+														tonal
+														small
+														inline
+														class="gap-1.5 !bg-[#EEDBD4] !text-[#9E5A45] dark:!bg-[#2D1E18] dark:!text-[#D39E8D]"
+														data-testid="direct-chat-name-not-verified"
+														onClick={() => (profileNamesSheetOpen = true)}
 													>
 														<wa-icon
 															class="small-icon"
 															src={wrapPathInSvg(mdiAccountQuestion)}
 														></wa-icon>
-														<span
-															><u>{m.profileNames()}</u
-															>{m.areNotVerified()}</span
-														>
-													</div>
+														{m.nameNotVerified()}
+													</Button>
 													<div class="flex items-center justify-center gap-2">
 														<wa-icon
 															class="small-icon"
