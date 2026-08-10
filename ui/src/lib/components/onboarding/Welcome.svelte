@@ -21,7 +21,7 @@
 	</div>
 
 	<div
-		class="flex w-full max-w-md flex-col gap-4 self-center px-11 pb-[calc(4rem+env(safe-area-inset-bottom))] mx-2"
+		class="flex w-full max-w-md flex-col gap-4 self-center px-11 pb-[calc(4rem+env(safe-area-inset-bottom))]"
 	>
 		<Button
 			clear
