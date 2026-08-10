@@ -52,13 +52,6 @@ export class MockContactsClient implements IContactsClient {
 		});
 	}
 
-	async rejectContactRequest(agentId: AgentId): Promise<void> {
-		await this.logsClient.create(this.deviceGroupTopicId, {
-			type: 'DeviceGroupPayload',
-			payload: { type: 'RejectContactRequest', payload: agentId },
-		});
-	}
-
 	async blockContact(agentId: AgentId): Promise<void> {
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',
@@ -73,14 +66,13 @@ export class MockContactsClient implements IContactsClient {
 		});
 	}
 
-	private reported = new Set<AgentId>();
-
-	async reportContact(agentId: AgentId): Promise<string[]> {
-		this.reported.add(agentId);
-		return ['mock-mailbox'];
-	}
-
-	async isContactReported(agentId: AgentId): Promise<boolean> {
-		return this.reported.has(agentId);
+	async reportContact(agentId: AgentId): Promise<void> {
+		await this.logsClient.create(this.deviceGroupTopicId, {
+			type: 'DeviceGroupPayload',
+			payload: {
+				type: 'ReportContact',
+				payload: { agent_id: agentId, device_ids: [], mailbox_ids: [] },
+			},
+		});
 	}
 }

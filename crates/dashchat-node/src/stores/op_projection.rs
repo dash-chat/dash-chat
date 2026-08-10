@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{BTreeSet, HashMap};
 
-use crate::{AgentId, DeleteCandidate, DeviceId, Profile, TopicId, forward_edit_closure};
+use crate::{
+    AgentId, DeleteCandidate, DeviceId, Profile, SystemNotification, TopicId, forward_edit_closure,
+};
 use crate::{
     AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
 };
@@ -121,7 +123,7 @@ impl OpProjection {
 
     /// Look up the device ID for a given agent ID.
     ///
-    /// This is temporary, and will not be needed once device groups are
+    /// This is temporary, and will not be needed once device gropus are
     /// implemented and [ChatMember] becomes [AgentId].
     pub async fn lookup_contact_by_agent_id(
         &self,
@@ -135,8 +137,11 @@ impl OpProjection {
         Ok(row.map(|(id,)| id))
     }
 
-    /// Every device id recorded for `agent_id`. Empty when the agent is unknown.
-    pub async fn devices_for_agent(&self, agent_id: AgentId) -> anyhow::Result<Vec<DeviceId>> {
+    /// Look up every device known to belong to a given agent.
+    pub async fn lookup_devices_by_agent_id(
+        &self,
+        agent_id: AgentId,
+    ) -> anyhow::Result<Vec<DeviceId>> {
         let rows: Vec<(DeviceId,)> =
             sqlx::query_as("SELECT device_id FROM devices WHERE agent_id = ?")
                 .bind(agent_id)
@@ -195,9 +200,10 @@ impl OpProjection {
     }
 
     pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
-        let rows: Vec<(Topic,)> = sqlx::query_as("SELECT chat_id FROM group_chats")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows: Vec<(Topic<crate::topic::kind::Untyped>,)> =
+            sqlx::query_as("SELECT chat_id FROM group_chats")
+                .fetch_all(&self.pool)
+                .await?;
         rows.into_iter()
             .map(|(id,)| Topic::<crate::topic::kind::Chat>::from_topic_id(crate::TopicId::from(id)))
             .collect()
@@ -272,18 +278,19 @@ impl OpProjection {
         // XXX: once refined operation logs (e.g. `all_valid_ops`) are moved
         //      to the projection layer, this Node injection must be removed.
         node: BadUseOfNode,
-    ) -> Result<(), ProjectionError> {
+    ) -> Result<Option<SystemNotification>, ProjectionError> {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
         let topic = operation.topic();
 
         self.enforce_blocklist(operation).await?;
 
-        match &payload {
+        let event = match &payload {
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
                 }
+                None
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
@@ -293,6 +300,11 @@ impl OpProjection {
                     self.add_tombstone(topic.into(), *hash, TombstoneReason::DeletedForEveryone)
                         .await?;
                 }
+                Some(SystemNotification::Tombstones {
+                    topic: topic.into(),
+                    hashes: hashes.clone(),
+                    reason: TombstoneReason::DeletedForEveryone,
+                })
             }
 
             Payload::Chat(ChatPayload::EditMessage { edit_hash, .. }) => {
@@ -302,14 +314,16 @@ impl OpProjection {
                 // arrive after the delete, and it keeps a delete-for-everyone's
                 // late edits from lingering too. Edits of live messages are
                 // validated later in `process_app`.
-                //
-                // It is not valid for an Edit to be applied to an operation which
-                // was DeletedForEveryone, but that validation lives elsewhere, and
-                // it's simpler to just unconditionally apply this transitive
-                // tombstoning here.
                 if let Some(reason) = self.tombstone_reason(topic.into(), *edit_hash).await? {
                     let self_hash = operation.event.operation.header().hash();
                     self.add_tombstone(topic.into(), self_hash, reason).await?;
+                    Some(SystemNotification::Tombstones {
+                        topic: topic.into(),
+                        hashes: BTreeSet::from_iter([*edit_hash]),
+                        reason,
+                    })
+                } else {
+                    None
                 }
             }
 
@@ -323,23 +337,32 @@ impl OpProjection {
                 tracing::info!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
                 self.save_profile(agent_id, profile.clone()).await?;
+                None
             }
 
             Payload::DeviceGroup(p) => match p {
                 DeviceGroupPayload::AddContact { agent_id } => {
                     self.save_agent_mapping(author, *agent_id).await?;
+                    None
                 }
                 DeviceGroupPayload::BlockAgent(agent_id) => {
                     self.block_agent(*agent_id).await?;
+                    None
                 }
                 DeviceGroupPayload::UnblockAgent(agent_id) => {
                     self.unblock_agent(*agent_id).await?;
+                    None
                 }
                 DeviceGroupPayload::DeleteForMe(delete) => {
                     self.tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
                         .await?;
+                    Some(SystemNotification::Tombstones {
+                        topic: delete.chat_id.into(),
+                        hashes: BTreeSet::from_iter([delete.message_hash]),
+                        reason: TombstoneReason::DeletedForMe,
+                    })
                 }
-                _ => (),
+                _ => None,
             },
 
             // ACID: TODO: it's not correct to unconditionally save contact info here.
@@ -350,6 +373,7 @@ impl OpProjection {
             | Payload::Inbox(InboxPayload::ContactRequestAck { agent_id, profile }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
+                None
             }
 
             // We define group chats as topics which contain a CreateGroup that makes at least
@@ -359,25 +383,29 @@ impl OpProjection {
             // meaning nobody will ever have admin access.
             //
             // TODO: this needs to be much more clearly defined, see https://hackmd.io/1S2xtZfXTo6N5WinzCnqWw
-            Payload::GroupControl(GroupsArgs { action, .. }) => match action {
-                GroupAction::Create { initial_members } => {
-                    for (_, access) in initial_members {
-                        if *access == p2panda_auth::Access::manage() {
-                            self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
-                                .await?;
-                            break;
+            Payload::GroupControl(GroupsArgs { action, .. }) => {
+                match action {
+                    GroupAction::Create { initial_members } => {
+                        for (_, access) in initial_members {
+                            if *access == p2panda_auth::Access::manage() {
+                                self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
+                                    .await?;
+                                break;
+                            }
                         }
                     }
-                }
-                _ => (),
-            },
+                    _ => (),
+                };
+                None
+            }
 
             _ => {
                 // Nothing to do.
+                None
             }
-        }
+        };
 
-        Ok(())
+        Ok(event)
     }
 
     // === helpers === //
@@ -437,50 +465,43 @@ impl OpProjection {
         // same agent as the deleter. Check every *target* op (the hashes in the
         // payload), not the delete op itself. Body-less/tombstoned copies still
         // carry the author's key in their header, so late joiners can enforce
-        // this too. Targets we haven't synced yet can't be checked here; they
-        // are tombstoned regardless so their body is dropped on arrival.
-        let deleter_agent = self.lookup_contact_by_device_id(author).await?;
+        // this too.
+        //
+        // TODO: Targets we haven't synced yet can't be checked here.
+        // This is only applicable for cross-device deletes,
+        // and is fixed once we have custom processors for partial ordering.
+        //
+        // TODO: Needs to be multi-device aware
         for target in payload.iter() {
             let Some(target_op) = node.op_store.get_operation(target).await? else {
                 continue;
             };
-            let target_agent = self
-                .lookup_contact_by_device_id(DeviceId::from(target_op.header.verifying_key))
-                .await?;
-            if target_agent != deleter_agent {
+            let target_device = DeviceId::from(target_op.header.verifying_key);
+            if target_device != author {
                 tracing::warn!(op = ?hash.aliased(), target = ?target.aliased(), "delete references another author's operation; skipping");
                 return Err(ProjectionError::invalid(format!(
                     "delete references another author's operation: {:?} != {:?}",
-                    target_agent.aliased(),
-                    deleter_agent.aliased()
+                    target_device.aliased(),
+                    author.aliased()
                 )));
             }
         }
 
-        // Mirror the author-side validation: a delete that breaks the
-        // chain-completeness / window rules is ignored (not applied) with a
-        // warning. Full validation needs every referenced op as a valid chat
-        // op; when some are already gone (a partially-applied replay, or a
-        // member that joined after the delete and synced body-less copies) the
-        // chain can't be reconstructed, so we fall back to the per-target
-        // authorship check above.
         let chat_id = ChatId::from_topic_id(topic)?;
         let valid_ops = node.valid_chat_ops(chat_id).await?;
-        if payload.iter().all(|h| valid_ops.contains_key(h)) {
-            let delete_ts: u64 = header.timestamp.into();
-            if let Err(err) = (DeleteCandidate {
-                hashes: payload.clone(),
-                deleter: author,
-                delete_timestamp: delete_ts,
-                self_hash: Some(hash),
-            })
-            .validate(&valid_ops)
-            {
-                tracing::warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
-                return Err(ProjectionError::invalid(format!(
-                    "invalid delete message: {err}"
-                )));
-            }
+        let delete_ts: u64 = header.timestamp.into();
+        if let Err(err) = (DeleteCandidate {
+            hashes: payload.clone(),
+            deleter: author,
+            delete_timestamp: delete_ts,
+            self_hash: Some(hash),
+        })
+        .validate(&valid_ops)
+        {
+            tracing::warn!(?err, op = ?hash.aliased(), "ignoring invalid delete message");
+            return Err(ProjectionError::invalid(format!(
+                "invalid delete message: {err}"
+            )));
         }
 
         Ok(())

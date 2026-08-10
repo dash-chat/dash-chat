@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import { envWithoutWdioLoader } from '../harness-env';
 import type { AgentPlatform, PrepareContext } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -12,7 +13,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const E2E_DIR = path.resolve(__dirname, '..', '..');
 
 const APK_DIR = path.join(ROOT, 'src-tauri/gen/android/app/build/outputs/apk');
-const APP_PACKAGE = 'studio.darksoil.dashchat';
+export const APP_PACKAGE = 'studio.darksoil.dashchat';
 
 // ABIs the e2e APK build covers (--split-per-abi): the gradle flavor that
 // names each APK and the rust target passed to tauri.
@@ -25,6 +26,10 @@ const ABIS: Record<string, { flavor: string; target: string }> = {
 // The device's own loopback port baked into the APK as MAILBOX_URL; onPrepare
 // bridges it to the host's mailbox via adb reverse.
 const DEVICE_MAILBOX_PORT = 3200;
+
+// The device's loopback port baked as PUSH_NOTIFICATIONS_SERVER_URL for the
+// real-device push spec; bridged to the host's push server via adb reverse.
+const DEVICE_PUSH_PORT = 3201;
 
 /** `android` = physical device, `android-emulator` = running emulator. */
 export type AndroidKind = 'android' | 'android-emulator';
@@ -124,12 +129,13 @@ function bootMissingEmulators(needed: number) {
 function ensureUiautomator2Driver() {
 	const installed = execSync(
 		'pnpm exec appium driver list --installed 2>&1 || true',
-		{ encoding: 'utf8', cwd: E2E_DIR },
+		{ encoding: 'utf8', cwd: E2E_DIR, env: envWithoutWdioLoader() },
 	);
 	if (!installed.includes('uiautomator2')) {
 		execSync('pnpm exec appium driver install uiautomator2@4.2.9', {
 			stdio: 'inherit',
 			cwd: E2E_DIR,
+			env: envWithoutWdioLoader(),
 		});
 	}
 }
@@ -193,10 +199,8 @@ function claimDevices(
 	return udids;
 }
 
-/**
- * Tail the app's logcat output on a device and echo it with an agent prefix.
- * Waits on-device for the app process to exist, then follows its pid.
- */
+/** Tail the app's logcat output on a device and echo it with an agent prefix.
+ *  Filters by uid, not pid, so logs survive the app being killed. */
 function startLogcatLogger(agent: string, udid: string): ChildProcess {
 	const proc = spawn(
 		'adb',
@@ -204,12 +208,23 @@ function startLogcatLogger(agent: string, udid: string): ChildProcess {
 			'-s',
 			udid,
 			'shell',
-			`until pid=$(pidof -s ${APP_PACKAGE}); do sleep 1; done; logcat -T 1 --pid=$pid`,
+			`until uid=$(pm list packages -U ${APP_PACKAGE} | sed -n 's/.*uid://p') && ` +
+				'[ -n "$uid" ]; do sleep 1; done; logcat -T 1 --uid=$uid',
 		],
 		{ stdio: ['ignore', 'pipe', 'ignore'] },
 	);
 	echoLinesWithPrefix(agent, proc.stdout!);
 	return proc;
+}
+
+/** Kill the app on `udid` and wait for its process to die. Unlike
+ *  `force-stop`, `stop-app` leaves the package eligible for FCM delivery. */
+export function stopAndroidApp(udid: string): void {
+	execSync(
+		`adb -s ${udid} shell "am stop-app ${APP_PACKAGE} && ` +
+			`until ! pidof ${APP_PACKAGE} >/dev/null; do sleep 0.2; done"`,
+		{ stdio: 'ignore', timeout: 30_000 },
+	);
 }
 
 /**
@@ -260,6 +275,14 @@ export class AndroidPlatform implements AgentPlatform {
 					`_WDIO_CHROMEDRIVER_PORT${slot}`,
 				),
 				'appium:chromedriverExecutableDir': CHROMEDRIVERS_DIR,
+				// Costs a devtools round trip per getContexts call, which `startApp`
+				// polls after every relaunch. It also refines the chromedriver pick out
+				// of CHROMEDRIVERS_DIR, so if a device's WebView major stops matching,
+				// restore it first.
+				'appium:enableWebviewDetailsCollection': false,
+				// terminateApp destroys the webview, so a merely suspended chromedriver
+				// session gets handed back stale on the next context switch.
+				'appium:recreateChromeDriverSessions': true,
 				'appium:adbExecTimeout': 60_000,
 				'appium:newCommandTimeout': 240,
 			} as WebdriverIO.Capabilities,
@@ -282,19 +305,20 @@ export class AndroidPlatform implements AgentPlatform {
 		const targets = new Set(
 			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
 		);
+		const buildEnv: NodeJS.ProcessEnv = envWithoutWdioLoader({
+			MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
+			CARGO_PROFILE_DEV_DEBUG: '0',
+			CARGO_PROFILE_DEV_STRIP: 'symbols',
+		});
+		// Real-device push spec: bake the push-server URL so the device registers
+		// its FCM token with the host's local push server (bridged below).
+		if (ctx.pushPort !== null) {
+			buildEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://127.0.0.1:${DEVICE_PUSH_PORT}`;
+		}
 		execSync(
 			'pnpm tauri android build --debug --apk --split-per-abi ' +
 				`--features e2e-tests -t ${[...targets].join(' ')}`,
-			{
-				cwd: ROOT,
-				stdio: 'inherit',
-				env: {
-					...process.env,
-					MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
-					CARGO_PROFILE_DEV_DEBUG: '0',
-					CARGO_PROFILE_DEV_STRIP: 'symbols',
-				},
-			},
+			{ cwd: ROOT, stdio: 'inherit', env: buildEnv },
 		);
 
 		for (const udid of this.udids.values()) {
@@ -323,6 +347,12 @@ export class AndroidPlatform implements AgentPlatform {
 			execSync(
 				`adb -s ${udid} reverse tcp:${DEVICE_MAILBOX_PORT} tcp:${ctx.mailboxPort}`,
 			);
+			// Same for the push server, when the real-device push spec is enabled.
+			if (ctx.pushPort !== null) {
+				execSync(
+					`adb -s ${udid} reverse tcp:${DEVICE_PUSH_PORT} tcp:${ctx.pushPort}`,
+				);
+			}
 		}
 	}
 
@@ -342,10 +372,12 @@ export class AndroidPlatform implements AgentPlatform {
 
 	async onComplete() {
 		for (const udid of this.udids.values()) {
-			try {
-				execSync(`adb -s ${udid} reverse --remove tcp:${DEVICE_MAILBOX_PORT}`);
-			} catch {
-				/* device gone or reverse already removed */
+			for (const port of [DEVICE_MAILBOX_PORT, DEVICE_PUSH_PORT]) {
+				try {
+					execSync(`adb -s ${udid} reverse --remove tcp:${port}`);
+				} catch {
+					/* device gone or reverse already removed */
+				}
 			}
 		}
 		for (const logger of this.loggers.values()) {

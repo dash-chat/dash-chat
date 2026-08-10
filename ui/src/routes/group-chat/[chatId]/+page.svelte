@@ -18,14 +18,7 @@
 		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
-	import {
-		Navbar,
-		NavbarBackLink,
-		Link,
-		Dialog,
-		DialogButton,
-		useTheme,
-	} from 'konsta/svelte';
+	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -40,7 +33,6 @@
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
-		canDeleteMessageForEveryone,
 		messagePosition,
 		scrollToMessage,
 	} from '$lib/components/messages/message-helpers';
@@ -317,14 +309,6 @@
 														{chatId}
 														searchQuery=""
 														onEdit={() => composer?.editMessage(message)}
-														onDelete={() =>
-															composer?.deleteMessage(
-																message,
-																canDeleteMessageForEveryone(
-																	message,
-																	myDeviceId,
-																),
-															)}
 														onReply={() =>
 															composer?.replyToMessage(
 																message,
@@ -363,8 +347,6 @@
 														showSenderName={position === 'first' ||
 															position === 'single'}
 														showAvatar
-														onDelete={() =>
-															composer?.deleteMessage(message, false)}
 														onReply={() =>
 															composer?.replyToMessage(
 																message,

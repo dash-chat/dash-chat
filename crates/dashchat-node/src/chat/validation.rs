@@ -2,6 +2,9 @@ mod delete;
 mod edit;
 mod reply;
 
+#[cfg(test)]
+pub(crate) mod test_common;
+
 pub use delete::*;
 pub use edit::*;
 pub use reply::*;

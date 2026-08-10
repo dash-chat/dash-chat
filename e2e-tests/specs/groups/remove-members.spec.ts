@@ -7,7 +7,10 @@ describe('Removing group members', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 
 		await agent1.enablePreviewFeatures();
 		await agent2.enablePreviewFeatures();
@@ -52,8 +55,8 @@ describe('Removing group members', () => {
 		await agent2.homePage.chatListItem('Test Group').click();
 		await agent2.groupChatPage.ready();
 
-		const systemMessage = agent2.$(
-			'[data-testid="group-chat-system-message-group_member_removed"]',
+		const systemMessage = agent2.groupChatPage.messages.systemMessage(
+			'group_member_removed',
 		);
 		await expect(systemMessage).toBeExisting();
 		const expectedText = await agent2.tr('someoneRemovedYouFromTheGroup', {

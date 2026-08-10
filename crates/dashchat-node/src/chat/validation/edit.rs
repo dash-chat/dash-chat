@@ -189,43 +189,8 @@ impl ValidChatOps {
 mod tests {
     use std::collections::HashMap;
 
-    use super::super::ChatOp;
+    use super::super::test_common::*;
     use super::*;
-
-    fn device(n: u8) -> DeviceId {
-        DeviceId::from(p2panda::SigningKey::from_bytes(&[n; 32]).verifying_key())
-    }
-
-    fn hash(n: u8) -> Hash {
-        Hash::from_bytes([n; 32])
-    }
-
-    fn message(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Message,
-        }
-    }
-
-    fn edit(author: DeviceId, timestamp: u64, seq_num: u64, target: Hash) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Edit(target),
-        }
-    }
-
-    fn other(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
-        ChatOp {
-            author,
-            timestamp,
-            seq_num,
-            kind: ChatOpKind::Other,
-        }
-    }
 
     #[test]
     fn valid_first_edit() {

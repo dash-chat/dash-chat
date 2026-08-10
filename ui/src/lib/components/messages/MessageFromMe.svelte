@@ -8,9 +8,11 @@
 		type Message,
 		type MessagesStore,
 		hasBody,
+		isDeleted,
 	} from 'dash-chat-stores';
 	import { type MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
+	import DeletedMessage from './DeletedMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
@@ -19,6 +21,7 @@
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import ReplyQuote from './ReplyQuote.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
+	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -33,7 +36,6 @@
 		searchQuery,
 		chatId,
 		onEdit,
-		onDelete,
 		onReply,
 		replyAuthorName,
 		onNavigateToMessage,
@@ -44,7 +46,6 @@
 		chatId: ChatId;
 		searchQuery: string;
 		onEdit?: () => void;
-		onDelete?: () => void;
 		onReply?: () => void;
 		/** Display name of the author quoted by this message's reply. */
 		replyAuthorName?: string;
@@ -52,6 +53,7 @@
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+	const deleted = $derived(isDeleted(message.content));
 
 	const reactions = $derived(
 		hasBody(message.content) ? message.content.reactions : {},
@@ -65,6 +67,7 @@
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
+	let confirmingDelete = $state(false);
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (!hasBody(message.content)) return;
@@ -122,31 +125,40 @@
 				{myDeviceId}
 				{onEdit}
 				{onReply}
-				{onDelete}
+				onDelete={() => (confirmingDelete = true)}
 				reverse
 			/>
 		{/if}
-		<Card
-			raised
-			contentWrapPadding="p-2"
-			class={`message my-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-		>
-			{#if message.reply}
-				<ReplyQuote
-					reply={message.reply}
-					authorName={replyAuthorName}
-					mine
-					onNavigate={onNavigateToMessage}
+		{#if deleted}
+			<DeletedMessage {message} {position} {myDeviceId} />
+		{:else}
+			<Card
+				raised
+				contentWrapPadding="p-2"
+				colors={{
+					bgIos: 'bg-brand-primary',
+					bgMaterial: 'bg-brand-primary',
+					textIos: 'text-white',
+					textMaterial: 'text-white',
+				}}
+				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+			>
+				{#if message.reply}
+					<ReplyQuote
+						reply={message.reply}
+						authorName={replyAuthorName}
+						mine
+						onNavigate={onNavigateToMessage}
+					/>
+				{/if}
+				<MessageContent
+					{message}
+					{searchQuery}
+					senderName={m.you()}
+					metadata={isLast || editHistory.length > 0 ? metadata : undefined}
 				/>
-			{/if}
-			<MessageContent
-				{message}
-				{searchQuery}
-				senderName={m.you()}
-				deletedText={m.youDeletedThisMessage()}
-				metadata={isLast || editHistory.length > 0 ? metadata : undefined}
-			/>
-		</Card>
+			</Card>
+		{/if}
 		{#if Object.keys(reactions).length > 0}
 			<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
 				<Reactions
@@ -165,7 +177,7 @@
 		{myDeviceId}
 		{onEdit}
 		{onReply}
-		{onDelete}
+		onDelete={() => (confirmingDelete = true)}
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
@@ -175,37 +187,9 @@
 		{myDeviceId}
 		{onEdit}
 		{onReply}
-		{onDelete}
+		onDelete={() => (confirmingDelete = true)}
 		bind:point={contextMenuPoint}
 	/>
 {/if}
 
-<style>
-	:global(.my-message) {
-		align-self: end;
-		background-color: var(--color-brand-primary);
-		color: white;
-		margin: 0;
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-
-	:global(.my-message.first-message) {
-		border-end-end-radius: 4px;
-	}
-	:global(.my-message.middle-message) {
-		border-start-end-radius: 4px;
-		border-end-end-radius: 4px;
-	}
-	:global(.my-message.last-message) {
-		border-start-end-radius: 4px;
-	}
-
-	:global(.my-message.offline-message) {
-		border: 3px dashed rgb(255, 182, 193);
-		background-clip: padding-box;
-	}
-	:global(.my-message.offline-message > div) {
-		padding: calc(0.5rem - 2px) !important;
-	}
-</style>
+<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />

@@ -7,6 +7,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
 	ChatSummary,
@@ -41,6 +42,7 @@ export class GroupChatStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		public client: IGroupChatClient,
 		public chatId: ChatId,
 		messagesClient: IMessagesClient,
@@ -48,6 +50,7 @@ export class GroupChatStore {
 		this.messages = new MessagesStore(
 			logsStore,
 			contactsStore,
+			tombstoneStore,
 			reactive(async () => chatId),
 			messagesClient,
 		);

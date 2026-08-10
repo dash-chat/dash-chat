@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Block, Dialog, DialogButton, useTheme } from 'konsta/svelte';
+	import { Sheet, Block, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
@@ -41,6 +41,7 @@
 	import EditingBanner from '$lib/components/messages/composer/EditingBanner.svelte';
 	import ReplyBanner from '$lib/components/messages/composer/ReplyBanner.svelte';
 	import DiscardEditButton from '$lib/components/messages/composer/DiscardEditButton.svelte';
+	import DiscardDraftDialog from '$lib/components/messages/composer/DiscardDraftDialog.svelte';
 
 	interface Props {
 		value?: string;
@@ -76,21 +77,15 @@
 	let replying = $state<Message | null>(null);
 	/** Display name of the author being replied to, for the banner. */
 	let replyingToName = $state('');
-	/** Edit requested while a draft was present, awaiting discard confirmation. */
-	let pendingEdit = $state<Message | null>(null);
-	/** Message awaiting delete confirmation. */
-	let deleting = $state<Message | null>(null);
-	/** Whether the pending delete may also be deleted for everyone (my own
-	 * message, within the delete window); otherwise only delete-for-me is
-	 * offered. */
-	let deletingForEveryone = $state(false);
+	let discardDialog: ReturnType<typeof DiscardDraftDialog> | undefined =
+		$state();
 
 	/** Switch the composer to editing `message`'s text instead of sending a
 	 * new message. Media attachments are disabled while editing. Asks to
 	 * discard first when a draft (text or staged media) would be lost. */
 	export function editMessage(message: Message) {
 		if (!editing && hasContent) {
-			pendingEdit = message;
+			discardDialog?.confirm(message);
 			return;
 		}
 		startEdit(message);
@@ -104,10 +99,7 @@
 		value = message.content.message;
 	}
 
-	function discardDraftAndEdit() {
-		const message = pendingEdit;
-		pendingEdit = null;
-		if (!message) return;
+	function discardDraftAndEdit(message: Message) {
 		media = undefined;
 		startEdit(message);
 	}
@@ -148,40 +140,6 @@
 
 	function cancelReply() {
 		replying = null;
-	}
-
-	/** Open the delete confirmation dialog for `message`. Delete-for-me is
-	 * always offered; delete-for-everyone only when `canDeleteForEveryone`. */
-	export function deleteMessage(
-		message: Message,
-		canDeleteForEveryone: boolean,
-	) {
-		deleting = message;
-		deletingForEveryone = canDeleteForEveryone;
-	}
-
-	async function confirmDeleteForEveryone() {
-		const target = deleting;
-		deleting = null;
-		if (!target) return;
-		try {
-			await store.deleteMessageForEveryone(target);
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to delete message', e);
-		}
-	}
-
-	async function confirmDeleteForMe() {
-		const target = deleting;
-		deleting = null;
-		if (!target) return;
-		try {
-			await store.deleteMessageForMe(target);
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to delete message for me', e);
-		}
 	}
 
 	function toggleMediaPanel() {
@@ -427,76 +385,7 @@
 	/>
 {/if}
 
-<Dialog
-	opened={pendingEdit !== null}
-	onBackdropClick={() => (pendingEdit = null)}
-	title={m.discardDraftTitle()}
-	data-testid="composer-discard-draft-dialog"
->
-	<span>{m.discardDraftDescription()}</span>
-	{#snippet buttons()}
-		<DialogButton
-			data-testid="composer-discard-draft-cancel"
-			onClick={() => (pendingEdit = null)}
-		>
-			{m.cancel()}
-		</DialogButton>
-		<DialogButton
-			data-testid="composer-discard-draft-confirm"
-			onClick={discardDraftAndEdit}
-		>
-			{m.discard()}
-		</DialogButton>
-	{/snippet}
-</Dialog>
-
-<Dialog
-	opened={deleting !== null}
-	onBackdropClick={() => (deleting = null)}
-	title={m.deleteMessageTitle()}
-	data-testid="composer-delete-message-dialog"
->
-	{#snippet buttons()}
-		{#if deletingForEveryone}
-			<div class="flex flex-col w-full">
-				<DialogButton
-					class="!text-red-500"
-					data-testid="composer-delete-confirm"
-					onClick={confirmDeleteForEveryone}
-				>
-					{m.deleteForEveryone()}
-				</DialogButton>
-				<DialogButton
-					class="!text-red-500"
-					data-testid="composer-delete-for-me-confirm"
-					onClick={confirmDeleteForMe}
-				>
-					{m.deleteForMe()}
-				</DialogButton>
-				<DialogButton
-					data-testid="composer-delete-cancel"
-					onClick={() => (deleting = null)}
-				>
-					{m.cancel()}
-				</DialogButton>
-			</div>
-		{:else}
-			<DialogButton
-				data-testid="composer-delete-cancel"
-				onClick={() => (deleting = null)}
-			>
-				{m.cancel()}
-			</DialogButton>
-			<DialogButton
-				class="!text-red-500"
-				data-testid="composer-delete-for-me-confirm"
-				onClick={confirmDeleteForMe}
-			>
-				{m.deleteForMe()}
-			</DialogButton>
-		{/if}
-	{/snippet}
-</Dialog>
+<DiscardDraftDialog bind:this={discardDialog} onConfirm={discardDraftAndEdit} />
 
 <Sheet
 	class="pb-safe text-lg"

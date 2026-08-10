@@ -121,19 +121,20 @@ export async function pickNativeFiles(opts: {
 }
 
 /**
- * Open the native file picker and resolve with the chosen files, or `null` if
- * the dialog was dismissed. The `<input>` is appended (some webviews require it
- * to be in the document for `click()`) and removed once the pick settles.
+ * Open an `<input type=file>` configured with `attrs` and resolve with the
+ * files it yields, or `null` if the dialog was dismissed.
  */
-export function pickFiles(opts: {
+export function openFileInput(attrs: {
 	accept?: string;
 	multiple?: boolean;
+	capture?: boolean;
 }): Promise<FileList | null> {
 	return new Promise(resolve => {
 		const input = document.createElement('input');
 		input.type = 'file';
-		if (opts.accept) input.accept = opts.accept;
-		input.multiple = opts.multiple ?? false;
+		if (attrs.accept) input.accept = attrs.accept;
+		if (attrs.capture) input.setAttribute('capture', '');
+		input.multiple = attrs.multiple ?? false;
 		input.style.display = 'none';
 
 		const finish = (files: FileList | null) => {
@@ -146,4 +147,15 @@ export function pickFiles(opts: {
 		document.body.appendChild(input);
 		input.click();
 	});
+}
+
+/**
+ * Open the native file picker and resolve with the chosen files, or `null` if
+ * the dialog was dismissed.
+ */
+export function pickFiles(opts: {
+	accept?: string;
+	multiple?: boolean;
+}): Promise<FileList | null> {
+	return openFileInput(opts);
 }

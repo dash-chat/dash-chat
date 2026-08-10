@@ -11,7 +11,6 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
-	import { canEditMessage } from './message-helpers';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
@@ -43,11 +42,6 @@
 
 	let open = $state<'reactions' | 'menu' | null>(null);
 
-	// Depends on `open` so the 24h edit window is re-checked each time the
-	// menu opens, not once at mount.
-	const canEdit = $derived(
-		open !== null && canEditMessage(message, myDeviceId),
-	);
 	let expanded = $state(false);
 	let reactEl = $state<HTMLElement>();
 	let menuEl = $state<HTMLElement>();
@@ -67,9 +61,7 @@
 		if (open !== null && e.key === 'Escape') close();
 	}
 
-	// The popover anchors are fixed, so it would visibly detach from a
-	// scrolling message — dismiss instead, like Signal.
-	function onScroll() {
+	function onUserScroll() {
 		if (open !== null) close();
 	}
 
@@ -108,7 +100,11 @@
 	}
 </script>
 
-<svelte:window onkeydowncapture={onKeydown} onscrollcapture={onScroll} />
+<svelte:window
+	onkeydowncapture={onKeydown}
+	onwheelcapture={onUserScroll}
+	ontouchmovecapture={onUserScroll}
+/>
 
 <div
 	class="absolute {reverse
@@ -174,11 +170,12 @@
 		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
 	>
 		<MessageActionsMenu
-			{canEdit}
+			{message}
+			{myDeviceId}
 			onEdit={edit}
 			onReply={onReply ? reply : undefined}
 			onCopy={copy}
-			onDelete={onDelete ? del : undefined}
+			onDelete={del}
 		/>
 	</Popover>
 </div>

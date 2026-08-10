@@ -65,7 +65,7 @@ async fn delete_for_me_tombstones_locally_without_affecting_peer() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
@@ -147,7 +147,7 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
@@ -225,7 +225,7 @@ async fn delete_for_me_hides_edits_arriving_after_the_delete() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
@@ -303,7 +303,7 @@ async fn delete_for_me_of_an_already_deleted_for_everyone_message() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());

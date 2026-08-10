@@ -6,7 +6,10 @@ describe('QR code image upload', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 	});
 
 	it('creates profiles on both agents', async () => {

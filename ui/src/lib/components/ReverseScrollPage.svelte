@@ -23,6 +23,7 @@
 	import { watcher } from 'signalium';
 	import { insetTarget } from 'tauri-plugin-virtual-keyboard';
 	import { findNavbarBg } from '$lib/utils/konsta';
+	import { safeAreaInsets } from '$lib/utils/safe-area';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 
 	interface PageColors {
@@ -141,36 +142,38 @@
 
 			// In column-reverse, scrollTop=0 is the visual bottom — the latest
 			// message sits right under the navbar, so the bg should be opaque to
-			// keep them visually separated. As the user scrolls up toward the top
-			// of the content (welcome card / avatar area), the bg fades out so the
-			// navbar blends with the welcome surface.
-			// The top of the scroll range is the inner div's navbar-height
-			// padding, not content — subtract it so a chat whose content barely
-			// overflows (slack ≤ padding) still reads as nothing-under-navbar.
+			// keep them visually separated. At the top of the scroll range the
+			// inner div's navbar-height padding is all that sits behind the
+			// navbar, so nothing shows through and the bg fades out to blend with
+			// the welcome surface.
 			// WebKit uses negative scrollTop in column-reverse; abs() normalises.
 			//
 			// Keyboard animations make DOM geometry lie (the show reflow is
 			// deferred to the end of the glide), so compute against the viewport
-			// height the layout is heading to: correct clientHeight by the gap
-			// between the applied inset (the CSS var) and the plugin's target.
-			// Every recompute then gives the same answer no matter where in the
-			// glide it runs. inner's rect height stands in for scrollHeight —
-			// equal whenever content overflows, and translation transforms don't
-			// affect it.
+			// height the layout is heading to. The reserved bottom space is
+			// max(inset, safe-area) — the keyboard and the home indicator are
+			// alternatives, not additions — so the shrink is the delta between
+			// those maxima; against the raw inset it overshoots by the safe area
+			// and the bg flips when the glide settles. inner's rect height stands
+			// in for scrollHeight — equal whenever content overflows, and
+			// translation transforms don't affect it.
 			const appliedInset =
 				parseFloat(
 					document.documentElement.style.getPropertyValue(
 						'--keyboard-inset-height',
 					),
 				) || 0;
-			const clientHeight = node.clientHeight + appliedInset - insetTarget.value;
+			const safeBottom = safeAreaInsets().bottom;
+			const clientHeight =
+				node.clientHeight +
+				Math.max(appliedInset, safeBottom) -
+				Math.max(insetTarget.value, safeBottom);
 			const maxScroll = Math.max(
 				inner.getBoundingClientRect().height - clientHeight,
 				0,
 			);
-			const navbarHeight = observedNavbar?.offsetHeight ?? 0;
 			navbarBgEl.style.opacity =
-				maxScroll - Math.abs(node.scrollTop) - navbarHeight > 10 ? '1' : '0';
+				maxScroll - Math.abs(node.scrollTop) > 10 ? '1' : '0';
 		};
 
 		// Coalesce mutation-driven updates to one per frame.

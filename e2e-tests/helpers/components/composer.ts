@@ -34,6 +34,17 @@ export class Composer extends TestHelper {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
 	}
 
+	/** The text currently in the composer. Read off the DOM property rather
+	 * than with `getValue()`: on a mobile session that reads the `value`
+	 * attribute, which a `<textarea>` does not have. */
+	inputText(): Promise<string> {
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector<HTMLTextAreaElement>(sel)?.value ?? '',
+			tid('message-input-textarea'),
+		);
+	}
+
 	/** Wait for the staged-media UI: the inline preview on desktop, the
 	 * full-screen staged-media page on mobile. */
 	async waitForStagedMedia(): Promise<void> {
@@ -92,8 +103,7 @@ export class Composer extends TestHelper {
 				? 'message-input-attach-photos'
 				: 'message-input-attach-file';
 		return this.agent.execute(
-			(sel: string) =>
-				document.querySelector(sel)?.textContent?.trim() ?? '',
+			(sel: string) => document.querySelector(sel)?.textContent?.trim() ?? '',
 			tid(testid),
 		);
 	}
@@ -126,7 +136,7 @@ export class Composer extends TestHelper {
 		await this.waitForStagedMedia();
 	}
 
-	/** Attach a zero-filled file of exactly `sizeBytes` to test the size cap. */
+	/** Attach a zero-filled file of exactly `sizeBytes`. */
 	async attachFileOfSize(sizeBytes: number, name = 'big.bin'): Promise<void> {
 		await this.messageInput.waitForExist();
 		await this.agent.execute(
@@ -137,6 +147,26 @@ export class Composer extends TestHelper {
 			},
 			sizeBytes,
 			name,
+		);
+		await this.waitForStagedMedia();
+	}
+
+	/** Stage a synthesized noise JPEG named `${label}.jpg` at the given pixel
+	 * size. Encoding is async in the page, so the staged-media wait is what
+	 * confirms the paste actually landed. */
+	async attachNoisePhoto(
+		label: string,
+		width: number,
+		height: number,
+	): Promise<void> {
+		await this.messageInput.waitForExist();
+		await this.agent.execute(
+			async (name: string, w: number, h: number) => {
+				await window.__test.pasteNoisePhoto({ name, width: w, height: h });
+			},
+			`${label}.jpg`,
+			width,
+			height,
 		);
 		await this.waitForStagedMedia();
 	}
@@ -247,7 +277,12 @@ export class Composer extends TestHelper {
 	 * the way a desktop user sends. Composer must already have content. */
 	async send(): Promise<void> {
 		if (await this.stagedMediaPage.isExisting()) {
-			await this.stagedMediaPage.$(tid('message-input-send')).click();
+			// The staged-media page's send button (the composer's is covered by the
+			// overlay and shares its testid) sits in a virtual-keyboard-composited
+			// surface, so a WDA native tap misses it — click it via the DOM instead.
+			await this.domClick(
+				`${tid('staged-media-page')} ${tid('message-input-send')}`,
+			);
 			return;
 		}
 		if (await this.sendButton.isExisting()) {

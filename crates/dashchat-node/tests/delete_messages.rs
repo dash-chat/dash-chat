@@ -109,7 +109,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -274,7 +274,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
         .await;
     carol
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     bobbi
@@ -379,7 +379,7 @@ async fn invalid_deletes_are_rejected() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
@@ -466,7 +466,7 @@ async fn mixed_hash_delete_cannot_censor_another_author() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());
@@ -513,4 +513,219 @@ async fn mixed_hash_delete_cannot_censor_another_author() {
             Some(true)
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_cannot_censor_unsynced_message_from_another_author() {
+    setup();
+    let poll = PollConfig::default();
+    let mb = TestMailbox::from_env();
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let mallory = TestNode::new(config.clone(), "mallory")
+        .await
+        .add_mailbox(&mb)
+        .await;
+
+    for peer in [&bobbi, &mallory] {
+        alice
+            .behavior()
+            .initiate_and_establish_contact(peer)
+            .await
+            .unwrap();
+    }
+
+    let chat = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+            *mallory.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    for peer in [&bobbi, &mallory] {
+        peer.behavior()
+            .accept_next_group_invitation()
+            .await
+            .unwrap();
+    }
+    poll.consistency([&alice, &bobbi, &mallory], &[chat.into()])
+        .await
+        .unwrap();
+
+    // Bobbi goes offline and writes the message that mallory will censor, so it
+    // exists on no other node.
+    bobbi.clear_mailboxes().await;
+    let msg = bobbi
+        .send_message_raw(chat, "bobbi's message".into())
+        .await
+        .unwrap();
+
+    mallory
+        .delete_message_raw(chat, std::iter::once(msg.hash()).collect())
+        .await
+        .unwrap();
+
+    // A legitimate operation afterwards gives us a positive signal to wait on.
+    mallory
+        .send_message_raw(chat, "after".into())
+        .await
+        .unwrap();
+    poll.consistency([&alice, &mallory], &[chat.into()])
+        .await
+        .unwrap();
+
+    // Bobbi comes back; his message propagates to alice for the first time.
+    bobbi.add_mailbox(&mb).await;
+    poll.wait_for(|| async {
+        match payload_present(&alice, *chat, bobbi.device_id(), msg.hash()).await {
+            Some(_) => Ok(()),
+            None => Err("alice has not synced bobbi's message"),
+        }
+    })
+    .await
+    .unwrap();
+
+    // The harm: alice drops the body on arrival and never renders the message.
+    assert_eq!(
+        payload_present(&alice, *chat, bobbi.device_id(), msg.hash()).await,
+        Some(true),
+        "alice dropped the body of a message censored by a delete she could never validate"
+    );
+    assert!(
+        alice
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .iter()
+            .any(|m| m.content.message() == "bobbi's message"),
+        "bobbi's message is missing from alice's chat"
+    );
+
+    // The mechanism: a tombstone recorded for a target alice could not attribute,
+    // which nothing ever removes.
+    assert!(
+        !alice
+            .projection
+            .is_tombstoned(*chat, msg.hash())
+            .await
+            .unwrap(),
+        "alice tombstoned a message she has never synced, authored by someone other than the deleter"
+    );
+
+    // The control: bobbi held the target all along, so the per-target authorship
+    // check rejected the very same delete on his node.
+    poll.wait_for(|| async {
+        let seen = bobbi
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .iter()
+            .any(|m| m.content.message() == "after");
+        seen.then_some(()).ok_or("bobbi has not synced the delete")
+    })
+    .await
+    .unwrap();
+    assert!(
+        !bobbi
+            .projection
+            .is_tombstoned(*chat, msg.hash())
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        payload_present(&bobbi, *chat, bobbi.device_id(), msg.hash()).await,
+        Some(true)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn junk_hash_in_payload_cannot_disable_delete_chain_validation() {
+    let poll = PollConfig::default();
+    let mb = TestMailbox::from_env();
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mb)
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_topic(bobbi.agent_id());
+
+    let msg = alice
+        .send_message_raw(chat, "my password is hunter2".into())
+        .await
+        .unwrap();
+    let edit = alice
+        .edit_message(chat, msg.hash(), "oops, ignore that")
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    let redacted = bobbi.valid_edits(chat).await.unwrap();
+    assert_eq!(redacted.len(), 1);
+    assert_eq!(redacted[0].text, "oops, ignore that");
+
+    // Control: deleting the tip edit alone is a partial chain, and every hash
+    // resolves, so full validation runs and rejects it.
+    alice
+        .delete_message_raw(chat, maplit::btreeset![edit.hash()])
+        .await
+        .unwrap();
+    alice.send_message_raw(chat, "after".into()).await.unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+    assert!(
+        !bobbi
+            .projection
+            .is_tombstoned(*chat, edit.hash())
+            .await
+            .unwrap(),
+        "a partial-chain delete was applied even with every hash resolvable"
+    );
+
+    // The same partial chain, plus one hash that is not a chat op. Nothing else
+    // about the delete changes.
+    let not_a_chat_op = Hash::from_bytes([0xCD; 32]);
+    alice
+        .delete_message_raw(chat, [edit.hash(), not_a_chat_op].into_iter().collect())
+        .await
+        .unwrap();
+    alice
+        .send_message_raw(chat, "after the junk hash".into())
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    assert!(
+        !bobbi
+            .projection
+            .is_tombstoned(*chat, edit.hash())
+            .await
+            .unwrap(),
+        "a junk hash in the payload disabled chain-completeness validation"
+    );
 }

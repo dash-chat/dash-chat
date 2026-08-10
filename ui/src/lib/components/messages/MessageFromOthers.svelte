@@ -3,6 +3,7 @@
 	import {
 		fullName,
 		hasBody,
+		isDeleted,
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
@@ -13,6 +14,7 @@
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
+	import DeletedMessage from './DeletedMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
@@ -20,6 +22,7 @@
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import ReplyQuote from './ReplyQuote.svelte';
+	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -37,7 +40,6 @@
 		sender,
 		showSenderName = false,
 		showAvatar = false,
-		onDelete,
 		onReply,
 		replyAuthorName,
 		onNavigateToMessage,
@@ -50,7 +52,6 @@
 		sender: Profile | undefined;
 		showSenderName?: boolean;
 		showAvatar?: boolean;
-		onDelete?: () => void;
 		onReply?: () => void;
 		/** Display name of the author quoted by this message's reply. */
 		replyAuthorName?: string;
@@ -58,6 +59,7 @@
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+	const deleted = $derived(isDeleted(message.content));
 	const senderDisplayName = $derived(
 		sender && sender.name ? fullName(sender) : m.unknownSender(),
 	);
@@ -74,6 +76,7 @@
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
+	let confirmingDelete = $state(false);
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (!hasBody(message.content)) return;
@@ -120,7 +123,12 @@
 <div class="group flex justify-start" use:longpress={{ onLongPress }}>
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile && hasBody(message.content)}
-			<MessageHoverToolbar {message} {myDeviceId} {onReply} {onDelete} />
+			<MessageHoverToolbar
+				{message}
+				{myDeviceId}
+				{onReply}
+				onDelete={() => (confirmingDelete = true)}
+			/>
 		{/if}
 		<div class="row items-end gap-2">
 			{#if showAvatar}
@@ -134,27 +142,35 @@
 					<div class="shrink-0" style="width: 2rem"></div>
 				{/if}
 			{/if}
-			<Card
-				raised
-				contentWrapPadding="p-2"
-				class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-			>
-				{#if message.reply}
-					<ReplyQuote
-						reply={message.reply}
-						authorName={replyAuthorName}
-						onNavigate={onNavigateToMessage}
-					/>
-				{/if}
-				<MessageContent
+			{#if deleted}
+				<DeletedMessage
 					{message}
-					{searchQuery}
+					{position}
+					{myDeviceId}
 					senderName={senderDisplayName}
-					{showSenderName}
-					deletedText={m.thisMessageWasDeleted()}
-					metadata={isLast || editHistory.length > 0 ? metadata : undefined}
 				/>
-			</Card>
+			{:else}
+				<Card
+					raised
+					contentWrapPadding="p-2"
+					class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+				>
+					{#if message.reply}
+						<ReplyQuote
+							reply={message.reply}
+							authorName={replyAuthorName}
+							onNavigate={onNavigateToMessage}
+						/>
+					{/if}
+					<MessageContent
+						{message}
+						{searchQuery}
+						senderName={senderDisplayName}
+						{showSenderName}
+						metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+					/>
+				</Card>
+			{/if}
 		</div>
 		{#if Object.keys(reactions).length > 0}
 			<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
@@ -173,7 +189,7 @@
 		{message}
 		{myDeviceId}
 		{onReply}
-		{onDelete}
+		onDelete={() => (confirmingDelete = true)}
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
@@ -182,33 +198,9 @@
 		{message}
 		{myDeviceId}
 		{onReply}
-		{onDelete}
+		onDelete={() => (confirmingDelete = true)}
 		bind:point={contextMenuPoint}
 	/>
 {/if}
 
-<style>
-	:global(.others-message) {
-		margin: 0;
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-	:global(.others-message.first-message) {
-		border-end-start-radius: 4px;
-	}
-	:global(.others-message.middle-message) {
-		border-start-start-radius: 4px;
-		border-end-start-radius: 4px;
-	}
-	:global(.others-message.last-message) {
-		border-start-start-radius: 4px;
-	}
-
-	:global(.others-message.offline-message) {
-		border: 3px dashed rgb(255, 182, 193);
-		background-clip: padding-box;
-	}
-	:global(.others-message.offline-message > div) {
-		padding: calc(0.5rem - 2px) !important;
-	}
-</style>
+<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />

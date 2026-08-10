@@ -6,11 +6,36 @@ import { fileURLToPath } from 'node:url';
 import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import { killAllE2EProcesses, killAndWait, killPortHolders } from '../cleanup';
+import { envWithoutWdioLoader } from '../harness-env';
 import { waitForPortFree, waitForPortListening } from '../wait-for-port';
 import type { AgentPlatform } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..', '..');
+
+/** The desktop agent drives the app through `tauri-driver`, which targets
+ *  Linux/WebKitGTK (see the GTK/XDG env in beforeSession). tauri-driver has no
+ *  macOS backend — it exits with "not supported on this platform" — so a desktop
+ *  agent can't run on a Mac; pair iOS agents with each other (PLATFORMS=ios,ios)
+ *  or run desktop on Linux. */
+function assertTauriDriverAvailable() {
+	if (process.platform === 'darwin') {
+		throw new Error(
+			'Desktop e2e agents are not supported on macOS: tauri-driver has no macOS ' +
+				'WebView WebDriver backend and the desktop path targets Linux/WebKitGTK. ' +
+				'On a Mac run iOS-only (PLATFORMS=ios) or two devices (PLATFORMS=ios,ios); ' +
+				'the desktop agent must run on Linux.',
+		);
+	}
+	try {
+		execSync('command -v tauri-driver', { stdio: 'ignore' });
+	} catch {
+		throw new Error(
+			'tauri-driver not found — the desktop agent drives the app through it. ' +
+				'Run inside the nix dev shell, or install it with `cargo install tauri-driver`.',
+		);
+	}
+}
 
 interface DesktopAgent {
 	slot: number;
@@ -25,6 +50,7 @@ export class DesktopPlatform implements AgentPlatform {
 	private agents: DesktopAgent[];
 
 	constructor(readonly slots: number[]) {
+		assertTauriDriverAvailable();
 		this.agents = slots.map(slot => ({
 			slot,
 			port: allocatePinnedPort(`_WDIO_PORT${slot}`),
@@ -41,8 +67,7 @@ export class DesktopPlatform implements AgentPlatform {
 		return {
 			port: agent.port,
 			capabilities: {
-				platformName:
-					process.platform === 'darwin' ? 'mac' : process.platform,
+				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
 				'tauri:options': {
 					application: path.join(ROOT, 'target', 'debug', 'dash-chat'),
 				},
@@ -54,6 +79,10 @@ export class DesktopPlatform implements AgentPlatform {
 		execSync('pnpm tauri build --debug --no-bundle --features e2e-tests', {
 			cwd: ROOT,
 			stdio: 'inherit',
+			env: envWithoutWdioLoader({
+				VITE_E2E: 'true',
+				CARGO_PROFILE_DEV_DEBUG: '0',
+			}),
 		});
 		// Kill any leftover processes from previous interrupted runs.
 		killAllE2EProcesses();

@@ -43,7 +43,10 @@
 			<p class="text-center text-sm quiet">{m.shareLinkWarning()}</p>
 
 			{#if isIos}
-				<div class="rounded-2xl bg-white px-4 py-3">
+				<div
+					class="rounded-2xl bg-ios-light-surface-1 px-4 py-3 dark:bg-ios-dark-surface-1"
+					data-testid="qr-link-sheet-link"
+				>
 					<span class="break-all text-start text-sm">{link}</span>
 				</div>
 			{:else}

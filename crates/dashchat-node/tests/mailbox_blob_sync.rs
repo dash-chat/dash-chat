@@ -91,7 +91,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     // Establish contact while both are online (no media exchanged yet).
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -296,7 +296,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
     // Establish contact while both are online (no media yet), then bobbi leaves.
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     let chat = alice.direct_chat_topic(bobbi.agent_id());

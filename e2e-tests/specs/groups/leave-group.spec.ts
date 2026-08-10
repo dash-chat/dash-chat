@@ -8,7 +8,10 @@ describe('Leaving group', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 
 		await agent1.enablePreviewFeatures();
 		await agent2.enablePreviewFeatures();
@@ -47,8 +50,8 @@ describe('Leaving group', () => {
 		await expect(agent1.groupChatPage.composer.messageInput).not.toBeExisting();
 
 		// System message records the departure
-		const systemMessage = agent1.$(
-			'[data-testid="group-chat-system-message-group_member_removed"]',
+		const systemMessage = agent1.groupChatPage.messages.systemMessage(
+			'group_member_removed',
 		);
 		await expect(systemMessage).toBeExisting();
 		const expectedText = await agent1.tr('youLeftTheGroup');

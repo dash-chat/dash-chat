@@ -2,7 +2,6 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { Popover } from 'konsta/svelte';
 	import { type Message, type DeviceId, hasBody } from 'dash-chat-stores';
-	import { canEditMessage } from './message-helpers';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
 	import { writeText } from '$lib/utils/clipboard';
 	import { showToast } from '$lib/utils/toasts';
@@ -27,12 +26,6 @@
 		point = $bindable(),
 	}: Props = $props();
 
-	// Depends on `point` so the 24h edit window is re-checked each time the
-	// menu opens, not once at mount.
-	const canEdit = $derived(
-		point !== undefined && canEditMessage(message, myDeviceId),
-	);
-
 	let pointAnchorEl = $state<HTMLElement>();
 
 	$effect(() => {
@@ -50,9 +43,7 @@
 		if (point !== undefined && e.key === 'Escape') close();
 	}
 
-	// The popover anchor is fixed, so it would visibly detach from a
-	// scrolling message — dismiss instead, like Signal.
-	function onScroll() {
+	function onUserScroll() {
 		if (point !== undefined) close();
 	}
 
@@ -86,7 +77,11 @@
 	}
 </script>
 
-<svelte:window onkeydowncapture={onKeydown} onscrollcapture={onScroll} />
+<svelte:window
+	onkeydowncapture={onKeydown}
+	onwheelcapture={onUserScroll}
+	ontouchmovecapture={onUserScroll}
+/>
 
 {#if point}
 	<!-- Viewport-pixel anchor; --k-safe-area-top zeroes out the space above
@@ -110,11 +105,13 @@
 		class="!w-auto !min-w-44 [&>div]:!rounded-2xl"
 	>
 		<MessageActionsMenu
-			{canEdit}
+			{message}
+			{myDeviceId}
 			onEdit={edit}
 			onReply={onReply ? reply : undefined}
 			onCopy={copy}
-			onDelete={onDelete ? del : undefined}
+			onDelete={del}
+			testid="message-context-menu"
 		/>
 	</Popover>
 </div>

@@ -193,6 +193,15 @@ export interface DeleteForMePayload {
  * message; a delete-for-me vanishes with no trace. */
 export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
 
+export type SystemEvent = {
+	type: 'Tombstones';
+	payload: {
+		topic: TopicId;
+		hashes: Hash[];
+		reason: TombstoneReason;
+	};
+};
+
 export interface Tombstone {
 	hash: Hash;
 	reason: TombstoneReason;
@@ -200,12 +209,23 @@ export interface Tombstone {
 
 export type DeviceGroupPayload =
 	| { type: 'AddContact'; payload: { agent_id: AgentId } }
-	| { type: 'PendingContactRequest'; payload: { device_pubkey: DeviceId } }
+	| {
+			type: 'PendingContactRequest';
+			payload: { device_pubkey: DeviceId; profile_name: string };
+	  }
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'BlockAgent'; payload: AgentId }
 	| { type: 'UnblockAgent'; payload: AgentId }
 	| { type: 'ReadMessages'; payload: ReadMessagesPayload }
-	| { type: 'DeleteForMe'; payload: DeleteForMePayload };
+	| { type: 'DeleteForMe'; payload: DeleteForMePayload }
+	| { type: 'ReportContact'; payload: ReportContactPayload };
+
+/** Written after at least one mailbox accepted a report of `agent_id`. */
+export interface ReportContactPayload {
+	agent_id: AgentId;
+	device_ids: DeviceId[];
+	mailbox_ids: string[];
+}
 
 export type InboxPayload = {
 	type: 'ContactRequest';
@@ -283,6 +303,12 @@ export type GroupControlEvent =
 			timestamp: number;
 	  };
 
+export type BlockEvent = {
+	kind: 'contact_blocked' | 'contact_unblocked';
+	contactName: string | undefined;
+	timestamp: number;
+};
+
 /** A single version of a message's text, with the time it was authored. */
 export interface MessageVersion {
 	hash: string;
@@ -299,17 +325,10 @@ export interface MessageBody {
 	editHistory: MessageVersion[];
 }
 
-/** The renderable content of a message, or a sentinel that replaces the body
- * entirely (dropping text, media, reactions and edits):
- * - `'deleted-for-everyone'`: the message was deleted for everyone (a delete op
- *   references it). Rendered as the deleted placeholder.
- * - `'body-unavailable'`: the operation's payload is gone but no delete op
- *   justifies it — an anomaly (e.g. a peer that synced the body-less op before
- *   the delete arrives). Rendered as an error bubble to bring attention to it. */
-export type MessageDisplay =
-	| MessageBody
-	| 'deleted-for-everyone'
-	| 'body-unavailable';
+/** The renderable content of a message, or `'deleted-for-everyone'` once a
+ * delete op replaces the body entirely — dropping text, media, reactions and
+ * edits — and it renders as the deleted placeholder. */
+export type MessageDisplay = MessageBody | 'deleted-for-everyone';
 
 /** Whether a message still has a live body. Written as a type guard so the
  * `true` branch narrows `content` to `MessageBody`. */

@@ -43,22 +43,14 @@ export interface IContactsClient {
 	// Accept an incoming contact request
 	acceptContact(agentId: AgentId): Promise<void>;
 
-	// Reject contact request
-	rejectContactRequest(agentId: AgentId): Promise<void>;
-
 	// Block a contact
 	blockContact(agentId: AgentId): Promise<void>;
 
 	// Unblock a contact
 	unblockContact(agentId: AgentId): Promise<void>;
 
-	// Report a contact to the shared infrastructure. Resolves with every mailbox
-	// the contact has been reported to so far; empty means no mailbox could be
-	// reached and the report was not delivered anywhere.
-	reportContact(agentId: AgentId): Promise<string[]>;
-
-	// Whether a contact has already been reported
-	isContactReported(agentId: AgentId): Promise<boolean>;
+	// Report a contact to the mailboxes we're connected to
+	reportContact(agentId: AgentId): Promise<void>;
 
 	// Remove contact
 	// removeContact(contact: ContactId): Promise<void>;
@@ -119,10 +111,6 @@ export class ContactsClient implements IContactsClient {
 		await invokeAfterSetup('accept_contact', { agentId });
 	}
 
-	async rejectContactRequest(agentId: AgentId): Promise<void> {
-		await invokeAfterSetup('reject_contact_request', { agentId });
-	}
-
 	async blockContact(agentId: AgentId): Promise<void> {
 		await invokeAfterSetup('block_contact', { agentId });
 	}
@@ -131,12 +119,8 @@ export class ContactsClient implements IContactsClient {
 		await invokeAfterSetup('unblock_contact', { agentId });
 	}
 
-	reportContact(agentId: AgentId): Promise<string[]> {
-		return invokeAfterSetup('report_contact', { agentId });
-	}
-
-	isContactReported(agentId: AgentId): Promise<boolean> {
-		return invokeAfterSetup('is_contact_reported', { agentId });
+	async reportContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('report_contact', { agentId });
 	}
 
 	// getContacts(): Promise<Array<VerifyingKey>> {

@@ -21,6 +21,17 @@ pub struct Profile {
     pub about: Option<String>,
 }
 
+impl Profile {
+    /// Return the display name as "<name> <surname>" when a non-empty surname
+    /// exists, otherwise just "<name>".
+    pub fn full_name(&self) -> String {
+        match self.surname {
+            Some(ref surname) if !surname.is_empty() => format!("{} {}", self.name, surname),
+            _ => self.name.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {
@@ -140,12 +151,16 @@ pub struct ReadMessagesPayload {
 ///
 /// Unlike `DeleteMessage` (delete for everyone), this lives in the private
 /// device group topic, so it is only ever seen by the author's own devices and
-/// syncs the deletion between them. It references only the *original* message
-/// (`message_hash`), not the whole edit chain: because a delete-for-me may
-/// target another author's message, the full chain can't be captured reliably
-/// at delete time (a later edit would be missed). Instead the receiver
-/// tombstones the message and walks its edits forward, and any edit arriving
-/// afterwards is tombstoned transitively. `chat_id` identifies the chat topic
+/// syncs the deletion between them. It names the *original* message
+/// (`message_hash`), not the whole edit chain as `DeleteMessage` does: a
+/// delete-for-me may target another author's message, who can keep editing it
+/// afterwards, so no hash set captured at delete time stays complete. Instead
+/// the receiver tombstones the named operation and walks its edits forward, and
+/// any edit arriving afterwards is tombstoned transitively.
+/// [`Node::delete_message_for_me`](crate::Node::delete_message_for_me) resolves
+/// whatever hash the caller names back to the root, falling back to that raw
+/// hash only when the op is unknown locally — in which case it has no chain to
+/// belong to yet. `chat_id` identifies the chat topic
 /// the message lives in, since the delete itself is stored in a different
 /// topic. Processing never scrubs the shared chat mailbox — the message remains
 /// visible to the other chat participants.
@@ -169,12 +184,32 @@ pub enum DeviceGroupPayload {
     /// the device -> agent mapping is known.
     PendingContactRequest {
         device_pubkey: DeviceId,
+        #[serde(default)]
+        profile_name: String,
     },
     RejectContactRequest(AgentId),
     BlockAgent(AgentId),
     UnblockAgent(AgentId),
     ReadMessages(ReadMessagesPayload),
     DeleteForMe(DeleteForMePayload),
+    ReportContact(ReportContactPayload),
+}
+
+/// Records that this device reported a contact to one or more mailboxes.
+///
+/// Written only after at least one mailbox accepted the report, so the presence
+/// of the operation is proof a report was delivered. It lives in the private
+/// device group topic: it syncs the record across the reporter's own devices
+/// and is never seen by the reported contact. Reporting is always available —
+/// each report produces another operation, and the UI renders one bubble per
+/// operation at its timestamp rather than collapsing them into a "reported"
+/// flag.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReportContactPayload {
+    pub agent_id: AgentId,
+    pub device_ids: Vec<DeviceId>,
+    /// Ids of the mailboxes that accepted this report.
+    pub mailbox_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -12,7 +12,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ALLOWED_MAILBOX_URL_PATTERNS: RegExp[] = (
 	JSON.parse(
 		readFileSync(
-			path.resolve(__dirname, '..', '..', 'allowed-test-mailbox-url-patterns.json'),
+			path.resolve(
+				__dirname,
+				'..',
+				'..',
+				'allowed-test-mailbox-url-patterns.json',
+			),
 			'utf-8',
 		),
 	) as string[]
@@ -29,7 +34,12 @@ export function getSpecFileRetries(): number {
 	return retries;
 }
 
-const AGENT_PLATFORMS = ['desktop', 'android', 'android-emulator'] as const;
+const AGENT_PLATFORMS = [
+	'desktop',
+	'android',
+	'android-emulator',
+	'ios',
+] as const;
 export type AgentPlatformName = (typeof AGENT_PLATFORMS)[number];
 
 /**

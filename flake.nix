@@ -4,6 +4,8 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
 
+    nixpkgs-pnpm.url = "github:nixos/nixpkgs/nixos-26.05";
+
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
     crane.url = "github:ipetkov/crane";
@@ -64,6 +66,7 @@
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
+          pkgsPnpm = import inputs.nixpkgs-pnpm { inherit system; };
 
           tauriLibraries = with pkgs; [
             webkitgtk_4_1
@@ -77,14 +80,19 @@
             libsoup_3
             libayatana-appindicator
             pango
+            # libatk-1.0
+            at-spi2-core
           ];
           nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
           # One toolchain (host + android targets) shared by the default and
           # androidDev shells: identical rustc + host-build env keep artifacts
           # in the shared target dir fingerprint-compatible across shells.
           rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          rustCranelift = pkgs.rust-bin.nightly."2025-12-15".default.override {
+            extensions = [ "rustc-codegen-cranelift-preview" ];
+          };
           hostBuildEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
-            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries} -C link-arg=-fuse-ld=mold"
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
             export SOURCE_DATE_EPOCH=315532800
           '';
@@ -92,11 +100,12 @@
             pkgs.mprocs
             pkgs.just
             pkgs."nodejs_${nodeVersion}"
-            pkgs.pnpm
+            pkgsPnpm.pnpm
             pkgs.cargo-nextest
             pkgs.doctl
             inputs'.tauri-driver.packages.tauri-driver
-          ];
+          ]
+          ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
         in
         rec {
           devShells.default = pkgs.mkShell {
@@ -105,13 +114,25 @@
             shellHook = hostBuildEnvHook;
           };
 
+          # Opt-in faster dev builds: nightly rustc with the Cranelift codegen backend
+          devShells.cranelift = pkgs.mkShell {
+            packages = [ rustCranelift ] ++ packages;
+            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
+            shellHook =
+              hostBuildEnvHook
+              + lib.optionalString pkgs.stdenv.isLinux ''
+                export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS -Zcodegen-backend=cranelift"
+              '';
+          };
+
           devShells.androidDev = pkgs.mkShell {
             packages = [
               rust
               pkgs."nodejs_${nodeVersion}"
               pkgs.jdk
             ]
-            ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ];
+            ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ]
+            ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
             # The e2e harness consumes tools and artifacts from PATH and
             # conventional paths; this hook provides the chromedrivers dir.
@@ -121,19 +142,18 @@
             '';
           };
 
-          devShells.iosDev =
-            pkgs.mkShell {
-              inputsFrom = [ devShells.default ];
-              packages = [ rust ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
-              shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
-                # Make libiconv findable by the linker even when xcodebuild
-                # strips NIX_LDFLAGS from the environment.
-                export LIBRARY_PATH="${lib.makeLibraryPath [ pkgs.libiconv ]}''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+          devShells.iosDev = pkgs.mkShell {
+            inputsFrom = [ devShells.default ];
+            packages = [ rust ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
+            shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
+              # Make libiconv findable by the linker even when xcodebuild
+              # strips NIX_LDFLAGS from the environment.
+              export LIBRARY_PATH="${lib.makeLibraryPath [ pkgs.libiconv ]}''${LIBRARY_PATH:+:$LIBRARY_PATH}"
 
-                # Unset SDKROOT so xcrun can locate the iOS SDK from Xcode.
-                unset SDKROOT
-              '';
-            };
+              # Unset SDKROOT so xcrun can locate the iOS SDK from Xcode.
+              unset SDKROOT
+            '';
+          };
 
         };
     };

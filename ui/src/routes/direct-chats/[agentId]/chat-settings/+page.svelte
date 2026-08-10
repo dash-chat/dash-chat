@@ -1,13 +1,14 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import {
+		chatKeyAgentId,
 		fullName,
 		type ChatsStore,
 		type ContactsStore,
 	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import {
 		mdiBellOutline,
 		mdiMagnify,
@@ -15,14 +16,14 @@
 		mdiPlusCircle,
 		mdiChevronRight,
 		mdiCancel,
-		mdiFlagOutline,
+		mdiAlertOctagonOutline,
 	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { onActivate } from '$lib/utils/keyboard';
 	import { showToast } from '$lib/utils/toasts';
-	import { reportContactWithFeedback } from '$lib/utils/report-contact';
-	import BlockContactDialog from '$lib/components/contacts/BlockContactDialog.svelte';
-	import ReportContactDialog from '$lib/components/contacts/ReportContactDialog.svelte';
+	import BlockContactDialog from '$lib/components/contacts/block/BlockContactDialog.svelte';
+	import UnblockContactDialog from '$lib/components/contacts/block/UnblockContactDialog.svelte';
+	import ReportContactDialog from '$lib/components/contacts/report/ReportContactDialog.svelte';
 	import PeerProfileSheet from '$lib/components/PeerProfileSheet.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
@@ -38,7 +39,9 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import Divider from '$lib/components/Divider.svelte';
 	let agentId = page.params.agentId!;
+	const peerAgentId = chatKeyAgentId(agentId);
 
 	const theme = $derived(useTheme());
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -46,30 +49,14 @@
 	const store = chatsStore.directChats(agentId);
 
 	const peerProfile = useReactivePromise(store.peerProfile);
-	const blockedAgentIds = useReactiveValue(
-		contactsStore.blockedContactAgentIds,
-	);
-	const isBlocked = $derived(($blockedAgentIds ?? new Set()).has(agentId));
-	const reported = useReactiveValue(contactsStore.contactReported, agentId);
-	const isReported = $derived($reported === true);
+	const blocked =
+		peerAgentId === undefined
+			? undefined
+			: useReactivePromise(contactsStore.isBlocked, peerAgentId);
 
 	let showPeerProfile = $state(false);
 	let showBlockDialog = $state(false);
 	let showReportDialog = $state(false);
-
-	async function confirmBlockToggle() {
-		showBlockDialog = false;
-		if (isBlocked) {
-			await contactsStore.client.unblockContact(agentId);
-		} else {
-			await contactsStore.client.blockContact(agentId);
-		}
-	}
-
-	async function confirmReport() {
-		showReportDialog = false;
-		await reportContactWithFeedback(contactsStore, agentId);
-	}
 
 	function comingSoon() {
 		showToast(m.comingSoon());
@@ -159,40 +146,77 @@
 					</div>
 				</div>
 
-				<div
-					class="mx-4 my-2 border-t border-gray-200 dark:border-gray-700"
-				></div>
+				{#if theme === 'material'}
+					<div class="mx-4 my-2">
+						<Divider />
+					</div>
+				{/if}
 
-				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
-					<ListItem
-						link
-						chevron={false}
-						title={isBlocked ? m.unblock() : m.block()}
-						class={isBlocked ? '' : 'text-red-500'}
-						onClick={() => (showBlockDialog = true)}
-						data-testid="chat-settings-block-toggle"
-					>
-						{#snippet media()}
-							<wa-icon style="font-size: 1.5rem;" src={wrapPathInSvg(mdiCancel)}
-							></wa-icon>
-						{/snippet}
-					</ListItem>
-					<ListItem
-						link={!isReported}
-						chevron={false}
-						title={isReported ? m.reported() : m.report()}
-						class={isReported ? 'quiet opacity-60' : 'text-red-500'}
-						onClick={isReported ? undefined : () => (showReportDialog = true)}
-						data-testid="chat-settings-report"
-					>
-						{#snippet media()}
-							<wa-icon
-								style="font-size: 1.5rem;"
-								src={wrapPathInSvg(mdiFlagOutline)}
-							></wa-icon>
-						{/snippet}
-					</ListItem>
-				</List>
+				{#if peerAgentId !== undefined}
+					{#await $blocked then isBlocked}
+						<List
+							nested
+							strongIos
+							inset={isWideScreen.value || theme === 'ios'}
+						>
+							{#if !isBlocked}
+								<ListItem
+									link
+									chevron={false}
+									title={m.block()}
+									colors={{
+										primaryTextIos: 'text-red-500',
+										primaryTextMaterial: 'text-red-500',
+									}}
+									onClick={() => (showBlockDialog = true)}
+									data-testid="chat-settings-block-btn"
+								>
+									{#snippet media()}
+										<wa-icon
+											class="text-red-500"
+											style="font-size: 1.5rem;"
+											src={wrapPathInSvg(mdiCancel)}
+										></wa-icon>
+									{/snippet}
+								</ListItem>
+							{:else}
+								<ListItem
+									link
+									chevron={false}
+									title={m.unblock()}
+									onClick={() => (showBlockDialog = true)}
+									data-testid="chat-settings-unblock-btn"
+								>
+									{#snippet media()}
+										<wa-icon
+											style="font-size: 1.5rem;"
+											src={wrapPathInSvg(mdiCancel)}
+										></wa-icon>
+									{/snippet}
+								</ListItem>
+							{/if}
+							<ListItem
+								link
+								chevron={false}
+								title={m.report()}
+								colors={{
+									primaryTextIos: 'text-red-500',
+									primaryTextMaterial: 'text-red-500',
+								}}
+								onClick={() => (showReportDialog = true)}
+								data-testid="chat-settings-report-btn"
+							>
+								{#snippet media()}
+									<wa-icon
+										class="text-red-500"
+										style="font-size: 1.5rem;"
+										src={wrapPathInSvg(mdiAlertOctagonOutline)}
+									></wa-icon>
+								{/snippet}
+							</ListItem>
+						</List>
+					{/await}
+				{/if}
 
 				<!-- TODO: Coming soon - chat color/wallpaper and groups in common -->
 				{#if false}
@@ -245,21 +269,31 @@
 				onClose={() => (showPeerProfile = false)}
 				{profile}
 			/>
+		{/if}
 
-			<BlockContactDialog
-				opened={showBlockDialog}
-				name={fullName(profile)}
-				blocked={isBlocked}
-				onConfirm={confirmBlockToggle}
-				onClose={() => (showBlockDialog = false)}
-			/>
-
-			<ReportContactDialog
-				opened={showReportDialog}
-				name={fullName(profile)}
-				onConfirm={confirmReport}
-				onClose={() => (showReportDialog = false)}
-			/>
+		{#if peerAgentId !== undefined}
+			{#await $blocked then isBlocked}
+				{@const peerName = profile ? fullName(profile) : ''}
+				{#if isBlocked}
+					<UnblockContactDialog
+						bind:opened={showBlockDialog}
+						agentId={peerAgentId}
+						name={peerName}
+					/>
+				{:else}
+					<BlockContactDialog
+						bind:opened={showBlockDialog}
+						agentId={peerAgentId}
+						name={peerName}
+					/>
+				{/if}
+				<ReportContactDialog
+					bind:opened={showReportDialog}
+					agentId={peerAgentId}
+					name={peerName}
+					onDone={() => goto('/')}
+				/>
+			{/await}
 		{/if}
 	{/await}
 </Page>

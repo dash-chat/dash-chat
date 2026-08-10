@@ -4,6 +4,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { DeviceId, Hash } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
 	ChatReaction,
@@ -50,6 +51,7 @@ export class MessagesStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		/** Resolves to '' while a pending direct chat has no topic yet. */
 		public chatId: ReactiveFn<Promise<ChatId>, []>,
 		public client: IMessagesClient,
@@ -60,14 +62,21 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const { messages, reactionsByTarget, editsByTarget, deletes } =
-			collectMessageActionsByType(logs);
+		const {
+			messages,
+			bodylessOps,
+			reactionsByTarget,
+			editsByTarget,
+			deleteTargets,
+		} = collectMessageActionsByType(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
 			if (message === undefined) {
-				console.warn('reaction for missing message');
-				// Deletes are applied last, so live content is always present here.
+				// A reaction on a tombstoned op is moot, not a missing target.
+				if (bodylessOps[target] === undefined) {
+					console.warn('reaction for missing message');
+				}
 			} else if (hasBody(message.content)) {
 				message.content.reactions = byAuthor;
 			}
@@ -77,30 +86,20 @@ export class MessagesStore {
 			messages[hash] = applyEdits(message, editsByTarget);
 		}
 
-		applyDeletes(messages, deletes);
+		Object.assign(
+			messages,
+			deletedMessages(deleteTargets, messages, bodylessOps),
+		);
 
-		const tombstones = await this.tombstones();
-		applyTombstones(messages, tombstones);
+		// Completely remove any message with a DeletedForMe tombstone.
+		const tombstones = await this.tombstoneStore.tombstones(chatId);
+		for (const { hash, reason } of tombstones) {
+			if (reason === 'DeletedForMe') delete messages[hash];
+		}
 
 		applyReplies(messages, logs, deletedForMeHashes(tombstones));
 
 		return messages;
-	});
-
-	// The backend's tombstone set for this chat (each hash tagged with why it was
-	// tombstoned). Re-fetched whenever the chat log or the device-group log
-	// changes, since that's when a delete — or a transitively-tombstoned edit —
-	// gets recorded. Delete-for-me can't be derived from the raw ops the way
-	// reads are: the backend drops the tombstoned edits' bodies, so their
-	// edit-chain pointers are gone and only the backend knows the full set.
-	tombstones = reactive(async () => {
-		const chatId = await this.chatId();
-		if (chatId === '') return [];
-		// Establish reactive dependencies on the logs so this recomputes when a
-		// delete or a tombstoned edit is processed into either topic.
-		await this.logsStore.logsForAllAuthors(chatId);
-		await this.contactsStore.devicesStore.myDeviceGroupTopic();
-		return this.client.getTombstones(chatId);
 	});
 
 	lastMessage = reactive(async () => {
@@ -214,71 +213,30 @@ function deletedForMeHashes(tombstones: Tombstone[]): Set<Hash> {
 	);
 }
 
-/** Reconcile the built message map with the backend's tombstone set.
- *
- * A `DeletedForMe` op (and any of its edits) is removed outright — following
- * Signal, a delete-for-me leaves no placeholder. A `DeletedForEveryone` edit
- * that slipped through as a raw body-less placeholder (rather than the
- * chain-collapsed `'deleted-for-everyone'` root that `applyDeletes` produces
- * from the `DeleteMessage` op) is removed too, so only the root placeholder
- * remains. Body-less ops that are *not* tombstoned stay as `'body-unavailable'`
- * — a genuinely unfetched message, which the tombstone set lets us tell apart
- * from a deletion. */
-function applyTombstones(
-	messages: Record<Hash, Message>,
-	tombstones: Tombstone[],
-): void {
-	for (const { hash, reason } of tombstones) {
-		const message = messages[hash];
-		if (message === undefined) continue;
-		if (reason === 'DeletedForMe' || message.content === 'body-unavailable') {
-			delete messages[hash];
-		}
-	}
-}
-
-/** A delete op, keyed in `deletesByTarget` by the original message it
- * deletes. */
-interface Delete {
-	hash: Hash;
-	timestamp: number;
-	/** The complete chain covered: the original message plus every edit. */
-	hashes: Hash[];
-}
-
 function collectMessageActionsByType(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;
+	// Operations whose payload is gone, keyed by hash
+	bodylessOps: Record<Hash, SimplifiedOperation<void>>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
 	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
-	/** Delete ops keyed by their own op hash; each carries the full chain of
-	 * message hashes it covers. */
-	deletes: Record<Hash, Delete>;
+	/** One entry per delete: every hash it covers — the original message and its
+	 * edits. */
+	deleteTargets: Hash[][];
 } {
 	const messages: Record<Hash, Message> = {};
+	const bodylessOps: Record<Hash, SimplifiedOperation<void>> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
-	const deletes: Record<Hash, Delete> = {};
+	const deleteTargets: Hash[][] = [];
 
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
 			const body = operation.body;
 			if (!body) {
-				// The only body-less ops in a chat log are group-control ops
-				// (which carry their action in `header.auth`) and messages whose
-				// payload was tombstoned by a delete. Record the latter as a
-				// placeholder: the DeleteMessage op that references it confirms it
-				// as deleted (see `applyDeletes`); an unreferenced one is an
-				// anomaly rendered as an error bubble (`'body-unavailable'`).
 				if (operation.header.auth) continue;
-				messages[operation.hash] = {
-					hash: operation.hash,
-					content: 'body-unavailable',
-					author,
-					seqNum: operation.header.seq_num,
-					timestamp: operation.header.timestamp,
-				};
+				bodylessOps[operation.hash] = { ...operation, body: undefined };
 				continue;
 			}
 			if (body.type !== 'Chat') continue;
@@ -317,54 +275,76 @@ function collectMessageActionsByType(
 					timestamp: operation.header.timestamp,
 				};
 			} else if (body.payload.type === 'DeleteMessage') {
-				deletes[operation.hash] = {
-					hash: operation.hash,
-					timestamp: operation.header.timestamp,
-					hashes: body.payload.payload.hashes,
-				};
+				deleteTargets.push(body.payload.payload.hashes);
 			}
 		}
 	}
 
 	return {
 		messages,
+		bodylessOps,
 		reactionsByTarget,
 		editsByTarget,
-		deletes,
+		deleteTargets,
 	};
 }
 
-/** Mark deleted messages as such, collapsing each delete's chain (the original
- * message plus its edits) to a single placeholder: keep the original (lowest
- * seq_num, since edits always follow it in the same author's log) as the
- * `'deleted-for-everyone'` placeholder and drop the rest. */
-function applyDeletes(
+/** The placeholder each delete leaves behind, keyed by the hash it stands in
+ * for. Merged over `messages` these replace the original's live entry, the only
+ * covered op that can be there — edits live in `editsByTarget`. */
+function deletedMessages(
+	deleteTargets: Hash[][],
 	messages: Record<Hash, Message>,
-	deletes: Record<Hash, Delete>,
-): void {
-	for (const del of Object.values(deletes)) {
-		// A chain member is absent from `messages` when it's an edit op that still
-		// has its body (edits live in `editsByTarget`, not `messages`) or an op
-		// this peer hasn't synced yet. Tombstoned members are *not* absent: they
-		// stay as body-less records. Skip the delete entirely until at least one
-		// target is present.
-		//
-		// We trust the backend to deliver only valid operations, so this is not a check
-		// for validity.
-		const chain = del.hashes.filter(hash => messages[hash] !== undefined);
-		if (chain.length === 0) continue;
+	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
+): Record<Hash, Message> {
+	const deleted: Record<Hash, Message> = {};
+	for (const hashes of deleteTargets) {
+		const original = earliestOp(hashes, messages, bodylessOps);
+		if (original === undefined) continue;
+		deleted[original.hash] = { ...original, content: 'deleted-for-everyone' };
+	}
+	return deleted;
+}
 
-		const original = chain.reduce((a, b) =>
-			messages[a].seqNum <= messages[b].seqNum ? a : b,
-		);
-		for (const hash of chain) {
-			if (hash === original) {
-				messages[hash].content = 'deleted-for-everyone';
-			} else {
-				delete messages[hash];
-			}
+/** The earliest of `hashes` this peer has — the original message, since its
+ * edits are authored after it. Ordered by timestamp, as the message list itself
+ * is, so the placeholder lands in the slot the original occupied. `seq_num`
+ * can't be used: once devices are linked an edit may come from another device,
+ * and positions in different logs aren't comparable. The hash breaks ties so
+ * every peer eventually picks the same op. */
+function earliestOp(
+	hashes: Hash[],
+	messages: Record<Hash, Message>,
+	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
+): Message | undefined {
+	let earliest: Message | undefined;
+	for (const hash of hashes) {
+		const bodyless = bodylessOps[hash];
+		const op =
+			messages[hash] ??
+			(bodyless === undefined ? undefined : placeholderFor(bodyless));
+		if (op === undefined) continue;
+		if (
+			earliest === undefined ||
+			op.timestamp < earliest.timestamp ||
+			(op.timestamp === earliest.timestamp && op.hash < earliest.hash)
+		) {
+			earliest = op;
 		}
 	}
+	return earliest;
+}
+
+/** The placeholder a tombstoned operation renders as, built from its header
+ * since its payload is gone. */
+function placeholderFor(op: SimplifiedOperation<void>): Message {
+	return {
+		hash: op.hash,
+		content: 'deleted-for-everyone',
+		author: op.header.verifying_key,
+		seqNum: op.header.seq_num,
+		timestamp: op.header.timestamp,
+	};
 }
 
 // Apply the message's edits and return the resulting message. Every edit

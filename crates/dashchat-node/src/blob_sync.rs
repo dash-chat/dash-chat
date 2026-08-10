@@ -130,17 +130,21 @@ impl BlobSync {
         };
 
         if sources.is_empty() {
+            tracing::debug!(%hash, "no blob sources");
             return false;
         }
 
-        dashchat_utils::blob_sync::download_capped(
+        let source_count = sources.len();
+        let fetched = dashchat_utils::blob_sync::download_capped(
             &self.downloader,
             hash,
             sources,
             attempt_timeout,
             &self.blobs,
         )
-        .await
+        .await;
+        tracing::debug!(%hash, source_count, fetched, "blob fetch attempt");
+        fetched
     }
 
     pub async fn add_to_fetch_pool(
@@ -156,6 +160,7 @@ impl BlobSync {
         let tag_name = blob_tag_name(topic, author, operation_hash, blob_hash);
         self.blobs.store().tags().set(tag_name, blob_hash).await?;
         self.fetch_pool.add(topic, blob_hash).await;
+        tracing::debug!(hash = %blob_hash, "queued blob for fetch");
         Ok(())
     }
 

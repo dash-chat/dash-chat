@@ -32,9 +32,12 @@ _default:
 build:
     pnpm tauri build --no-bundle --debug
 
-# build dash chat as an installer (AppImage on linux)
+# Overrides so a local bundle needs none of the release-only setup CI provides:
+bundle-config := '{"bundle":{"createUpdaterArtifacts":false}}'
+
+# build dash chat as an installer (deb and rpm on linux)
 bundle:
-    pnpm tauri build
+    pnpm tauri build -b appimage --config '{{ bundle-config }}'
 
 # cut a new release (e.g. just release 0.11.0)
 release version:
@@ -48,6 +51,11 @@ update-version version:
 format:
     cargo fmt
     pnpm -r --if-present format
+
+# typecheck every TS package and the rust workspace
+check:
+    cargo check --workspace
+    pnpm -r --if-present check
 
 # regenerate paraglide message exports from source translation files
 paraglide:

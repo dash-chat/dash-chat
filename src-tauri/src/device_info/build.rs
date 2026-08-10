@@ -26,7 +26,7 @@ pub fn log_build_info(handle: &AppHandle) {
     log::info!(
         "Dash Chat version: {} (commit {}{}, branch {}, {}, arch {}, features {})",
         pkg.version,
-        option_env!("VERGEN_GIT_SHA").unwrap_or("unknown"),
+        short_git_sha().unwrap_or("unknown"),
         dirty_suffix,
         option_env!("VERGEN_GIT_BRANCH").unwrap_or("unknown"),
         build_profile,
@@ -41,6 +41,11 @@ pub fn log_build_info(handle: &AppHandle) {
             .unwrap_or_else(|| "unknown".to_string()),
     );
     log::info!("App identifier: {}", handle.config().identifier);
+}
+
+pub(crate) fn short_git_sha() -> Option<&'static str> {
+    let sha = option_env!("VERGEN_GIT_SHA")?;
+    Some(sha.get(..12).unwrap_or(sha))
 }
 
 fn active_features() -> Vec<&'static str> {

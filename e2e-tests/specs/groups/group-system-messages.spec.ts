@@ -7,13 +7,18 @@ describe('Group chat inline system messages', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 		await exchangeContactsAndCreateGroup(agent1, agent2);
 	});
 
 	it('renders "You created the group." for the creator', async () => {
-		await agent1.groupChatPage.systemMessage('group_created').waitForExist();
-		const created = await agent1.groupChatPage
+		await agent1.groupChatPage.messages
+			.systemMessage('group_created')
+			.waitForExist();
+		const created = await agent1.groupChatPage.messages
 			.systemMessage('group_created')
 			.getText();
 		expect(created).toContain('You created the group.');
@@ -27,8 +32,10 @@ describe('Group chat inline system messages', () => {
 		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
 
-		await agent2.groupChatPage.systemMessage('group_created').waitForExist();
-		const added = await agent2.groupChatPage
+		await agent2.groupChatPage.messages
+			.systemMessage('group_created')
+			.waitForExist();
+		const added = await agent2.groupChatPage.messages
 			.systemMessage('group_created')
 			.getText();
 		expect(added).toContain('Alice Test added you to the group.');

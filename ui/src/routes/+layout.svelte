@@ -28,6 +28,9 @@
 		MockChatsStore,
 		MockMailboxTrackerStore,
 		MockSettingsClient,
+		MockTombstoneClient,
+		TombstoneClient,
+		TombstoneStore,
 		seedDemoData,
 		DEMO_IDS,
 	} from 'dash-chat-stores';
@@ -36,13 +39,13 @@
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
+	import CrashReportDialog from '$lib/components/CrashReportDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
+	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
-	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 	import {
@@ -86,13 +89,16 @@
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
-	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile;
+	// Never in the binary under test
+	const isE2E = import.meta.env.VITE_E2E === 'true';
+	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile && !isE2E;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
 	let logsStore: LogsStore<Payload>;
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
+	let tombstoneStore: TombstoneStore;
 	let chatsStore: ChatsStore;
 	let mailboxTrackerStore: IMailboxTrackerStore;
 
@@ -121,10 +127,15 @@
 			mockContactsClient,
 		);
 
+		tombstoneStore = new TombstoneStore(
+			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
+		);
+
 		const mockChatsClient = new MockChatsClient();
 		chatsStore = new MockChatsStore(
 			logsStore,
 			contactsStore,
+			tombstoneStore,
 			mockChatsClient,
 			mockLogsClient,
 			DEMO_IDS.MY_AGENT_ID,
@@ -143,8 +154,15 @@
 		const contactsClient = new ContactsClient(logsClient);
 		contactsStore = new ContactsStore(logsStore, devicesStore, contactsClient);
 
+		tombstoneStore = new TombstoneStore(new TombstoneClient());
+
 		const chatsClient = new ChatsClient();
-		chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
+		chatsStore = new ChatsStore(
+			logsStore,
+			contactsStore,
+			tombstoneStore,
+			chatsClient,
+		);
 
 		mailboxTrackerStore = new MailboxTrackerStore();
 
@@ -163,16 +181,14 @@
 	// when navigating back home from any page
 	useKeepAlive(chatsStore.allChatsSummaries);
 
-	const isDark = useSignal(settingsStore.isDark);
-
 	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
+	const applied = useSignal(settingsStore.colorScheme);
+
 	let darkOverride: boolean | null = $state(null);
-	const effectiveDark = $derived(darkOverride ?? !!$isDark);
+	const effectiveDark = $derived(darkOverride ?? $applied === 'dark');
 	$effect(() => {
-		applyDarkMode(effectiveDark).catch(e => {
-			showToast(m.errorApplyStyle(), 'error');
-		});
+		applyDarkMode(effectiveDark);
 	});
 
 	$effect(() => {
@@ -238,5 +254,8 @@
 			</div>
 		{/if}
 		<ToastManager />
+		{#if import.meta.env.VITE_SENTRY_ENABLED}
+			<CrashReportDialog />
+		{/if}
 	</App>
 </KonstaProvider>

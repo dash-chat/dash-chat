@@ -28,6 +28,33 @@ jobs:
           name: Dash Chat v${{ steps.version.outputs.value }}${{ contains(github.ref_name, '-staging') && ' (staging)' || '' }}
           body: See the assets to download this version and install.
 
+  create-sentry-release:
+    runs-on: ubuntu-22.04
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build the release name the app tags its events with
+        id: release
+        run: |
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          echo "name=dash-chat@${version}+${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Sentry release and associate commits
+        if: env.SENTRY_AUTH_TOKEN != ''
+        uses: getsentry/action-release@v3
+        with:
+          release: ${{ steps.release.outputs.name }}
+          environment: ${{ contains(github.ref_name, '-staging') && 'staging' || 'production' }}
+          set_commits: auto
+          ignore_missing: true
+          ignore_empty: true
+
   release-tauri-app:
     needs: create-release-draft
     strategy:
@@ -36,14 +63,23 @@ jobs:
         include:
           - platform: 'macos-26' # for Arm based macs (M1 and above).
             args: '--target aarch64-apple-darwin'
+            debug_files: 'target/aarch64-apple-darwin/release/dash-chat target/aarch64-apple-darwin/release/dash-chat.dSYM'
           - platform: 'macos-26' # for Intel based macs.
             args: '--target x86_64-apple-darwin'
+            debug_files: 'target/x86_64-apple-darwin/release/dash-chat target/x86_64-apple-darwin/release/dash-chat.dSYM'
           - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
             args: ' -b appimage'
+            debug_files: 'target/release/dash-chat'
           - platform: 'windows-latest'
             args: ''
+            debug_files: 'target/release/dash-chat.exe target/release/*.pdb'
     env:
       MACOSX_DEPLOYMENT_TARGET: 10.13
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+      CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+      CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: ${{ startsWith(matrix.platform, 'ubuntu') && 'off' || 'packed' }}
     permissions: write-all
 
     runs-on: ${{ matrix.platform }}
@@ -60,7 +96,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
           cache: true
 
       - name: Install and prepare
@@ -124,17 +159,18 @@ jobs:
             libsoup-3.0 \
             webkit2gtk-4.1
 
-      - name: Load server URLs from .env
+      - name: Load server URLs and ENV from .env
         shell: bash
         run: |
           if [[ "${{ github.ref_name }}" == *-staging ]]; then
-            env_file=.env.staging
+            app_env=staging
           else
-            env_file=.env.production
+            app_env=production
           fi
           set -a
-          source "$env_file"
+          source ".env.$app_env"
           set +a
+          echo "ENV=$app_env" >> "$GITHUB_ENV"
           echo "MAILBOX_URL=$MAILBOX_URL" >> "$GITHUB_ENV"
           echo "PUSH_NOTIFICATIONS_SERVER_URL=$PUSH_NOTIFICATIONS_SERVER_URL" >> "$GITHUB_ENV"
 
@@ -157,6 +193,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         with:
           # Upload to the draft release created by the create-release-draft job.
           # When releaseId is set, tagName and releaseName are ignored.
@@ -170,6 +207,11 @@ jobs:
       - name: Assert no wayland libs bundled (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: ./scripts/assert-no-wayland-in-appimage.sh
+
+      - name: Upload debug files to Sentry
+        if: env.SENTRY_AUTH_TOKEN != ''
+        shell: bash
+        run: pnpm dlx @sentry/cli@2 debug-files upload ${{ matrix.debug_files }}
 
   release-docker-images:
     if: ${{ !contains(github.ref_name, '-staging') }}
@@ -213,6 +255,10 @@ jobs:
   release-tauri-android-app:
     needs: create-release-draft
     permissions: write-all
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
 
     runs-on: ubuntu-22.04
     steps:
@@ -240,7 +286,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
           cache: true
 
       - uses: cachix/cachix-action@v15
@@ -302,21 +347,24 @@ jobs:
 
           echo "Generated tauri.properties with version $VERSION and versionCode $VERSION_CODE"
 
-      - name: Load server URLs from .env
+      - name: Load server URLs and ENV from .env
         shell: bash
         run: |
           if [[ "${{ github.ref_name }}" == *-staging ]]; then
-            env_file=.env.staging
+            app_env=staging
           else
-            env_file=.env.production
+            app_env=production
           fi
           set -a
-          source "$env_file"
+          source ".env.$app_env"
           set +a
+          echo "ENV=$app_env" >> "$GITHUB_ENV"
           echo "MAILBOX_URL=$MAILBOX_URL" >> "$GITHUB_ENV"
           echo "PUSH_NOTIFICATIONS_SERVER_URL=$PUSH_NOTIFICATIONS_SERVER_URL" >> "$GITHUB_ENV"
 
       - name: Install and Build 🔧
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: pnpm install && pnpm tauri android build --aab --apk
 
       - name: Upload AAB to release
@@ -334,3 +382,7 @@ jobs:
           file: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
           release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
+
+      - name: Upload debug files to Sentry
+        if: env.SENTRY_AUTH_TOKEN != ''
+        run: pnpm dlx @sentry/cli@2 debug-files upload target/*-linux-android*/release/libtauri_app_lib.so

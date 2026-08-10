@@ -30,6 +30,9 @@ export * from './chats/replies.js';
 export * from './settings/settings-client.js';
 export * from './settings/settings-store.js';
 
+export * from './tombstones/tombstone-store.js';
+export * from './tombstones/tombstone-client.js';
+
 export * from './mailbox-tracker/mailbox-tracker-store.js';
 export * from './mailbox-tracker/types.js';
 

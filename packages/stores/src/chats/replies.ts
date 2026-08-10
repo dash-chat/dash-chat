@@ -28,7 +28,6 @@ export type MessageReply =
 interface OpInfo {
 	author: DeviceId;
 	timestamp: number;
-	seqNum: number;
 	body: Payload | undefined;
 }
 
@@ -41,7 +40,6 @@ function collectOps(
 			ops[op.hash] = {
 				author: op.header.verifying_key,
 				timestamp: op.header.timestamp,
-				seqNum: op.header.seq_num,
 				body: op.body,
 			};
 		}
@@ -74,8 +72,8 @@ function rootMessageHash(
 }
 
 /** Where a delete-for-everyone placeholder for `target` is rendered: the
- * root (lowest seq num) of the covering delete's chain, mirroring
- * `applyDeletes`. Undefined when no delete covers `target`. */
+ * earliest op of the covering delete's chain, mirroring `deletedMessages`.
+ * Undefined when no delete covers `target`. */
 function deletePlaceholderHash(
 	ops: Record<Hash, OpInfo>,
 	target: Hash,
@@ -85,15 +83,34 @@ function deletePlaceholderHash(
 		if (payload?.type !== 'DeleteMessage') continue;
 		const hashes = payload.payload.hashes;
 		if (!hashes.includes(target)) continue;
-		let root: Hash | undefined;
-		for (const hash of hashes) {
-			const member = ops[hash];
-			if (!member) continue;
-			if (root === undefined || member.seqNum < ops[root].seqNum) root = hash;
-		}
-		return root;
+		return earliestCoveredHash(ops, hashes);
 	}
 	return undefined;
+}
+
+/** The earliest of `hashes` this peer has, by the same ordering the message
+ * list uses — timestamp, then hash to break ties. Only ops that render as
+ * messages are candidates: an edit that still has its body lives in the
+ * edit chain, not the message map. */
+function earliestCoveredHash(
+	ops: Record<Hash, OpInfo>,
+	hashes: Hash[],
+): Hash | undefined {
+	let earliest: Hash | undefined;
+	for (const hash of hashes) {
+		const op = ops[hash];
+		if (op === undefined) continue;
+		const payload = chatPayload(op);
+		if (op.body !== undefined && payload?.type !== 'Message') continue;
+		if (
+			earliest === undefined ||
+			op.timestamp < ops[earliest].timestamp ||
+			(op.timestamp === ops[earliest].timestamp && hash < earliest)
+		) {
+			earliest = hash;
+		}
+	}
+	return earliest;
 }
 
 /** Resolve one reply annotation against the logs, mirroring the backend's
@@ -144,10 +161,10 @@ function resolveReply(
 }
 
 /** Resolve the reply annotation of every message in the already-built
- * `messages` map, in place. Must run after `applyEdits`, `applyDeletes` and
- * `applyTombstones`: a quote pointing at a message that ended up deleted
- * falls back to a tombstone, and its scroll target is only kept when the
- * corresponding placeholder actually renders. */
+ * `messages` map, in place. Must run after edits, deletes and delete-for-me
+ * tombstones have been applied: a quote pointing at a message that ended up
+ * deleted falls back to a tombstone, and its scroll target is only kept when
+ * the corresponding placeholder actually renders. */
 export function applyReplies(
 	messages: Record<Hash, Message>,
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,

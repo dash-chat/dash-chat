@@ -6,10 +6,13 @@ export class ChatSettingsPage extends TestHelper {
 	peerName = this.el(tid('chat-settings-peer-name'));
 	peerHeader = this.el(tid('chat-settings-peer-header'));
 	searchButton = this.el(tid('chat-settings-search-btn'));
-	blockToggle = this.el(tid('chat-settings-block-toggle'));
+	blockButton = this.el(tid('chat-settings-block-btn'));
+	unblockButton = this.el(tid('chat-settings-unblock-btn'));
+	reportButton = this.el(tid('chat-settings-report-btn'));
 	blockConfirm = this.el(tid('block-contact-confirm'));
-	reportItem = this.el(tid('chat-settings-report'));
 	reportConfirm = this.el(tid('report-contact-confirm'));
+	reportAndBlockConfirm = this.el(tid('report-contact-and-block-confirm'));
+	unblockConfirm = this.el(tid('unblock-contact-confirm'));
 
 	async ready() {
 		await this.peerHeader.waitForExist();

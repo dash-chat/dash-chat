@@ -5,6 +5,7 @@
 	"windows": ["main"],
 	"permissions": [
 		"process:allow-restart",
+		"system-theme:default",
 		"core:default",
 		"core:window:allow-set-title",
 		"log:default",
@@ -15,8 +16,8 @@
 		"sharekit:allow-share-text",
 		"sharekit:allow-share-file",
 		"fs:allow-appcache-write-recursive",
-		"mailto:default",
 		"core:path:default",
-		"virtual-keyboard:default"
+		"virtual-keyboard:default",
+		"sentry-reporting:default"
 	]
 }

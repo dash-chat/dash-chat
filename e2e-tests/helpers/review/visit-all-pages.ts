@@ -1,5 +1,5 @@
 import type { Agent } from '../../setup/setup-agents';
-import { checkPage, type CheckOptions, type PageResult } from './checks';
+import { type CheckOptions, type PageResult, checkPage } from './checks';
 
 export interface VisitOptions {
 	checkDarkMode?: boolean;
