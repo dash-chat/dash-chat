@@ -3,7 +3,7 @@
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
 		Link,
@@ -26,18 +26,16 @@
 	let avatar = $state<string | undefined>(undefined);
 	let about = $state<string | undefined>(undefined);
 
-	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const myProfile = useReactiveValue(contactsStore.myProfile);
 	let initialized = false;
 	$effect(() => {
-		$myProfile.then(profile => {
-			if (!initialized) {
-				initialized = true;
-				name = profile?.name || '';
-				surname = profile?.surname;
-				avatar = profile?.avatar;
-				about = profile?.about;
-			}
-		});
+		const profile = $myProfile;
+		if (profile === undefined || initialized) return;
+		initialized = true;
+		name = profile.name || '';
+		surname = profile.surname;
+		avatar = profile.avatar;
+		about = profile.about;
 	});
 
 	function saveDisabled(
@@ -75,19 +73,19 @@
 </script>
 
 <Page>
-	{#await $myProfile}
+	{#if $myProfile === undefined}
 		<div
 			class="column"
 			style="height: 100%; align-items: center; justify-content: center"
 		>
 			<Preloader />
 		</div>
-	{:then myProfile}
+	{:else}
 		<Navbar
 			title={m.editName()}
 			titleClass="opacity1"
 			transparent={true}
-			rightClass={saveDisabled(myProfile) ? 'ios-right-disabled' : ''}
+			rightClass={saveDisabled($myProfile) ? 'ios-right-disabled' : ''}
 		>
 			{#snippet left()}
 				<NavbarBackLink
@@ -128,10 +126,10 @@
 			<FixedActionButton
 				onClick={save}
 				testId="edit-name-save-btn"
-				disabled={saveDisabled(myProfile)}
+				disabled={saveDisabled($myProfile)}
 			>
 				{m.save()}
 			</FixedActionButton>
 		{/if}
-	{/await}
+	{/if}
 </Page>

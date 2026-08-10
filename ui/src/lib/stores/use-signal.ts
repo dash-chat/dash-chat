@@ -1,10 +1,4 @@
-import {
-	type Equals,
-	type ReactiveFn,
-	ReactivePromise,
-	reactive,
-	watcher,
-} from 'signalium';
+import { type ReactiveFn, ReactivePromise, watcher } from 'signalium';
 import { type Readable } from 'svelte/store';
 
 import { getKeepAliveScope } from './keep-alive-scope.svelte';
@@ -40,15 +34,26 @@ export function useSignal<T, Args extends unknown[]>(
 /**
  * Synchronously expose a signalium async reactive's resolved value as a Svelte
  * store. Emits `undefined` while the underlying ReactivePromise is pending,
- * then the resolved value. Use when you need to consume the value in plain
- * reactive expressions (`$derived`, class strings, …) rather than gating an
- * entire subtree behind `{#await}`.
+ * then the resolved value.
+ *
+ * Prefer this over `useReactivePromise` and gate on `{#if}`. An `{#await}`
+ * rebuilds its `:then` branch whenever the promise identity changes, and a
+ * resolved value hands Svelte a fresh promise on every store update — so the
+ * whole subtree unmounts and remounts each time an operation arrives, closing
+ * open overlays and detaching the DOM under the user's cursor. Reach for
+ * `useReactivePromise` only where a `{:catch}` arm needs the rejection.
  */
 export function useReactiveValue<
 	RP extends ReactivePromise<unknown>,
 	Args extends unknown[],
 >(v: (...args: Args) => RP, ...args: Args): Readable<Awaited<RP> | undefined> {
 	type T = Awaited<RP>;
+	// Keep the signalium cache for this (fn, args) alive for the surrounding
+	// route group rather than just this consumer's subscription.
+	getKeepAliveScope()?.keepAlive(v, args);
+
+	const origin = callSite();
+
 	const w = watcher(() => {
 		const rp = v(...args);
 		(rp as unknown as { _version: { value: unknown } })._version.value;
@@ -56,10 +61,24 @@ export function useReactiveValue<
 	});
 	return {
 		subscribe: set => {
-			const read = () => set(w.value as T | undefined);
+			let stalledTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(
+				() => console.error(new StalledStoreError(origin).message),
+				STALLED_MS,
+			);
+			const read = () => {
+				const value = w.value as T | undefined;
+				if (value !== undefined) {
+					clearTimeout(stalledTimer);
+					stalledTimer = undefined;
+				}
+				set(value);
+			};
 			const unsubs = w.addListener(read);
 			read();
-			return () => unsubs();
+			return () => {
+				clearTimeout(stalledTimer);
+				unsubs();
+			};
 		},
 	};
 }
@@ -83,6 +102,16 @@ export class StalledStoreError extends Error {
 	}
 }
 
+/**
+ * A signalium async reactive as a Svelte store of a promise, for the `{:catch}`
+ * arm that `useReactiveValue` cannot give you.
+ *
+ * Reach for `useReactiveValue` first. Every value change here hands `{#await}`
+ * a new promise, which tears down and rebuilds the whole `:then` branch — fine
+ * for a leaf, but it closes overlays and detaches DOM in anything interactive.
+ * Use this only where the subtree must react to a rejection, or where a
+ * distinct pending UI has to be told apart from a resolved `undefined`.
+ */
 export function useReactivePromise<
 	RP extends ReactivePromise<unknown>,
 	Args extends unknown[],
@@ -188,31 +217,4 @@ export function useReactivePromise<
 			};
 		},
 	};
-}
-
-/**
- * `useReactivePromise` for several async reactives at once: resolves to a tuple
- * of their values, so one `{#await}` — keeping its `:then`/`:catch` arms — can
- * gate a branch that needs all of them, instead of nesting an `{#await}` per
- * store.
- *
- *     useReactivePromises(() => [contactsStore.profiles(agentId), store.info()])
- */
-export function useReactivePromises<
-	const T extends readonly ReactivePromise<unknown>[],
->(
-	sources: () => T,
-): Readable<Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }>> {
-	type Values = { -readonly [K in keyof T]: Awaited<T[K]> };
-
-	const sameValues = (a: readonly unknown[], b: readonly unknown[]) =>
-		a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
-
-	// signalium runs an async reactive's `equals` against the resolved value but
-	// types it against the promise.
-	const equals = sameValues as unknown as Equals<Promise<Values>>;
-
-	return useReactivePromise(
-		reactive(async () => await ReactivePromise.all(sources()), { equals }),
-	);
 }

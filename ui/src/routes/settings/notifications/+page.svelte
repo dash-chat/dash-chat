@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		BlockTitle,
 		List,
@@ -19,7 +19,7 @@
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
-	const notificationsEnabled = useReactivePromise(
+	const notificationsEnabled = useReactiveValue(
 		settingsStore.notificationsEnabled,
 	);
 
@@ -80,13 +80,11 @@
 			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 				<ListItem title={m.notifications()} data-testid="notifications-toggle">
 					{#snippet after()}
-						{#await $notificationsEnabled then enabled}
-							<Toggle
-								checked={enabled}
-								disabled={toggling}
-								onChange={() => (enabled ? disable() : enable())}
-							/>
-						{/await}
+						<Toggle
+							checked={$notificationsEnabled ?? false}
+							disabled={toggling}
+							onChange={() => ($notificationsEnabled ? disable() : enable())}
+						/>
 					{/snippet}
 				</ListItem>
 			</List>

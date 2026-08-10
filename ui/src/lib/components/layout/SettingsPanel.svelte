@@ -3,7 +3,7 @@
 	import { fullName, type ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiAccountCircleOutline,
 		mdiBellOutline,
@@ -44,7 +44,7 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
-	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const myProfile = useReactiveValue(contactsStore.myProfile);
 	const theme = $derived(useTheme());
 
 	const isActive = (path: string) => page.url.pathname.startsWith(path);
@@ -57,14 +57,14 @@
 		{/snippet}
 	</Navbar>
 
-	{#await $myProfile}
+	{#if $myProfile === undefined}
 		<div
 			class="column"
 			style="height: 100%; align-items: center; justify-content: center"
 		>
 			<Preloader />
 		</div>
-	{:then myProfile}
+	{:else}
 		<List
 			strongIos
 			nested={theme === 'material'}
@@ -76,14 +76,14 @@
 				chevron={false}
 				linkProps={{ href: '/settings/profile' }}
 				data-testid="settings-profile-link"
-				title={myProfile ? fullName(myProfile) : undefined}
+				title={$myProfile ? fullName($myProfile) : undefined}
 				titleFontSizeIos="text-xl"
 				titleFontSizeMaterial="text-xl"
 			>
 				{#snippet media()}
 					<Avatar
-						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
+						image={$myProfile?.avatar}
+						initials={$myProfile?.name.slice(0, 2)}
 						style={isWideScreen.value || theme === 'ios'
 							? '--size: 64px'
 							: '--size: 64px; margin-inline-start: 16px'}
@@ -197,7 +197,7 @@
 				{/snippet}
 			</ListItem>
 		</List>
-	{/await}
+	{/if}
 </div>
 
 <style>

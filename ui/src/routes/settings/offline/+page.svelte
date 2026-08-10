@@ -3,7 +3,7 @@
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { type SettingsStore } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
 	import {
@@ -20,7 +20,7 @@
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
-	const localMailboxEnabled = useReactivePromise(
+	const localMailboxEnabled = useReactiveValue(
 		settingsStore.localMailboxEnabled,
 	);
 	let toggling = $state(false);
@@ -62,13 +62,11 @@
 					data-testid="offline-local-mailbox-toggle"
 				>
 					{#snippet after()}
-						{#await $localMailboxEnabled then enabled}
-							<Toggle
-								checked={enabled}
-								disabled={toggling}
-								onChange={() => toggle(enabled)}
-							/>
-						{/await}
+						<Toggle
+							checked={$localMailboxEnabled ?? false}
+							disabled={toggling}
+							onChange={() => toggle($localMailboxEnabled ?? false)}
+						/>
 					{/snippet}
 				</ListItem>
 			</List>

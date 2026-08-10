@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ChatsStore } from 'dash-chat-stores';
@@ -37,9 +37,9 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const groupChatStore = chatsStore.groupChats(chatId);
 
-	const info = useReactivePromise(groupChatStore.info);
-	const members = useReactivePromise(groupChatStore.allMembers);
-	const me = useReactivePromise(groupChatStore.me);
+	const info = useReactiveValue(groupChatStore.info);
+	const members = useReactiveValue(groupChatStore.allMembers);
+	const me = useReactiveValue(groupChatStore.me);
 
 	let sheetOpenFor = $state<string | null>(null);
 	let dialogType = $state<
@@ -141,7 +141,7 @@
 </script>
 
 <Page>
-	{#await $info then info}
+	{#if $info !== undefined}
 		<Navbar transparent={true}>
 			{#snippet left()}
 				<NavbarBackLink
@@ -156,17 +156,17 @@
 					style="display: flex; justify-content: start; align-items: center; flex: 1"
 				>
 					<Avatar
-						image={info.image}
-						initials={info.name.slice(0, 2)}
+						image={$info.image}
+						initials={$info.name.slice(0, 2)}
 						size="2.5rem"
 					/>
-					<span>{info.name}</span>
+					<span>{$info.name}</span>
 				</div>
 			{/snippet}
 
 			{#snippet right()}
-				{#await $me then me}
-					{#if me.admin}
+				{#if $me !== undefined}
+					{#if $me.admin}
 						<Link
 							data-testid="group-info-edit-link"
 							href={`/group-chat/${chatId}/info/edit`}
@@ -179,17 +179,17 @@
 							{/if}
 						</Link>
 					{/if}
-				{/await}
+				{/if}
 			{/snippet}
 		</Navbar>
 
-		{#await $me then me}
+		{#if $me !== undefined}
 			<div class="column" style="flex: 1">
 				<div class="column center-in-desktop gap-8 p-2">
 					<div class="column" style="align-items: center; gap: 1rem">
 						<Avatar
-							image={info.image}
-							initials={info.name.slice(0, 2)}
+							image={$info.image}
+							initials={$info.name.slice(0, 2)}
 							size="5rem"
 						>
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
@@ -197,22 +197,22 @@
 
 						<span
 							class="text-xl font-semibold break-words text-center max-w-full"
-							>{info.name}</span
+							>{$info.name}</span
 						>
 
 						<span class="quiet break-words text-center max-w-full"
-							>{info.description}</span
+							>{$info.description}</span
 						>
 					</div>
 
-					{#await $members then members}
+					{#if $members !== undefined}
 						<BlockTitle>
 							{m.membersCount({
-								count: Object.keys(members).length,
+								count: Object.keys($members).length,
 							})}</BlockTitle
 						>
 						<ActionList data-testid="group-info-members">
-							{#if me.admin}
+							{#if $me.admin}
 								<ListAction
 									title={m.addMembers()}
 									icon={mdiPlusCircle}
@@ -221,13 +221,13 @@
 								/>
 							{/if}
 
-							{#each Object.entries(members) as [actorId, member]}
+							{#each Object.entries($members) as [actorId, member]}
 								<ListItem
 									link
 									chevron={false}
 									title={member.profile?.name}
 									data-testid={`group-info-member-${member.profile?.name}`}
-									onclick={me.admin
+									onclick={$me.admin
 										? () => (sheetOpenFor = actorId)
 										: undefined}
 								>
@@ -248,7 +248,7 @@
 							{/each}
 						</ActionList>
 
-						{#if me.member}
+						{#if $me.member}
 							<ActionList>
 								<ListAction
 									title={m.leaveGroup()}
@@ -267,7 +267,7 @@
 							</ActionList>
 						{/if}
 
-						{@const sheetMember = sheetOpenFor ? members[sheetOpenFor] : null}
+						{@const sheetMember = sheetOpenFor ? $members[sheetOpenFor] : null}
 						<Sheet
 							class="pb-safe"
 							opened={sheetOpenFor !== null}
@@ -287,7 +287,7 @@
 								</div>
 
 								<ActionList>
-									{#if me.admin}
+									{#if $me.admin}
 										<!-- {#if sheetMember.admin}
 											<ListAction
 												title={m.demoteFromAdministrator()}
@@ -310,7 +310,7 @@
 											/>
 										{/if} -->
 
-										{#if sheetOpenFor === me.agentId}
+										{#if sheetOpenFor === $me.agentId}
 											<ListAction
 												title={m.leaveGroup()}
 												actionType="danger"
@@ -334,10 +334,10 @@
 								</ActionList>
 							{/if}
 						</Sheet>
-					{/await}
+					{/if}
 				</div>
 			</div>
-		{/await}
+		{/if}
 
 		<!-- Dialogs -->
 		<!-- <Dialog
@@ -436,7 +436,7 @@
 				</DialogButton>
 			{/snippet}
 		</Dialog> -->
-	{/await}
+	{/if}
 </Page>
 
 <style>

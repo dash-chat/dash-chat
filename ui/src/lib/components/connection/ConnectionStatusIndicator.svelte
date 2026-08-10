@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { MailboxTrackerStore } from 'dash-chat-stores';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext, type Snippet } from 'svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiEmoticonPoop } from '@mdi/js';
@@ -11,7 +11,7 @@
 		'mailbox-tracker-store',
 	);
 
-	const connectionStatus = useReactivePromise(
+	const connectionStatus = useReactiveValue(
 		mailboxTrackerStore.connectionStatus,
 	);
 
@@ -22,10 +22,10 @@
 	const asTitle = (snippet: Snippet) => snippet as unknown as string;
 </script>
 
-{#await $connectionStatus then connectionStatus}
-	{@const localCount = connectionStatus.connectedLocalMailboxCount}
+{#if $connectionStatus !== undefined}
+	{@const localCount = $connectionStatus.connectedLocalMailboxCount}
 	{@const isLocal = localCount > 0}
-	{#if !connectionStatus.connectedToCloudMailboxServer}
+	{#if !$connectionStatus.connectedToCloudMailboxServer}
 		<Chip
 			data-testid="connection-status"
 			data-status={isLocal ? 'local' : 'disconnected'}
@@ -103,7 +103,7 @@
 			{/snippet}
 		</Dialog>
 	{/if}
-{/await}
+{/if}
 
 <style>
 	.connection-status {

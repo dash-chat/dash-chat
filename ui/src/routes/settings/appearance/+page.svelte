@@ -4,7 +4,7 @@
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { isIos } from '$lib/utils/environment';
 	import {
 		type ColorSchemePreference,
@@ -25,7 +25,7 @@
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
-	const preference = useReactivePromise(settingsStore.colorSchemePreference);
+	const preference = useReactiveValue(settingsStore.colorSchemePreference);
 	const setup = $derived(page.url.searchParams.get('setup') === 'true');
 
 	async function select(scheme: ColorSchemePreference) {
@@ -57,7 +57,7 @@
 		{/snippet}
 	</Navbar>
 
-	{#await $preference then selected}
+	{#if $preference !== undefined}
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
 				<BlockTitle>{m.colorScheme()}</BlockTitle>
@@ -70,7 +70,7 @@
 						data-testid="appearance-light"
 					>
 						{#snippet after()}
-							{#if selected === 'light'}
+							{#if $preference === 'light'}
 								<span class="text-brand-primary">✓</span>
 							{/if}
 						{/snippet}
@@ -83,7 +83,7 @@
 						data-testid="appearance-dark"
 					>
 						{#snippet after()}
-							{#if selected === 'dark'}
+							{#if $preference === 'dark'}
 								<span class="text-brand-primary">✓</span>
 							{/if}
 						{/snippet}
@@ -96,7 +96,7 @@
 						data-testid="appearance-system"
 					>
 						{#snippet after()}
-							{#if selected === 'system'}
+							{#if $preference === 'system'}
 								<span class="text-brand-primary">✓</span>
 							{/if}
 						{/snippet}
@@ -110,5 +110,5 @@
 				{m.done()}
 			</FixedActionButton>
 		{/if}
-	{/await}
+	{/if}
 </Page>

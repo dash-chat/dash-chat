@@ -16,7 +16,7 @@
 	import { isMobile } from '$lib/utils/environment';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
@@ -38,9 +38,7 @@
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
-	const contacts = useReactivePromise(
-		contactsStore.profilesForUnblockedContacts,
-	);
+	const contacts = useReactiveValue(contactsStore.profilesForUnblockedContacts);
 	const theme = $derived(useTheme());
 
 	let menuFor = $state<{
@@ -129,26 +127,26 @@
 
 		<BlockTitle>{m.contacts()}</BlockTitle>
 
-		{#await $contacts}
+		{#if $contacts === undefined}
 			<div
 				class="column"
 				style="height: 100%; align-items: center; justify-content: center"
 			>
 				<Preloader />
 			</div>
-		{:then contacts}
+		{:else}
 			<List
 				strongIos
 				inset={isWideScreen.value || theme === 'ios'}
 				data-testid="new-message-contact-list"
 			>
-				{#if contacts.length === 0}
+				{#if $contacts.length === 0}
 					<ListItem
 						title={m.noContactsYet()}
 						data-testid="new-message-contacts-empty"
 					/>
 				{:else}
-					{@const filteredContacts = contacts.filter(([_, profile]) =>
+					{@const filteredContacts = $contacts.filter(([_, profile]) =>
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
 					)}
 					{#each filteredContacts as [actorId, profile]}
@@ -191,7 +189,7 @@
 					{/each}
 				{/if}
 			</List>
-		{/await}
+		{/if}
 	</div>
 </div>
 

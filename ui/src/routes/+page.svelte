@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
@@ -18,24 +18,22 @@
 
 	let getStartedVisible = $state(true);
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const myProfile = useReactiveValue(contactsStore.myProfile);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
-	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+	const chatSummaries = useReactiveValue(chatsStore.allChatsSummaries);
 </script>
 
 <Page>
 	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			{#await $myProfile then myProfile}
-				<Link iconOnly href="/settings" data-testid="home-settings-link">
-					<Avatar
-						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
-						size={42}
-					/>
-				</Link>
-			{/await}
+			<Link iconOnly href="/settings" data-testid="home-settings-link">
+				<Avatar
+					image={$myProfile?.avatar}
+					initials={$myProfile?.name.slice(0, 2)}
+					size={42}
+				/>
+			</Link>
 		{/snippet}
 
 		{#snippet right()}
@@ -44,15 +42,13 @@
 					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 				</Link>
 				{#if !isWideScreen.value}
-					{#await $chatSummaries then chats}
-						{#if chats.length === 0}
-							<!-- Absolute so it anchors to the navbar's inner row (already relative)
-								and sits below the new-message icon without affecting layout. -->
-							<div class="absolute end-0 top-full mt-2 z-30">
-								<FirstChatTooltip />
-							</div>
-						{/if}
-					{/await}
+					{#if $chatSummaries?.length === 0}
+						<!-- Absolute so it anchors to the navbar's inner row (already relative)
+							and sits below the new-message icon without affecting layout. -->
+						<div class="absolute end-0 top-full mt-2 z-30">
+							<FirstChatTooltip />
+						</div>
+					{/if}
 				{/if}
 			{/if}
 		{/snippet}
@@ -69,13 +65,11 @@
 			class="flex flex-col fixed bottom-4 inset-x-0 z-10 pb-safe pointer-events-none"
 		>
 			{#if theme == 'material'}
-				{#await $chatSummaries then chats}
-					{#if chats.length === 0}
-						<div class="self-end me-4 mb-2 z-30 pointer-events-auto">
-							<FirstChatTooltip />
-						</div>
-					{/if}
-				{/await}
+				{#if $chatSummaries?.length === 0}
+					<div class="self-end me-4 mb-2 z-30 pointer-events-auto">
+						<FirstChatTooltip />
+					</div>
+				{/if}
 				<Fab
 					class="z-20 me-4 pointer-events-auto"
 					style="align-self: end;"

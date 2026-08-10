@@ -3,7 +3,7 @@
 	import type { ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { mdiAccount, mdiInformationOutline, mdiQrcode } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
@@ -24,7 +24,7 @@
 	const theme = $derived(useTheme());
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
-	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const myProfile = useReactiveValue(contactsStore.myProfile);
 </script>
 
 <Page>
@@ -39,26 +39,26 @@
 		{/snippet}
 	</Navbar>
 
-	{#await $myProfile}
+	{#if $myProfile === undefined}
 		<div
 			class="column"
 			style="height: 100%; align-items: center; justify-content: center"
 		>
 			<Preloader />
 		</div>
-	{:then myProfile}
+	{:else}
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
 				<EditableAvatar
-					image={myProfile?.avatar}
-					initials={myProfile?.name.slice(0, 2)}
+					image={$myProfile?.avatar}
+					initials={$myProfile?.name.slice(0, 2)}
 					onEdit={() => goto('/settings/profile/edit-photo')}
 					class="mt-2 mb-4"
 				/>
 
 				<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<TitleTruncatedListItem
-						title={fullName(myProfile!)}
+						title={fullName($myProfile!)}
 						link
 						linkProps={{ href: '/settings/profile/edit-name' }}
 						data-testid="profile-edit-name"
@@ -102,7 +102,7 @@
 				<p class="explanation">{m.qrCodeExplanation()}</p>
 			</div>
 		</div>
-	{/await}
+	{/if}
 </Page>
 
 <style>

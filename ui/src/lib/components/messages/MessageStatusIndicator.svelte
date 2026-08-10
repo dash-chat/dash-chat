@@ -8,7 +8,7 @@
 		type MailboxTrackerStore,
 	} from 'dash-chat-stores';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 
 	import SendingSpinner from './SendingSpinner.svelte';
@@ -25,7 +25,7 @@
 		'mailbox-tracker-store',
 	);
 
-	const syncStatus = useReactivePromise(
+	const syncStatus = useReactiveValue(
 		mailboxTrackerStore.syncStatusForOp,
 		props.chatId,
 		props.author,
@@ -33,8 +33,8 @@
 	);
 </script>
 
-{#await $syncStatus then syncStatus}
-	{#if syncStatus.syncedWithCloudMailbox}
+{#if $syncStatus !== undefined}
+	{#if $syncStatus.syncedWithCloudMailbox}
 		<wa-icon
 			data-testid="message-status"
 			data-status="cloud"
@@ -42,7 +42,7 @@
 			src={wrapPathInSvg(mdiCheckCircleOutline)}
 			aria-label="sent"
 		></wa-icon>
-	{:else if syncStatus.syncedWithAnyLocalMailbox}
+	{:else if $syncStatus.syncedWithAnyLocalMailbox}
 		<wa-icon
 			data-testid="message-status"
 			data-status="local"
@@ -59,7 +59,7 @@
 			<SendingSpinner />
 		</div>
 	{/if}
-{/await}
+{/if}
 
 <style>
 	.message-status {

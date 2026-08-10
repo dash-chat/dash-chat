@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ChatsStore } from 'dash-chat-stores';
@@ -21,8 +21,7 @@
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
-	const info = useReactivePromise(store.info);
-	const infoValue = useReactiveValue(store.info);
+	const info = useReactiveValue(store.info);
 
 	let image = $state<string | undefined>(undefined);
 	let name = $state<string>('');
@@ -31,7 +30,7 @@
 	let initialized = false;
 
 	$effect(() => {
-		const i = $infoValue;
+		const i = $info;
 		if (i && !initialized) {
 			initialized = true;
 			image = i.image;
@@ -101,11 +100,11 @@
 			{/snippet}
 		</Navbar>
 
-		{#await $info then info}
+		{#if $info !== undefined}
 			<Container class="pt-2">
 				<EditableAvatar
 					{image}
-					initials={info.name?.slice(0, 2)}
+					initials={$info.name?.slice(0, 2)}
 					onEdit={startEditPhoto}
 				/>
 
@@ -135,6 +134,6 @@
 					{m.save()}
 				</FixedActionButton>
 			{/if}
-		{/await}
+		{/if}
 	</Page>
 {/if}
