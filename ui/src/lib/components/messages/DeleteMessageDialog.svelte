@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { DialogButton } from 'konsta/svelte';
-	import LazyDialog from '$lib/components/LazyDialog.svelte';
+	import { Actions, ActionsGroup, Dialog, DialogButton } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { DeviceId, Message, MessagesStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
+	import ActionButton from '$lib/components/navigation/ActionButton.svelte';
 	import { canDeleteMessageForEveryone } from './message-helpers';
+	import { isIos } from '$lib/utils/environment';
+	import { lazyMount } from '$lib/stores/lazy-mount.svelte';
 	import { showToast } from '$lib/utils/toasts';
 
 	interface Props {
@@ -22,6 +24,9 @@
 	const forEveryone = $derived(
 		canDeleteMessageForEveryone(message, myDeviceId),
 	);
+
+	// There is one of these per message, so keep it out of the DOM until used.
+	const prompt = lazyMount(() => opened);
 
 	async function deleteForEveryone() {
 		opened = false;
@@ -63,28 +68,66 @@
 	</DialogButton>
 {/snippet}
 
-<LazyDialog
-	{opened}
-	onBackdropClick={() => (opened = false)}
-	title={m.deleteMessageTitle()}
-	data-testid="delete-message-dialog"
->
-	{#snippet buttons()}
-		{#if forEveryone}
-			<div class="flex flex-col w-full">
-				<DialogButton
-					class="!text-red-500"
-					data-testid="delete-message-confirm"
-					onClick={deleteForEveryone}
+{#if prompt.mounted}
+	{#if isIos}
+		<Actions
+			opened={prompt.opened}
+			onBackdropClick={() => (opened = false)}
+			data-testid="delete-message-dialog"
+		>
+			<ActionsGroup class="flex flex-col gap-3 p-2.5">
+				<div class="px-3.5 py-2 text-start text-xl text-black dark:text-white">
+					{m.deleteMessageTitle()}
+				</div>
+				{#if forEveryone}
+					<ActionButton
+						destructive
+						onClick={deleteForEveryone}
+						data-testid="delete-message-confirm"
+					>
+						{m.deleteForEveryone()}
+					</ActionButton>
+				{/if}
+				<ActionButton
+					destructive
+					onClick={deleteForMe}
+					data-testid="delete-message-for-me-confirm"
 				>
-					{m.deleteForEveryone()}
-				</DialogButton>
-				{@render deleteForMeButton()}
-				{@render cancelButton()}
-			</div>
-		{:else}
-			{@render cancelButton()}
-			{@render deleteForMeButton()}
-		{/if}
-	{/snippet}
-</LazyDialog>
+					{m.deleteForMe()}
+				</ActionButton>
+				<ActionButton
+					onClick={() => (opened = false)}
+					data-testid="delete-message-cancel"
+				>
+					{m.cancel()}
+				</ActionButton>
+			</ActionsGroup>
+		</Actions>
+	{:else}
+		<Dialog
+			opened={prompt.opened}
+			onBackdropClick={() => (opened = false)}
+			title={m.deleteMessageTitle()}
+			data-testid="delete-message-dialog"
+		>
+			{#snippet buttons()}
+				{#if forEveryone}
+					<div class="flex w-full flex-col">
+						<DialogButton
+							class="!text-red-500"
+							data-testid="delete-message-confirm"
+							onClick={deleteForEveryone}
+						>
+							{m.deleteForEveryone()}
+						</DialogButton>
+						{@render deleteForMeButton()}
+						{@render cancelButton()}
+					</div>
+				{:else}
+					{@render cancelButton()}
+					{@render deleteForMeButton()}
+				{/if}
+			{/snippet}
+		</Dialog>
+	{/if}
+{/if}

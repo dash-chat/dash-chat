@@ -1,12 +1,9 @@
 <script lang="ts">
-	import { invokeAfterSetup } from 'dash-chat-stores';
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
 		BlockTitle,
-		Dialog,
-		DialogButton,
 		List,
 		ListItem,
 		Navbar,
@@ -14,25 +11,10 @@
 		Page,
 		useTheme,
 	} from 'konsta/svelte';
-	import { showToast } from '$lib/utils/toasts';
+	import DeleteAccountDialog from '$lib/components/DeleteAccountDialog.svelte';
 
 	const theme = $derived(useTheme());
 	let showDeleteDialog = $state(false);
-	let loading = $state(false);
-
-	async function handleDeleteAccount() {
-		loading = true;
-		try {
-			// On success the app exits immediately,
-			// so no code after this line executes on the happy path.
-			await invokeAfterSetup('delete_account');
-		} catch (e) {
-			console.error(e);
-			showToast(m.errorDeleteAccount(), 'error');
-			loading = false;
-			showDeleteDialog = false;
-		}
-	}
 </script>
 
 <Page>
@@ -66,26 +48,5 @@
 		</div>
 	</div>
 
-	<Dialog
-		opened={showDeleteDialog}
-		onBackdropClick={() => (showDeleteDialog = false)}
-		title={m.deleteAccount()}
-	>
-		<span>{m.areYouSureDeleteAccount()}</span>
-		{#snippet buttons()}
-			<DialogButton
-				onClick={() => (showDeleteDialog = false)}
-				data-testid="account-delete-cancel"
-			>
-				{m.cancel()}
-			</DialogButton>
-			<DialogButton
-				onClick={handleDeleteAccount}
-				disabled={loading}
-				data-testid="account-delete-confirm"
-			>
-				{loading ? '...' : m.delete()}
-			</DialogButton>
-		{/snippet}
-	</Dialog>
+	<DeleteAccountDialog bind:opened={showDeleteDialog} />
 </Page>

@@ -285,7 +285,6 @@
 						bind:opened={showBlockDialog}
 						agentId={peerAgentId}
 						name={peerName}
-						onDone={() => goto('/')}
 					/>
 				{/if}
 				<ReportContactDialog

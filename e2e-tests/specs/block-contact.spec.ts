@@ -18,23 +18,39 @@ describe('block contact', () => {
 	});
 
 	it('blocks from chat settings and shows the indicators', async () => {
-		// Blocking returns to the chat list, where the row is marked as blocked.
 		await blockAgent(agent1);
-		await agent1.homePage.blockedRowIcon.waitForDisplayed();
-
-		await agent1.homePage.chatRow.click();
-		await agent1.directChatPage.ready();
 		await agent1.directChatPage.blockedBanner.waitForDisplayed();
 		await agent1.directChatPage.blockedNameIcon.waitForDisplayed();
+
+		await expect(
+			agent1.directChatPage.messages.systemMessage('contact_blocked'),
+		).toHaveText(await agent1.tr('youBlockedContact', { name: 'Bob Test' }));
+		await expect(
+			agent2.directChatPage.messages.systemMessage('contact_blocked'),
+		).not.toBeExisting();
+
+		await agent1.directChatPage.back.click();
+		await agent1.homePage.ready();
+		await agent1.homePage.blockedRowIcon.waitForDisplayed();
 	});
 
 	it('unblocks from the blocked banner', async () => {
+		await agent1.homePage.chatRow.click();
+		await agent1.directChatPage.ready();
 		await agent1.directChatPage.unblockButton.click();
 		await agent1.directChatPage.unblockConfirm.waitForClickable();
 		await agent1.directChatPage.unblockConfirm.click();
 		await agent1.directChatPage.blockedBanner.waitForDisplayed({
 			reverse: true,
 		});
+
+		await expect(
+			agent1.directChatPage.messages.systemMessage('contact_unblocked'),
+		).toHaveText(await agent1.tr('youUnblockedContact', { name: 'Bob Test' }));
+		// The earlier block stays in the timeline — it's history, not state.
+		await expect(
+			agent1.directChatPage.messages.systemMessage('contact_blocked'),
+		).toBeExisting();
 	});
 
 	it('blocks from the new-message contact menu', async () => {

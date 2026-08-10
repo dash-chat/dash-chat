@@ -50,8 +50,8 @@ describe('Leaving group', () => {
 		await expect(agent1.groupChatPage.composer.messageInput).not.toBeExisting();
 
 		// System message records the departure
-		const systemMessage = agent1.$(
-			'[data-testid="group-chat-system-message-group_member_removed"]',
+		const systemMessage = agent1.groupChatPage.messages.systemMessage(
+			'group_member_removed',
 		);
 		await expect(systemMessage).toBeExisting();
 		const expectedText = await agent1.tr('youLeftTheGroup');

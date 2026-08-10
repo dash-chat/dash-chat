@@ -19,6 +19,7 @@ export class DirectChatPage extends TestHelper {
 	peerName = this.el(tid('direct-chat-peer-name'));
 	peerHeader = this.el(tid('direct-chat-peer-header'));
 	peerAvatar = this.el(tid('direct-chat-peer-avatar'));
+	nameNotVerifiedPill = this.el(tid('direct-chat-name-not-verified'));
 	acceptButton = this.el(tid('direct-chat-accept-btn'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
 	blockButton = this.el(tid('direct-chat-block-btn'));
@@ -100,7 +101,7 @@ export class DirectChatPage extends TestHelper {
 	isPeerNamePresent(): Promise<boolean> {
 		return this.peerName.isExisting();
 	}
-	
+
 	/**
 	 * Wait until the peer's real profile is rendered: the chat has left the
 	 * pending state and the avatar is no longer the placeholder. Gate on this —

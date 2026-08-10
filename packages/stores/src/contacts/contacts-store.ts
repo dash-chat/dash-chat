@@ -143,6 +143,30 @@ export class ContactsStore {
 		await this.client.reportContact(agentId);
 	};
 
+	/** Every block/unblock operation for `agentId`, keyed by operation hash. */
+	blockHistory = reactive(async (agentId: AgentId) => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const events: Record<
+			Hash,
+			{ blocked: boolean; timestamp: number; author: DeviceId }
+		> = {};
+		for (const ops of Object.values(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				const payload = op.body?.payload;
+				if (payload?.type !== 'BlockAgent' && payload?.type !== 'UnblockAgent')
+					continue;
+				if (payload.payload !== agentId) continue;
+				events[op.hash] = {
+					blocked: payload.type === 'BlockAgent',
+					timestamp: op.header.timestamp,
+					author: op.header.verifying_key,
+				};
+			}
+		}
+		return events;
+	});
+
 	isBlocked = reactive(async (agentId: AgentId) => {
 		const blocked = await this.blockedContactAgentIds();
 

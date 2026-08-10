@@ -55,8 +55,8 @@ describe('Removing group members', () => {
 		await agent2.homePage.chatListItem('Test Group').click();
 		await agent2.groupChatPage.ready();
 
-		const systemMessage = agent2.$(
-			'[data-testid="group-chat-system-message-group_member_removed"]',
+		const systemMessage = agent2.groupChatPage.messages.systemMessage(
+			'group_member_removed',
 		);
 		await expect(systemMessage).toBeExisting();
 		const expectedText = await agent2.tr('someoneRemovedYouFromTheGroup', {

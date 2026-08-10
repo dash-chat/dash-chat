@@ -127,7 +127,9 @@
 			mockContactsClient,
 		);
 
-		tombstoneStore = new TombstoneStore(new MockTombstoneClient());
+		tombstoneStore = new TombstoneStore(
+			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
+		);
 
 		const mockChatsClient = new MockChatsClient();
 		chatsStore = new MockChatsStore(

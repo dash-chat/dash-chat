@@ -13,8 +13,8 @@
 		"windows": [
 			{
 				"title": "Dash Chat",
-				"width": 850,
-				"height": 650
+				"width": 1000,
+				"height": 750
 			}
 		],
 		"withGlobalTauri": true,
