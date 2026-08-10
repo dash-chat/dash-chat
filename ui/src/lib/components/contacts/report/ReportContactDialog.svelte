@@ -22,8 +22,8 @@
 
 	async function confirm(alsoBlock: boolean) {
 		try {
-			await contactsStore.reportContact(agentId);
 			if (alsoBlock) await contactsStore.client.blockContact(agentId);
+			await contactsStore.reportContact(agentId);
 			// Closing can unmount whatever owns `name`, so resolve the toast first.
 			const toast = alsoBlock
 				? m.contactBlockedToast({ name })
