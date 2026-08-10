@@ -49,6 +49,7 @@ export function useReactiveValue<
 	Args extends unknown[],
 >(v: (...args: Args) => RP, ...args: Args): Readable<Awaited<RP> | undefined> {
 	type T = Awaited<RP>;
+	getKeepAliveScope()?.keepAlive(v, args);
 	const w = watcher(() => {
 		const rp = v(...args);
 		(rp as unknown as { _version: { value: unknown } })._version.value;
