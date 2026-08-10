@@ -30,7 +30,7 @@
 	class="!font-normal"
 	colors={{
 		tonalBgIos:
-			'bg-black/[0.06] active:bg-black/10 dark:bg-white/10 dark:active:bg-white/15',
+			'bg-black/10 active:bg-black/[0.16] dark:bg-white/10 dark:active:bg-white/15',
 		tonalTextIos: destructive ? 'text-red-500' : 'text-black dark:text-white',
 	}}
 	{onClick}
