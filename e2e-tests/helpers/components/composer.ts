@@ -243,6 +243,21 @@ export class Composer extends TestHelper {
 		}, tid('message-input-textarea'));
 	}
 
+	/** Pixels between the bottom of the input bar and the bottom of the
+	 * viewport. Anything but 0 means something scrolled the app shell out from
+	 * under the composer. */
+	bottomGap(): Promise<number> {
+		return this.agent.execute((sel: string) => {
+			const bar = document
+				.querySelector(sel)
+				?.closest('.message-input-bar') as HTMLElement | null;
+			if (!bar) throw new Error('bottomGap: input bar not found');
+			return Math.round(
+				window.innerHeight - bar.getBoundingClientRect().bottom,
+			);
+		}, tid('message-input-textarea'));
+	}
+
 	private textareaValue(): Promise<string> {
 		return this.agent.execute(
 			(sel: string) =>

@@ -44,6 +44,22 @@ describe('Replying to messages', () => {
 		});
 	});
 
+	it('keeps the composer pinned to the bottom when the quote jump cannot scroll further', async () => {
+		if (!(await agent2.supportsWideScreen())) return;
+		await agent2.setWideScreen(true);
+		try {
+			const reply =
+				await agent2.directChatPage.messages.waitForMessage('Sure, at noon');
+			await reply.clickReplyQuote();
+			// The jump animates, and so does the shell scroll this guards
+			// against — sample once it has settled, not mid-glide.
+			await agent2.pause(1_000);
+			expect(await agent2.directChatPage.composer.bottomGap()).toBe(0);
+		} finally {
+			await agent2.setWideScreen(false);
+		}
+	});
+
 	it('keeps the quoted content frozen when the target is edited, and still scrolls to it', async () => {
 		const original = await agent1.directChatPage.messages.waitForMessage(
 			'Shall we meet tomorrow?',
