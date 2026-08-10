@@ -9,7 +9,13 @@
  * macOS + a device, so they can't share one host.
  */
 import type { ChildProcess } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	appendFileSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -116,25 +122,103 @@ async function teardown() {
 	pushLogger?.kill();
 }
 
+const FAILURES_DIR = path.join(ROOT, '.dbs', 'e2e', 'failures');
+const FAILURES_LOG = path.join(FAILURES_DIR, 'failures.jsonl');
+
+interface RecordedFailure {
+	spec: string;
+	title: string;
+	error: string;
+	screenshots: string[];
+}
+
+/** Append a failure to the run-wide log that onComplete replays at the end.
+ * Workers each own a process, so the log is the only place they can meet. */
+function recordFailure(
+	test: { parent: string; title: string; file?: string },
+	error: Error | undefined,
+	screenshots: string[],
+): void {
+	const failure: RecordedFailure = {
+		spec: test.file ? path.relative(__dirname, test.file) : '',
+		title: `${test.parent} ${test.title}`.trim(),
+		error: error?.stack ?? error?.message ?? 'unknown error',
+		screenshots,
+	};
+	mkdirSync(FAILURES_DIR, { recursive: true });
+	appendFileSync(FAILURES_LOG, `${JSON.stringify(failure)}\n`);
+}
+
+function readFailures(): RecordedFailure[] {
+	try {
+		return readFileSync(FAILURES_LOG, 'utf8')
+			.split('\n')
+			.filter(Boolean)
+			.map(line => JSON.parse(line));
+	} catch {
+		return [];
+	}
+}
+
+/** Drop the failures of specs about to run again, so a spec that only passes
+ * on its retry doesn't leave its first attempt in the final summary. */
+function forgetFailuresFor(specs: string[]): void {
+	const rerun = new Set(
+		specs.map(spec => path.relative(__dirname, spec.replace(/^file:\/\//, ''))),
+	);
+	const kept = readFailures().filter(failure => !rerun.has(failure.spec));
+	mkdirSync(FAILURES_DIR, { recursive: true });
+	writeFileSync(FAILURES_LOG, kept.map(f => `${JSON.stringify(f)}\n`).join(''));
+}
+
+/** Reprint every failure of the run, so the errors are the last thing on
+ * screen instead of something to scroll back through the run log for. */
+function printFailureSummary(): void {
+	const failures = readFailures();
+	if (failures.length === 0) return;
+	const out = [
+		'',
+		`${'='.repeat(70)}`,
+		`FAILURES (${failures.length})`,
+		`${'='.repeat(70)}`,
+	];
+	failures.forEach((failure, i) => {
+		out.push('', `${i + 1}) ${failure.title}`);
+		if (failure.spec) out.push(`   ${failure.spec}`);
+		out.push(
+			failure.error
+				.split('\n')
+				.map(line => `   ${line}`)
+				.join('\n'),
+		);
+		for (const shot of failure.screenshots) {
+			out.push(`   screenshot: ${path.relative(ROOT, shot)}`);
+		}
+	});
+	out.push('');
+	console.error(out.join('\n'));
+}
+
 /** Save a per-agent screenshot of the current webview to .dbs/e2e/failures/. */
 async function saveFailureScreenshots(test: {
 	parent: string;
 	title: string;
-}): Promise<void> {
-	const dir = path.join(ROOT, '.dbs', 'e2e', 'failures');
-	mkdirSync(dir, { recursive: true });
+}): Promise<string[]> {
+	mkdirSync(FAILURES_DIR, { recursive: true });
 	const slug = `${test.parent} ${test.title}`
 		.replace(/[^a-zA-Z0-9]+/g, '-')
 		.slice(0, 80);
+	const saved: string[] = [];
 	for (const name of browser.instances) {
+		const file = path.join(FAILURES_DIR, `${slug}-${name}.png`);
 		try {
-			await browser
-				.getInstance(name)
-				.saveScreenshot(path.join(dir, `${slug}-${name}.png`));
+			await browser.getInstance(name).saveScreenshot(file);
+			saved.push(file);
 		} catch {
 			/* session may already be dead */
 		}
 	}
+	return saved;
 }
 
 export const config: WebdriverIO.MultiremoteConfig = {
@@ -240,7 +324,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		}
 	},
 
-	async beforeSession() {
+	async beforeSession(_config, _capabilities, specs) {
+		forgetFailuresFor(specs);
 		for (const platform of platforms) {
 			await platform.beforeSession();
 		}
@@ -249,11 +334,20 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes
 	 * that only reproduce on slow devices leave usable evidence behind. */
 	async afterTest(test, _context, result) {
-		if (!result.passed) await saveFailureScreenshots(test);
+		if (result.passed) return;
+		recordFailure(test, result.error, await saveFailureScreenshots(test));
 	},
 
 	async afterHook(test, _context, result) {
-		if (!result.passed) await saveFailureScreenshots(test);
+		if (result.passed) return;
+		recordFailure(
+			{ parent: test.parent ?? '', title: test.title ?? '' },
+			result.error,
+			await saveFailureScreenshots({
+				parent: test.parent ?? '',
+				title: test.title ?? '',
+			}),
+		);
 	},
 
 	async afterSession() {
@@ -264,5 +358,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 	async onComplete() {
 		await teardown();
+		printFailureSummary();
 	},
 };
