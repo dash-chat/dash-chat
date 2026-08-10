@@ -3,6 +3,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { Actions, ActionsGroup, Dialog, DialogButton } from 'konsta/svelte';
 	import ActionButton from '$lib/components/navigation/ActionButton.svelte';
+	import ActionsTitle from '$lib/components/navigation/ActionsTitle.svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { showToast } from '$lib/utils/toasts';
 
@@ -27,15 +28,13 @@
 
 {#if isIos}
 	<Actions {opened} onBackdropClick={() => (opened = false)}>
-		<ActionsGroup class="flex flex-col gap-3 p-2.5">
-			<div class="flex flex-col gap-1 px-3.5 py-2 text-start">
-				<span class="text-xl text-black dark:text-white">
-					{m.deleteAccount()}
-				</span>
-				<span class="text-black/60 dark:text-white/60">
-					{m.areYouSureDeleteAccount()}
-				</span>
-			</div>
+		<ActionsGroup
+			class="flex flex-col gap-2 !bg-white p-2.5 dark:!bg-neutral-900"
+		>
+			<ActionsTitle
+				title={m.deleteAccount()}
+				subtitle={m.areYouSureDeleteAccount()}
+			/>
 			<ActionButton
 				destructive
 				onClick={confirm}
