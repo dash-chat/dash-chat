@@ -58,29 +58,6 @@ macro_rules! capabilities {
     };
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum VersionConvertError {
-    Lossy,
-    UnknownVersion,
-}
-
-impl fmt::Display for VersionConvertError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            VersionConvertError::Lossy => write!(f, "lossy version conversion"),
-            VersionConvertError::UnknownVersion => write!(f, "unknown version"),
-        }
-    }
-}
-
-impl std::error::Error for VersionConvertError {}
-
-pub trait VersionConvert: Sized {
-    type Capabilities;
-
-    fn to_version(&self, capabilities: &Self::Capabilities) -> Result<Self, VersionConvertError>;
-}
-
 #[cfg(test)]
 mod tests {
 
