@@ -46,6 +46,13 @@ export interface FileAttachment {
 	mime_type: string;
 }
 
+export interface VoiceNote {
+	hash: Hash;
+	mime_type: string;
+	duration_ms: number;
+	waveform: Uint8Array;
+}
+
 /**
  * Raw bytes leaving the composer for the backend to store. `data` carries raw
  * bytes — NOT base64; in-process it is a `Uint8Array`, and over Tauri JSON IPC
@@ -55,7 +62,8 @@ export interface FileAttachment {
  */
 export type OutgoingMedia =
 	| { kind: 'photos'; photos: OutgoingPhoto[] }
-	| { kind: 'file'; file: OutgoingFile };
+	| { kind: 'file'; file: OutgoingFile }
+	| { kind: 'voice_note'; voice_note: OutgoingVoiceNote };
 
 export interface OutgoingPhoto {
 	data: Uint8Array;
@@ -69,6 +77,13 @@ export interface OutgoingFile {
 	mime_type: string;
 }
 
+export interface OutgoingVoiceNote {
+	data: Uint8Array;
+	mime_type: string;
+	duration_ms: number;
+	waveform: Uint8Array;
+}
+
 /**
  * Metadata for a single stored blob. A message log carries these in place of
  * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
@@ -77,7 +92,15 @@ export interface OutgoingFile {
  */
 export type MediaMetadata =
 	| { kind: 'Photo'; name: string; mime_type: string; size: number; hash: Hash }
-	| { kind: 'File'; name: string; mime_type: string; size: number; hash: Hash };
+	| { kind: 'File'; name: string; mime_type: string; size: number; hash: Hash }
+	| {
+			kind: 'VoiceNote';
+			mime_type: string;
+			size: number;
+			duration_ms: number;
+			waveform: Uint8Array;
+			hash: Hash;
+	  };
 
 /** Matches `dashchat_node::MediaBundle`, which serializes as a flat array. */
 export type MediaBundle = MediaMetadata[];

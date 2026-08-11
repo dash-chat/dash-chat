@@ -1855,6 +1855,22 @@ impl Node {
                     hash,
                 });
             }
+            OutgoingMedia::VoiceNote { voice_note } => {
+                let size = voice_note.data.len() as u64;
+                ensure_blob_size(size, "voice note")?;
+
+                let hash = self
+                    .require_blob_sync()?
+                    .store_blob(topic, self.device_id(), operation_hash, voice_note.data)
+                    .await?;
+                items.push(MediaMetadata::VoiceNote {
+                    mime_type: voice_note.mime_type,
+                    size,
+                    duration_ms: voice_note.duration_ms,
+                    waveform: voice_note.waveform,
+                    hash,
+                });
+            }
         }
         Ok(MediaBundle::from(items))
     }
@@ -1914,22 +1930,40 @@ impl Node {
             items.push((item, data));
         }
 
-        // A file is always a single-item bundle; photos may be many.
-        if items.len() == 1 && matches!(items[0].0, MediaMetadata::File { .. }) {
+        // A voice note or a file is always a single-item bundle; photos may be many.
+        if items.len() == 1
+            && matches!(
+                items[0].0,
+                MediaMetadata::VoiceNote { .. } | MediaMetadata::File { .. }
+            )
+        {
             let (item, data) = items.pop().unwrap();
-            let MediaMetadata::File {
-                name, mime_type, ..
-            } = item
-            else {
-                unreachable!()
-            };
-            return Ok(OutgoingMedia::File {
-                file: OutgoingFile {
-                    data: data.to_vec(),
-                    name,
+            let outgoing_media = match item {
+                MediaMetadata::VoiceNote {
                     mime_type,
-                },
-            });
+                    duration_ms,
+                    waveform,
+                    ..
+                } => Ok(OutgoingMedia::VoiceNote {
+                    voice_note: crate::chat::OutgoingVoiceNote {
+                        data: data.to_vec(),
+                        mime_type,
+                        duration_ms,
+                        waveform,
+                    },
+                }),
+                MediaMetadata::File {
+                    name, mime_type, ..
+                } => Ok(OutgoingMedia::File {
+                    file: OutgoingFile {
+                        data: data.to_vec(),
+                        name,
+                        mime_type,
+                    },
+                }),
+                MediaMetadata::Photo { .. } => unreachable!(),
+            };
+            return outgoing_media;
         }
 
         let photos = items
