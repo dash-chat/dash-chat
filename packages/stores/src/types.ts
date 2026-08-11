@@ -47,15 +47,6 @@ export interface FileAttachment {
 }
 
 /**
- * Renderable media attached to a chat message. A message has either a set of
- * photos or a single file — not both. Built from a log's `MediaMetaCollection`
- * via `mediaMetaToMedia`; carries hashes, not bytes.
- */
-export type MediaAttachment =
-	| { kind: 'photos'; photos: PhotoAttachment[] }
-	| { kind: 'file'; file: FileAttachment };
-
-/**
  * Raw bytes leaving the composer for the backend to store. `data` carries raw
  * bytes — NOT base64; in-process it is a `Uint8Array`, and over Tauri JSON IPC
  * a `Vec<u8>` arrives as `number[]`. This is the *only* media shape that holds
@@ -78,54 +69,18 @@ export interface OutgoingFile {
 	mime_type: string;
 }
 
-export type MediaMetaKind = 'Photo' | 'File';
-
 /**
  * Metadata for a single stored blob. A message log carries these in place of
  * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
- * via the `irohblob://` URI scheme. Matches `dashchat_node::MediaMetaItem`.
+ * via the `irohblob://` URI scheme. Mirrors the `#[serde(tag = "kind")]` enum
+ * `dashchat_node::MediaMetadata`: each variant carries only what its kind needs.
  */
-export interface MediaMetadata {
-	name: string;
-	mime_type: string;
-	size: number;
-	kind: MediaMetaKind;
-	hash: Hash;
-}
+export type MediaMetadata =
+	| { kind: 'Photo'; name: string; mime_type: string; size: number; hash: Hash }
+	| { kind: 'File'; name: string; mime_type: string; size: number; hash: Hash };
 
 /** Matches `dashchat_node::MediaBundle`, which serializes as a flat array. */
 export type MediaBundle = MediaMetadata[];
-
-/**
- * Convert the blob metadata stored in a message log into the renderable
- * `MediaAttachment` shape. Mirrors `Node::load_media`: a lone file becomes a `file`
- * attachment, otherwise the items become `photos`. The resulting photos/file
- * carry only a `hash` (no bytes).
- */
-export function mediaBundleToAttachment(
-	meta: MediaBundle | null | undefined,
-): MediaAttachment | null {
-	if (!meta || meta.length === 0) return null;
-	const file = meta.find(item => item.kind === 'File');
-	if (file) {
-		return {
-			kind: 'file',
-			file: {
-				name: file.name,
-				mime_type: file.mime_type,
-				size: file.size,
-				hash: file.hash,
-			},
-		};
-	}
-	const photos: PhotoAttachment[] = meta.map(item => ({
-		name: item.name,
-		mime_type: item.mime_type,
-		size: item.size,
-		hash: item.hash,
-	}));
-	return { kind: 'photos', photos };
-}
 
 /**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
@@ -134,9 +89,9 @@ export function mediaBundleToAttachment(
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob
-	 * store, fetched lazily via `irohblob://`). `mediaBundleToAttachment` turns this
-	 * into the renderable `MediaAttachment`. */
+	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob store,
+	 * fetched lazily via `irohblob://`). Consumers derive the photos/file
+	 * grouping from this list at render time. */
 	media: MediaBundle | null;
 };
 export type MessageContent = MessageContentV1;
@@ -316,7 +271,7 @@ export interface MessageVersion {
  * history. */
 export interface MessageBody {
 	message: string;
-	media: MediaAttachment | null;
+	media: MediaBundle | null;
 	reactions: Record<DeviceId, string>;
 	editHistory: MessageVersion[];
 }

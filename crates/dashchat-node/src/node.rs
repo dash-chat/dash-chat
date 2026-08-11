@@ -40,8 +40,8 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
-    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetaKind,
-    MediaMetadata, OutgoingFile, OutgoingMedia,
+    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetadata,
+    OutgoingFile, OutgoingMedia,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -976,7 +976,7 @@ impl Node {
             for item in bundle.iter() {
                 if let Err(err) = self
                     .require_blob_sync()?
-                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash)
+                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash())
                     .await
                 {
                     tracing::warn!(?err, "failed to retag blob after operation creation");
@@ -1834,12 +1834,11 @@ impl Node {
                         .require_blob_sync()?
                         .store_blob(topic, self.device_id(), operation_hash, photo.data)
                         .await?;
-                    items.push(MediaMetadata {
+                    items.push(MediaMetadata::Photo {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
                         hash,
-                        kind: MediaMetaKind::Photo,
                     });
                 }
             }
@@ -1850,12 +1849,11 @@ impl Node {
                     .require_blob_sync()?
                     .store_blob(topic, self.device_id(), operation_hash, file.data)
                     .await?;
-                items.push(MediaMetadata {
+                items.push(MediaMetadata::File {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
                     hash,
-                    kind: MediaMetaKind::File,
                 });
             }
         }
@@ -1911,44 +1909,46 @@ impl Node {
             let data = self
                 .require_blob_sync()?
                 .blobs
-                .get_bytes(item.hash)
+                .get_bytes(item.hash())
                 .await
                 .context(format!("failed to load blob: {item:?}"))?;
             items.push((item, data));
         }
 
-        let (photos, mut other): (Vec<_>, Vec<_>) = items
-            .into_iter()
-            .partition(|(item, _)| item.kind == MediaMetaKind::Photo);
-
-        if other.len() > 1 {
-            return Err(anyhow::anyhow!(
-                "multiple files are not supported. photos: {photos:?}, other: {other:?}",
-            ));
-        } else if photos.len() >= 1 && other.len() == 1 {
-            return Err(anyhow::anyhow!(
-                "photos and other media in the same message are not supported. photos: {photos:?}, other: {other:?}",
-            ));
-        } else if other.len() == 1 {
-            let (item, data) = other.pop().unwrap();
+        // A file is always a single-item bundle; photos may be many.
+        if items.len() == 1 && matches!(items[0].0, MediaMetadata::File { .. }) {
+            let (item, data) = items.pop().unwrap();
+            let MediaMetadata::File {
+                name, mime_type, ..
+            } = item
+            else {
+                unreachable!()
+            };
             return Ok(OutgoingMedia::File {
                 file: OutgoingFile {
                     data: data.to_vec(),
-                    name: item.name,
-                    mime_type: item.mime_type,
+                    name,
+                    mime_type,
                 },
             });
-        } else {
-            let photos = photos
-                .into_iter()
-                .map(|(item, data)| crate::chat::OutgoingPhoto {
-                    data: data.to_vec(),
-                    name: item.name,
-                    mime_type: item.mime_type,
-                })
-                .collect();
-            return Ok(OutgoingMedia::Photos { photos });
         }
+
+        let photos = items
+            .into_iter()
+            .map(|(item, data)| match item {
+                MediaMetadata::Photo {
+                    name, mime_type, ..
+                } => Ok(crate::chat::OutgoingPhoto {
+                    data: data.to_vec(),
+                    name,
+                    mime_type,
+                }),
+                other => Err(anyhow::anyhow!(
+                    "unsupported media combination in a single message: {other:?}"
+                )),
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(OutgoingMedia::Photos { photos })
     }
 }
 
