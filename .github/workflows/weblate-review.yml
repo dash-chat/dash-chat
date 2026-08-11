@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize]
     paths:
       - "ui/messages/*.json"
+      - "ui/messages/eula/*.md"
 
 jobs:
   review-translations:
@@ -35,6 +36,13 @@ jobs:
             PR NUMBER: ${{ github.event.pull_request.number }}
 
             Review this Weblate translation PR. Use `gh pr diff` to see the changes.
+
+            Translations come from two Weblate components: the UI strings in `ui/messages/*.json`,
+            and the end user licence agreement in `ui/messages/eula/*.md`. For a changed
+            `ui/messages/eula/*.md` file, compare against `ui/messages/eula/en.md` and check that the
+            heading structure, list items, and `**bold**` spans match the English source, that section
+            numbering is preserved, and that `https://dashchat.org/privacy`, `support@dashchat.org`, and
+            the postal address in Section 19 are left verbatim. Do not flag the agreement's legal wording.
 
             For each changed translation file, compare against `ui/messages/en.json` (the source strings) and check for:
 

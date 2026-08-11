@@ -15,6 +15,7 @@ import { UpdaterBanner } from '../helpers/components/updater-banner';
 import { CreateProfilePage } from '../helpers/pages/create-profile-page';
 import { ChatSettingsPage } from '../helpers/pages/direct-chats/chat-settings-page';
 import { DirectChatPage } from '../helpers/pages/direct-chats/direct-chat-page';
+import { EulaPage } from '../helpers/pages/eula-page';
 import { AddMembersPage } from '../helpers/pages/group-chat/add-members-page';
 import { GroupChatPage } from '../helpers/pages/group-chat/group-chat-page';
 import { GroupInfoEditPage } from '../helpers/pages/group-chat/group-info-edit-page';
@@ -34,6 +35,7 @@ import { EditNamePage } from '../helpers/pages/settings/profile/edit-name-page';
 import { EditPhotoPage } from '../helpers/pages/settings/profile/edit-photo-page';
 import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
+import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import { APP_PACKAGE, stopAndroidApp } from './platforms/android';
 import { type AgentPlatformName, platformNames } from './test-env';
@@ -52,6 +54,7 @@ export type Agent = WebdriverIO.Browser & {
 	editAboutPage: EditAboutPage;
 	editNamePage: EditNamePage;
 	editPhotoPage: EditPhotoPage;
+	eulaPage: EulaPage;
 	addMembersPage: AddMembersPage;
 	groupChatPage: GroupChatPage;
 	groupInfoEditPage: GroupInfoEditPage;
@@ -67,6 +70,7 @@ export type Agent = WebdriverIO.Browser & {
 	settingsPage: SettingsPage;
 	toast: Toast;
 	updaterBanner: UpdaterBanner;
+	welcomePage: WelcomePage;
 
 	/** SvelteKit `goto` — uses `window.__test.goto` for client-side nav. */
 	goto(path: string): Promise<void>;
@@ -130,6 +134,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.editAboutPage = new EditAboutPage(b);
 	agent.editNamePage = new EditNamePage(b);
 	agent.editPhotoPage = new EditPhotoPage(b);
+	agent.eulaPage = new EulaPage(b);
 	agent.addMembersPage = new AddMembersPage(b);
 	agent.groupChatPage = new GroupChatPage(b);
 	agent.groupInfoEditPage = new GroupInfoEditPage(b);
@@ -145,6 +150,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.settingsPage = new SettingsPage(b);
 	agent.toast = new Toast(b);
 	agent.updaterBanner = new UpdaterBanner(b);
+	agent.welcomePage = new WelcomePage(b);
 }
 
 export function makeAgent(b: WebdriverIO.Browser): Agent {

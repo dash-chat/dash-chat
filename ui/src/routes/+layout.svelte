@@ -36,7 +36,7 @@
 	} from 'dash-chat-stores';
 	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
-	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
+	import OnboardingWrapper from '$lib/components/onboarding/OnboardingWrapper.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import CrashReportDialog from '$lib/components/CrashReportDialog.svelte';
@@ -231,7 +231,7 @@
 
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
-		<SplashscreenPrompt>
+		<OnboardingWrapper>
 			{#key currentLocale}
 				{#if isWideScreen.value}
 					<DesktopLayout>
@@ -243,7 +243,7 @@
 					</MobileLayout>
 				{/if}
 			{/key}
-		</SplashscreenPrompt>
+		</OnboardingWrapper>
 		{#if addContactPending.value}
 			<div
 				class="fixed inset-0 z-40 flex items-center justify-center"
