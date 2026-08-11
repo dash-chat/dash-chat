@@ -18,7 +18,7 @@ export class MockMessagesClient implements IMessagesClient {
 			type: 'Chat',
 			payload: {
 				type: 'Message',
-				payload: { v: '1', message, media: null },
+				payload: { message, media: null },
 			},
 		});
 	}
