@@ -151,8 +151,8 @@ importers:
         specifier: ^3.0.1
         version: 3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)
       tauri-plugin-system-theme:
-        specifier: github:dash-chat/tauri-plugin-system-theme#27d004e3f97ad088a9a2fcdc4a03bd45825265dd
-        version: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97))
+        specifier: github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d
+        version: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97))
       webbuf:
         specifier: ^3.0.28
         version: 3.0.28
@@ -5204,12 +5204,6 @@ packages:
 
   tauri-plugin-background-service@1.0.0:
     resolution: {integrity: sha512-i3ANk6SLyTGInXJNQez1VrgnDYqlCptVtgjMO2neZQbH3lYnwKH9cfXKMAsqotTEAE/dTseCove+ielnuUQ2hg==}
-
-  tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd:
-    resolution: {gitHosted: true, integrity: sha512-cj99p71/WJTX+PgPPBUl76w7odrkRjBRTiHaduDR13YXbtHbpycSSpHyFHzHXPMJ+xJDLdbTb4T7grTENstKPw==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd}
-    version: 0.1.0
-    peerDependencies:
-      signalium: ^3
 
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d:
     resolution: {gitHosted: true, integrity: sha512-SH/YsIdzSpG6yed/qiJdzipcWVP0y34uCmfS5st/zr3rpBKj1pthIgedvZUko9f7SK3LGQyuOSTjzHj+wk1M5A==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d}
@@ -11131,11 +11125,6 @@ snapshots:
   tauri-plugin-background-service@1.0.0:
     dependencies:
       '@tauri-apps/api': 2.11.0
-
-  tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)):
-    dependencies:
-      '@tauri-apps/api': 2.11.0
-      signalium: 3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)
 
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)):
     dependencies:
