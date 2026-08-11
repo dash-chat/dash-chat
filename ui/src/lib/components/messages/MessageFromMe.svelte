@@ -26,7 +26,6 @@
 	import { getContext } from 'svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { toggleReaction } from '$lib/utils/reactions';
-	import { showToast } from '$lib/utils/toasts';
 
 	let {
 		message,
@@ -60,16 +59,6 @@
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 	let confirmingDelete = $state(false);
-
-	async function deleteMessage() {
-		confirmingDelete = false;
-		try {
-			await store.deleteMessage(message);
-		} catch (e) {
-			console.error('Failed to delete message', e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		}
-	}
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (!hasBody(message.content)) return;
@@ -183,8 +172,4 @@
 	/>
 {/if}
 
-<DeleteMessageDialog
-	opened={confirmingDelete}
-	onConfirm={deleteMessage}
-	onCancel={() => (confirmingDelete = false)}
-/>
+<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />

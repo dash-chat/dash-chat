@@ -12,7 +12,7 @@
 	} from '@mdi/js';
 	import type { ContactsStore, ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { settled, useReactivePromise } from '$lib/stores/use-signal';
 	import { useTheme } from 'konsta/svelte';
 
 	type CardColor = 'warm' | 'sage';
@@ -50,10 +50,8 @@
 
 	let hasAvatar = $state(false);
 	$effect(() => {
-		const p = $myProfile;
-		p.then(profile => {
-			hasAvatar = !!profile?.avatar;
-		});
+		const profile = $myProfile;
+		if (settled(profile)) hasAvatar = !!profile?.avatar;
 	});
 
 	const allCards: Card[] = [

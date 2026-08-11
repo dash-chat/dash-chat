@@ -95,6 +95,19 @@
             export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries} -C link-arg=-fuse-ld=mold"
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
             export SOURCE_DATE_EPOCH=315532800
+
+            # Off NixOS there is no /run/opengl-driver, so glvnd finds no GL
+            # driver, WebKitGTK aborts its web process with "Could not create
+            # default EGL display: EGL_BAD_PARAMETER", and every desktop e2e
+            # spec dies in its first hook with "page crash or hang". Point
+            # glvnd at this shell's Mesa and rasterize in software, which is
+            # what CI does under xvfb.
+            if [ ! -d /run/opengl-driver ]; then
+              export LIBGL_ALWAYS_SOFTWARE=1
+              export LIBGL_DRIVERS_PATH="${pkgs.mesa}/lib/dri"
+              export __EGL_VENDOR_LIBRARY_DIRS="${pkgs.mesa}/share/glvnd/egl_vendor.d"
+              export LD_LIBRARY_PATH="${pkgs.mesa}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            fi
           '';
           packages = [
             pkgs.mprocs

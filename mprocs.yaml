@@ -18,3 +18,5 @@ procs:
   ios:
     shell: just ios dev
     autostart: false
+  "pnpm dev":
+    shell: pnpm dev

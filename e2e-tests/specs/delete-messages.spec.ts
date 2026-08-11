@@ -22,7 +22,7 @@ describe('Deleting messages', () => {
 		const theirs =
 			await agent2.directChatPage.messages.waitForMessage('Delete me');
 
-		await mine.delete();
+		await mine.deleteForEveryone();
 
 		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
 		await theirs.waitForDeleted(
@@ -41,7 +41,7 @@ describe('Deleting messages', () => {
 		const theirs =
 			await agent2.directChatPage.messages.waitForMessage('Draft v2');
 
-		await mine.delete();
+		await mine.deleteForEveryone();
 
 		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
 		await theirs.waitForDeleted(
@@ -49,13 +49,39 @@ describe('Deleting messages', () => {
 		);
 	});
 
-	it('does not offer Delete on the peer’s messages', async () => {
-		await agent2.directChatPage.composer.sendMessage("Bob's message stays");
-		const message = await agent1.directChatPage.messages.waitForMessage(
-			"Bob's message stays",
+	it('deletes a message only for me, leaving no placeholder', async () => {
+		await agent1.directChatPage.composer.sendMessage('Just for me');
+		const message =
+			await agent1.directChatPage.messages.waitForMessage('Just for me');
+		await agent2.directChatPage.messages.waitForMessage('Just for me');
+
+		await message.deleteForMe();
+
+		// Gone on my side (no placeholder, unlike delete-for-everyone)...
+		await agent1.directChatPage.messages.waitForMessageGone('Just for me');
+		// ...but still visible for the peer.
+		expect(
+			await agent2.directChatPage.messages.messageAreaContains('Just for me'),
+		).toBe(true);
+	});
+
+	it('offers Delete for me (but not Delete for everyone) on the peer’s messages', async () => {
+		await agent2.directChatPage.composer.sendMessage("Bob's message");
+		const message =
+			await agent1.directChatPage.messages.waitForMessage("Bob's message");
+
+		await message.openDeleteDialog();
+
+		// Only "Delete for me" is available for a received message.
+		await message.deleteForMeDialogConfirm.waitForExist();
+		expect(await message.deleteForEveryoneDialogConfirm.isExisting()).toBe(
+			false,
 		);
 
-		await message.openActions();
-		expect(await message.deleteAction.isExisting()).toBe(false);
+		await message.deleteForMeDialogConfirm.click();
+		await agent1.directChatPage.messages.waitForMessageGone("Bob's message");
+		expect(
+			await agent2.directChatPage.messages.messageAreaContains("Bob's message"),
+		).toBe(true);
 	});
 });
