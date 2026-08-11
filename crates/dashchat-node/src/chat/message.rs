@@ -1,4 +1,3 @@
-use dashchat_compat::{Compat, VersionConvert, VersionConvertError};
 use derive_more::derive::{Deref, From};
 use p2panda::Hash;
 use serde::{Deserialize, Serialize};
