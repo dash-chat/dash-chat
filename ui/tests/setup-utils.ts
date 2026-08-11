@@ -209,6 +209,112 @@ function dropFiles(specs: TestFileSpec[]) {
 	}
 }
 
+function buildSilentWav(durationMs: number): Uint8Array {
+	const sampleRate = 16000;
+	const numSamples = Math.max(1, Math.floor((sampleRate * durationMs) / 1000));
+	const dataSize = numSamples * 2;
+	const buffer = new ArrayBuffer(44 + dataSize);
+	const view = new DataView(buffer);
+	const writeStr = (offset: number, s: string) => {
+		for (let i = 0; i < s.length; i++)
+			view.setUint8(offset + i, s.charCodeAt(i));
+	};
+	writeStr(0, 'RIFF');
+	view.setUint32(4, 36 + dataSize, true);
+	writeStr(8, 'WAVE');
+	writeStr(12, 'fmt ');
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true); // PCM
+	view.setUint16(22, 1, true); // mono
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true); // byte rate
+	view.setUint16(32, 2, true); // block align
+	view.setUint16(34, 16, true); // bits per sample
+	writeStr(36, 'data');
+	view.setUint32(40, dataSize, true);
+	return new Uint8Array(buffer);
+}
+
+/** Bypasses the native recorder (no microphone in the WebKitGTK harness); the
+ * composer listens for `test-inject-voice-note`. */
+function injectVoiceNote(durationMs = 3000, audioDurationMs = durationMs) {
+	const wav = buildSilentWav(audioDurationMs);
+	const waveform = Array.from({ length: 48 }, (_, i) => 40 + (i % 5) * 40);
+	window.dispatchEvent(
+		new CustomEvent('test-inject-voice-note', {
+			detail: { bytes: Array.from(wav), durationMs, waveform },
+		}),
+	);
+}
+
+/** Seeks to `fraction` of the real audio length, so specs can assert the
+ * scrubber follows the audio rather than the recorded metadata. */
+function voiceSeekFraction(fraction: number): number {
+	const audio = document.querySelector<HTMLAudioElement>(
+		'[data-testid="message-attachment-voice"] audio',
+	);
+	if (!audio || !isFinite(audio.duration) || audio.duration <= 0) return -1;
+	audio.pause();
+	audio.currentTime = Math.max(0, Math.min(1, fraction)) * audio.duration;
+	return audio.currentTime / audio.duration;
+}
+
+function voiceProgress(): number {
+	const scrubber = document.querySelector('[data-testid="voice-scrubber"]');
+	const progress = scrubber
+		?.querySelector('div')
+		?.shadowRoot?.querySelector<HTMLElement>('.progress');
+	if (!progress) return 0;
+	return parseFloat(progress.style.width) / 100 || 0;
+}
+
+/** Peak bar luminance of the unplayed vs played canvases: wavesurfer composites
+ * with `source-in`, so a translucent waveColor makes the two indistinguishable. */
+function voiceBarLuminance(): { unplayed: number; played: number } {
+	const shadow = document
+		.querySelector('[data-testid="voice-scrubber"]')
+		?.querySelector('div')?.shadowRoot;
+	const peak = (canvas: HTMLCanvasElement | null | undefined): number => {
+		if (!canvas) return 0;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return 0;
+		const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+		let max = 0;
+		for (let i = 0; i < data.length; i += 4) {
+			const lum =
+				((data[i] + data[i + 1] + data[i + 2]) / 3) * (data[i + 3] / 255);
+			if (lum > max) max = lum;
+		}
+		return max;
+	};
+	return {
+		unplayed: peak(shadow?.querySelector('.canvases canvas')),
+		played: peak(shadow?.querySelector('.progress canvas')),
+	};
+}
+
+/** Fails the next voice-note byte fetch after `delayMs` so the spinner stays
+ * observable. Only `irohblob` is intercepted, and `fetch` is restored at once. */
+function failNextVoiceLoad(delayMs = 0) {
+	const original = window.fetch;
+	window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+		const url =
+			typeof input === 'string'
+				? input
+				: input instanceof URL
+					? input.href
+					: input.url;
+		if (!url.includes('irohblob')) return original(input, init);
+		window.fetch = original;
+		return new Promise<Response>((_, reject) =>
+			setTimeout(
+				() => reject(new Error('test: forced voice load failure')),
+				delayMs,
+			),
+		);
+	};
+}
+
 /** What a file input the app opened was configured to ask the OS for. */
 export interface FilePickerRequest {
 	accept: string;
@@ -262,6 +368,11 @@ export const testUtils = {
 	pasteFiles,
 	pasteNoisePhoto,
 	dropFiles,
+	injectVoiceNote,
+	voiceSeekFraction,
+	voiceProgress,
+	voiceBarLuminance,
+	failNextVoiceLoad,
 	recordMediaDownloads,
 	photoDownloadMs,
 	interceptFilePickers,

@@ -168,6 +168,22 @@ export class Composer extends TestHelper {
 		await this.waitForStagedMedia();
 	}
 
+	/** Injects a ready-made WAV draft, since the WebKitGTK harness has no
+	 * microphone. Pass a smaller `audioDurationMs` to simulate metadata that
+	 * overshoots the real audio length. */
+	async recordVoiceNote(
+		durationMs = 3000,
+		audioDurationMs = durationMs,
+	): Promise<void> {
+		await this.agent.execute(
+			(ms: number, ams: number) => {
+				window.__test.injectVoiceNote(ms, ams);
+			},
+			durationMs,
+			audioDurationMs,
+		);
+	}
+
 	/** Paste a single synthesized PNG named `${label}.png` into the composer. */
 	async pastePhotos(label: string): Promise<void> {
 		await this.messageInput.waitForExist();

@@ -38,6 +38,7 @@ export class Messages extends TestHelper {
 	readonly dividerSelector: string;
 	readonly root;
 	readonly unreadDivider;
+	voicePlayButton = this.el(tid('voice-play-button'));
 	scrollBottom = this.el(tid('chat-scroll-bottom'));
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
@@ -249,6 +250,62 @@ export class Messages extends TestHelper {
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
+	}
+
+	async waitForVoiceMessage(timeout = SYNC_TIMEOUT): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				this.agent.execute(
+					(messagesSel: string, voiceSel: string) =>
+						(document.querySelector(messagesSel)?.querySelectorAll(voiceSel)
+							.length ?? 0) > 0,
+					this.messagesSelector,
+					tid('message-attachment-voice'),
+				),
+			{ timeout, timeoutMsg: 'Voice message not found' },
+		);
+	}
+
+	async voiceProgress(): Promise<number> {
+		return this.agent.execute(() => window.__test.voiceProgress());
+	}
+
+	/** Peak bar luminance of the unplayed vs played regions, to prove the played
+	 * region is visibly distinct. */
+	async voiceBarLuminance(): Promise<{ unplayed: number; played: number }> {
+		return this.agent.execute(() => window.__test.voiceBarLuminance());
+	}
+
+	/** Seeks to `fraction` of the real audio length, resolving to that fraction
+	 * (or -1 if the audio isn’t loaded). */
+	async voiceSeekFraction(fraction: number): Promise<number> {
+		return this.agent.execute(
+			(f: number) => window.__test.voiceSeekFraction(f),
+			fraction,
+		);
+	}
+
+	/** Fails the next byte-load after `delayMs`, so the spinner stays observable
+	 * before the error toast. */
+	async failNextVoiceLoad(delayMs = 0): Promise<void> {
+		await this.agent.execute(
+			(ms: number) => window.__test.failNextVoiceLoad(ms),
+			delayMs,
+		);
+	}
+
+	async voicePlayLoading(): Promise<boolean> {
+		return (await this.voicePlayButton.getAttribute('aria-busy')) === 'true';
+	}
+
+	async voiceMessageCount(): Promise<number> {
+		return this.agent.execute(
+			(messagesSel: string, voiceSel: string) =>
+				document.querySelector(messagesSel)?.querySelectorAll(voiceSel)
+					.length ?? 0,
+			this.messagesSelector,
+			tid('message-attachment-voice'),
+		);
 	}
 }
 

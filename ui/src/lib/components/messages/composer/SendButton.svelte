@@ -9,9 +9,14 @@
 		onSend: () => Promise<boolean>;
 		/** Show a checkmark (save edit) instead of the send arrow. */
 		editing?: boolean;
+		testid?: string;
 	}
 
-	let { onSend, editing = false }: Props = $props();
+	let {
+		onSend,
+		editing = false,
+		testid = 'message-input-send',
+	}: Props = $props();
 
 	let loading = $state(false);
 
@@ -29,7 +34,7 @@
 <button
 	type="button"
 	class="send-button flex h-[42px] w-[42px] shrink-0 items-center justify-center p-0"
-	data-testid="message-input-send"
+	data-testid={testid}
 	onclick={handleClick}
 	disabled={loading}
 	aria-label={editing ? m.save() : m.send()}

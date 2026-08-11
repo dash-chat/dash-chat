@@ -5,6 +5,7 @@
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
 	import FileAttachment from './attachments/FileAttachment.svelte';
+	import VoiceNoteAttachment from './attachments/voice-notes/VoiceNoteAttachment.svelte';
 	import MessageText from './MessageText.svelte';
 
 	let {
@@ -25,13 +26,17 @@
 
 	const body = $derived(hasBody(message.content) ? message.content : null);
 	const media = $derived(body?.media ?? null);
-	const file = $derived(media?.find(m => m.kind === 'File'));
+	const voiceNote = $derived(media?.find(m => m.kind === 'VoiceNote'));
+	const file = $derived(
+		voiceNote ? undefined : media?.find(m => m.kind === 'File'),
+	);
 	const photos = $derived(
-		file ? [] : (media?.filter(m => m.kind === 'Photo') ?? []),
+		voiceNote || file ? [] : (media?.filter(m => m.kind === 'Photo') ?? []),
 	);
 	const hasText = $derived(!!body?.message);
 	const isPhotoOnly = $derived(photos.length > 0 && !hasText);
 	const isFileOnly = $derived(!!file && !hasText);
+	const isVoiceOnly = $derived(!!voiceNote && !hasText);
 
 	let metadataWidth = $state(0);
 </script>
@@ -60,8 +65,15 @@
 	<div class="media file">
 		<FileAttachment {file} metadata={isFileOnly ? metadata : undefined} />
 	</div>
+{:else if voiceNote}
+	<div class="media voice">
+		<VoiceNoteAttachment
+			voice={voiceNote}
+			metadata={isVoiceOnly ? metadata : undefined}
+		/>
+	</div>
 {/if}
-{#if hasText || (metadata && !isPhotoOnly && !isFileOnly)}
+{#if hasText || (metadata && !isPhotoOnly && !isFileOnly && !isVoiceOnly)}
 	<div class="caption relative px-1">
 		{#if metadata}
 			<div
@@ -123,6 +135,13 @@
 	}
 	/* Space the file row away from the sender-name header above it in groups. */
 	.sender-name + .media.file {
+		margin-top: 6px;
+	}
+	/* Same spacing rules for voice notes as for file attachments. */
+	.media.voice:has(+ .caption) {
+		margin-bottom: 4px;
+	}
+	.sender-name + .media.voice {
 		margin-top: 6px;
 	}
 

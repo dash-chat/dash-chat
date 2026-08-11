@@ -54,6 +54,18 @@ export interface VoiceNote {
 }
 
 /**
+ * A renderable voice note, carrying only the blob `hash` and metadata. The
+ * `waveform` (peak-normalized bars, 0..=255) rides in the message metadata so
+ * the scrubber renders before the audio downloads.
+ */
+export interface VoiceNote {
+	hash: Hash;
+	mime_type: string;
+	duration_ms: number;
+	waveform: Uint8Array;
+}
+
+/**
  * Raw bytes leaving the composer for the backend to store. `data` carries raw
  * bytes — NOT base64; in-process it is a `Uint8Array`, and over Tauri JSON IPC
  * a `Vec<u8>` arrives as `number[]`. This is the *only* media shape that holds
@@ -88,7 +100,7 @@ export interface OutgoingVoiceNote {
  * Metadata for a single stored blob. A message log carries these in place of
  * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
  * via the `irohblob://` URI scheme. Mirrors the `#[serde(tag = "kind")]` enum
- * `dashchat_node::MediaMetadata`: each variant carries only what its kind needs.
+ * `dashchat_node::MediaMetadata`.
  */
 export type MediaMetadata =
 	| { kind: 'Photo'; name: string; mime_type: string; size: number; hash: Hash }
@@ -112,9 +124,8 @@ export type MediaBundle = MediaMetadata[];
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob store,
-	 * fetched lazily via `irohblob://`). Consumers derive the photos/file
-	 * grouping from this list at render time. */
+	/** Flat wire form; consumers derive the photos/file/voice grouping at render
+	 * time. */
 	media: MediaBundle | null;
 };
 export type MessageContent = MessageContentV1;

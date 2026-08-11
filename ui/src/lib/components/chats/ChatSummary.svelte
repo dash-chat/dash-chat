@@ -43,6 +43,7 @@
 		if (content.message) return content.message;
 		const media = content.media;
 		if (!media || media.length === 0) return '';
+		if (media.some(item => item.kind === 'VoiceNote')) return m.voiceMessage();
 		const file = media.find(item => item.kind === 'File');
 		if (file) return file.name;
 		const n = media.filter(item => item.kind === 'Photo').length;

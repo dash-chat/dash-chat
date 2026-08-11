@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { Sheet, Block, useTheme } from 'konsta/svelte';
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
@@ -15,6 +16,9 @@
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
 	} from '$lib/utils/media';
+	import VoiceRecordButton from '$lib/components/messages/composer/voice/VoiceRecordButton.svelte';
+	import VoiceRecordingBar from '$lib/components/messages/composer/voice/VoiceRecordingBar.svelte';
+	import { VoiceRecording } from '$lib/components/messages/composer/voice/voice-recording.svelte';
 	import {
 		type Hash,
 		type Message,
@@ -219,6 +223,13 @@
 		if (editing) messageInput?.focus();
 	});
 
+	const voice = new VoiceRecording(draft => {
+		media = { kind: 'voice_note', voice: draft };
+		void send();
+	});
+
+	const showVoiceButton = $derived(!editing && !hasContent);
+
 	function openEmojiPicker() {
 		hideKeyboard();
 		showEmojiPicker = true;
@@ -230,6 +241,24 @@
 		event.preventDefault();
 		stage(files);
 	}
+
+	// Test-only: the native recorder can’t capture in the headless e2e harness.
+	onMount(() => {
+		const handler = (event: Event) => {
+			const detail = (event as CustomEvent).detail;
+			media = {
+				kind: 'voice_note',
+				voice: {
+					bytes: new Uint8Array(detail.bytes),
+					mimeType: 'audio/wav',
+					durationMs: detail.durationMs,
+					waveform: new Uint8Array(detail.waveform),
+				},
+			};
+		};
+		window.addEventListener('test-inject-voice-note', handler);
+		return () => window.removeEventListener('test-inject-voice-note', handler);
+	});
 </script>
 
 <MediaDropOverlay onFiles={stage} />
@@ -254,7 +283,9 @@
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
-		<div class="m-2 row gap-2" style="align-items: flex-end;">
+		<div class="m-2 row relative gap-2" style="align-items: flex-end;">
+			<VoiceRecordingBar {voice} endButtons={isMobile ? 1 : 2} />
+
 			{#if editing}
 				{#if !isWideScreen.value}
 					<DiscardEditButton onClick={cancelEdit} />
@@ -277,6 +308,7 @@
 				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
 				banner={editing !== null ? editingBanner : undefined}
+				class={voice.recordingHoldMobile ? 'relative z-30' : ''}
 			>
 				{#snippet after()}
 					{#if !editing && isMobile && theme === 'material' && hasContent}
@@ -284,6 +316,9 @@
 							expanded={showMediaPanel}
 							onClick={toggleMediaPanel}
 						/>
+					{/if}
+					{#if isMobile && showVoiceButton}
+						<VoiceRecordButton {voice} />
 					{/if}
 				{/snippet}
 			</MessageInput>
@@ -313,6 +348,9 @@
 					/>
 				{/if}
 			{:else}
+				{#if showVoiceButton}
+					<VoiceRecordButton {voice} />
+				{/if}
 				<AttachMenuButton onFiles={stage} />
 			{/if}
 		</div>
