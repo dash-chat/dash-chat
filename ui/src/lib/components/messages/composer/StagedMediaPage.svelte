@@ -6,7 +6,7 @@
 	import { mdiClose, mdiArrowRight } from '@mdi/js';
 	import { type DraftMedia } from '$lib/utils/media';
 	import { isAndroid, isIos } from '$lib/utils/environment';
-	import { darkOverlay } from '$lib/actions/dark-overlay';
+	import { lightSystemBars } from '$lib/actions/light-system-bars';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import StagedPhotosCarousel from '$lib/components/messages/composer/StagedPhotosCarousel.svelte';
@@ -65,8 +65,8 @@
 {/snippet}
 
 <div
-	class="fixed inset-0 z-30 flex flex-col bg-black"
-	use:darkOverlay
+	class="dark fixed inset-0 z-30 flex flex-col bg-black"
+	use:lightSystemBars
 	role="dialog"
 	aria-modal="true"
 	aria-label={ariaLabel}

@@ -83,10 +83,21 @@ export class StalledStoreError extends Error {
 	}
 }
 
+export type Awaitable<T> = T | Promise<T>;
+
+export function settled<T>(value: Awaitable<T>): value is T {
+	return !(value instanceof Promise);
+}
+
+type AwaitedValues<T extends readonly unknown[]> = {
+	-readonly [K in keyof T]: Awaited<T[K]>;
+};
+
+/** Expose a signalium async reactive to `{#await}`. */
 export function useReactivePromise<
 	RP extends ReactivePromise<unknown>,
 	Args extends unknown[],
->(v: (...args: Args) => RP, ...args: Args): Readable<Promise<Awaited<RP>>> {
+>(v: (...args: Args) => RP, ...args: Args): Readable<Awaitable<Awaited<RP>>> {
 	type T = Awaited<RP>;
 	// Register with the nearest KeepAliveScope (if any) so the signalium cache
 	// for this (fn, args) is kept alive for the lifetime of the surrounding
@@ -149,14 +160,13 @@ export function useReactivePromise<
 					// signalium fires the watcher listener once on first attach
 					// after the synchronous `w.value` read has already bumped
 					// `updatedCount` past `listeners.updatedAt`, producing a
-					// redundant fire with the same value. Dedupe by reference
-					// so we don't hand Svelte a fresh Promise — that would
-					// reset `{#await}` to :pending and unmount the :then branch.
+					// redundant fire with the same value. Dedupe by reference so
+					// that redundant fire doesn't reach Svelte at all.
 					if (Object.is(lastEmittedValue, value) && lastEmittedSettled) return;
 					clearStalledTimer();
 					lastEmittedValue = value;
 					lastEmittedError = sentinel;
-					set(Promise.resolve(value as T));
+					set(value as T);
 					lastEmittedSettled = true;
 				} else if (!lastEmittedSettled) {
 					// First-load pending — emit a never-resolving placeholder so
@@ -200,10 +210,8 @@ export function useReactivePromise<
  */
 export function useReactivePromises<
 	const T extends readonly ReactivePromise<unknown>[],
->(
-	sources: () => T,
-): Readable<Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }>> {
-	type Values = { -readonly [K in keyof T]: Awaited<T[K]> };
+>(sources: () => T): Readable<Awaitable<AwaitedValues<T>>> {
+	type Values = AwaitedValues<T>;
 
 	const sameValues = (a: readonly unknown[], b: readonly unknown[]) =>
 		a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
