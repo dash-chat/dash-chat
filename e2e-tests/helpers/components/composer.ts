@@ -175,6 +175,9 @@ export class Composer extends TestHelper {
 		durationMs = 3000,
 		audioDurationMs = durationMs,
 	): Promise<void> {
+		// The composer listens for the injected event from `onMount`, and a
+		// CustomEvent dispatched before then is dropped with no trace.
+		await this.messageInput.waitForExist();
 		await this.agent.execute(
 			(ms: number, ams: number) => {
 				window.__test.injectVoiceNote(ms, ams);
