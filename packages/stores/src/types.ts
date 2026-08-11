@@ -263,6 +263,12 @@ export type GroupControlEvent =
 			timestamp: number;
 	  };
 
+export type BlockEvent = {
+	kind: 'contact_blocked' | 'contact_unblocked';
+	contactName: string | undefined;
+	timestamp: number;
+};
+
 /** A single version of a message's text, with the time it was authored. */
 export interface MessageVersion {
 	hash: string;

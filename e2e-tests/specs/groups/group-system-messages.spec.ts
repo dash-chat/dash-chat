@@ -15,8 +15,10 @@ describe('Group chat inline system messages', () => {
 	});
 
 	it('renders "You created the group." for the creator', async () => {
-		await agent1.groupChatPage.systemMessage('group_created').waitForExist();
-		const created = await agent1.groupChatPage
+		await agent1.groupChatPage.messages
+			.systemMessage('group_created')
+			.waitForExist();
+		const created = await agent1.groupChatPage.messages
 			.systemMessage('group_created')
 			.getText();
 		expect(created).toContain('You created the group.');
@@ -30,8 +32,10 @@ describe('Group chat inline system messages', () => {
 		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
 
-		await agent2.groupChatPage.systemMessage('group_created').waitForExist();
-		const added = await agent2.groupChatPage
+		await agent2.groupChatPage.messages
+			.systemMessage('group_created')
+			.waitForExist();
+		const added = await agent2.groupChatPage.messages
 			.systemMessage('group_created')
 			.getText();
 		expect(added).toContain('Alice Test added you to the group.');
