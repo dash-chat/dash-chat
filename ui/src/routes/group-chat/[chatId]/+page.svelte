@@ -4,7 +4,6 @@
 	import {
 		useReactivePromise,
 		useReactivePromises,
-		useReactiveValue,
 	} from '$lib/stores/use-signal';
 	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
@@ -46,23 +45,21 @@
 	const readMessageOnObserve = readTracker.observe;
 
 	const info = useReactivePromise(store.info);
+	const readMessageHashes = useReactivePromise(
+		store.messages.readMessageHashes,
+	);
 	const unreadCount = useReactivePromise(store.messages.unreadCount);
 
 	const headerData = useReactivePromises(() => [
 		store.info(),
 		store.allMembers(),
 	]);
+	const messageListData = useReactivePromises(() => [
+		contactsStore.myDeviceId(),
+		store.groupedEvents(),
+		store.allMembers(),
+	]);
 	const composerData = useReactivePromises(() => [store.me(), store.info()]);
-
-	// The message list is read as values behind `{#if}`, not awaited: `{#await}`
-	// rebuilds its `:then` branch whenever the promise identity changes, and
-	// these stores hand out a fresh collection on every arriving operation — so
-	// the whole list would unmount and remount mid-interaction, closing open
-	// message menus and dialogs.
-	const readMessageHashes = useReactiveValue(store.messages.readMessageHashes);
-	const myDeviceId = useReactiveValue(contactsStore.myDeviceId);
-	const messageGroups = useReactiveValue(store.groupedEvents);
-	const members = useReactiveValue(store.allMembers);
 
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
@@ -230,78 +227,83 @@
 			</div>
 
 			<div class="column m-2 gap-1" data-testid="group-chat-messages">
-				{#if $myDeviceId !== undefined && $messageGroups !== undefined && $members !== undefined}
-					{@const unreadDivider = getUnreadDividerInfo(
-						$messageGroups,
-						$readMessageHashes,
-						$myDeviceId,
-					)}
-					{#each $messageGroups as messageGroupsInDay}
-						<div class="self-center z-10">
-							<DayTag class="quiet" day={messageGroupsInDay.day} />
-						</div>
+				{#await $readMessageHashes then readHashes}
+					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
+						{@const unreadDivider = getUnreadDividerInfo(
+							messageGroupsInDays,
+							readHashes,
+							myDeviceId,
+						)}
+						{#each messageGroupsInDays as messageGroupsInDay}
+							<div class="self-center z-10">
+								<DayTag class="quiet" day={messageGroupsInDay.day} />
+							</div>
 
-						{#each messageGroupsInDay.eventsGroups as messageGroup}
-							<div class="column" style="gap: 1px">
-								{#each messageGroup as [hash, item], i (hash)}
-									{#if unreadDivider.hash === hash}
-										<div
-											class="unread-divider"
-											data-testid="group-chat-unread-divider"
-										>
-											{m.unreadMessages({ count: unreadDivider.count })}
-										</div>
-									{/if}
-									{#if item.kind === 'control'}
-										<SystemMessage event={item.event} />
-									{:else}
-										{@const message = item.message}
-										{@const position = messagePosition(messageGroup.length, i)}
-										{#if $myDeviceId === message.author}
+							{#each messageGroupsInDay.eventsGroups as messageGroup}
+								<div class="column" style="gap: 1px">
+									{#each messageGroup as [hash, item], i (hash)}
+										{#if unreadDivider.hash === hash}
 											<div
-												class="w-full"
-												data-message-hash={hash}
-												use:scrollToBottomOnMount={hash}
+												class="unread-divider"
+												data-testid="group-chat-unread-divider"
 											>
-												<MessageFromMe
-													{message}
-													{position}
-													myDeviceId={$myDeviceId}
-													{chatId}
-													searchQuery=""
-													onEdit={() => composer?.editMessage(message)}
-												/>
-											</div>
-										{:else}
-											{@const author = Object.values($members).find(m =>
-												m.deviceIds.includes(message.author),
-											)}
-											<div
-												class="w-full"
-												data-message-hash={hash}
-												use:readMessageOnObserve={$readMessageHashes?.has(hash)
-													? null
-													: hash}
-											>
-												<MessageFromOthers
-													{message}
-													{position}
-													myDeviceId={$myDeviceId}
-													{chatId}
-													searchQuery=""
-													sender={author?.profile}
-													showSenderName={position === 'first' ||
-														position === 'single'}
-													showAvatar
-												/>
+												{m.unreadMessages({ count: unreadDivider.count })}
 											</div>
 										{/if}
-									{/if}
-								{/each}
-							</div>
+										{#if item.kind === 'control'}
+											<SystemMessage event={item.event} />
+										{:else}
+											{@const message = item.message}
+											{@const position = messagePosition(
+												messageGroup.length,
+												i,
+											)}
+											{#if myDeviceId === message.author}
+												<div
+													class="w-full"
+													data-message-hash={hash}
+													use:scrollToBottomOnMount={hash}
+												>
+													<MessageFromMe
+														{message}
+														{position}
+														{myDeviceId}
+														{chatId}
+														searchQuery=""
+														onEdit={() => composer?.editMessage(message)}
+													/>
+												</div>
+											{:else}
+												{@const author = Object.values(members).find(m =>
+													m.deviceIds.includes(message.author),
+												)}
+												<div
+													class="w-full"
+													data-message-hash={hash}
+													use:readMessageOnObserve={readHashes?.has(hash)
+														? null
+														: hash}
+												>
+													<MessageFromOthers
+														{message}
+														{position}
+														{myDeviceId}
+														{chatId}
+														searchQuery=""
+														sender={author?.profile}
+														showSenderName={position === 'first' ||
+															position === 'single'}
+														showAvatar
+													/>
+												</div>
+											{/if}
+										{/if}
+									{/each}
+								</div>
+							{/each}
 						{/each}
-					{/each}
-				{/if}
+					{/await}
+				{/await}
 			</div>
 		</div>
 	</ReverseScrollPage>
