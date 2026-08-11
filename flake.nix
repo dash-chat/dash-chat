@@ -68,30 +68,27 @@
           pkgs = import inputs.nixpkgs { inherit system overlays; };
           pkgsPnpm = import inputs.nixpkgs-pnpm { inherit system; };
 
-          # Voice-note mic capture (cpal → ALSA) dev-shell plumbing.
-          alsa = import ./nix/alsa.nix { inherit pkgs lib; };
-
-          tauriLibraries =
-            (with pkgs; [
-              webkitgtk_4_1
-              gtk3
-              cairo
-              gdk-pixbuf
-              glib
-              dbus
-              openssl
-              librsvg
-              libsoup_3
-              libayatana-appindicator
-              pango
-              # libatk-1.0
-              at-spi2-core
-              # GStreamer so WebKitGTK can play voice-note audio (<audio> WAV).
-              gst_all_1.gstreamer
-              gst_all_1.gst-plugins-base
-              gst_all_1.gst-plugins-good
-            ])
-            ++ alsa.libraries;
+          tauriLibraries = with pkgs; [
+            webkitgtk_4_1
+            gtk3
+            cairo
+            gdk-pixbuf
+            glib
+            dbus
+            openssl
+            librsvg
+            libsoup_3
+            libayatana-appindicator
+            pango
+            # libatk-1.0
+            at-spi2-core
+            # GStreamer so WebKitGTK can play voice-note audio (<audio> WAV).
+            gst_all_1.gstreamer
+            gst_all_1.gst-plugins-base
+            gst_all_1.gst-plugins-good
+            # cpal links libasound for voice-note mic capture.
+            alsa-lib
+          ];
           gstPluginPath = pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" [
             pkgs.gst_all_1.gstreamer
             pkgs.gst_all_1.gst-plugins-base
@@ -123,13 +120,10 @@
               export LD_LIBRARY_PATH="${pkgs.mesa}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             fi
           '';
-          # Voice notes: let WebKitGTK find GStreamer plugins for <audio>
-          # playback, and point cpal's capture `default` at PulseAudio.
-          voiceHostEnvHook =
-            lib.optionalString pkgs.stdenv.isLinux ''
-              export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPluginPath}"
-            ''
-            + alsa.shellHook;
+          # Voice notes: let WebKitGTK find GStreamer plugins for <audio> playback.
+          voiceHostEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
+            export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPluginPath}"
+          '';
           packages = [
             pkgs.mprocs
             pkgs.just
@@ -139,8 +133,11 @@
             pkgs.doctl
             inputs'.tauri-driver.packages.tauri-driver
           ]
-          ++ alsa.packages
-          ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
+          ++ lib.optionals pkgs.stdenv.isLinux [
+            pkgs.mold
+            # alsa-sys needs the .pc file at build time (cpal → mic capture).
+            pkgs.alsa-lib
+          ];
         in
         rec {
           devShells.default = pkgs.mkShell {
