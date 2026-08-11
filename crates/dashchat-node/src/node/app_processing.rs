@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use derive_more::derive::From;
 use futures::StreamExt;
 use p2panda::NodeId;
 use p2panda::operation::Header;
@@ -7,17 +8,53 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
+use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
-use crate::stores::{BadUseOfNode, ProjectionError};
+use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
 
+#[derive(Clone, Debug, Serialize, Deserialize, From)]
+pub enum Notification {
+    Op(OpNotification),
+    System(SystemNotification),
+}
+
+impl Notification {
+    pub fn op(&self) -> Option<&OpNotification> {
+        if let Notification::Op(operation) = self {
+            Some(operation)
+        } else {
+            None
+        }
+    }
+
+    pub fn system(&self) -> Option<&SystemNotification> {
+        if let Notification::System(system) = self {
+            Some(system)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Notification {
+pub struct OpNotification {
     pub topic: TopicId,
     pub header: Header,
     pub payload: Option<Payload>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload")]
+pub enum SystemNotification {
+    /// A new tombstone has been created.
+    Tombstones {
+        topic: TopicId,
+        hashes: BTreeSet<Hash>,
+        reason: TombstoneReason,
+    },
 }
 
 impl Node {
@@ -428,7 +465,11 @@ impl Node {
             .await
         {
             // Continue processing.
-            Ok(_) => (),
+            Ok(event) => {
+                if let Some(event) = event {
+                    self.notify_system_event(event).await?;
+                }
+            }
 
             // Don't process but allow the log to proceed.
             Err(ProjectionError::InvalidOp(msg)) => {
@@ -607,6 +648,22 @@ impl Node {
                 }
             }
 
+            Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(delete)) => {
+                // Drop the payloads referenced by the delete.
+                //
+                // Unlike `DeleteForEveryone`, a `DeleteForMe` op is never shared with the
+                // other chat participants, so their copies are untouched. We fall
+                // through to `notify_payload` below so the frontend re-reads the
+                // tombstone set and drops the message from its chat view.
+                let chat_topic: TopicId = delete.chat_id.into();
+                let valid_ops = self.valid_chat_ops(delete.chat_id).await?;
+                for hash in forward_edit_closure(&valid_ops, delete.message_hash) {
+                    if let Some(op) = self.op_store.get_operation(&hash).await? {
+                        self.enforce_tombstone(chat_topic, &op).await?;
+                    }
+                }
+            }
+
             _ => {
                 // Nothing to do.
             }
@@ -695,11 +752,14 @@ impl Node {
     pub async fn notify_header(&self, topic: TopicId, header: &Header) -> anyhow::Result<()> {
         if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx
-                .send(Notification {
-                    topic: topic.clone(),
-                    header: header.clone(),
-                    payload: None,
-                })
+                .send(
+                    OpNotification {
+                        topic: topic.clone(),
+                        header: header.clone(),
+                        payload: None,
+                    }
+                    .into(),
+                )
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }
@@ -714,11 +774,24 @@ impl Node {
     ) -> anyhow::Result<()> {
         if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
             notification_tx
-                .send(Notification {
-                    topic: topic.clone(),
-                    header: header.clone(),
-                    payload: Some(payload.clone()),
-                })
+                .send(
+                    OpNotification {
+                        topic: topic.clone(),
+                        header: header.clone(),
+                        payload: Some(payload.clone()),
+                    }
+                    .into(),
+                )
+                .await
+                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
+        }
+        Ok(())
+    }
+
+    async fn notify_system_event(&self, event: SystemNotification) -> anyhow::Result<()> {
+        if let Some(notification_tx) = self.notification_tx.clone() {
+            notification_tx
+                .send(event.into())
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }

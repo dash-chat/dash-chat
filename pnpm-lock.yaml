@@ -247,6 +247,9 @@ importers:
       konsta:
         specifier: ^5.0.6
         version: 5.0.6(patch_hash=e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f)
+      marked:
+        specifier: ^16.4.1
+        version: 16.4.2
       qr-creator:
         specifier: ^1.0.0
         version: 1.0.0
@@ -4185,6 +4188,11 @@ packages:
   map-obj@4.3.0:
     resolution: {integrity: sha512-hdN1wVrZbb29eBGiGjJbeP8JbKjq1urkHJ/LIP/NY48MZ1QVXUsQBV1G1zvYFHn1XE06cwjBsOI2K3Ulnj1YXQ==}
     engines: {node: '>=8'}
+
+  marked@16.4.2:
+    resolution: {integrity: sha512-TI3V8YYWvkVf3KJe1dRkpnjs68JUPyEa5vjKrp1XEEJUAOaQc+Qj+L1qWbPd0SJuAdQkFU0h73sXXqwDYxsiDA==}
+    engines: {node: '>= 20'}
+    hasBin: true
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -9977,6 +9985,8 @@ snapshots:
   map-obj@1.0.1: {}
 
   map-obj@4.3.0: {}
+
+  marked@16.4.2: {}
 
   math-intrinsics@1.1.0: {}
 

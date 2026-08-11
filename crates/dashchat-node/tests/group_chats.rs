@@ -176,7 +176,8 @@ async fn test_p2p_direct_chat() {
 
     for mut rx in [alice.watcher.lock().await, bobbi.watcher.lock().await] {
         while let Some(notification) = rx.recv().await {
-            if let Some(Payload::Chat(ChatPayload::Message(content))) = notification.payload {
+            let payload = notification.op().as_ref().and_then(|n| n.payload.as_ref());
+            if let Some(Payload::Chat(ChatPayload::Message(content))) = payload {
                 assert_eq!(message, content.message());
                 break;
             }

@@ -4,6 +4,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { DeviceId, Hash } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
 	ChatReaction,
@@ -11,6 +12,7 @@ import {
 	MessageVersion,
 	OutgoingMedia,
 	Payload,
+	Tombstone,
 	hasBody,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
@@ -43,6 +45,7 @@ export class MessagesStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		/** Resolves to '' while a pending direct chat has no topic yet. */
 		public chatId: ReactiveFn<Promise<ChatId>, []>,
 		public client: IMessagesClient,
@@ -82,6 +85,11 @@ export class MessagesStore {
 			deletedMessages(deleteTargets, messages, bodylessOps),
 		);
 
+		// Completely remove any message with a DeletedForMe tombstone.
+		const tombstones = await this.tombstoneStore.tombstones(chatId);
+		for (const { hash, reason } of tombstones) {
+			if (reason === 'DeletedForMe') delete messages[hash];
+		}
 		return messages;
 	});
 
@@ -160,13 +168,20 @@ export class MessagesStore {
 		return this.client.editMessage(chatId, current.hash, newText);
 	}
 
-	async deleteMessage(message: Message): Promise<Hash> {
+	async deleteMessageForEveryone(message: Message): Promise<Hash> {
 		const chatId = await this.chatId();
 		// Same staleness concern as `editMessage`: the caller's snapshot may
 		// predate an edit that arrived since.
 		const fresh = (await this.messages())[message.hash] ?? message;
 		const current = currentVersion(fresh);
-		return this.client.deleteMessage(chatId, current.hash);
+		return this.client.deleteMessageForEveryone(chatId, current.hash);
+	}
+
+	async deleteMessageForMe(message: Message): Promise<Hash> {
+		const chatId = await this.chatId();
+		// The whole message is deleted regardless of which version is shown, so
+		// target the original op; the backend tombstones its edit chain.
+		return this.client.deleteMessageForMe(chatId, message.hash);
 	}
 }
 

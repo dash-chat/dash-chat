@@ -164,6 +164,33 @@ export interface ReadMessagesPayload {
 	message_hashes: Hash[];
 }
 
+export interface DeleteForMePayload {
+	chat_id: ChatId;
+	/** The original message being deleted. Its edit chain (present and future)
+	 * is tombstoned transitively by the backend, so only the root is named
+	 * here — unlike `DeleteMessagePayload`, which lists the whole chain. */
+	message_hash: Hash;
+}
+
+/** Why an operation was tombstoned, mirroring the backend `TombstoneReason`. A
+ * delete-for-everyone still shows a "deleted" placeholder for the author's
+ * message; a delete-for-me vanishes with no trace. */
+export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
+
+export type SystemEvent = {
+	type: 'Tombstones';
+	payload: {
+		topic: TopicId;
+		hashes: Hash[];
+		reason: TombstoneReason;
+	};
+};
+
+export interface Tombstone {
+	hash: Hash;
+	reason: TombstoneReason;
+}
+
 export type DeviceGroupPayload =
 	| { type: 'AddContact'; payload: { agent_id: AgentId } }
 	| {
@@ -173,7 +200,8 @@ export type DeviceGroupPayload =
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'BlockAgent'; payload: AgentId }
 	| { type: 'UnblockAgent'; payload: AgentId }
-	| { type: 'ReadMessages'; payload: ReadMessagesPayload };
+	| { type: 'ReadMessages'; payload: ReadMessagesPayload }
+	| { type: 'DeleteForMe'; payload: DeleteForMePayload };
 
 export type InboxPayload = {
 	type: 'ContactRequest';

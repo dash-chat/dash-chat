@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import CreateProfile from '$lib/components/profiles/CreateProfile.svelte';
+	import Onboarding from './Onboarding.svelte';
 	import type { ContactsStore } from 'dash-chat-stores';
 	import { Preloader } from 'konsta/svelte';
 
@@ -21,6 +21,6 @@
 	{#if myProfile}
 		<slot></slot>
 	{:else}
-		<CreateProfile></CreateProfile>
+		<Onboarding></Onboarding>
 	{/if}
 {/await}
