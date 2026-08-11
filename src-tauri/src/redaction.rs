@@ -288,9 +288,8 @@ mod tests {
         };
         let input = format!("{voice:?}");
         let result = redact(&input);
-        // The recorded audio bytes are private and must be stripped. The
-        // waveform is lossy downsampled amplitude (not recoverable audio), so
-        // it is left readable for debugging.
+        // The waveform is lossy downsampled amplitude, not recoverable audio, so
+        // only the bytes are stripped.
         assert!(
             !result.contains("255, 251, 144"),
             "voice bytes leaked: {result}"

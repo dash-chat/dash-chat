@@ -1,8 +1,5 @@
-/**
- * Voice notes E2E — verifies a voice message can be staged (a synthetic WAV is
- * injected, since the headless WebKitGTK harness has no microphone), sent, and
- * rendered as a playable waveform bubble on both ends.
- */
+// A synthetic WAV is injected throughout: the headless WebKitGTK harness has no
+// microphone.
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgent } from '../setup/setup-agents';
 
@@ -30,9 +27,8 @@ describe('Voice notes', () => {
 	});
 
 	it('renders the played region visibly distinct from the unplayed region', async () => {
-		// wavesurfer composites progressColor onto the wave canvas with `source-in`,
-		// so a translucent waveColor collapses the two to near-identical alpha and
-		// the progress is invisible. The played bars must contrast clearly.
+		// wavesurfer composites progressColor with `source-in`, so a translucent
+		// waveColor would collapse both regions to near-identical alpha.
 		const { unplayed, played } =
 			await agent2.directChatPage.messages.voiceBarLuminance();
 		expect(Math.abs(played - unplayed)).toBeGreaterThan(30);
@@ -53,8 +49,7 @@ describe('Voice notes', () => {
 	});
 
 	it('shows a spinner while loading and toasts when the audio fails to load', async () => {
-		// Alice plays her own sent note; force its byte-load to fail after a beat so
-		// the play button's spinner is observable before the error toast appears.
+		// Delayed so the spinner is observable before the error toast.
 		const messages = agent1.directChatPage.messages;
 		await messages.waitForVoiceMessage();
 		await messages.failNextVoiceLoad(1500);

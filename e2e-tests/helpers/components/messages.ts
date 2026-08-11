@@ -38,7 +38,6 @@ export class Messages extends TestHelper {
 	readonly dividerSelector: string;
 	readonly root;
 	readonly unreadDivider;
-	/** Play/pause toggle on the first voice-note attachment in the list. */
 	voicePlayButton = this.el(tid('voice-play-button'));
 	scrollBottom = this.el(tid('chat-scroll-bottom'));
 	unreadBadge = this.el(tid('chat-unread-badge'));
@@ -253,7 +252,6 @@ export class Messages extends TestHelper {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
 	}
 
-	/** Wait until a voice-note attachment (play button + waveform) appears. */
 	async waitForVoiceMessage(timeout = SYNC_TIMEOUT): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
@@ -268,18 +266,18 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Played fraction (0..1) of the first voice note's waveform. */
 	async voiceProgress(): Promise<number> {
 		return this.agent.execute(() => window.__test.voiceProgress());
 	}
 
-	/** Peak bar luminance of the unplayed vs played regions of the first voice note. */
+	/** Peak bar luminance of the unplayed vs played regions, to prove the played
+	 * region is visibly distinct. */
 	async voiceBarLuminance(): Promise<{ unplayed: number; played: number }> {
 		return this.agent.execute(() => window.__test.voiceBarLuminance());
 	}
 
-	/** Pause and seek the first voice note to `fraction` of its real audio length;
-	 * resolves to that real fraction (or -1 if the audio isn't loaded). */
+	/** Seeks to `fraction` of the real audio length, resolving to that fraction
+	 * (or -1 if the audio isn’t loaded). */
 	async voiceSeekFraction(fraction: number): Promise<number> {
 		return this.agent.execute(
 			(f: number) => window.__test.voiceSeekFraction(f),
@@ -287,8 +285,8 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Force the next voice-note byte-load to fail after `delayMs`, so specs can
-	 * exercise the play button's loading spinner and the load-error toast. */
+	/** Fails the next byte-load after `delayMs`, so the spinner stays observable
+	 * before the error toast. */
 	async failNextVoiceLoad(delayMs = 0): Promise<void> {
 		await this.agent.execute(
 			(ms: number) => window.__test.failNextVoiceLoad(ms),
@@ -296,12 +294,10 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Whether the first voice note's play button is in its loading state. */
 	async voicePlayLoading(): Promise<boolean> {
 		return (await this.voicePlayButton.getAttribute('aria-busy')) === 'true';
 	}
 
-	/** Number of voice-note attachments currently rendered in the list. */
 	async voiceMessageCount(): Promise<number> {
 		return this.agent.execute(
 			(messagesSel: string, voiceSel: string) =>

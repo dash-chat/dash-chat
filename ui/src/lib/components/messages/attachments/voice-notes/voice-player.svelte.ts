@@ -2,20 +2,14 @@ import { blobUrl } from '$lib/utils/media';
 import type { VoiceNote } from 'dash-chat-stores';
 
 // Only one voice note plays at a time: starting a player pauses whichever was
-// already playing, matching Signal.
+// already playing.
 let playing: VoicePlayer | undefined;
 
-/**
- * Owns the playback of a single voice note: the one `<audio>` element, its
- * play/pause/seek logic, lazy byte loading, and the reactive state
- * (`paused`/`currentTime`/`loading`) that the play button and waveform both
- * render from. Creating one instance per voice note and sharing it keeps the
- * two views driving the same audio rather than each tracking its own.
- */
+/** Playback of a single voice note, shared by the play button and the waveform
+ * so both drive the same `<audio>` rather than tracking their own. */
 export class VoicePlayer {
 	paused = $state(true);
 	currentTime = $state(0);
-	/** True while the bytes for the first play are being fetched. */
 	loading = $state(false);
 
 	#audio: HTMLAudioElement | undefined;
@@ -31,16 +25,14 @@ export class VoicePlayer {
 		this.#onError = onError;
 	}
 
-	/** The real playback length: prefer the loaded element's own duration over
-	 * the recorded metadata, which can overshoot and leave the played region
-	 * short of the end. Falls back to the metadata before the audio loads. */
+	/** Prefers the loaded element's duration; the recorded metadata overshoots
+	 * and leaves the played region short of the end. */
 	get durationSec(): number {
 		const d = this.#audio?.duration;
 		return d && isFinite(d) && d > 0 ? d : this.#voice.duration_ms / 1000;
 	}
 
-	/** Bind the DOM `<audio>` element and subscribe to its lifecycle. Returns a
-	 * teardown to run on unmount (stops ticking, revokes the object URL). */
+	/** Binds the `<audio>` element; returns a teardown to run on unmount. */
 	attach(audio: HTMLAudioElement): () => void {
 		this.#audio = audio;
 		const onPlay = () => {
@@ -108,11 +100,9 @@ export class VoicePlayer {
 		this.#sync();
 	}
 
-	// WebKitGTK's `<audio>` can't load our custom `irohblob://` scheme (its media
-	// pipeline bypasses the webview's scheme handler), so the bytes are fetched
-	// lazily on first play and set as an object URL. Concurrent callers (e.g.
-	// scrubbing before the first play) share one in-flight load rather than each
-	// firing its own fetch and leaking all but the last object URL.
+	// WebKitGTK's `<audio>` can't load our `irohblob://` scheme — its media
+	// pipeline bypasses the webview's scheme handler — so bytes are fetched on
+	// first play and set as an object URL, with concurrent callers sharing it.
 	#ensureLoaded(): Promise<boolean> {
 		if (this.#loaded) return Promise.resolve(true);
 		return (this.#loadPromise ??= this.#load().finally(
@@ -140,7 +130,6 @@ export class VoicePlayer {
 		}
 	}
 
-	/** Fetch the voice note's bytes for playback; undefined on failure. */
 	async #fetchAudio(): Promise<
 		{ data: Uint8Array; mimeType: string } | undefined
 	> {
@@ -160,9 +149,7 @@ export class VoicePlayer {
 		if (this.#audio) this.currentTime = this.#audio.currentTime;
 	};
 
-	// The `<audio>` element's `timeupdate` event is throttled (~4/sec), so the
-	// played region would visibly lag. Repaint each frame while playing instead,
-	// matching wavesurfer's own 60fps progress animation.
+	// `timeupdate` fires only ~4/sec, so the played region would visibly lag.
 	#tick = (): void => {
 		this.#sync();
 		if (this.#audio && !this.#audio.paused)

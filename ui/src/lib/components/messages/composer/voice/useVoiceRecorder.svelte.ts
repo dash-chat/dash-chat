@@ -11,14 +11,13 @@ import {
 } from 'tauri-plugin-audio-recorder-api';
 
 import { computeWaveform, decodeToBuffer, resampleToMono } from './audioBuffer';
+import { RecordingLevels } from './recording-levels.svelte';
 
 let warmUpPromise: Promise<unknown> | undefined;
 
-/** cpal cold-initializes the audio subsystem (~2s on desktop) on the first
- * device access in the process, which would otherwise land on the user's first
- * recording. Enumerate devices once up front — this touches the same cpal host
- * without opening the mic — so the first real `startRecording` is fast. Runs at
- * most once per session; safe to call repeatedly. */
+/** Touches the cpal host up front so the first recording doesn't pay its ~2s
+ * cold init. Only helps a press that follows soon after: Linux/ALSA suspends an
+ * idle capture device and reopening costs ~1.9s again within seconds. */
 export function warmUpRecorder(): void {
 	if (warmUpPromise) return;
 	warmUpPromise = getDevices().catch(() => {});
@@ -32,26 +31,15 @@ export type RecorderPhase =
 	| 'denied'
 	| 'encoding';
 
-/** Hard cap on recording length (seconds); keeps the WAV well under the
- * message size limit and matches Signal's generous-but-bounded behavior. */
 const MAX_DURATION_SECONDS = 300;
-
-/** Mono sample rate for normalized voice notes. Matches the desktop recorder's
- * "low" preset, and keeps a full-length recording well under the message size
- * limit when re-encoding a mobile recording to WAV. */
 const TARGET_SAMPLE_RATE = 16000;
 
-/**
- * Owns the voice-note recording lifecycle: microphone permission, the native
- * recorder plugin, the elapsed timer, and turning a finished recording into a
- * playable WAV `DraftVoiceNote` (normalizing mobile M4A → WAV and computing
- * the waveform). It is the only place that touches the audio plugins.
- */
+/** Owns the voice-note recording lifecycle and is the only place that touches
+ * the audio plugins. */
 export class VoiceRecorder {
 	phase = $state<RecorderPhase>('idle');
 	elapsedMs = $state(0);
-	/** Invoked when the hard duration cap is reached so the caller can finish
-	 * the recording the same way a manual stop would. */
+	readonly levels = new RecordingLevels();
 	onMaxDuration: (() => void) | undefined;
 
 	#timer: ReturnType<typeof setInterval> | undefined;
@@ -64,8 +52,8 @@ export class VoiceRecorder {
 	async start(): Promise<void> {
 		if (this.isActive || this.phase === 'requesting') return;
 		this.phase = 'requesting';
-		// Reset now so the optimistic overlay (shown during `requesting`, before the
-		// native recorder has started) reads 0:00 instead of the prior take's time.
+		// The overlay is already up during `requesting`, so clear the prior take's
+		// time before it can render.
 		this.elapsedMs = 0;
 		try {
 			const permission = await requestPermission();
@@ -73,17 +61,14 @@ export class VoiceRecorder {
 				this.phase = 'denied';
 				return;
 			}
-			// Write straight into the app cache dir (the recorder plugin creates
-			// the file itself); ensure the dir exists first. Avoiding a
-			// subdirectory keeps the path within the granted `scope-appcache`.
+			// Straight into the cache dir, no subdirectory: that keeps the path
+			// within the granted `scope-appcache`.
 			const cache = await appCacheDir();
 			await mkdir(cache, { recursive: true });
 			const outputPath = await join(
 				cache,
 				`dc-voice-${crypto.randomUUID()}.wav`,
 			);
-			// If a warm-up is in flight, let it finish before opening the device so
-			// the two don't race the same cold cpal init.
 			if (warmUpPromise) await warmUpPromise;
 			await this.#discardOrphanedRecording();
 			await startRecording({
@@ -96,6 +81,10 @@ export class VoiceRecorder {
 			this.elapsedMs = 0;
 			this.phase = 'recording';
 			this.#startTimer();
+			// The plugin appends its own extension, so the file being written is not
+			// the `outputPath` we asked for.
+			const status = await getStatus();
+			if (status.outputPath) await this.levels.start(status.outputPath);
 		} catch (e) {
 			this.phase = 'idle';
 			throw e;
@@ -109,20 +98,18 @@ export class VoiceRecorder {
 	async stop(): Promise<DraftVoiceNote | undefined> {
 		if (!this.isActive) return undefined;
 		this.#stopTimer();
+		await this.levels.stop();
 		this.phase = 'encoding';
-		// Track the file path separately so a rejection from `stopRecording()`
-		// itself still runs the `finally` — otherwise `phase` would stay 'encoding'
-		// and the locked/desktop bar would wedge on screen until a manual Cancel.
+		// Held outside the try so a rejection from `stopRecording()` still runs the
+		// `finally`; otherwise `phase` wedges on 'encoding' and the bar never leaves.
 		let filePath: string | undefined;
 		try {
 			const result = await stopRecording();
 			filePath = result.filePath;
 			const recorded = await readFile(result.filePath);
 			const decoded = await decodeToBuffer(recorded);
-			// Desktop already records low-rate mono WAV; mobile records AAC/M4A,
-			// which we decode and re-encode to WAV so every peer can play the same
-			// bytes. iOS `AVAssetExportSession` can't output WAV, so the conversion
-			// is done here in the webview rather than via the native media plugin.
+			// Desktop records WAV already; mobile records AAC/M4A and is re-encoded
+			// here rather than natively, since iOS `AVAssetExportSession` can't emit WAV.
 			const isWav = result.filePath.toLowerCase().endsWith('.wav');
 			const buffer = isWav
 				? decoded
@@ -130,9 +117,8 @@ export class VoiceRecorder {
 			return {
 				bytes: isWav ? recorded : new Uint8Array(audioBufferToWav(buffer)),
 				mimeType: 'audio/wav',
-				// The decoded buffer is the audio peers actually play; its duration is
-				// exact, whereas the recorder's wall-clock `result.durationMs` overshoots
-				// and leaves the scrubber/timer short of the end on playback.
+				// The recorder's wall-clock duration overshoots the decoded audio and
+				// leaves the scrubber short of the end.
 				durationMs: Math.round(buffer.duration * 1000),
 				waveform: computeWaveform(buffer),
 			};
@@ -144,27 +130,27 @@ export class VoiceRecorder {
 
 	async cancel(): Promise<void> {
 		this.#stopTimer();
+		await this.levels.stop();
 		if (this.isActive) {
 			try {
 				const result = await stopRecording();
 				await cleanup([result.filePath]);
 			} catch {
-				// Not actually recording (e.g. permission was pending) — nothing to do.
+				// Not actually recording (e.g. permission was pending).
 			}
 		}
 		this.phase = 'idle';
 		this.elapsedMs = 0;
 	}
 
-	// A webview reload mid-recording tears down our JS state without firing
-	// onDestroy, leaving the native recorder running; stop any such orphaned
-	// session so the next start doesn't hit "Already recording".
+	// A webview reload tears down our JS state without firing onDestroy, leaving
+	// the native recorder running and the next start hitting "Already recording".
 	async #discardOrphanedRecording(): Promise<void> {
 		try {
 			const status = await getStatus();
 			if (status.state !== 'idle') await stopRecording();
 		} catch {
-			// Best effort — if this fails, startRecording will surface the error.
+			// startRecording will surface the error.
 		}
 	}
 

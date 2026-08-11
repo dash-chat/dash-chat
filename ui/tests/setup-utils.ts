@@ -209,7 +209,6 @@ function dropFiles(specs: TestFileSpec[]) {
 	}
 }
 
-/** Build a valid silent 16 kHz mono 16-bit WAV of `durationMs` for tests. */
 function buildSilentWav(durationMs: number): Uint8Array {
 	const sampleRate = 16000;
 	const numSamples = Math.max(1, Math.floor((sampleRate * durationMs) / 1000));
@@ -236,11 +235,8 @@ function buildSilentWav(durationMs: number): Uint8Array {
 	return new Uint8Array(buffer);
 }
 
-/**
- * Stage a synthetic voice note in the composer, bypassing the native recorder
- * (microphone capture is unavailable in the WebKitGTK test harness). The
- * composer listens for `test-inject-voice-note` and sets a voice draft.
- */
+/** Bypasses the native recorder (no microphone in the WebKitGTK harness); the
+ * composer listens for `test-inject-voice-note`. */
 function injectVoiceNote(durationMs = 3000, audioDurationMs = durationMs) {
 	const wav = buildSilentWav(audioDurationMs);
 	const waveform = Array.from({ length: 48 }, (_, i) => 40 + (i % 5) * 40);
@@ -251,10 +247,8 @@ function injectVoiceNote(durationMs = 3000, audioDurationMs = durationMs) {
 	);
 }
 
-/** Pause and seek the first voice note to `fraction` of its real audio length,
- * returning that real fraction (or -1 if the audio isn't loaded yet). Lets specs
- * assert the scrubber maps progress to the audio's own duration, not the
- * (possibly inaccurate) recorded metadata. */
+/** Seeks to `fraction` of the real audio length, so specs can assert the
+ * scrubber follows the audio rather than the recorded metadata. */
 function voiceSeekFraction(fraction: number): number {
 	const audio = document.querySelector<HTMLAudioElement>(
 		'[data-testid="message-attachment-voice"] audio',
@@ -265,8 +259,6 @@ function voiceSeekFraction(fraction: number): number {
 	return audio.currentTime / audio.duration;
 }
 
-/** Read the played fraction (0..1) of the first voice-note waveform from
- * wavesurfer's shadow DOM, so specs can assert playback progress advances. */
 function voiceProgress(): number {
 	const scrubber = document.querySelector('[data-testid="voice-scrubber"]');
 	const progress = scrubber
@@ -276,10 +268,8 @@ function voiceProgress(): number {
 	return parseFloat(progress.style.width) / 100 || 0;
 }
 
-/** Peak bar luminance of the unplayed (wave) vs played (progress) canvases, so
- * specs can assert the played region is visibly distinct — wavesurfer composites
- * `progressColor` onto the wave canvas with `source-in`, so a translucent
- * waveColor would make the two indistinguishable. */
+/** Peak bar luminance of the unplayed vs played canvases: wavesurfer composites
+ * with `source-in`, so a translucent waveColor makes the two indistinguishable. */
 function voiceBarLuminance(): { unplayed: number; played: number } {
 	const shadow = document
 		.querySelector('[data-testid="voice-scrubber"]')
@@ -303,10 +293,8 @@ function voiceBarLuminance(): { unplayed: number; played: number } {
 	};
 }
 
-/** Make the next voice-note byte fetch fail (after `delayMs`, so the play
- * button's loading spinner stays observable), letting specs exercise the
- * load-error toast. Only the `irohblob` blob request is intercepted; the
- * original `fetch` is restored as soon as it fires. */
+/** Fails the next voice-note byte fetch after `delayMs` so the spinner stays
+ * observable. Only `irohblob` is intercepted, and `fetch` is restored at once. */
 function failNextVoiceLoad(delayMs = 0) {
 	const original = window.fetch;
 	window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {

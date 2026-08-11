@@ -4,15 +4,13 @@
 	import RecordingIndicator from './RecordingIndicator.svelte';
 
 	interface Props {
-		/** Live elapsed time while recording. */
 		elapsedMs: number;
-		/** Discard the recording. */
+		levels: number[];
 		onCancel: () => void;
-		/** Stop the recording and send it immediately. */
 		onSend: () => Promise<boolean>;
 	}
 
-	let { elapsedMs, onCancel, onSend }: Props = $props();
+	let { elapsedMs, levels, onCancel, onSend }: Props = $props();
 
 	let sending = $state(false);
 
@@ -26,12 +24,15 @@
 		}
 	}
 
-	// A fixed, waveform-shaped set of bar heights (percent) so the recording
-	// track reads as a waveform at rest; each bar also pulses while recording.
-	const bars = Array.from({ length: 88 }, (_, i) => {
-		const wave = Math.sin(i * 0.7) * Math.sin(i * 0.23 + 1);
-		return 22 + Math.abs(wave) * 70;
-	});
+	const CAPACITY = 88;
+	const MIN_HEIGHT = 8;
+
+	// Newest at the trailing edge, older ones scrolling out of the leading one.
+	const heights = $derived(
+		levels
+			.slice(-CAPACITY)
+			.map(level => MIN_HEIGHT + level * (100 - MIN_HEIGHT)),
+	);
 </script>
 
 <div class="flex w-full items-center gap-2" data-testid="voice-desktop-bar">
@@ -44,13 +45,9 @@
 			timerTestid="voice-recording-timer"
 		/>
 
-		<div
-			class="wave flex h-7 min-w-0 flex-1 items-center justify-between"
-			aria-hidden="true"
-		>
-			{#each bars as height, i (i)}
-				<span style="height: {height}%; animation-delay: {(i % 14) * 90}ms"
-				></span>
+		<div class="wave flex h-7 min-w-0 flex-1 items-center" aria-hidden="true">
+			{#each heights as height, i (i)}
+				<span style="height: {height}%"></span>
 			{/each}
 		</div>
 	</div>
@@ -87,23 +84,18 @@
 		border: 1px solid var(--k-hairline-color);
 		border-radius: 22px;
 	}
+	/* Fills from the trailing edge so the first bars appear where the newest
+	   audio is, rather than stretching across an empty track. */
+	.wave {
+		justify-content: flex-end;
+		gap: 2px;
+		overflow: hidden;
+	}
 	.wave span {
+		flex: none;
 		width: 2px;
 		border-radius: 9999px;
 		background: currentColor;
 		opacity: 0.5;
-		transform-origin: center;
-		animation: wave 1.1s ease-in-out infinite;
-	}
-	@keyframes wave {
-		0%,
-		100% {
-			transform: scaleY(0.5);
-			opacity: 0.4;
-		}
-		50% {
-			transform: scaleY(1);
-			opacity: 0.75;
-		}
 	}
 </style>

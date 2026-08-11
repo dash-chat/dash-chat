@@ -228,8 +228,6 @@
 		void send();
 	});
 
-	/** The mic replaces the send button while there is nothing to send, and is
-	 * out of the way entirely while editing (media can't be edited). */
 	const showVoiceButton = $derived(!editing && !hasContent);
 
 	function openEmojiPicker() {
@@ -244,8 +242,7 @@
 		stage(files);
 	}
 
-	// Test-only: stage a synthetic voice note (the native recorder can't capture
-	// in the headless e2e harness). See `window.__test.injectVoiceNote`.
+	// Test-only: the native recorder can’t capture in the headless e2e harness.
 	onMount(() => {
 		const handler = (event: Event) => {
 			const detail = (event as CustomEvent).detail;

@@ -20,8 +20,7 @@ import type {
 } from 'dash-chat-stores';
 
 /**
- * Draft voice note held in the composer before sending. `bytes` is the
- * recorded WAV; `waveform` is the precomputed amplitude bars (0..=255).
+ * Draft voice note held in the composer before sending.
  */
 export interface DraftVoiceNote {
 	bytes: Uint8Array;

@@ -10,8 +10,7 @@
 
 	interface Props {
 		voice: VoiceNote;
-		/** Timestamp / receipts rendered inline at the end of the row, Signal-style
-		 * (only on a voice-only message; a captioned note shows them below). */
+		/** Inline at the end of the row; a captioned note shows them below instead. */
 		metadata?: Snippet;
 	}
 
@@ -29,7 +28,6 @@
 		if (audioEl) return player.attach(audioEl);
 	});
 
-	// `voice.duration_ms` is authoritative; while playing we show the elapsed time.
 	const labelMs = $derived(
 		player.paused && player.currentTime === 0
 			? voice.duration_ms

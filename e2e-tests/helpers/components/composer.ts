@@ -168,14 +168,9 @@ export class Composer extends TestHelper {
 		await this.waitForStagedMedia();
 	}
 
-	/**
-	 * Stage a synthetic voice note in the composer. Microphone capture isn't
-	 * available in the WebKitGTK harness, so this injects a ready-made WAV draft
-	 * via `window.__test.injectVoiceNote` instead of driving the recorder.
-	 *
-	 * `audioDurationMs` defaults to `durationMs`; pass a smaller value to simulate
-	 * a recording whose metadata duration overshoots the real audio length.
-	 */
+	/** Injects a ready-made WAV draft, since the WebKitGTK harness has no
+	 * microphone. Pass a smaller `audioDurationMs` to simulate metadata that
+	 * overshoots the real audio length. */
 	async recordVoiceNote(
 		durationMs = 3000,
 		audioDurationMs = durationMs,

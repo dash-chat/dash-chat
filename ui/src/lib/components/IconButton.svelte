@@ -5,8 +5,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 
-	/** Pointer handlers forwarded to the underlying button — lets an icon button
-	 * drive press-and-hold gestures (e.g. the voice recorder). */
+	/** Forwarded so an icon button can drive a press-and-hold gesture. */
 	type PointerProps = Pick<
 		HTMLButtonAttributes,
 		'onpointerdown' | 'onpointermove' | 'onpointerup' | 'onpointercancel'
@@ -21,7 +20,6 @@
 		expanded?: boolean;
 		/** Give the button a translucent surface background. */
 		filled?: boolean;
-		/** Show a spinner in place of the icon while an action is in flight. */
 		loading?: boolean;
 		iconClass?: string;
 		class?: string;
@@ -53,13 +51,22 @@
 		event.stopPropagation();
 		onClick?.(event);
 	}
+
+	// Keeps a press off an ancestor’s own gesture (e.g. a bubble’s long-press).
+	// Svelte delegates pointerdown to the root, so stopping propagation would also
+	// swallow a forwarded `onpointerdown` — hence never for a button that has one.
+	const stopAncestorPress = $derived(
+		rest.onpointerdown
+			? undefined
+			: (event: PointerEvent) => event.stopPropagation(),
+	);
 </script>
 
 <Button
 	clear
 	inline
 	onClick={click}
-	onpointerdowncapture={(e: PointerEvent) => e.stopPropagation()}
+	onpointerdowncapture={stopAncestorPress}
 	{...rest}
 	aria-label={label}
 	aria-expanded={expanded}

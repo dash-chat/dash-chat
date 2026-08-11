@@ -18,7 +18,7 @@
 	style="width: {micSize}px; height: {micSize}px"
 	src={wrapPathInSvg(mdiMicrophone)}
 ></wa-icon>
-<span class="font-mono text-sm tabular-nums" data-testid={timerTestid}
+<span class="text-sm tabular-nums" data-testid={timerTestid}
 	>{formatDuration(elapsedMs)}</span
 >
 

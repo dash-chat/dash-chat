@@ -1,6 +1,5 @@
 import WebaudioPeaks from 'webaudio-peaks';
 
-/** Number of amplitude bars stored for the voice-note scrubber UI. */
 export const WAVEFORM_BARS = 48;
 
 let audioContext: AudioContext | undefined;
@@ -10,7 +9,6 @@ function sharedAudioContext(): AudioContext {
 	return audioContext;
 }
 
-/** Decode an audio file's bytes into a PCM `AudioBuffer`. */
 export async function decodeToBuffer(bytes: Uint8Array): Promise<AudioBuffer> {
 	// `decodeAudioData` detaches the passed ArrayBuffer, so hand it a copy.
 	const copy = bytes.slice().buffer;
@@ -18,10 +16,8 @@ export async function decodeToBuffer(bytes: Uint8Array): Promise<AudioBuffer> {
 }
 
 /**
- * Render a decoded buffer down to a single mono channel at `sampleRate`.
- * Used to normalize mobile recordings to the same low-rate mono WAV the
- * desktop recorder produces, keeping voice notes well under the message size
- * limit. WebAudio downmixes multi-channel sources to mono automatically.
+ * Renders a decoded buffer down to mono at `sampleRate`, normalizing mobile
+ * recordings to the low-rate WAV the desktop recorder already produces.
  */
 export async function resampleToMono(
 	buffer: AudioBuffer,
@@ -37,18 +33,16 @@ export async function resampleToMono(
 }
 
 /**
- * Reduce a decoded buffer into `bars` peak-normalized amplitude values
- * (0..=255) for the scrubber. Peaks are extracted by `webaudio-peaks`; the
- * loudest bar maps to 255 so quiet recordings still fill the waveform.
+ * Reduces a decoded buffer into `bars` amplitudes (0..=255) for the scrubber,
+ * with the loudest mapped to 255 so quiet recordings still fill the waveform.
  */
 export function computeWaveform(
 	buffer: AudioBuffer,
 	bars = WAVEFORM_BARS,
 ): Uint8Array {
 	const samplesPerPixel = Math.max(1, Math.floor(buffer.length / bars));
-	// `data[0]` holds 8-bit mono min/max pairs per pixel: [min0, max0, min1, …].
-	// `cueOut` must be the sample count: it is not defaulted when passed as 0,
-	// which would slice an empty range and yield a flat (all-zero) waveform.
+	// `data[0]` holds 8-bit min/max pairs per pixel. `cueOut` must be the sample
+	// count: it is not defaulted at 0, which would yield a flat waveform.
 	const { data } = WebaudioPeaks(
 		buffer,
 		samplesPerPixel,

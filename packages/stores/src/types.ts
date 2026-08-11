@@ -47,12 +47,9 @@ export interface FileAttachment {
 }
 
 /**
- * A renderable voice note. Like `PhotoAttachment` it carries only the blob
- * `hash` and metadata — the audio (a self-contained 16 kHz mono WAV) lives in
- * the iroh-blobs store and is loaded lazily via the `irohblob://` URI scheme.
- * `waveform` holds downsampled, peak-normalized amplitude bars (0..=255) for the
- * scrubber UI, carried in the message metadata so it renders before the audio
- * downloads.
+ * A renderable voice note, carrying only the blob `hash` and metadata. The
+ * `waveform` (peak-normalized bars, 0..=255) rides in the message metadata so
+ * the scrubber renders before the audio downloads.
  */
 export interface VoiceNote {
 	hash: Hash;
@@ -96,9 +93,7 @@ export interface OutgoingVoiceNote {
  * Metadata for a single stored blob. A message log carries these in place of
  * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
  * via the `irohblob://` URI scheme. Mirrors the `#[serde(tag = "kind")]` enum
- * `dashchat_node::MediaMetadata`: photos/files reference their blob by `hash`,
- * while voice notes also carry `duration_ms`/`waveform` so the scrubber renders
- * without first fetching the audio.
+ * `dashchat_node::MediaMetadata`.
  */
 export type MediaMetadata =
 	| { kind: 'Photo'; name: string; mime_type: string; size: number; hash: Hash }
@@ -122,9 +117,8 @@ export type MediaBundle = MediaMetadata[];
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob store,
-	 * fetched lazily via `irohblob://`). Consumers derive the photos/file/voice
-	 * grouping from this list at render time. */
+	/** Flat wire form; consumers derive the photos/file/voice grouping at render
+	 * time. */
 	media: MediaBundle | null;
 };
 export type MessageContent = MessageContentV1;

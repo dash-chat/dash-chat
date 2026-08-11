@@ -43,10 +43,8 @@ pub struct OutgoingFile {
     pub mime_type: String,
 }
 
-/// A voice note. `data` is a self-contained audio file (16 kHz mono 16-bit
-/// WAV, `audio/wav`); `mime_type` identifies the encoding so the format can
-/// change without a wire break. `waveform` holds downsampled, peak-normalized
-/// amplitude bars (`0..=255`) for the scrubber UI.
+/// A voice note. `mime_type` identifies the encoding so the format can change
+/// without a wire break; `waveform` holds amplitude bars (`0..=255`) for the UI.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct OutgoingVoiceNote {
     pub data: Vec<u8>,
@@ -84,12 +82,8 @@ pub enum MediaMetadata {
         name: String,
         mime_type: String,
         size: u64,
-        // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
-        // impl encodes a 32-element array, which serde's untagged-enum buffering (used
-        // by `dashchat_compat::Compat`) cannot reconstruct from CBOR.
-        //
-        // TODO: consider reworking Compat to remove this complexity, since we're
-        //       not really getting what we want from Compat anyway.
+        // As a CBOR byte string: `iroh_blobs::Hash` encodes a 32-element array,
+        // which `Compat`’s untagged-enum buffering cannot reconstruct from CBOR.
         #[serde(with = "hash_bytes")]
         hash: iroh_blobs::Hash,
     },

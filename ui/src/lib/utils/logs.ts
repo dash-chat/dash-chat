@@ -71,9 +71,8 @@ export function forwardConsoleToTauriLog(): void {
 		debug(fmt(args)).catch(() => {});
 	};
 
-	// Uncaught errors and rejected promises with no `.catch` are printed by the
-	// engine through an internal channel that bypasses our patched `console.*`,
-	// so capture them explicitly or they never reach the Tauri log.
+	// The engine prints these through an internal channel that bypasses our
+	// patched `console.*`, so they never reach the Tauri log otherwise.
 	window.addEventListener('unhandledrejection', event => {
 		error(`Unhandled promise rejection: ${fmtOne(event.reason)}`).catch(
 			() => {},

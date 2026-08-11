@@ -3,9 +3,7 @@
 	import RecordingIndicator from './RecordingIndicator.svelte';
 
 	interface Props {
-		/** Live elapsed time while recording hands-free. */
 		elapsedMs: number;
-		/** Discard the recording. */
 		onCancel: () => void;
 	}
 

@@ -8,8 +8,6 @@
 		/** Peak amplitudes in 0..1, one per bar. */
 		peaks: number[];
 		durationSec: number;
-		/** Shared playback state/logic; the scrubber renders its progress and
-		 * drives seeking through it. */
 		player: VoicePlayer;
 	}
 
@@ -23,12 +21,9 @@
 		return [Number(r), Number(g), Number(b)];
 	}
 
-	// wavesurfer builds the progress (played) canvas by compositing `progressColor`
-	// onto the wave canvas with `source-in`, which multiplies the alphas — so a
-	// translucent `waveColor` caps the played region's alpha at the unplayed value
-	// and the progress is invisible. Bake opaque colors against the bubble
-	// background instead: the unplayed bars look identical to a translucent fill,
-	// while the played bars stay fully opaque and clearly visible.
+	// wavesurfer composites `progressColor` onto the wave canvas with `source-in`,
+	// multiplying alphas — a translucent `waveColor` would make progress invisible,
+	// so bake opaque colors against the surface behind the bars instead.
 	function mixOver(color: string, background: string, alpha: number): string {
 		const [r, g, b] = parseRgb(color);
 		const [br, bg, bb] = parseRgb(background);
@@ -37,8 +32,7 @@
 		return `rgb(${mix(r, br)}, ${mix(g, bg)}, ${mix(b, bb)})`;
 	}
 
-	/** First ancestor background that isn't fully transparent — the surface the
-	 * waveform is painted on, used to flatten the bars to opaque colors. */
+	/** First ancestor background that isn’t fully transparent. */
 	function resolveBackground(el: HTMLElement): string {
 		let node: HTMLElement | null = el;
 		while (node) {
@@ -50,10 +44,9 @@
 		return 'rgb(0, 0, 0)';
 	}
 
-	// wavesurfer renders only the static bars; playback runs through the shared
-	// player's own `<audio>` (wavesurfer's media element doesn't advance
-	// `currentTime` for blob audio on iOS WKWebView). Drive the played region from
-	// the player's clock against its real duration.
+	// wavesurfer renders only the static bars: its media element doesn’t advance
+	// `currentTime` for blob audio on iOS WKWebView, so the shared player drives
+	// the played region instead.
 	function renderProgress() {
 		const duration = player.durationSec;
 		if (!wavesurfer || duration <= 0) return;
@@ -66,7 +59,6 @@
 	}
 
 	$effect(() => {
-		// Re-render whenever the shared clock or play state changes.
 		player.currentTime;
 		player.paused;
 		renderProgress();
@@ -118,9 +110,8 @@
 	function onKeyDown(event: KeyboardEvent) {
 		if (durationSec <= 0) return;
 		const el = event.currentTarget as HTMLElement;
-		// The scrubber is visually mirrored in RTL (`rtl:-scale-x-100`), and pointer
-		// seeking flips for it too, so the arrow keys must follow the visual fill:
-		// in RTL the leftward arrow moves forward in time and vice versa.
+		// The scrubber is visually mirrored in RTL, so the arrow keys follow the
+		// visual fill: leftward moves forward in time.
 		const rtl = getComputedStyle(el).direction === 'rtl';
 		const backKey = rtl ? 'ArrowRight' : 'ArrowLeft';
 		const forwardKey = rtl ? 'ArrowLeft' : 'ArrowRight';

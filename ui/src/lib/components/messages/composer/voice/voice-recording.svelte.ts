@@ -24,12 +24,9 @@ function clamp01(value: number): number {
 	return Math.max(0, Math.min(1, value));
 }
 
-/**
- * The press-and-hold recording gesture and its phase, shared by the mic button
- * and the recording overlays. They render in different parts of the composer —
- * the button inside the input pill on mobile, the overlays across the composer
- * row — so the state they both read lives here rather than in either component.
- */
+/** The press-and-hold recording gesture and its phase. Lives outside both
+ * components because the mic sits inside the input pill while the bars span the
+ * composer row. */
 export class VoiceRecording {
 	readonly recorder = new VoiceRecorder();
 	drag: DragState = $state(idle);
@@ -38,13 +35,11 @@ export class VoiceRecording {
 	private startY = 0;
 	private isRtl = false;
 	private willCancel = false;
-	// Whether this take was locked hands-free. A hold-and-release also passes
-	// through `encoding`, but must not surface the locked bar / send button while
-	// the WAV encodes — only a genuinely locked take should.
+	// A hold-and-release also passes through `encoding`, but must not surface the
+	// locked bar while the WAV encodes — only a genuinely locked take should.
 	private wasLocked = $state(false);
-	// The pointer can be released while `recorder.start()` is still awaiting mic
-	// permission/native start; remember that so we finish the hold once recording
-	// actually begins instead of leaving it stuck recording.
+	// The pointer can be released while `recorder.start()` is still awaiting the
+	// native start, which would otherwise leave it stuck recording.
 	private releasedWhileStarting = false;
 
 	constructor(private onRecorded: (draft: DraftVoiceNote) => void) {
@@ -58,10 +53,8 @@ export class VoiceRecording {
 		);
 	}
 
-	// The press-and-hold visuals (red mic, slide-up-to-lock pill) only make sense
-	// mid-hold on touch; desktop click-records straight into the locked bar. Show
-	// them already during `requesting` so the overlay appears the instant the user
-	// presses, rather than after the native recorder has finished starting up.
+	// Hold visuals are touch-only (desktop click-records straight into the locked
+	// bar), and show from `requesting` so they appear on press, not after startup.
 	get recordingHoldMobile(): boolean {
 		return (
 			(this.recorder.phase === 'recording' ||
@@ -70,8 +63,7 @@ export class VoiceRecording {
 		);
 	}
 
-	// While the locked/desktop bar replaces the input row, the mic button must be
-	// hidden: it overlaps the bar's send button and, painting later, would steal
+	// The mic overlaps the bar’s own send button and, painting later, would steal
 	// its taps.
 	get barReplacesButton(): boolean {
 		return (
@@ -80,8 +72,6 @@ export class VoiceRecording {
 		);
 	}
 
-	/** Pre-pay cpal's ~2s cold audio-subsystem init on desktop so the first press
-	 * records immediately instead of hanging while the device spins up. */
 	warmUp() {
 		if (!isMobile) warmUpRecorder();
 	}

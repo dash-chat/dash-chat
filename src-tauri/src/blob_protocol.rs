@@ -50,9 +50,8 @@ pub fn handle<R: Runtime>(
     });
 }
 
-/// Best-effort MIME type from a blob's magic bytes. Covers the media kinds the
-/// app stores (voice-note WAV and the supported image formats); anything else
-/// falls back to a generic type, which is fine for file-attachment downloads.
+/// Best-effort MIME type from a blob’s magic bytes, falling back to a generic
+/// type for anything that is not stored media.
 fn sniff_content_type(bytes: &[u8]) -> &'static str {
     if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" {
         match &bytes[8..12] {

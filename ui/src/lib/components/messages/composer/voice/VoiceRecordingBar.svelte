@@ -8,8 +8,7 @@
 
 	interface Props {
 		voice: VoiceRecording;
-		/** Trailing buttons the bar must leave uncovered, so the mic (and the
-		 * attach button beside it on desktop) stay reachable mid-recording. */
+		/** Trailing buttons the bar leaves uncovered so they stay reachable. */
 		endButtons: 1 | 2;
 	}
 
@@ -50,6 +49,7 @@
 		<div class="voice-bar voice-bar-flush bg-page-surface">
 			<VoiceDesktopBar
 				elapsedMs={voice.recorder.elapsedMs}
+				levels={voice.recorder.levels.levels}
 				onCancel={() => void voice.cancel()}
 				onSend={() => voice.stopAndSend()}
 			/>
