@@ -14,7 +14,6 @@ import {
 	Payload,
 	Tombstone,
 	hasBody,
-	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
 
@@ -218,7 +217,7 @@ function collectMessageActionsByType(
 					hash: operation.hash,
 					content: {
 						message: body.payload.payload.message,
-						media: mediaBundleToAttachment(body.payload.payload.media),
+						media: body.payload.payload.media,
 						reactions: {},
 						editHistory: [],
 					},
