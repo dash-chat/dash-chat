@@ -82,7 +82,7 @@ async fn media_hash_of(node: &TestNode, chat: ChatId, text: &str) -> iroh_blobs:
         .expect("message carries media")
         .first()
         .expect("at least one media item")
-        .hash
+        .hash()
 }
 
 /// The full flow from the spec: two nodes connected only through a mailbox

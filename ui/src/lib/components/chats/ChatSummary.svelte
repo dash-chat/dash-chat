@@ -6,7 +6,7 @@
 	import {
 		type ChatSummary,
 		type ContactsStore,
-		type MediaAttachment,
+		type MessageBody,
 		hasBody,
 	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
@@ -39,14 +39,13 @@
 
 	const title = $derived(summary.name || m.waitingForProfile());
 
-	function summarizeMessage(content: {
-		message: string;
-		media: MediaAttachment | null;
-	}): string {
+	function summarizeMessage(content: MessageBody): string {
 		if (content.message) return content.message;
-		if (!content.media) return '';
-		if (content.media.kind === 'file') return content.media.file.name;
-		const n = content.media.photos.length;
+		const media = content.media;
+		if (!media || media.length === 0) return '';
+		const file = media.find(item => item.kind === 'File');
+		if (file) return file.name;
+		const n = media.filter(item => item.kind === 'Photo').length;
 		return n > 1 ? m.photosCount({ count: n }) : m.photo();
 	}
 </script>
