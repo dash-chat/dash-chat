@@ -26,7 +26,7 @@ pub use error::{
     AddContactError, DeleteMessageError, EditMessageError, Error, RemoveGroupMemberError,
 };
 pub use id::*;
-pub use node::{Node, NodeConfig, Notification};
+pub use node::{Node, NodeConfig, Notification, OpNotification, SystemNotification};
 pub use p2panda::SigningKey;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;

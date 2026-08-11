@@ -13,3 +13,11 @@ export const SYNC_TIMEOUT = 60_000;
  *  channel (with a mailbox relay hop) separately from the message op, which
  *  is slower still than op sync on cold CI runners. */
 export const MEDIA_SYNC_TIMEOUT = 120_000;
+
+/** How long something already on screen must survive to count as untouched by
+ *  an arriving message. One arrival re-renders a chat more than once: the
+ *  message itself, then the read receipt its appearance publishes on a 500ms
+ *  debounce, then the render that receipt's own operation triggers. Asserting
+ *  before the whole burst has landed passes on a chat that is about to tear
+ *  the element down. */
+export const RENDER_SETTLE_WINDOW = 5_000;

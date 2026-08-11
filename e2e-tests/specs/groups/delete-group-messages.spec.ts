@@ -25,7 +25,7 @@ describe('Deleting group messages', () => {
 		const theirs =
 			await agent2.groupChatPage.messages.waitForMessage('Delete me');
 
-		await mine.delete();
+		await mine.deleteForEveryone();
 
 		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
 		await theirs.waitForDeleted(
@@ -33,13 +33,52 @@ describe('Deleting group messages', () => {
 		);
 	});
 
-	it('does not offer Delete on another member’s messages', async () => {
-		await agent2.groupChatPage.composer.sendMessage("Bob's message stays");
+	// The delete-for-me op lives in the deleter's private device-group topic and
+	// tombstones the target in the shared chat topic, so the message must vanish
+	// for the deleter while staying visible to every other member.
+	it('deletes my own message only for me, leaving other members untouched', async () => {
+		await agent1.groupChatPage.composer.sendMessage('Only I forget this');
+		const message =
+			await agent1.groupChatPage.messages.waitForMessage('Only I forget this');
+		await agent2.groupChatPage.messages.waitForMessage('Only I forget this');
+
+		await message.deleteForMe();
+
+		// Gone on my side with no placeholder (unlike delete-for-everyone)...
+		await agent1.groupChatPage.messages.waitForMessageGone(
+			'Only I forget this',
+		);
+		// ...but still visible to the other member.
+		expect(
+			await agent2.groupChatPage.messages.messageAreaContains(
+				'Only I forget this',
+			),
+		).toBe(true);
+	});
+
+	it("deletes another member's message only for me", async () => {
+		await agent2.groupChatPage.composer.sendMessage("Bob's group message");
 		const message = await agent1.groupChatPage.messages.waitForMessage(
-			"Bob's message stays",
+			"Bob's group message",
 		);
 
-		await message.openActions();
-		expect(await message.deleteAction.isExisting()).toBe(false);
+		await message.openDeleteDialog();
+
+		// Only "Delete for me" is available for another member's message.
+		await message.deleteForMeDialogConfirm.waitForExist();
+		expect(await message.deleteForEveryoneDialogConfirm.isExisting()).toBe(
+			false,
+		);
+
+		await message.deleteForMeDialogConfirm.click();
+
+		await agent1.groupChatPage.messages.waitForMessageGone(
+			"Bob's group message",
+		);
+		expect(
+			await agent2.groupChatPage.messages.messageAreaContains(
+				"Bob's group message",
+			),
+		).toBe(true);
 	});
 });

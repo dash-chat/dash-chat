@@ -23,6 +23,7 @@
 	"editingMessage": "Edit message",
 	"deleteMessageTitle": "Delete message?",
 	"deleteForEveryone": "Delete for everyone",
+	"deleteForMe": "Delete for me",
 	"youDeletedThisMessage": "You deleted this message.",
 	"someoneDeletedThisMessage": "{{name}} deleted this message.",
 	"messageDeleted": "Message deleted",

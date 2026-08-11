@@ -27,7 +27,7 @@ pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
 /// foreground-suppression handled by the plugin.
 pub(crate) async fn show_sync_notification(
     app_handle: &AppHandle,
-    notification: &dashchat_node::Notification,
+    notification: &dashchat_node::OpNotification,
 ) {
     if !are_notifications_enabled(app_handle) {
         return;

@@ -41,11 +41,12 @@ async fn test_reject_contact_request() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) = &n.payload
+            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
+                n.op()?.payload
             else {
                 return None;
             };
-            Some(*agent_id)
+            Some(agent_id)
         })
         .await
         .expect("Alice should receive Bobbi's contact request");
@@ -114,11 +115,11 @@ async fn test_reject_multiple_contact_requests() {
             .await
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
                 let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
-                    &n.payload
+                    n.op()?.payload
                 else {
                     return None;
                 };
-                Some(*agent_id)
+                Some(agent_id)
             })
             .await
             .expect("Alice should receive contact request");
@@ -180,11 +181,12 @@ async fn test_inbox_two_way_flow() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) = &n.payload
+            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
+                n.op()?.payload
             else {
                 return None;
             };
-            Some(*agent_id)
+            Some(agent_id)
         })
         .await
         .expect("Alice should receive Bobbi's contact request");
@@ -198,7 +200,8 @@ async fn test_inbox_two_way_flow() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Some(Payload::Inbox(InboxPayload::ContactRequestAck { profile, .. })) = &n.payload
+            let Some(Payload::Inbox(InboxPayload::ContactRequestAck { profile, .. })) =
+                n.op()?.payload.as_ref()
             else {
                 return None;
             };
