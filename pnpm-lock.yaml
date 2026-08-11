@@ -244,6 +244,9 @@ importers:
       konsta:
         specifier: ^5.0.6
         version: 5.0.6(patch_hash=e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f)
+      linkifyjs:
+        specifier: ^4.3.3
+        version: 4.3.3
       qr-creator:
         specifier: ^1.0.0
         version: 1.0.0
@@ -4046,6 +4049,9 @@ packages:
   lines-and-columns@2.0.4:
     resolution: {integrity: sha512-wM1+Z03eypVAVUCE7QdSqpVIvelbOakn1M0bPDoA4SGWPx3sNDVUiMo3L6To6WWGClB7VyXnhQ4Sn7gxiJbE6A==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
+
+  linkifyjs@4.3.3:
+    resolution: {integrity: sha512-P8aEP5U/D1/IlTY2OeYsErdwh9bGuLE30NcXtKEjgdHcahveQoQwM2yZNsioQHsWFz0P7KKudisbrzCgR0sDHg==}
 
   lit-element@4.2.1:
     resolution: {integrity: sha512-WGAWRGzirAgyphK2urmYOV72tlvnxw7YfyLDgQ+OZnM9vQQBQnumQ7jUJe6unEzwGU3ahFOjuz1iz1jjrpCPuw==}
@@ -9824,6 +9830,8 @@ snapshots:
   lines-and-columns@1.2.4: {}
 
   lines-and-columns@2.0.4: {}
+
+  linkifyjs@4.3.3: {}
 
   lit-element@4.2.1:
     dependencies:

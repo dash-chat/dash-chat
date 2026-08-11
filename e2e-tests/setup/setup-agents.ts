@@ -36,6 +36,7 @@ import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { checkOverflow } from '../helpers/review/checks';
 import { APP_PACKAGE, stopAndroidApp } from './platforms/android';
+import { readOpenedUrls } from './platforms/desktop';
 import { type AgentPlatformName, platformNames } from './test-env';
 
 export type Agent = WebdriverIO.Browser & {
@@ -106,6 +107,9 @@ export type Agent = WebdriverIO.Browser & {
 	 *  One-way for the life of the process; the agent still reads/writes
 	 *  locally and talks to a mailbox. */
 	disableP2p(): Promise<void>;
+	/** The urls this agent asked the OS to open, once at least `count` have
+	 *  arrived. Recorded by the harness's `xdg-open` stub, so desktop only. */
+	waitForOpenedUrls(count?: number): Promise<string[]>;
 };
 
 /** The device serial this Appium session was launched against. */
@@ -286,11 +290,23 @@ export async function waitForTestUtils(
 async function setupAgent(
 	agentName: string,
 	platform: AgentPlatformName,
+	slot: number,
 ): Promise<Agent> {
 	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
 	const agent = makeAgent(b);
 	agent.platform = platform;
+	agent.waitForOpenedUrls = async (count = 1) => {
+		let urls: string[] = [];
+		await b.waitUntil(
+			() => {
+				urls = readOpenedUrls(slot);
+				return urls.length >= count;
+			},
+			{ timeoutMsg: `${agentName} never asked the OS to open ${count} url(s)` },
+		);
+		return urls;
+	};
 	await agent.setWideScreen(false);
 	return agent;
 }
@@ -380,7 +396,7 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 	);
 	if (slots === null) ctx.skip();
 	const agents = await Promise.all(
-		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1])),
+		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1], slot)),
 	);
 	return agents as { [K in keyof T]: Agent };
 }
