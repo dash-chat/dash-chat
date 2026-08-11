@@ -47,7 +47,10 @@
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
-	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
+	import {
+		forwardConsoleToTauriLog,
+		reportUncaughtErrors,
+	} from '$lib/utils/logs';
 	import {
 		listenForDeepLinks,
 		handleLaunchDeepLink,
@@ -85,6 +88,7 @@
 
 	// Forward console.log/info/warn/error from the WebView to the tauri logs
 	forwardConsoleToTauriLog();
+	reportUncaughtErrors();
 
 	let { children } = $props();
 
