@@ -22,6 +22,7 @@
 	"edited": "Edited",
 	"editingMessage": "Edit message",
 	"deleteMessageTitle": "Delete message?",
+	"deleteMessageDescription": "Who would you like to delete this message for?",
 	"deleteForEveryone": "Delete for everyone",
 	"deleteForMe": "Delete for me",
 	"youDeletedThisMessage": "You deleted this message.",

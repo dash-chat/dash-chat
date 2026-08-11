@@ -1,6 +1,3 @@
-<!--
-	A full-width pill action, as used by the iOS confirmation sheets.
--->
 <script lang="ts">
 	import { Button } from 'konsta/svelte';
 	import type { Snippet } from 'svelte';
