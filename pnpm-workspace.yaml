@@ -19,7 +19,6 @@ allowBuilds:
   appium: true
   sharp: true
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/ce6e762f816bdffeaa0bd56078995bda21cdb68b: set this to true or false
-  tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd: set this to true or false
 
 patchedDependencies:
   konsta@5.0.6: patches/konsta@5.0.6.patch
