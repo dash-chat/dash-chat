@@ -1,5 +1,3 @@
-use mailbox_client::mem::MemMailbox;
-
 use dashchat_node::{testing::*, *};
 
 const TRACING_FILTER: [&str; 4] = [
@@ -65,22 +63,20 @@ async fn test_profiles_sync_between_contacts() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
     println!("nodes:");
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing(), "alice--")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(NodeConfig::testing(), "--bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     let poll = PollConfig::default();
 
     println!("alice: {}", alice.device_id());
     println!("bobbi: {}", bobbi.device_id());
-
-    introduce_and_wait([&alice, &bobbi]).await;
 
     // Set initial profiles before adding contacts
     let profile = Profile {
@@ -101,12 +97,7 @@ async fn test_profiles_sync_between_contacts() {
         .unwrap();
 
     alice
-        .add_contact(
-            bobbi
-                .new_qr_code(ShareIntent::AddContact, true)
-                .await
-                .unwrap(),
-        )
+        .add_contact(bobbi.create_add_contact_qr_code().await.unwrap())
         .await
         .unwrap();
 

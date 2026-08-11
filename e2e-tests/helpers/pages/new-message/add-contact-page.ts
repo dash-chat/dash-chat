@@ -7,11 +7,17 @@ const FILE_INPUT_TESTID = 'add-contact-file-input';
 
 export class AddContactPage extends TestHelper {
 	back = this.el(tid('add-contact-back'));
-	codeTab = this.el(tid('add-contact-code-tab'));
+	codeTab = this.el(tid('add-contact-link-tab'));
 	scanTab = this.el(tid('add-contact-scan-tab'));
 	qrCode = this.el('wa-qr-code');
 	copyButton = this.el(tid('add-contact-copy-btn'));
-	codeInput = this.el(tid('add-contact-code-input'));
+	copyLinkBox = this.el(tid('add-contact-copy-link-box'));
+	copyLinkButton = this.el(tid('add-contact-copy-link-btn'));
+	linkButton = this.el(tid('add-contact-link-btn'));
+	linkSheet = this.el(tid('qr-link-sheet'));
+	linkSheetLink = this.el(tid('qr-link-sheet-link'));
+	linkSheetCopyButton = this.el(tid('qr-link-sheet-copy'));
+	linkSheetShareButton = this.el(tid('qr-link-sheet-share'));
 	shareButton = this.el(tid('add-contact-share-btn'));
 	saveButton = this.el(tid('add-contact-save-btn'));
 	uploadButton = this.el(tid('add-contact-upload-btn'));
@@ -20,25 +26,50 @@ export class AddContactPage extends TestHelper {
 	colorButton = this.el(tid('add-contact-color-btn'));
 
 	async ready() {
-		await this.codeInput.waitForExist();
+		await this.copyButton.waitForExist();
 	}
 
-	/** Read the contact code from the QR element. */
-	async getContactCode(): Promise<string> {
+	/** True if the link sheet is open (not the slide-out dismissed state). */
+	linkSheetIsOpen(): Promise<boolean> {
+		return this.agent.execute((sel: string) => {
+			const inner = document.querySelector(sel);
+			const sheet = inner?.closest('.k-sheet');
+			if (!sheet) return false;
+			return sheet.classList.contains('-translate-y-full');
+		}, tid('qr-link-sheet'));
+	}
+
+	/** Close the link sheet by clicking its backdrop. */
+	async closeLinkSheet() {
+		await this.agent.execute((sel: string) => {
+			const inner = document.querySelector(sel);
+			const sheet = inner?.closest('.k-sheet');
+			const backdrop = sheet?.previousElementSibling as HTMLElement | null;
+			backdrop?.click();
+		}, tid('qr-link-sheet'));
+	}
+
+	/** Read the contact link from the QR element. */
+	async getAddContactLink(): Promise<string> {
 		await this.qrCode.waitForExist();
-		const code = (await this.qrCode.getProperty('value')) as string | null;
-		if (!code) throw new Error('contact code missing on QR element');
-		return code;
+		const link = (await this.qrCode.getProperty('value')) as string | null;
+		if (!link) throw new Error('add contact link missing on QR element');
+		return link;
 	}
 
-	async enterCode(code: string) {
-		await this.typeInto(`${tid('add-contact-code-input')} input`, code);
+	// There is no UI to type a contact link; receiving one is only reachable by
+	// opening a shared link, so dispatch it through the app's deep-link routing.
+	async enterAddContactLink(link: string) {
+		await this.agent.execute(
+			(l: string) => window.__test.handleDeepLink(l),
+			link,
+		);
 	}
 
-	/** Generate a QR PNG for the given code and inject it into the file input. */
-	async uploadQrCodeImage(code: string): Promise<void> {
+	/** Generate a QR PNG for the given string and inject it into the file input. */
+	async uploadQrCodeImage(value: string): Promise<void> {
 		const pngBase64 = (
-			await QRCode.toBuffer(code, { type: 'png', errorCorrectionLevel: 'L' })
+			await QRCode.toBuffer(value, { type: 'png', errorCorrectionLevel: 'L' })
 		).toString('base64');
 		await this.agent.execute(
 			(base64: string, testid: string) => {

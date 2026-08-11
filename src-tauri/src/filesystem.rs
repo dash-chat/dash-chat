@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Runtime};
 
-const DATABASE_VERSION: &str = "0.5";
+const DATABASE_VERSION: &str = "0.7";
 
 /// When `DATA_DIR` is set, isolate the XDG directories under it so concurrently
 /// running desktop instances don't share WebKitGTK's SQLite databases (which
@@ -77,6 +77,10 @@ impl FileSystem {
     /// Sibling of `app_data_dir` (NOT versioned)
     pub fn logs_dir(&self) -> PathBuf {
         self.app_root_dir.join("logs")
+    }
+
+    pub fn error_reporting_dir(&self) -> PathBuf {
+        self.app_root_dir.join("error-reporting")
     }
 
     pub fn settings_path(&self) -> PathBuf {

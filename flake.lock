@@ -2,11 +2,11 @@
   "nodes": {
     "crane": {
       "locked": {
-        "lastModified": 1780099841,
-        "narHash": "sha256-EVZd2RsbpreRUDSi9rBwPY+ZxoyMaiEBbZxxhljbaS4=",
+        "lastModified": 1784172867,
+        "narHash": "sha256-hzzeOgTP0MXMvg4djVwysTDvvUXIpsUCgsA0wPMF/Qk=",
         "owner": "ipetkov",
         "repo": "crane",
-        "rev": "0532eb17955225173906d671fb36306bdeb1e2dc",
+        "rev": "8833b7dc3c7426ce1110ed6fed31b6f63d74f2dc",
         "type": "github"
       },
       "original": {
@@ -35,11 +35,11 @@
         "nixpkgs-lib": "nixpkgs-lib"
       },
       "locked": {
-        "lastModified": 1778716662,
-        "narHash": "sha256-m1Yf0wZ8j1OHjTc2UwHwyQRSnNeSgLJOd7q5Y45hzi4=",
+        "lastModified": 1782949081,
+        "narHash": "sha256-vp6Y/Grm98ESt6ceOkWiHWyZRDV3J1RID4w+6NWK9yA=",
         "owner": "hercules-ci",
         "repo": "flake-parts",
-        "rev": "f7c1a2d347e4c52d5fb8d10cb4d94b5884e546fb",
+        "rev": "17c9d6cdfc60c64f4ee8d306f9bc0b4ccb51481e",
         "type": "github"
       },
       "original": {
@@ -220,11 +220,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1779796641,
-        "narHash": "sha256-ZsIrKmhp4vbBXoXXmR/tBXA/UCsAQiJL9vsgZEduhVY=",
+        "lastModified": 1782847189,
+        "narHash": "sha256-twXPFqFsrrY5r28Zh7Homgcp2gUMBgQ6WDS98Q/3xFI=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "25f538306313eae3927264466c70d7001dcea1df",
+        "rev": "b6018f87da91d19d0ab4cf979885689b469cdd41",
         "type": "github"
       },
       "original": {
@@ -234,13 +234,61 @@
         "type": "github"
       }
     },
+    "nixpkgs-chromedriver-124": {
+      "locked": {
+        "lastModified": 1714953413,
+        "narHash": "sha256-etkqplp5Ah2mw7aZSh96c1FeakzsU7HoygE9Np8WGss=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "fcc7d2be753560cdf34228a398f7a44202f09aaa",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "fcc7d2be753560cdf34228a398f7a44202f09aaa",
+        "type": "github"
+      }
+    },
+    "nixpkgs-chromedriver-149": {
+      "locked": {
+        "lastModified": 1781913064,
+        "narHash": "sha256-dH4bn/TfMV6+B6IA5dp6xpYdeE0RK3WqB5bcsMx6rqo=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "d25a391ba507bc1cb32a8a732a2deb0d9dd16ad6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "d25a391ba507bc1cb32a8a732a2deb0d9dd16ad6",
+        "type": "github"
+      }
+    },
+    "nixpkgs-chromedriver-150": {
+      "locked": {
+        "lastModified": 1784555310,
+        "narHash": "sha256-/FCliTPgiuV1owejZFNx3Ch9irdvkOfOFl+HHZ+DrtM=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "421eebfd0ec7bccd4abe826ce62d7e6e83129493",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "421eebfd0ec7bccd4abe826ce62d7e6e83129493",
+        "type": "github"
+      }
+    },
     "nixpkgs-lib": {
       "locked": {
-        "lastModified": 1777168982,
-        "narHash": "sha256-GOkGPcboWE9BmGCRMLX3worL4EMnsnG8MyKmXNeYuhQ=",
+        "lastModified": 1782614948,
+        "narHash": "sha256-ePjCwr1sNm9NYUqywL7QfK3JnlS015msC+eBu2zKlp8=",
         "owner": "nix-community",
         "repo": "nixpkgs.lib",
-        "rev": "f5901329dade4a6ea039af1433fb087bd9c1fe14",
+        "rev": "db3f255737b94216eb71cce308e2912cf6bc2d7c",
         "type": "github"
       },
       "original": {
@@ -279,6 +327,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-pnpm": {
+      "locked": {
+        "lastModified": 1785989512,
+        "narHash": "sha256-HFQhkQcl5D1hUNoen3SGHCSFCt2Bg6uP+HgbrnA3InQ=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "445d861c6d31b4af0c79d8d4be2331f762a361d7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-26.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "nixpkgs_2": {
       "locked": {
         "lastModified": 1744536153,
@@ -297,16 +361,16 @@
     },
     "nixpkgs_3": {
       "locked": {
-        "lastModified": 1771903837,
-        "narHash": "sha256-sdaqdnsQCv3iifzxwB22tUwN/fSHoN7j2myFW5EIkGk=",
+        "lastModified": 1784120854,
+        "narHash": "sha256-KesHgItiZPgGX740axSiQLcIQ8D24MDqNpkKYWIek8k=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "e764fc9a405871f1f6ca3d1394fb422e0a0c3951",
+        "rev": "753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
         "type": "github"
       },
       "original": {
         "owner": "nixos",
-        "ref": "nixos-25.11",
+        "ref": "nixos-unstable",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -332,6 +396,10 @@
         "crane": "crane",
         "flake-parts": "flake-parts",
         "nixpkgs": "nixpkgs",
+        "nixpkgs-chromedriver-124": "nixpkgs-chromedriver-124",
+        "nixpkgs-chromedriver-149": "nixpkgs-chromedriver-149",
+        "nixpkgs-chromedriver-150": "nixpkgs-chromedriver-150",
+        "nixpkgs-pnpm": "nixpkgs-pnpm",
         "rust-overlay": "rust-overlay",
         "tauri-driver": "tauri-driver",
         "tauri-plugin-holochain": "tauri-plugin-holochain"
@@ -342,11 +410,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1780456895,
-        "narHash": "sha256-CvRZn3Ut0scqLJ1xwQFkZwKGVBUUNBPrFVXRTMZpbfU=",
+        "lastModified": 1784178955,
+        "narHash": "sha256-YtXHVFBzzqSidcEhPhfTcF2yzzu0p0yA7x07LOR+LaY=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "7cc96a6a3fd6613cafd633250a3934483479b9a1",
+        "rev": "1785b85aeccca381caf8777133410f577b8f2f59",
         "type": "github"
       },
       "original": {
@@ -427,11 +495,11 @@
         "nixpkgs": "nixpkgs_3"
       },
       "locked": {
-        "lastModified": 1772118368,
-        "narHash": "sha256-03lNjyBvAwo+ayGwHAg+iT7WBp5+8rMwcbA2phyV10k=",
+        "lastModified": 1784213362,
+        "narHash": "sha256-Oji62kHEzTSR4aXvOwcYx4hZXJ05PABgOUV5KVUWHRY=",
         "owner": "dash-chat",
         "repo": "tauri-driver",
-        "rev": "07da8c17df8273213640712eb618920410294cfc",
+        "rev": "983dc796f9fb37c9ab55d16a05daae88547cf894",
         "type": "github"
       },
       "original": {
@@ -463,11 +531,11 @@
         "webkitnixpkgs": "webkitnixpkgs"
       },
       "locked": {
-        "lastModified": 1778843306,
-        "narHash": "sha256-Accl/WW5mqdFXCABSvPdorr8DiMgIP/akkivr7J7tXk=",
+        "lastModified": 1784215143,
+        "narHash": "sha256-5lPSqjmCl2T2gmrtRkkDIGJNtsF3gPFMhc7LcKlT6Lc=",
         "owner": "darksoil-studio",
         "repo": "tauri-plugin-holochain",
-        "rev": "b7cfbfc0145701d20ffcf5d4f2a82e75a1377d17",
+        "rev": "be5071dc1e2b7eba4af244d10d9f80e8bb95c81f",
         "type": "github"
       },
       "original": {

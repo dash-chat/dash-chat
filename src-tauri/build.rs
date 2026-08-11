@@ -3,41 +3,64 @@ use std::net::UdpSocket;
 fn main() {
     capture_git_commit();
 
-    // Mobile devices run on a different machine than the dev servers and can't
-    // read the dev shell's runtime env, so bake the dev-server URLs (the compile
-    // host's LAN IP) into debug cross-compiled builds. Desktop dev reads
-    // MAILBOX_URL / PUSH_NOTIFICATIONS_SERVER_URL from the runtime env instead
-    // (set by `just dev`), and release builds fall through to the production URLs.
-    if tauri_build::is_dev() {
-        println!("cargo:rerun-if-env-changed=MAILBOX_URL");
-        println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
-        println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_URL");
-        println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_PORT");
+    // An explicit MAILBOX_URL / PUSH_NOTIFICATIONS_SERVER_URL in the build env
+    // is read directly by option_env! in the consumers, so build.rs only needs
+    // to synthesize a URL when a dev flow (`just dev`) exports the server's
+    // *_PORT: mobile devices run on a different machine than the dev servers
+    // and can't read the dev shell's runtime env, so bake the compile host's
+    // LAN IP + port into the binary. With neither var set, the consumers fall
+    // through to the production URLs.
+    // An absent or empty SENTRY_DSN disables Sentry reporting entirely; ENV
+    // becomes the Sentry environment, so one DSN serves every environment and
+    // staging and local runs stay out of production's issues.
+    println!("cargo:rerun-if-env-changed=SENTRY_DSN");
+    println!("cargo:rerun-if-env-changed=ENV");
+    reject_unparseable_sentry_dsn();
 
-        let mailbox_url = std::env::var("MAILBOX_URL").unwrap_or_else(|_| {
-            let port = std::env::var("MAILBOX_PORT").unwrap_or_else(|_| "3000".to_string());
-            let host = local_ip().unwrap_or_else(|| {
-                println!(
-                    "cargo:warning=Could not detect local IP; falling back to 127.0.0.1. \
-                     Mobile devices will not be able to reach the dev servers."
-                );
-                "127.0.0.1".to_string()
-            });
-            format!("http://{host}:{port}")
-        });
-
-        let push_url = std::env::var("PUSH_NOTIFICATIONS_SERVER_URL").unwrap_or_else(|_| {
-            let port = std::env::var("PUSH_NOTIFICATIONS_SERVER_PORT")
-                .unwrap_or_else(|_| "3001".to_string());
-            let host = local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
-            format!("http://{host}:{port}")
-        });
-
-        println!("cargo:rustc-env=MAILBOX_URL={mailbox_url}");
-        println!("cargo:rustc-env=PUSH_NOTIFICATIONS_SERVER_URL={push_url}");
-    }
+    println!("cargo:rerun-if-env-changed=MAILBOX_URL");
+    println!("cargo:rerun-if-env-changed=MAILBOX_PORT");
+    println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_URL");
+    println!("cargo:rerun-if-env-changed=PUSH_NOTIFICATIONS_SERVER_PORT");
+    synthesize_url_from_port("MAILBOX_URL", "MAILBOX_PORT");
+    synthesize_url_from_port(
+        "PUSH_NOTIFICATIONS_SERVER_URL",
+        "PUSH_NOTIFICATIONS_SERVER_PORT",
+    );
 
     tauri_build::build()
+}
+
+/// A DSN that is set but unparseable would disable reporting in the backend
+/// while the frontend, which only checks that `SENTRY_DSN` is non-empty, still
+/// offers the report action — a button that can only ever fail. Fail the build
+/// so the two gates cannot disagree.
+fn reject_unparseable_sentry_dsn() {
+    let Ok(dsn) = std::env::var("SENTRY_DSN") else {
+        return;
+    };
+    if dsn.is_empty() {
+        return;
+    }
+    if let Err(err) = dsn.parse::<sentry_types::Dsn>() {
+        println!("cargo::error=SENTRY_DSN is set but is not a valid DSN: {err}");
+    }
+}
+
+fn synthesize_url_from_port(url_var: &str, port_var: &str) {
+    if std::env::var(url_var).is_ok() {
+        return;
+    }
+    let Ok(port) = std::env::var(port_var) else {
+        return;
+    };
+    let host = local_ip().unwrap_or_else(|| {
+        println!(
+            "cargo:warning=Could not detect local IP; falling back to 127.0.0.1. \
+             Mobile devices will not be able to reach the dev servers."
+        );
+        "127.0.0.1".to_string()
+    });
+    println!("cargo:rustc-env={url_var}=http://{host}:{port}");
 }
 
 /// Returns the compile host's LAN IP by asking the kernel which interface it
@@ -50,7 +73,7 @@ fn local_ip() -> Option<String> {
 
 fn capture_git_commit() {
     let mut gitcl = match vergen_gitcl::GitclBuilder::default()
-        .sha(true)
+        .sha(false)
         .branch(true)
         .dirty(true)
         .build()

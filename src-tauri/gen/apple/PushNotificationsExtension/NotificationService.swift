@@ -54,6 +54,16 @@ class NotificationService: UNNotificationServiceExtension {
     private var pendingContentHandler: ((UNNotificationContent) -> Void)?
     private var pendingBestAttemptContent: UNMutableNotificationContent?
 
+    /// The extension's delivery outcome, stamped into every delivered
+    /// notification's userInfo by `deliver(_:)`. Starts as `"fallback"` and is
+    /// upgraded to `"delivered"` once real content is decoded. When iOS kills
+    /// this extension before it can respond (exceeded time/memory budget) it
+    /// delivers the raw APNS payload — topic_id / author:seq — which never
+    /// passes through `deliver(_:)`, so it arrives with this key absent. The
+    /// app's foreground `willPresent` presents only `"delivered"` pushes and
+    /// drops the rest.
+    private var contentStatus = "fallback"
+
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         log.info("didReceive fired")
         guard let bestAttemptContent = request.content.mutableCopy() as? UNMutableNotificationContent else {
@@ -84,8 +94,8 @@ class NotificationService: UNNotificationServiceExtension {
         guard let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.studio.darksoil.dashchat"
         ) else {
-            log.error("missing App Group container — passing through original")
-            self.deliver(bestAttemptContent)
+            log.error("missing App Group container — delivering generic 'New message' fallback")
+            self.deliverGenericFallback()
             return
         }
         let dataDir = containerURL.path
@@ -95,8 +105,8 @@ class NotificationService: UNNotificationServiceExtension {
 
         log.info("calling receive_notification payload=\(s, privacy: .auto) dataDir=\(dataDir, privacy: .public)")
         guard let n = receive_notification(slice, dataDirSlice) else {
-            log.error("receive_notification returned NULL pointer — delivering generic 'New message' fallback")
-            self.deliverGenericFallback()
+            log.info("receive_notification returned NULL — this op should not notify; suppressing")
+            self.suppress()
             return
         }
         let title = notification_title(n).asString()
@@ -105,21 +115,18 @@ class NotificationService: UNNotificationServiceExtension {
         let largeIconBytes = notification_large_icon_bytes(n).asString()
         let conversationSenderId = notification_conversation_sender_id(n).asString()
         let conversationTitle = notification_conversation_title(n).asString()
-        let dedupId = notification_id(n)
 
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .private) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .private) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
         if (title == nil || title!.isEmpty) && (body == nil || body!.isEmpty) {
-            log.info("both title and body empty/nil — delivering generic 'New message' fallback")
-            self.deliverGenericFallback()
+            log.info("both title and body empty/nil — this op should not notify; suppressing")
+            self.suppress()
             return
         }
+        self.contentStatus = "delivered"
         if let title { bestAttemptContent.title = title }
         if let body { bestAttemptContent.body = body }
         var userInfo = bestAttemptContent.userInfo
-        // Stable per-message id so the plugin's `willPresent` can dedup this push
-        // against the main app's local (sync-path) notification for the same op.
-        userInfo["__notification_dedup_id__"] = String(dedupId)
         if let route, !route.isEmpty {
             userInfo["__notification_route__"] = route
         }
@@ -263,18 +270,33 @@ class NotificationService: UNNotificationServiceExtension {
     }
 
     /// Replaces the pending best-attempt content with a generic readable
-    /// "New message" notification and delivers it. Used by every path that
-    /// can't produce real content but must still deliver something — without
-    /// the `com.apple.developer.usernotifications.filtering` entitlement, iOS
-    /// won't honor empty content and would otherwise leak the raw APNS
-    /// payload (topic_id / author:seq) to the user.
+    /// "New message" notification and delivers it. Used by the paths where we
+    /// couldn't reach or complete the Rust decode (missing App Group container,
+    /// JSON-encode failure, budget expiry): a real message likely exists, so we
+    /// show a readable placeholder rather than the raw APNS payload
+    /// (topic_id / author:seq) iOS would otherwise leak.
     private func deliverGenericFallback() {
         guard let bestAttemptContent = self.pendingBestAttemptContent else {
             return
         }
         bestAttemptContent.title = "New message"
         bestAttemptContent.body = ""
+        self.contentStatus = "fallback"
         self.deliver(bestAttemptContent)
+    }
+
+    /// Drop the notification entirely by handing iOS empty content. Requires the
+    /// `com.apple.developer.usernotifications.filtering` entitlement; used when
+    /// the Rust decode determined this op should not produce a user-facing
+    /// notification (own message, control op, or an op the main app already
+    /// notified) — mirroring Android, where the handler simply returns nothing.
+    private func suppress() {
+        guard let handler = self.pendingContentHandler else {
+            return
+        }
+        self.pendingContentHandler = nil
+        self.pendingBestAttemptContent = nil
+        handler(UNNotificationContent())
     }
 
     /// Wraps `contentHandler(content)` so the pending references are cleared
@@ -287,7 +309,19 @@ class NotificationService: UNNotificationServiceExtension {
         }
         self.pendingContentHandler = nil
         self.pendingBestAttemptContent = nil
-        handler(content)
+        // Stamp the delivery outcome so the app's foreground `willPresent` can
+        // distinguish this NSE-produced notification from the raw APNS payload
+        // iOS delivers when the extension is killed. Done here (the single
+        // delivery funnel) so it also covers the Communication Notification path,
+        // whose `updating(from:)` result we can't assume preserves userInfo.
+        guard let mutable = content.mutableCopy() as? UNMutableNotificationContent else {
+            handler(content)
+            return
+        }
+        var userInfo = mutable.userInfo
+        userInfo["__nse_content_status__"] = self.contentStatus
+        mutable.userInfo = userInfo
+        handler(mutable)
     }
 
 }

@@ -1,18 +1,9 @@
-use std::{
-    collections::{BTreeSet, HashMap},
-    path::Path,
-    time::Duration,
-};
+use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
-use p2panda::Hash;
-use sqlx::{
-    SqlitePool,
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
-};
+use sqlx::SqlitePool;
 
 use crate::{
-    compat::Capabilities,
     contact::InboxTopic,
     topic::{AutoRegisteredTopic, kind},
     *,
@@ -21,34 +12,35 @@ use crate::{
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
 
+/// Distinguishes the two roles an inbox topic can play for this node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[repr(i64)]
+enum InboxRole {
+    /// An inbox we advertise in our QR code and receive contact requests on.
+    Advertised = 0,
+    /// A private inbox we minted while scanning someone's QR, used only to
+    /// receive their `ContactRequestAck`.
+    Reply = 1,
+}
+
 const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS identity (
         key TEXT PRIMARY KEY,
         value BLOB NOT NULL
-    )",
-    "CREATE TABLE IF NOT EXISTS devices (
-        device_id BLOB PRIMARY KEY,
-        agent_id BLOB NOT NULL,
-        capabilities BLOB NULL
-    )",
-    "CREATE TABLE IF NOT EXISTS agents (
-        agent_id BLOB PRIMARY KEY,
-        profile BLOB NULL
     )",
     "CREATE TABLE IF NOT EXISTS subscribed_topics (
         topic_id BLOB PRIMARY KEY
     )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
         topic_id BLOB NOT NULL PRIMARY KEY,
-        expires_at_nanos INTEGER NOT NULL
+        expires_at_nanos INTEGER NOT NULL,
+        role INTEGER NOT NULL DEFAULT 0,
+        expected_ack_author BLOB NULL
     )",
-    "CREATE TABLE IF NOT EXISTS group_chats (
-        chat_id BLOB NOT NULL PRIMARY KEY
-    )",
-    "CREATE TABLE IF NOT EXISTS tombstones (
-        topic_id BLOB NOT NULL,
-        op_hash BLOB NOT NULL,
-        PRIMARY KEY (topic_id, op_hash)
+    "CREATE TABLE IF NOT EXISTS unfetched_blob_hashes (
+        blob_hash BLOB NOT NULL,
+        mailbox_id TEXT NOT NULL,
+        PRIMARY KEY (blob_hash, mailbox_id)
     )",
 ];
 
@@ -64,20 +56,17 @@ impl NodeKeys {
     }
 }
 
+/// The [`LocalStore`] stores only information that is specific to the operation of this device.
+/// It is completely independent and orthogonal to the [`crate::stores::OpStore`] and [`crate::stores::OpProjection`].
+/// If data doesn't belong in a log to be synced with other devices (including in one's own device group),
+/// it probably belongs here.
 #[derive(Clone)]
 pub struct LocalStore {
     pool: SqlitePool,
 }
 
 impl LocalStore {
-    pub async fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let path = path.as_ref().to_path_buf();
-        let opts = SqliteConnectOptions::new()
-            .filename(&path)
-            .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(30));
-        let pool = SqlitePoolOptions::new().connect_with(opts).await?;
+    pub async fn new(pool: SqlitePool) -> anyhow::Result<Self> {
         for sql in MIGRATIONS {
             sqlx::query(sql).execute(&pool).await?;
         }
@@ -126,141 +115,11 @@ impl LocalStore {
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
-        let rows: Vec<(Topic,)> = sqlx::query_as("SELECT topic_id FROM subscribed_topics")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows: Vec<(Topic<kind::Untyped>,)> =
+            sqlx::query_as("SELECT topic_id FROM subscribed_topics")
+                .fetch_all(&self.pool)
+                .await?;
         Ok(rows.into_iter().map(|(id,)| *id).collect())
-    }
-
-    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        let rows: Vec<(AgentId,)> = sqlx::query_as("SELECT agent_id FROM devices")
-            .fetch_all(&self.pool)
-            .await?;
-        let mut agent_ids: Vec<AgentId> = rows.into_iter().map(|(id,)| id).collect();
-        // Deduplicate since multiple devices can map to the same agent
-        agent_ids.sort();
-        agent_ids.dedup();
-        Ok(agent_ids)
-    }
-
-    pub async fn lookup_contact_by_device_id(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Option<AgentId>> {
-        let row: Option<(AgentId,)> =
-            sqlx::query_as("SELECT agent_id FROM devices WHERE device_id = ?")
-                .bind(device_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.map(|(id,)| id))
-    }
-
-    /// Look up the device ID for a given agent ID.
-    ///
-    /// This is temporary, and will not be needed once device gropus are
-    /// implemented and [ChatMember] becomes [AgentId].
-    pub async fn lookup_contact_by_agent_id(
-        &self,
-        agent_id: AgentId,
-    ) -> anyhow::Result<Option<DeviceId>> {
-        let row: Option<(DeviceId,)> =
-            sqlx::query_as("SELECT device_id FROM devices WHERE agent_id = ?")
-                .bind(agent_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.map(|(id,)| id))
-    }
-
-    /// Look up multiple contacts in a single query.
-    ///
-    /// Returns a map from `DeviceId` to its `AgentId`. Devices that have no
-    /// contact entry are simply absent from the map — the caller can compare
-    /// against the input slice to find which lookups missed.
-    pub async fn lookup_contacts(
-        &self,
-        device_ids: impl IntoIterator<Item = &DeviceId>,
-    ) -> anyhow::Result<HashMap<DeviceId, AgentId>> {
-        let device_ids = device_ids.into_iter().collect::<Vec<_>>();
-        if device_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let placeholders = std::iter::repeat("?")
-            .take(device_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql =
-            format!("SELECT device_id, agent_id FROM devices WHERE device_id IN ({placeholders})");
-        let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(&sql);
-        for id in device_ids {
-            q = q.bind(*id);
-        }
-        Ok(q.fetch_all(&self.pool).await?.into_iter().collect())
-    }
-
-    pub async fn save_contact(&self, contact: QrCode) -> anyhow::Result<()> {
-        self.save_agent_mapping(contact.device_pubkey, contact.agent_id)
-            .await
-    }
-
-    pub async fn save_agent_mapping(
-        &self,
-        device_id: DeviceId,
-        agent_id: AgentId,
-    ) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR IGNORE INTO devices (device_id, agent_id) VALUES (?, ?)")
-            .bind(device_id)
-            .bind(agent_id)
-            .execute(&self.pool)
-            .await?;
-
-        sqlx::query("INSERT OR IGNORE INTO agents (agent_id) VALUES (?)")
-            .bind(agent_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn save_capabilities(
-        &self,
-        device_id: DeviceId,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
-        sqlx::query("UPDATE devices SET capabilities = ? WHERE device_id = ?")
-            .bind(capabilities)
-            .bind(device_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn save_profile(&self, agent_id: AgentId, profile: Profile) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR REPLACE INTO agents (agent_id, profile) VALUES (?, ?)")
-            .bind(agent_id)
-            .bind(profile)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn get_capabilities(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Option<Capabilities>> {
-        let row: Option<(Option<Capabilities>,)> =
-            sqlx::query_as("SELECT capabilities FROM devices WHERE device_id = ?")
-                .bind(device_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.and_then(|(capabilities,)| capabilities))
-    }
-
-    pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
-        let row: Option<(Option<Profile>,)> =
-            sqlx::query_as("SELECT profile FROM agents WHERE agent_id = ?")
-                .bind(agent_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.and_then(|(profile,)| profile))
     }
 
     pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
@@ -313,9 +172,46 @@ impl LocalStore {
         Ok(AgentId::from(crate::ActorId::from_bytes(&arr)?))
     }
 
-    pub async fn get_active_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
-        let rows: Vec<(Topic, i64)> =
-            sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes")
+    /// Inbox topics this node created and advertises via its QR code.
+    pub async fn get_advertised_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
+        self.get_inbox_topics(InboxRole::Advertised).await
+    }
+
+    /// Reply inbox topics this node created for a specific contact exchange and
+    /// is awaiting a `ContactRequestAck` on. Kept separate from advertised
+    /// inboxes so the frontend's contact-request scan only looks at inboxes
+    /// meant to receive requests, not our own private reply channels.
+    pub async fn get_reply_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
+        self.get_inbox_topics(InboxRole::Reply).await
+    }
+
+    pub async fn get_reply_inbox_topics_with_author(
+        &self,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        let rows: Vec<(Topic<kind::Untyped>, i64, DeviceId)> = sqlx::query_as(
+            "SELECT topic_id, expires_at_nanos, expected_ack_author FROM active_inboxes WHERE role = ?",
+        )
+        .bind(InboxRole::Reply)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(topic, nanos, author)| {
+                (
+                    InboxTopic {
+                        expires_at: DateTime::from_timestamp_nanos(nanos),
+                        topic: topic.upcast::<kind::Inbox>(),
+                    },
+                    author,
+                )
+            })
+            .collect())
+    }
+
+    async fn get_inbox_topics(&self, role: InboxRole) -> anyhow::Result<BTreeSet<InboxTopic>> {
+        let rows: Vec<(Topic<kind::Untyped>, i64)> =
+            sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes WHERE role = ?")
+                .bind(role)
                 .fetch_all(&self.pool)
                 .await?;
         Ok(rows
@@ -328,16 +224,73 @@ impl LocalStore {
     }
 
     pub async fn add_active_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
+        self.add_inbox_topic(inbox_topic, InboxRole::Advertised)
+            .await
+    }
+
+    pub async fn add_reply_inbox_topic(
+        &self,
+        inbox_topic: InboxTopic,
+        expected_ack_author: DeviceId,
+    ) -> anyhow::Result<()> {
         let nanos = inbox_topic
             .expires_at
             .timestamp_nanos_opt()
             .unwrap_or(0)
             .max(0);
         sqlx::query(
-            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos, role, expected_ack_author) VALUES (?, ?, ?, ?)",
         )
         .bind(inbox_topic.topic.to_vec())
         .bind(nanos)
+        .bind(InboxRole::Reply)
+        .bind(expected_ack_author)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn has_pending_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ?",
+        )
+        .bind(device_id)
+        .bind(InboxRole::Reply)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.is_some())
+    }
+
+    pub async fn get_reply_inbox_expected_ack_author(
+        &self,
+        topic: TopicId,
+    ) -> anyhow::Result<Option<DeviceId>> {
+        let row: Option<(DeviceId,)> = sqlx::query_as(
+            "SELECT expected_ack_author FROM active_inboxes WHERE topic_id = ? AND role = ?",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(InboxRole::Reply)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(id,)| id))
+    }
+
+    async fn add_inbox_topic(
+        &self,
+        inbox_topic: InboxTopic,
+        role: InboxRole,
+    ) -> anyhow::Result<()> {
+        let nanos = inbox_topic
+            .expires_at
+            .timestamp_nanos_opt()
+            .unwrap_or(0)
+            .max(0);
+        sqlx::query(
+            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos, role) VALUES (?, ?, ?)",
+        )
+        .bind(inbox_topic.topic.to_vec())
+        .bind(nanos)
+        .bind(role)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -355,64 +308,81 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn save_group_chat_subscribed(&self, chat_id: ChatId) -> anyhow::Result<()> {
-        let mut tx = self.pool.begin().await?;
-        sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
-            .bind(chat_id.to_vec())
-            .execute(&mut *tx)
+    pub async fn add_unfetched_blobs(
+        &self,
+        mailbox_id: &str,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        for hash in hashes {
+            sqlx::query(
+                "INSERT OR IGNORE INTO unfetched_blob_hashes (blob_hash, mailbox_id) VALUES (?, ?)",
+            )
+            .bind(hash.as_bytes().to_vec())
+            .bind(mailbox_id)
+            .execute(&self.pool)
             .await?;
-        sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
-            .bind(chat_id.to_vec())
-            .execute(&mut *tx)
-            .await?;
-        tx.commit().await?;
+        }
         Ok(())
     }
 
-    pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
-        let rows: Vec<(Topic,)> = sqlx::query_as("SELECT chat_id FROM group_chats")
-            .fetch_all(&self.pool)
-            .await?;
-        rows.into_iter()
-            .map(|(id,)| Topic::<kind::Chat>::from_topic_id(TopicId::from(id)))
-            .collect()
-    }
-
-    /// Record an operation hash in the per-topic tombstone set. Payloads for
-    /// tombstoned operations must never be stored or synced.
-    pub async fn add_tombstone(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR IGNORE INTO tombstones (topic_id, op_hash) VALUES (?, ?)")
-            .bind(topic.as_bytes().to_vec())
-            .bind(op_hash.as_bytes().to_vec())
+    pub async fn remove_unfetched_blob(
+        &self,
+        mailbox_id: &str,
+        hash: iroh_blobs::Hash,
+    ) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM unfetched_blob_hashes WHERE mailbox_id = ? AND blob_hash = ?")
+            .bind(mailbox_id)
+            .bind(hash.as_bytes().to_vec())
             .execute(&self.pool)
             .await?;
         Ok(())
     }
 
-    pub async fn is_tombstoned(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<bool> {
-        let row: Option<(i64,)> =
-            sqlx::query_as("SELECT 1 FROM tombstones WHERE topic_id = ? AND op_hash = ?")
-                .bind(topic.as_bytes().to_vec())
-                .bind(op_hash.as_bytes().to_vec())
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.is_some())
+    pub async fn remove_unfetched_blobs(
+        &self,
+        mailbox_id: &str,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        for hash in hashes {
+            self.remove_unfetched_blob(mailbox_id, *hash).await?;
+        }
+        Ok(())
     }
 
-    pub async fn tombstoned_hashes(&self, topic: TopicId) -> anyhow::Result<BTreeSet<Hash>> {
-        let rows: Vec<(Vec<u8>,)> =
-            sqlx::query_as("SELECT op_hash FROM tombstones WHERE topic_id = ?")
-                .bind(topic.as_bytes().to_vec())
+    /// Remove every `unfetched_blob_hashes` row for these hashes across ALL
+    /// mailboxes. Called when a blob is deleted locally, so the followup task
+    /// stops re-announcing a hash this node can no longer serve.
+    pub async fn remove_unfetched_blobs_all_mailboxes(
+        &self,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        for hash in hashes {
+            sqlx::query("DELETE FROM unfetched_blob_hashes WHERE blob_hash = ?")
+                .bind(hash.as_bytes().to_vec())
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn unfetched_blobs_by_mailbox(
+        &self,
+    ) -> anyhow::Result<std::collections::BTreeMap<String, Vec<iroh_blobs::Hash>>> {
+        let rows: Vec<(Vec<u8>, String)> =
+            sqlx::query_as("SELECT blob_hash, mailbox_id FROM unfetched_blob_hashes")
                 .fetch_all(&self.pool)
                 .await?;
-        rows.into_iter()
-            .map(|(bytes,)| {
-                let arr: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("tombstone op_hash is not 32 bytes"))?;
-                Ok(Hash::from_bytes(arr))
-            })
-            .collect()
+        let mut out: std::collections::BTreeMap<String, Vec<iroh_blobs::Hash>> =
+            std::collections::BTreeMap::new();
+        for (bytes, mailbox_id) in rows {
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("unfetched blob_hash is not 32 bytes"))?;
+            out.entry(mailbox_id)
+                .or_default()
+                .push(iroh_blobs::Hash::from_bytes(arr));
+        }
+        Ok(out)
     }
 }
 
@@ -421,14 +391,16 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::topic::Topic;
+    use crate::{stores::create_sqlite_pool, topic::Topic};
     use chrono::{Duration, Utc};
 
     #[tokio::test]
     async fn test_initialize_idempotent() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_initialize_random.db");
-        let store = LocalStore::new(&path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_initialize_random.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
         let private_key = store.private_key().await.unwrap();
         let agent_id = store.agent_id().await.unwrap();
         store.ensure_initialized().await.unwrap();
@@ -439,8 +411,12 @@ mod tests {
         assert_eq!(store.agent_id().await.unwrap(), agent_id);
 
         drop(store);
+        pool.close().await;
 
-        let store = LocalStore::new(path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_initialize_random.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
         assert_eq!(
             store.private_key().await.unwrap().as_bytes(),
             private_key.as_bytes()
@@ -449,54 +425,81 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tombstones_per_topic() {
+    async fn test_unfetched_blob_hashes_crud() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_tombstones.db");
-        let store = LocalStore::new(&path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_unfetched.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
 
-        let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
-        let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
-        let hash1 = Hash::digest(b"op1");
-        let hash2 = Hash::digest(b"op2");
+        let mbx_a = "mailbox-a";
+        let mbx_b = "mailbox-b";
+        let h1 = iroh_blobs::Hash::new([1; 32]);
+        let h2 = iroh_blobs::Hash::new([2; 32]);
 
-        assert!(!store.is_tombstoned(topic_a, hash1).await.unwrap());
+        store.add_unfetched_blobs(mbx_a, &[h1, h2]).await.unwrap();
+        store.add_unfetched_blobs(mbx_b, &[h1]).await.unwrap();
+        // Idempotent insert.
+        store.add_unfetched_blobs(mbx_a, &[h1]).await.unwrap();
 
-        store.add_tombstone(topic_a, hash1).await.unwrap();
-        store.add_tombstone(topic_a, hash2).await.unwrap();
-        store.add_tombstone(topic_b, hash1).await.unwrap();
-        // Adding the same hash again is idempotent.
-        store.add_tombstone(topic_a, hash1).await.unwrap();
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert_eq!(by_mailbox.get(mbx_a).unwrap().len(), 2);
+        assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
 
-        assert!(store.is_tombstoned(topic_a, hash1).await.unwrap());
-        assert!(store.is_tombstoned(topic_a, hash2).await.unwrap());
-        // Tombstones are scoped per-topic: hash2 in topic_a does not leak into topic_b.
-        assert!(store.is_tombstoned(topic_b, hash1).await.unwrap());
-        assert!(!store.is_tombstoned(topic_b, hash2).await.unwrap());
+        // Removing h1 from mailbox-a leaves h2 for a, and does not touch mailbox-b.
+        store.remove_unfetched_blob(mbx_a, h1).await.unwrap();
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert_eq!(by_mailbox.get(mbx_a).unwrap(), &vec![h2]);
+        assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
 
-        assert_eq!(
-            store.tombstoned_hashes(topic_a).await.unwrap(),
-            maplit::btreeset![hash1, hash2]
-        );
-        assert_eq!(
-            store.tombstoned_hashes(topic_b).await.unwrap(),
-            maplit::btreeset![hash1]
-        );
+        // Bulk remove.
+        store.remove_unfetched_blobs(mbx_a, &[h2]).await.unwrap();
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert!(by_mailbox.get(mbx_a).is_none());
 
-        // Tombstones persist across reopening the database.
+        // Persists across reopen.
         drop(store);
-        let store = LocalStore::new(&path).await.unwrap();
-        assert!(store.is_tombstoned(topic_a, hash1).await.unwrap());
-        assert_eq!(
-            store.tombstoned_hashes(topic_a).await.unwrap(),
-            maplit::btreeset![hash1, hash2]
-        );
+        pool.close().await;
+        let pool = create_sqlite_pool(dir.path().join("test_unfetched.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
+    }
+
+    #[tokio::test]
+    async fn test_remove_unfetched_blobs_all_mailboxes() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_unfetched_all.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
+
+        let h1 = iroh_blobs::Hash::new([1; 32]);
+        let h2 = iroh_blobs::Hash::new([2; 32]);
+        store.add_unfetched_blobs("mbx-a", &[h1, h2]).await.unwrap();
+        store.add_unfetched_blobs("mbx-b", &[h1]).await.unwrap();
+
+        // Removing h1 across all mailboxes clears it from both mbx-a and mbx-b,
+        // but leaves h2 (still needed by mbx-a).
+        store
+            .remove_unfetched_blobs_all_mailboxes(&[h1])
+            .await
+            .unwrap();
+
+        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
+        assert_eq!(by_mailbox.get("mbx-a").unwrap(), &vec![h2]);
+        assert!(by_mailbox.get("mbx-b").is_none());
     }
 
     #[tokio::test]
     async fn test_prune_expired_active_inbox_topics() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_prune_inbox_topics.db");
-        let store = LocalStore::new(&path).await.unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_prune_inbox_topics.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool.clone()).await.unwrap();
 
         let now = Utc::now();
         let expired = now - Duration::days(1);
@@ -522,13 +525,13 @@ mod tests {
             store.add_active_inbox_topic(t.clone()).await.unwrap();
         }
 
-        let loaded_topics = store.get_active_inbox_topics().await.unwrap();
+        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
 
         store.prune_expired_active_inbox_topics(now).await.unwrap();
         topics.pop_first().unwrap();
 
-        let loaded_topics = store.get_active_inbox_topics().await.unwrap();
+        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
 
         store
@@ -537,7 +540,7 @@ mod tests {
             .unwrap();
         topics.pop_first().unwrap();
 
-        let loaded_topics = store.get_active_inbox_topics().await.unwrap();
+        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
     }
 }

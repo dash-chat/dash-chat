@@ -1,7 +1,10 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import {
+		useReactivePromise,
+		useReactivePromises,
+	} from '$lib/stores/use-signal';
 	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
@@ -10,6 +13,7 @@
 		ContactsStore,
 		DeviceId,
 		Hash,
+		Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
@@ -32,21 +36,30 @@
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
-	setContext('messages-store', store);
+	setContext('messages-store', store.messages);
 
-	const readTracker = createReadMessagesTracker(store);
+	const readTracker = createReadMessagesTracker(store.messages);
 	const readMessageOnObserve = readTracker.observe;
 
-	const messageSets = useReactivePromise(store.messageSets);
 	const info = useReactivePromise(store.info);
-	const allMembers = useReactivePromise(store.allMembers);
-	const me = useReactivePromise(store.me);
-	const readMessageHashes = useReactivePromise(store.readMessageHashes);
-	const unreadCount = useReactivePromise(store.unreadCount);
+	const readMessageHashes = useReactivePromise(
+		store.messages.readMessageHashes,
+	);
+	const unreadCount = useReactivePromise(store.messages.unreadCount);
+
+	const headerData = useReactivePromises(() => [
+		store.info(),
+		store.allMembers(),
+	]);
+	const messageListData = useReactivePromises(() => [
+		contactsStore.myDeviceId(),
+		store.groupedEvents(),
+		store.allMembers(),
+	]);
+	const composerData = useReactivePromises(() => [store.me(), store.info()]);
 
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
@@ -55,6 +68,8 @@
 
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
+
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
@@ -66,7 +81,14 @@
 	};
 
 	function onMessageSent(messageHash: Hash) {
-		justSentMessageHash = messageHash;
+		// The bubble renders off the new-operation event, which can beat
+		// sendMessage's response — if it already mounted, the action missed
+		// the handshake, so scroll now.
+		if (document.querySelector(`[data-message-hash="${messageHash}"]`)) {
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		} else {
+			justSentMessageHash = messageHash;
+		}
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
 	}
@@ -74,11 +96,11 @@
 	const theme = $derived(useTheme());
 
 	function getUnreadDividerInfo(
-		messagesSetsInDays: Awaited<typeof $messageSets>,
+		messageGroupsInDays: Awaited<ReturnType<typeof store.groupedEvents>>,
 		readHashes: Set<Hash> | undefined,
 		deviceId: DeviceId | undefined,
 	): { hash: Hash | null; count: number } {
-		if (!messagesSetsInDays || !readHashes || !deviceId) {
+		if (!messageGroupsInDays || !readHashes || !deviceId) {
 			return { hash: null, count: 0 };
 		}
 
@@ -86,9 +108,9 @@
 			capturedUnreadHash === null &&
 			(!unreadDividerCaptured || !isAtBottom)
 		) {
-			for (const day of messagesSetsInDays) {
-				for (const messageSet of day.eventsSets) {
-					for (const [hash, item] of messageSet) {
+			for (const day of messageGroupsInDays) {
+				for (const messageGroup of day.eventsGroups) {
+					for (const [hash, item] of messageGroup) {
 						if (item.kind !== 'message') continue;
 						if (item.message.author !== deviceId && !readHashes.has(hash)) {
 							capturedUnreadHash = hash;
@@ -106,9 +128,9 @@
 
 		let count = 0;
 		let found = false;
-		for (const day of messagesSetsInDays) {
-			for (const messageSet of day.eventsSets) {
-				for (const [hash, item] of messageSet) {
+		for (const day of messageGroupsInDays) {
+			for (const messageGroup of day.eventsGroups) {
+				for (const [hash, item] of messageGroup) {
 					if (hash === capturedUnreadHash) found = true;
 					if (
 						found &&
@@ -171,7 +193,7 @@
 
 		<div class="column" style={`padding-bottom: ${bottomBarHeight}px`}>
 			<div class="mt-16 mb-6 px-4" data-testid="group-chat-header">
-				{#await Promise.all([$info, $allMembers]) then [info, members]}
+				{#await $headerData then [info, members]}
 					<div class="column items-center">
 						<div
 							class="outline-card"
@@ -206,20 +228,20 @@
 
 			<div class="column m-2 gap-1" data-testid="group-chat-messages">
 				{#await $readMessageHashes then readHashes}
-					{#await Promise.all( [$myDeviceId, $messageSets, $allMembers], ) then [myDeviceId, messageSetsInDays, members]}
+					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
 						{@const unreadDivider = getUnreadDividerInfo(
-							messageSetsInDays,
+							messageGroupsInDays,
 							readHashes,
 							myDeviceId,
 						)}
-						{#each messageSetsInDays as messageSetInDay}
+						{#each messageGroupsInDays as messageGroupsInDay}
 							<div class="self-center z-10">
-								<DayTag class="quiet" day={messageSetInDay.day} />
+								<DayTag class="quiet" day={messageGroupsInDay.day} />
 							</div>
 
-							{#each messageSetInDay.eventsSets as messageSet}
+							{#each messageGroupsInDay.eventsGroups as messageGroup}
 								<div class="column" style="gap: 1px">
-									{#each messageSet as [hash, item], i (hash)}
+									{#each messageGroup as [hash, item], i (hash)}
 										{#if unreadDivider.hash === hash}
 											<div
 												class="unread-divider"
@@ -232,10 +254,13 @@
 											<SystemMessage event={item.event} />
 										{:else}
 											{@const message = item.message}
-											{@const position = messagePosition(messageSet.length, i)}
+											{@const position = messagePosition(
+												messageGroup.length,
+												i,
+											)}
 											{#if myDeviceId === message.author}
 												<div
-													class="self-end max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:scrollToBottomOnMount={hash}
 												>
@@ -245,6 +270,7 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
+														onEdit={() => composer?.editMessage(message)}
 													/>
 												</div>
 											{:else}
@@ -252,21 +278,12 @@
 													m.deviceIds.includes(message.author),
 												)}
 												<div
-													class="row items-end gap-2 self-start max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:readMessageOnObserve={readHashes?.has(hash)
 														? null
 														: hash}
 												>
-													{#if position === 'last' || position === 'single'}
-														<Avatar
-															image={author?.profile?.avatar}
-															initials={author?.profile?.name.slice(0, 2)}
-															size="2rem"
-														/>
-													{:else}
-														<div class="shrink-0" style="width: 2rem"></div>
-													{/if}
 													<MessageFromOthers
 														{message}
 														{position}
@@ -276,6 +293,7 @@
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
 															position === 'single'}
+														showAvatar
 													/>
 												</div>
 											{/if}
@@ -302,25 +320,27 @@
 	{/if}
 
 	<div
-		bind:clientHeight={bottomBarHeight}
 		class="absolute bottom-0 inset-x-0 z-30"
 		class:bg-page-surface={theme === 'material'}
 	>
-		{#await Promise.all([$me, $info]) then [me, info]}
-			{#if me.member}
-				<MessageComposer
-					{store}
-					destinationName={info.name}
-					onSent={onMessageSent}
-				/>
-			{:else}
-				<div
-					class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
-					data-testid="group-chat-not-member"
-				>
-					{m.youAreNoLongerAMember()}
-				</div>
-			{/if}
-		{/await}
+		<div bind:clientHeight={bottomBarHeight}>
+			{#await $composerData then [me, info]}
+				{#if me.member}
+					<MessageComposer
+						bind:this={composer}
+						store={store.messages}
+						destinationName={info.name}
+						onSent={onMessageSent}
+					/>
+				{:else}
+					<div
+						class="quiet px-6 py-4 text-center text-sm"
+						data-testid="group-chat-not-member"
+					>
+						{m.youAreNoLongerAMember()}
+					</div>
+				{/if}
+			{/await}
+		</div>
 	</div>
 </div>

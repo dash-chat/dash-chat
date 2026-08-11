@@ -15,12 +15,11 @@
 	"dependencies": {
 		"@tauri-apps/api": "^2",
 		"@webbuf/blake3": "^3.0.28",
-		"base64-js": "^1.5.1",
 		"blakejs": "^1.2.1",
-		"cbor-web": "^10.0.11",
 		"emittery": "^1.2.0",
 		"rimraf": "^6.1.0",
 		"signalium": "^3.0.1",
+		"tauri-plugin-system-theme": "github:dash-chat/tauri-plugin-system-theme#27d004e3f97ad088a9a2fcdc4a03bd45825265dd",
 		"webbuf": "^3.0.28"
 	},
 	"devDependencies": {

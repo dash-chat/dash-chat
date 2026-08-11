@@ -6,10 +6,12 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isIos } from '$lib/utils/environment';
-	import { type SettingsStore, type ColorScheme } from 'dash-chat-stores';
+	import {
+		type ColorSchemePreference,
+		type SettingsStore,
+	} from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
 	import {
-		Button,
 		BlockTitle,
 		Link,
 		List,
@@ -19,15 +21,16 @@
 		Page,
 		useTheme,
 	} from 'konsta/svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
-	const colorScheme = useReactivePromise(settingsStore.colorScheme);
+	const preference = useReactivePromise(settingsStore.colorSchemePreference);
 	const setup = $derived(page.url.searchParams.get('setup') === 'true');
 
-	async function select(scheme: ColorScheme) {
+	async function select(scheme: ColorSchemePreference) {
 		try {
-			await settingsStore.setColorScheme(scheme);
+			await settingsStore.setColorSchemePreference(scheme);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
@@ -54,7 +57,7 @@
 		{/snippet}
 	</Navbar>
 
-	{#await $colorScheme then selected}
+	{#await $preference then selected}
 		<div class="column" style="flex: 1">
 			<div class="column center-in-desktop">
 				<BlockTitle>{m.colorScheme()}</BlockTitle>
@@ -103,14 +106,9 @@
 		</div>
 
 		{#if setup && !isIos}
-			<Button
-				onClick={() => goto('/')}
-				class="fixed-action-btn"
-				rounded
-				data-testid="appearance-done-btn"
-			>
+			<FixedActionButton onClick={() => goto('/')} testId="appearance-done-btn">
 				{m.done()}
-			</Button>
+			</FixedActionButton>
 		{/if}
 	{/await}
 </Page>

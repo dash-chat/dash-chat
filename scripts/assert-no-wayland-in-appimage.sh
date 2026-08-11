@@ -7,10 +7,25 @@
 # silent regression into a loud failure.
 set -euo pipefail
 
-BUNDLE_DIR="${1:-src-tauri/target/release/bundle/appimage}"
-appimage="$(find "$BUNDLE_DIR" -maxdepth 1 -name '*.AppImage' | head -1)"
+# The bundle lands in the Cargo workspace target dir (repo-root `target/`), but
+# fall back to the per-crate `src-tauri/target/` in case the layout changes.
+if [ -n "${1:-}" ]; then
+  BUNDLE_DIRS=("$1")
+else
+  BUNDLE_DIRS=(
+    "target/release/bundle/appimage"
+    "src-tauri/target/release/bundle/appimage"
+  )
+fi
+
+appimage=""
+for dir in "${BUNDLE_DIRS[@]}"; do
+  [ -d "$dir" ] || continue
+  appimage="$(find "$dir" -maxdepth 1 -name '*.AppImage' | head -1)"
+  [ -n "$appimage" ] && break
+done
 if [ -z "$appimage" ]; then
-  echo "assert-no-wayland: no AppImage found in $BUNDLE_DIR" >&2
+  echo "assert-no-wayland: no AppImage found in ${BUNDLE_DIRS[*]}" >&2
   exit 1
 fi
 appimage="$(readlink -f "$appimage")"

@@ -1,4 +1,5 @@
 use clap::Parser;
+use dashchat_utils::RELAY_URL;
 use futures::FutureExt;
 use mailbox_server::spawn_server;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -39,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.addr,
         args.push_notifications_url,
         None,
+        Some(RELAY_URL.clone()),
         signal,
     )
     .await?;

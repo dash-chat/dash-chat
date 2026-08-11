@@ -1,6 +1,6 @@
 [toolchain]
 channel = "1.94.0"
 components = [ "rust-analyzer", "rust-src", "rustfmt", "rustc-dev" ]
-targets = [ "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu" ]
+targets = [ "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-linux-android" , "armv7-linux-androideabi", "x86_64-linux-android", "i686-linux-android", "aarch64-apple-ios", "aarch64-apple-ios-sim", "x86_64-apple-ios" ]
 profile = "minimal"
 

@@ -3,11 +3,9 @@
 
 #![cfg(test)]
 
-use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::mem::MemMailbox;
+use dashchat_node::{testing::*, *};
 
 use maplit::{btreemap, btreeset};
-use p2panda::network::MdnsDiscoveryMode;
 use p2panda_auth::Access;
 use std::collections::BTreeSet;
 
@@ -82,10 +80,10 @@ fn setup() {
     );
 }
 
-async fn make_node(mailbox: &MemMailbox<MailboxOperation>, name: &str) -> TestNode {
+async fn make_node(mailbox: &TestMailbox, name: &str) -> TestNode {
     let result = TestNode::new(NodeConfig::testing(), name)
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(mailbox)
         .await;
     println!("Node {}: {}", name, result.device_id());
     result
@@ -96,15 +94,13 @@ async fn test_direct_chat() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -118,14 +114,6 @@ async fn test_direct_chat() {
         .send_message_raw(chat_id, "Hello".into())
         .await
         .unwrap();
-
-    // consistency(
-    //     [&alice, &bobbi],
-    //     &[chat_id.into()],
-    //     &ClusterConfig::default(),
-    // )
-    // .await
-    // .unwrap();
 
     poll.wait_for(|| async {
         let msgs = [
@@ -145,6 +133,12 @@ async fn test_direct_chat() {
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())
     );
+
+    // A direct chat must never be registered as a group chat.
+    for node in [&alice, &bobbi] {
+        let ids = node.projection.get_group_chat_ids().await.unwrap();
+        assert!(!ids.contains(&chat_id));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -153,20 +147,18 @@ async fn test_p2p_direct_chat() {
 
     let network_id = p2panda::Topic::random();
 
-    let mut alice_config = NodeConfig::testing();
-    alice_config.network_id = network_id.into();
-    alice_config.mdns_mode = MdnsDiscoveryMode::Active;
+    let mut config = NodeConfig::testing();
+    config.network_id = network_id.into();
 
-    let mut bobbi_config = NodeConfig::testing();
-    bobbi_config.network_id = network_id.into();
-    bobbi_config.mdns_mode = MdnsDiscoveryMode::Active;
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-    let alice = TestNode::new(alice_config, "alice").await;
-    let bobbi = TestNode::new(bobbi_config, "bobbi").await;
+    // Faster and more reliable than testing mDNS discovery.
+    introduce_peers([&alice, &bobbi]).await.unwrap();
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -197,21 +189,19 @@ async fn test_group_chat() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
     let cammy = make_node(&mailbox, "cammy").await;
 
-    introduce_and_wait([&alice, &bobbi, &cammy]).await;
-
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     cammy
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -310,7 +300,7 @@ async fn test_group_chat() {
     .unwrap();
 
     let alice_profile = cammy
-        .local_store
+        .projection
         .get_profile(alice.agent_id())
         .await
         .unwrap();
@@ -325,7 +315,7 @@ async fn test_group_chat() {
     );
 
     let cammy_profile = alice
-        .local_store
+        .projection
         .get_profile(cammy.agent_id())
         .await
         .unwrap();
@@ -348,11 +338,54 @@ async fn test_group_chat() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_group_chat_registered_in_op_projection() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    for node in [&alice, &bobbi] {
+        poll.wait_for(|| async {
+            let ids = node.projection.get_group_chat_ids().await.unwrap();
+            ids.contains(&chat_id).then_some(()).ok_or(ids)
+        })
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_admin_removes_themself_when_they_are_the_only_member() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
 
     let chat_id = alice
@@ -374,15 +407,13 @@ async fn test_admin_removes_themself_there_is_another_admin() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -426,15 +457,13 @@ async fn test_admin_removes_themself_there_is_another_admin() {
 async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
     setup();
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -459,15 +488,13 @@ async fn test_non_admin_removes_themself() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -513,15 +540,13 @@ async fn test_admin_removes_non_admin() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &bobbi]).await;
-
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -566,21 +591,19 @@ async fn test_non_admin_cannot_remove_admin() {
     setup();
 
     let poll = PollConfig::default();
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let andi = make_node(&mailbox, "andi").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
 
-    introduce_and_wait([&alice, &andi, &bobbi]).await;
-
     alice
         .behavior()
-        .initiate_and_establish_contact(&andi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&andi)
         .await
         .unwrap();
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 

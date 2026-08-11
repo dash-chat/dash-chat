@@ -18,9 +18,11 @@
 	<div class="flex flex-col">
 		<span>{message}</span>
 		{#if error !== undefined}
-			<Button inline clear onClick={() => (dialogOpen = true)}>
-				{m.sendErrorReport()}
-			</Button>
+			{#if import.meta.env.VITE_SENTRY_ENABLED}
+				<Button inline clear onClick={() => (dialogOpen = true)}>
+					{m.sendErrorReport()}
+				</Button>
+			{/if}
 		{/if}
 	</div>
 </div>

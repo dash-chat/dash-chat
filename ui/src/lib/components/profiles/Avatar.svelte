@@ -5,7 +5,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { mdiAccountQuestion } from '@mdi/js';
+	import { mdiAccountOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { TextAvatarData } from './text-avatar-data-url';
 	import type { Snippet } from 'svelte';
@@ -18,6 +18,7 @@
 		size,
 		style,
 		id,
+		testId,
 		children,
 	}: {
 		waitingForProfile?: boolean | undefined;
@@ -27,6 +28,7 @@
 		size?: number | string | undefined;
 		style?: string | undefined;
 		id?: string | undefined;
+		testId?: string | undefined;
 		children?: Snippet | undefined;
 	} = $props();
 
@@ -35,7 +37,9 @@
 		image?.startsWith('data:image') ? image : undefined,
 	);
 	const avatarInitials = $derived(
-		textAvatarData?.text || initials || undefined,
+		waitingForProfile
+			? undefined
+			: textAvatarData?.text || initials || undefined,
 	);
 	const sizeValue = $derived(
 		size !== undefined
@@ -61,7 +65,11 @@
 	});
 </script>
 
-<span class="inline-block">
+<span
+	class="inline-block"
+	data-testid={testId}
+	data-waiting={testId ? (waitingForProfile ? 'true' : 'false') : undefined}
+>
 	<wa-avatar
 		{id}
 		image={avatarImage}
@@ -73,7 +81,7 @@
 		{#if waitingForProfile}
 			<wa-icon
 				slot="icon"
-				src={wrapPathInSvg(mdiAccountQuestion)}
+				src={wrapPathInSvg(mdiAccountOutline)}
 				style="font-size: calc(var(--size, 3rem) * 0.5)"
 			></wa-icon>
 		{/if}

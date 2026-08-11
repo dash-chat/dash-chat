@@ -7,16 +7,16 @@
  * attach button opens the MediaMenu instead.
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Recent photos strip', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Recents');
 		await agent2.createProfilePage.createProfile('Bob', 'Recents');
@@ -34,10 +34,11 @@ describe('Recent photos strip', () => {
 			this.skip();
 		}
 
+		// Tapping a strip photo stages it and opens the full-screen staged-media
+		// page, so only one photo can be picked from the strip per staging (more
+		// go through "add more" → the native picker, which can't be driven).
 		await composer.recentPhotos.tile(0).click();
 		await composer.expectStagedPhotoCount(1);
-		await composer.recentPhotos.tile(1).click();
-		await composer.expectStagedPhotoCount(2);
 
 		await composer.type('from recents');
 		await composer.send();

@@ -3,17 +3,18 @@
 	import { Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiSend } from '@mdi/js';
+	import { mdiCheck, mdiSend } from '@mdi/js';
 
 	interface Props {
-		disabled?: boolean;
 		onSend: () => Promise<boolean>;
+		/** Show a checkmark (save edit) instead of the send arrow. */
+		editing?: boolean;
 		testid?: string;
 	}
 
 	let {
-		disabled = false,
 		onSend,
+		editing = false,
 		testid = 'message-input-send',
 	}: Props = $props();
 
@@ -34,13 +35,18 @@
 	type="button"
 	class="send-button flex h-[42px] w-[42px] shrink-0 items-center justify-center p-0"
 	data-testid={testid}
-	class:enabled={!disabled}
 	onclick={handleClick}
-	disabled={disabled || loading}
-	aria-label={m.send()}
+	disabled={loading}
+	aria-label={editing ? m.save() : m.send()}
 >
 	{#if loading}
 		<Preloader class="h-[22px] w-[22px] !text-white" />
+	{:else if editing}
+		<wa-icon
+			class="no-offset"
+			style="font-size: 24px"
+			src={wrapPathInSvg(mdiCheck)}
+		></wa-icon>
 	{:else}
 		<wa-icon style="font-size: 24px" src={wrapPathInSvg(mdiSend)}></wa-icon>
 	{/if}
@@ -51,12 +57,10 @@
 		border: none;
 		border-radius: 50%;
 		cursor: pointer;
-		background: rgba(128, 128, 128, 0.15);
-		color: var(--k-text-color);
-		opacity: 0.4;
+		background: var(--color-brand-primary);
+		color: white;
 		transition:
-			background-color 0.2s ease,
-			opacity 0.2s ease,
+			filter 0.2s ease,
 			transform 0.1s ease;
 	}
 
@@ -64,17 +68,11 @@
 		cursor: default;
 	}
 
-	.send-button.enabled {
-		background: var(--color-brand-primary);
-		color: white;
-		opacity: 1;
-	}
-
-	.send-button.enabled:hover {
+	.send-button:hover {
 		filter: brightness(1.1);
 	}
 
-	.send-button.enabled:active {
+	.send-button:active {
 		transform: scale(0.95);
 	}
 
@@ -82,5 +80,9 @@
 		width: 22px;
 		height: 22px;
 		margin-inline-start: 2px; /* Optical centering for send arrow */
+	}
+
+	.send-button :global(wa-icon.no-offset) {
+		margin-inline-start: 0;
 	}
 </style>

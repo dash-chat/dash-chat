@@ -7,9 +7,7 @@ import { defineConfig } from 'vite';
 
 // Resolve signalium's development ESM build for production builds
 const require = createRequire(import.meta.url);
-const signaliumPkgDir = path.dirname(
-	require.resolve('signalium/package.json'),
-);
+const signaliumPkgDir = path.dirname(require.resolve('signalium/package.json'));
 const signaliumDevIndex = path.join(
 	signaliumPkgDir,
 	'dist/esm/development/index.js',
@@ -21,13 +19,21 @@ const signaliumDevIndex = path.join(
 const host = process.env.TAURI_DEV_HOST;
 const uiPort = parseInt(process.env.UI_PORT || '1420', 10);
 
+// The same variable `src-tauri` compiles into the binary, so the report action
+// is only built when there is somewhere to send it. Tauri runs this build from
+// the same environment as cargo.
+const sentryEnabled = !!process.env.SENTRY_DSN;
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+	define: {
+		'import.meta.env.VITE_SENTRY_ENABLED': JSON.stringify(sentryEnabled),
+	},
 	optimizeDeps: {
 		exclude: ['dash-chat-stores'],
 		// Pre-include dash-chat-stores' transitive deps so Vite doesn't discover
 		// them at runtime and re-optimize, which causes duplicate module instances
-		include: ['base64-js', 'cbor-web', 'blakejs', 'emittery'],
+		include: ['blakejs', 'emittery'],
 	},
 	resolve: {
 		dedupe: ['svelte', 'svelte/internal', 'svelte/internal/client'],

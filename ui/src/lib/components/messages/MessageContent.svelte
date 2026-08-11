@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { Message } from 'dash-chat-stores';
+	import { type Message, hasBody } from 'dash-chat-stores';
 	import { senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
@@ -24,7 +24,8 @@
 		showSenderName?: boolean;
 	} = $props();
 
-	const media = $derived(message.content.media);
+	const body = $derived(hasBody(message.content) ? message.content : null);
+	const media = $derived(body?.media ?? null);
 	const voiceNote = $derived(media?.find(m => m.kind === 'VoiceNote'));
 	const file = $derived(
 		voiceNote ? undefined : media?.find(m => m.kind === 'File'),
@@ -32,7 +33,7 @@
 	const photos = $derived(
 		voiceNote || file ? [] : (media?.filter(m => m.kind === 'Photo') ?? []),
 	);
-	const hasText = $derived(!!message.content.message);
+	const hasText = $derived(!!body?.message);
 	const isPhotoOnly = $derived(photos.length > 0 && !hasText);
 	const isFileOnly = $derived(!!file && !hasText);
 	const isVoiceOnly = $derived(!!voiceNote && !hasText);
@@ -83,7 +84,7 @@
 			</div>
 		{/if}
 		<div class="max-w-full" use:shrinkToWidestLine>
-			<MessageText text={message.content.message} {searchQuery} />
+			<MessageText text={body?.message ?? ''} {searchQuery} />
 			<!-- Reserves the metadata's space in the bottom-end corner, since
 			     wrapped text cannot be made to avoid an absolute box via CSS. -->
 			{#if metadata}

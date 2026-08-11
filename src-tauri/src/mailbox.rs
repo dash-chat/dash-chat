@@ -1,5 +1,6 @@
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
+use tokio_util::task::AbortOnDropHandle;
 
 // In e2e mode, use a distinct service type so test agents only discover each
 // other's local mailboxes, not external dash-chat instances on the same LAN
@@ -68,70 +69,17 @@ pub(crate) async fn cloud_mailbox_id(
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,
     node: dashchat_node::Node,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<AbortOnDropHandle<()>> {
     let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
     let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
     log::info!("Started mdns browse for local mailboxes: {MDNS_SERVICE_TYPE}");
 
-    let mut handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
+    // Interface changes are handled by the mdns-sd daemon itself: it re-checks
+    // interfaces periodically and re-sends browse queries on new ones, so the
+    // browse doesn't need to be re-issued on network switches.
+    let handler_task = tokio::spawn(handle_browse_events(node, receiver));
 
-    // The browse receiver is tied to the interface set the daemon had at
-    // `browse()` time; when the device switches networks services on the
-    // new interface aren't picked up until we re-issue the browse.
-    tokio::spawn(async move {
-        use futures::StreamExt;
-        let mut watcher = match if_watch::tokio::IfWatcher::new() {
-            Ok(w) => w,
-            Err(err) => {
-                log::warn!("Failed to start mailbox browse interface watcher: {err:?}");
-                return;
-            }
-        };
-
-        while let Some(event) = watcher.next().await {
-            match event {
-                Ok(if_watch::IfEvent::Up(net)) => {
-                    log::info!(
-                        "Mailbox browse interface watcher: up {net}, refreshing mDNS browse"
-                    );
-                }
-                Ok(if_watch::IfEvent::Down(net)) => {
-                    log::info!(
-                        "Mailbox browse interface watcher: down {net}, refreshing mDNS browse"
-                    );
-                }
-                Err(err) => {
-                    log::warn!("Mailbox browse interface watcher error: {err:?}");
-                    continue;
-                }
-            }
-
-            debounce_rebrowse_burst(&mut watcher).await;
-
-            // Tear down the current browse + handler, then restart against the
-            // now-current interface set. `stop_browse` closes the existing
-            // receiver, which exits the handler loop on its own; we also abort
-            // it as a belt-and-suspenders guard in case stop_browse races with
-            // an in-flight recv.
-            if let Err(err) = mdns.stop_browse(MDNS_SERVICE_TYPE) {
-                log::warn!("Failed to stop mDNS browse during refresh: {err:?}");
-            }
-            handler_task.abort();
-
-            match mdns.browse(MDNS_SERVICE_TYPE) {
-                Ok(receiver) => {
-                    handler_task = tokio::spawn(handle_browse_events(node.clone(), receiver));
-                }
-                Err(err) => {
-                    log::warn!("Failed to restart mDNS browse after interface change: {err:?}");
-                }
-            }
-        }
-
-        log::warn!("Mailbox browse interface watcher stream ended");
-    });
-
-    Ok(())
+    Ok(AbortOnDropHandle::new(handler_task))
 }
 
 async fn handle_browse_events(
@@ -180,16 +128,20 @@ async fn handle_browse_events(
 
                     let url = format!("http://{host}:{port}");
                     node.mailboxes
-                        .register(mailbox_client::toy::ToyMailboxClient::new(
-                            mailbox_id.clone(),
-                            url.clone(),
-                            node.endpoint_id(),
-                        ))
+                        .register(
+                            mailbox_client::toy::ToyMailboxClient::new(
+                                mailbox_id.clone(),
+                                url.clone(),
+                                node.endpoint_id(),
+                                node.unfetched_blob_tracker(),
+                            )
+                            .with_blob_reader(node.blob_reader()),
+                        )
                         .await;
                     // Add the mailbox's dialing address to the address book so
                     // the blob downloader can reach it by EndpointId rather than
                     // relying solely on p2panda mDNS resolution timing.
-                    match crate::setup::fetch_mailbox_health(&url).await {
+                    match dashchat_node::mailbox::fetch_mailbox_health(&url).await {
                         Ok(health) => {
                             if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
                                 log::warn!(
@@ -208,19 +160,10 @@ async fn handle_browse_events(
                     // path and re-registers the updated EndpointAddr. Cloud
                     // mailboxes don't have this hook; re-registration there would
                     // require a network-change callback from the node layer.
-                    match node.iroh_endpoint().await {
-                        Ok(ep) => {
-                            if let Err(err) =
-                                crate::setup::register_self_with_mailbox(&url, ep.addr()).await
-                            {
-                                log::warn!(
-                                    "Failed to register our addr with local mailbox {mailbox_id}: {err}"
-                                );
-                            }
-                        }
-                        Err(err) => log::warn!(
-                            "Could not get iroh endpoint to register with mailbox {mailbox_id}: {err}"
-                        ),
+                    if let Err(err) = node.register_with_mailbox(&url).await {
+                        log::warn!(
+                            "Failed to register our addr with local mailbox {mailbox_id}: {err}"
+                        );
                     }
                     log::info!(
                         "*** Registered local mailbox client via mdns: {mailbox_id} ({url}) ***",
@@ -344,27 +287,5 @@ fn strip_collision_suffix(name: &str) -> &str {
         &name[..open_idx]
     } else {
         name
-    }
-}
-
-/// Wait 500ms after an interface event so a burst of related changes
-/// (a typical Wi-Fi handoff produces several in quick succession) triggers
-/// a single re-browse. The browse side has no cancel signal — if the watcher
-/// stream ends inside the window, the outer loop exits on its own next
-/// iteration.
-async fn debounce_rebrowse_burst(watcher: &mut if_watch::tokio::IfWatcher) {
-    use futures::StreamExt;
-    let debounce = tokio::time::sleep(std::time::Duration::from_millis(500));
-    tokio::pin!(debounce);
-    loop {
-        tokio::select! {
-            biased;
-            _ = &mut debounce => return,
-            next = watcher.next() => {
-                if next.is_none() {
-                    return;
-                }
-            }
-        }
     }
 }

@@ -13,7 +13,10 @@
 	let { image, initials, onEdit, class: className }: Props = $props();
 </script>
 
-<div class="column gap-2 items-center {className ?? ''}">
+<div
+	class="column gap-2 items-center {className ?? ''}"
+	data-testid="editable-avatar"
+>
 	<Avatar {image} {initials} size={100} />
 	<Button
 		tonal

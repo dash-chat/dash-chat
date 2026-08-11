@@ -93,52 +93,6 @@ Please read this coding style carefully and take it into account when planning o
 pnpm install
 ```
 
-## Common Commands
-
-### Running the Application
-```bash
-# Start two instances forming a p2panda network
-pnpm start
-
-# This uses mprocs to spawn multiple processes:
-# - agent1 and agent2: Two Tauri development instances
-# - ui: Frontend development server
-# - stores: Watches and rebuilds the stores package
-```
-
-### Development Tasks
-```bash
-# Run Rust tests
-cargo nextest run
-# or
-pnpm test
-
-# Type check Svelte components (from ui/ directory)
-pnpm check
-pnpm check:watch
-
-# Build UI (from ui/ directory)
-pnpm build
-
-# Build stores package (from packages/stores/ directory)
-pnpm build
-```
-
-### Mobile Development
-```bash
-# Run on Android
-pnpm tauri android dev
-
-# View Android logs
-adb logcat | grep -F "`adb shell ps | grep studio.darksoil.dashchat | tr -s [:space:] ' ' | cut -d' ' -f2`"
-
-# Run on iOS simulator
-pnpm tauri ios dev "iPhone 16"
-
-# Run on physical iOS device
-pnpm tauri ios dev --device
-```
-
 ## Architecture
 
 ### Monorepo Structure
@@ -194,7 +148,7 @@ The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tau
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
-- **iOS theme action buttons**: On actual iOS devices, primary action buttons (Save, Done, Create, Add, Next) appear as a `<Link>` in the Navbar's `right` snippet. On all other platforms (including macOS desktop), they appear as a bottom FAB (`class="fixed-action-btn"`). Use `import { isIos } from '$lib/utils/environment'` and `{#if isIos}` in the navbar right snippet and `{#if !isIos}` around the FAB. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
+- **iOS theme action buttons**: On actual iOS devices, primary action buttons (Save, Done, Create, Add, Next) appear as a `<Link>` in the Navbar's `right` snippet. On all other platforms (including macOS desktop), they appear as a bottom action pill: use the `FixedActionButton` component (`ui/src/lib/components/FixedActionButton.svelte`), which also glides with the virtual keyboard. Use `import { isIos } from '$lib/utils/environment'` and `{#if isIos}` in the navbar right snippet and `{#if !isIos}` around the `FixedActionButton`. Apply disabled styling via `rightClass="ios-right-disabled"` on the Navbar (defined in `app.css`).
 
 ### Desktop Layout
 
@@ -401,10 +355,6 @@ Core p2panda dependencies (from custom fork):
 - p2panda-spaces: Space management
 - p2panda-discovery: Peer discovery (mDNS)
 
-## CI
-
-Execute all CI commands inside of the default nix shell with `nix develop`.
-
 ## Testing
 
 ### Rust Tests
@@ -415,28 +365,37 @@ cargo nextest run
 Run tests from workspace root. Tests use tokio async runtime.
 
 ### Development Testing
+
 Use `pnpm start` to run two instances locally that can communicate with each other over the p2panda network.
 
 ### E2E Tests (WebdriverIO)
 
-The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO + `tauri-driver`. Tests launch two built Tauri instances and exercise the full messaging flow (profile creation, contact exchange, messaging).
+The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (tauri-driver against the built binary), `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
 
 ```bash
 # Build the Tauri binary and run the e2e suite (recommended)
 just test e2e
 
-# Build the binary only
-just test e2e-build
-
 # Build and run a single spec
 just test e2e full-flow
+
+# Phone + desktop, two phones, two auto-booted emulators, or a single desktop
+PLATFORMS=android,desktop just test e2e send-messages
+PLATFORMS=android,android just test e2e send-messages
+PLATFORMS=android-emulator,android-emulator just test e2e send-messages
+PLATFORMS=desktop just test e2e settings-pages
+
+# Connected iPhone; pair two iPhones for two-agent specs (desktop needs Linux,
+# so it can't share a Mac host with an iOS agent)
+PLATFORMS=ios,ios just test e2e send-messages
+PLATFORMS=ios just test e2e settings-pages
 ```
 
 **Key details:**
-- Tests use page objects from `e2e-tests/helpers/pages/`. `setupAgent('agent1')` returns an `Agent` with all page-object instances pre-attached (`agent.homePage`, `agent.directChatPage`, …).
+- Tests use page objects from `e2e-tests/helpers/pages/`. `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` returns one `Agent` per requirement with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
-- Two `tauri-driver` instances run on ports 4444 and 4446.
-- Launch scripts (`e2e-tests/setup/`) set `DATA_DIR` and `MAILBOX_URL` env vars.
+- Platform-specific setup (tauri-driver instances, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
+- Desktop agents get `DATA_DIR` and `MAILBOX_URL` through each agent's tauri-driver spawn env (`e2e-tests/setup/platforms/desktop.ts`); Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events.
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run.
 
@@ -445,7 +404,8 @@ just test e2e full-flow
 - **Navigate via the UI, not `agent.goto()`.** Always walk through the app the way a user would — click back buttons, sidebar links, FABs, list items. `agent.goto()` and `window.__test.goto()` exist as escape hatches only for cases that genuinely cannot be reached by clicking (e.g. simulating a page reload, or the `review-checks` spec that programmatically enumerates every page). If you add a new `goto()` call, leave a comment explaining why the UI path doesn't work.
 - **Specs run in narrow (mobile) layout by default.** `setupAgent` forces `agent.setWideScreen(false)` so back buttons (`direct-chat-back`, `offline-back`, …) and FABs render — most of those are gated by `{#if !isWideScreen.value}`. When a spec needs the desktop two-panel layout (e.g. `review-checks` switching combos), call `agent.setWideScreen(true)` in `before()`. Wide-screen mode mounts `ChatListPanel` / `SettingsPanel` / `NewMessagePanel` in the sidebar; some navigation steps that need a back-out in narrow can skip it in wide-screen because the sidebar is always there. The handful of cross-mode helpers (`helpers/review/visit-all-pages.ts`) guard with `if (await page.back.isDisplayed())` to handle both.
 - **Use `page.ready()` instead of bare waits after navigation.** Each page object has a `ready()` method that waits for the first stable element on that page. Call it right after the click that triggered the navigation.
-- **Only pass custom `waitUntil` / `waitForExist` arguments when strictly necessary.** The default `waitforTimeout` (10s) is correct for incidental waits — animations, navigations, store hydration. Override `timeout` / `interval` / `timeoutMsg` only when (a) the operation genuinely needs longer than 10s (network sync, p2p propagation, connection-state flips that depend on real timeouts) or (b) a custom error message is the only way to diagnose a flake. Don't copy timeouts from neighbouring code without justifying them.
+- **Only pass custom `waitUntil` / `waitForExist` arguments when strictly necessary.** The default `waitforTimeout` (30s) is correct for incidental waits — animations, navigations, store hydration. Override `timeout` / `interval` / `timeoutMsg` only when (a) the operation genuinely needs longer than 30s (network sync, p2p propagation, connection-state flips that depend on real timeouts) or (b) a custom error message is the only way to diagnose a flake. Don't copy timeouts from neighbouring code without justifying them.
+- **Specs declare per-agent requirements in `setupAgents`.** Each suite builds its agents with `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` inside `before(async function () { ... })` (a plain `function`, so `this` is the mocha context). A spec covering a platform-specific feature passes `{ platform: 'desktop' }`, `{ platform: 'android' }` (fulfilled by a physical device or an emulator), or `{ platform: 'ios' }` for the agent that needs it. The harness matches the requirements against the unordered `PLATFORMS` multiset — a `'desktop'` requirement gets a desktop agent regardless of its position in the list — and skips the suite when no assignment exists (including when the spec asks for more agents than `PLATFORMS` launches).
 - **One page object per route, one spec per feature.** When you add a new route under `ui/src/routes/`, add a matching page object under `e2e-tests/helpers/pages/` (mirror the route structure: `routes/settings/profile/edit-name/+page.svelte` → `helpers/pages/settings/profile/edit-name-page.ts`) and wire it into `setup-agents.ts`. New UI features must also ship with a spec in `e2e-tests/specs/` covering the happy path.
 
 **REQUIREMENT:** E2E specs must drive the UI via page objects (`agent.homePage.newMessageButton.click()`), not by inlining `document.querySelector` or duplicating selectors. DOM-side helpers that can't be expressed as clicks belong in `ui/tests/setup-utils.ts` under `window.__test`.
@@ -453,30 +413,6 @@ just test e2e full-flow
 **REQUIREMENT:** New UI features must include E2E test coverage in `e2e-tests/specs/`, and every new route must have a corresponding page object under `e2e-tests/helpers/pages/` registered in `setup-agents.ts`.
 
 **REQUIREMENT:** The review-checks E2E test (`e2e-tests/specs/review-checks.spec.ts`) must visit every page in the app. When adding a new page, add it to `e2e-tests/helpers/review/visit-all-pages.ts` so it is covered by the overflow, dark-mode, and RTL checks.
-
-### Backwards Compatibility Tests
-
-The `e2e-tests/compat/` directory contains tests that verify data created by older versions can be read by the current version. This catches breaking changes to the data model before they ship.
-
-```bash
-# Run compat test against a specific version tag
-cd e2e-tests && bash compat/run.sh v0.10.0
-
-# Test multiple versions
-cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
-```
-
-**How it works:**
-1. Builds the current version and the old version (with patches for E2E support)
-2. Phase 1 (setup): Creates profiles, contacts, and messages using the old binary
-3. Phase 2 (verify): Launches the current binary against the same data and verifies everything persisted
-4. Data is stored in `.dbs/compat/` with state saved to `state.json` between phases
-
-**Key files:**
-- `compat/run.sh` — Orchestrator script (entry point)
-- `compat/wdio.compat.ts` — WDIO config (reads COMPAT_PHASE and COMPAT_BINARY env vars)
-- `specs/compat-setup.spec.ts` — Phase 1: create data with old version
-- `specs/compat-verify.spec.ts` — Phase 2: verify with current version
 
 ### Verifying UI Features
 
@@ -490,64 +426,25 @@ cd e2e-tests && bash compat/run.sh v0.10.0 v0.10.1
 
 ### Mobile Virtual Keyboard Handling
 
-The `tauri-plugin-virtual-keyboard-padding` plugin is registered under `#[cfg(mobile)]` in `src-tauri/src/lib.rs` to fix native-vs-webview keyboard behavior that Tauri does not handle out of the box ([tauri-apps/tauri#10631](https://github.com/tauri-apps/tauri/issues/10631)). On **iOS** WKWebView leaves a scrollable gap behind the keyboard and shows a "Done" input-accessory toolbar; on **Android** the WebView is obscured by the IME instead of being pushed above it. The plugin makes focused inputs remain visible on both platforms and gives the webview a stable, non-scrolling viewport while the keyboard is open.
-
-**Plugin source:** `tauri-plugin-virtual-keyboard-padding`. `Cargo.toml` uses git URL `https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding`. The plugin's own README still claims iOS is unsupported — that is outdated; the Swift implementation exists and is registered alongside Android.
-
-**CSS requirement (iOS):** `html` and `body` must have `background-color: transparent !important` (set in `app.css`) so the native background color the plugin applies to the view hierarchy shows through during the keyboard animation.
-
-### iOS Simulator Testing
-
-Testing keyboard behavior and UI interactions in the iOS simulator has inherent limitations due to idb + WKWebView interop issues. **Keyboard behavior is best verified on a real device.**
-
-**What works in the simulator:**
-- `idb ui tap --udid <UDID> <x> <y>` can focus *some* WKWebView inputs (e.g. Konsta `ListInput` with `placeholder` prop). Coordinates are in device points (iPhone 16: 393x852).
-- Typing via AppleScript `keystroke` when hardware keyboard is connected (toggle with Cmd+Shift+K in Simulator)
-- `xcrun simctl pbcopy <UDID>` to set pasteboard content
-- `xcrun simctl io <UDID> screenshot <path>` to capture screenshots
-- Visual verification of keyboard show/hide (no scrollbar, proper frame resize)
-
-**What doesn't work:**
-- `idb ui tap` doesn't reliably reach all WKWebView elements (floating-label Konsta inputs don't respond)
-- `idb ui text` doesn't type into WKWebView inputs
-- Tapping virtual keyboard keys dismisses the keyboard instead of typing
-- `xcrun simctl keyboard input` is not available on iOS 18
-- AppleScript `click at` screen coordinates doesn't reach WKWebView content
-
-**Recommended workflow for iOS simulator testing:**
-1. Start with `pnpm tauri ios dev "iPhone 16"`
-2. Disconnect hardware keyboard (Cmd+Shift+K) to show software keyboard
-3. Use `idb ui tap` to focus inputs (works for some elements)
-4. Connect hardware keyboard (Cmd+Shift+K) to type via AppleScript
-5. Toggle back to verify keyboard visual behavior
-6. Use `xcrun simctl io <UDID> screenshot` to capture and inspect state
-
-**iOS app icon note:** iOS icons must have NO alpha channel. The `tauri icon --ios-color` command generates RGBA PNGs (Tauri CLI bug). Fix by stripping alpha from all icons in `src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/`.
+The `tauri-plugin-virtual-keyboard` plugin (source: `https://github.com/dash-chat/tauri-plugin-virtual-keyboard`) owns all soft-keyboard integration ([tauri-apps/tauri#10631](https://github.com/tauri-apps/tauri/issues/10631) background). 
 
 ## Important Notes
 
-- **Log redaction**: The `get_redacted_log` command in `src-tauri/src/commands/logs.rs` strips sensitive data from log files before they are sent as error report attachments. This includes: hex strings, base64 blobs, public key byte arrays, hashes, signatures, device/agent IDs, timestamps, profile fields (name, surname, about), chat message content, and reactions. **When adding any new feature that introduces private or user-generated data, you must also update the redaction patterns in `get_redacted_log` to ensure that data never leaves the device in error reports.**
+- **Log redaction**: `REDACTION_REGEXES` in `src-tauri/src/commands/redact_log.rs` lists what counts as sensitive: hex strings, base64 blobs, public key byte arrays, hashes, signatures, device/agent IDs, timestamps, profile fields (name, surname, about), chat message content, and reactions. `tauri-plugin-sentry-reporting` applies those patterns to everything on its way off the device — whole-string over the attached log tail, and per string leaf over serialized Sentry events. **When adding any new feature that introduces private or user-generated data, you must add a pattern to `REDACTION_REGEXES` so that data never leaves the device in a report.**
+- **Error reporting**: error reports go to Sentry via `crates/tauri-plugin-sentry-reporting`, on the rule that **nothing leaves the device until the user presses Send**. Capture is local-only; a user-initiated command redacts and POSTs. `SENTRY_DSN` is set by CI at build time — one DSN across environments, with `ENV` distinguishing them in Sentry. With no DSN the whole path is inert and logging is unaffected.
 - **Rust edition**: Uses Rust edition 2021 (src-tauri) and 2024 (dashchat-node)
-- **Rust toolchain**: Pinned to stable 1.94.0 via `rust-toolchain.toml` (mobile variants: `rust-toolchain.ios.toml`, `rust-toolchain.android.toml`).
+- **Rust toolchain**: Pinned to stable 1.94.0 via `rust-toolchain.toml` (one toolchain including the Android and iOS targets).
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)
 - **Internationalization**: UI supports multiple languages via Weblate integration
 
-## Build Configuration
+### Notes for edits
 
-### Development
-Standard development builds with debug symbols.
-
-### Release
-Optimized builds with:
-- opt-level 3
-- LTO enabled ("fat")
-- Single codegen unit
-- Panic = abort
-
+- Run `just format` before considering any code ready to commit.
+- IDE diagnostics for Rust code will usually be stale and inaccurate while you're changing things. If you can verify that they're up to date, use them, but otherwise prefer running explicit lints/checks.
+ 
 ## Localization
 
 Translations managed through Weblate: https://hosted.weblate.org/projects/dash-chat
-Contact team at hello@dashchat.org to become a translation reviewer.
 
 **IMPORTANT:** Never modify non-English translation files. They are managed exclusively through Weblate and any manual changes will be overwritten. Only the English source strings (`en.json`) should be edited in code.
 

@@ -33,43 +33,31 @@ pub(crate) async fn show_sync_notification(
         return;
     }
 
-    // On iOS the foreground sync path is the only one that can show a banner:
-    // `willPresent` unconditionally drops the NSE's push while the app is
-    // foregrounded, and a backgrounded app is suspended so this loop isn't
-    // running. Sharing the dedup token with the NSE here would let the NSE win
-    // the race and silence this banner (push suppressed + sync skipped = nothing
-    // shown), so on iOS we always show and leave push/sync dedup to `willPresent`.
-    // Other platforms can display both paths, so they keep the cross-path dedup.
-    //
-    // TODO(usernotifications.filtering entitlement): once Apple grants
-    // `com.apple.developer.usernotifications.filtering`, the NSE can suppress its
-    // own push when the main app is alive, so the foreground push/sync collision
-    // goes away. At that point delete this iOS bypass *and* the unconditional
-    // push-suppression in the plugin's `willPresent` (NotificationHandler.swift),
-    // and let every platform share the single cross-path dedup again.
-    #[cfg(not(target_os = "ios"))]
+    let Some(app_node) = app_handle.try_state::<crate::app_node::AppNode>() else {
+        return;
+    };
+
+    match app_node
+        .notified_operations_store()
+        .record_notified_operation(notification.header.hash())
+        .await
     {
-        let store = app_handle.state::<NotifiedOperationsStore>();
-        match store
-            .record_notified_operation(notification.header.hash())
-            .await
-        {
-            Ok(false) => {
-                log::debug!("Skipping sync notification: op already notified");
-                return;
-            }
-            Ok(true) => {}
-            Err(err) => {
-                log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
-            }
+        Ok(false) => {
+            log::debug!("Skipping sync notification: op already notified");
+            return;
+        }
+        Ok(true) => {}
+        Err(err) => {
+            log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
         }
     }
 
-    let node = app_handle.state::<Node>();
-    let topic = *notification.topic;
+    let Ok(node) = app_node.get().await else {
+        return;
+    };
     let data = build_notification_data(
         &node,
-        topic.into(),
+        notification.topic,
         &notification.header,
         notification.payload.as_ref(),
     )
@@ -113,7 +101,7 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
 /// Build the system notification for a freshly-processed p2panda operation.
 ///
 /// Shared between the FCM/APNs entry point (`receive_push_notification`) and the
-/// foreground sync loop (`spawn_notification_loop` in `setup.rs`). Returns `None`
+/// foreground sync loop (`notification_loop` in `app_node.rs`). Returns `None`
 /// when the op should not produce a user-facing notification (own message, payload
 /// variant we don't surface, etc.).
 pub async fn build_notification_data(
@@ -151,17 +139,17 @@ pub async fn build_notification_data(
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
             Some(chat_message_notification(node, topic, sender_device_id, content, id).await)
         }
-        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { code, profile }) => {
-            Some(NotificationData {
-                id,
-                title: Some(sonix_i18n::t!("newContactRequest")),
-                body: Some(profile.name.clone()),
-                icon: Some("ic_stat_icon".to_string()),
-                group: Some(topic.to_hex()),
-                route: Some(format!("/direct-chats/{}", code.agent_id.to_hex())),
-                ..Default::default()
-            })
-        }
+        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest {
+            agent_id, profile, ..
+        }) => Some(NotificationData {
+            id,
+            title: Some(sonix_i18n::t!("newContactRequest")),
+            body: Some(profile.name.clone()),
+            icon: Some("ic_stat_icon".to_string()),
+            group: Some(topic.to_hex()),
+            route: Some(format!("/direct-chats/{}", agent_id.to_hex())),
+            ..Default::default()
+        }),
         _ => None,
     }
 }
@@ -182,7 +170,7 @@ async fn chat_message_notification(
     };
 
     let sender_profile = if let Some(agent_id) = sender_agent_id {
-        node.local_store.get_profile(agent_id).await.ok().flatten()
+        node.projection.get_profile(agent_id).await.ok().flatten()
     } else {
         None
     };
@@ -305,7 +293,7 @@ async fn auth_control_op_notification(
     let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
     let sender_name = match sender_agent_id {
         Some(agent_id) => node
-            .local_store
+            .projection
             .get_profile(agent_id)
             .await
             .ok()
@@ -401,26 +389,6 @@ async fn auth_control_op_notification(
 pub fn new_message_generic_notification() -> NotificationData {
     NotificationData {
         title: Some(sonix_i18n::t!("youHaveANewMessage")),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        ..Default::default()
-    }
-}
-
-#[cfg(target_os = "ios")]
-pub fn synced_generic_notification() -> NotificationData {
-    NotificationData {
-        title: Some(sonix_i18n::t!("syncedWithServer")),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        ..Default::default()
-    }
-}
-
-#[cfg(target_os = "ios")]
-pub fn may_have_new_messages_generic_notification() -> NotificationData {
-    NotificationData {
-        title: Some(sonix_i18n::t!("mayHaveNewMessages")),
         body: None,
         icon: Some("ic_stat_icon".to_string()),
         ..Default::default()

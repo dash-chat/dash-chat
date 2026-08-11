@@ -1,5 +1,4 @@
 use dashchat_node::{testing::*, *};
-use mailbox_client::mem::MemMailbox;
 use p2panda::network::MdnsDiscoveryMode;
 
 const TRACING_FILTER: [&str; 1] = ["dashchat=debug"];
@@ -10,29 +9,31 @@ async fn test_mailbox_bootstrap() {
 
     let poll = PollConfig::default();
 
-    let mut alice_config = NodeConfig::testing();
+    let mut config = NodeConfig::testing();
     // NOTE: mDNS discovery is disabled by default in testing environment anyway but adding here
     // so it is made explicit in this test.
-    alice_config.mdns_mode = MdnsDiscoveryMode::Disabled;
+    config.mdns_mode = MdnsDiscoveryMode::Disabled;
 
-    let mut bobbi_config = NodeConfig::testing();
-    bobbi_config.mdns_mode = MdnsDiscoveryMode::Disabled;
-
-    let mailbox = MemMailbox::new();
-    let alice = TestNode::new(alice_config, "alice")
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
-    let bobbi = TestNode::new(bobbi_config, "bobbi")
+    let bobbi = TestNode::new(config, "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
+
+    // Teach each node the other's direct dialing address, so they can keep
+    // syncing directly once the mailbox is gone without relying on internet
+    // discovery (relay + pkarr).
+    introduce_peers([&alice, &bobbi]).await.unwrap();
 
     // Drop the mailbox meaning it can no-longer provide sync for alice and bobbi. If they
     // continue to sync messages it demonstrates that they discovered each other via the mailbox
@@ -50,6 +51,16 @@ async fn test_mailbox_bootstrap() {
         .send_message_raw(direct_chat_topic, "Hello".into())
         .await
         .unwrap();
+
+    // Wait for the message to arrive at bobbi first: consistency() compares
+    // processed_ops sets, which can match vacuously in the window before
+    // alice's own pipeline has processed the op she just published.
+    poll.wait_for(|| async {
+        let n = bobbi.get_messages(direct_chat_topic).await.unwrap().len();
+        (n == 1).then_some(()).ok_or(n)
+    })
+    .await
+    .unwrap();
 
     poll.consistency([&alice, &bobbi], &[direct_chat_topic.into()])
         .await

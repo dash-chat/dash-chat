@@ -1,6 +1,4 @@
-use std::sync::{Arc, Mutex as StdMutex};
-
-use dashchat_node::Node;
+use crate::app_node::AppNode;
 use mailbox_local_server::LocalMailboxServer;
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
@@ -10,13 +8,7 @@ use crate::filesystem::FileSystem;
 
 pub(crate) struct LocalMailboxState {
     server: LocalMailboxServer,
-    /// Currently-registered mDNS fullname. Owned by the interface watcher
-    /// which overwrites it on every re-announce so `stop_local_mailbox`
-    /// unregisters the actually-registered service rather than a stale one
-    /// from a previous re-announce cycle.
-    mdns_fullname: Arc<StdMutex<String>>,
-    interface_watcher_stop: tokio::sync::oneshot::Sender<()>,
-    interface_watcher: tokio::task::JoinHandle<()>,
+    mdns_fullname: String,
 }
 
 pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxState>>;
@@ -28,14 +20,18 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         return Ok(());
     }
 
-    let node = handle.state::<Node>();
+    let node = handle
+        .state::<AppNode>()
+        .get()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
     let endpoint_id = node.endpoint_id();
     let endpoint = node.iroh_endpoint().await?;
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
     let daemon: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
 
     let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
-    let node_for_peer_addrs = (*node).clone();
+    let node_for_peer_addrs = node.clone();
     tokio::spawn(async move {
         while let Some(addr) = peer_addr_rx.recv().await {
             if let Err(err) = node_for_peer_addrs.insert_peer_addr(addr).await {
@@ -48,41 +44,36 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     // its EndpointId equals the node's device id and relayed blobs are served
     // from the same store on the same endpoint. The mDNS instance name therefore
     // encodes that EndpointId and resolves to this shared endpoint.
+    let blob_sync = node.blob_sync_optional().expect("blob sync is enabled");
     let server = mailbox_local_server::spawn_local_mailbox_server(
         path,
-        node.blobs(),
-        node.blob_downloader(),
+        blob_sync.blobs.clone(),
+        blob_sync.downloader(),
         endpoint,
+        None,
         None,
         peer_addr_tx,
     )
     .await?;
 
-    let mdns_fullname = Arc::new(StdMutex::new(
-        mailbox_local_server::register_mdns_with_retry(
-            &daemon,
-            super::MDNS_SERVICE_TYPE,
-            endpoint_id,
-            server.port,
-            3,
-        )?,
-    ));
-
-    let (interface_watcher_stop, interface_watcher_stop_rx) = tokio::sync::oneshot::channel();
-    let interface_watcher = mailbox_local_server::spawn_interface_watcher(
-        daemon,
-        super::MDNS_SERVICE_TYPE.to_string(),
+    // Interface changes (a new network appearing after startup) are handled by
+    // the mdns-sd daemon itself: it re-checks interfaces periodically and
+    // announces `addr_auto` services on new ones. Re-registering the service
+    // ourselves must be avoided — mdns-sd 0.20 probes on re-register, mistakes
+    // its own just-unregistered records for a conflicting peer, and renames the
+    // service, after which it no longer answers SRV refresh queries and
+    // browsers drop it when the announcement TTL expires.
+    let mdns_fullname = mailbox_local_server::register_mdns_with_retry(
+        &daemon,
+        super::MDNS_SERVICE_TYPE,
         endpoint_id,
         server.port,
-        mdns_fullname.clone(),
-        interface_watcher_stop_rx,
-    );
+        3,
+    )?;
 
     *guard = Some(LocalMailboxState {
         server,
         mdns_fullname,
-        interface_watcher_stop,
-        interface_watcher,
     });
 
     log::info!("Started local mailbox");
@@ -98,17 +89,11 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
         return Ok(());
     };
     log::info!("Sending stop signal to local mailbox...");
-    let _ = state.interface_watcher_stop.send(());
-    if let Err(err) = state.interface_watcher.await {
-        log::error!("Mailbox interface watcher ended unexpectedly: {err}");
-    }
     state.server.stop().await;
-    let fullname = state
-        .mdns_fullname
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .clone();
-    if let Err(e) = handle.state::<ServiceDaemon>().unregister(&fullname) {
+    if let Err(e) = handle
+        .state::<ServiceDaemon>()
+        .unregister(&state.mdns_fullname)
+    {
         log::error!("Failed to unregister MDNS service: {e:?}");
     }
 

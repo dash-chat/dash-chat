@@ -16,7 +16,9 @@ import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, VerifyingKey } from '../p2panda/types';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
+import { pendingChatKey } from './chat-key';
 import { type IChatsClient } from './chats-client';
+import { type IMessagesClient, MessagesClient } from './messages-client';
 
 export class ChatsStore {
 	private groupChatVersion = signal(0);
@@ -25,16 +27,31 @@ export class ChatsStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		public client: IChatsClient,
-		private directChatClientFactory: () => IDirectChatClient = () =>
-			new DirectChatClient(),
-		private groupChatClientFactory: () => IGroupChatClient = () =>
-			new GroupChatClient(),
 	) {
 		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
-			if (op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') {
+			// GroupControl bumps are what reveal a newly joined group: the backend
+			// marks a chat as a group chat while reducing the group's Create op
+			// (before emitting this notification), which happens after the
+			// JoinGroup notification has already triggered a (too early) refetch.
+			if (
+				(op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') ||
+				op.body?.type === 'GroupControl'
+			) {
 				this.groupChatVersion.value++;
 			}
 		});
+	}
+
+	protected directChatClient(): IDirectChatClient {
+		return new DirectChatClient();
+	}
+
+	protected groupChatClient(): IGroupChatClient {
+		return new GroupChatClient();
+	}
+
+	protected messagesClient(): IMessagesClient {
+		return new MessagesClient();
 	}
 
 	private groupChatIds = reactive(async () => {
@@ -62,8 +79,9 @@ export class ChatsStore {
 			new GroupChatStore(
 				this.logsStore,
 				this.contactsStore,
-				this.groupChatClientFactory(),
+				this.groupChatClient(),
 				chatId,
+				this.messagesClient(),
 			),
 	);
 
@@ -72,8 +90,9 @@ export class ChatsStore {
 			new DirectChatStore(
 				this.logsStore,
 				this.contactsStore,
-				this.directChatClientFactory(),
+				this.directChatClient(),
 				peer,
+				this.messagesClient(),
 			),
 	);
 
@@ -84,12 +103,13 @@ export class ChatsStore {
 	});
 
 	allChatsSummaries = reactive(async () => {
-		const [direct, groups, pending] = await Promise.all([
+		const [direct, groups, pending, outgoing] = await Promise.all([
 			this.allDirectChatSummaries(),
 			this.allGroupChatSummaries(),
 			this.allPendingRequestSummaries(),
+			this.allOutgoingPendingSummaries(),
 		]);
-		const summaries = [...direct, ...groups, ...pending];
+		const summaries = [...direct, ...groups, ...pending, ...outgoing];
 		summaries.sort((a, b) => b.lastEvent.timestamp - a.lastEvent.timestamp);
 		return summaries;
 	});
@@ -114,12 +134,11 @@ export class ChatsStore {
 			const pendingRequests = await this.contactsStore.contactRequests();
 			const unique = pendingRequests.filter(
 				(request, index, self) =>
-					self.findIndex(r => r.code.agent_id === request.code.agent_id) ===
-					index,
+					self.findIndex(r => r.agentId === request.agentId) === index,
 			);
 			return unique.map(pendingRequest => ({
 				type: 'DirectChat',
-				chatId: pendingRequest.code.agent_id,
+				chatId: pendingRequest.agentId,
 				name: fullName(pendingRequest.profile),
 				avatar: pendingRequest.profile.avatar,
 				lastEvent: {
@@ -127,6 +146,24 @@ export class ChatsStore {
 					timestamp: pendingRequest.timestamp,
 				},
 				unreadMessages: 1,
+			}));
+		},
+	);
+
+	private allOutgoingPendingSummaries = reactive(
+		async (): Promise<ChatSummary[]> => {
+			const pending = await this.contactsStore.outgoingPendingRequests();
+			return pending.map(request => ({
+				type: 'DirectChat',
+				chatId: pendingChatKey(request.devicePubkey),
+				name: request.profileName,
+				avatar: undefined,
+				waitingForProfile: true as const,
+				lastEvent: {
+					kind: 'contact_request',
+					timestamp: request.timestamp,
+				},
+				unreadMessages: 0,
 			}));
 		},
 	);

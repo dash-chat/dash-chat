@@ -1,26 +1,49 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { isIos } from '$lib/utils/environment';
-	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
+	import { useTheme } from 'konsta/svelte';
 
 	interface Props {
 		value?: string;
 		placeholder?: string;
 		onSend?: () => Promise<boolean>;
-		onEmojiClick?: () => void;
+		onpaste?: (event: ClipboardEvent) => void;
+		onfocus?: (event: FocusEvent) => void;
+		/** Leading content rendered inside the pill, before the textarea. */
+		before?: Snippet;
+		/** Trailing content rendered inside the pill, after the textarea. */
+		after?: Snippet;
+		/** Full-width row rendered inside the pill, above the textarea (e.g.
+		 * the editing banner). */
+		banner?: Snippet;
+		class?: string;
 	}
 
 	let {
 		value = $bindable(''),
 		placeholder = m.typeMessage(),
 		onSend,
-		onEmojiClick,
+		onpaste,
+		onfocus,
+		before,
+		after,
+		banner,
+		class: className = '',
 	}: Props = $props();
+
+	const theme = $derived(useTheme());
 
 	let textarea: HTMLTextAreaElement;
 
 	export function reset() {
 		textarea.style.height = 'auto';
+	}
+
+	/** Focus the input with the cursor at the end, sized to the current text. */
+	export function focus() {
+		textarea.focus();
+		textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+		autoResize();
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -42,22 +65,41 @@
 	}
 </script>
 
-{#if onEmojiClick && !isIos}
-	<EmojiButton onClick={onEmojiClick} />
-{/if}
+<div
+	class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
+	'ios'
+		? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+		: 'bg-white dark:bg-gray-800'} {className}"
+	{onpaste}
+>
+	{@render banner?.()}
 
-<textarea
-	class="message-textarea"
-	data-testid="message-input-textarea"
-	{placeholder}
-	bind:value
-	bind:this={textarea}
-	rows="1"
-	onkeydown={handleKeydown}
-	oninput={handleInput}
-></textarea>
+	<div class="flex w-full items-center">
+		{@render before?.()}
+
+		<textarea
+			class:ms-4={!before}
+			class="message-textarea me-2"
+			data-testid="message-input-textarea"
+			{placeholder}
+			bind:value
+			bind:this={textarea}
+			rows="1"
+			onkeydown={handleKeydown}
+			oninput={handleInput}
+			{onfocus}
+		></textarea>
+
+		{@render after?.()}
+	</div>
+</div>
 
 <style>
+	.input-container {
+		border: 1px solid var(--k-hairline-color);
+		border-radius: 22px;
+	}
+
 	.message-textarea {
 		flex: 1;
 		min-width: 0;
@@ -68,7 +110,8 @@
 		color: var(--k-text-color);
 		font-family: inherit;
 		min-height: 28px;
-		padding: 8px;
+		padding-top: 8px;
+		padding-bottom: 8px;
 		max-height: 100px;
 		overflow-y: auto;
 	}

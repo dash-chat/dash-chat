@@ -5,6 +5,8 @@ export type Error =
 
 export type AddContactError =
 	| { kind: 'ProfileNotCreated'; message: null }
+	| { kind: 'CannotAddSelf'; message: null }
+	| { kind: 'InvalidContactCode'; message: string }
 	| { kind: 'CreateQrCode'; message: string }
 	| { kind: 'CreateDirectChat'; message: string }
 	| { kind: 'StoreContact'; message: string }

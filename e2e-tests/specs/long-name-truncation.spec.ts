@@ -7,7 +7,7 @@
  * sheet, and the profile-settings list item.
  */
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 const LONG_NAME = 'Bartholomew';
 const LONG_SURNAME = 'Wolfeschlegelsteinhausenbergerdorff';
@@ -18,10 +18,10 @@ describe('Long name truncation', () => {
 	let agent1Code = '';
 	let agent2Code = '';
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 	});
 
@@ -36,9 +36,9 @@ describe('Long name truncation', () => {
 	it('agent1 sends a one-way contact request — chat list has no overflow', async () => {
 		await navigateToAddContact(agent1);
 		await navigateToAddContact(agent2);
-		agent1Code = await agent1.addContactPage.getContactCode();
-		agent2Code = await agent2.addContactPage.getContactCode();
-		await agent1.addContactPage.enterCode(agent2Code);
+		agent1Code = await agent1.addContactPage.getAddContactLink();
+		agent2Code = await agent2.addContactPage.getAddContactLink();
+		await agent1.addContactPage.enterAddContactLink(agent2Code);
 
 		await agent2.addContactPage.back.click();
 		await agent2.newMessagePage.back.click();
@@ -62,10 +62,10 @@ describe('Long name truncation', () => {
 		await agent2.directChatPage.back.click();
 		await agent2.homePage.ready();
 		await navigateToAddContact(agent2);
-		await agent2.addContactPage.enterCode(agent1Code);
+		await agent2.addContactPage.enterAddContactLink(agent1Code);
 		await agent2.directChatPage.ready();
 
-		expect(await agent2.directChatPage.isPeerNamePresent()).toBe(true);
+		await agent2.directChatPage.waitForPeerProfile();
 		expect(await agent2.directChatPage.checkNavbarOverflow()).toEqual([]);
 		expect(await agent2.checkOverflow()).toEqual([]);
 	});
@@ -89,8 +89,8 @@ describe('Long name truncation', () => {
 		await agent1.settingsPage.ready();
 		await agent1.settingsPage.profileLink.click();
 		await agent1.profilePage.ready();
-		await agent1.waitUntil(
-			async () => agent1.profilePage.nameItemContains(LONG_NAME),
+		await agent1.waitUntil(async () =>
+			agent1.profilePage.nameItemContains(LONG_NAME),
 		);
 		expect(await agent1.checkOverflow()).toEqual([]);
 	});

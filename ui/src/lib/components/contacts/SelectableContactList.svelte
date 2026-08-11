@@ -64,7 +64,10 @@
 				</ListItem>
 			{/each}
 			{#if contacts.length === 0 && noDataMessage}
-				<ListItem title={noDataMessage} />
+				<ListItem
+					title={noDataMessage}
+					data-testid="selectable-contacts-empty"
+				/>
 			{/if}
 		</List>
 	{/if}

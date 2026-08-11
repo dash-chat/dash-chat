@@ -1,9 +1,9 @@
 name: "ios build"
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, 'main-**', develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, 'main-**', develop ]
 
 jobs:
   ios-build:
@@ -19,14 +19,10 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
           cache: true
 
       - name: Install xcodegen and just
         run: brew install xcodegen just
-
-      - name: Use iOS rust toolchain
-        run: cp rust-toolchain.ios.toml rust-toolchain.toml
 
       # Workaround for actions/runner-images#14097: on macos-15-arm64/20260511.0048+
       # /opt/homebrew/bin/{cargo,rustc,rustup,rustup-init} are broken rustup-init shims

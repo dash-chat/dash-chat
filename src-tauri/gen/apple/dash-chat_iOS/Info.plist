@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.19.4</string>
+	<string>0.19.13</string>
 	<key>CFBundleVersion</key>
-	<string>0.19.4</string>
+	<string>0.19.13</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -41,7 +41,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Dash Chat uses the camera to scan a contact&apos;s QR code when you add them as a contact.</string>
+	<string>Dash Chat uses the camera to scan a contact&apos;s QR code when you add them as a contact, and to take a photo for your profile.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Dash Chat discovers and syncs with Local Message Servers on your local network so you can exchange messages without internet access.</string>
 	<key>NSBonjourServices</key>

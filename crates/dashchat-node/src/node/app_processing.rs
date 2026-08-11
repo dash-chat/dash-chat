@@ -8,13 +8,14 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
 use crate::node::actor::{ProcessorError, ProcessorEvent};
+use crate::stores::{BadUseOfNode, ProjectionError};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Notification {
-    pub topic: Topic,
+    pub topic: TopicId,
     pub header: Header,
     pub payload: Option<Payload>,
 }
@@ -153,51 +154,57 @@ impl Node {
                                     continue;
                                 };
 
-                                let result = node.process_groups(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
-                                if let Err(err) = result.as_ref() {
-                                    tracing::error!(?err, "process groups operation error");
-                                };
+                                let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
                                 // that any errors can be reacted to by the waiter.
                                 if let Some(processed_tx) = processed_tx {
-                                    if let Err(err) = processed_tx.send(result) {
+                                    if let Err(err) = processed_tx.send(result.clone()) {
                                         tracing::error!(?err, "processed_tx send error")
                                     }
                                 }
 
-                                // @TODO: this is required for tests, but nowhere else, it can be placed behind the
-                                // testing flag.
-                                node.op_store.mark_op_processed(topic, &id);
+                                // Don't continue to acknowledgement if there was an error processing,
+                                // so that the operation will be replayed another time.
+                                if let Err(err) = result {
+                                    tracing::error!(?err, "process groups operation error");
+                                    continue;
+                                };
 
+                                if let Err(err) = node.ack_operation(&operation).await {
+                                    tracing::error!(?err, "failed to acknowledge operation");
+                                }
                             },
                             ProcessorEvent::App { operation, source, processed_tx } => {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
 
+
                                 // Process the operation.
-                                let result = node.process_app(operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
-                                if let Err(err) = result.as_ref() {
-                                    tracing::error!(?err, "process operation error");
-                                }
+                                let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
                                 // that any errors can be reacted to by the waiter.
                                 if let Some(processed_tx) = processed_tx {
-                                    if let Err(err) = processed_tx.send(result) {
+                                    if let Err(err) = processed_tx.send(result.clone()) {
                                         tracing::error!(?err, "processed_tx send error")
                                     }
-
-
                                 }
 
-                                // @TODO: this is required for tests, but nowhere else, it can be placed behind the
-                                // testing flag.
-                                node.op_store.mark_op_processed(topic, &id);
+                                // Don't continue to acknowledgement if there was an error processing,
+                                // so that the operation will be replayed another time.
+                                if let Err(err) = result {
+                                    tracing::error!(?err, "process operation error");
+                                    continue;
+                                }
 
+
+                                if let Err(err) = node.ack_operation(&operation).await {
+                                    tracing::error!(?err, "failed to acknowledge operation");
+                                }
                             },
                         }
 
@@ -220,19 +227,38 @@ impl Node {
         handle
     }
 
+    async fn ack_operation(&self, operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
+        // Mark the operation as processed so it can be awaited by
+        // [`crate::testing::PollConfig::consistency`]
+        #[cfg(feature = "testing")]
+        self.op_store
+            .mark_op_processed(operation.topic(), &operation.id());
+
+        // Acknowledge the operation now that application-layer
+        // processing has finished. The node uses an `Explicit`
+        // ack policy, so this persisted ack is what makes the
+        // operation eligible for mailbox transmission (see
+        // `OpStore::acked_log_height`).
+        operation.ack().await?;
+
+        Ok(())
+    }
+
     /// Enforce the topic's tombstone set on a received operation: if its hash
     /// has been tombstoned, drop its stored payload so it is never persisted or
     /// synced onward. The operation arrives here already written to the op
     /// store (by peers or by mailbox sync), so this deletes the body after the
     /// fact.
+    //
+    // TODO: when device groups exist, test that tombstones are enforced across devices.
     async fn enforce_tombstone(
         &self,
-        operation: &ProcessedOperation<Payload>,
+        topic: TopicId,
+        tombstoned_op: &Operation,
     ) -> anyhow::Result<bool> {
-        let topic = operation.topic();
-        let hash = operation.id();
-        if self.local_store.is_tombstoned(topic, hash).await? {
-            self.unprocess_app(&operation.processed().operation).await?;
+        let hash = tombstoned_op.hash;
+        if self.projection.is_tombstoned(topic, hash).await? {
+            self.unprocess_app(tombstoned_op).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
         } else {
@@ -241,8 +267,11 @@ impl Node {
     }
 
     /// Filter out operations whose payloads are not able to be deleted.
-    pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
-        matches!(payload, Payload::Chat(ChatPayload::Message(_)))
+    pub(crate) fn is_tombstoneable(payload: &Payload) -> bool {
+        matches!(
+            payload,
+            Payload::Chat(ChatPayload::Message(_) | ChatPayload::EditMessage { .. })
+        )
     }
 
     /// Note that this is a function that processes operations which could have deleted payloads.
@@ -251,10 +280,32 @@ impl Node {
     /// [`Self::enforce_tombstone`] before processing.
     async fn process_groups(
         &self,
-        operation: ProcessedOperation<Payload>,
+        operation: &ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(&operation, source).await?;
+        self.register_bootstrap(operation, source).await?;
+
+        // If an operation is invalidated by the projection layer, we don't process it,
+        // but still allow it to be acknowledged as processed.
+        match self
+            .projection
+            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
+            .await
+        {
+            // Continue processing.
+            Ok(_) => (),
+
+            // Don't process but allow the log to proceed.
+            Err(ProjectionError::InvalidOp(msg)) => {
+                tracing::info!(msg, "invalid operation");
+                return Ok(());
+            }
+
+            // Bubble up the error: the log won't proceed.
+            Err(ProjectionError::Any(err)) => {
+                return Err(err);
+            }
+        }
 
         // Subscribe to announcements topics for any group members whose agent_id we know.
         let topic = operation.topic();
@@ -287,7 +338,7 @@ impl Node {
         // @TODO: this requires a reliable way to know the agent id from the device id
         // even if they're not a contact.
         let known = self
-            .local_store
+            .projection
             .lookup_contacts(member_device_ids.iter())
             .await?;
 
@@ -304,11 +355,9 @@ impl Node {
         //
         // @TODO: once group control messages are properly ordered we could send a
         // membership diff here instead of relying on the frontend to refetch.
-        let dashchat_topic =
-            crate::Topic::<crate::topic::kind::Untyped>::new(*operation.topic().as_bytes());
         self.notify_payload(
-            dashchat_topic,
-            &operation.processed().header(),
+            operation.topic(),
+            operation.processed().header(),
             operation.message(),
         )
         .await?;
@@ -324,7 +373,7 @@ impl Node {
         let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
             return Ok(());
         };
-        if self.is_tombstoneable(&payload) {
+        if Self::is_tombstoneable(&payload) {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     use p2panda_store::topics::TopicStore;
@@ -339,10 +388,17 @@ impl Node {
                             anyhow!(format!("failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}", author.aliased(), log_id.aliased()))
                         })?;
 
-                    if let Some(media) = m.media() {
+                    if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash()).collect();
                         let is_own = DeviceId::from(author) == self.device_id();
-                        self.blob_sync
+                        if let Err(err) = self
+                            .local_store
+                            .remove_unfetched_blobs_all_mailboxes(&hashes)
+                            .await
+                        {
+                            tracing::warn!(?err, "failed to clear unfetched blob rows on delete");
+                        }
+                        blob_sync
                             .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)
                             .await;
                     }
@@ -357,24 +413,43 @@ impl Node {
 
     async fn process_app(
         &self,
-        operation: ProcessedOperation<Payload>,
+        operation: &ProcessedOperation<Payload>,
         source: &Source,
     ) -> anyhow::Result<()> {
-        self.register_bootstrap(&operation, source).await?;
+        self.register_bootstrap(operation, source).await?;
         let topic = operation.topic();
-        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
 
-        // NOTE: realistically the tombstone will only be enforced here
-        // upon playback of operations. The first time through, it will
-        // have been processed and potentially have modified local state.
-        // Upon tombstoning (or enforcement), it will be "unprocessed"
-        // via [`Self::unprocess_app`] to undo those state changes,
-        // as if it were never processed at all. On playback, the operation
-        // simply doesn't get processed.
-        if self.enforce_tombstone(&operation).await? {
-            // The payload is tombstoned, so there's nothing to process.
-            self.notify_header(dashchat_topic, header).await?;
+        // If an operation is invalidated by the projection layer, we don't process it,
+        // but still allow it to be acknowledged as processed.
+        match self
+            .projection
+            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
+            .await
+        {
+            // Continue processing.
+            Ok(_) => (),
+
+            // Don't process but allow the log to proceed.
+            Err(ProjectionError::InvalidOp(msg)) => {
+                tracing::info!(msg, "invalid operation");
+                return Ok(());
+            }
+
+            // Bubble up the error: the log won't proceed.
+            Err(ProjectionError::Any(err)) => {
+                return Err(err);
+            }
+        }
+
+        // If a receiver is processing this, the tombstone may have been processed prior,
+        // so we want to drop the payload now and not process it.
+        if self
+            .enforce_tombstone(topic, &operation.event.operation)
+            .await?
+        {
+            // The payload is tombstoned, so we must not process it. Return early.
+            self.notify_header(topic, header).await?;
             return Ok(());
         }
 
@@ -387,19 +462,7 @@ impl Node {
                 // Nothing to do.
             }
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
-                for (device_id, agent_id) in agents {
-                    if let Err(err) = self
-                        .local_store
-                        .save_agent_mapping(*device_id, *agent_id)
-                        .await
-                    {
-                        tracing::warn!(
-                            ?err,
-                            device_id = ?device_id.aliased(),
-                            agent_id = ?agent_id.aliased(),
-                            "failed to save agent mapping from IntroduceAgents"
-                        );
-                    }
+                for (_, agent_id) in agents {
                     if agent_id == &self.agent_id() {
                         continue;
                     }
@@ -414,83 +477,137 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
-                if let Err(err) = self.join_group(*chat_id).await {
-                    // TODO: no retry path — device ends up with no topic registered for this group.
-                    tracing::error!(?err, "failed to join group from invitation");
-                }
+                self.join_group(*chat_id)
+                    .await
+                    .context("failed to join group from invitation")?;
             }
 
             Payload::Inbox(invitation) => {
-                let active_topics = self.local_store.get_active_inbox_topics().await?;
-                if !active_topics
+                let topic_id = TopicId::from(topic);
+                let all_advertised_topics = self.local_store.get_advertised_inbox_topics().await?;
+                let is_advertised_topic =
+                    all_advertised_topics.iter().any(|it| *it.topic == topic_id);
+                let is_reply = self
+                    .local_store
+                    .get_reply_inbox_topics()
+                    .await?
                     .iter()
-                    .any(|it| *it.topic == TopicId::from(topic))
-                {
-                    // not for me, ignore
+                    .any(|it| *it.topic == topic_id);
+                if !is_advertised_topic && !is_reply {
+                    // not for me (e.g. another scanner's request on a shared
+                    // advertised inbox we only synced as an intermediary): ignore.
                     return Ok(());
                 }
                 match invitation {
-                    InboxPayload::ContactRequest { .. } => {
-                        // Nothing to do.
+                    InboxPayload::ContactRequest { agent_id, .. } => {
+                        // A request arrived on our advertised inbox. Perform no network
+                        // side-effects (bootstrap registration, topic
+                        // subscriptions) and disclose nothing about us until the
+                        // user explicitly accepts (see `accept_contact`). This
+                        // keeps an unsolicited request — e.g. anyone scanning a
+                        // shared QR — from amplifying our resources or handing our
+                        // profile to every scanner. The request is signed by the
+                        // scanner's device key (author), so we map that device to
+                        // the requester's agent_id directly rather than trusting
+                        // the embedded QR code's agent_id.
+                        if is_advertised_topic && !matches!(source, Source::LocalStore) {
+                            // Mutual add: if we also sent this peer a contact
+                            // request, their incoming request is an implicit
+                            // acceptance — complete the exchange automatically
+                            // rather than waiting for a manual tap. Spawned so we
+                            // don't await publishing (which needs this same
+                            // processor) and deadlock.
+                            if self.has_outgoing_pending_request(author).await? {
+                                let node = self.clone();
+                                let agent_id = *agent_id;
+                                tokio::spawn(async move {
+                                    if let Err(err) = node.accept_contact(agent_id).await {
+                                        tracing::warn!(
+                                            ?err,
+                                            "failed to auto-accept mutual contact request"
+                                        );
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    InboxPayload::ContactRequestAck { agent_id, .. } => {
+                        // The op must arrive on our private reply topic and be
+                        // signed by the device whose QR we scanned. Verifying
+                        // Verifying author == expected_ack_author prevents a
+                        // third party from injecting a spoofed ack with
+                        // an attacker-chosen agent_id/profile.
+                        if is_reply && !matches!(source, Source::LocalStore) {
+                            let expected = self
+                                .local_store
+                                .get_reply_inbox_expected_ack_author(topic_id)
+                                .await?;
+                            if expected.as_ref() != Some(&author) {
+                                tracing::warn!(
+                                    ?author,
+                                    ?expected,
+                                    "ContactRequestAck author does not match expected; ignoring"
+                                );
+                                return Ok(());
+                            }
+                            self.establish_contact(author, *agent_id).await?;
+
+                            let node = self.clone();
+                            let agent_id = *agent_id;
+                            tokio::spawn(async move {
+                                if let Err(err) = node.publish_add_contact(agent_id).await {
+                                    tracing::warn!(?err, "failed to record accepted contact");
+                                }
+                            });
+                        }
                     }
                 }
             }
 
             Payload::Chat(ChatPayload::Message(m)) => {
-                if let Some(media) = m.media() {
+                if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                     for item in media.iter() {
                         // TODO: revisit during ACID review (replay)
-                        self.blob_sync
+                        blob_sync
                             .add_to_fetch_pool(topic.into(), author, hash, item.hash())
                             .await?;
                     }
                 }
             }
 
-            Payload::Chat(ChatPayload::Reaction(_) | ChatPayload::GroupInfo(_)) => {
-                // Nothing to do.
-            }
-
-            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-
-                tracing::info!(me = ?self.agent_id().aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
-
-                if let Err(err) = self
-                    .local_store
-                    .save_profile(agent_id, profile.clone())
-                    .await
-                {
-                    tracing::warn!(?err, "failed to save profile from SetProfile");
+            Payload::Chat(ChatPayload::EditMessage { edit_hash, .. }) => {
+                // Mirror the author-side validation: an edit that breaks the
+                // linear-chain / authorship / window rules is ignored (not
+                // forwarded to the frontend) with a warning.
+                let chat_id = ChatId::from_topic_id(topic)?;
+                let valid_ops = self.valid_chat_ops(chat_id).await?;
+                let edit_ts: u64 = operation.processed().header().timestamp.into();
+                let candidate = EditCandidate {
+                    target: *edit_hash,
+                    editor: author,
+                    timestamp: edit_ts,
+                    self_hash: Some(hash),
+                };
+                if let Err(err) = candidate.validate(&valid_ops) {
+                    warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
+                    return Ok(());
                 }
             }
 
-            Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }) => {
-                // Save the device_id -> agent_id mapping so group members can look each other up.
-
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-                if let Err(err) = self.local_store.save_agent_mapping(author, agent_id).await {
-                    tracing::warn!(?err, "failed to save agent mapping from SetCapabilities");
-                }
-
-                if let Err(err) = self
-                    .local_store
-                    .save_capabilities(author, capabilities.clone())
-                    .await
-                {
-                    tracing::warn!(?err, "failed to save capabilities from SetCapabilities");
+            Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
+                // Enforce the tombstones the projection just recorded, dropping
+                // the targets' payloads. The delete op's *own* payload is only a
+                // list of hashes (nothing sensitive), so we fall through to
+                // `notify_payload` below: the frontend needs it to learn which
+                // messages were deleted and render their placeholders.
+                for hash in hashes {
+                    if let Some(op) = self.op_store.get_operation(hash).await? {
+                        self.enforce_tombstone(topic, &op).await?;
+                    }
                 }
             }
 
-            Payload::DeviceGroup(_) => {
+            _ => {
                 // Nothing to do.
             }
         }
@@ -504,8 +621,7 @@ impl Node {
         // processing resulted in an error. It might be required that the frontend is also
         // informed of any errors or these events are not even forwarded.
 
-        // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
-        self.notify_payload(dashchat_topic, &operation.processed().header(), &payload)
+        self.notify_payload(topic, &operation.processed().header(), &payload)
             .await?;
 
         Ok(())
@@ -572,7 +688,11 @@ impl Node {
         Ok(())
     }
 
-    pub async fn notify_header(&self, topic: Topic, header: &Header) -> anyhow::Result<()> {
+    /// Notify the frontend of an operation without its payload. Used when the
+    /// op's body has been tombstoned: the frontend must learn the op exists (so
+    /// it refetches and renders the body-less op) but must never receive the
+    /// deleted content.
+    pub async fn notify_header(&self, topic: TopicId, header: &Header) -> anyhow::Result<()> {
         if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx
                 .send(Notification {
@@ -588,7 +708,7 @@ impl Node {
 
     pub async fn notify_payload(
         &self,
-        topic: Topic,
+        topic: TopicId,
         header: &Header,
         payload: &Payload,
     ) -> anyhow::Result<()> {

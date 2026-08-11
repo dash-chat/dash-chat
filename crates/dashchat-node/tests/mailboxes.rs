@@ -1,27 +1,10 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::{MailboxClient, mem::MemMailbox, toy::ToyMailboxClient};
+use mailbox_client::toy::ToyMailboxClient;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_mailbox_late_join_mem() {
-    dashchat_node::testing::setup_tracing(
-        &[
-            "dashchat=info",
-            "p2panda_stream=warn",
-            "p2panda_auth=warn",
-            "p2panda_spaces=warn",
-            "aliased=warn",
-        ],
-        true,
-    );
-
-    let mb = MemMailbox::new();
-    mailbox_late_join(mb.client(), mb.client()).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn test_mailbox_late_join_toy() {
+async fn mailbox_late_join() {
     dashchat_node::testing::setup_tracing(
         &[
             "dashchat=info",
@@ -34,27 +17,7 @@ async fn test_mailbox_late_join_toy() {
         true,
     );
 
-    // Start a test mailbox server
-    let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
-    let url = server.server_address().unwrap().to_string();
-    let url = url.trim_end_matches('/').to_string();
-
-    // Create clients pointing to the same server. The sender_pubkey is a
-    // per-client identity used for blob upload attribution; a fresh random
-    // key per client is sufficient for tests.
-    let dummy_key = || iroh::SecretKey::generate().public();
-    let alice_mailbox =
-        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
-    let bobbi_mailbox =
-        ToyMailboxClient::<MailboxOperation>::new(nanoid::nanoid!(), &url, dummy_key());
-
-    mailbox_late_join(alice_mailbox, bobbi_mailbox).await;
-}
-
-async fn mailbox_late_join(
-    alice_mailbox: impl MailboxClient<MailboxOperation>,
-    bobbi_mailbox: impl MailboxClient<MailboxOperation>,
-) {
+    let mailbox = TestMailbox::from_env();
     let poll = PollConfig::default();
     let config = NodeConfig::testing();
 
@@ -62,14 +25,11 @@ async fn mailbox_late_join(
     let alice = TestNode::new(config.clone(), "alice").await;
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-    let qr = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
-    alice.add_mailbox_client(alice_mailbox).await;
-    bobbi.add_mailbox_client(bobbi_mailbox).await;
+    alice.add_mailbox(&mailbox).await;
+    bobbi.add_mailbox(&mailbox).await;
 
     alice.behavior().accept_next_contact().await.unwrap();
 
@@ -80,7 +40,7 @@ async fn mailbox_late_join(
     //
     // alice
     //     .behavior()
-    //     .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+    //     .initiate_and_establish_contact(&bobbi)
     //     .await
     //     .unwrap();
 
@@ -137,10 +97,7 @@ async fn test_mailbox_restart_relay() {
     let alice_agent_id = alice.agent_id();
     let bobbi_agent_id = bobbi.agent_id();
 
-    let qr = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
     let dummy_key = || iroh::SecretKey::generate().public();
@@ -149,6 +106,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     bobbi
@@ -156,6 +114,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
 
@@ -198,6 +157,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
     bobbi
@@ -205,6 +165,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
         ))
         .await;
 
@@ -247,34 +208,34 @@ async fn test_multiple_mailboxes_group_pivot() {
         true,
     );
 
-    let mb1 = MemMailbox::new();
-    let mb2 = MemMailbox::new();
+    let mb1 = TestMailbox::from_env();
+    let mb2 = TestMailbox::from_env();
     let alice = TestNode::new(NodeConfig::testing(), "alice")
         .await
-        .add_mailbox_client(mb1.client())
+        .add_mailbox(&mb1)
         .await;
 
     let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
         .await
-        .add_mailbox_client(mb1.client())
+        .add_mailbox(&mb1)
         .await
-        .add_mailbox_client(mb2.client())
+        .add_mailbox(&mb2)
         .await;
 
     let carol = TestNode::new(NodeConfig::testing(), "carol")
         .await
-        .add_mailbox_client(mb2.client())
+        .add_mailbox(&mb2)
         .await;
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
     carol
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 

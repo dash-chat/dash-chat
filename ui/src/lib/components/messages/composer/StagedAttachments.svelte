@@ -52,12 +52,13 @@
 		{#if showClearAll}
 			<div class="flex justify-end pb-2 pe-2">
 				<IconButton
-					icon={mdiClose}
 					onClick={clear}
 					label={m.removeAllAttachments()}
 					testid="message-input-clear-attachments"
-					iconClass="text-xl"
-				/>
+					class="!h-7 !w-7"
+				>
+					<wa-icon class="text-xl" src={wrapPathInSvg(mdiClose)}></wa-icon>
+				</IconButton>
 			</div>
 		{/if}
 		<div class="flex max-h-[142px] gap-2 overflow-x-auto px-2">

@@ -9,6 +9,7 @@ edition = "2024"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 serde_json = "1"
+serde_repr = "0.1"
 
 mailbox-client = { workspace = true }
 mailbox-server = { workspace = true }
@@ -26,7 +27,7 @@ iroh-blobs = { workspace = true }
 aliased = { workspace = true }
 anyhow = "1.0.95"
 dashchat-compat = { workspace = true }
-dashchat-utils = { path = "../dashchat-utils" }
+dashchat-utils = { workspace = true }
 ed25519-dalek = { workspace = true }
 thiserror = "2.0"
 async-trait = "0.1.85"
@@ -36,19 +37,19 @@ tokio = { version = "1.43.0", features = ["fs"] }
 base64 = "0.22"
 blake3 = "1.8.2"
 chrono = { version = "0.4.42", features = ["serde"] }
-hex = "0.4.3"
+hex = { version = "0.4.3", features = ["serde"] }
 rand = "0.9.2"
+unicode-segmentation = "1"
 tokio-stream = "0.1.17"
 tokio-util = "0.7"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-bytes = "1.11.0"
+bytes = { workspace = true }
 sqlx = "0.8.6"
 
 tempfile = { version = "3.24", optional = true }
 nanoid = { version = "0.4", optional = true }
-
-[target.'cfg(target_os = "android")'.dependencies]
+regex = { version = "1", optional = true }
 if-watch = { version = "3", features = ["tokio"] }
 
 [dev-dependencies]
@@ -62,7 +63,7 @@ tempfile = "3"
 p2panda-store = { workspace = true, features = ["test_utils"] }
 
 [features]
-default = ["testing", "instrument"]
+default = ["instrument"]
 instrument = []
-testing = ["tempfile", "nanoid", "p2panda-store/test_utils"]
+testing = ["tempfile", "nanoid", "regex", "p2panda-store/test_utils"]
 p2p = []

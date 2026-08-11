@@ -1,9 +1,9 @@
 name: "android build"
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, 'main-**', develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, 'main-**', develop ]
 
 jobs:
   android-build:
@@ -20,7 +20,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
           cache: true
 
       - uses: cachix/cachix-action@v15

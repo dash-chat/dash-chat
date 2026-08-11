@@ -24,17 +24,28 @@ mod droplet 'scripts/droplet.just'
 # build docker images for the mailbox and push notifications servers
 mod docker 'scripts/docker.just'
 
+# Show available recipes.
+_default:
+    @just --list --list-submodules
+
 # build dash chat as a binary
 build:
-    pnpm tauri build --no-bundle
+    pnpm tauri build --no-bundle --debug
 
-# build dash chat as an installer (AppImage on linux)
+# Overrides so a local bundle needs none of the release-only setup CI provides:
+bundle-config := '{"bundle":{"createUpdaterArtifacts":false}}'
+
+# build dash chat as an installer (deb and rpm on linux)
 bundle:
-    pnpm tauri build
+    pnpm tauri build -b appimage --config '{{ bundle-config }}'
 
 # cut a new release (e.g. just release 0.11.0)
 release version:
     ./scripts/release.sh {{version}}
+
+# update the version in all version files without committing (e.g. just update-version 0.11.0)
+update-version version:
+    ./scripts/update-version.sh {{version}}
 
 # format both UI and rust files
 format:

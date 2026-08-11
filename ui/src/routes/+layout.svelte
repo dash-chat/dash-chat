@@ -3,6 +3,7 @@
 	import '@awesome.me/webawesome/dist/styles/themes/default.css';
 
 	import '../app.css';
+	import 'tauri-plugin-virtual-keyboard';
 	import { setContext } from 'svelte';
 
 	import {
@@ -24,26 +25,25 @@
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
-		MockDirectChatClient,
-		MockGroupChatClient,
+		MockChatsStore,
 		MockMailboxTrackerStore,
 		MockSettingsClient,
 		seedDemoData,
 		DEMO_IDS,
 	} from 'dash-chat-stores';
-	import { App, KonstaProvider } from 'konsta/svelte';
+	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
 	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
+	import CrashReportDialog from '$lib/components/CrashReportDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
+	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
+	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
-	import { showToast } from '$lib/utils/toasts';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
-	import { trackKeyboardHeight } from '$lib/utils/keyboard.svelte';
 	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
 	import {
 		listenForDeepLinks,
@@ -76,7 +76,7 @@
 			setLocale as (locale: string) => void,
 			m,
 			() => previewFeatures.enable(),
-			url => handleUrls([url]),
+			url => handleUrls([url], contactsStore),
 		),
 	);
 
@@ -86,7 +86,9 @@
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
-	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile;
+	// Never in the binary under test
+	const isE2E = import.meta.env.VITE_E2E === 'true';
+	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile && !isE2E;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
@@ -122,12 +124,12 @@
 		);
 
 		const mockChatsClient = new MockChatsClient();
-		chatsStore = new ChatsStore(
+		chatsStore = new MockChatsStore(
 			logsStore,
 			contactsStore,
 			mockChatsClient,
-			() => new MockDirectChatClient(mockLogsClient, DEMO_IDS.MY_AGENT_ID),
-			() => new MockGroupChatClient(),
+			mockLogsClient,
+			DEMO_IDS.MY_AGENT_ID,
 		);
 
 		mailboxTrackerStore = new MockMailboxTrackerStore();
@@ -162,20 +164,14 @@
 	// when navigating back home from any page
 	useKeepAlive(chatsStore.allChatsSummaries);
 
-	const isDark = useSignal(settingsStore.isDark);
-
 	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
-	let darkOverride: boolean | null = $state(null);
-	const effectiveDark = $derived(darkOverride ?? !!$isDark);
-	$effect(() => {
-		applyDarkMode(effectiveDark).catch(e => {
-			showToast(m.errorApplyStyle(), 'error');
-		});
-	});
+	const applied = useSignal(settingsStore.colorScheme);
 
+	let darkOverride: boolean | null = $state(null);
+	const effectiveDark = $derived(darkOverride ?? $applied === 'dark');
 	$effect(() => {
-		if (isMobile) trackKeyboardHeight();
+		applyDarkMode(effectiveDark);
 	});
 
 	$effect(() => {
@@ -204,11 +200,11 @@
 	});
 
 	if (isTauriEnv()) {
-		handleLaunchDeepLink();
+		handleLaunchDeepLink(contactsStore);
 	}
 	$effect(() => {
 		if (!isTauriEnv()) return;
-		return listenForDeepLinks();
+		return listenForDeepLinks(contactsStore);
 	});
 </script>
 
@@ -231,6 +227,18 @@
 				{/if}
 			{/key}
 		</SplashscreenPrompt>
+		{#if addContactPending.value}
+			<div
+				class="fixed inset-0 z-40 flex items-center justify-center"
+				style="background-color: var(--background-color)"
+				data-testid="add-contact-pending-overlay"
+			>
+				<Preloader />
+			</div>
+		{/if}
 		<ToastManager />
+		{#if import.meta.env.VITE_SENTRY_ENABLED}
+			<CrashReportDialog />
+		{/if}
 	</App>
 </KonstaProvider>

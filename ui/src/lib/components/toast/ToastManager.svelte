@@ -63,9 +63,11 @@
 	<span data-testid="toast">{toastMessage}</span>
 	{#snippet button()}
 		{#if toastVariant === 'unexpected'}
-			<Button inline clear onClick={handleSendErrorReport}>
-				{m.sendErrorReport()}
-			</Button>
+			{#if import.meta.env.VITE_SENTRY_ENABLED}
+				<Button inline clear onClick={handleSendErrorReport}>
+					{m.sendErrorReport()}
+				</Button>
+			{/if}
 			<button
 				class="ms-1 opacity-70 active:opacity-100"
 				onclick={dismissToast}

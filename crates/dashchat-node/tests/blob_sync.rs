@@ -1,6 +1,4 @@
 use dashchat_node::{testing::*, *};
-use mailbox_client::mem::MemMailbox;
-use p2panda::network::MdnsDiscoveryMode;
 
 /// A chat message with a photo attachment created by one node should be
 /// loadable by the recipient node: the op carrying the media metadata syncs
@@ -11,28 +9,27 @@ async fn media_blob_syncs_between_nodes() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
     let poll = PollConfig::default();
-    let mut config = NodeConfig::testing();
-    config.mdns_mode = MdnsDiscoveryMode::Active;
+    let config = NodeConfig::testing();
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config.clone(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(config.clone(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
 
-    let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
+    let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
         photos: vec![OutgoingPhoto {
             data: photo_bytes.clone(),
@@ -99,29 +96,28 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
     let poll = PollConfig::default();
-    let mut config = NodeConfig::testing();
-    config.mdns_mode = MdnsDiscoveryMode::Active;
+    let config = NodeConfig::testing();
 
-    let mailbox = MemMailbox::new();
+    let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config.clone(), "alice")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
     let bobbi = TestNode::new(config.clone(), "bobbi")
         .await
-        .add_mailbox_client(mailbox.client())
+        .add_mailbox(&mailbox)
         .await;
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
     let chat = alice.direct_chat_topic(bobbi.agent_id());
     let chat_topic: TopicId = chat.into();
 
-    let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
+    let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
         photos: vec![OutgoingPhoto {
             data: photo_bytes,

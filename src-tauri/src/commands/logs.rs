@@ -1,4 +1,4 @@
-use dashchat_node::{DeviceId, Node, Payload, Topic};
+use dashchat_node::{DeviceId, Payload, TopicId};
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::processor::GroupsArgs;
@@ -6,6 +6,8 @@ use p2panda_core::cbor::decode_cbor;
 use p2panda_core::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
+
+use crate::app_node::AppNode;
 
 /// Serialize a `Timestamp` (microseconds) as milliseconds since the UNIX epoch
 /// so JS can pass it straight to `new Date(ms)`.
@@ -59,7 +61,7 @@ pub struct SimplifiedHeader {
     /// author has been observed yet.
     previous: Vec<Hash>,
 
-    topic_id: Topic,
+    topic_id: TopicId,
 
     /// p2panda-auth group-control extension, when this operation is a group action
     /// (Create / Add / Remove / Promote / Demote) rather than a chat payload.
@@ -72,7 +74,7 @@ impl SimplifiedHeader {
     ///
     /// As a p2panda::Header does not contain the raw topic (only the hashed representation in the
     /// form of a LogId) we need to pass this in as a separate argument.
-    pub fn from_header(topic: Topic, header: Header) -> Self {
+    pub fn from_header(topic: TopicId, header: Header) -> Self {
         // Only operations contain groups args in their extension have dependency requirements.
         let previous = header
             .extensions
@@ -126,7 +128,7 @@ impl SimplifiedHeader {
 // }
 
 pub fn simplify(
-    topic: Topic,
+    topic: TopicId,
     hash: Hash,
     header: Header,
     body: Option<p2panda_core::Body>,
@@ -174,13 +176,14 @@ pub fn simplify(
 
 #[tauri::command]
 pub async fn get_log(
-    topic_id: Topic,
+    topic_id: TopicId,
     author: DeviceId,
-    node: State<'_, Node>,
+    app_node: State<'_, AppNode>,
 ) -> Result<Vec<SimplifiedOperation>, String> {
+    let node = app_node.get().await?;
     let log = node
         .op_store
-        .get_log(&author, &LogId::from(topic_id), None)
+        .get_log(&author, &LogId::from_topic(topic_id), None)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
 
@@ -195,12 +198,13 @@ pub async fn get_log(
 
 #[tauri::command]
 pub async fn get_authors(
-    topic_id: Topic,
-    node: State<'_, Node>,
+    topic_id: TopicId,
+    app_node: State<'_, AppNode>,
 ) -> Result<std::collections::HashSet<DeviceId>, String> {
+    let node = app_node.get().await?;
     let authors = node
         .op_store
-        .get_authors(LogId::from(topic_id))
+        .get_authors(LogId::from_topic(topic_id))
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
     Ok(authors)

@@ -7,12 +7,11 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
+dashchat-utils = { workspace = true }
 mailbox-server = { workspace = true }
 iroh = { workspace = true }
 iroh-blobs = { workspace = true }
 anyhow = "1"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }
-futures = "0.3"
-mdns-sd = "0.17"
-if-watch = { version = "3", features = ["tokio"] }
+mdns-sd = "0.20"

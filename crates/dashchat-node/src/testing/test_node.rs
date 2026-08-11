@@ -14,8 +14,12 @@ use mailbox_client::MailboxClient;
 
 use crate::{
     AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
-    filesystem::Filesystem, mailbox::MailboxOperation, node::Node, stores::LocalStore,
-    testing::behavior::Behavior, topic::TopicId,
+    filesystem::Filesystem,
+    mailbox::MailboxOperation,
+    node::Node,
+    stores::{LocalStore, OpProjection},
+    testing::{TestMailbox, behavior::Behavior},
+    topic::TopicId,
 };
 
 #[derive(Clone, derive_more::Deref, derive_more::Debug)]
@@ -37,9 +41,11 @@ impl TestNode {
         let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
 
         let filesystem = Filesystem::new(dir.path().to_path_buf());
-        let local_store = LocalStore::new(filesystem.local_store_path())
+        let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path())
             .await
             .unwrap();
+        let local_store = LocalStore::new(pool.clone()).await.unwrap();
+        let _projection = OpProjection::new(pool.clone()).await.unwrap();
         if config.use_alias {
             local_store.device_id().await.unwrap().alias_named(name);
             local_store.agent_id().await.unwrap().alias_named(name);
@@ -84,9 +90,11 @@ impl TestNode {
         let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
 
         let filesystem = Filesystem::new(store_dir.path().to_path_buf());
-        let local_store = LocalStore::new(filesystem.local_store_path())
+        let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path())
             .await
             .unwrap();
+        let local_store = LocalStore::new(pool.clone()).await.unwrap();
+        let _projection = OpProjection::new(pool).await.unwrap();
         local_store.device_id().await.unwrap().alias_named(name);
         local_store.agent_id().await.unwrap().alias_named(name);
         drop(local_store);
@@ -115,6 +123,11 @@ impl TestNode {
         self.clone()
     }
 
+    pub async fn add_mailbox(&self, mailbox: &TestMailbox) -> Self {
+        mailbox.register_on(&self.node).await;
+        self.clone()
+    }
+
     pub async fn clear_mailboxes(&self) {
         self.node.mailboxes.clear().await;
     }
@@ -131,7 +144,9 @@ impl TestNode {
             .await?
             .into_iter()
             .filter_map(|(_, payload)| match payload {
-                Some(Payload::DeviceGroup(DeviceGroupPayload::AddContact(qr))) => Some(qr.agent_id),
+                Some(Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id })) => {
+                    Some(agent_id)
+                }
                 _ => None,
             })
             .collect();
@@ -215,6 +230,15 @@ impl Default for PollConfig {
 }
 
 impl PollConfig {
+    pub fn seconds(seconds: u64) -> Self {
+        let poll_timeout = Duration::from_secs(seconds);
+        let poll_interval = poll_timeout / 10;
+        Self {
+            poll_interval,
+            poll_timeout,
+        }
+    }
+
     pub async fn consistency(
         &self,
         nodes: impl IntoIterator<Item = &TestNode>,

@@ -50,9 +50,9 @@
 	let originX = $state(50);
 	let originY = $state(50);
 
-	let blobImages = $state<Array<{ retry: () => void } | undefined>>([]);
-	let statuses = $state<Record<number, 'loading' | 'loaded' | 'error'>>({});
-	const imgStatus = $derived(statuses[index] ?? 'loading');
+	let blobImages = $state<Array<{ retryIfErrored: () => boolean } | undefined>>(
+		[],
+	);
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
@@ -108,10 +108,7 @@
 	}
 
 	function onStageClick(event: MouseEvent) {
-		if (imgStatus === 'error') {
-			blobImages[index]?.retry();
-			return;
-		}
+		if (blobImages[index]?.retryIfErrored()) return;
 		// Mobile: a tap toggles immersive mode (hide all chrome). Desktop: tapping
 		// the letterbox around the image (anything but the photo) closes.
 		if (isMobile) {
@@ -192,7 +189,6 @@
 				imgStyle={i === index
 					? `transform-origin: ${originX}% ${originY}%`
 					: ''}
-				onStatus={s => (statuses[i] = s)}
 			/>
 		{/snippet}
 	</ImageCarousel>
@@ -208,7 +204,7 @@
 					onClick={onClose}
 					label={m.closeLightbox()}
 					testid="lightbox-back"
-					class="!p-2 opacity-85 hover:opacity-100"
+					class="opacity-85 hover:!bg-white/10"
 				/>
 			{/if}
 			<div class="flex min-w-0 flex-col">
@@ -225,7 +221,7 @@
 				onClick={handleSave}
 				label={m.saveFile()}
 				testid="lightbox-save"
-				class="!p-2 opacity-85 hover:opacity-100"
+				class="opacity-85 hover:!bg-white/10"
 			/>
 			{#if !isAndroid}
 				<IconButton
@@ -233,7 +229,7 @@
 					onClick={onClose}
 					label={m.closeLightbox()}
 					testid="lightbox-close"
-					class="!p-2 opacity-85 hover:opacity-100"
+					class="opacity-85 hover:!bg-white/10"
 				/>
 			{/if}
 		</div>
@@ -248,8 +244,8 @@
 			onClick={() => select(index - 1)}
 			label={m.previousPhoto()}
 			testid="lightbox-prev"
-			circle
-			class="absolute top-1/2 left-3 -translate-y-1/2 opacity-85 hover:opacity-100 {zoomed
+			filled
+			class="absolute top-1/2 start-3 -translate-y-1/2 opacity-85 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
@@ -260,8 +256,8 @@
 			onClick={() => select(index + 1)}
 			label={m.nextPhoto()}
 			testid="lightbox-next"
-			circle
-			class="absolute top-1/2 right-3 -translate-y-1/2 opacity-85 hover:opacity-100 {zoomed
+			filled
+			class="absolute top-1/2 end-3 -translate-y-1/2 opacity-85 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
@@ -280,7 +276,7 @@
 					<ShareButton
 						onClick={handleShare}
 						testid="lightbox-share"
-						class="!p-2 opacity-85 hover:opacity-100"
+						class="opacity-85 hover:!bg-white/10"
 					/>
 				</div>
 			{/if}

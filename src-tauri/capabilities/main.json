@@ -5,6 +5,7 @@
 	"windows": ["main"],
 	"permissions": [
 		"process:allow-restart",
+		"system-theme:default",
 		"core:default",
 		"core:window:allow-set-title",
 		"log:default",
@@ -18,8 +19,9 @@
 		"fs:allow-appcache-read-recursive",
 		"fs:allow-appcache-write",
 		"fs:allow-appcache-read",
-		"mailto:default",
 		"core:path:default",
+		"virtual-keyboard:default",
+		"sentry-reporting:default",
 		"audio-recorder:default"
 	]
 }

@@ -1,7 +1,18 @@
+import { simulateLongpress } from '../long-press';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-import { SYNC_TIMEOUT } from '../timeouts';
+import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
+import { Composer } from './composer';
 import { Lightbox } from './lightbox';
+
+export type SystemMessageKind =
+	| 'group_created'
+	| 'group_member_added'
+	| 'group_member_removed'
+	| 'group_member_promoted'
+	| 'group_member_demoted'
+	| 'contact_blocked'
+	| 'contact_unblocked';
 
 // Driver for a chat's rendered message list — the messages themselves plus the
 // scroll-to-bottom button and unread affordances around them.
@@ -10,6 +21,7 @@ export class Messages extends TestHelper {
 		agent: WebdriverIO.Browser,
 		messagesTestId: string,
 		unreadDividerTestId: string,
+		private composer: Composer,
 	) {
 		super(agent);
 		this.messagesSelector = tid(messagesTestId);
@@ -18,8 +30,8 @@ export class Messages extends TestHelper {
 		this.unreadDivider = this.el(this.dividerSelector);
 	}
 
-	private readonly messagesSelector: string;
-	private readonly dividerSelector: string;
+	readonly messagesSelector: string;
+	readonly dividerSelector: string;
 	readonly root;
 	readonly unreadDivider;
 	/** Play/pause toggle on the first voice-note attachment in the list. */
@@ -28,6 +40,48 @@ export class Messages extends TestHelper {
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
 	lightbox = new Lightbox(this.agent);
+
+	/** The system message of `kind` rendered in this message list. */
+	systemMessage(kind: SystemMessageKind) {
+		return this.el(`${this.messagesSelector} ${tid(`system-message-${kind}`)}`);
+	}
+
+	/** The rendered message whose text contains `text`, as a `Message` helper
+	 * scoped to it (by its message hash), or null if none is rendered. */
+	async messageWithText(text: string): Promise<Message | null> {
+		const hash = await this.agent.execute(
+			(messagesSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (wrapper.textContent?.includes(t)) {
+						return wrapper.getAttribute('data-message-hash');
+					}
+				}
+				return null;
+			},
+			this.messagesSelector,
+			text,
+		);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
+	}
+
+	/** Wait until a message whose text contains `text` renders, and return its
+	 * `Message` helper. */
+	async waitForMessage(text: string, timeout = SYNC_TIMEOUT): Promise<Message> {
+		let message: Message | null = null;
+		await this.agent.waitUntil(
+			async () => {
+				message = await this.messageWithText(text);
+				return message !== null;
+			},
+			{ timeout, timeoutMsg: `Message "${text}" not found` },
+		);
+		return message!;
+	}
 
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
@@ -45,26 +99,13 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	async waitForMessage(text: string, timeout = SYNC_TIMEOUT) {
-		await this.agent.waitUntil(
-			async () =>
-				this.agent.execute(
-					(sel: string, t: string) =>
-						document.querySelector(sel)?.textContent?.includes(t) ?? false,
-					this.messagesSelector,
-					text,
-				),
-			{ timeout, timeoutMsg: `Message "${text}" not found` },
-		);
-	}
-
 	/** Wait until a rendered (loaded) photo attachment whose filename contains
 	 * `label` appears. The label is the one passed to `attachPhotos`, so a
 	 * specific send can be matched without colliding with identical-looking
 	 * photos from earlier tests. */
 	async waitForPhotoMessage(
 		label: string,
-		timeout = SYNC_TIMEOUT,
+		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
@@ -74,12 +115,17 @@ export class Messages extends TestHelper {
 							document
 								.querySelector(messagesSel)
 								?.querySelectorAll(`${photosSel} img`) ?? [];
-						return Array.from(imgs).some(el => {
-							const img = el as HTMLImageElement;
-							return (
-								img.alt.includes(name) && img.complete && img.naturalWidth > 0
-							);
-						});
+						const img = Array.from(imgs).find(el =>
+							(el as HTMLImageElement).alt.includes(name),
+						) as HTMLImageElement | undefined;
+						if (img === undefined) return false;
+						if (img.complete && img.naturalWidth > 0) return true;
+						// Attachments render with loading="lazy", so one that is
+						// scrolled out of view never decodes and naturalWidth stays 0.
+						// Only scroll when it still needs decoding — scrolling on
+						// every poll forces a layout over the whole message list.
+						img.scrollIntoView({ block: 'center' });
+						return false;
 					},
 					this.messagesSelector,
 					tid('message-attachment-photos'),
@@ -92,7 +138,7 @@ export class Messages extends TestHelper {
 	/** Wait until a file attachment with the given filename appears. */
 	async waitForFileMessage(
 		name: string,
-		timeout = SYNC_TIMEOUT,
+		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
@@ -108,6 +154,53 @@ export class Messages extends TestHelper {
 				),
 			{ timeout, timeoutMsg: `File message "${name}" not found` },
 		);
+	}
+
+	/** Open the lightbox on the photo labelled `label`. Clicked in-page because
+	 * the cell is identified by its image's alt, which a CSS selector can't reach
+	 * from the enclosing button. */
+	async openPhoto(label: string): Promise<void> {
+		const clicked = await this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const imgs =
+					document
+						.querySelector(messagesSel)
+						?.querySelectorAll(`${photosSel} img`) ?? [];
+				const img = Array.from(imgs).find(el =>
+					(el as HTMLImageElement).alt.includes(name),
+				);
+				const button = img?.closest('button');
+				if (!button) return false;
+				button.click();
+				return true;
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
+		);
+		if (!clicked) throw new Error(`No photo cell showing "${label}"`);
+		await this.lightbox.root.waitForExist();
+	}
+
+	/** How long the photo labelled `label` spent downloading: the webview issuing
+	 * the blob request to its last byte. The agent must have called
+	 * `window.__test.recordMediaDownloads()` before the photo rendered. */
+	async photoDownloadMs(
+		label: string,
+		timeout = MEDIA_SYNC_TIMEOUT,
+	): Promise<number> {
+		let ms: number | null = null;
+		await this.agent.waitUntil(
+			async () => {
+				ms = await this.agent.execute(
+					(name: string) => window.__test.photoDownloadMs(name),
+					label,
+				);
+				return ms !== null;
+			},
+			{ timeout, timeoutMsg: `No download timing recorded for "${label}"` },
+		);
+		return ms!;
 	}
 
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
@@ -173,147 +266,268 @@ export class Messages extends TestHelper {
 			tid('message-attachment-voice'),
 		);
 	}
+}
 
-	/** True if the unread divider precedes (in DOM order) the message wrapper containing `text`. */
-	async unreadDividerPrecedes(messageText: string): Promise<boolean> {
+/**
+ * Dispatch a right-click at the centre of a message's bubble. Serialized into
+ * the page by `execute`, so it has to stay self-contained.
+ */
+function dispatchBubbleContextMenu(wrapperSel: string) {
+	const wrapper = document.querySelector<HTMLElement>(wrapperSel);
+	if (!wrapper) return;
+	const msg = wrapper.querySelector('.message') as HTMLElement | null;
+	const el = msg ?? wrapper;
+	const rect = el.getBoundingClientRect();
+	el.dispatchEvent(
+		new MouseEvent('contextmenu', {
+			bubbles: true,
+			cancelable: true,
+			clientX: rect.left + rect.width / 2,
+			clientY: rect.top + rect.height / 2,
+		}),
+	);
+}
+
+// Driver for a single rendered message, identified by its message hash.
+// Obtain one via `Messages.messageWithText()`. Elements re-resolve on every
+// use, so a Message never holds a stale handle across re-renders.
+export class Message extends TestHelper {
+	constructor(
+		agent: WebdriverIO.Browser,
+		private messages: Messages,
+		readonly hash: string,
+		private composer: Composer,
+	) {
+		super(agent);
+		this.wrapperSelector = `${messages.messagesSelector} [data-message-hash="${hash}"]`;
+		this.wrapper = this.el(this.wrapperSelector);
+	}
+
+	private readonly wrapperSelector: string;
+	/** The message's wrapper element in the list. */
+	readonly wrapper;
+
+	/** Every message mounts its own (closed) actions popover, so the menu and
+	 * its actions must be resolved scoped to this message's wrapper. */
+	get actionsMenu() {
+		return this.wrapper.$(tid('message-actions-menu'));
+	}
+
+	get editAction() {
+		return this.wrapper.$(tid('message-action-edit'));
+	}
+
+	get copyAction() {
+		return this.wrapper.$(tid('message-action-copy'));
+	}
+
+	get deleteAction() {
+		return this.wrapper.$(tid('message-action-delete'));
+	}
+
+	/** The deleted-for-everyone placeholder that replaces this message's body. */
+	get deletedPlaceholder() {
+		return this.wrapper.$(tid('message-deleted-placeholder'));
+	}
+
+	/** The delete confirmation. It is mounted only while it is up, and only by
+	 * the message being deleted, so it resolves at agent level. */
+	get deleteDialog() {
+		return this.agent.$(tid('delete-message-dialog'));
+	}
+
+	get deleteDialogCancel() {
+		return this.agent.$(tid('delete-message-cancel'));
+	}
+
+	get deleteDialogConfirm() {
+		return this.agent.$(tid('delete-message-confirm'));
+	}
+
+	/** Open this message's actions menu with the gesture its platform uses — a
+	 * long-press on mobile, which opens the spotlight overlay, or the hover
+	 * toolbar's ⋯ button on desktop — and wait for it to actually open. */
+	async openActions() {
+		if (await this.isMobileBuild()) {
+			await this.longPressBubble();
+		} else {
+			await this.clickHoverButton('message-hover-menu');
+		}
+		await this.actionsMenu.waitForDisplayed();
+	}
+
+	/** The right-click menu, a second actions menu the message hosts alongside
+	 * the hover toolbar's. Its items have the same testids as that one, so they
+	 * must be resolved inside it rather than in the message wrapper. */
+	get contextMenu() {
+		return this.wrapper.$(tid('message-context-menu'));
+	}
+
+	get contextMenuCopyAction() {
+		return this.contextMenu.$(tid('message-action-copy'));
+	}
+
+	/** Open this message's actions menu the other way desktop offers — a
+	 * right-click on the bubble, which opens `MessageContextMenu` at the cursor
+	 * rather than the hover toolbar's popover. Desktop only: on mobile the
+	 * gesture belongs to the spotlight overlay instead. */
+	async openActionsByRightClick() {
+		await this.agent.execute(dispatchBubbleContextMenu, this.wrapperSelector);
+		await this.contextMenu.waitForDisplayed();
+	}
+
+	/** Long-press the bubble the way a mobile user opens the actions menu. */
+	private async longPressBubble() {
+		const bubbleSelector = `${this.wrapperSelector} .message`;
+		const hasBubble = await this.agent.$(bubbleSelector).isExisting();
+		await simulateLongpress(
+			this.agent,
+			hasBubble ? bubbleSelector : this.wrapperSelector,
+		);
+	}
+
+	/** Open this message's quick-reaction bar with the gesture its platform
+	 * uses — the same long-press that opens the actions menu on mobile, since
+	 * the spotlight carries the bar above the message and the menu below, or
+	 * the hover toolbar's add-reaction button on desktop — and wait for it to
+	 * actually open. */
+	async openReactionBar() {
+		if (await this.isMobileBuild()) {
+			await this.longPressBubble();
+		} else {
+			await this.clickHoverButton('message-hover-react');
+		}
+		// A quick-reaction bar exists per message; scope to this one.
+		await this.wrapper.$(tid('quick-reaction-bar')).waitForDisplayed();
+	}
+
+	/** JS-clicked because the toolbar is hover-revealed. */
+	private async clickHoverButton(testid: string) {
+		const clicked = await this.agent.execute(
+			(wrapperSel: string, buttonSel: string) => {
+				const button = document
+					.querySelector(wrapperSel)
+					?.querySelector(buttonSel) as HTMLElement | null;
+				if (!button) return false;
+				button.click();
+				return true;
+			},
+			this.wrapperSelector,
+			tid(testid),
+		);
+		if (!clicked)
+			throw new Error(
+				`Hover-toolbar button "${testid}" on message ${this.hash} not found`,
+			);
+	}
+
+	/** Open the quick-reaction bar and tap the given quick emoji. */
+	async reactWith(emoji: string) {
+		await this.openReactionBar();
+		await this.wrapper.$(tid(`quick-reaction-${emoji}`)).click();
+	}
+
+	/** Whether this message shows a reaction chip for `emoji`. */
+	hasReaction(emoji: string): Promise<boolean> {
 		return this.agent.execute(
-			(dividerSel: string, messagesSel: string, text: string) => {
-				const divider = document.querySelector(dividerSel);
-				if (!divider) return false;
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(text)) {
-						return !!(
-							divider.compareDocumentPosition(wrapper) &
-							Node.DOCUMENT_POSITION_FOLLOWING
-						);
-					}
-				}
-				return false;
-			},
-			this.dividerSelector,
-			this.messagesSelector,
-			messageText,
-		);
-	}
-
-	async messageBubbleWithText(text: string) {
-		const hash = await this.agent.execute(
-			(messagesSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						return wrapper.getAttribute('data-message-hash');
-					}
-				}
-				return null;
-			},
-			this.messagesSelector,
-			text,
-		);
-		if (!hash) return null;
-		return this.agent.$(
-			`${this.messagesSelector} [data-message-hash="${hash}"]`,
-		);
-	}
-
-	/** Long-press (via a synthetic contextmenu) the bubble containing `text` to
-	 * open its quick-reaction bar, and resolve the bar scoped to that message. */
-	async openReactions(text: string) {
-		const dispatched = await this.agent.execute(
-			(messagesSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						const msg = wrapper.querySelector('.message') as HTMLElement | null;
-						(msg ?? wrapper).dispatchEvent(
-							new MouseEvent('contextmenu', {
-								bubbles: true,
-								cancelable: true,
-							}),
-						);
-						return true;
-					}
-				}
-				return false;
-			},
-			this.messagesSelector,
-			text,
-		);
-		if (!dispatched) throw new Error(`Message "${text}" not found`);
-		// A quick-reaction bar exists per message; scope to this one and wait for
-		// it to actually open.
-		const wrapper = await this.messageBubbleWithText(text);
-		if (!wrapper) throw new Error(`Message "${text}" not found`);
-		const bar = wrapper.$(tid('quick-reaction-bar'));
-		await bar.waitForDisplayed();
-		return wrapper;
-	}
-
-	/** Open the quick-reaction bar for `text` and tap the given quick emoji. */
-	async reactWith(text: string, emoji: string) {
-		const wrapper = await this.openReactions(text);
-		await wrapper.$(tid(`quick-reaction-${emoji}`)).click();
-	}
-
-	/** Whether the bubble containing `text` shows a reaction chip for `emoji`. */
-	hasReaction(text: string, emoji: string): Promise<boolean> {
-		return this.agent.execute(
-			(messagesSel: string, t: string, chipSel: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						return !!wrapper.querySelector(chipSel);
-					}
-				}
-				return false;
-			},
-			this.messagesSelector,
-			text,
+			(wrapperSel: string, chipSel: string) =>
+				!!document.querySelector(wrapperSel)?.querySelector(chipSel),
+			this.wrapperSelector,
 			tid(`reaction-chip-${emoji}`),
 		);
 	}
 
-	async waitForReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
-		await this.agent.waitUntil(() => this.hasReaction(text, emoji), {
+	async waitForReaction(emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(() => this.hasReaction(emoji), {
 			timeout,
-			timeoutMsg: `Reaction "${emoji}" on "${text}" not found`,
+			timeoutMsg: `Reaction "${emoji}" on message ${this.hash} not found`,
 		});
 	}
 
-	async waitForNoReaction(text: string, emoji: string, timeout = SYNC_TIMEOUT) {
-		await this.agent.waitUntil(
-			async () => !(await this.hasReaction(text, emoji)),
-			{ timeout, timeoutMsg: `Reaction "${emoji}" on "${text}" still present` },
+	async waitForNoReaction(emoji: string, timeout = SYNC_TIMEOUT) {
+		await this.agent.waitUntil(async () => !(await this.hasReaction(emoji)), {
+			timeout,
+			timeoutMsg: `Reaction "${emoji}" on message ${this.hash} still present`,
+		});
+	}
+
+	authorInitials(): Promise<string | null> {
+		return this.agent.execute((wrapperSel: string) => {
+			const avatar = document
+				.querySelector(wrapperSel)
+				?.querySelector('wa-avatar') as
+				| (Element & { initials?: string })
+				| null;
+			return avatar?.initials || null;
+		}, this.wrapperSelector);
+	}
+
+	/** True if the unread divider precedes this message in DOM order. */
+	isPrecededByUnreadDivider(): Promise<boolean> {
+		return this.agent.execute(
+			(dividerSel: string, wrapperSel: string) => {
+				const divider = document.querySelector(dividerSel);
+				const wrapper = document.querySelector(wrapperSel);
+				if (!divider || !wrapper) return false;
+				return !!(
+					divider.compareDocumentPosition(wrapper) &
+					Node.DOCUMENT_POSITION_FOLLOWING
+				);
+			},
+			this.messages.dividerSelector,
+			this.wrapperSelector,
 		);
 	}
 
-	async getAuthorInitials(messageText: string): Promise<string | null> {
+	/** Whether this message shows the "Edited" indicator. */
+	hasEditedIndicator(): Promise<boolean> {
 		return this.agent.execute(
-			(sel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${sel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (wrapper.textContent?.includes(t)) {
-						const avatar = wrapper.querySelector('wa-avatar') as
-							| (Element & { initials?: string })
-							| null;
-						return avatar?.initials || null;
-					}
-				}
-				return null;
+			(wrapperSel: string, editedSel: string) =>
+				!!document.querySelector(wrapperSel)?.querySelector(editedSel),
+			this.wrapperSelector,
+			tid('message-edited-indicator'),
+		);
+	}
+
+	/** Open the actions menu, tap Edit, replace the text with `newText`, and
+	 * send. `oldText` is the message's current text, used to assert the
+	 * editing input is prefilled. */
+	async edit(oldText: string, newText: string): Promise<void> {
+		await this.openActions();
+		await this.editAction.waitForClickable();
+		await this.editAction.click();
+		// The Signal-style editing state: header banner plus the input prefilled
+		// with the message being edited.
+		await this.composer.editingBanner.waitForExist();
+		await this.agent.waitUntil(
+			async () => (await this.composer.inputText()) === oldText,
+			{ timeoutMsg: 'Editing input is not prefilled with the original text' },
+		);
+		await this.composer.type(newText);
+		await this.composer.send();
+	}
+
+	/** Open the actions menu, tap Delete, and confirm deleting for everyone. */
+	async delete(): Promise<void> {
+		await this.openActions();
+		await this.deleteAction.waitForClickable();
+		await this.deleteAction.click();
+		await this.deleteDialogConfirm.waitForClickable();
+		await this.deleteDialogConfirm.click();
+	}
+
+	/** Wait for this message to render the deleted-for-everyone placeholder
+	 * reading `text`. A delete tombstones the original message rather than
+	 * replacing it, so the hash — and this helper — stays valid across it. */
+	async waitForDeleted(text: string, timeout = SYNC_TIMEOUT): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				(await this.deletedPlaceholder.isExisting()) &&
+				(await this.deletedPlaceholder.getText()).trim() === text,
+			{
+				timeout,
+				timeoutMsg: `Message ${this.hash} does not show the deleted placeholder "${text}"`,
 			},
-			this.messagesSelector,
-			messageText,
 		);
 	}
 }

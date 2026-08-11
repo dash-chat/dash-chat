@@ -1,4 +1,33 @@
+import { withinWindow } from '$lib/utils/time';
+import {
+	DELETE_FOR_EVERYONE_WINDOW_MS,
+	type DeviceId,
+	EDIT_WINDOW_MS,
+	type Message,
+	hasBody,
+} from 'dash-chat-stores';
+
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
+
+export function canEditMessage(
+	message: Message,
+	myDeviceId: DeviceId,
+): boolean {
+	if (!hasBody(message.content)) return false;
+	if (message.author !== myDeviceId) return false;
+	// `timestamp` is the original message op's; edits never change it.
+	return withinWindow(message.timestamp, EDIT_WINDOW_MS);
+}
+
+export function canDeleteMessageForEveryone(
+	message: Message,
+	myDeviceId: DeviceId,
+): boolean {
+	if (!hasBody(message.content)) return false;
+	if (message.author !== myDeviceId) return false;
+	// `timestamp` is the original message op's; edits never change it.
+	return withinWindow(message.timestamp, DELETE_FOR_EVERYONE_WINDOW_MS);
+}
 
 export function messagePosition(
 	setLength: number,

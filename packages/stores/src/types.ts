@@ -1,5 +1,11 @@
 import { Profile } from './contacts/contacts-client';
-import { AgentId, DeviceId, Hash, TopicId } from './p2panda/types';
+import {
+	AgentId,
+	DeviceId,
+	Hash,
+	TopicId,
+	VerifyingKey,
+} from './p2panda/types';
 
 export type ChatId = TopicId;
 
@@ -132,28 +138,26 @@ export interface GroupInfo {
 	image: string | undefined;
 }
 
+export interface EditMessagePayload {
+	/** The corrected text. Media cannot be edited. */
+	message: string;
+	/** Hash of the message (or prior edit) being edited; edits chain linearly. */
+	edit_hash: Hash;
+}
+
+export interface DeleteMessagePayload {
+	/** The complete edit chain being deleted: the original message plus every
+	 * edit (a single hash when the message was never edited). */
+	hashes: Hash[];
+}
+
 export type ChatPayload =
 	| { type: 'Message'; payload: MessageContent }
 	| { type: 'Reaction'; payload: ChatReaction }
+	| { type: 'EditMessage'; payload: EditMessagePayload }
+	| { type: 'DeleteMessage'; payload: DeleteMessagePayload }
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo };
-
-export interface InboxTopic {
-	expires_at: number;
-	topic: TopicId;
-}
-
-export type ShareIntent = 'AddDevice' | 'AddContact';
-
-export interface ContactCode {
-	/// Pubkey of this node: allows adding this node to groups.
-	device_pubkey: DeviceId;
-	/// Agent ID to add to spaces
-	agent_id: AgentId;
-	inbox_topic: InboxTopic | undefined;
-	/// The intent of the QR code: whether to add this node as a contact or a device.
-	share_intent: ShareIntent;
-}
 
 export interface ReadMessagesPayload {
 	chat_id: ChatId;
@@ -161,23 +165,37 @@ export interface ReadMessagesPayload {
 }
 
 export type DeviceGroupPayload =
-	| { type: 'AddContact'; payload: ContactCode }
+	| { type: 'AddContact'; payload: { agent_id: AgentId } }
+	| {
+			type: 'PendingContactRequest';
+			payload: { device_pubkey: DeviceId; profile_name: string };
+	  }
 	| { type: 'RejectContactRequest'; payload: AgentId }
+	| { type: 'BlockAgent'; payload: AgentId }
+	| { type: 'UnblockAgent'; payload: AgentId }
 	| { type: 'ReadMessages'; payload: ReadMessagesPayload };
 
 export type InboxPayload = {
 	type: 'ContactRequest';
 	payload: {
-		code: ContactCode;
 		profile: Profile;
+		agent_id: AgentId;
+		reply_topic: TopicId;
 	};
 };
+
+/** `p2panda_auth::processor::GroupsArgs`; `action` is not modeled here. */
+export interface GroupControlPayload {
+	group_id: VerifyingKey;
+	dependencies: Hash[];
+}
 
 export type Payload =
 	| { type: 'Announcements'; payload: AnnouncementPayload }
 	| { type: 'Chat'; payload: ChatPayload }
 	| { type: 'DeviceGroupPayload'; payload: DeviceGroupPayload }
-	| { type: 'Inbox'; payload: InboxPayload };
+	| { type: 'Inbox'; payload: InboxPayload }
+	| { type: 'GroupControl'; payload: GroupControlPayload };
 
 export type MessageId = string;
 
@@ -193,17 +211,6 @@ export type MessageId = string;
 // 	author: VerifyingKey;
 // 	timestamp: number;
 // }
-
-export interface MessagesStore {
-	markAsRead(messageHashes: Hash[]): Promise<void>;
-	/** Sends the message and resolves with the operation id of the created
-	 * message once it is confirmed in the local log. */
-	sendMessage(input: {
-		message: string;
-		media: OutgoingMedia | null;
-	}): Promise<Hash>;
-	sendReaction(reaction: ChatReaction): Promise<void>;
-}
 
 export type GroupControlEvent =
 	| {
@@ -244,10 +251,50 @@ export type GroupControlEvent =
 			timestamp: number;
 	  };
 
+export type BlockEvent = {
+	kind: 'contact_blocked' | 'contact_unblocked';
+	contactName: string | undefined;
+	timestamp: number;
+};
+
+/** A single version of a message's text, with the time it was authored. */
+export interface MessageVersion {
+	hash: string;
+	text: string;
+	timestamp: number;
+}
+
+/** The live, renderable body of a message: its text, media, reactions and edit
+ * history. */
+export interface MessageBody {
+	message: string;
+	media: MediaBundle | null;
+	reactions: Record<DeviceId, string>;
+	editHistory: MessageVersion[];
+}
+
+/** The renderable content of a message, or `'deleted-for-everyone'` once a
+ * delete op replaces the body entirely — dropping text, media, reactions and
+ * edits — and it renders as the deleted placeholder. */
+export type MessageDisplay = MessageBody | 'deleted-for-everyone';
+
+/** Whether a message still has a live body. Written as a type guard so the
+ * `true` branch narrows `content` to `MessageBody`. */
+export function hasBody(content: MessageDisplay): content is MessageBody {
+	return typeof content !== 'string';
+}
+
+/** Whether a message was deleted for everyone. */
+export function isDeleted(
+	content: MessageDisplay,
+): content is 'deleted-for-everyone' {
+	return content === 'deleted-for-everyone';
+}
+
 export type ChatSummaryLastEvent =
 	| {
 			kind: 'message';
-			content: { message: string; media: MediaBundle | null };
+			content: MessageDisplay;
 			authorName?: string;
 			timestamp: number;
 	  }
@@ -262,4 +309,5 @@ export interface ChatSummary {
 	name: string;
 	avatar: string | undefined;
 	lastEvent: ChatSummaryLastEvent;
+	waitingForProfile?: true;
 }

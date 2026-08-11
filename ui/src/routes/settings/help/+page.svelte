@@ -4,6 +4,8 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
+	import { isAndroid } from '$lib/utils/environment';
+	import { startService } from 'tauri-plugin-background-service';
 	import {
 		BlockTitle,
 		List,
@@ -43,6 +45,18 @@
 					title={m.contactUs()}
 					data-testid="help-contact-us"
 				/>
+				{#if isAndroid && import.meta.env.DEV}
+					<ListItem
+						link
+						chevron={false}
+						title={m.startOfflineMode()}
+						data-testid="help-start-offline-mode"
+						onClick={() =>
+							startService({ serviceLabel: 'Dash Chat' }).catch(e => {
+								console.error('[background-service] startService failed:', e);
+							})}
+					/>
+				{/if}
 				{#await versionPromise then version}
 					<ListItem
 						title={m.version()}
