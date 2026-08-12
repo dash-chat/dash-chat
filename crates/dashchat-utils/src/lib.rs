@@ -1,10 +1,12 @@
 pub mod blob_sync;
-pub mod cbor;
 mod derive_watch;
 pub mod endpoint;
 mod fetch_loop;
 mod retry_with_backoff;
 mod singleton_task_with_retries;
+
+#[cfg(feature = "cbor")]
+pub mod cbor;
 
 pub use derive_watch::derive_watch;
 pub use fetch_loop::{fetch_loop, FetchConfig, FetchPool};

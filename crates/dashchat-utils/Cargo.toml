@@ -22,4 +22,4 @@ tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread"
 
 [features]
 default = []
-serde = ["dep:serde", "ciborium"]
+cbor = ["serde", "ciborium"]
