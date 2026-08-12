@@ -953,10 +953,7 @@ impl Node {
         Ok(messages)
     }
 
-    /// Send a message to a chat.
-    ///
-    /// `media` and `reply` are mutually exclusive. Replies don't contain media.
-    #[deprecated = "TODO, make media and reply mutually exclusive"]
+    /// Send a message to a chat, optionally with media and/or a previous message to reply to.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn send_message(
         &self,
