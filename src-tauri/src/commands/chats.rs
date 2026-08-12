@@ -117,9 +117,9 @@ pub async fn delete_message(
 pub async fn delete_message_for_me(
     chat_id: ChatId,
     target_hash: Hash,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Hash, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let header = node
         .delete_message_for_me(chat_id, target_hash)
         .await
@@ -137,9 +137,9 @@ pub struct Tombstone {
 #[tauri::command]
 pub async fn get_tombstones(
     chat_id: ChatId,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Vec<Tombstone>, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let rows = node
         .chat_tombstones(chat_id)
         .await
