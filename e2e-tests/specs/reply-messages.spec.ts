@@ -31,6 +31,21 @@ describe('Replying to messages', () => {
 		await reply1.waitForReplyQuote('Shall we meet tomorrow?');
 	});
 
+	// Desktop's hover toolbar offers Reply as a shortcut next to React, on top
+	// of the Reply entry in the ⋯ actions menu (covered above).
+	it('replies from the hover toolbar shortcut', async function () {
+		if (agent2.platform !== 'desktop') this.skip();
+		await agent1.directChatPage.composer.sendMessage('Bring the maps');
+		const target =
+			await agent2.directChatPage.messages.waitForMessage('Bring the maps');
+
+		await target.replyFromHoverToolbar('Already packed');
+
+		const reply =
+			await agent2.directChatPage.messages.waitForMessage('Already packed');
+		await reply.waitForReplyQuote('Bring the maps');
+	});
+
 	it('scrolls to the replied-to message when the quote is clicked', async () => {
 		const reply =
 			await agent2.directChatPage.messages.waitForMessage('Sure, at noon');

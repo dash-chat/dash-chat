@@ -520,11 +520,28 @@ export class Message extends TestHelper {
 		await this.composer.send();
 	}
 
+	/** The hover toolbar's Reply shortcut, which sits alongside React on desktop. */
+	get hoverReplyButton() {
+		return this.wrapper.$(tid('message-hover-reply'));
+	}
+
 	/** Open the actions menu, tap Reply, type `replyText`, and send it. */
 	async reply(replyText: string): Promise<void> {
 		await this.openActions();
 		await this.replyAction.waitForClickable();
 		await this.replyAction.click();
+		await this.composeReply(replyText);
+	}
+
+	/** Reply via the hover toolbar's Reply shortcut rather than the actions
+	 * menu. Desktop only — mobile has no hover toolbar. */
+	async replyFromHoverToolbar(replyText: string): Promise<void> {
+		await this.clickHoverButton('message-hover-reply');
+		await this.composeReply(replyText);
+	}
+
+	/** Type `replyText` into the composer waiting in its replying state and send. */
+	private async composeReply(replyText: string): Promise<void> {
 		await this.composer.replyBanner.waitForExist();
 		await this.composer.type(replyText);
 		await this.composer.send();
