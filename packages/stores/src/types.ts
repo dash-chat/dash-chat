@@ -128,11 +128,10 @@ export function mediaBundleToAttachment(
 }
 
 /**
- * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
- * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
+ * Matches the serialization of `ChatMessageContentV1` in
+ * `crates/dashchat-node/src/chat/message.rs`.
  */
 export type MessageContentV1 = {
-	v: '1';
 	message: string;
 	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob
 	 * store, fetched lazily via `irohblob://`). `mediaBundleToAttachment` turns this

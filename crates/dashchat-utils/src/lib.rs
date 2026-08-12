@@ -1,4 +1,5 @@
 pub mod blob_sync;
+pub mod cbor;
 mod derive_watch;
 pub mod endpoint;
 mod fetch_loop;

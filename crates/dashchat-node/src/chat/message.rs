@@ -1,24 +1,6 @@
-use dashchat_compat::{Compat, VersionConvert, VersionConvertError};
-use derive_more::derive::{Deref, From};
+use derive_more::derive::From;
 use p2panda::Hash;
 use serde::{Deserialize, Serialize};
-
-use crate::compat::Capabilities;
-
-#[derive(
-    Clone, Debug, PartialEq, Eq, Serialize, Deserialize, derive_more::From, derive_more::Deref,
-)]
-pub struct ChatMessageContentV0(String);
-
-/// Placeholder for future message versions.
-//
-// TODO: macro to ensure proper tagging
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "v")]
-pub enum ChatMessageContentV {
-    #[serde(rename = "1")]
-    V1(ChatMessageContentV1),
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChatMessageContentV1 {
@@ -29,7 +11,7 @@ pub struct ChatMessageContentV1 {
     /// been edited, an honest node replies to the latest edit it knows of.
     /// Absent on the wire for non-replies, so old clients keep decoding V1
     /// messages unchanged (and silently drop the reply on newer ones).
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "reply_hash")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply: Option<Hash>,
 }
 
@@ -75,130 +57,7 @@ pub struct MediaMetadata {
     pub mime_type: String,
     pub size: u64,
     pub kind: MediaMetaKind,
-    // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
-    // impl encodes a 32-element array, which serde's untagged-enum buffering (used
-    // by `dashchat_compat::Compat`) cannot reconstruct from CBOR.
-    //
-    // TODO: consider reworking Compat to remove this complexity, since we're
-    //       not really getting what we want from Compat anyway.
-    #[serde(with = "hash_bytes")]
     pub hash: iroh_blobs::Hash,
-}
-
-/// Serde for the optional reply hash. Same situation as `hash_bytes` below:
-/// `p2panda::Hash` writes a CBOR byte string but decides how to *read* based on
-/// `is_human_readable`, which serde's untagged/internally-tagged buffering
-/// (used by `dashchat_compat::Compat` and the `"v"` tag) misreports as `true`
-/// for CBOR — so its own impl can't decode itself through the buffer. Dispatch
-/// on the value shape instead.
-mod reply_hash {
-    use std::fmt;
-
-    use p2panda::Hash;
-    use serde::{Deserializer, Serialize, Serializer, de};
-
-    pub fn serialize<S: Serializer>(hash: &Option<Hash>, serializer: S) -> Result<S::Ok, S::Error> {
-        // `skip_serializing_if` means this is only reached for `Some`.
-        let hash = hash.as_ref().expect("None is skipped by the field attr");
-        if serializer.is_human_readable() {
-            serializer.serialize_str(&hash.to_hex())
-        } else {
-            serde_bytes::Bytes::new(hash.as_bytes()).serialize(serializer)
-        }
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Option<Hash>, D::Error> {
-        struct HashVisitor;
-
-        impl<'de> de::Visitor<'de> for HashVisitor {
-            type Value = Hash;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an operation hash as a hex string or 32 bytes")
-            }
-
-            fn visit_str<E: de::Error>(self, s: &str) -> Result<Hash, E> {
-                s.parse().map_err(E::custom)
-            }
-
-            fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Hash, E> {
-                Hash::try_from(bytes).map_err(E::custom)
-            }
-
-            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Hash, A::Error> {
-                let mut arr = [0u8; 32];
-                for (i, slot) in arr.iter_mut().enumerate() {
-                    *slot = seq
-                        .next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(i, &self))?;
-                }
-                Ok(Hash::from_bytes(arr))
-            }
-        }
-
-        deserializer.deserialize_any(HashVisitor).map(Some)
-    }
-}
-
-mod hash_bytes {
-    use std::fmt;
-
-    use iroh_blobs::Hash;
-    use serde::{Deserializer, Serialize, Serializer, de};
-
-    pub fn serialize<S: Serializer>(hash: &Hash, serializer: S) -> Result<S::Ok, S::Error> {
-        // Mirror iroh's own impl for human-readable formats (hex string, so the
-        // JSON the frontend reads matches `Hash`), but emit a CBOR byte string
-        // otherwise: iroh's non-human-readable impl writes a 32-element array,
-        // which serde's untagged-enum buffering (`dashchat_compat::Compat`)
-        // cannot reconstruct from CBOR.
-        if serializer.is_human_readable() {
-            serializer.serialize_str(&hash.to_string())
-        } else {
-            serde_bytes::Bytes::new(hash.as_bytes()).serialize(serializer)
-        }
-    }
-
-    /// Accept either form via `deserialize_any`. Untagged buffering routes
-    /// through serde's `Content` deserializer, which reports `is_human_readable
-    /// == true` even for CBOR, so the encoding can't be inferred from the
-    /// deserializer — dispatch on the value shape instead.
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Hash, D::Error> {
-        struct HashVisitor;
-
-        impl<'de> de::Visitor<'de> for HashVisitor {
-            type Value = Hash;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a blob hash as a hex string or 32 bytes")
-            }
-
-            fn visit_str<E: de::Error>(self, s: &str) -> Result<Hash, E> {
-                s.parse().map_err(E::custom)
-            }
-
-            fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Hash, E> {
-                let arr: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| E::invalid_length(bytes.len(), &self))?;
-                Ok(Hash::from_bytes(arr))
-            }
-
-            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Hash, A::Error> {
-                let mut arr = [0u8; 32];
-                for (i, slot) in arr.iter_mut().enumerate() {
-                    *slot = seq
-                        .next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(i, &self))?;
-                }
-                Ok(Hash::from_bytes(arr))
-            }
-        }
-
-        deserializer.deserialize_any(HashVisitor)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -207,8 +66,7 @@ pub enum MediaMetaKind {
     File,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Deref, From)]
-pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
+pub type ChatMessageContent = ChatMessageContentV1;
 
 impl ChatMessageContent {
     pub fn new(
@@ -216,99 +74,37 @@ impl ChatMessageContent {
         media: Option<MediaBundle>,
         reply: Option<Hash>,
     ) -> Self {
-        Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
-            ChatMessageContentV1 {
-                message: message.into(),
-                media,
-                reply,
-            },
-        )))
+        ChatMessageContentV1 {
+            message: message.into(),
+            media,
+            reply,
+        }
     }
 
     pub fn text_only(message: impl Into<String>) -> Self {
-        Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
-            ChatMessageContentV1 {
-                message: message.into(),
-                media: None,
-                reply: None,
-            },
-        )))
+        ChatMessageContentV1 {
+            message: message.into(),
+            media: None,
+            reply: None,
+        }
     }
 
     pub fn message(&self) -> &str {
-        match &self.0 {
-            dashchat_compat::Compat::Unversioned(v0) => &v0.0,
-            dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => &v1.message,
-        }
+        &self.message
     }
 
     pub fn media(&self) -> Option<&MediaBundle> {
-        match &self.0 {
-            dashchat_compat::Compat::Unversioned(_) => None,
-            dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),
-        }
+        self.media.as_ref()
     }
 
     pub fn reply(&self) -> Option<Hash> {
-        match &self.0 {
-            dashchat_compat::Compat::Unversioned(_) => None,
-            dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.reply,
-        }
-    }
-
-    #[cfg(any(test, feature = "testing"))]
-    pub fn unversioned(message: impl Into<String>) -> Self {
-        Self(dashchat_compat::Compat::Unversioned(ChatMessageContentV0(
-            message.into(),
-        )))
+        self.reply
     }
 }
 
 impl From<&str> for ChatMessageContent {
     fn from(value: &str) -> Self {
         ChatMessageContent::text_only(value)
-    }
-}
-
-impl PartialOrd for ChatMessageContent {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (self.message(), self.media(), self.reply()).partial_cmp(&(
-            other.message(),
-            other.media(),
-            other.reply(),
-        ))
-    }
-}
-
-impl VersionConvert for ChatMessageContent {
-    type Capabilities = Capabilities;
-
-    // TODO: just take Capabilities?
-    fn to_version(&self, target: &Capabilities) -> Result<Self, VersionConvertError> {
-        match (&**self, target.messaging) {
-            (Compat::Unversioned(_), 0) => Ok(self.clone()),
-
-            (Compat::Versioned(ChatMessageContentV::V1(v1)), 0) => {
-                if v1.media.is_some() || v1.reply.is_some() {
-                    Err(VersionConvertError::Lossy)
-                } else {
-                    Ok(Compat::Unversioned(ChatMessageContentV0(v1.message.clone())).into())
-                }
-            }
-
-            (Compat::Unversioned(v0), 1) => Ok(Compat::Versioned(ChatMessageContentV::V1(
-                ChatMessageContentV1 {
-                    message: v0.0.clone(),
-                    media: None,
-                    reply: None,
-                },
-            ))
-            .into()),
-
-            (Compat::Versioned(ChatMessageContentV::V1(_)), 1) => Ok(self.clone()),
-
-            _ => Err(VersionConvertError::UnknownVersion),
-        }
     }
 }
 
