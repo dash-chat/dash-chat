@@ -55,7 +55,10 @@
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		scrollToMessage,
+	} from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
@@ -203,19 +206,11 @@
 	});
 
 	function scrollToMatch() {
-		if (!matchingHashes.length) return;
-		const hash = matchingHashes[currentMatchIndex];
-		const el = parentDivEl?.querySelector(`[data-message-hash="${hash}"]`);
-		if (!el) return;
-		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-		// Remove flash from any previously flashing message
-		parentDivEl
-			?.querySelectorAll('.search-flash')
-			.forEach(e => e.classList.remove('search-flash'));
-		// Flash the current match's message card
-		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
-		void (card as HTMLElement).offsetWidth;
-		card.classList.add('search-flash');
+		if (matchingHashes.length === 0) return;
+		scrollToMessage(
+			parentDivEl ?? undefined,
+			matchingHashes[currentMatchIndex],
+		);
 	}
 
 	function goToPreviousMatch() {

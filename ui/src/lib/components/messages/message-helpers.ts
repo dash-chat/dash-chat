@@ -64,3 +64,68 @@ export function highlightMatch(text: string, query: string): string {
 		'<mark class="search-highlight">$1</mark>',
 	);
 }
+
+const SCROLL_MOVE_EPSILON_PX = 0.5;
+const SCROLL_START_GRACE_MS = 100;
+const SCROLL_SETTLED_FRAMES = 3;
+const SCROLL_SETTLE_TIMEOUT_MS = 1500;
+
+/** Run `callback` once `el` has stopped moving under a smooth scroll, or right
+ * away if it never starts moving (target already in view, or the container is
+ * already at its scroll limit). Tracks the element's viewport position rather
+ * than a container's scrollTop so it doesn't need to know which ancestor
+ * scrolls. */
+function afterScrollSettles(el: Element, callback: () => void): void {
+	const start = performance.now();
+	let lastTop = el.getBoundingClientRect().top;
+	let moved = false;
+	let stableFrames = 0;
+
+	const tick = () => {
+		const top = el.getBoundingClientRect().top;
+		if (Math.abs(top - lastTop) > SCROLL_MOVE_EPSILON_PX) {
+			lastTop = top;
+			moved = true;
+			stableFrames = 0;
+		} else if (moved) {
+			stableFrames++;
+		}
+
+		const elapsed = performance.now() - start;
+		const settled = moved
+			? stableFrames >= SCROLL_SETTLED_FRAMES
+			: elapsed > SCROLL_START_GRACE_MS;
+		if (settled || elapsed > SCROLL_SETTLE_TIMEOUT_MS) {
+			callback();
+			return;
+		}
+		requestAnimationFrame(tick);
+	};
+	requestAnimationFrame(tick);
+}
+
+let pendingFlash = 0;
+
+/** Scroll `root` to the message with `hash` and flash its bubble once the
+ * scroll has landed. Used by both chat search and reply-quote navigation. */
+export function scrollToMessage(
+	root: HTMLElement | undefined,
+	hash: string,
+): void {
+	const el = root?.querySelector(`[data-message-hash="${hash}"]`);
+	if (!el) return;
+	el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	root
+		?.querySelectorAll('.search-flash')
+		.forEach(e => e.classList.remove('search-flash'));
+
+	// Flashing on click would waste the animation on a long scroll: it can be
+	// over before the target comes into view.
+	const flash = ++pendingFlash;
+	afterScrollSettles(el, () => {
+		if (flash !== pendingFlash) return;
+		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
+		void (card as HTMLElement).offsetWidth;
+		card.classList.add('search-flash');
+	});
+}
