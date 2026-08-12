@@ -49,6 +49,9 @@ export interface IContactsClient {
 	// Unblock a contact
 	unblockContact(agentId: AgentId): Promise<void>;
 
+	// Report a contact to the mailboxes we're connected to
+	reportContact(agentId: AgentId): Promise<void>;
+
 	// Remove contact
 	// removeContact(contact: ContactId): Promise<void>;
 
@@ -114,6 +117,10 @@ export class ContactsClient implements IContactsClient {
 
 	async unblockContact(agentId: AgentId): Promise<void> {
 		await invokeAfterSetup('unblock_contact', { agentId });
+	}
+
+	async reportContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('report_contact', { agentId });
 	}
 
 	// getContacts(): Promise<Array<VerifyingKey>> {

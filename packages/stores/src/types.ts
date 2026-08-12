@@ -213,7 +213,15 @@ export type DeviceGroupPayload =
 	| { type: 'BlockAgent'; payload: AgentId }
 	| { type: 'UnblockAgent'; payload: AgentId }
 	| { type: 'ReadMessages'; payload: ReadMessagesPayload }
-	| { type: 'DeleteForMe'; payload: DeleteForMePayload };
+	| { type: 'DeleteForMe'; payload: DeleteForMePayload }
+	| { type: 'ReportContact'; payload: ReportContactPayload };
+
+/** Written after at least one mailbox accepted a report of `agent_id`. */
+export interface ReportContactPayload {
+	agent_id: AgentId;
+	device_ids: DeviceId[];
+	mailbox_ids: string[];
+}
 
 export type InboxPayload = {
 	type: 'ContactRequest';

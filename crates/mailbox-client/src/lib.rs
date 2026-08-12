@@ -56,6 +56,13 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
         &self,
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error>;
+
+    /// Report one or more devices to this mailbox's `/report` endpoint. The
+    /// default no-op covers in-memory/test mailboxes that have no server to
+    /// receive reports.
+    async fn report(&self, _request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

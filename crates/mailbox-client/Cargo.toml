@@ -24,6 +24,8 @@ bytes = { workspace = true }
 
 
 
+reporting = { workspace = true }
+
 # TODO: pull out the toy mailbox request/response types so they can be
 #       independently depended upon
 mailbox-server = { path = "../mailbox-server" }

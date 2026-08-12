@@ -52,8 +52,12 @@
 	});
 </script>
 
+<!-- Konsta's toast root is a full-width bar pinned across the bottom of the
+	screen with the pill centred inside it, so leaving it hit-testable covers
+	whatever sits in the bottom corners (the new-message FAB). Only the controls
+	take pointer events. -->
 <Toast
-	style={toastVariant === 'unexpected' ? '' : 'pointer-events: none'}
+	style="pointer-events: none"
 	position="center"
 	class={toastVariant === 'error' || toastVariant === 'unexpected'
 		? 'k-color-brand-red'
@@ -63,19 +67,21 @@
 	<span data-testid="toast">{toastMessage}</span>
 	{#snippet button()}
 		{#if toastVariant === 'unexpected'}
-			{#if import.meta.env.VITE_SENTRY_ENABLED}
-				<Button inline clear onClick={handleSendErrorReport}>
-					{m.sendErrorReport()}
-				</Button>
-			{/if}
-			<button
-				class="ms-1 opacity-70 active:opacity-100"
-				onclick={dismissToast}
-				aria-label={m.close()}
-			>
-				<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 18px"
-				></wa-icon>
-			</button>
+			<div class="pointer-events-auto">
+				{#if import.meta.env.VITE_SENTRY_ENABLED}
+					<Button inline clear onClick={handleSendErrorReport}>
+						{m.sendErrorReport()}
+					</Button>
+				{/if}
+				<button
+					class="ms-1 opacity-70 active:opacity-100"
+					onclick={dismissToast}
+					aria-label={m.close()}
+				>
+					<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 18px"
+					></wa-icon>
+				</button>
+			</div>
 		{/if}
 	{/snippet}
 </Toast>
