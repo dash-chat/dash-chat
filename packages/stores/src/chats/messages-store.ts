@@ -17,7 +17,7 @@ import {
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
-import { type MessageReply, applyReplies } from './replies';
+import { type MessageReply, applyReply, collectOps } from './replies';
 
 /** The window during which a message may be edited, measured from the original
  * message timestamp. Frontend operation timestamps are milliseconds since the
@@ -97,7 +97,11 @@ export class MessagesStore {
 			if (reason === 'DeletedForMe') delete messages[hash];
 		}
 
-		applyReplies(messages, logs, deletedForMeHashes(tombstones));
+		const ops = collectOps(logs);
+		const deletedForMe = deletedForMeHashes(tombstones);
+		for (const [hash, message] of Object.entries(messages)) {
+			messages[hash] = applyReply(message, messages, ops, deletedForMe);
+		}
 
 		return messages;
 	});

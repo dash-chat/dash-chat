@@ -25,13 +25,16 @@ export type MessageReply =
 	 * tombstone with a warning marker and does not scroll. */
 	| { kind: 'deleted-for-me' };
 
-interface OpInfo {
+export interface OpInfo {
 	author: DeviceId;
 	timestamp: number;
 	body: Payload | undefined;
 }
 
-function collectOps(
+/** Every operation in the chat's logs by hash, the lookup reply resolution
+ * walks: quotes and scroll targets point at ops that may not render as
+ * messages themselves (edits, tombstoned bodies). */
+export function collectOps(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): Record<Hash, OpInfo> {
 	const ops: Record<Hash, OpInfo> = {};
@@ -160,41 +163,44 @@ function resolveReply(
 	};
 }
 
-/** Resolve the reply annotation of every message in the already-built
- * `messages` map, in place. Must run after edits, deletes and delete-for-me
- * tombstones have been applied: a quote pointing at a message that ended up
- * deleted falls back to a tombstone, and its scroll target is only kept when
- * the corresponding placeholder actually renders. */
-export function applyReplies(
+/** The reply as it can actually be rendered against `messages`: a scroll
+ * target is kept only while the message it points at is in the map, and a
+ * quote whose target ended up deleted for everyone falls back to a tombstone. */
+function renderableReply(
+	reply: MessageReply,
 	messages: Record<Hash, Message>,
-	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
-	deletedForMeHashes: Set<Hash>,
-): void {
-	const ops = collectOps(logs);
+): MessageReply {
+	if (reply.kind === 'deleted-for-me') return reply;
 
-	for (const message of Object.values(messages)) {
-		if (message.replyTo === undefined) continue;
-		const reply = resolveReply(
-			ops,
-			deletedForMeHashes,
-			message.timestamp,
-			message.replyTo,
-		);
-		if (reply === undefined) continue;
-
-		if (reply.kind === 'content' || reply.kind === 'deleted') {
-			const target = reply.scrollTarget;
-			const rendered = target === undefined ? undefined : messages[target];
-			if (rendered === undefined) {
-				reply.scrollTarget = undefined;
-			} else if (
-				reply.kind === 'content' &&
-				rendered.content === 'deleted-for-everyone'
-			) {
-				message.reply = { kind: 'deleted', scrollTarget: target };
-				continue;
-			}
-		}
-		message.reply = reply;
+	const target = reply.scrollTarget;
+	const rendered = target === undefined ? undefined : messages[target];
+	if (rendered === undefined) return { ...reply, scrollTarget: undefined };
+	if (reply.kind === 'content' && rendered.content === 'deleted-for-everyone') {
+		return { kind: 'deleted', scrollTarget: target };
 	}
+	return reply;
+}
+
+/** Resolve the message's reply annotation and return the resulting message.
+ * Must run after edits, deletes and delete-for-me tombstones have been applied
+ * to `messages`: a quote pointing at a message that ended up deleted falls
+ * back to a tombstone, and its scroll target is only kept when the
+ * corresponding placeholder actually renders. */
+export function applyReply(
+	message: Message,
+	messages: Record<Hash, Message>,
+	ops: Record<Hash, OpInfo>,
+	deletedForMeHashes: Set<Hash>,
+): Message {
+	if (message.replyTo === undefined) return message;
+
+	const reply = resolveReply(
+		ops,
+		deletedForMeHashes,
+		message.timestamp,
+		message.replyTo,
+	);
+	if (reply === undefined) return message;
+
+	return { ...message, reply: renderableReply(reply, messages) };
 }
