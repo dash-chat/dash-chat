@@ -50,73 +50,7 @@ pub struct MediaMetadata {
     pub mime_type: String,
     pub size: u64,
     pub kind: MediaMetaKind,
-    // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
-    // impl encodes a 32-element array, which serde's untagged-enum buffering (used
-    // by `dashchat_compat::Compat`) cannot reconstruct from CBOR.
-    //
-    // TODO: consider reworking Compat to remove this complexity, since we're
-    //       not really getting what we want from Compat anyway.
-    #[serde(with = "hash_bytes")]
     pub hash: iroh_blobs::Hash,
-}
-
-mod hash_bytes {
-    use std::fmt;
-
-    use iroh_blobs::Hash;
-    use serde::{Deserializer, Serialize, Serializer, de};
-
-    pub fn serialize<S: Serializer>(hash: &Hash, serializer: S) -> Result<S::Ok, S::Error> {
-        // Mirror iroh's own impl for human-readable formats (hex string, so the
-        // JSON the frontend reads matches `Hash`), but emit a CBOR byte string
-        // otherwise: iroh's non-human-readable impl writes a 32-element array,
-        // which serde's untagged-enum buffering (`dashchat_compat::Compat`)
-        // cannot reconstruct from CBOR.
-        if serializer.is_human_readable() {
-            serializer.serialize_str(&hash.to_string())
-        } else {
-            serde_bytes::Bytes::new(hash.as_bytes()).serialize(serializer)
-        }
-    }
-
-    /// Accept either form via `deserialize_any`. Untagged buffering routes
-    /// through serde's `Content` deserializer, which reports `is_human_readable
-    /// == true` even for CBOR, so the encoding can't be inferred from the
-    /// deserializer — dispatch on the value shape instead.
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Hash, D::Error> {
-        struct HashVisitor;
-
-        impl<'de> de::Visitor<'de> for HashVisitor {
-            type Value = Hash;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a blob hash as a hex string or 32 bytes")
-            }
-
-            fn visit_str<E: de::Error>(self, s: &str) -> Result<Hash, E> {
-                s.parse().map_err(E::custom)
-            }
-
-            fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Hash, E> {
-                let arr: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| E::invalid_length(bytes.len(), &self))?;
-                Ok(Hash::from_bytes(arr))
-            }
-
-            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Hash, A::Error> {
-                let mut arr = [0u8; 32];
-                for (i, slot) in arr.iter_mut().enumerate() {
-                    *slot = seq
-                        .next_element()?
-                        .ok_or_else(|| de::Error::invalid_length(i, &self))?;
-                }
-                Ok(Hash::from_bytes(arr))
-            }
-        }
-
-        deserializer.deserialize_any(HashVisitor)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
