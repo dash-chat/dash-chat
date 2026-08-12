@@ -560,11 +560,6 @@ export class Message extends TestHelper {
 		return this.wrapper.$(tid('reply-quote-deleted')).isExisting();
 	}
 
-	/** Whether this message's quote shows the deleted-for-me warning. */
-	replyQuoteIsDeletedForMe(): Promise<boolean> {
-		return this.wrapper.$(tid('reply-quote-deleted-for-me')).isExisting();
-	}
-
 	/** Whether this message is currently flash-highlighted (the effect applied
 	 * after scrolling to it). */
 	isFlashed(): Promise<boolean> {

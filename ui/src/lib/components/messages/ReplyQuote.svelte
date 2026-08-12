@@ -1,9 +1,6 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { DeviceId, Hash, MessageReply } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiAlertCircle } from '@mdi/js';
 	import BlobImage from '$lib/components/BlobImage.svelte';
 
 	let {
@@ -76,13 +73,6 @@
 				class="reply-quote-text flex items-center gap-1 italic"
 				data-testid="reply-quote-deleted"
 			>
-				{#if reply.kind === 'deleted-for-me'}
-					<wa-icon
-						class="small-icon shrink-0 text-amber-500"
-						src={wrapPathInSvg(mdiAlertCircle)}
-						data-testid="reply-quote-deleted-for-me"
-					></wa-icon>
-				{/if}
 				{deletedText}
 			</span>
 		{/if}

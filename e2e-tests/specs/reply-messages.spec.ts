@@ -131,7 +131,7 @@ describe('Replying to messages', () => {
 		});
 	});
 
-	it('shows the tombstone with a warning when the target was deleted for me, without scrolling', async () => {
+	it('shows the tombstone when the target was deleted for me, without scrolling', async () => {
 		await agent1.directChatPage.composer.sendMessage('Ephemeral note');
 		const target =
 			await agent2.directChatPage.messages.waitForMessage('Ephemeral note');
@@ -144,8 +144,8 @@ describe('Replying to messages', () => {
 		await target.deleteForMe();
 		await agent2.directChatPage.messages.waitForMessageGone('Ephemeral note');
 
-		await agent2.waitUntil(() => reply2.replyQuoteIsDeletedForMe(), {
-			timeoutMsg: 'No deleted-for-me warning on the quote',
+		await agent2.waitUntil(() => reply2.replyQuoteIsDeleted(), {
+			timeoutMsg: 'No tombstone quote after deleting for me',
 		});
 		// We are the one who deleted it, even though Alice wrote it.
 		await reply2.waitForReplyQuote(await agent2.tr('youDeletedThisMessage'));
