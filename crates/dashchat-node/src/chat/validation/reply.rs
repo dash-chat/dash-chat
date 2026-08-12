@@ -6,14 +6,15 @@ use super::{ChatOpKind, ValidChatOps};
 
 /// Why a reply annotation on a message is considered invalid.
 ///
-/// The same validation rules are enforced on the author's side (as a hard error
-/// before publishing) and on the receiving side — except that the receiver only
-/// ignores the reply annotation, never the message carrying it, and does not
-/// enforce [`ReplyError::NotLatestEdit`] (the replier may honestly not have
+/// The receiver ignores the reply annotation (but never the message carrying it), 
+/// and does not enforce [`ReplyError::NotLatestEdit`] (the replier may honestly not have
 /// known of a later edit).
 #[derive(Debug, Clone, PartialEq, Eq, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
 pub enum ReplyError {
+    // XXX: This is only possible because we can't tap into p2panda's partial ordering yet,
+    //      and when it does strike it can be nondeterministic!
+    //      Once we have custom p2panda processors this goes away.
     #[error("the message being replied to could not be found in this chat")]
     TargetNotFound,
 

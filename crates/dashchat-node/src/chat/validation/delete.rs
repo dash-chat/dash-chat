@@ -14,9 +14,6 @@ use super::{ChatOp, ChatOpKind, ValidChatOps};
 pub const DELETE_WINDOW_MICROS: u64 = EDIT_WINDOW_MICROS;
 
 /// Why a delete operation is considered invalid (not allowed to be applied).
-///
-/// The same validation rules are enforced on the author's side (as a hard error before
-/// publishing) and on the receiving side (the delete is ignored with a warning).
 #[derive(Debug, Clone, PartialEq, Eq, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
 pub enum DeleteError {

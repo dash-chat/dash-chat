@@ -953,13 +953,10 @@ impl Node {
         Ok(messages)
     }
 
-    /// Send a message to a chat, optionally as a reply to a previous message.
+    /// Send a message to a chat.
     ///
-    /// `reply` must refer to a `Message` or `EditMessage` operation in this
-    /// chat (any author's log, unlike edits and deletes) that is not deleted,
-    /// is older than now, and is the latest edit of its chain that we know of.
-    /// The reply is validated before publishing; see
-    /// [`ReplyError`](crate::chat::ReplyError).
+    /// `media` and `reply` are mutually exclusive. Replies don't contain media.
+    #[deprecated = "TODO, make media and reply mutually exclusive"]
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn send_message(
         &self,
