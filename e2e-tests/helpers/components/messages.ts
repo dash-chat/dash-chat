@@ -547,10 +547,18 @@ export class Message extends TestHelper {
 		await this.composer.send();
 	}
 
-	/** Trimmed text of this message's reply quote, or null when it has none. */
+	/** Trimmed text of this message's reply quote, or null when it has none.
+	 * Read from the DOM rather than with `getText()`: the quote is a clipped
+	 * `<button>`, whose text WebKit's rendered-text algorithm leaves out. */
 	async replyQuoteText(): Promise<string | null> {
-		if (!(await this.replyQuote.isExisting())) return null;
-		return (await this.replyQuote.getText()).trim();
+		const text = await this.agent.execute(
+			(wrapperSel: string, quoteSel: string) =>
+				document.querySelector(wrapperSel)?.querySelector(quoteSel)
+					?.textContent ?? null,
+			this.wrapperSelector,
+			tid('reply-quote'),
+		);
+		return text === null ? null : text.trim();
 	}
 
 	/** Wait until this message renders a reply quote containing `quotedText`. */
