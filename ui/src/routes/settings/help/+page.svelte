@@ -64,20 +64,17 @@
 						data-testid="help-version"
 					/>
 				{/await}
-				<!-- Removing for now because we don't have any preview feature -->
-				{#if false}
-					<ListItem
-						title={m.previewFeatures()}
-						data-testid="help-preview-features-toggle"
-					>
-						{#snippet after()}
-							<Toggle
-								checked={previewFeatures.enabled}
-								onChange={() => previewFeatures.toggle()}
-							/>
-						{/snippet}
-					</ListItem>
-				{/if}
+				<ListItem
+					title={m.previewFeatures()}
+					data-testid="help-preview-features-toggle"
+				>
+					{#snippet after()}
+						<Toggle
+							checked={previewFeatures.enabled}
+							onChange={() => previewFeatures.toggle()}
+						/>
+					{/snippet}
+				</ListItem>
 			</List>
 		</div>
 	</div>

@@ -10,4 +10,20 @@ export class HelpPage extends TestHelper {
 	async ready() {
 		await this.contactUsLink.waitForExist();
 	}
+
+	/** Whether preview features are currently switched on. */
+	previewFeaturesEnabled(): Promise<boolean> {
+		return this.previewFeaturesToggle.$('input').isSelected();
+	}
+
+	/** Flip the preview-features switch, waiting until the new state applies.
+	 * The checkbox itself is visually hidden, so the label takes the click. */
+	async togglePreviewFeatures(): Promise<void> {
+		const before = await this.previewFeaturesEnabled();
+		await this.previewFeaturesToggle.$('label').click();
+		await this.agent.waitUntil(
+			async () => (await this.previewFeaturesEnabled()) !== before,
+			{ timeoutMsg: 'Preview-features toggle did not change state' },
+		);
+	}
 }
