@@ -36,7 +36,7 @@
 	} from 'dash-chat-stores';
 	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
-	import SplashscreenPrompt from '$lib/components/splashscreen/SplashscreenPrompt.svelte';
+	import OnboardingWrapper from '$lib/components/onboarding/OnboardingWrapper.svelte';
 	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import CrashReportDialog from '$lib/components/CrashReportDialog.svelte';
@@ -47,7 +47,10 @@
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
-	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
+	import {
+		forwardConsoleToTauriLog,
+		reportUncaughtErrors,
+	} from '$lib/utils/logs';
 	import {
 		listenForDeepLinks,
 		handleLaunchDeepLink,
@@ -85,6 +88,7 @@
 
 	// Forward console.log/info/warn/error from the WebView to the tauri logs
 	forwardConsoleToTauriLog();
+	reportUncaughtErrors();
 
 	let { children } = $props();
 
@@ -231,7 +235,7 @@
 
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
-		<SplashscreenPrompt>
+		<OnboardingWrapper>
 			{#key currentLocale}
 				{#if isWideScreen.value}
 					<DesktopLayout>
@@ -243,7 +247,7 @@
 					</MobileLayout>
 				{/if}
 			{/key}
-		</SplashscreenPrompt>
+		</OnboardingWrapper>
 		{#if addContactPending.value}
 			<div
 				class="fixed inset-0 z-40 flex items-center justify-center"

@@ -26,10 +26,15 @@ describe('report contact', () => {
 		// One-way add, so Alice lands on a chat showing Bob's contact request.
 		await navigateToAddContact(agent1);
 		const aliceLink = await agent1.addContactPage.getAddContactLink();
+		await agent1.addContactPage.back.click();
+		await agent1.newMessagePage.back.click();
+		await agent1.homePage.ready();
+
 		await navigateToAddContact(agent2);
 		await agent2.addContactPage.enterAddContactLink(aliceLink);
 		await agent2.directChatPage.ready();
 
+		await agent1.homePage.chatList.waitForExist();
 		await agent1.homePage.openChat('Bob Test');
 		await agent1.directChatPage.acceptButton.waitForExist();
 	});

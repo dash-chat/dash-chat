@@ -1,7 +1,11 @@
 import { simulateLongpress } from '../long-press';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
+import {
+	MEDIA_SYNC_TIMEOUT,
+	RENDER_SETTLE_WINDOW,
+	SYNC_TIMEOUT,
+} from '../timeouts';
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
@@ -350,6 +354,19 @@ export class Message extends TestHelper {
 			await this.clickHoverButton('message-hover-menu');
 		}
 		await this.actionsMenu.waitForDisplayed();
+	}
+
+	/** Fail unless this message's actions menu is open now and still open
+	 * `ms` later. Use after something that re-renders the chat: a menu torn
+	 * down by a re-render can outlive the first one of a burst. */
+	async expectActionsMenuToStayOpen(ms = RENDER_SETTLE_WINDOW): Promise<void> {
+		const deadline = Date.now() + ms;
+		while (Date.now() < deadline) {
+			if (!(await this.actionsMenu.isDisplayed())) {
+				throw new Error(`Actions menu on message ${this.hash} closed`);
+			}
+			await this.agent.pause(100);
+		}
 	}
 
 	/** The right-click menu, a second actions menu the message hosts alongside

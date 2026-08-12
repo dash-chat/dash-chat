@@ -1,3 +1,5 @@
+import { m } from '$lib/paraglide/messages.js';
+import { showToast } from '$lib/utils/toasts';
 import { debug, error, info, warn } from '@tauri-apps/plugin-log';
 
 import { isTauriEnv } from './environment';
@@ -70,4 +72,43 @@ export function forwardConsoleToTauriLog(): void {
 		orig.debug(...args);
 		debug(fmt(args)).catch(() => {});
 	};
+}
+
+let errorHandlersInstalled = false;
+
+const describe = (value: unknown): string =>
+	value instanceof Error
+		? (value.stack ?? `${value.name}: ${value.message}`)
+		: String(value);
+
+// Browsers surface a ResizeObserver delivery loop as an uncaught error. It is a
+// benign scheduling notice the spec requires, not an app failure, and every
+// layout pass can raise one.
+const ignoredErrors = ['ResizeObserver loop'];
+
+const isIgnoredError = (message: string) =>
+	ignoredErrors.some(ignored => message.includes(ignored));
+
+/**
+ * Log uncaught exceptions and unhandled rejections, and surface them as an
+ * unexpected-error toast.
+ */
+export function reportUncaughtErrors(): void {
+	if (errorHandlersInstalled) return;
+	errorHandlersInstalled = true;
+
+	window.addEventListener('error', event => {
+		if (isIgnoredError(event.message)) return;
+		const where = event.filename
+			? ` @ ${event.filename}:${event.lineno}:${event.colno}`
+			: '';
+		console.error(
+			`[uncaught] ${event.message}${where}\n${describe(event.error)}`,
+		);
+		showToast(m.errorUnexpected(), 'unexpected', event.error);
+	});
+	window.addEventListener('unhandledrejection', event => {
+		console.error(`[unhandledrejection] ${describe(event.reason)}`);
+		showToast(m.errorUnexpected(), 'unexpected', event.reason);
+	});
 }

@@ -3,7 +3,7 @@
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { settled, useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
 		Link,
@@ -29,15 +29,13 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	let initialized = false;
 	$effect(() => {
-		$myProfile.then(profile => {
-			if (!initialized) {
-				initialized = true;
-				name = profile?.name || '';
-				surname = profile?.surname;
-				avatar = profile?.avatar;
-				about = profile?.about;
-			}
-		});
+		const profile = $myProfile;
+		if (!settled(profile) || initialized) return;
+		initialized = true;
+		name = profile?.name || '';
+		surname = profile?.surname;
+		avatar = profile?.avatar;
+		about = profile?.about;
 	});
 
 	function saveDisabled(
