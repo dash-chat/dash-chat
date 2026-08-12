@@ -10,6 +10,8 @@ describe('Replying to messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
+		await agent1.enablePreviewFeatures();
+		await agent2.enablePreviewFeatures();
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 		await exchangeContacts(agent1, agent2);

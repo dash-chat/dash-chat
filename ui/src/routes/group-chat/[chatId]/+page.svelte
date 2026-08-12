@@ -22,6 +22,7 @@
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountGroup } from '@mdi/js';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
@@ -169,6 +170,21 @@
 		return member?.profile ? fullName(member.profile) : m.unknownSender();
 	}
 
+	/** Starts a reply to `message`, or undefined while replies are switched off,
+	 * which is what hides every reply affordance on the message. */
+	function replyHandler(
+		message: Message,
+		myDeviceId: DeviceId,
+		members: Record<string, GroupMemberWithProfile>,
+	): (() => void) | undefined {
+		if (!previewFeatures.enabled) return undefined;
+		return () =>
+			composer?.replyToMessage(
+				message,
+				deviceDisplayName(message.author, myDeviceId, members),
+			);
+	}
+
 	/** Display name of the author quoted by `message`'s reply, if that author is
 	 * known — a quote of a message this peer never received has none. */
 	function quotedAuthorName(
@@ -311,15 +327,7 @@
 														{chatId}
 														searchQuery=""
 														onEdit={() => composer?.editMessage(message)}
-														onReply={() =>
-															composer?.replyToMessage(
-																message,
-																deviceDisplayName(
-																	message.author,
-																	myDeviceId,
-																	members,
-																),
-															)}
+														onReply={replyHandler(message, myDeviceId, members)}
 														replyAuthorName={quotedAuthorName(
 															message,
 															myDeviceId,
@@ -349,15 +357,7 @@
 														showSenderName={position === 'first' ||
 															position === 'single'}
 														showAvatar
-														onReply={() =>
-															composer?.replyToMessage(
-																message,
-																deviceDisplayName(
-																	message.author,
-																	myDeviceId,
-																	members,
-																),
-															)}
+														onReply={replyHandler(message, myDeviceId, members)}
 														replyAuthorName={quotedAuthorName(
 															message,
 															myDeviceId,

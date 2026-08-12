@@ -51,6 +51,7 @@
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
@@ -226,6 +227,21 @@
 	): string {
 		if (deviceId === myDeviceId) return m.you();
 		return profile ? fullName(profile) : m.unknownSender();
+	}
+
+	/** Starts a reply to `message`, or undefined while replies are switched off,
+	 * which is what hides every reply affordance on the message. */
+	function replyHandler(
+		message: Message,
+		myDeviceId: DeviceId,
+		profile: Profile | undefined,
+	): (() => void) | undefined {
+		if (!previewFeatures.enabled) return undefined;
+		return () =>
+			composer?.replyToMessage(
+				message,
+				deviceDisplayName(message.author, myDeviceId, profile),
+			);
 	}
 
 	/** Display name of the author quoted by `message`'s reply, if that author is
@@ -602,15 +618,11 @@
 																				: ''}
 																			onEdit={() =>
 																				composer?.editMessage(message)}
-																			onReply={() =>
-																				composer?.replyToMessage(
-																					message,
-																					deviceDisplayName(
-																						message.author,
-																						myDeviceId,
-																						profile,
-																					),
-																				)}
+																			onReply={replyHandler(
+																				message,
+																				myDeviceId,
+																				profile,
+																			)}
 																			replyAuthorName={quotedAuthorName(
 																				message,
 																				myDeviceId,
@@ -640,15 +652,11 @@
 																				? searchQuery
 																				: ''}
 																			sender={profile}
-																			onReply={() =>
-																				composer?.replyToMessage(
-																					message,
-																					deviceDisplayName(
-																						message.author,
-																						myDeviceId,
-																						profile,
-																					),
-																				)}
+																			onReply={replyHandler(
+																				message,
+																				myDeviceId,
+																				profile,
+																			)}
 																			replyAuthorName={quotedAuthorName(
 																				message,
 																				myDeviceId,

@@ -219,6 +219,7 @@
 	<button
 		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/90"
 		aria-label={m.close()}
+		data-testid="spotlight-backdrop"
 		transition:fade={{ duration: 200 }}
 		onclick={onClose}
 		onoutroend={() => (spotlighted = false)}

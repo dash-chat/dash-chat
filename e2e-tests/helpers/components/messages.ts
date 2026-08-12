@@ -356,6 +356,17 @@ export class Message extends TestHelper {
 		await this.actionsMenu.waitForDisplayed();
 	}
 
+	/** Dismiss this message's open actions menu the way its platform does — a
+	 * tap on the spotlight backdrop on mobile, Escape on desktop. */
+	async closeActions() {
+		if (await this.isMobileBuild()) {
+			await this.agent.$(tid('spotlight-backdrop')).click();
+		} else {
+			await this.agent.keys(['Escape']);
+		}
+		await this.actionsMenu.waitForDisplayed({ reverse: true });
+	}
+
 	/** Fail unless this message's actions menu is open now and still open
 	 * `ms` later. Use after something that re-renders the chat: a menu torn
 	 * down by a re-render can outlive the first one of a burst. */
