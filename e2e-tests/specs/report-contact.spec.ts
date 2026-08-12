@@ -70,7 +70,7 @@ describe('report contact', () => {
 		await agent1.homePage.newMessageButton.click();
 		await agent1.newMessagePage.ready();
 
-		await agent1.newMessagePage.openContactMenu('Bob Test');
+		await agent1.newMessagePage.openContactMenu('Bob');
 		await agent1.newMessagePage.contactActionsMenu.report.click();
 		await agent1.newMessagePage.contactActionsMenu.reportConfirm.waitForClickable();
 		await agent1.newMessagePage.contactActionsMenu.reportConfirm.click();
