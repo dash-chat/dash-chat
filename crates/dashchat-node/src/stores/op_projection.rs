@@ -137,6 +137,19 @@ impl OpProjection {
         Ok(row.map(|(id,)| id))
     }
 
+    /// Look up every device known to belong to a given agent.
+    pub async fn lookup_devices_by_agent_id(
+        &self,
+        agent_id: AgentId,
+    ) -> anyhow::Result<Vec<DeviceId>> {
+        let rows: Vec<(DeviceId,)> =
+            sqlx::query_as("SELECT device_id FROM devices WHERE agent_id = ?")
+                .bind(agent_id)
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
+
     /// Look up multiple contacts in a single query.
     ///
     /// Returns a map from `DeviceId` to its `AgentId`. Devices that have no

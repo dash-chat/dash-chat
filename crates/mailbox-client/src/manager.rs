@@ -374,6 +374,31 @@ where
         self.trigger_sync();
     }
 
+    /// Send a `/report` to every currently-registered mailbox, best-effort.
+    /// Each mailbox is contacted independently; a failure against one is logged
+    /// and does not prevent the others from receiving the report. Returns the
+    /// ids of the mailboxes the report was successfully delivered to.
+    pub async fn report_all(&self, request: reporting::ReportRequest) -> Vec<MailboxId> {
+        let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
+            .mailboxes
+            .lock()
+            .await
+            .iter()
+            .map(|(id, tm)| (id.clone(), tm.clone()))
+            .collect();
+        let mut succeeded = Vec::new();
+        for (id, tracked_mailbox) in mailboxes {
+            let client = tracked_mailbox.client().await;
+            match client.report(request.clone()).await {
+                Ok(()) => succeeded.push(id),
+                Err(err) => {
+                    tracing::error!(?err, mailbox = %id, "failed to send report to mailbox")
+                }
+            }
+        }
+        succeeded
+    }
+
     pub async fn subscribe(
         &self,
         topic: Item::Topic,

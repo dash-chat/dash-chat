@@ -279,6 +279,21 @@ where
         }
     }
 
+    async fn report(&self, request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
+        let response = HTTP_CLIENT
+            .post(format!("{}/report", self.base_url))
+            .json(&request)
+            .send()
+            .await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(anyhow::anyhow!("Failed to report: {} - {}", status, body))
+        }
+    }
+
     async fn fetch(
         &self,
         request: FetchRequest<Item>,

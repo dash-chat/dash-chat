@@ -26,6 +26,13 @@ export interface OutgoingContactRequest {
 	profileName: string;
 }
 
+/** One filed report against a contact, as recorded in the device group log. */
+export interface ContactReport {
+	timestamp: number;
+	author: DeviceId;
+	mailboxCount: number;
+}
+
 export class ContactsStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
@@ -107,6 +114,34 @@ export class ContactsStore {
 		}
 		return blocked;
 	});
+
+	/**
+	 * Every report this device group has filed against `agentId`, keyed by the
+	 * hash of the `ReportContact` operation. Reporting stays available after a
+	 * report, so an agent can have any number of these.
+	 */
+	reports = reactive(async (agentId: AgentId) => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const reports: Record<Hash, ContactReport> = {};
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				const payload = op.body?.payload;
+				if (payload?.type !== 'ReportContact') continue;
+				if (payload.payload.agent_id !== agentId) continue;
+				reports[op.hash] = {
+					timestamp: op.header.timestamp,
+					author: op.header.verifying_key,
+					mailboxCount: payload.payload.mailbox_ids.length,
+				};
+			}
+		}
+		return reports;
+	});
+
+	reportContact = async (agentId: AgentId) => {
+		await this.client.reportContact(agentId);
+	};
 
 	/** Every block/unblock operation for `agentId`, keyed by operation hash. */
 	blockHistory = reactive(async (agentId: AgentId) => {
