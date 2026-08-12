@@ -36,7 +36,6 @@
 	"someoneDeletedThisMessage": "{{name}} deleted this message.",
 	"reply": "Reply",
 	"replyingTo": "Replying to {{name}}",
-	"replyDeletedMessage": "This message has been deleted.",
 	"messageDeleted": "Message deleted",
 	"discardDraftTitle": "Discard draft?",
 	"discardDraftDescription": "This action can't be undone.",

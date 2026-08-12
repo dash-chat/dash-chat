@@ -10,6 +10,7 @@
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
+		replyAuthor,
 		type ChatsStore,
 		type ContactsStore,
 		type DeviceId,
@@ -168,15 +169,16 @@
 		return member?.profile ? fullName(member.profile) : m.unknownSender();
 	}
 
-	/** Display name of the author quoted by `message`'s reply, if it quotes
-	 * content at all. */
+	/** Display name of the author quoted by `message`'s reply, if that author is
+	 * known — a quote of a message this peer never received has none. */
 	function quotedAuthorName(
 		message: Message,
 		myDeviceId: DeviceId,
 		members: Record<string, GroupMemberWithProfile>,
 	): string | undefined {
-		if (message.reply?.kind !== 'content') return undefined;
-		return deviceDisplayName(message.reply.author, myDeviceId, members);
+		const author = replyAuthor(message.reply);
+		if (author === undefined) return undefined;
+		return deviceDisplayName(author, myDeviceId, members);
 	}
 </script>
 

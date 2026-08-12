@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import type { Hash, MessageReply } from 'dash-chat-stores';
+	import type { DeviceId, Hash, MessageReply } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAlertCircle } from '@mdi/js';
@@ -9,12 +9,14 @@
 	let {
 		reply,
 		authorName = '',
+		myDeviceId,
 		mine = false,
 		onNavigate,
 	}: {
 		reply: MessageReply;
-		/** Display name of the quoted author (kind 'content' only). */
+		/** Display name of the quoted author. */
 		authorName?: string;
+		myDeviceId: DeviceId;
 		/** Whether the enclosing bubble is my own message (picks the color scheme). */
 		mine?: boolean;
 		/** Scroll the chat to the quoted message. */
@@ -29,6 +31,18 @@
 			? reply.media.photos[0]
 			: undefined,
 	);
+
+	/** The tombstone line for a deleted quote, naming who deleted it as the
+	 * deleted message's own placeholder does. A delete-for-me is always ours. */
+	const deletedText = $derived.by(() => {
+		if (reply.kind === 'content') return '';
+		if (reply.kind === 'deleted-for-me' || reply.author === myDeviceId) {
+			return m.youDeletedThisMessage();
+		}
+		return m.someoneDeletedThisMessage({
+			name: authorName || m.unknownSender(),
+		});
+	});
 
 	function navigate() {
 		if (scrollTarget !== undefined) onNavigate?.(scrollTarget);
@@ -69,7 +83,7 @@
 						data-testid="reply-quote-deleted-for-me"
 					></wa-icon>
 				{/if}
-				{m.replyDeletedMessage()}
+				{deletedText}
 			</span>
 		{/if}
 	</span>

@@ -147,6 +147,7 @@
 					<ReplyQuote
 						reply={message.reply}
 						authorName={replyAuthorName}
+						{myDeviceId}
 						mine
 						onNavigate={onNavigateToMessage}
 					/>

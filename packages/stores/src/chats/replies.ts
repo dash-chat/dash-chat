@@ -19,13 +19,25 @@ export type MessageReply =
 	  }
 	/** The target was deleted for everyone (or is unknown locally). The quote
 	 * shows only a tombstone; `scrollTarget` is set when the "deleted"
-	 * placeholder message is rendered and can be scrolled to. */
-	| { kind: 'deleted'; scrollTarget?: Hash }
-	/** The target was deleted only on this device group. The quote shows the
-	 * tombstone with a warning marker and does not scroll. */
+	 * placeholder message is rendered and can be scrolled to. `author` is unset
+	 * when the target op itself never reached this peer. */
+	| { kind: 'deleted'; author?: DeviceId; scrollTarget?: Hash }
+	/** The target was deleted only on this device group — always by us, so the
+	 * quote needs no author. It shows the tombstone with a warning marker and
+	 * does not scroll. */
 	| { kind: 'deleted-for-me' };
 
-export interface OpInfo {
+/** The author of the message a reply quotes, when it is known: a quote of a
+ * message this peer never received has none, and a delete-for-me quote names
+ * no one but us. */
+export function replyAuthor(
+	reply: MessageReply | undefined,
+): DeviceId | undefined {
+	if (reply === undefined || reply.kind === 'deleted-for-me') return undefined;
+	return reply.author;
+}
+
+interface OpInfo {
 	author: DeviceId;
 	timestamp: number;
 	body: Payload | undefined;
@@ -136,6 +148,7 @@ function resolveReply(
 	if (targetOp === undefined || targetOp.body === undefined) {
 		return {
 			kind: 'deleted',
+			author: targetOp?.author,
 			scrollTarget: deletePlaceholderHash(ops, target),
 		};
 	}
@@ -176,7 +189,7 @@ function renderableReply(
 	const rendered = target === undefined ? undefined : messages[target];
 	if (rendered === undefined) return { ...reply, scrollTarget: undefined };
 	if (reply.kind === 'content' && rendered.content === 'deleted-for-everyone') {
-		return { kind: 'deleted', scrollTarget: target };
+		return { kind: 'deleted', author: reply.author, scrollTarget: target };
 	}
 	return reply;
 }

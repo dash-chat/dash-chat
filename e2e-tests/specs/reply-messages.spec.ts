@@ -99,26 +99,33 @@ describe('Replying to messages', () => {
 		await mine.deleteForEveryone();
 
 		// The deleted content never shows anywhere — including inside quotes.
-		const placeholder = await agent2.tr('thisMessageWasDeleted');
+		const deletedByMe = await agent1.tr('youDeletedThisMessage');
+		const deletedByAlice = await agent2.tr('someoneDeletedThisMessage', {
+			name: 'Alice Test',
+		});
 		await agent1.directChatPage.messages.waitForMessageGone('Secret plans');
 		await agent2.directChatPage.messages.waitForDeleted(
 			'Secret plans',
-			placeholder,
+			deletedByAlice,
 		);
 
+		// The quote is worded from each side's point of view, like the deleted
+		// message's own placeholder.
 		await agent1.waitUntil(() => reply1.replyQuoteIsDeleted(), {
 			timeoutMsg: 'No tombstone quote on the author side',
 		});
+		await reply1.waitForReplyQuote(deletedByMe);
 		const reply2 =
 			await agent2.directChatPage.messages.waitForMessage('Acknowledged');
 		await agent2.waitUntil(() => reply2.replyQuoteIsDeleted(), {
 			timeoutMsg: 'No tombstone quote on the peer side',
 		});
+		await reply2.waitForReplyQuote(deletedByAlice);
 
 		// Clicking the tombstone quote still scrolls to the deleted placeholder.
 		await reply2.clickReplyQuote();
 		const deleted =
-			await agent2.directChatPage.messages.waitForMessage(placeholder);
+			await agent2.directChatPage.messages.waitForMessage(deletedByAlice);
 		await agent2.waitUntil(() => deleted.isFlashed(), {
 			timeoutMsg: 'Deleted placeholder was not highlighted',
 		});
@@ -140,6 +147,8 @@ describe('Replying to messages', () => {
 		await agent2.waitUntil(() => reply2.replyQuoteIsDeletedForMe(), {
 			timeoutMsg: 'No deleted-for-me warning on the quote',
 		});
+		// We are the one who deleted it, even though Alice wrote it.
+		await reply2.waitForReplyQuote(await agent2.tr('youDeletedThisMessage'));
 
 		// The other side is unaffected and still sees the quoted content.
 		const reply1 =

@@ -6,7 +6,7 @@ use super::{ChatOpKind, ValidChatOps};
 
 /// Why a reply annotation on a message is considered invalid.
 ///
-/// The receiver ignores the reply annotation (but never the message carrying it), 
+/// The receiver ignores the reply annotation (but never the message carrying it),
 /// and does not enforce [`ReplyError::NotLatestEdit`] (the replier may honestly not have
 /// known of a later edit).
 #[derive(Debug, Clone, PartialEq, Eq, Error, Serialize)]
