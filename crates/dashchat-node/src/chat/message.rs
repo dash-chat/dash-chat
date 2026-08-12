@@ -1,4 +1,4 @@
-use derive_more::derive::{Deref, From};
+use derive_more::derive::From;
 use p2panda::Hash;
 use serde::{Deserialize, Serialize};
 
