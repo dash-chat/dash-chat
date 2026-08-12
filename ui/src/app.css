@@ -298,7 +298,7 @@ li.plain span {
 
 .search-flash {
 	--flash-brightness: 1.5;
-	animation: search-flash-anim 1s ease-out;
+	animation: search-flash-anim 1.5s ease-out;
 }
 
 /* brightness() is multiplicative, so the dark incoming bubble needs a much
