@@ -297,23 +297,30 @@ li.plain span {
 }
 
 .search-flash {
-	animation: search-flash-anim 1.5s ease-out;
+	--flash-brightness: 1.5;
+	animation: search-flash-anim 1s ease-out;
+}
+
+/* brightness() is multiplicative, so the dark incoming bubble needs a much
+   larger factor than the bright outgoing one to shift by as many levels. */
+:where(.dark) .search-flash.incoming-message {
+	--flash-brightness: 3.0;
 }
 
 @keyframes search-flash-anim {
 	0% {
 		filter: brightness(1);
 	}
-	15% {
-		filter: brightness(1.4);
+	20% {
+		filter: brightness(var(--flash-brightness));
 	}
-	30% {
+	40% {
 		filter: brightness(1);
 	}
-	45% {
-		filter: brightness(1.4);
-	}
 	70% {
+		filter: brightness(var(--flash-brightness));
+	}
+	100% {
 		filter: brightness(1);
 	}
 }
