@@ -297,7 +297,7 @@ li.plain span {
 }
 
 .search-flash {
-	animation: search-flash-anim 0.8s ease-out;
+	animation: search-flash-anim 1.5s ease-out;
 }
 
 @keyframes search-flash-anim {
