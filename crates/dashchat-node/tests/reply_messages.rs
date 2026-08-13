@@ -271,3 +271,111 @@ async fn receiver_accepts_reply_to_an_edit_it_knows_is_superseded() {
         .unwrap();
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn late_joiner_syncing_crossing_replies_can_hit_target_not_found() {
+    setup();
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let carol = make_node(&mailbox, "carol").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&carol)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(maplit::btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap();
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    // Alice and bobbi build up a chain of replies that cross each other's
+    // logs before carol ever joins the group.
+    let alice_msg = alice
+        .send_message(chat_id, "hello", None, None)
+        .await
+        .unwrap();
+    poll.wait_for(|| async {
+        let n = bobbi.get_messages(chat_id).await.unwrap().len();
+        (n == 1).then_some(()).ok_or(n)
+    })
+    .await
+    .unwrap();
+
+    let bobbi_reply = bobbi
+        .send_message(chat_id, "hi back", None, Some(alice_msg.hash()))
+        .await
+        .unwrap();
+    poll.wait_for(|| async {
+        let replies = alice.valid_replies(chat_id).await.unwrap();
+        (replies.len() == 1)
+            .then_some(())
+            .ok_or_else(|| replies.clone())
+    })
+    .await
+    .unwrap();
+
+    alice
+        .send_message(chat_id, "no you", None, Some(bobbi_reply.hash()))
+        .await
+        .unwrap();
+    poll.wait_for(|| async {
+        let replies = bobbi.valid_replies(chat_id).await.unwrap();
+        (replies.len() == 2)
+            .then_some(())
+            .ok_or_else(|| replies.clone())
+    })
+    .await
+    .unwrap();
+
+    // Carol now joins a group whose history already contains two messages
+    // that reply into each other's logs. Catching her up requires processing
+    // both alice's and bobbi's logs; since there's no cross-log ordering
+    // (see the XXX on ReplyError::TargetNotFound), carol can fully process
+    // one author's log — including a reply into the other author's log —
+    // before that other log has been processed at all, hitting
+    // ReplyError::TargetNotFound while the target does in fact exist in the
+    // chat. Run with `dashchat=info` (the default in `setup()`) and
+    // `--nocapture` to see the warning logged from `process_app`.
+    alice
+        .add_group_member(chat_id, *carol.device_id(), p2panda_auth::Access::write())
+        .await
+        .unwrap();
+    carol
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi, &carol], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    poll.wait_for(|| async {
+        let replies = carol.valid_replies(chat_id).await.unwrap();
+        (replies.len() == 2)
+            .then_some(())
+            .ok_or_else(|| replies.clone())
+    })
+    .await
+    .unwrap();
+}
