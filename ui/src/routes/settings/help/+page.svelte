@@ -2,10 +2,10 @@
 	import { goto } from '$app/navigation';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { m } from '$lib/paraglide/messages.js';
+	import { offlineMode } from '$lib/stores/offline-mode.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { isAndroid } from '$lib/utils/environment';
-	import { startService } from 'tauri-plugin-background-service';
 	import {
 		BlockTitle,
 		List,
@@ -51,11 +51,15 @@
 						chevron={false}
 						title={m.startOfflineMode()}
 						data-testid="help-start-offline-mode"
-						onClick={() =>
-							startService({ serviceLabel: 'Dash Chat' }).catch(e => {
-								console.error('[background-service] startService failed:', e);
-							})}
-					/>
+						onClick={() => offlineMode.toggle()}
+					>
+						{#snippet after()}
+							<Toggle
+								checked={offlineMode.enabled}
+								onChange={() => offlineMode.toggle()}
+							/>
+						{/snippet}
+					</ListItem>
 				{/if}
 				{#await versionPromise then version}
 					<ListItem

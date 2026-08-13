@@ -63,6 +63,7 @@
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
+	import { startOfflineModeLifecycle } from '$lib/offline-mode/service-lifecycle';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
@@ -226,6 +227,11 @@
 	$effect(() => {
 		if (!isTauriEnv()) return;
 		return listenForDeepLinks(contactsStore);
+	});
+
+	$effect(() => {
+		if (!isTauriEnv()) return;
+		return startOfflineModeLifecycle();
 	});
 </script>
 
