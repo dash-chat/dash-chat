@@ -130,6 +130,8 @@ export function scrollToMessage(
 		void (card as HTMLElement).offsetWidth;
 		card.classList.add('search-flash');
 	});
+}
+
 /** Escaped HTML for a message body: http(s) urls become anchors, and search
  * matches are highlighted within each run. */
 export function messageTextHtml(text: string, query: string): string {
