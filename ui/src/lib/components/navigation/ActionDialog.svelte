@@ -77,12 +77,6 @@
 	}
 </script>
 
-{#snippet actionPreloader(action: ActionDialogAction)}
-	{#if running === action}
-		<Preloader class="ms-2 h-4 w-4" />
-	{/if}
-{/snippet}
-
 {#snippet cancelButton()}
 	<DialogButton onClick={cancel} disabled={loading} data-testid={cancelTestId}>
 		{cancelText}
@@ -98,7 +92,9 @@
 		data-testid={action.testid}
 	>
 		{action.text}
-		{@render actionPreloader(action)}
+		{#if running === action}
+			<Preloader class="ms-2 h-4 w-4" />
+		{/if}
 	</DialogButton>
 {/snippet}
 
@@ -122,7 +118,9 @@
 							data-testid={action.testid}
 						>
 							{action.text}
-							{@render actionPreloader(action)}
+							{#if running === action}
+								<Preloader class="ms-2 h-4 w-4" />
+							{/if}
 						</ActionButton>
 					{/each}
 					<ActionButton
