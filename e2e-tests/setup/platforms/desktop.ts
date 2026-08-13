@@ -1,5 +1,11 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,6 +49,40 @@ interface DesktopAgent {
 	nativePort: number;
 	driver?: ChildProcess;
 	logger?: ChildProcess | null;
+}
+
+function agentDir(slot: number): string {
+	return path.join(ROOT, '.dbs', 'e2e', `agent-${slot}`);
+}
+
+function openedUrlsPath(slot: number): string {
+	return path.join(agentDir(slot), 'opened-urls');
+}
+
+/**
+ * Put an `xdg-open` stub at the front of the agent's PATH. `open`, the crate
+ * behind tauri-plugin-opener, launches urls with `Command::new("xdg-open")`, so
+ * the stub records what the app asked the OS to open — exercising the whole
+ * real stack without a browser window appearing mid-run.
+ */
+function installXdgOpenStub(slot: number): string {
+	const binDir = path.join(agentDir(slot), 'bin');
+	mkdirSync(binDir, { recursive: true });
+	writeFileSync(
+		path.join(binDir, 'xdg-open'),
+		`#!/bin/sh\nprintf '%s\\n' "$1" >> ${JSON.stringify(openedUrlsPath(slot))}\n`,
+		{ mode: 0o755 },
+	);
+	return binDir;
+}
+
+/** The urls this agent asked the OS to open, oldest first. */
+export function readOpenedUrls(slot: number): string[] {
+	const file = openedUrlsPath(slot);
+	if (!existsSync(file)) return [];
+	return readFileSync(file, 'utf8')
+		.split('\n')
+		.filter(line => line !== '');
 }
 
 /** Agents running the desktop binary, one tauri-driver instance per slot. */
@@ -110,19 +150,20 @@ export class DesktopPlatform implements AgentPlatform {
 			// the Rust backend data, because WebKitGTK stores
 			// localStorage/IndexedDB under the XDG dirs (.local/share/, .config/,
 			// .cache/) inside the agent directory.
-			const agentDir = path.join(ROOT, '.dbs', 'e2e', `agent-${agent.slot}`);
+			const dataDir = agentDir(agent.slot);
 			try {
-				rmSync(agentDir, { recursive: true, force: true });
+				rmSync(dataDir, { recursive: true, force: true });
 			} catch {
 				/* ignore */
 			}
 
-			mkdirSync(agentDir, { recursive: true });
+			mkdirSync(dataDir, { recursive: true });
+			const binDir = installXdgOpenStub(agent.slot);
 
 			// tauri-plugin-log names the file after productName (tauri.conf.json).
 			agent.logger = startAgentLogger(
 				`agent-${agent.slot}`,
-				path.join(agentDir, 'logs', 'Dash Chat.log'),
+				path.join(dataDir, 'logs', 'Dash Chat.log'),
 			);
 
 			agent.driver = spawn(
@@ -137,8 +178,9 @@ export class DesktopPlatform implements AgentPlatform {
 					stdio: ['ignore', 'ignore', 'pipe'],
 					env: {
 						...process.env,
-						DATA_DIR: agentDir,
+						DATA_DIR: dataDir,
 						MAILBOX_URL: mailboxUrl,
+						PATH: `${binDir}:${process.env.PATH}`,
 						// Disable AT-SPI accessibility bridge to prevent D-Bus
 						// contention.
 						NO_AT_BRIDGE: '1',

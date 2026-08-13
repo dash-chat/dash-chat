@@ -142,6 +142,7 @@ pub fn run() {
             commands::contacts::active_inbox_topics,
             commands::contacts::block_contact,
             commands::contacts::unblock_contact,
+            commands::contacts::report_contact,
             commands::direct_chats::direct_chat_id,
             commands::chats::send_message,
             commands::chats::edit_message,
@@ -178,7 +179,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_sharekit::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_os::init());
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_opener::init());
 
     #[cfg(target_os = "android")]
     {

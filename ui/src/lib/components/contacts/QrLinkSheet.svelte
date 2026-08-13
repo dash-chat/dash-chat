@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, useTheme } from 'konsta/svelte';
+	import { Sheet } from 'konsta/svelte';
 	import { mdiContentCopy } from '@mdi/js';
 	import { mdiShare } from '$lib/utils/icon';
 	import { shareText } from '$lib/utils/share';
@@ -28,11 +28,13 @@
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
-	const theme = $derived(useTheme());
+
+	const elevatedSurface = 'bg-ios-light-surface-1 dark:bg-white/10';
 </script>
 
 <Sheet
-	class="pb-safe {theme === 'ios' ? 'bg-page-surface' : ''}"
+	class="pb-safe"
+	colors={{ bgIos: 'bg-ios-light-surface dark:bg-ios-dark-surface-1' }}
 	{opened}
 	onBackdropClick={onClose}
 >
@@ -44,7 +46,7 @@
 
 			{#if isIos}
 				<div
-					class="rounded-2xl bg-ios-light-surface-1 px-4 py-3 dark:bg-ios-dark-surface-1"
+					class="w-full rounded-2xl {elevatedSurface} px-4 py-3"
 					data-testid="qr-link-sheet-link"
 				>
 					<span class="break-all text-start text-sm">{link}</span>
@@ -57,7 +59,7 @@
 		</div>
 
 		<div class="pt-4 pb-8">
-			<ActionList>
+			<ActionList colors={{ strongBgIos: elevatedSurface }}>
 				<ListAction
 					title={m.copyLink()}
 					icon={mdiContentCopy}
