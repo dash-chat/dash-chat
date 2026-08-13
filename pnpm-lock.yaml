@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  konsta@5.0.6: e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f
+  konsta@5.0.6: 1e038298da6b55fe1f7ffd625b171603997dbdc355849796317ad1087f5dc569
   signalium@3.0.1: 2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97
 
 importers:
@@ -243,7 +243,7 @@ importers:
         version: 1.4.0
       konsta:
         specifier: ^5.0.6
-        version: 5.0.6(patch_hash=e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f)
+        version: 5.0.6(patch_hash=1e038298da6b55fe1f7ffd625b171603997dbdc355849796317ad1087f5dc569)
       linkifyjs:
         specifier: ^4.3.3
         version: 4.3.3
@@ -9759,7 +9759,7 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  konsta@5.0.6(patch_hash=e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f):
+  konsta@5.0.6(patch_hash=1e038298da6b55fe1f7ffd625b171603997dbdc355849796317ad1087f5dc569):
     dependencies:
       tailwind-merge: 3.4.0
 
