@@ -14,6 +14,7 @@ import {
 import { GroupChatStore } from '../group-chats/group-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, VerifyingKey } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
 import { pendingChatKey } from './chat-key';
@@ -26,6 +27,7 @@ export class ChatsStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		public client: IChatsClient,
 	) {
 		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
@@ -79,6 +81,7 @@ export class ChatsStore {
 			new GroupChatStore(
 				this.logsStore,
 				this.contactsStore,
+				this.tombstoneStore,
 				this.groupChatClient(),
 				chatId,
 				this.messagesClient(),
@@ -90,6 +93,7 @@ export class ChatsStore {
 			new DirectChatStore(
 				this.logsStore,
 				this.contactsStore,
+				this.tombstoneStore,
 				this.directChatClient(),
 				peer,
 				this.messagesClient(),

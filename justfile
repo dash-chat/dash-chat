@@ -52,6 +52,11 @@ format:
     cargo fmt
     pnpm -r --if-present format
 
+# typecheck every TS package and the rust workspace
+check:
+    cargo check --workspace
+    pnpm -r --if-present check
+
 # regenerate paraglide message exports from source translation files
 paraglide:
     pnpm --filter ui paraglide

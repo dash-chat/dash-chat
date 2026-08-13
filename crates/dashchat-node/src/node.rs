@@ -1,6 +1,7 @@
 pub(crate) mod actor;
 mod app_processing;
 pub(crate) mod publish;
+mod report;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
@@ -30,7 +31,7 @@ use tokio::task::JoinHandle;
 
 use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
-    collect_deletable_edit_chain,
+    collect_deletable_edit_chain, resolve_message_root,
 };
 use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
@@ -44,7 +45,7 @@ use crate::{
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
-pub use app_processing::Notification;
+pub use app_processing::{Notification, OpNotification, SystemNotification};
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -1083,7 +1084,7 @@ impl Node {
     /// `DeleteMessage` payload; processing it tombstones every operation in the
     /// chain. See [`DeleteError`](crate::chat::DeleteError).
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn delete_message(
+    pub async fn delete_message_for_everyone(
         &self,
         topic: impl Into<ChatId>,
         target: Hash,
@@ -1109,6 +1110,56 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// Delete a previously-sent message only for my own device group.
+    ///
+    /// Unlike [`Self::delete_message_for_everyone`], which requires the tip of
+    /// the edit chain, `target` here may be any operation in the chain — it is
+    /// resolved back to the original message before publishing, so the whole
+    /// chain is captured whichever version the caller names.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message_for_me(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let chat_id = topic.into();
+        let ops = self.valid_chat_ops(chat_id).await?;
+        // Resolve to the original message when we can, but fall back to the raw
+        // target when its body is gone (already deleted for everyone) or never
+        // fetched — such an op isn't in `valid_chat_ops`, and delete-for-me should
+        // still just remove it locally instead of erroring. Pruning guarantees
+        // every edit in `ops` has its target, so resolution fails only when
+        // `target` itself is absent, leaving nothing to walk back through.
+        //
+        // TODO: ACID: this is something to tighten up when revisiting tombstone logic.
+        let message_hash = resolve_message_root(&ops, &target).unwrap_or(target);
+
+        let header = self
+            .publish(
+                self.device_group_topic(),
+                Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(
+                    crate::payload::DeleteForMePayload {
+                        chat_id,
+                        message_hash,
+                    },
+                )),
+                Some(&format!("delete_message_for_me({:?})", chat_id.aliased())),
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Every tombstone in a chat, paired with why it was tombstoned. The
+    /// frontend uses this to drop delete-for-me messages (and their edits) from
+    /// view while keeping the delete-for-everyone placeholders.
+    pub async fn chat_tombstones(
+        &self,
+        chat_id: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<(Hash, crate::stores::TombstoneReason)>> {
+        self.projection.tombstones(chat_id.into().into()).await
     }
 
     /// Publish a delete without validating it. For testing the receiving-side

@@ -1,7 +1,11 @@
 import { simulateLongpress } from '../long-press';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
+import {
+	MEDIA_SYNC_TIMEOUT,
+	RENDER_SETTLE_WINDOW,
+	SYNC_TIMEOUT,
+} from '../timeouts';
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
@@ -94,6 +98,47 @@ export class Messages extends TestHelper {
 				document.querySelector(sel)?.textContent?.includes(t) ?? false,
 			this.messagesSelector,
 			text,
+		);
+	}
+
+	/** Wait until `text` is no longer present anywhere in the message list.
+	 * Delete-for-me removes the message with no placeholder (Signal UX). */
+	async waitForMessageGone(
+		text: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => !(await this.messageAreaContains(text)),
+			{ timeout, timeoutMsg: `Message "${text}" was still present` },
+		);
+	}
+
+	/** Wait until `originalText` is gone from the message list and a
+	 * deleted-message placeholder containing `placeholder` is shown. */
+	async waitForDeleted(
+		originalText: string,
+		placeholder: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				if (await this.messageAreaContains(originalText)) return false;
+				return this.agent.execute(
+					(messagesSel: string, deletedSel: string, p: string) => {
+						const els = document.querySelectorAll(
+							`${messagesSel} ${deletedSel}`,
+						);
+						return Array.from(els).some(el => el.textContent?.includes(p));
+					},
+					this.messagesSelector,
+					tid('message-deleted-placeholder'),
+					placeholder,
+				);
+			},
+			{
+				timeout,
+				timeoutMsg: `"${originalText}" was not replaced by the deleted placeholder`,
+			},
 		);
 	}
 
@@ -279,8 +324,15 @@ export class Message extends TestHelper {
 		return this.agent.$(tid('delete-message-cancel'));
 	}
 
-	get deleteDialogConfirm() {
+	/** Confirms delete-for-everyone. Offered only on my own messages, within the
+	 * delete window. */
+	get deleteForEveryoneDialogConfirm() {
 		return this.agent.$(tid('delete-message-confirm'));
+	}
+
+	/** Confirms delete-for-me, offered on every message. */
+	get deleteForMeDialogConfirm() {
+		return this.agent.$(tid('delete-message-for-me-confirm'));
 	}
 
 	/** Open this message's actions menu with the gesture its platform uses — a
@@ -293,6 +345,19 @@ export class Message extends TestHelper {
 			await this.clickHoverButton('message-hover-menu');
 		}
 		await this.actionsMenu.waitForDisplayed();
+	}
+
+	/** Fail unless this message's actions menu is open now and still open
+	 * `ms` later. Use after something that re-renders the chat: a menu torn
+	 * down by a re-render can outlive the first one of a burst. */
+	async expectActionsMenuToStayOpen(ms = RENDER_SETTLE_WINDOW): Promise<void> {
+		const deadline = Date.now() + ms;
+		while (Date.now() < deadline) {
+			if (!(await this.actionsMenu.isDisplayed())) {
+				throw new Error(`Actions menu on message ${this.hash} closed`);
+			}
+			await this.agent.pause(100);
+		}
 	}
 
 	/** The right-click menu, a second actions menu the message hosts alongside
@@ -464,13 +529,27 @@ export class Message extends TestHelper {
 		await this.composer.send();
 	}
 
-	/** Open the actions menu, tap Delete, and confirm deleting for everyone. */
-	async delete(): Promise<void> {
+	/** Open the actions menu, tap Delete, and confirm "Delete for everyone". */
+	async deleteForEveryone(): Promise<void> {
+		await this.openDeleteDialog();
+		await this.deleteForEveryoneDialogConfirm.waitForClickable();
+		await this.deleteForEveryoneDialogConfirm.click();
+	}
+
+	/** Open the actions menu, tap Delete, and confirm "Delete for me". */
+	async deleteForMe(): Promise<void> {
+		await this.openDeleteDialog();
+		await this.deleteForMeDialogConfirm.waitForClickable();
+		await this.deleteForMeDialogConfirm.click();
+	}
+
+	/** Open the actions menu and tap Delete, leaving the confirmation dialog open
+	 * for the caller to confirm or inspect. */
+	async openDeleteDialog(): Promise<void> {
 		await this.openActions();
 		await this.deleteAction.waitForClickable();
 		await this.deleteAction.click();
-		await this.deleteDialogConfirm.waitForClickable();
-		await this.deleteDialogConfirm.click();
+		await this.deleteDialog.waitForDisplayed();
 	}
 
 	/** Wait for this message to render the deleted-for-everyone placeholder

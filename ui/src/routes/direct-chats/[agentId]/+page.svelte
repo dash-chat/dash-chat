@@ -44,6 +44,7 @@
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import BlockContactDialog from '$lib/components/contacts/block/BlockContactDialog.svelte';
 	import UnblockContactDialog from '$lib/components/contacts/block/UnblockContactDialog.svelte';
+	import ReportContactDialog from '$lib/components/contacts/report/ReportContactDialog.svelte';
 	import BlockedActionsBar from '$lib/components/contacts/block/BlockedActionsBar.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
@@ -52,6 +53,7 @@
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
+	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import { messagePosition } from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
@@ -122,6 +124,7 @@
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
 	let showBlockDialog = $state(false);
+	let showReportDialog = $state(false);
 	let profileNamesSheetOpen = $state(false);
 	// Initial value reserves space for the bottom bar before bind:clientHeight
 	// has measured it, so the latest message doesn't flash under the input on
@@ -550,7 +553,9 @@
 																})}
 															</div>
 														{/if}
-														{#if item.kind === 'block'}
+														{#if item.kind === 'report'}
+															<ReportMessage />
+														{:else if item.kind === 'block'}
 															<SystemMessage event={item.event} />
 														{:else}
 															{@const message = item.message}
@@ -654,6 +659,13 @@
 					{/if}
 				{/await}
 
+				<ReportContactDialog
+					bind:opened={showReportDialog}
+					{agentId}
+					name={profile ? fullName(profile) : ''}
+					onDone={() => goto('/')}
+				/>
+
 				<SafetyTipsSheet
 					opened={showSecurityTips}
 					onClose={() => (showSecurityTips = false)}
@@ -721,6 +733,7 @@
 										<ContactRequestBar
 											name={contactRequest.profile.name}
 											onBlock={() => (showBlockDialog = true)}
+											onReport={() => (showReportDialog = true)}
 											onAccept={() => (showAcceptDialog = true)}
 										/>
 									{/if}

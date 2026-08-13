@@ -28,6 +28,9 @@
 		MockChatsStore,
 		MockMailboxTrackerStore,
 		MockSettingsClient,
+		MockTombstoneClient,
+		TombstoneClient,
+		TombstoneStore,
 		seedDemoData,
 		DEMO_IDS,
 	} from 'dash-chat-stores';
@@ -44,7 +47,10 @@
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
-	import { forwardConsoleToTauriLog } from '$lib/utils/logs';
+	import {
+		forwardConsoleToTauriLog,
+		reportUncaughtErrors,
+	} from '$lib/utils/logs';
 	import {
 		listenForDeepLinks,
 		handleLaunchDeepLink,
@@ -82,6 +88,7 @@
 
 	// Forward console.log/info/warn/error from the WebView to the tauri logs
 	forwardConsoleToTauriLog();
+	reportUncaughtErrors();
 
 	let { children } = $props();
 
@@ -95,6 +102,7 @@
 	let logsStore: LogsStore<Payload>;
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
+	let tombstoneStore: TombstoneStore;
 	let chatsStore: ChatsStore;
 	let mailboxTrackerStore: IMailboxTrackerStore;
 
@@ -123,13 +131,19 @@
 			mockContactsClient,
 		);
 
+		tombstoneStore = new TombstoneStore(
+			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
+		);
+
 		const mockChatsClient = new MockChatsClient();
 		chatsStore = new MockChatsStore(
 			logsStore,
 			contactsStore,
+			tombstoneStore,
 			mockChatsClient,
 			mockLogsClient,
 			DEMO_IDS.MY_AGENT_ID,
+			DEMO_IDS.DEVICE_GROUP_TOPIC,
 		);
 
 		mailboxTrackerStore = new MockMailboxTrackerStore();
@@ -144,8 +158,15 @@
 		const contactsClient = new ContactsClient(logsClient);
 		contactsStore = new ContactsStore(logsStore, devicesStore, contactsClient);
 
+		tombstoneStore = new TombstoneStore(new TombstoneClient());
+
 		const chatsClient = new ChatsClient();
-		chatsStore = new ChatsStore(logsStore, contactsStore, chatsClient);
+		chatsStore = new ChatsStore(
+			logsStore,
+			contactsStore,
+			tombstoneStore,
+			chatsClient,
+		);
 
 		mailboxTrackerStore = new MailboxTrackerStore();
 

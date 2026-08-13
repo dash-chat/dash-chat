@@ -8,7 +8,7 @@
 		mdiClose,
 		mdiTrayArrowDown,
 	} from '@mdi/js';
-	import { darkOverlay } from '$lib/actions/dark-overlay';
+	import { lightSystemBars } from '$lib/actions/light-system-bars';
 	import type { PhotoAttachment } from 'dash-chat-stores';
 	import { savePhoto, loadMediaBytes, BlobLoadError } from '$lib/utils/media';
 	import { shareFile } from '$lib/utils/files';
@@ -160,8 +160,8 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="fixed inset-0 z-50 bg-black"
-	use:darkOverlay
+	class="dark fixed inset-0 z-50 bg-black"
+	use:lightSystemBars
 	role="dialog"
 	aria-modal="true"
 	aria-label={photo.name}

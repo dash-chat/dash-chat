@@ -10,7 +10,7 @@
 		"build": "rimraf dist && tsc && babel ./src --extensions \".ts\" --out-dir ./dist",
 		"dev": "concurrently -k \"tsc -w --preserveWatchOutput\" \"babel --watch ./src --extensions \".ts\" --out-dir ./dist\"",
 		"format": "prettier --write 'src/**/*.ts'",
-		"check": "prettier --check 'src/**/*.ts'"
+		"check": "tsc --noEmit && prettier --check 'src/**/*.ts'"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2",
@@ -19,7 +19,7 @@
 		"emittery": "^1.2.0",
 		"rimraf": "^6.1.0",
 		"signalium": "^3.0.1",
-		"tauri-plugin-system-theme": "github:dash-chat/tauri-plugin-system-theme#27d004e3f97ad088a9a2fcdc4a03bd45825265dd",
+		"tauri-plugin-system-theme": "github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d",
 		"webbuf": "^3.0.28"
 	},
 	"devDependencies": {

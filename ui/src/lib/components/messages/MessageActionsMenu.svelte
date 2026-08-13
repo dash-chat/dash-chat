@@ -3,10 +3,7 @@
 	import { mdiContentCopy, mdiDeleteOutline, mdiPencilOutline } from '@mdi/js';
 	import { List } from 'konsta/svelte';
 	import type { DeviceId, Message } from 'dash-chat-stores';
-	import {
-		canDeleteMessageForEveryone,
-		canEditMessage,
-	} from './message-helpers';
+	import { canEditMessage } from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 
 	interface Props {
@@ -31,7 +28,6 @@
 	}: Props = $props();
 
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
-	const canDelete = $derived(canDeleteMessageForEveryone(message, myDeviceId));
 </script>
 
 <List nested data-testid={testid}>
@@ -49,12 +45,12 @@
 		onClick={onCopy}
 		data-testid="message-action-copy"
 	/>
-	{#if canDelete}
+	{#if onDelete}
 		<ListAction
 			title={m.delete()}
 			icon={mdiDeleteOutline}
 			actionType="danger"
-			onClick={() => onDelete?.()}
+			onClick={onDelete}
 			data-testid="message-action-delete"
 		/>
 	{/if}

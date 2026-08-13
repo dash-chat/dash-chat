@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   konsta@5.0.6: e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f
-  signalium@3.0.1: 9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106
+  signalium@3.0.1: 2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97
 
 importers:
 
@@ -149,10 +149,10 @@ importers:
         version: 6.1.0
       signalium:
         specifier: ^3.0.1
-        version: 3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)
+        version: 3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)
       tauri-plugin-system-theme:
-        specifier: github:dash-chat/tauri-plugin-system-theme#27d004e3f97ad088a9a2fcdc4a03bd45825265dd
-        version: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd(signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106))
+        specifier: github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d
+        version: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97))
       webbuf:
         specifier: ^3.0.28
         version: 3.0.28
@@ -255,7 +255,7 @@ importers:
         version: 1.0.0
       signalium:
         specifier: ^3.0.1
-        version: 3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)
+        version: 3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)
       tailwindcss:
         specifier: ^4.1.18
         version: 4.1.18
@@ -266,14 +266,14 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       tauri-plugin-system-theme:
-        specifier: github:dash-chat/tauri-plugin-system-theme#27d004e3f97ad088a9a2fcdc4a03bd45825265dd
-        version: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd(signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106))
+        specifier: github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d
+        version: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97))
       tauri-plugin-view-api:
         specifier: ^0.0.5
         version: 0.0.5
       tauri-plugin-virtual-keyboard:
         specifier: github:dash-chat/tauri-plugin-virtual-keyboard#a20b82e5091fa9834b1ea1014fc336ebfe7c4547
-        version: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547(signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106))
+        version: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97))
       vite-plugin-babel:
         specifier: ^1.3.2
         version: 1.3.2(@babel/core@7.28.5(supports-color@8.1.1))(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.0))
@@ -5211,8 +5211,8 @@ packages:
   tauri-plugin-background-service@1.0.0:
     resolution: {integrity: sha512-i3ANk6SLyTGInXJNQez1VrgnDYqlCptVtgjMO2neZQbH3lYnwKH9cfXKMAsqotTEAE/dTseCove+ielnuUQ2hg==}
 
-  tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd:
-    resolution: {gitHosted: true, integrity: sha512-cj99p71/WJTX+PgPPBUl76w7odrkRjBRTiHaduDR13YXbtHbpycSSpHyFHzHXPMJ+xJDLdbTb4T7grTENstKPw==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd}
+  tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d:
+    resolution: {gitHosted: true, integrity: sha512-SH/YsIdzSpG6yed/qiJdzipcWVP0y34uCmfS5st/zr3rpBKj1pthIgedvZUko9f7SK3LGQyuOSTjzHj+wk1M5A==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d}
     version: 0.1.0
     peerDependencies:
       signalium: ^3
@@ -10840,7 +10840,7 @@ snapshots:
 
   signal-polyfill@0.1.2: {}
 
-  signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106): {}
+  signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97): {}
 
   simple-swizzle@0.2.4:
     dependencies:
@@ -11134,19 +11134,19 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.11.0
 
-  tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/27d004e3f97ad088a9a2fcdc4a03bd45825265dd(signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)):
+  tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)):
     dependencies:
       '@tauri-apps/api': 2.11.0
-      signalium: 3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)
+      signalium: 3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)
 
   tauri-plugin-view-api@0.0.5:
     dependencies:
       '@tauri-apps/api': 2.10.1
 
-  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547(signalium@3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)):
+  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)):
     dependencies:
       '@tauri-apps/api': 2.11.0
-      signalium: 3.0.1(patch_hash=9fe320a67075ed13dfb291c5184767e9c337389d12a1fc49730aded24fe60106)
+      signalium: 3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)
 
   teen_process@2.3.2:
     dependencies:
