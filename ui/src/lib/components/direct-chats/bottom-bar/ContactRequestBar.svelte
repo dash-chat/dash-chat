@@ -7,10 +7,11 @@
 	interface Props {
 		name: string;
 		onBlock: () => void;
+		onReport: () => void;
 		onAccept: () => void;
 	}
 
-	let { name, onBlock, onAccept }: Props = $props();
+	let { name, onBlock, onReport, onAccept }: Props = $props();
 </script>
 
 <div class="flex flex-col items-center gap-3 px-6 py-3">
@@ -31,6 +32,18 @@
 			}}
 			data-testid="direct-chat-block-btn"
 			onClick={onBlock}>{m.block()}</Button
+		>
+		<Button
+			class="neutral-tonal-button {isWideScreen.value ? '' : 'flex-1'}"
+			rounded
+			tonal
+			large={!isWideScreen.value}
+			colors={{
+				tonalTextIos: 'text-red-500',
+				tonalTextMaterial: 'text-red-500',
+			}}
+			data-testid="direct-chat-report-btn"
+			onClick={onReport}>{m.report()}</Button
 		>
 		<Button
 			class="neutral-tonal-button {isWideScreen.value ? '' : 'flex-1'}"

@@ -4,7 +4,7 @@ import { isPendingChatKey, pendingChatKeyDevice } from '../chats/chat-key';
 import { type IMessagesClient } from '../chats/messages-client';
 import { Message, MessagesStore } from '../chats/messages-store';
 import { fullName } from '../contacts/contacts-client';
-import { ContactsStore } from '../contacts/contacts-store';
+import { ContactReport, ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
@@ -18,6 +18,7 @@ import { type IDirectChatClient } from './direct-chat-client';
 
 export type DirectChatEvent =
 	| { kind: 'message'; message: Message }
+	| { kind: 'report'; report: ContactReport }
 	| { kind: 'block'; event: BlockEvent };
 
 // Store tied to a specific direct chat
@@ -84,6 +85,9 @@ export class DirectChatStore {
 
 	groupedEvents = reactive(async () => {
 		const messages = await this.messages.messages();
+		const reports = this.isPending
+			? {}
+			: await this.contactsStore.reports(this.peer);
 		const blockHistory = this.isPending
 			? {}
 			: await this.contactsStore.blockHistory(this.peer);
@@ -102,6 +106,16 @@ export class DirectChatStore {
 				author: message.author,
 				timestamp: message.timestamp,
 				type: 'Message',
+			};
+		}
+
+		for (const [hash, report] of Object.entries(reports)) {
+			devices.add(report.author);
+			eventsWithProvenance[hash] = {
+				event: { kind: 'report', report },
+				author: report.author,
+				timestamp: report.timestamp,
+				type: 'ReportContact',
 			};
 		}
 
