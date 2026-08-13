@@ -32,7 +32,6 @@
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
 	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
-	import { showToast } from '$lib/utils/toasts';
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -86,15 +85,24 @@
 	// }
 
 	async function handleRemove() {
-		const actorId = dialogActorId;
-		if (!actorId) return;
+		if (!dialogActorId) {
+			return {
+				success: false as const,
+				error: m.errorUnexpected(),
+			};
+		}
+
 		try {
-			await groupChatStore.client.removeMember(chatId, actorId);
+			await groupChatStore.client.removeMember(chatId, dialogActorId);
 			dialogType = null;
 			dialogActorId = null;
+			return { success: true as const };
 		} catch (e) {
 			console.error(e);
-			showToast(m.errorUnexpected(), 'error');
+			return {
+				success: false as const,
+				error: m.errorUnexpected(),
+			};
 		}
 	}
 
@@ -103,14 +111,19 @@
 			await chatsStore.leaveGroup(chatId);
 			goto('/');
 			dialogType = null;
+			return { success: true as const };
 		} catch (e) {
 			console.error(e);
 			const errorMessage =
 				(e as { kind?: string }).kind === 'LastAdmin'
 					? m.errorLeavingGroupOnlyAdmin()
 					: m.errorLeavingGroup();
+
 			dialogType = null;
-			showToast(errorMessage, 'error');
+			return {
+				success: false as const,
+				error: errorMessage,
+			};
 		}
 	}
 

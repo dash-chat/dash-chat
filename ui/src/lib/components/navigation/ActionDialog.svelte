@@ -9,11 +9,14 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import ActionButton from './ActionButton.svelte';
 	import { isIos } from '$lib/utils/environment';
+	import { showToast } from '$lib/utils/toasts';
 	import type { Snippet } from 'svelte';
+
+	type ActionResult = { success: true } | { success: false; error: string };
 
 	export interface Action {
 		text: string;
-		onClick: () => void | Promise<void>;
+		onClick: () => Promise<ActionResult>;
 		destructive?: boolean;
 		testid?: string;
 	}
@@ -46,12 +49,13 @@
 	let running = $state<Action | null>(null);
 
 	async function run(action: Action) {
-		const result = action.onClick();
-		if (!(result instanceof Promise)) return;
 		loading = true;
 		running = action;
 		try {
-			await result;
+			const result = await action.onClick();
+			if (!result.success) {
+				showToast(result.error, 'error');
+			}
 		} finally {
 			loading = false;
 			running = null;
