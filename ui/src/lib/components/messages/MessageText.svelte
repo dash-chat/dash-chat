@@ -4,7 +4,8 @@
 
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { highlightMatch } from './message-helpers';
+	import { openExternalUrl } from '$lib/utils/links';
+	import { messageTextHtml } from './message-helpers';
 
 	interface Props {
 		text: string;
@@ -46,14 +47,23 @@
 	function expand() {
 		displayLimit += INCREMENT_COUNT;
 	}
+
+	// The anchors come from `{@html}`, so the listener has to be delegated.
+	// `preventDefault` keeps the webview from navigating away from the app.
+	function openLink(e: MouseEvent) {
+		if (!(e.target instanceof HTMLElement)) return;
+		const link = e.target.closest('a');
+		if (!link) return;
+		e.preventDefault();
+		openExternalUrl(link.href).catch(err =>
+			console.error('[links] failed to open link', err),
+		);
+	}
 </script>
 
-<span class="whitespace-pre-wrap"
-	><span data-message-text
-		>{#if searchQuery}{@html highlightMatch(
-				shown,
-				searchQuery,
-			)}{:else}{shown}{/if}</span
+<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+<span class="whitespace-pre-wrap" onclick={openLink}
+	><span data-message-text>{@html messageTextHtml(shown, searchQuery)}</span
 	>{#if truncated}{'… '}<button
 			type="button"
 			class="read-more"
@@ -63,6 +73,13 @@
 >
 
 <style>
+	/* The anchors are injected by `{@html}`, so scoped styles can't reach them. */
+	[data-message-text] :global(.message-link) {
+		color: inherit;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
 	.read-more {
 		padding: 0;
 		border: none;

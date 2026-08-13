@@ -10,7 +10,7 @@ export IPHONEOS_DEPLOYMENT_TARGET := "17.0"
 
 # run the app in development mode. --host makes Tauri set TAURI_DEV_HOST and
 # serve the dev URL on the LAN IP so a physical device can reach Vite + HMR.
-dev:
+dev: sync-xcode-env
     pnpm tauri ios dev --host
 
 # run the app in an iPhone simulator

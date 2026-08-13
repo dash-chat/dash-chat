@@ -492,6 +492,24 @@ export class Message extends TestHelper {
 		);
 	}
 
+	/** The hrefs of the links rendered inside this message's text. */
+	linkHrefs(): Promise<string[]> {
+		return this.agent.execute(
+			(wrapperSel: string, linkSel: string) =>
+				Array.from(
+					document.querySelector(wrapperSel)?.querySelectorAll(linkSel) ?? [],
+					link => link.getAttribute('href') ?? '',
+				),
+			this.wrapperSelector,
+			tid('message-link'),
+		);
+	}
+
+	/** Tap the link with `href` inside this message's text. */
+	async tapLink(href: string): Promise<void> {
+		await this.wrapper.$(`${tid('message-link')}[href="${href}"]`).click();
+	}
+
 	/** Whether this message shows the "Edited" indicator. */
 	hasEditedIndicator(): Promise<boolean> {
 		return this.agent.execute(
