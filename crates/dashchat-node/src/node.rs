@@ -1,6 +1,7 @@
 pub(crate) mod actor;
 mod app_processing;
 pub(crate) mod publish;
+mod report;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;

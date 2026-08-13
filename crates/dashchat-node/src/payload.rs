@@ -192,6 +192,24 @@ pub enum DeviceGroupPayload {
     UnblockAgent(AgentId),
     ReadMessages(ReadMessagesPayload),
     DeleteForMe(DeleteForMePayload),
+    ReportContact(ReportContactPayload),
+}
+
+/// Records that this device reported a contact to one or more mailboxes.
+///
+/// Written only after at least one mailbox accepted the report, so the presence
+/// of the operation is proof a report was delivered. It lives in the private
+/// device group topic: it syncs the record across the reporter's own devices
+/// and is never seen by the reported contact. Reporting is always available —
+/// each report produces another operation, and the UI renders one bubble per
+/// operation at its timestamp rather than collapsing them into a "reported"
+/// flag.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReportContactPayload {
+    pub agent_id: AgentId,
+    pub device_ids: Vec<DeviceId>,
+    /// Ids of the mailboxes that accepted this report.
+    pub mailbox_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

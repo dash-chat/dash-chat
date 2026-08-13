@@ -79,7 +79,10 @@
 			<ActionsGroup
 				class="flex flex-col gap-2 !bg-white p-2.5 dark:!bg-neutral-900"
 			>
-				<ActionsTitle title={m.deleteMessageTitle()} />
+				<ActionsTitle
+					title={m.deleteMessageTitle()}
+					subtitle={forEveryone ? m.deleteMessageDescription() : undefined}
+				/>
 				{#if forEveryone}
 					<ActionButton
 						destructive
@@ -111,9 +114,12 @@
 			title={m.deleteMessageTitle()}
 			data-testid="delete-message-dialog"
 		>
+			{#if forEveryone}
+				{m.deleteMessageDescription()}
+			{/if}
 			{#snippet buttons()}
 				{#if forEveryone}
-					<div class="flex w-full flex-col">
+					<div class="flex w-full flex-col items-end gap-2">
 						<DialogButton
 							class="!text-red-500"
 							data-testid="delete-message-confirm"
