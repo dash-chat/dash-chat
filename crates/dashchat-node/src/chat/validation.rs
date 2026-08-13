@@ -17,11 +17,12 @@ use p2panda::Hash;
 
 use crate::DeviceId;
 
-/// A chat operation reduced to only the facts that edit/delete validation cares about.
+/// A chat operation reduced to only the facts that edit/delete/reply validation cares about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatOpKind {
-    /// An original `ChatPayload::Message`.
-    Message,
+    /// An original `ChatPayload::Message`, carrying its reply target (if any)
+    /// once that target has passed validation — see [`ValidChatOps::prune`].
+    Message { reply: Option<Hash> },
     /// A `ChatPayload::EditMessage` pointing at the operation it edits.
     Edit(Hash),
     /// A `ChatPayload::DeleteMessage` carrying the full edit chain it deletes.
@@ -114,5 +115,130 @@ impl ValidChatOps {
                 break;
             }
         }
+
+        self.prune_invalid_replies();
+    }
+
+    // Clear reply annotations that don't pass validation, so callers can
+    // trust a `Some` reply target on a pruned `Message` without re-running
+    // `ReplyCandidate::validate` themselves. Unlike edits/deletes, an invalid
+    // reply never removes the op carrying it — the message stays, only the
+    // quote is dropped — and clearing a reply can't invalidate anything else,
+    // so a single pass (after edit/delete pruning above) is enough.
+    fn prune_invalid_replies(&mut self) {
+        let candidates: Vec<(Hash, Hash, u64)> = self
+            .0
+            .iter()
+            .filter_map(|(hash, op)| match op.kind {
+                ChatOpKind::Message {
+                    reply: Some(target),
+                } => Some((*hash, target, op.timestamp)),
+                _ => None,
+            })
+            .collect();
+        for (hash, target, timestamp) in candidates {
+            let valid = ReplyCandidate {
+                target,
+                timestamp,
+                self_hash: Some(hash),
+            }
+            .validate(self)
+            .is_ok();
+            if !valid {
+                if let Some(op) = self.0.get_mut(&hash) {
+                    op.kind = ChatOpKind::Message { reply: None };
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_common::*;
+    use super::*;
+
+    #[test]
+    fn prune_clears_a_reply_targeting_an_unknown_message() {
+        let alice = device(1);
+        let bobbi = device(2);
+        let mut ops = ValidChatOps::new([
+            (hash(1), message(alice, 1000, 0)),
+            (
+                hash(2),
+                ChatOp {
+                    author: bobbi,
+                    timestamp: 2000,
+                    seq_num: 0,
+                    kind: ChatOpKind::Message {
+                        reply: Some(hash(9)),
+                    },
+                },
+            ),
+        ]);
+
+        ops.prune();
+
+        assert_eq!(
+            ops.get(&hash(2)).unwrap().kind,
+            ChatOpKind::Message { reply: None }
+        );
+    }
+
+    #[test]
+    fn prune_keeps_a_reply_targeting_a_known_message() {
+        let alice = device(1);
+        let bobbi = device(2);
+        let mut ops = ValidChatOps::new([
+            (hash(1), message(alice, 1000, 0)),
+            (
+                hash(2),
+                ChatOp {
+                    author: bobbi,
+                    timestamp: 2000,
+                    seq_num: 0,
+                    kind: ChatOpKind::Message {
+                        reply: Some(hash(1)),
+                    },
+                },
+            ),
+        ]);
+
+        ops.prune();
+
+        assert_eq!(
+            ops.get(&hash(2)).unwrap().kind,
+            ChatOpKind::Message {
+                reply: Some(hash(1))
+            }
+        );
+    }
+
+    #[test]
+    fn prune_clears_a_reply_to_a_message_deleted_in_the_same_pass() {
+        let alice = device(1);
+        let bobbi = device(2);
+        let mut ops = ValidChatOps::new([
+            (hash(1), message(alice, 1000, 0)),
+            (hash(2), delete(alice, 2000, 1, maplit::btreeset![hash(1)])),
+            (
+                hash(3),
+                ChatOp {
+                    author: bobbi,
+                    timestamp: 3000,
+                    seq_num: 0,
+                    kind: ChatOpKind::Message {
+                        reply: Some(hash(1)),
+                    },
+                },
+            ),
+        ]);
+
+        ops.prune();
+
+        assert_eq!(
+            ops.get(&hash(3)).unwrap().kind,
+            ChatOpKind::Message { reply: None }
+        );
     }
 }

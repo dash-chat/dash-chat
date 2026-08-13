@@ -55,7 +55,7 @@ pub fn collect_deletable_edit_chain(
 ) -> Result<BTreeSet<Hash>, DeleteError> {
     let target_op = valid_ops.get(target).ok_or(DeleteError::TargetNotFound)?;
     match target_op.kind {
-        ChatOpKind::Message | ChatOpKind::Edit(_) => {}
+        ChatOpKind::Message { .. } | ChatOpKind::Edit(_) => {}
         ChatOpKind::Delete(_) | ChatOpKind::Other => return Err(DeleteError::TargetNotDeletable),
     }
 
@@ -72,7 +72,7 @@ pub fn collect_deletable_edit_chain(
         chain.insert(current);
         let op = valid_ops.get(&current).ok_or(DeleteError::TargetNotFound)?;
         match &op.kind {
-            ChatOpKind::Message => return Ok(chain),
+            ChatOpKind::Message { .. } => return Ok(chain),
             ChatOpKind::Edit(t) => current = *t,
             ChatOpKind::Delete(_) | ChatOpKind::Other => {
                 return Err(DeleteError::TargetNotDeletable);
@@ -97,7 +97,7 @@ pub fn resolve_message_root(
     for _ in 0..valid_ops.len() + 1 {
         let op = valid_ops.get(&current).ok_or(DeleteError::TargetNotFound)?;
         match &op.kind {
-            ChatOpKind::Message => return Ok(current),
+            ChatOpKind::Message { .. } => return Ok(current),
             ChatOpKind::Edit(edit_hash) => current = *edit_hash,
             ChatOpKind::Delete(_) | ChatOpKind::Other => {
                 return Err(DeleteError::TargetNotDeletable);
@@ -172,7 +172,7 @@ impl DeleteCandidate {
         for hash in &self.hashes {
             let op = valid_ops.get(hash).ok_or(DeleteError::TargetNotFound)?;
             match &op.kind {
-                ChatOpKind::Message => {
+                ChatOpKind::Message { .. } => {
                     // Exactly one original message per chain.
                     if root.replace(*hash).is_some() {
                         return Err(DeleteError::IncompleteChain);
@@ -242,7 +242,7 @@ impl DeleteCandidate {
             .iter()
             .find_map(|hash| {
                 let op = valid_ops.get(hash)?;
-                matches!(op.kind, ChatOpKind::Message).then_some(op.timestamp)
+                matches!(op.kind, ChatOpKind::Message { .. }).then_some(op.timestamp)
             })
             .ok_or(DeleteError::TargetNotFound)?;
         if self.delete_timestamp.saturating_sub(root_timestamp) > DELETE_WINDOW_MICROS {

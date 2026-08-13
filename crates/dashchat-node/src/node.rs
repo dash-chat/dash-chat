@@ -1216,7 +1216,7 @@ impl Node {
                     continue;
                 };
                 let kind = match chat {
-                    ChatPayload::Message(_) => ChatOpKind::Message,
+                    ChatPayload::Message(m) => ChatOpKind::Message { reply: m.reply() },
                     ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
                     ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
                     _ => ChatOpKind::Other,
@@ -1300,22 +1300,22 @@ impl Node {
                 else {
                     continue;
                 };
-                let Some(target) = message.reply() else {
+                let op_hash = op.header.hash();
+                let Some(ChatOp {
+                    kind:
+                        ChatOpKind::Message {
+                            reply: Some(target),
+                        },
+                    ..
+                }) = valid_ops.get(&op_hash)
+                else {
                     continue;
                 };
-                let op_hash = op.header.hash();
-                let candidate = ReplyCandidate {
-                    target,
-                    timestamp: op.header.timestamp.into(),
-                    self_hash: Some(op_hash),
-                };
-                if candidate.validate(&valid_ops).is_ok() {
-                    replies.push(crate::chat::ValidReply {
-                        op_hash,
-                        target,
-                        text: message.message().to_string(),
-                    });
-                }
+                replies.push(crate::chat::ValidReply {
+                    op_hash,
+                    target: *target,
+                    text: message.message().to_string(),
+                });
             }
         }
 

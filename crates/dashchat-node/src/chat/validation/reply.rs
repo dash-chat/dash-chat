@@ -75,7 +75,7 @@ impl ReplyCandidate {
             .get(&self.target)
             .ok_or(ReplyError::TargetNotFound)?;
         match target.kind {
-            ChatOpKind::Message | ChatOpKind::Edit(_) => Ok(()),
+            ChatOpKind::Message { .. } | ChatOpKind::Edit(_) => Ok(()),
             ChatOpKind::Delete(_) | ChatOpKind::Other => Err(ReplyError::TargetNotRepliable),
         }
     }
@@ -137,7 +137,7 @@ mod tests {
             author,
             timestamp,
             seq_num,
-            kind: ChatOpKind::Message,
+            kind: ChatOpKind::Message { reply: None },
         }
     }
 
