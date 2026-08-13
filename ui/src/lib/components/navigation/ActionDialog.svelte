@@ -25,8 +25,6 @@
 		opened: boolean;
 		title: string;
 		children: Snippet;
-		/** Primary actions, most prominent first. Cancel is appended
-		 * automatically. */
 		actions: Action[];
 		cancelText?: string;
 		cancelTestId?: string;
