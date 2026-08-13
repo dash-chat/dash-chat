@@ -86,8 +86,7 @@
             gst_all_1.gstreamer
             gst_all_1.gst-plugins-base
             gst_all_1.gst-plugins-good
-            # cpal links libasound for voice-note mic capture.
-            alsa-lib
+            pkgsPnpm.alsa-lib
           ];
           gstPluginPath = pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" [
             pkgs.gst_all_1.gstreamer
@@ -135,8 +134,7 @@
           ]
           ++ lib.optionals pkgs.stdenv.isLinux [
             pkgs.mold
-            # alsa-sys needs the .pc file at build time (cpal → mic capture).
-            pkgs.alsa-lib
+            pkgsPnpm.alsa-lib
           ];
         in
         rec {
