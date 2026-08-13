@@ -1,4 +1,3 @@
-import type { SimplifiedOperation } from '../p2panda/simplified-types';
 import type { DeviceId, Hash } from '../p2panda/types';
 import type { MediaAttachment, Payload } from '../types';
 import { mediaBundleToAttachment } from '../types';
@@ -37,29 +36,13 @@ export function replyAuthor(
 	return reply.author;
 }
 
-interface OpInfo {
+/** An operation reduced to what reply resolution needs to look it up by hash:
+ * quotes and scroll targets point at ops that may not render as messages
+ * themselves (edits, tombstoned bodies). */
+export interface OpInfo {
 	author: DeviceId;
 	timestamp: number;
 	body: Payload | undefined;
-}
-
-/** Every operation in the chat's logs by hash, the lookup reply resolution
- * walks: quotes and scroll targets point at ops that may not render as
- * messages themselves (edits, tombstoned bodies). */
-export function collectOps(
-	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
-): Record<Hash, OpInfo> {
-	const ops: Record<Hash, OpInfo> = {};
-	for (const operations of Object.values(logs)) {
-		for (const op of operations) {
-			ops[op.hash] = {
-				author: op.header.verifying_key,
-				timestamp: op.header.timestamp,
-				body: op.body,
-			};
-		}
-	}
-	return ops;
 }
 
 function chatPayload(op: OpInfo | undefined) {
@@ -86,48 +69,6 @@ function rootMessageHash(
 	return undefined;
 }
 
-/** Where a delete-for-everyone placeholder for `target` is rendered: the
- * earliest op of the covering delete's chain, mirroring `deletedMessages`.
- * Undefined when no delete covers `target`. */
-function deletePlaceholderHash(
-	ops: Record<Hash, OpInfo>,
-	target: Hash,
-): Hash | undefined {
-	for (const op of Object.values(ops)) {
-		const payload = chatPayload(op);
-		if (payload?.type !== 'DeleteMessage') continue;
-		const hashes = payload.payload.hashes;
-		if (!hashes.includes(target)) continue;
-		return earliestCoveredHash(ops, hashes);
-	}
-	return undefined;
-}
-
-/** The earliest of `hashes` this peer has, by the same ordering the message
- * list uses — timestamp, then hash to break ties. Only ops that render as
- * messages are candidates: an edit that still has its body lives in the
- * edit chain, not the message map. */
-function earliestCoveredHash(
-	ops: Record<Hash, OpInfo>,
-	hashes: Hash[],
-): Hash | undefined {
-	let earliest: Hash | undefined;
-	for (const hash of hashes) {
-		const op = ops[hash];
-		if (op === undefined) continue;
-		const payload = chatPayload(op);
-		if (op.body !== undefined && payload?.type !== 'Message') continue;
-		if (
-			earliest === undefined ||
-			op.timestamp < ops[earliest].timestamp ||
-			(op.timestamp === ops[earliest].timestamp && hash < earliest)
-		) {
-			earliest = hash;
-		}
-	}
-	return earliest;
-}
-
 /** Resolve one reply annotation against the logs, mirroring the backend's
  * receiving-side rules: a reply to anything other than a `Message` or
  * `EditMessage`, or not later than its target, is invalid (`undefined` —
@@ -136,6 +77,7 @@ function earliestCoveredHash(
  * tombstone: deletes must completely remove content in all circumstances. */
 function resolveReply(
 	ops: Record<Hash, OpInfo>,
+	deletePlaceholderFor: Record<Hash, Hash>,
 	deletedForMeHashes: Set<Hash>,
 	replyTimestamp: number,
 	target: Hash,
@@ -149,7 +91,7 @@ function resolveReply(
 		return {
 			kind: 'deleted',
 			author: targetOp?.author,
-			scrollTarget: deletePlaceholderHash(ops, target),
+			scrollTarget: deletePlaceholderFor[target],
 		};
 	}
 	if (payload?.type !== 'Message' && payload?.type !== 'EditMessage') {
@@ -198,17 +140,21 @@ function renderableReply(
  * Must run after edits, deletes and delete-for-me tombstones have been applied
  * to `messages`: a quote pointing at a message that ended up deleted falls
  * back to a tombstone, and its scroll target is only kept when the
- * corresponding placeholder actually renders. */
+ * corresponding placeholder actually renders. `deletePlaceholderFor` maps
+ * every hash a delete covers to the placeholder hash it renders as, as
+ * computed alongside `messages` itself. */
 export function applyReply(
 	message: Message,
 	messages: Record<Hash, Message>,
 	ops: Record<Hash, OpInfo>,
+	deletePlaceholderFor: Record<Hash, Hash>,
 	deletedForMeHashes: Set<Hash>,
 ): Message {
 	if (message.replyTo === undefined) return message;
 
 	const reply = resolveReply(
 		ops,
+		deletePlaceholderFor,
 		deletedForMeHashes,
 		message.timestamp,
 		message.replyTo,

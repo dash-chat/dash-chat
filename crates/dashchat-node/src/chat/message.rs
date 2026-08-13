@@ -11,7 +11,7 @@ pub struct ChatMessageContentV1 {
     /// been edited, an honest node replies to the latest edit it knows of.
     /// Absent on the wire for non-replies, so old clients keep decoding V1
     /// messages unchanged (and silently drop the reply on newer ones).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub reply: Option<Hash>,
 }
 

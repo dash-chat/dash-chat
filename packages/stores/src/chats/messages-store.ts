@@ -17,7 +17,7 @@ import {
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
-import { type MessageReply, applyReply, collectOps } from './replies';
+import { type MessageReply, type OpInfo, applyReply } from './replies';
 
 /** The window during which a message may be edited, measured from the original
  * message timestamp. Frontend operation timestamps are milliseconds since the
@@ -64,6 +64,7 @@ export class MessagesStore {
 
 		const {
 			messages,
+			ops,
 			bodylessOps,
 			reactionsByTarget,
 			editsByTarget,
@@ -86,10 +87,12 @@ export class MessagesStore {
 			messages[hash] = applyEdits(message, editsByTarget);
 		}
 
-		Object.assign(
+		const { deleted, placeholderFor } = deletedMessages(
+			deleteTargets,
 			messages,
-			deletedMessages(deleteTargets, messages, bodylessOps),
+			bodylessOps,
 		);
+		Object.assign(messages, deleted);
 
 		// Completely remove any message with a DeletedForMe tombstone.
 		const tombstones = await this.tombstoneStore.tombstones(chatId);
@@ -97,10 +100,15 @@ export class MessagesStore {
 			if (reason === 'DeletedForMe') delete messages[hash];
 		}
 
-		const ops = collectOps(logs);
 		const deletedForMe = deletedForMeHashes(tombstones);
 		for (const [hash, message] of Object.entries(messages)) {
-			messages[hash] = applyReply(message, messages, ops, deletedForMe);
+			messages[hash] = applyReply(
+				message,
+				messages,
+				ops,
+				placeholderFor,
+				deletedForMe,
+			);
 		}
 
 		return messages;
@@ -221,6 +229,10 @@ function collectMessageActionsByType(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;
+	/** Every operation in the chat's logs by hash, the lookup reply resolution
+	 * walks: quotes and scroll targets point at ops that may not render as
+	 * messages themselves (edits, tombstoned bodies). */
+	ops: Record<Hash, OpInfo>;
 	// Operations whose payload is gone, keyed by hash
 	bodylessOps: Record<Hash, SimplifiedOperation<void>>;
 	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
@@ -230,6 +242,7 @@ function collectMessageActionsByType(
 	deleteTargets: Hash[][];
 } {
 	const messages: Record<Hash, Message> = {};
+	const ops: Record<Hash, OpInfo> = {};
 	const bodylessOps: Record<Hash, SimplifiedOperation<void>> = {};
 	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
 	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
@@ -238,6 +251,11 @@ function collectMessageActionsByType(
 	for (const [author, operations] of Object.entries(logs)) {
 		for (const operation of operations) {
 			const body = operation.body;
+			ops[operation.hash] = {
+				author,
+				timestamp: operation.header.timestamp,
+				body,
+			};
 			if (!body) {
 				if (operation.header.auth) continue;
 				bodylessOps[operation.hash] = { ...operation, body: undefined };
@@ -286,6 +304,7 @@ function collectMessageActionsByType(
 
 	return {
 		messages,
+		ops,
 		bodylessOps,
 		reactionsByTarget,
 		editsByTarget,
@@ -295,19 +314,24 @@ function collectMessageActionsByType(
 
 /** The placeholder each delete leaves behind, keyed by the hash it stands in
  * for. Merged over `messages` these replace the original's live entry, the only
- * covered op that can be there — edits live in `editsByTarget`. */
+ * covered op that can be there — edits live in `editsByTarget`. `placeholderFor`
+ * maps every hash the delete covers (original and edits alike) to that same
+ * placeholder hash, so a reply targeting any of them resolves to where the
+ * tombstone actually renders. */
 function deletedMessages(
 	deleteTargets: Hash[][],
 	messages: Record<Hash, Message>,
 	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
-): Record<Hash, Message> {
+): { deleted: Record<Hash, Message>; placeholderFor: Record<Hash, Hash> } {
 	const deleted: Record<Hash, Message> = {};
+	const placeholderFor: Record<Hash, Hash> = {};
 	for (const hashes of deleteTargets) {
 		const original = earliestOp(hashes, messages, bodylessOps);
 		if (original === undefined) continue;
 		deleted[original.hash] = { ...original, content: 'deleted-for-everyone' };
+		for (const hash of hashes) placeholderFor[hash] = original.hash;
 	}
-	return deleted;
+	return { deleted, placeholderFor };
 }
 
 /** The earliest of `hashes` this peer has — the original message, since its
