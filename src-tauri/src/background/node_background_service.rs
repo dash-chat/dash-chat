@@ -3,7 +3,9 @@ use tauri::Runtime;
 use tauri_plugin_background_service::{BackgroundService, ServiceContext, ServiceError};
 
 use crate::filesystem::FileSystem;
-use crate::node::{NodeContext, node_slot};
+use crate::node::{node_slot, NodeContext, NodeRole};
+
+const LOG_PREFIX: &str = "[background-service]";
 
 pub struct NodeBackgroundService;
 
@@ -16,7 +18,7 @@ impl NodeBackgroundService {
 #[async_trait]
 impl<R: Runtime> BackgroundService<R> for NodeBackgroundService {
     async fn init(&mut self, ctx: &ServiceContext<R>) -> Result<(), ServiceError> {
-        log::warn!("[background-service] init");
+        log::warn!("{LOG_PREFIX} init");
 
         let fs = FileSystem::new(&ctx.app).map_err(|err| {
             ServiceError::Init(format!("failed to resolve data directory: {err:#}"))
@@ -27,25 +29,36 @@ impl<R: Runtime> BackgroundService<R> for NodeBackgroundService {
             .await
             .map_err(|err| ServiceError::Init(format!("failed to start node: {err:#}")))?;
 
-        log::warn!(
-            "[background-service] node acquired, is_new={}",
-            acquired.is_new
-        );
+        log::warn!("{LOG_PREFIX} node acquired, is_new={}", acquired.is_new);
 
         Ok(())
     }
 
     async fn run(&mut self, ctx: &ServiceContext<R>) -> Result<(), ServiceError> {
-        log::warn!("[background-service] run loop started");
+        log::warn!("{LOG_PREFIX} run loop started");
 
-        ctx.shutdown.cancelled().await;
-        log::warn!("[background-service] shutdown requested");
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+
+        loop {
+            tokio::select! {
+                _ = ctx.shutdown.cancelled() => {
+                    log::warn!("{LOG_PREFIX} shutdown requested");
+                    break;
+                }
+                _ = interval.tick() => {
+                    match node_slot::current_node_for_role(NodeRole::BackgroundTask).await {
+                        Some(_) => log::warn!("{LOG_PREFIX} node is up"),
+                        None => log::warn!("{LOG_PREFIX} node is down"),
+                    }
+                }
+            }
+        }
 
         // Empty the process-wide node slot so the Node is torn down before the
         // service process exits.
         node_slot::clear().await;
 
-        log::warn!("[background-service] run loop stopped");
+        log::warn!("{LOG_PREFIX} run loop stopped");
         Ok(())
     }
 }
