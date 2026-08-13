@@ -6,6 +6,7 @@ import {
 	type Message,
 	hasBody,
 } from 'dash-chat-stores';
+import { find } from 'linkifyjs';
 
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
 
@@ -53,7 +54,8 @@ function escapeHtml(text: string): string {
 	return text
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;');
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
 }
 
 export function highlightMatch(text: string, query: string): string {
@@ -128,4 +130,16 @@ export function scrollToMessage(
 		void (card as HTMLElement).offsetWidth;
 		card.classList.add('search-flash');
 	});
+/** Escaped HTML for a message body: http(s) urls become anchors, and search
+ * matches are highlighted within each run. */
+export function messageTextHtml(text: string, query: string): string {
+	let html = '';
+	let cursor = 0;
+	for (const link of find(text, 'url', { defaultProtocol: 'https' })) {
+		if (!/^https?:\/\//i.test(link.href)) continue;
+		html += highlightMatch(text.slice(cursor, link.start), query);
+		html += `<a href="${escapeHtml(link.href)}" class="message-link" data-testid="message-link">${highlightMatch(link.value, query)}</a>`;
+		cursor = link.end;
+	}
+	return html + highlightMatch(text.slice(cursor), query);
 }
