@@ -28,7 +28,6 @@
 		actions: ActionDialogAction[];
 		cancelText?: string;
 		cancelTestId?: string;
-		/** Side effect when dismissed via the cancel button or the backdrop. */
 		onCancel?: () => void;
 		/** Called on every close, no matter which path triggered it. */
 		onClosed?: () => void;
