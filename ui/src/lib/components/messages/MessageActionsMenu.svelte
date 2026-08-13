@@ -5,6 +5,7 @@
 	import type { DeviceId, Message } from 'dash-chat-stores';
 	import { canEditMessage } from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
+	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 
 	interface Props {
 		message: Message;
@@ -27,6 +28,8 @@
 		testid = 'message-actions-menu',
 	}: Props = $props();
 
+	let deleteDialog = $state<DeleteMessageDialog>();
+
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
 </script>
 
@@ -45,13 +48,16 @@
 		onClick={onCopy}
 		data-testid="message-action-copy"
 	/>
-	{#if onDelete}
-		<ListAction
-			title={m.delete()}
-			icon={mdiDeleteOutline}
-			actionType="danger"
-			onClick={onDelete}
-			data-testid="message-action-delete"
-		/>
-	{/if}
+	<ListAction
+		title={m.delete()}
+		icon={mdiDeleteOutline}
+		actionType="danger"
+		onClick={() => {
+			onDelete?.();
+			deleteDialog?.show();
+		}}
+		data-testid="message-action-delete"
+	/>
 </List>
+
+<DeleteMessageDialog {message} {myDeviceId} bind:this={deleteDialog} />

@@ -8,7 +8,7 @@
 
 	let { message, error }: { message: string; error?: unknown } = $props();
 
-	let dialogOpen = $state(false);
+	let dialog = $state<SendErrorReportDialog>();
 </script>
 
 <div
@@ -19,7 +19,7 @@
 		<span>{message}</span>
 		{#if error !== undefined}
 			{#if import.meta.env.VITE_SENTRY_ENABLED}
-				<Button inline clear onClick={() => (dialogOpen = true)}>
+				<Button inline clear onClick={() => dialog?.show()}>
 					{m.sendErrorReport()}
 				</Button>
 			{/if}
@@ -27,4 +27,4 @@
 	</div>
 </div>
 
-<SendErrorReportDialog bind:opened={dialogOpen} {message} {error} />
+<SendErrorReportDialog bind:this={dialog} {message} {error} />

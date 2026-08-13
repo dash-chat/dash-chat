@@ -14,7 +14,7 @@
 	import DeleteAccountDialog from '$lib/components/DeleteAccountDialog.svelte';
 
 	const theme = $derived(useTheme());
-	let showDeleteDialog = $state(false);
+	let deleteDialog = $state<DeleteAccountDialog>();
 </script>
 
 <Page>
@@ -37,7 +37,7 @@
 					title={m.deleteAccount()}
 					link
 					chevron={false}
-					onClick={() => (showDeleteDialog = true)}
+					onClick={() => deleteDialog?.show()}
 					data-testid="account-delete"
 					colors={{
 						primaryTextIos: 'text-red-500',
@@ -48,5 +48,5 @@
 		</div>
 	</div>
 
-	<DeleteAccountDialog bind:opened={showDeleteDialog} />
+	<DeleteAccountDialog bind:this={deleteDialog} />
 </Page>

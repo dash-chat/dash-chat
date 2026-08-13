@@ -8,92 +8,159 @@
 	} from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import ActionButton from './ActionButton.svelte';
+	import ActionsTitle from './ActionsTitle.svelte';
 	import { isIos } from '$lib/utils/environment';
-	import { showToast } from '$lib/utils/toasts';
-	import type { Snippet } from 'svelte';
+	import Modal from '$lib/components/Modal.svelte';
 
-	type ActionResult = { success: true } | { success: false; error: string };
+	export interface ActionDialogAction {
+		text: string;
+		onClick: () => void | Promise<void>;
+		destructive?: boolean;
+		strong?: boolean;
+		testid?: string;
+	}
 
-	type Props = {
-		opened: boolean;
-		onCancel: () => void;
-		onConfirm: () => Promise<ActionResult>;
+	interface Props {
 		title: string;
-		children: Snippet;
+		description?: string;
+		/** Primary actions, most prominent first. Cancel is appended
+		 * automatically. */
+		actions: ActionDialogAction[];
 		cancelText?: string;
-		confirmText: string;
-		confirmTestId?: string;
-	};
+		cancelTestId?: string;
+		/** Side effect when dismissed via the cancel button or the backdrop. */
+		onCancel?: () => void;
+		/** Called on every close, no matter which path triggered it. */
+		onClosed?: () => void;
+		testid?: string;
+	}
 
 	let {
-		opened,
-		onCancel,
-		onConfirm,
 		title,
-		children,
+		description,
+		actions,
 		cancelText = m.cancel(),
-		confirmText,
-		confirmTestId,
+		cancelTestId,
+		onCancel,
+		onClosed,
+		testid,
 	}: Props = $props();
 
+	let opened = $state(false);
 	let loading = $state(false);
+	let running = $state<ActionDialogAction | null>(null);
 
-	async function handleConfirm() {
+	export function show() {
+		opened = true;
+	}
+
+	export function close() {
+		opened = false;
+		onClosed?.();
+	}
+
+	function cancel() {
+		close();
+		onCancel?.();
+	}
+
+	async function run(action: ActionDialogAction) {
+		const result = action.onClick();
+		if (!(result instanceof Promise)) return;
 		loading = true;
+		running = action;
 		try {
-			const result = await onConfirm();
-			if (!result.success) {
-				showToast(result.error, 'error');
-			}
+			await result;
 		} finally {
 			loading = false;
+			running = null;
 		}
 	}
 </script>
 
-{#if isIos}
-	<Actions {opened} onBackdropClick={onCancel}>
-		<ActionsGroup class="flex flex-col gap-3 p-2.5">
-			<div class="flex flex-col gap-1 px-3.5 py-2 text-start">
-				<span class="text-xl text-black dark:text-white">{title}</span>
-				<span class="text-black/60 dark:text-white/60">
-					{@render children()}
-				</span>
-			</div>
-			<ActionButton
-				destructive
-				onClick={handleConfirm}
-				disabled={loading}
-				data-testid={confirmTestId}
+{#snippet actionPreloader(action: ActionDialogAction)}
+	{#if running === action}
+		<Preloader class="ms-2 h-4 w-4" />
+	{/if}
+{/snippet}
+
+{#snippet cancelButton()}
+	<DialogButton onClick={cancel} disabled={loading} data-testid={cancelTestId}>
+		{cancelText}
+	</DialogButton>
+{/snippet}
+
+{#snippet dialogButton(action: ActionDialogAction)}
+	<DialogButton
+		class={action.destructive ? '!text-red-500' : ''}
+		strong={action.strong}
+		onClick={() => run(action)}
+		disabled={loading}
+		data-testid={action.testid}
+	>
+		{action.text}
+		{@render actionPreloader(action)}
+	</DialogButton>
+{/snippet}
+
+<Modal bind:opened>
+	{#snippet children(modal)}
+		{#if isIos}
+			<Actions
+				opened={modal.opened}
+				onBackdropClick={cancel}
+				data-testid={testid}
 			>
-				{confirmText}
-				{#if loading}
-					<Preloader class="ms-2 h-4 w-4" />
-				{/if}
-			</ActionButton>
-			<ActionButton onClick={onCancel} disabled={loading}>
-				{cancelText}
-			</ActionButton>
-		</ActionsGroup>
-	</Actions>
-{:else}
-	<Dialog {opened} onBackdropClick={onCancel} {title}>
-		{@render children()}
-		{#snippet buttons()}
-			<DialogButton onClick={onCancel} disabled={loading}>
-				{cancelText}
-			</DialogButton>
-			<DialogButton
-				strong
-				onClick={handleConfirm}
-				disabled={loading}
-				data-testid={confirmTestId}
+				<ActionsGroup
+					class="flex flex-col gap-2 !bg-white p-2.5 dark:!bg-neutral-900"
+				>
+					<ActionsTitle {title} subtitle={description} />
+					{#each actions as action (action.text)}
+						<ActionButton
+							destructive={action.destructive}
+							onClick={() => run(action)}
+							disabled={loading}
+							data-testid={action.testid}
+						>
+							{action.text}
+							{@render actionPreloader(action)}
+						</ActionButton>
+					{/each}
+					<ActionButton
+						onClick={cancel}
+						disabled={loading}
+						data-testid={cancelTestId}
+					>
+						{cancelText}
+					</ActionButton>
+				</ActionsGroup>
+			</Actions>
+		{:else}
+			<Dialog
+				opened={modal.opened}
+				onBackdropClick={cancel}
+				{title}
+				data-testid={testid}
 			>
-				{confirmText}
-				{#if loading}
-					<Preloader class="ms-2 h-4 w-4" />
+				{#if description}
+					<span>{description}</span>
 				{/if}
-			</DialogButton>
-		{/snippet}
-	</Dialog>
-{/if}
+				{#snippet buttons()}
+					{#if actions.length > 1}
+						<div class="flex w-full flex-col items-end gap-2">
+							{#each actions as action (action.text)}
+								{@render dialogButton(action)}
+							{/each}
+							{@render cancelButton()}
+						</div>
+					{:else}
+						{@render cancelButton()}
+						{#each actions as action (action.text)}
+							{@render dialogButton(action)}
+						{/each}
+					{/if}
+				{/snippet}
+			</Dialog>
+		{/if}
+	{/snippet}
+</Modal>

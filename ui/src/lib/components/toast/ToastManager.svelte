@@ -12,7 +12,7 @@
 	let toastVariant = $state<'default' | 'error' | 'unexpected'>('default');
 	let toastTimeout: ReturnType<typeof setTimeout> | undefined;
 
-	let errorReportDialogOpen = $state(false);
+	let errorReportDialog = $state<SendErrorReportDialog>();
 	let errorReportMessage = $state('');
 	let errorReportError = $state<unknown>(undefined);
 
@@ -40,7 +40,7 @@
 		toastOpen = false;
 		clearTimeout(toastTimeout);
 		errorReportMessage = toastMessage;
-		errorReportDialogOpen = true;
+		errorReportDialog?.show();
 	}
 
 	onMount(() => {
@@ -87,7 +87,7 @@
 </Toast>
 
 <SendErrorReportDialog
-	bind:opened={errorReportDialogOpen}
+	bind:this={errorReportDialog}
 	message={errorReportMessage}
 	error={errorReportError}
 />

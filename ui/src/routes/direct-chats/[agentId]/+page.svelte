@@ -8,14 +8,12 @@
 	import {
 		fullName,
 		type ChatsStore,
-		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
 		type Hash,
 		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
-	import type { AddContactError } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiAccountQuestion,
@@ -28,8 +26,6 @@
 		Navbar,
 		NavbarBackLink,
 		Button,
-		Dialog,
-		DialogButton,
 		useTheme,
 		Link,
 	} from 'konsta/svelte';
@@ -42,6 +38,7 @@
 	import { showToast } from '$lib/utils/toasts';
 	import type { Action } from 'svelte/action';
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
+	import AcceptContactRequestDialog from '$lib/components/contacts/AcceptContactRequestDialog.svelte';
 	import BlockContactDialog from '$lib/components/contacts/block/BlockContactDialog.svelte';
 	import UnblockContactDialog from '$lib/components/contacts/block/UnblockContactDialog.svelte';
 	import ReportContactDialog from '$lib/components/contacts/report/ReportContactDialog.svelte';
@@ -95,36 +92,13 @@
 	);
 	const unreadCount = useReactivePromise(store.messages.unreadCount);
 
-	async function acceptContactRequest(contactRequest: ContactRequest) {
-		try {
-			await contactsStore.client.acceptContact(contactRequest.agentId);
-			showToast(m.contactAccepted());
-		} catch (e) {
-			console.error(e);
-			const error = e as AddContactError;
-			switch (error.kind) {
-				case 'ProfileNotCreated':
-					showToast(m.errorAddContactProfileRequired(), 'error');
-					break;
-				case 'InitializeTopic':
-				case 'AuthorOperation':
-				case 'CreateQrCode':
-				case 'CreateDirectChat':
-				case 'StoreContact':
-					showToast(m.errorAddContact(), 'error');
-					break;
-				default:
-					showToast(m.errorUnexpected(), 'unexpected', e);
-			}
-		}
-	}
-
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
-	let showAcceptDialog = $state(false);
-	let showBlockDialog = $state(false);
-	let showReportDialog = $state(false);
+	let acceptDialog = $state<AcceptContactRequestDialog>();
+	let blockDialog = $state<BlockContactDialog>();
+	let unblockDialog = $state<UnblockContactDialog>();
+	let reportDialog = $state<ReportContactDialog>();
 	let profileNamesSheetOpen = $state(false);
 	// Initial value reserves space for the bottom bar before bind:clientHeight
 	// has measured it, so the latest message doesn't flash under the input on
@@ -620,39 +594,22 @@
 				</ReverseScrollPage>
 
 				{#if contactRequest}
-					<Dialog
-						opened={showAcceptDialog}
-						onBackdropClick={() => (showAcceptDialog = false)}
-						title={m.acceptRequestTitle()}
-					>
-						<span>{m.acceptRequestDescription()}</span>
-						{#snippet buttons()}
-							<DialogButton onClick={() => (showAcceptDialog = false)}>
-								{m.cancel()}
-							</DialogButton>
-							<DialogButton
-								data-testid="direct-chat-accept-confirm"
-								onClick={() => {
-									showAcceptDialog = false;
-									acceptContactRequest(contactRequest);
-								}}
-							>
-								{m.accept()}
-							</DialogButton>
-						{/snippet}
-					</Dialog>
+					<AcceptContactRequestDialog
+						bind:this={acceptDialog}
+						{contactRequest}
+					/>
 				{/if}
 
 				{#await $blocked then isBlocked}
 					{#if isBlocked}
 						<UnblockContactDialog
-							bind:opened={showBlockDialog}
+							bind:this={unblockDialog}
 							{agentId}
 							name={profile ? fullName(profile) : ''}
 						/>
 					{:else}
 						<BlockContactDialog
-							bind:opened={showBlockDialog}
+							bind:this={blockDialog}
 							{agentId}
 							name={profile ? fullName(profile) : ''}
 						/>
@@ -660,7 +617,7 @@
 				{/await}
 
 				<ReportContactDialog
-					bind:opened={showReportDialog}
+					bind:this={reportDialog}
 					{agentId}
 					name={profile ? fullName(profile) : ''}
 					onDone={() => goto('/')}
@@ -727,14 +684,14 @@
 									{:else if isBlocked}
 										<BlockedActionsBar
 											name={profile ? fullName(profile) : ''}
-											onUnblock={() => (showBlockDialog = true)}
+											onUnblock={() => unblockDialog?.show()}
 										/>
 									{:else if contactRequest}
 										<ContactRequestBar
 											name={contactRequest.profile.name}
-											onBlock={() => (showBlockDialog = true)}
-											onReport={() => (showReportDialog = true)}
-											onAccept={() => (showAcceptDialog = true)}
+											onBlock={() => blockDialog?.show()}
+											onReport={() => reportDialog?.show()}
+											onAccept={() => acceptDialog?.show()}
 										/>
 									{/if}
 								</div>

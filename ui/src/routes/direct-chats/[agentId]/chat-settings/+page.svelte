@@ -55,8 +55,9 @@
 			: useReactivePromise(contactsStore.isBlocked, peerAgentId);
 
 	let showPeerProfile = $state(false);
-	let showBlockDialog = $state(false);
-	let showReportDialog = $state(false);
+	let blockDialog = $state<BlockContactDialog>();
+	let unblockDialog = $state<UnblockContactDialog>();
+	let reportDialog = $state<ReportContactDialog>();
 
 	function comingSoon() {
 		showToast(m.comingSoon());
@@ -168,7 +169,7 @@
 										primaryTextIos: 'text-red-500',
 										primaryTextMaterial: 'text-red-500',
 									}}
-									onClick={() => (showBlockDialog = true)}
+									onClick={() => blockDialog?.show()}
 									data-testid="chat-settings-block-btn"
 								>
 									{#snippet media()}
@@ -184,7 +185,7 @@
 									link
 									chevron={false}
 									title={m.unblock()}
-									onClick={() => (showBlockDialog = true)}
+									onClick={() => unblockDialog?.show()}
 									data-testid="chat-settings-unblock-btn"
 								>
 									{#snippet media()}
@@ -203,7 +204,7 @@
 									primaryTextIos: 'text-red-500',
 									primaryTextMaterial: 'text-red-500',
 								}}
-								onClick={() => (showReportDialog = true)}
+								onClick={() => reportDialog?.show()}
 								data-testid="chat-settings-report-btn"
 							>
 								{#snippet media()}
@@ -276,19 +277,19 @@
 				{@const peerName = profile ? fullName(profile) : ''}
 				{#if isBlocked}
 					<UnblockContactDialog
-						bind:opened={showBlockDialog}
+						bind:this={unblockDialog}
 						agentId={peerAgentId}
 						name={peerName}
 					/>
 				{:else}
 					<BlockContactDialog
-						bind:opened={showBlockDialog}
+						bind:this={blockDialog}
 						agentId={peerAgentId}
 						name={peerName}
 					/>
 				{/if}
 				<ReportContactDialog
-					bind:opened={showReportDialog}
+					bind:this={reportDialog}
 					agentId={peerAgentId}
 					name={peerName}
 					onDone={() => goto('/')}

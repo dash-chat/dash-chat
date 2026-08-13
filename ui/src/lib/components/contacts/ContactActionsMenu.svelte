@@ -16,11 +16,8 @@
 
 	let { anchor, agentId, name, onClose }: Props = $props();
 
+	let blockDialog = $state<BlockContactDialog>();
 	let blockDialogOpen = $state(false);
-
-	function closeOnDismiss(opened: boolean) {
-		if (!opened) onClose();
-	}
 </script>
 
 <Popover
@@ -35,14 +32,18 @@
 			title={m.block()}
 			icon={mdiCancel}
 			actionType="danger"
-			onClick={() => (blockDialogOpen = true)}
+			onClick={() => {
+				blockDialogOpen = true;
+				blockDialog?.show();
+			}}
 			data-testid="contact-block"
 		/>
 	</List>
 </Popover>
 
 <BlockContactDialog
-	bind:opened={() => blockDialogOpen, closeOnDismiss}
+	bind:this={blockDialog}
 	{agentId}
 	{name}
+	onClosed={onClose}
 />
