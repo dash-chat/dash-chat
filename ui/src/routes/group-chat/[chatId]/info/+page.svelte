@@ -32,6 +32,7 @@
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
 	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
+	import { showToast } from '$lib/utils/toasts';
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -85,24 +86,15 @@
 	// }
 
 	async function handleRemove() {
-		if (!dialogActorId) {
-			return {
-				success: false as const,
-				error: m.errorUnexpected(),
-			};
-		}
-
+		const actorId = dialogActorId;
+		if (!actorId) return;
 		try {
-			await groupChatStore.client.removeMember(chatId, dialogActorId);
+			await groupChatStore.client.removeMember(chatId, actorId);
 			dialogType = null;
 			dialogActorId = null;
-			return { success: true as const };
 		} catch (e) {
 			console.error(e);
-			return {
-				success: false as const,
-				error: m.errorUnexpected(),
-			};
+			showToast(m.errorUnexpected(), 'error');
 		}
 	}
 
@@ -111,19 +103,14 @@
 			await chatsStore.leaveGroup(chatId);
 			goto('/');
 			dialogType = null;
-			return { success: true as const };
 		} catch (e) {
 			console.error(e);
 			const errorMessage =
 				(e as { kind?: string }).kind === 'LastAdmin'
 					? m.errorLeavingGroupOnlyAdmin()
 					: m.errorLeavingGroup();
-
 			dialogType = null;
-			return {
-				success: false as const,
-				error: errorMessage,
-			};
+			showToast(errorMessage, 'error');
 		}
 	}
 
@@ -402,24 +389,32 @@
 				dialogType = null;
 				dialogActorId = null;
 			}}
-			onConfirm={handleRemove}
 			title={m.removeMember()}
-			confirmText={m.remove()}
-			confirmTestId="group-info-remove-member-confirm"
-		>
-			<span>{m.areYouSureRemoveMember()}</span>
-		</ActionDialog>
+			description={m.areYouSureRemoveMember()}
+			actions={[
+				{
+					text: m.remove(),
+					actionType: 'danger',
+					testid: 'group-info-remove-member-confirm',
+					onClick: handleRemove,
+				},
+			]}
+		/>
 
 		<ActionDialog
 			opened={dialogType === 'leave'}
 			onCancel={() => (dialogType = null)}
-			onConfirm={handleLeaveGroup}
 			title={m.leaveGroup()}
-			confirmText={m.leave()}
-			confirmTestId="group-info-leave-confirm"
-		>
-			<span>{m.areYouSureLeaveGroup()}</span>
-		</ActionDialog>
+			description={m.areYouSureLeaveGroup()}
+			actions={[
+				{
+					text: m.leave(),
+					actionType: 'danger',
+					testid: 'group-info-leave-confirm',
+					onClick: handleLeaveGroup,
+				},
+			]}
+		/>
 
 		<!-- <Dialog
 			opened={dialogType === 'delete'}
