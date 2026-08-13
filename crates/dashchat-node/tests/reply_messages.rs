@@ -122,6 +122,43 @@ async fn cannot_reply_to_an_unknown_message() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn receiver_renders_reply_to_unknown_message_as_a_normal_message() {
+    setup();
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::new();
+    let (alice, bobbi, chat_id) = two_friends(&mailbox).await;
+
+    // Alice injects a reply to a hash that was never posted anywhere, via the
+    // raw path, bypassing author-side validation. Bobbi must still receive
+    // the message itself — the frontend renders it as a normal message with
+    // no quote, exactly as it does for any other invalid reply annotation.
+    alice
+        .send_message_raw(
+            chat_id,
+            ChatMessageContent::new("nope", None, Some(p2panda_core::Hash::from_bytes([9; 32]))),
+        )
+        .await
+        .unwrap();
+
+    poll.wait_for(|| async {
+        let n = bobbi.get_messages(chat_id).await.unwrap().len();
+        (n == 1).then_some(()).ok_or(n)
+    })
+    .await
+    .unwrap();
+
+    let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
+    let content = &bobbi_messages.first().unwrap().content;
+    assert_eq!(content.message(), "nope");
+    assert_eq!(content.reply(), Some(p2panda_core::Hash::from_bytes([9; 32])));
+
+    for node in [&alice, &bobbi] {
+        let replies = node.valid_replies(chat_id).await.unwrap();
+        assert!(replies.is_empty());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn reply_must_target_the_latest_known_edit() {
     setup();
     let mailbox = MemMailbox::new();
