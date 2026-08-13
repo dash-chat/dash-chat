@@ -82,6 +82,19 @@ impl NodeContext {
         }
     }
 
+    /// Context used when a long-lived background service is keeping a Node alive
+    /// without the main app running: no P2P, no blob sync, and no app-lifetime
+    /// channels.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub fn for_background_task() -> Self {
+        Self {
+            role: NodeRole::BackgroundTask,
+            notification_tx: None,
+            topic_subscribed_tx: None,
+            app_handle: None,
+        }
+    }
+
     /// Context used when the app is running in the foreground (or resuming from
     /// background on iOS): full networking and notification channels enabled.
     pub fn for_app(
