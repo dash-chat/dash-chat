@@ -390,31 +390,33 @@
 				dialogActorId = null;
 			}}
 			title={m.removeMember()}
-			description={m.areYouSureRemoveMember()}
 			actions={[
 				{
 					text: m.remove(),
-					actionType: 'danger',
+					destructive: true,
 					testid: 'group-info-remove-member-confirm',
 					onClick: handleRemove,
 				},
 			]}
-		/>
+		>
+			<span>{m.areYouSureRemoveMember()}</span>
+		</ActionDialog>
 
 		<ActionDialog
 			opened={dialogType === 'leave'}
 			onCancel={() => (dialogType = null)}
 			title={m.leaveGroup()}
-			description={m.areYouSureLeaveGroup()}
 			actions={[
 				{
 					text: m.leave(),
-					actionType: 'danger',
+					destructive: true,
 					testid: 'group-info-leave-confirm',
 					onClick: handleLeaveGroup,
 				},
 			]}
-		/>
+		>
+			<span>{m.areYouSureLeaveGroup()}</span>
+		</ActionDialog>
 
 		<!-- <Dialog
 			opened={dialogType === 'delete'}

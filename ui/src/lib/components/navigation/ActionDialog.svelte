@@ -9,21 +9,22 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import ActionButton from './ActionButton.svelte';
 	import { isIos } from '$lib/utils/environment';
+	import type { Snippet } from 'svelte';
 
-	export interface ActionDialogAction {
+	export interface Action {
 		text: string;
 		onClick: () => void | Promise<void>;
-		actionType?: 'normal' | 'danger';
+		destructive?: boolean;
 		testid?: string;
 	}
 
 	interface Props {
 		opened: boolean;
 		title: string;
-		description?: string;
+		children: Snippet;
 		/** Primary actions, most prominent first. Cancel is appended
 		 * automatically. */
-		actions: ActionDialogAction[];
+		actions: Action[];
 		cancelText?: string;
 		cancelTestId?: string;
 		onCancel: () => void;
@@ -33,7 +34,7 @@
 	let {
 		opened,
 		title,
-		description,
+		children,
 		actions,
 		cancelText = m.cancel(),
 		cancelTestId,
@@ -42,9 +43,9 @@
 	}: Props = $props();
 
 	let loading = $state(false);
-	let running = $state<ActionDialogAction | null>(null);
+	let running = $state<Action | null>(null);
 
-	async function run(action: ActionDialogAction) {
+	async function run(action: Action) {
 		const result = action.onClick();
 		if (!(result instanceof Promise)) return;
 		loading = true;
@@ -68,9 +69,9 @@
 	</DialogButton>
 {/snippet}
 
-{#snippet dialogButton(action: ActionDialogAction)}
+{#snippet dialogButton(action: Action)}
 	<DialogButton
-		class={action.actionType === 'danger' ? '!text-red-500' : ''}
+		class={action.destructive ? '!text-red-500' : ''}
 		onClick={() => run(action)}
 		disabled={loading}
 		data-testid={action.testid}
@@ -87,13 +88,13 @@
 		<ActionsGroup class="flex flex-col gap-3 p-2.5">
 			<div class="flex flex-col gap-1 px-3.5 py-2 text-start">
 				<span class="text-xl text-black dark:text-white">{title}</span>
-				{#if description}
-					<span class="text-black/60 dark:text-white/60">{description}</span>
-				{/if}
+				<span class="text-black/60 dark:text-white/60">
+					{@render children()}
+				</span>
 			</div>
 			{#each actions as action (action.text)}
 				<ActionButton
-					destructive={action.actionType === 'danger'}
+					destructive={action.destructive}
 					onClick={() => run(action)}
 					disabled={loading}
 					data-testid={action.testid}
@@ -115,9 +116,7 @@
 	</Actions>
 {:else}
 	<Dialog {opened} onBackdropClick={onCancel} {title} data-testid={testid}>
-		{#if description}
-			<span>{description}</span>
-		{/if}
+		{@render children()}
 		{#snippet buttons()}
 			{#if actions.length > 1}
 				<div class="flex w-full flex-col items-end gap-2">
