@@ -1,0 +1,13 @@
+[package]
+name = "reporting"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+ed25519-dalek = { workspace = true }
+hex = "0.4"
+serde = { workspace = true }
+thiserror = "2.0"

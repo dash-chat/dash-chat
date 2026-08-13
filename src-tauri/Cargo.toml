@@ -22,7 +22,7 @@ sentry-types = "0.42"
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
 
-tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "27d004e3f97ad088a9a2fcdc4a03bd45825265dd" }
+tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "6f1b63c2a831b291bed936237a1ef9c850de3b0d" }
 tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
@@ -32,6 +32,7 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-sharekit = "0.3"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
+tauri-plugin-opener = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
 tauri-plugin-audio-recorder = "0.1"
 tauri-plugin-sentry-reporting = { workspace = true }
@@ -62,7 +63,6 @@ mdns-sd = "0.20"
 nanoid = "0"
 image = "0.25"
 
-opener = { version = "0.7", features = ["reveal"] }
 log = "0.4"
 netdev = "0.43"
 if-watch = { version = "3", features = ["tokio"] }

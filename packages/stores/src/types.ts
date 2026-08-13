@@ -46,13 +46,6 @@ export interface FileAttachment {
 	mime_type: string;
 }
 
-export interface VoiceNote {
-	hash: Hash;
-	mime_type: string;
-	duration_ms: number;
-	waveform: Uint8Array;
-}
-
 /**
  * A renderable voice note, carrying only the blob `hash` and metadata. The
  * `waveform` (peak-normalized bars, 0..=255) rides in the message metadata so
@@ -100,7 +93,7 @@ export interface OutgoingVoiceNote {
  * Metadata for a single stored blob. A message log carries these in place of
  * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
  * via the `irohblob://` URI scheme. Mirrors the `#[serde(tag = "kind")]` enum
- * `dashchat_node::MediaMetadata`.
+ * `dashchat_node::MediaMetadata`: each variant carries only what its kind needs.
  */
 export type MediaMetadata =
 	| { kind: 'Photo'; name: string; mime_type: string; size: number; hash: Hash }
@@ -124,8 +117,9 @@ export type MediaBundle = MediaMetadata[];
 export type MessageContentV1 = {
 	v: '1';
 	message: string;
-	/** Flat wire form; consumers derive the photos/file/voice grouping at render
-	 * time. */
+	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob store,
+	 * fetched lazily via `irohblob://`). Consumers derive the photos/file/voice
+	 * grouping from this list at render time. */
 	media: MediaBundle | null;
 };
 export type MessageContent = MessageContentV1;
@@ -202,7 +196,15 @@ export type DeviceGroupPayload =
 	| { type: 'BlockAgent'; payload: AgentId }
 	| { type: 'UnblockAgent'; payload: AgentId }
 	| { type: 'ReadMessages'; payload: ReadMessagesPayload }
-	| { type: 'DeleteForMe'; payload: DeleteForMePayload };
+	| { type: 'DeleteForMe'; payload: DeleteForMePayload }
+	| { type: 'ReportContact'; payload: ReportContactPayload };
+
+/** Written after at least one mailbox accepted a report of `agent_id`. */
+export interface ReportContactPayload {
+	agent_id: AgentId;
+	device_ids: DeviceId[];
+	mailbox_ids: string[];
+}
 
 export type InboxPayload = {
 	type: 'ContactRequest';

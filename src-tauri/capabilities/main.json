@@ -22,6 +22,10 @@
 		"core:path:default",
 		"virtual-keyboard:default",
 		"sentry-reporting:default",
-		"audio-recorder:default"
+		"audio-recorder:default",
+		{
+			"identifier": "opener:allow-open-url",
+			"allow": [{ "url": "http://*" }, { "url": "https://*" }]
+		}
 	]
 }

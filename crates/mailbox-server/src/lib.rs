@@ -20,6 +20,8 @@ mod get_blips;
 mod notify_topics_subscribers;
 mod register_hashes;
 mod register_peer;
+mod report;
+mod reports_table;
 mod server_key;
 mod store_blips;
 mod watermark;
@@ -46,6 +48,7 @@ pub use register_hashes::{
     RegisterHashesResponse, UploadBlobResponse,
 };
 pub use register_peer::RegisterPeerRequest;
+pub use reports_table::REPORTS_TABLE;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest};
 pub use watermark::compute_initial_watermarks;
@@ -181,6 +184,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
         let _blips_table = write_txn.open_table(BLIPS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
         let _server_key_table = write_txn.open_table(SERVER_KEY_TABLE)?;
+        let _reports_table = write_txn.open_table(REPORTS_TABLE)?;
     }
     write_txn.commit()?;
 
@@ -215,6 +219,7 @@ pub fn create_app(
         .route("/blobs/upload", post(register_hashes::upload_blob))
         .route("/blips/get", post(get_blips_for_topics))
         .route("/peers/register", post(register_peer::register_peer))
+        .route("/report", post(report::report))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))
