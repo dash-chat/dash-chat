@@ -29,7 +29,6 @@
 		cancelText?: string;
 		cancelTestId?: string;
 		onCancel: () => void;
-		testid?: string;
 	}
 
 	let {
@@ -40,7 +39,6 @@
 		cancelText = m.cancel(),
 		cancelTestId,
 		onCancel,
-		testid,
 	}: Props = $props();
 
 	let loading = $state(false);
@@ -86,7 +84,7 @@
 {/snippet}
 
 {#if isIos}
-	<Actions {opened} onBackdropClick={onCancel} data-testid={testid}>
+	<Actions {opened} onBackdropClick={onCancel}>
 		<ActionsGroup class="flex flex-col gap-3 p-2.5">
 			<div class="flex flex-col gap-1 px-3.5 py-2 text-start">
 				<span class="text-xl text-black dark:text-white">{title}</span>
@@ -117,7 +115,7 @@
 		</ActionsGroup>
 	</Actions>
 {:else}
-	<Dialog {opened} onBackdropClick={onCancel} {title} data-testid={testid}>
+	<Dialog {opened} onBackdropClick={onCancel} {title}>
 		{@render children()}
 		{#snippet buttons()}
 			{#if actions.length > 1}
