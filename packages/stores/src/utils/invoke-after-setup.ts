@@ -12,7 +12,7 @@ const BACKEND_NOT_READY = 'state not managed';
 
 // The iOS app quiesces its node when backgrounded (releasing SQLite locks to
 // avoid a 0xdead10cc kill) and rebuilds it on foreground. While paused/rebuilding,
-// node-backed commands return this sentinel (see `AppNode::get`); retry until the
+// node-backed commands return this sentinel (see `AppNodeManager::get`); retry until the
 // node is back.
 const NODE_NOT_READY = 'NodeNotReady';
 

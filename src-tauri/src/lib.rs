@@ -1,7 +1,6 @@
 #[cfg(target_os = "android")]
 use crate::background::ExampleBackgroundService;
 
-mod app_node;
 #[cfg(target_os = "android")]
 mod background;
 mod blob_protocol;
@@ -13,6 +12,7 @@ mod i18n;
 mod mailbox;
 #[cfg(desktop)]
 mod media_drop;
+mod node;
 mod notifications;
 mod redaction;
 mod sentry;
@@ -67,20 +67,20 @@ pub fn run() {
             tauri_plugin_ios_lifecycle::Builder::new()
                 .on_pause(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node) = app
-                        .try_state::<app_node::AppNode>()
+                    if let Some(app_node_manager) = app
+                        .try_state::<node::AppNodeManager>()
                         .map(|s| s.inner().clone())
                     {
-                        app_node.pause().await;
+                        app_node_manager.pause().await;
                     }
                 })
                 .on_resume(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node) = app
-                        .try_state::<app_node::AppNode>()
+                    if let Some(app_node_manager) = app
+                        .try_state::<node::AppNodeManager>()
                         .map(|s| s.inner().clone())
                     {
-                        if let Err(err) = app_node.resume(&app).await {
+                        if let Err(err) = app_node_manager.resume(&app).await {
                             log::error!("Failed to rebuild node on foreground: {err:?}");
                         }
                     }

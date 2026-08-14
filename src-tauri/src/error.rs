@@ -17,7 +17,7 @@ pub enum Error {
     AddContact(#[from] dashchat_node::AddContactError),
 }
 
-/// Lets commands that still return `Result<_, String>` use `?` on `AppNode::get`
+/// Lets commands that still return `Result<_, String>` use `?` on `AppNodeManager::get`
 /// and other `Error`-producing calls.
 impl From<Error> for String {
     fn from(err: Error) -> Self {
