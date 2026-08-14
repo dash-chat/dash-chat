@@ -54,7 +54,7 @@ describe('Offline notifications on Android (background sync)', () => {
 		await receiver.helpPage.enableOfflineMode();
 
 		// Background the app. The background service keeps the node alive.
-		await receiver.stopApp();
+		await receiver.backgroundApp();
 		await receiver.pause(5_000);
 
 		await sender.directChatPage.composer.sendMessage(message);

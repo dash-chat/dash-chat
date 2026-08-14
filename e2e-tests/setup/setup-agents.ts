@@ -40,6 +40,7 @@ import { checkOverflow } from '../helpers/review/checks';
 import { APP_PACKAGE, stopAndroidApp } from './platforms/android';
 import { readOpenedUrls } from './platforms/desktop';
 import { type AgentPlatformName, platformNames } from './test-env';
+import { execSync } from 'node:child_process';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
@@ -97,6 +98,9 @@ export type Agent = WebdriverIO.Browser & {
 	 *  down there reinstalls the APK on the next session, so the app would
 	 *  return as a fresh install with no profile. */
 	stopApp(): Promise<void>;
+	/** Send the app to the background (home button) without killing it.
+	 *  On Android this is a home-key press; on desktop it is currently a no-op. */
+	backgroundApp(): Promise<void>;
 	/** Relaunch after [`stopApp`] and wait until the app is interactive again. */
 	startApp(): Promise<void>;
 	/** Switch the Konsta theme. */
@@ -242,6 +246,21 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			return;
 		}
 		stopAndroidApp(androidUdid(b));
+	};
+	agent.backgroundApp = async () => {
+		if (agent.platform === 'desktop') {
+			return;
+		}
+		if (agent.platform === 'ios') {
+			await b.terminateApp(APP_PACKAGE);
+			return;
+		}
+		// Home button press: keeps the process alive so the background service
+		// can continue syncing, unlike am stop-app which tears the app down.
+		execSync(
+			`adb -s ${androidUdid(b)} shell input keyevent KEYCODE_HOME`,
+			{ stdio: 'ignore' },
+		);
 	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
