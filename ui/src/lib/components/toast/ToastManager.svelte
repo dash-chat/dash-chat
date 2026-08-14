@@ -24,7 +24,9 @@
 		if (event.detail.error !== undefined) {
 			errorReportError = event.detail.error;
 		}
-		if (toastVariant !== 'unexpected') {
+		// Without Sentry there is no report action to wait for, so even
+		// unexpected toasts auto-hide.
+		if (toastVariant !== 'unexpected' || !import.meta.env.VITE_SENTRY_ENABLED) {
 			toastTimeout = setTimeout(() => {
 				toastOpen = false;
 			}, TOAST_TTL_MS);

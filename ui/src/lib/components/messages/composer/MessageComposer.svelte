@@ -157,6 +157,10 @@
 			onSent?.(hash);
 			return true;
 		} catch (e) {
+			// Restore the draft so the user can fix it, unless new content
+			// replaced it while the send was in flight.
+			if (value === '') value = message;
+			if (media === undefined) media = draft;
 			if (e instanceof AttachmentTooLargeError) {
 				showToast(
 					m.errorAttachmentTooLarge({
