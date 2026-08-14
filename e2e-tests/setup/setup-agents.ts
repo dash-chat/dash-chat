@@ -297,7 +297,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			await b.activateApp(APP_PACKAGE);
 			// A relaunch drops back to the native context; only the session's
 			// initial `autoWebview` does this for us.
-			await switchToWebview(b);
+			await switchToWebview(b, agent.platform);
 		}
 		await waitForTestUtils(b);
 		attachPages(agent, b);
@@ -413,18 +413,31 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 	);
 }
 
-/** Attach to the app's webview context, which a relaunch drops out of. */
-async function switchToWebview(agent: WebdriverIO.Browser): Promise<void> {
+/** Attach to the app's webview context, which a relaunch drops out of.
+ *
+ *  On Android the app's context must be matched by name: other apps' webviews
+ *  can be listed too (a backgrounded Chrome appears as WEBVIEW_chrome, and it
+ *  can be the only one listed while the app is still starting). iOS names
+ *  WKWebView contexts WEBVIEW_<id> with no package, but the app's webview is
+ *  the only one there. */
+async function switchToWebview(
+	agent: WebdriverIO.Browser,
+	platform: AgentPlatformName,
+): Promise<void> {
+	const isAppWebview = (id: string) =>
+		platform === 'ios'
+			? id.startsWith('WEBVIEW')
+			: id === `WEBVIEW_${APP_PACKAGE}`;
 	let webview: string | undefined;
 	await agent.waitUntil(
 		async () => {
 			const contexts = await agent.getContexts();
 			webview = contexts
 				.map(context => (typeof context === 'string' ? context : context.id))
-				.find(id => id.startsWith('WEBVIEW'));
+				.find(isAppWebview);
 			return webview !== undefined;
 		},
-		{ timeoutMsg: 'no WEBVIEW context after relaunch' },
+		{ timeoutMsg: 'no app WEBVIEW context after relaunch' },
 	);
 	await agent.switchContext(webview!);
 }
