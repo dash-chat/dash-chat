@@ -334,10 +334,16 @@
 		bind:value
 		{destinationName}
 		onSend={async () => {
+			const keepFocus = document.activeElement instanceof HTMLTextAreaElement;
 			const sent = await send();
 			// Guard against the stagedMedia entry already being popped (e.g. the user
 			// hit back during a slow send) — otherwise we'd navigate off the chat.
-			if (sent && page.state.stagedMedia) history.back();
+			if (sent && page.state.stagedMedia) {
+				// Hand focus to the composer's input before the staged page unmounts
+				// so an open keyboard stays open back in the chat.
+				if (keepFocus) messageInput?.focus();
+				history.back();
+			}
 			return sent;
 		}}
 		onAddMore={addMore}

@@ -59,7 +59,6 @@
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
-		if (!hasBody(message.content)) return;
 		if (isMobile) {
 			reactionsOpened = true;
 		} else if (e instanceof MouseEvent) {
@@ -106,7 +105,7 @@
 	{/if}
 {/snippet}
 
-<div class="group flex justify-end" use:longpress={{ onLongPress }}>
+{#snippet bubble()}
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile && hasBody(message.content)}
 			<MessageHoverToolbar {message} {myDeviceId} {onEdit} reverse />
@@ -144,7 +143,15 @@
 			</div>
 		{/if}
 	</div>
-</div>
+{/snippet}
+
+{#if deleted}
+	<div class="group flex justify-end">{@render bubble()}</div>
+{:else}
+	<div class="group flex justify-end" use:longpress={{ onLongPress }}>
+		{@render bubble()}
+	</div>
+{/if}
 {#if isMobile}
 	<MessageActionsOverlay
 		{message}

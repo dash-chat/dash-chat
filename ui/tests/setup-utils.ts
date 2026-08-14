@@ -86,6 +86,13 @@ function photoDownloadMs(label: string): number | null {
 function disableP2p(): Promise<void> {
 	return invokeAfterSetup('close_iroh_endpoint');
 }
+
+/** Summon the Android soft keyboard for the currently focused input. A
+ * WebDriver click focuses the input but does not reliably raise the IME, so
+ * keyboard-behavior specs summon it natively, the way the app itself does. */
+function showKeyboard(): Promise<void> {
+	return invokeAfterSetup('plugin:virtual-keyboard|show');
+}
 export interface TestFileSpec {
 	name: string;
 	mimeType: string;
@@ -259,6 +266,7 @@ export const testUtils = {
 	simulateUpdate,
 	hasText,
 	disableP2p,
+	showKeyboard,
 	pasteFiles,
 	pasteNoisePhoto,
 	dropFiles,

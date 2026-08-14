@@ -39,7 +39,11 @@ import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
-import { APP_PACKAGE, stopAndroidApp } from './platforms/android';
+import {
+	APP_PACKAGE,
+	stopAndroidApp,
+	waitForAppLinksVerified,
+} from './platforms/android';
 import { readOpenedUrls } from './platforms/desktop';
 import { type AgentPlatformName, platformNames } from './test-env';
 
@@ -77,8 +81,15 @@ export type Agent = WebdriverIO.Browser & {
 
 	/** SvelteKit `goto` — uses `window.__test.goto` for client-side nav. */
 	goto(path: string): Promise<void>;
-	/** Dispatch a URL through the app's deep link routing logic. */
+	/** Deliver a deep link the way the OS would: a real VIEW intent on Android,
+	 *  `mobile: deepLink` on iOS. Desktop e2e builds skip the single-instance
+	 *  plugin — the OS delivery path for runtime deep links — so there it falls
+	 *  back to [`injectDeepLink`]. */
 	handleDeepLink(url: string): Promise<void>;
+	/** Dispatch a URL through the app's deep link routing logic directly,
+	 *  bypassing OS delivery — for links the OS wouldn't route to the app
+	 *  (e.g. the dash-chat:// scheme is only registered on desktop). */
+	injectDeepLink(url: string): Promise<void>;
 	/** Resolve a paraglide message key in the agent's current locale. */
 	tr(key: string, params?: Record<string, unknown>): Promise<string>;
 	/** Scan the whole page for horizontal-overflow issues. */
@@ -171,8 +182,25 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			await window.__test.goto(p);
 		}, path);
 	};
-	agent.handleDeepLink = async (url: string) => {
+	agent.injectDeepLink = async (url: string) => {
 		await b.execute((u: string) => window.__test.handleDeepLink(u), url);
+	};
+	agent.handleDeepLink = async (url: string) => {
+		if (agent.platform === 'desktop') {
+			await agent.injectDeepLink(url);
+		} else if (agent.platform === 'ios') {
+			// Unlike Android's pm get-app-links, the device's AASA validation
+			// state can't be asserted from the harness, and a failed validation
+			// would open Safari — so route the URL to the app explicitly.
+			await b.execute('mobile: deepLink', { url, bundleId: APP_PACKAGE });
+		} else {
+			// No package pin: the OS resolves the link itself, so this covers the
+			// verified App Links association, not just the intent filter. No
+			// waitForLaunch: `am start -W` can block forever on a cold launch;
+			// callers already wait for the app via page ready()/startApp().
+			await waitForAppLinksVerified(androidUdid(b));
+			await b.execute('mobile: deepLink', { url, waitForLaunch: false });
+		}
 	};
 	agent.tr = async (key: string, params?: Record<string, unknown>) =>
 		await b.execute(

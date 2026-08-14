@@ -280,6 +280,27 @@ function startLogcatLogger(agent: string, udid: string): ChildProcess {
 	return proc;
 }
 
+/** Wait until the OS has verified the app's App Links domains. Verification
+ *  runs asynchronously after install (the debug key is listed in the hosted
+ *  assetlinks.json), and an unforced VIEW intent sent before it completes
+ *  would resolve to the browser instead of the app. */
+export async function waitForAppLinksVerified(udid: string): Promise<void> {
+	const deadline = Date.now() + 30_000;
+	for (;;) {
+		const out = execSync(
+			`adb -s ${udid} shell pm get-app-links ${APP_PACKAGE}`,
+			{ encoding: 'utf8', timeout: 10_000, env: androidEnv },
+		);
+		if (/:\s*verified/.test(out)) return;
+		if (Date.now() > deadline) {
+			throw new Error(
+				`App Links for ${APP_PACKAGE} never became verified:\n${out}`,
+			);
+		}
+		await new Promise(resolve => setTimeout(resolve, 500));
+	}
+}
+
 /** Kill the app on `udid` and wait for its process to die. Unlike
  *  `force-stop`, `stop-app` leaves the package eligible for FCM delivery. */
 export function stopAndroidApp(udid: string): void {
