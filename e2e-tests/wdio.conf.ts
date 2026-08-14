@@ -149,8 +149,23 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		[...nameBySlot.keys()].map(slot => [`agent${slot}`, agentEntry(slot)]),
 	),
 
+	// The appium server's own log only reaches the console as truncated warnings,
+	// so keep the full one on disk — device-side failures (usbmux timeouts, WDA
+	// signing) are only diagnosable from it.
 	services:
-		appiumPort !== null ? [['appium', { args: { port: appiumPort } }]] : [],
+		appiumPort !== null
+			? [
+					[
+						'appium',
+						{
+							args: {
+								port: appiumPort,
+								log: path.join(ROOT, '.dbs', 'e2e', 'appium.log'),
+							},
+						},
+					],
+				]
+			: [],
 
 	logLevel: 'warn',
 	waitforTimeout: UI_TIMEOUT,
@@ -176,6 +191,9 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			} catch {
 				// ignore
 			}
+			// The appium service starts right after this hook and writes its log
+			// here, so the directory has to exist before the first server does.
+			mkdirSync(dataDir, { recursive: true });
 
 			killLeftoverMailboxServers();
 

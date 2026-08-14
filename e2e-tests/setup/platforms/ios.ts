@@ -1,5 +1,11 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { constants, copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import {
+	constants,
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	statSync,
+} from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -132,6 +138,39 @@ function builtIpa(): string {
 	return ipas[0];
 }
 
+/** Put a device back to a freshly-installed app, retrying the install: CoreDevice
+ * intermittently fails with a transient "unable to create bookmark data" /
+ * "No such file" error even though the .ipa exists. Best-effort — a device left
+ * without the app falls back to the session's own `appium:app` install. */
+async function reinstallApp(udid: string): Promise<void> {
+	try {
+		execSync(
+			`xcrun devicectl device uninstall app --device ${udid} ${APP_BUNDLE_ID}`,
+			{ stdio: 'ignore' },
+		);
+	} catch {
+		/* not installed */
+	}
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		try {
+			execSync(
+				`xcrun devicectl device install app --device ${udid} "${SESSION_IPA}"`,
+				{ stdio: 'inherit' },
+			);
+			return;
+		} catch (err) {
+			if (attempt === 3) {
+				console.warn(
+					`[ios] devicectl install failed for ${udid} after ${attempt} ` +
+						`attempts; falling back to the session's appium:app install: ${err}`,
+				);
+				return;
+			}
+			await new Promise(resolve => setTimeout(resolve, 2000));
+		}
+	}
+}
+
 // Tail the app's device console and echo it with an agent prefix
 function startSyslogLogger(agent: string, udid: string): ChildProcess | null {
 	try {
@@ -181,6 +220,13 @@ export class IosPlatform implements AgentPlatform {
 				'appium:udid': udid,
 				'appium:app': SESSION_IPA,
 				'appium:bundleId': APP_BUNDLE_ID,
+				// beforeSession already reinstalled this exact build through
+				// devicectl; without this the driver installs it a second time
+				// (`enforceAppInstall` defaults to reinstall-every-session), which is
+				// the usbmux traffic that breaks session creation. Left as `false`
+				// rather than dropping `appium:app`, so a device the devicectl install
+				// failed on is still recovered by the session.
+				'appium:enforceAppInstall': false,
 				'appium:autoWebview': true,
 				'appium:autoWebviewTimeout': 30_000,
 				'appium:webviewConnectTimeout': 30_000,
@@ -255,57 +301,25 @@ export class IosPlatform implements AgentPlatform {
 		mkdirSync(path.dirname(SESSION_IPA), { recursive: true });
 		// COPYFILE_FICLONE: APFS clones instead of duplicating the ~135MB payload.
 		copyFileSync(builtIpa(), SESSION_IPA, constants.COPYFILE_FICLONE);
-
-		// Install the freshly-built app on each device up front — uninstall first
-		// for a clean slate, then install and let it settle — so the Appium session
-		// only has to *launch* it. Letting the session install the .ipa races the
-		// launch on real devices: the app is still "installing or uninstalling" when
-		// FrontBoard is asked to open it, which surfaces intermittently as
-		// "Application … is unknown to FrontBoard" (worse with two devices installing
-		// at once). See the XCUITest troubleshooting guide. Best-effort: if devicectl
-		// can't install (e.g. a device not yet registered in the provisioning
-		// profile), the session's own `appium:app` install still covers it.
-		for (const udid of this.udids.values()) {
-			try {
-				execSync(
-					`xcrun devicectl device uninstall app --device ${udid} ${APP_BUNDLE_ID}`,
-					{ stdio: 'ignore' },
-				);
-			} catch {
-				/* not installed */
-			}
-			await this.installApp(udid);
-		}
-	}
-
-	/** Install the freshly-built app on a device, retrying a few times: CoreDevice
-	 * intermittently fails with a transient "unable to create bookmark data" /
-	 * "No such file" error even though the .ipa exists. Falls back to the
-	 * session's own `appium:app` install if every attempt fails. */
-	private async installApp(udid: string): Promise<void> {
-		for (let attempt = 1; attempt <= 3; attempt++) {
-			try {
-				execSync(
-					`xcrun devicectl device install app --device ${udid} "${SESSION_IPA}"`,
-					{ stdio: 'inherit' },
-				);
-				return;
-			} catch (err) {
-				if (attempt === 3) {
-					console.warn(
-						`[ios] devicectl install failed for ${udid} after ${attempt} ` +
-							`attempts; falling back to the session's appium:app install: ${err}`,
-					);
-					return;
-				}
-				await new Promise(resolve => setTimeout(resolve, 2000));
-			}
-		}
 	}
 
 	async beforeSession() {
+		for (const logger of this.loggers.values()) logger.kill();
+		this.loggers.clear();
+		// Every spec's `before` creates a profile, so each session needs the app
+		// back at first launch — hence a reinstall per spec, not just per run.
+		// Doing it here, one device at a time, keeps it off the session's own
+		// `appium:app` install, which pushes the same ~135MB .ipa on both devices
+		// at once and starves the 5s usbmuxd read timeouts inside appium-ios-device
+		// ("Failed to receive any data within the timeout: 5000" out of POST
+		// /session). It also stops the app being "installing or uninstalling" when
+		// FrontBoard is asked to open it ("Application … is unknown to FrontBoard").
+		for (const udid of this.udids.values()) {
+			await reinstallApp(udid);
+		}
+		// Attach the console tails only once the installs are done: idevicesyslog
+		// streams the whole device log over the same usbmux channel.
 		for (const [slot, udid] of this.udids) {
-			this.loggers.get(slot)?.kill();
 			const logger = startSyslogLogger(`agent-${slot}`, udid);
 			if (logger) this.loggers.set(slot, logger);
 		}
