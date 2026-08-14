@@ -323,7 +323,9 @@ export class IosPlatform implements AgentPlatform {
 				'appium:wdaLocalPort': allocatePinnedPort(`_WDIO_WDA_PORT${slot}`),
 				'appium:mjpegServerPort': allocatePinnedPort(`_WDIO_MJPEG_PORT${slot}`),
 				'appium:wdaLaunchTimeout': 120_000,
-				'appium:newCommandTimeout': 240,
+				// 0 disables idle expiry: specs like review-checks park one agent
+				// for the whole spec after setup, far beyond any sane timeout.
+				'appium:newCommandTimeout': 0,
 				// Surface the WDA xcodebuild output so signing/config failures are
 				// diagnosable instead of a bare "xcodebuild failed with code 65".
 				'appium:showXcodeLog': true,
