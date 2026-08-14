@@ -9,6 +9,8 @@
  * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
  * multiset can't fulfill the requirements.
  */
+import { execSync } from 'node:child_process';
+
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
@@ -40,7 +42,6 @@ import { checkOverflow } from '../helpers/review/checks';
 import { APP_PACKAGE, stopAndroidApp } from './platforms/android';
 import { readOpenedUrls } from './platforms/desktop';
 import { type AgentPlatformName, platformNames } from './test-env';
-import { execSync } from 'node:child_process';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
@@ -257,10 +258,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 		}
 		// Home button press: keeps the process alive so the background service
 		// can continue syncing, unlike am stop-app which tears the app down.
-		execSync(
-			`adb -s ${androidUdid(b)} shell input keyevent KEYCODE_HOME`,
-			{ stdio: 'ignore' },
-		);
+		execSync(`adb -s ${androidUdid(b)} shell input keyevent KEYCODE_HOME`, {
+			stdio: 'ignore',
+		});
 	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
