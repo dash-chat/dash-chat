@@ -277,6 +277,26 @@ mod tests {
     }
 
     #[test]
+    fn redacts_chat_message_media_voice() {
+        let voice = dashchat_node::OutgoingMedia::VoiceNote {
+            voice_note: dashchat_node::OutgoingVoiceNote {
+                data: vec![255, 251, 144, 0, 7, 8],
+                mime_type: "audio/wav".into(),
+                duration_ms: 4200,
+                waveform: vec![0, 128, 255],
+            },
+        };
+        let input = format!("{voice:?}");
+        let result = redact(&input);
+        // The waveform is lossy downsampled amplitude, not recoverable audio, so
+        // only the bytes are stripped.
+        assert!(
+            !result.contains("255, 251, 144"),
+            "voice bytes leaked: {result}"
+        );
+    }
+
+    #[test]
     fn redacts_chat_message_json() {
         let input = r#""content":"secret message here""#;
         let result = redact(input);

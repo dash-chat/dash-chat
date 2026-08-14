@@ -43,8 +43,17 @@ pub struct OutgoingFile {
     pub mime_type: String,
 }
 
-/// Media attached to a chat message. A message has either a set of photos
-/// or a single file — not both — matching Signal's UX.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct OutgoingVoiceNote {
+    pub data: Vec<u8>,
+    pub mime_type: String,
+    pub duration_ms: u32,
+    // Amplitude bars (`0..=255`) for the UI
+    pub waveform: Vec<u8>,
+}
+
+/// Media attached to a chat message. A message has either a set of photos,
+/// a single file or a single voice note.
 ///
 /// This type only applies to outgoing messages.
 /// Once a message with media is sent, it is stored in the local blob store
@@ -56,6 +65,8 @@ pub enum OutgoingMedia {
     Photos { photos: Vec<OutgoingPhoto> },
     #[serde(rename = "file")]
     File { file: OutgoingFile },
+    #[serde(rename = "voice_note")]
+    VoiceNote { voice_note: OutgoingVoiceNote },
 }
 
 /// The collection of media metadata appearing in a single message.
@@ -86,12 +97,22 @@ pub enum MediaMetadata {
         #[serde(with = "hash_bytes")]
         hash: iroh_blobs::Hash,
     },
+    VoiceNote {
+        mime_type: String,
+        size: u64,
+        duration_ms: u32,
+        waveform: Vec<u8>,
+        #[serde(with = "hash_bytes")]
+        hash: iroh_blobs::Hash,
+    },
 }
 
 impl MediaMetadata {
     pub fn hash(&self) -> iroh_blobs::Hash {
         match self {
-            MediaMetadata::Photo { hash, .. } | MediaMetadata::File { hash, .. } => *hash,
+            MediaMetadata::Photo { hash, .. }
+            | MediaMetadata::File { hash, .. }
+            | MediaMetadata::VoiceNote { hash, .. } => *hash,
         }
     }
 }
