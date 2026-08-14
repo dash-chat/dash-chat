@@ -3,6 +3,7 @@
 	import { fade } from 'svelte/transition';
 	import { untrack, type Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { holdKeyboardSlot } from 'tauri-plugin-virtual-keyboard';
 	import { safeAreaInsets } from '$lib/utils/safe-area';
 
 	interface Props {
@@ -75,6 +76,11 @@
 
 	$effect(() => {
 		if (opened) spotlighted = true;
+	});
+
+	$effect(() => {
+		if (!spotlighted) return;
+		return holdKeyboardSlot();
 	});
 
 	// The whole spotlight scene lives between the page chrome (z <= 30) and

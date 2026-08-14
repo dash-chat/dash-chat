@@ -7,7 +7,6 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
-	import { holdKeyboardSlot } from 'tauri-plugin-virtual-keyboard';
 	import SpotlightOverlay from '$lib/components/SpotlightOverlay.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
@@ -40,11 +39,6 @@
 	// Reset the picker state once the actions UI is closed.
 	$effect(() => {
 		if (!opened) expanded = false;
-	});
-
-	$effect(() => {
-		if (!opened) return;
-		return holdKeyboardSlot();
 	});
 
 	function close() {
