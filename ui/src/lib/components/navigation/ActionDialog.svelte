@@ -14,42 +14,74 @@
 
 	type ActionResult = { success: true } | { success: false; error: string };
 
-	type Props = {
+	export interface Action {
+		text: string;
+		onClick: () => Promise<ActionResult>;
+		destructive?: boolean;
+		testid?: string;
+	}
+
+	interface Props {
 		opened: boolean;
-		onCancel: () => void;
-		onConfirm: () => Promise<ActionResult>;
 		title: string;
 		children: Snippet;
+		actions: Action[];
 		cancelText?: string;
-		confirmText: string;
-		confirmTestId?: string;
-	};
+		cancelTestId?: string;
+		onCancel: () => void;
+	}
 
 	let {
 		opened,
-		onCancel,
-		onConfirm,
 		title,
 		children,
+		actions,
 		cancelText = m.cancel(),
-		confirmText,
-		confirmTestId,
+		cancelTestId,
+		onCancel,
 	}: Props = $props();
 
 	let loading = $state(false);
+	let running = $state<Action | null>(null);
 
-	async function handleConfirm() {
+	async function run(action: Action) {
 		loading = true;
+		running = action;
 		try {
-			const result = await onConfirm();
+			const result = await action.onClick();
 			if (!result.success) {
 				showToast(result.error, 'error');
 			}
 		} finally {
 			loading = false;
+			running = null;
 		}
 	}
 </script>
+
+{#snippet cancelButton()}
+	<DialogButton
+		onClick={onCancel}
+		disabled={loading}
+		data-testid={cancelTestId}
+	>
+		{cancelText}
+	</DialogButton>
+{/snippet}
+
+{#snippet dialogButton(action: Action)}
+	<DialogButton
+		class={action.destructive ? '!text-red-500' : ''}
+		onClick={() => run(action)}
+		disabled={loading}
+		data-testid={action.testid}
+	>
+		{action.text}
+		{#if running === action}
+			<Preloader class="ms-2 h-4 w-4" />
+		{/if}
+	</DialogButton>
+{/snippet}
 
 {#if isIos}
 	<Actions {opened} onBackdropClick={onCancel}>
@@ -60,18 +92,24 @@
 					{@render children()}
 				</span>
 			</div>
+			{#each actions as action (action.text)}
+				<ActionButton
+					destructive={action.destructive}
+					onClick={() => run(action)}
+					disabled={loading}
+					data-testid={action.testid}
+				>
+					{action.text}
+					{#if running === action}
+						<Preloader class="ms-2 h-4 w-4" />
+					{/if}
+				</ActionButton>
+			{/each}
 			<ActionButton
-				destructive
-				onClick={handleConfirm}
+				onClick={onCancel}
 				disabled={loading}
-				data-testid={confirmTestId}
+				data-testid={cancelTestId}
 			>
-				{confirmText}
-				{#if loading}
-					<Preloader class="ms-2 h-4 w-4" />
-				{/if}
-			</ActionButton>
-			<ActionButton onClick={onCancel} disabled={loading}>
 				{cancelText}
 			</ActionButton>
 		</ActionsGroup>
@@ -80,20 +118,19 @@
 	<Dialog {opened} onBackdropClick={onCancel} {title}>
 		{@render children()}
 		{#snippet buttons()}
-			<DialogButton onClick={onCancel} disabled={loading}>
-				{cancelText}
-			</DialogButton>
-			<DialogButton
-				strong
-				onClick={handleConfirm}
-				disabled={loading}
-				data-testid={confirmTestId}
-			>
-				{confirmText}
-				{#if loading}
-					<Preloader class="ms-2 h-4 w-4" />
-				{/if}
-			</DialogButton>
+			{#if actions.length > 1}
+				<div class="flex w-full flex-col items-end gap-2">
+					{#each actions as action (action.text)}
+						{@render dialogButton(action)}
+					{/each}
+					{@render cancelButton()}
+				</div>
+			{:else}
+				{@render cancelButton()}
+				{#each actions as action (action.text)}
+					{@render dialogButton(action)}
+				{/each}
+			{/if}
 		{/snippet}
 	</Dialog>
 {/if}
