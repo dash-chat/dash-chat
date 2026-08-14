@@ -265,13 +265,16 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes
-	 * that only reproduce on slow devices leave usable evidence behind. */
+	 * that only reproduce on slow devices leave usable evidence behind. A skip
+	 * is reported as `passed: false` with no error (wdio sets
+	 * `passed: !error && !skip`), so only an error counts as a failure — a spec
+	 * that skips itself for the launched platforms must not leave one behind. */
 	async afterTest(test, _context, result) {
-		if (!result.passed) await saveFailureScreenshots(test);
+		if (result.error !== undefined) await saveFailureScreenshots(test);
 	},
 
 	async afterHook(test, _context, result) {
-		if (!result.passed) await saveFailureScreenshots(test);
+		if (result.error !== undefined) await saveFailureScreenshots(test);
 	},
 
 	async afterSession() {
