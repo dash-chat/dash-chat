@@ -43,11 +43,19 @@ describe('Offline notifications on Android (background sync)', () => {
 		const marker = `OFFLINE_${Date.now()}`;
 		const message = `offline hi ${marker}`;
 
-		// TODO: navigate receiver to settings and enable emergency/background mode.
-		// TODO: grant notification permission if not already granted.
-		// TODO: put receiver into emergency power-save / background-restricted state.
+		// Enable offline mode on the Android receiver from the help screen.
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.homePage.settingsLink.waitForExist();
+		await receiver.homePage.settingsLink.click();
+		await receiver.settingsPage.ready();
+		await receiver.settingsPage.helpLink.click();
+		await receiver.helpPage.ready();
+		await receiver.helpPage.enableOfflineMode();
 
+		// Background the app. The background service keeps the node alive.
 		await receiver.stopApp();
+		await receiver.pause(5_000);
 
 		await sender.directChatPage.composer.sendMessage(message);
 
@@ -55,6 +63,10 @@ describe('Offline notifications on Android (background sync)', () => {
 		const text = await notifications.waitForNotification(marker);
 		expect(text).toContain(marker);
 
-		// TODO: tap notification and verify we land back in the chat with the message.
+		// Tap the notification and verify we return to the chat with the message.
+		await notifications.tapNotification(marker);
+		await notifications.returnToApp();
+		await receiver.directChatPage.ready();
+		await receiver.directChatPage.messages.waitForMessage(message);
 	});
 });

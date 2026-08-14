@@ -45,7 +45,7 @@
 					title={m.contactUs()}
 					data-testid="help-contact-us"
 				/>
-				{#if isAndroid && import.meta.env.DEV}
+				{#if isAndroid || import.meta.env.DEV}
 					<ListItem
 						link
 						chevron={false}
