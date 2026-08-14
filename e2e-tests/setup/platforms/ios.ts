@@ -1,5 +1,11 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { constants, copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import {
+	constants,
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	statSync,
+} from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
