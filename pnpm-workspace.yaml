@@ -18,7 +18,7 @@ allowBuilds:
   tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547: true
   appium: true
   sharp: true
-  tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/ce6e762f816bdffeaa0bd56078995bda21cdb68b: set this to true or false
+  tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/ce6e762f816bdffeaa0bd56078995bda21cdb68b: true 
 
 patchedDependencies:
   konsta@5.0.6: patches/konsta@5.0.6.patch

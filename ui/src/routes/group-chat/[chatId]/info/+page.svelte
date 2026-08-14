@@ -402,10 +402,15 @@
 				dialogType = null;
 				dialogActorId = null;
 			}}
-			onConfirm={handleRemove}
 			title={m.removeMember()}
-			confirmText={m.remove()}
-			confirmTestId="group-info-remove-member-confirm"
+			actions={[
+				{
+					text: m.remove(),
+					destructive: true,
+					testid: 'group-info-remove-member-confirm',
+					onClick: handleRemove,
+				},
+			]}
 		>
 			<span>{m.areYouSureRemoveMember()}</span>
 		</ActionDialog>
@@ -413,10 +418,15 @@
 		<ActionDialog
 			opened={dialogType === 'leave'}
 			onCancel={() => (dialogType = null)}
-			onConfirm={handleLeaveGroup}
 			title={m.leaveGroup()}
-			confirmText={m.leave()}
-			confirmTestId="group-info-leave-confirm"
+			actions={[
+				{
+					text: m.leave(),
+					destructive: true,
+					testid: 'group-info-leave-confirm',
+					onClick: handleLeaveGroup,
+				},
+			]}
 		>
 			<span>{m.areYouSureLeaveGroup()}</span>
 		</ActionDialog>
