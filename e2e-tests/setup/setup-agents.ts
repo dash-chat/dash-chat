@@ -279,6 +279,10 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	return agent;
 }
 
+/** Held long enough that WebKit reads the touch as a tap instead of the start of
+ *  a scroll, and well under the app's 500ms long-press threshold. */
+const TAP_HOLD_MS = 100;
+
 /** Make webview clicks tap the element's own on-screen rect.
  *
  *  XCUITest's `nativeWebTap` taps the native accessibility element matching the
@@ -288,7 +292,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
  *  fallback assumes Safari's browser chrome — it insets by a URL bar and scales
  *  the viewport onto a shorter "real" area — so in this app's full-screen
  *  webview it lands tens of points off and the tap silently misses. CSS pixels
- *  here already are screen points, so the rect is the tap point. */
+ *  here already are screen points, so the rect is the tap point. A pointer
+ *  action rather than `mobile: tap`: that one is an instantaneous
+ *  XCUICoordinate tap, which WebKit drops inside a scrolling container. */
 function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 	agent.overwriteCommand(
 		'click',
@@ -301,7 +307,13 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 				const rect = el.getBoundingClientRect();
 				return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 			}, this);
-			await agent.execute('mobile: tap', { x, y });
+			await agent
+				.action('pointer', { parameters: { pointerType: 'touch' } })
+				.move({ x: Math.round(x), y: Math.round(y) })
+				.down()
+				.pause(TAP_HOLD_MS)
+				.up()
+				.perform();
 		},
 		true,
 	);
