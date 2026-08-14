@@ -3,10 +3,6 @@
 	import { fade } from 'svelte/transition';
 	import { untrack, type Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import {
-		holdKeyboardSlot,
-		type KeyboardSlotHold,
-	} from 'tauri-plugin-virtual-keyboard';
 	import { safeAreaInsets } from '$lib/utils/safe-area';
 
 	interface Props {
@@ -79,34 +75,6 @@
 
 	$effect(() => {
 		if (opened) spotlighted = true;
-	});
-
-	// The keyboard gives way to the overlay: holding its slot retracts it
-	// natively while the layout above stays pinned in place. Dismissing the
-	// overlay releases the hold, refocusing the composer and re-summoning the
-	// keyboard into the still-held slot.
-	// Tracked with a plain variable and an explicit open→close transition
-	// (not an effect cleanup): the effect can re-run spuriously while the
-	// overlay stays open, and a cleanup-based release would re-summon the
-	// keyboard mid-hide on every such re-run.
-	let slotHold: KeyboardSlotHold | null = null;
-
-	$effect(() => {
-		if (opened) {
-			if (slotHold === null) slotHold = holdKeyboardSlot();
-		} else if (slotHold) {
-			slotHold.release({ restoreFocus: true });
-			slotHold = null;
-		}
-	});
-
-	// Destroyed while open (e.g. navigation): give the slot back, but don't
-	// re-summon the keyboard.
-	$effect(() => {
-		return () => {
-			slotHold?.release();
-			slotHold = null;
-		};
 	});
 
 	// The whole spotlight scene lives between the page chrome (z <= 30) and

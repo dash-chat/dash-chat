@@ -272,8 +272,8 @@ importers:
         specifier: ^0.0.5
         version: 0.0.5
       tauri-plugin-virtual-keyboard:
-        specifier: github:dash-chat/tauri-plugin-virtual-keyboard#a20b82e5091fa9834b1ea1014fc336ebfe7c4547
-        version: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97))
+        specifier: github:dash-chat/tauri-plugin-virtual-keyboard#99be13fce0c81f23b877fee5593a29afe582f569
+        version: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/99be13fce0c81f23b877fee5593a29afe582f569(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97))
       vite-plugin-babel:
         specifier: ^1.3.2
         version: 1.3.2(@babel/core@7.28.5(supports-color@8.1.1))(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.0))
@@ -5222,8 +5222,8 @@ packages:
   tauri-plugin-view-api@0.0.5:
     resolution: {integrity: sha512-W5Q3eGT1qQSUUkdoZ4nKlr52GhNtfSQA+4jXi/JlwFizhOTAbbMLa2vTGvOVjq8tVzpFmx9qYU7JBeWFXwacxA==}
 
-  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547:
-    resolution: {gitHosted: true, integrity: sha512-frmgFITRhnHuij8F3PnYmE1b/G4JoWM3CHPiZ1u8u+j+yL3UiDTWwLhF19U7axfZFdlO++o5BZkjxeWCCmBnug==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547}
+  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/99be13fce0c81f23b877fee5593a29afe582f569:
+    resolution: {gitHosted: true, integrity: sha512-9APJ9s/IGT0k4kqzjDr1mCrsg8MDFaVJ6/lqiOpsHqwjzekuAeDygmWntRVscRCz3GTDfzqydCLZFIZ5axUfGw==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/99be13fce0c81f23b877fee5593a29afe582f569}
     version: 0.1.0
     peerDependencies:
       signalium: ^3
@@ -11145,7 +11145,7 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.10.1
 
-  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)):
+  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/99be13fce0c81f23b877fee5593a29afe582f569(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)):
     dependencies:
       '@tauri-apps/api': 2.11.0
       signalium: 3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)
