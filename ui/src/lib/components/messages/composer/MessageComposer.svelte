@@ -135,7 +135,7 @@
 		messageInput?.focus();
 	}
 
-	/** Returns whether the message was sent. */
+	/** Returns whether the message was sent (so callers can keep the draft on failure). */
 	async function send(): Promise<boolean> {
 		if (editing) {
 			await submitEdit();
@@ -148,19 +148,19 @@
 		sending = true;
 		const message = value;
 		const draft = media;
-		value = '';
-		media = undefined;
-		messageInput?.reset();
 		try {
 			const wireMedia = draft ? await draftToMedia(draft) : null;
 			const hash = await store.sendMessage({ message, media: wireMedia });
+			// Only clear what this send actually consumed: the user may have
+			// typed or staged new attachments while the send was confirming.
+			if (value === message) value = '';
+			if (media === draft) {
+				media = undefined;
+			}
+			messageInput?.reset();
 			onSent?.(hash);
 			return true;
 		} catch (e) {
-			// Restore the draft so the user can fix it, unless new content
-			// replaced it while the send was in flight.
-			if (value === '') value = message;
-			if (media === undefined) media = draft;
 			if (e instanceof AttachmentTooLargeError) {
 				showToast(
 					m.errorAttachmentTooLarge({

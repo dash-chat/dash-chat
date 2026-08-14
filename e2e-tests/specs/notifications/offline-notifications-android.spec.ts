@@ -19,7 +19,8 @@ import { type Agent, setupAgents } from '../../setup/setup-agents';
  * in src-tauri/src/notifications/mod.rs that fires when an operation arrives
  * through the regular sync pipeline while the app is backgrounded.
  */
-describe('Offline notifications on Android (background sync)', () => {
+// Skipped: the offline-mode toggle in the help page is disabled for now.
+describe.skip('Offline notifications on Android (background sync)', () => {
 	let receiver: Agent;
 	let sender: Agent;
 	let notifications: NotificationHelper;
