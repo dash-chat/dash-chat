@@ -7,7 +7,9 @@ import {
 
 export function startOfflineModeLifecycle(): () => void {
 	const handleVisibilityChange = () => {
-		if (document.visibilityState === 'hidden' && offlineMode.enabled) {
+		if (!offlineMode.enabled) return;
+
+		if (document.visibilityState === 'hidden') {
 			startService({ serviceLabel: 'Dash Chat' }).catch(e => {
 				console.error('[background-service] startService failed:', e);
 			});

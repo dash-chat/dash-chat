@@ -40,11 +40,17 @@ impl NodeRole {
         if *self == requested {
             return true;
         }
-        matches!(
-            (*self, requested),
-            // A full app (or background-task) Node can satisfy push handling.
-            (Self::App, Self::PushNotification) | (Self::BackgroundTask, Self::PushNotification)
-        )
+        match (*self, requested) {
+            // A full app Node can satisfy push handling.
+            (Self::App, Self::PushNotification) => true,
+            // The background service keeps the same Node the app was using;
+            // treat App and BackgroundTask as interchangeable so the slot is
+            // not torn down and rebuilt across foreground/background transitions.
+            (Self::App, Self::BackgroundTask) => true,
+            (Self::BackgroundTask, Self::App) => true,
+            (Self::BackgroundTask, Self::PushNotification) => true,
+            _ => false,
+        }
     }
 }
 

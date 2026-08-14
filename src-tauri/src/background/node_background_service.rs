@@ -54,10 +54,6 @@ impl<R: Runtime> BackgroundService<R> for NodeBackgroundService {
             }
         }
 
-        // Empty the process-wide node slot so the Node is torn down before the
-        // service process exits.
-        node_slot::clear().await;
-
         log::warn!("{LOG_PREFIX} run loop stopped");
         Ok(())
     }
