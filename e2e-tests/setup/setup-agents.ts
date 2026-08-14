@@ -325,6 +325,14 @@ async function tapPoint(
 	agent: WebdriverIO.Browser,
 	element: WebdriverIO.Element,
 ): Promise<{ x: number; y: number }> {
+	// Without this the wait below spends its whole timeout re-throwing "not a
+	// valid element" from execute, and reports that instead of the real problem:
+	// the app is on a different page than the test thinks.
+	if (!(await element.isExisting())) {
+		throw new Error(
+			`Cannot tap ${String(element.selector)}: it is not in the page`,
+		);
+	}
 	return await agent.waitUntil(
 		async () =>
 			await agent.execute((el: HTMLElement) => {
@@ -338,33 +346,41 @@ async function tapPoint(
 			}, element),
 		{
 			timeoutMsg:
-				'element never became the topmost one at its own centre, so a tap ' +
-				'there would have hit something else',
+				`${String(element.selector)} is in the page but never became the ` +
+				'topmost element at its own centre, so a tap there would have hit ' +
+				'whatever is covering it',
 		},
 	);
 }
 
-/** Touch (x, y) and report whether the page actually saw a click.
+/** Touch (x, y) and report whether `element` actually received a click.
  *
  *  WDA reports a successful touch that WebKit sometimes never turns into a
- *  click, so the tap has to be confirmed rather than assumed. The flag lives on
- *  documentElement because a click that lands usually starts a navigation and
- *  takes the tapped element with it. */
-async function clickReachedPage(
+ *  click, so the tap has to be confirmed rather than assumed. It has to be
+ *  confirmed *on the target*: the point is checked before the touch and the
+ *  round trip takes most of a second, so a page that moves in between leaves
+ *  the tap landing on something else — which still fires a click, just not the
+ *  one that was asked for. The flag lives on documentElement because a click
+ *  that lands usually starts a navigation and takes the element with it. */
+async function clickReachedElement(
 	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
 	x: number,
 	y: number,
 ): Promise<boolean> {
-	await agent.execute(() => {
+	await agent.execute((el: HTMLElement) => {
 		delete document.documentElement.dataset.e2eClick;
 		document.addEventListener(
 			'click',
-			() => {
-				document.documentElement.dataset.e2eClick = 'seen';
+			event => {
+				const target = event.target;
+				if (target instanceof Node && (el === target || el.contains(target))) {
+					document.documentElement.dataset.e2eClick = 'seen';
+				}
 			},
 			{ once: true, capture: true },
 		);
-	});
+	}, element);
 	await agent
 		.action('pointer', { parameters: { pointerType: 'touch' } })
 		.move({ x: Math.round(x), y: Math.round(y) })
@@ -399,14 +415,15 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 			}
 			for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
 				const { x, y } = await tapPoint(agent, this);
-				if (await clickReachedPage(agent, x, y)) return;
+				if (await clickReachedElement(agent, this, x, y)) return;
 				console.warn(
-					`[ios] tap at ${x},${y} left the page without a click event ` +
+					`[ios] tap at ${x},${y} did not reach ${String(this.selector)} ` +
 						`(attempt ${attempt}/${TAP_ATTEMPTS})`,
 				);
 			}
 			throw new Error(
-				`tapped ${TAP_ATTEMPTS} times and the page never saw a click`,
+				`tapped ${String(this.selector)} ${TAP_ATTEMPTS} times and it never ` +
+					'received a click',
 			);
 		},
 		true,

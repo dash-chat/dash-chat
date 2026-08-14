@@ -103,8 +103,49 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// os_log is the only log channel that leaves an iOS device, so it is what any
+/// on-device debugging reads. Redacted, unlike the other targets: the unified
+/// log is swept into sysdiagnose archives, which users hand to Apple and attach
+/// to bug reports, and nothing sensitive may leave that way.
+#[cfg(target_os = "ios")]
+fn device_console_target() -> tauri_plugin_log::Target {
+    let logger =
+        oslog::OsLogger::new("studio.darksoil.dashchat").level_filter(log::LevelFilter::Debug);
+    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Dispatch(
+        tauri_plugin_log::fern::Dispatch::new().chain(Box::new(logger) as Box<dyn log::Log>),
+    ))
+    .format(format_redacted_record)
+}
+
+#[cfg(target_os = "ios")]
+fn format_redacted_record(
+    out: tauri_plugin_log::fern::FormatCallback,
+    message: &std::fmt::Arguments,
+    record: &log::Record,
+) {
+    let redacted = tauri_plugin_sentry_reporting::redact(
+        &crate::redaction::REDACTION_REGEXES,
+        &message.to_string(),
+    );
+    format_record(out, &format_args!("{redacted}"), record);
+}
+
 fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
     let fs = FileSystem::new(handle)?;
+
+    // Only iOS pushes to it, below.
+    #[cfg_attr(not(target_os = "ios"), allow(unused_mut))]
+    let mut targets = vec![
+        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout).format(format_record),
+        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+            path: fs.logs_dir(),
+            file_name: None,
+        })
+        .format(format_record),
+        tauri_plugin_sentry_reporting::log_target(handle),
+    ];
+    #[cfg(target_os = "ios")]
+    targets.push(device_console_target());
 
     let log_plugin = tauri_plugin_log::Builder::default()
         .level(log::LevelFilter::Warn)
@@ -117,16 +158,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .format(|out, message, _record| out.finish(format_args!("{message}")))
         .clear_targets()
         .max_file_size(5 * 1024 * 1024)
-        .targets([
-            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
-                .format(format_record),
-            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-                path: fs.logs_dir(),
-                file_name: None,
-            })
-            .format(format_record),
-            tauri_plugin_sentry_reporting::log_target(handle),
-        ])
+        .targets(targets)
         .build();
 
     crate::utils::install_panic_hook();
