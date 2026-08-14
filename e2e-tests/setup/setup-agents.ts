@@ -283,6 +283,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
  *  a scroll, and well under the app's 500ms long-press threshold. */
 const TAP_HOLD_MS = 100;
 
+/** How many times to re-tap an element whose tap never reached the page. */
+const TAP_ATTEMPTS = 3;
+
 /** The centre of `element`, once a touch there would actually reach it.
  *
  *  A tap is aimed at a point, so it hits whatever is topmost there — during a
@@ -313,6 +316,39 @@ async function tapPoint(
 	);
 }
 
+/** Touch (x, y) and report whether the page actually saw a click.
+ *
+ *  WDA reports a successful touch that WebKit sometimes never turns into a
+ *  click, so the tap has to be confirmed rather than assumed. The flag lives on
+ *  documentElement because a click that lands usually starts a navigation and
+ *  takes the tapped element with it. */
+async function clickReachedPage(
+	agent: WebdriverIO.Browser,
+	x: number,
+	y: number,
+): Promise<boolean> {
+	await agent.execute(() => {
+		delete document.documentElement.dataset.e2eClick;
+		document.addEventListener(
+			'click',
+			() => {
+				document.documentElement.dataset.e2eClick = 'seen';
+			},
+			{ once: true, capture: true },
+		);
+	});
+	await agent
+		.action('pointer', { parameters: { pointerType: 'touch' } })
+		.move({ x: Math.round(x), y: Math.round(y) })
+		.down()
+		.pause(TAP_HOLD_MS)
+		.up()
+		.perform();
+	return await agent.execute(
+		() => document.documentElement.dataset.e2eClick === 'seen',
+	);
+}
+
 /** Make webview clicks tap the element's own on-screen rect.
  *
  *  XCUITest's `nativeWebTap` taps the native accessibility element matching the
@@ -333,14 +369,17 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
 				return await origClick();
 			}
-			const { x, y } = await tapPoint(agent, this);
-			await agent
-				.action('pointer', { parameters: { pointerType: 'touch' } })
-				.move({ x: Math.round(x), y: Math.round(y) })
-				.down()
-				.pause(TAP_HOLD_MS)
-				.up()
-				.perform();
+			for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
+				const { x, y } = await tapPoint(agent, this);
+				if (await clickReachedPage(agent, x, y)) return;
+				console.warn(
+					`[ios] tap at ${x},${y} left the page without a click event ` +
+						`(attempt ${attempt}/${TAP_ATTEMPTS})`,
+				);
+			}
+			throw new Error(
+				`tapped ${TAP_ATTEMPTS} times and the page never saw a click`,
+			);
 		},
 		true,
 	);
