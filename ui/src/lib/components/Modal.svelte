@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
 	import { modalHost } from '$lib/stores/modal-host.svelte';
+	import { suppressKeyboardRestore } from 'tauri-plugin-virtual-keyboard';
 
 	interface ModalControls {
 		opened: boolean;
@@ -52,6 +53,11 @@
 		if (current === 'unmounted') return;
 		phase = 'leaving';
 		return afterDelay(EXIT_DURATION, () => (phase = 'unmounted'));
+	});
+
+	$effect(() => {
+		if (!opened) return;
+		return suppressKeyboardRestore();
 	});
 
 	function close() {
