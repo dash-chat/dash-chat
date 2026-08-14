@@ -283,6 +283,36 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
  *  a scroll, and well under the app's 500ms long-press threshold. */
 const TAP_HOLD_MS = 100;
 
+/** The centre of `element`, once a touch there would actually reach it.
+ *
+ *  A tap is aimed at a point, so it hits whatever is topmost there — during a
+ *  page transition that is still the outgoing page, and the tap is swallowed
+ *  with the target sitting at exactly the right coordinates. `elementFromPoint`
+ *  is the same hit test WebKit will do, so waiting on it makes the tap
+ *  self-verifying rather than hoping the transition has finished. */
+async function tapPoint(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+): Promise<{ x: number; y: number }> {
+	return await agent.waitUntil(
+		async () =>
+			await agent.execute((el: HTMLElement) => {
+				const rect = el.getBoundingClientRect();
+				const x = rect.x + rect.width / 2;
+				const y = rect.y + rect.height / 2;
+				const topmost = document.elementFromPoint(x, y);
+				return topmost !== null && (topmost === el || el.contains(topmost))
+					? { x, y }
+					: null;
+			}, element),
+		{
+			timeoutMsg:
+				'element never became the topmost one at its own centre, so a tap ' +
+				'there would have hit something else',
+		},
+	);
+}
+
 /** Make webview clicks tap the element's own on-screen rect.
  *
  *  XCUITest's `nativeWebTap` taps the native accessibility element matching the
@@ -303,10 +333,7 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
 				return await origClick();
 			}
-			const { x, y } = await agent.execute((el: HTMLElement) => {
-				const rect = el.getBoundingClientRect();
-				return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-			}, this);
+			const { x, y } = await tapPoint(agent, this);
 			await agent
 				.action('pointer', { parameters: { pointerType: 'touch' } })
 				.move({ x: Math.round(x), y: Math.round(y) })
