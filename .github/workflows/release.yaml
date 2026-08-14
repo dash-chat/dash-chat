@@ -100,7 +100,7 @@ jobs:
 
       - name: Install and prepare
         run: |
-          pnpm install
+          pnpm install --reporter=append-only
 
       # Workaround for actions/runner-images#14097: on macos-15-arm64/20260511.0048+
       # /opt/homebrew/bin/{cargo,rustc,rustup,rustup-init} are broken rustup-init shims
@@ -365,7 +365,7 @@ jobs:
       - name: Install and Build 🔧
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-        run: pnpm install && pnpm tauri android build --aab --apk
+        run: pnpm install --reporter=append-only && pnpm tauri android build --aab --apk
 
       - name: Upload AAB to release
         uses: svenstaro/upload-release-action@v2

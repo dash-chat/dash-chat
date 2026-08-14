@@ -64,7 +64,7 @@ jobs:
 
       - name: Install and prepare
         run: |
-          pnpm install
+          pnpm install --reporter=append-only
           pnpm -F ./packages/stores build
           npx @inlang/paraglide-js compile --project ./ui/project.inlang
 

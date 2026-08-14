@@ -22,7 +22,7 @@ jobs:
           cache: true
 
       - name: Install pnpm dependencies
-        run: pnpm install
+        run: pnpm install --reporter=append-only
 
       - name: Build UI packages
         run: pnpm --recursive build

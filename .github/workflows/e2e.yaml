@@ -50,7 +50,7 @@ jobs:
         run: cargo install tauri-driver --locked
 
       - name: Install pnpm dependencies
-        run: pnpm install
+        run: pnpm install --reporter=append-only
 
       - name: Build UI packages
         run: pnpm -F ./packages/stores build
