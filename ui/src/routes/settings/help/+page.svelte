@@ -5,7 +5,6 @@
 	import { offlineMode } from '$lib/stores/offline-mode.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
-	import { isAndroid } from '$lib/utils/environment';
 	import {
 		BlockTitle,
 		List,
@@ -45,7 +44,8 @@
 					title={m.contactUs()}
 					data-testid="help-contact-us"
 				/>
-				{#if isAndroid || import.meta.env.DEV}
+				<!-- Disabling the background service for now -->
+				{#if false}
 					<ListItem
 						title={m.startOfflineMode()}
 						data-testid="help-start-offline-mode"
