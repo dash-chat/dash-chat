@@ -1,29 +1,28 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { getContext } from 'svelte';
-	import type { AgentId, ContactsStore } from 'dash-chat-stores';
+	import type { ChatsStore } from 'dash-chat-stores';
 	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
-	import { showToast } from '$lib/utils/toasts';
 
 	let {
 		opened = $bindable(),
-		agentId,
-		name,
+		chatId,
+		actorId,
 	}: {
 		opened: boolean;
-		agentId: AgentId;
-		name: string;
+		chatId: string;
+		actorId: string | null;
 	} = $props();
 
-	const contactsStore: ContactsStore = getContext('contacts-store');
+	const chatsStore: ChatsStore = getContext('chats-store');
 
 	async function confirm() {
+		if (actorId === null) {
+			return { success: false as const, error: m.errorUnexpected() };
+		}
 		try {
-			await contactsStore.client.unblockContact(agentId);
-			// Closing can unmount whatever owns `name`, so resolve the toast first.
-			const toast = m.contactUnblockedToast({ name });
+			await chatsStore.groupChats(chatId).client.removeMember(chatId, actorId);
 			opened = false;
-			showToast(toast);
 			return { success: true as const };
 		} catch (e) {
 			console.error(e);
@@ -35,12 +34,13 @@
 <ActionDialog
 	{opened}
 	onCancel={() => (opened = false)}
-	title={m.unblockContactTitle({ name })}
-	description={m.unblockContactDescription()}
+	title={m.removeMember()}
+	description={m.areYouSureRemoveMember()}
 	actions={[
 		{
-			text: m.unblock(),
-			testid: 'unblock-contact-confirm',
+			text: m.remove(),
+			destructive: true,
+			testid: 'group-info-remove-member-confirm',
 			onClick: confirm,
 		},
 	]}

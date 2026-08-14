@@ -43,6 +43,7 @@
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
+	import { modalHost } from '$lib/stores/modal-host.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
@@ -267,5 +268,6 @@
 		{#if import.meta.env.VITE_SENTRY_ENABLED}
 			<CrashReportDialog />
 		{/if}
+		<div class="contents" bind:this={modalHost.element}></div>
 	</App>
 </KonstaProvider>
