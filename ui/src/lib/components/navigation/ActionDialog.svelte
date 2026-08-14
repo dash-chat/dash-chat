@@ -10,6 +10,7 @@
 	import ActionButton from './ActionButton.svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { showToast } from '$lib/utils/toasts';
+	import Modal from '$lib/components/Modal.svelte';
 
 	type ActionResult =
 		| { success: true }
@@ -90,60 +91,73 @@
 	</DialogButton>
 {/snippet}
 
-{#if isIos}
-	<Actions {opened} onBackdropClick={onCancel} data-testid={testid}>
-		<ActionsGroup
-			class="flex flex-col gap-2 !bg-white p-2.5 dark:!bg-neutral-900"
-		>
-			<div
-				class="flex flex-col px-2.5 pb-2 pt-1 text-start text-[17px] leading-[22px] text-black dark:text-white"
+<Modal {opened}>
+	{#snippet children(modal)}
+		{#if isIos}
+			<Actions
+				opened={modal.opened}
+				onBackdropClick={onCancel}
+				data-testid={testid}
 			>
-				<span class:font-semibold={description !== undefined}>{title}</span>
+				<ActionsGroup
+					class="flex flex-col gap-2 !bg-white p-2.5 dark:!bg-neutral-900"
+				>
+					<div
+						class="flex flex-col px-2.5 pb-2 pt-1 text-start text-[17px] leading-[22px] text-black dark:text-white"
+					>
+						<span class:font-semibold={description !== undefined}>{title}</span>
+						{#if description !== undefined}
+							<span>{description}</span>
+						{/if}
+					</div>
+					{#each actions as action (action.text)}
+						<ActionButton
+							destructive={action.destructive}
+							onClick={() => run(action)}
+							disabled={loading}
+							data-testid={action.testid}
+						>
+							{action.text}
+							{#if running === action}
+								<Preloader class="ms-2 h-4 w-4" />
+							{/if}
+						</ActionButton>
+					{/each}
+					<ActionButton
+						onClick={onCancel}
+						disabled={loading}
+						data-testid={cancelTestId}
+					>
+						{cancelText}
+					</ActionButton>
+				</ActionsGroup>
+			</Actions>
+		{:else}
+			<Dialog
+				opened={modal.opened}
+				onBackdropClick={onCancel}
+				{title}
+				data-testid={testid}
+			>
 				{#if description !== undefined}
 					<span>{description}</span>
 				{/if}
-			</div>
-			{#each actions as action (action.text)}
-				<ActionButton
-					destructive={action.destructive}
-					onClick={() => run(action)}
-					disabled={loading}
-					data-testid={action.testid}
-				>
-					{action.text}
-					{#if running === action}
-						<Preloader class="ms-2 h-4 w-4" />
+				{#snippet buttons()}
+					{#if actions.length > 1}
+						<div class="flex w-full flex-col items-end gap-2">
+							{#each actions as action (action.text)}
+								{@render dialogButton(action)}
+							{/each}
+							{@render cancelButton()}
+						</div>
+					{:else}
+						{@render cancelButton()}
+						{#each actions as action (action.text)}
+							{@render dialogButton(action)}
+						{/each}
 					{/if}
-				</ActionButton>
-			{/each}
-			<ActionButton
-				onClick={onCancel}
-				disabled={loading}
-				data-testid={cancelTestId}
-			>
-				{cancelText}
-			</ActionButton>
-		</ActionsGroup>
-	</Actions>
-{:else}
-	<Dialog {opened} onBackdropClick={onCancel} {title} data-testid={testid}>
-		{#if description !== undefined}
-			<span>{description}</span>
+				{/snippet}
+			</Dialog>
 		{/if}
-		{#snippet buttons()}
-			{#if actions.length > 1}
-				<div class="flex w-full flex-col items-end gap-2">
-					{#each actions as action (action.text)}
-						{@render dialogButton(action)}
-					{/each}
-					{@render cancelButton()}
-				</div>
-			{:else}
-				{@render cancelButton()}
-				{#each actions as action (action.text)}
-					{@render dialogButton(action)}
-				{/each}
-			{/if}
-		{/snippet}
-	</Dialog>
-{/if}
+	{/snippet}
+</Modal>
