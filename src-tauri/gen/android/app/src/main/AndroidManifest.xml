@@ -5,15 +5,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- tauri-plugin-background-service declares these in its own manifest and the
-         merger pulls them into ours; `tools:node="remove"` strips them back out.
-         TODO: delete this whole block to re-enable the foreground service once we
-         pass Play Console review. -->
-    <!-- <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+         merger pulls them into ours; `tools:node="remove"` strips them back out. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" tools:node="remove" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" tools:node="remove" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" tools:node="remove" /> -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" tools:node="remove" />
 
     <!-- WRITE_EXTERNAL_STORAGE saves downloaded photos to the gallery on Android 9
          and below (Android 10+ uses scoped storage / MediaStore and needs no
