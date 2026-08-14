@@ -8,13 +8,16 @@ use serde::Serialize;
 use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
 
-use crate::app_node::AppNode;
+use crate::node::AppNodeManager;
 
 /// The current node, or the next one built after a swap. Returns `None` only when
 /// the app is shutting down (the generation sender was dropped).
-async fn wait_for_node(app_node: &AppNode, generation: &mut watch::Receiver<u64>) -> Option<Node> {
+async fn wait_for_node(
+    app_node_manager: &AppNodeManager,
+    generation: &mut watch::Receiver<u64>,
+) -> Option<Node> {
     loop {
-        if let Ok(node) = app_node.get().await {
+        if let Ok(node) = app_node_manager.get().await {
             return Some(node);
         }
         // Paused/rebuilding: wait for the next node generation.
@@ -34,15 +37,18 @@ async fn wait_for_node(app_node: &AppNode, generation: &mut watch::Receiver<u64>
 /// `subscribe` future *may* hold a node clone transiently while it waits for a
 /// resource to (re)appear, but it is raced against the generation signal, so a
 /// pause aborts it and releases the clone.
-fn spawn_watch_forwarder<T, F, Fut>(app_node: AppNode, on_event: Channel<T>, subscribe: F)
-where
+fn spawn_watch_forwarder<T, F, Fut>(
+    app_node_manager: AppNodeManager,
+    on_event: Channel<T>,
+    subscribe: F,
+) where
     T: Serialize + Clone + Send + Sync + 'static,
     F: Fn(Node) -> Fut + Send + 'static,
     Fut: Future<Output = anyhow::Result<watch::Receiver<T>>> + Send,
 {
     tokio::spawn(async move {
-        let mut generation = app_node.subscribe_generation();
-        while let Some(node) = wait_for_node(&app_node, &mut generation).await {
+        let mut generation = app_node_manager.subscribe_generation();
+        while let Some(node) = wait_for_node(&app_node_manager, &mut generation).await {
             // Acquire this node's watch, racing a swap so a pause mid-subscribe
             // aborts (dropping the subscribe future's transient node clone).
             let rx = tokio::select! {
@@ -111,27 +117,29 @@ async fn tracked_sync_state(
 #[tauri::command]
 pub async fn mailbox_subscribe_active_ids(
     on_event: Channel<BTreeSet<MailboxId>>,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    spawn_watch_forwarder(app_node.inner().clone(), on_event, |node| async move {
-        Ok(node.mailboxes.active_mailbox_ids())
-    });
+    spawn_watch_forwarder(
+        app_node_manager.inner().clone(),
+        on_event,
+        |node| async move { Ok(node.mailboxes.active_mailbox_ids()) },
+    );
     Ok(())
 }
 
 #[tauri::command]
 pub async fn mailbox_subscribe_cloud_id(
     on_event: Channel<Option<MailboxId>>,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
     // Custom forwarder: the cloud id is derived from the active-id set *and* the
     // node (it inspects tracked mailboxes), so it recomputes on each active-set
     // change. `node` is held only for the current generation's forward loop and
     // dropped on swap, so it never keeps a paused node alive.
-    let app_node = app_node.inner().clone();
+    let app_node_manager = app_node_manager.inner().clone();
     tokio::spawn(async move {
-        let mut generation = app_node.subscribe_generation();
-        while let Some(node) = wait_for_node(&app_node, &mut generation).await {
+        let mut generation = app_node_manager.subscribe_generation();
+        while let Some(node) = wait_for_node(&app_node_manager, &mut generation).await {
             let mut active = node.mailboxes.active_mailbox_ids();
             if on_event
                 .send(crate::mailbox::cloud_mailbox_id(&node).await)
@@ -163,11 +171,13 @@ pub async fn mailbox_subscribe_cloud_id(
 #[tauri::command]
 pub async fn mailbox_subscribe_all_ids(
     on_event: Channel<BTreeSet<MailboxId>>,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    spawn_watch_forwarder(app_node.inner().clone(), on_event, |node| async move {
-        Ok(node.mailboxes.sync_tracker().all_mailbox_ids())
-    });
+    spawn_watch_forwarder(
+        app_node_manager.inner().clone(),
+        on_event,
+        |node| async move { Ok(node.mailboxes.sync_tracker().all_mailbox_ids()) },
+    );
     Ok(())
 }
 
@@ -175,9 +185,9 @@ pub async fn mailbox_subscribe_all_ids(
 pub async fn mailbox_subscribe_connection_state(
     mailbox_id: MailboxId,
     on_event: Channel<MailboxConnectionState>,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    spawn_watch_forwarder(app_node.inner().clone(), on_event, move |node| {
+    spawn_watch_forwarder(app_node_manager.inner().clone(), on_event, move |node| {
         let id = mailbox_id.clone();
         async move { tracked_connection_state(&node, &id).await }
     });
@@ -188,9 +198,9 @@ pub async fn mailbox_subscribe_connection_state(
 pub async fn mailbox_subscribe_sync_state(
     mailbox_id: MailboxId,
     on_event: Channel<MailboxSyncState<TopicId, DeviceId>>,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    spawn_watch_forwarder(app_node.inner().clone(), on_event, move |node| {
+    spawn_watch_forwarder(app_node_manager.inner().clone(), on_event, move |node| {
         let id = mailbox_id.clone();
         async move { tracked_sync_state(&node, &id).await }
     });
