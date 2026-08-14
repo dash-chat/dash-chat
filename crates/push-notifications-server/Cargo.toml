@@ -11,6 +11,7 @@ path = "src/main.rs"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 async-trait = "0.1.89"
+openssl-sys = { workspace = true }
 axum = { version = "0.8", features = ["json"] }
 push-notifications-client = { path = "../push-notifications-client" }
 fcm_v1 = "0.3"

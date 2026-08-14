@@ -49,6 +49,11 @@ iroh = { version = "1.0.0", default-features = false, features = [
 ] }
 iroh-blobs = "0.103.0"
 
+# Build openssl from source for host binary crates so builds don't depend on
+# system headers (e.g. Ubuntu multiarch installs opensslconf.h in an
+# arch-specific directory that pkg-config doesn't expose).
+openssl-sys = { version = "0.9", features = ["vendored"] }
+
 [patch.crates-io]
 iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
 # Fork of iroh 1.0.3 (dash-chat/iroh) with the iroh#4390 fix
