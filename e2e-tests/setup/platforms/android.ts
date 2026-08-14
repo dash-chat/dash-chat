@@ -368,7 +368,9 @@ export class AndroidPlatform implements AgentPlatform {
 				// session gets handed back stale on the next context switch.
 				'appium:recreateChromeDriverSessions': true,
 				'appium:adbExecTimeout': 60_000,
-				'appium:newCommandTimeout': 240,
+				// 0 disables idle expiry: specs like review-checks park one agent
+				// for the whole spec after setup, far beyond any sane timeout.
+				'appium:newCommandTimeout': 0,
 			} as WebdriverIO.Capabilities,
 		};
 	}
