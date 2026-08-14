@@ -1,5 +1,5 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +17,12 @@ const E2E_DIR = path.resolve(__dirname, '..', '..');
 const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
 const IOS_BUILD_DIR = path.join(ROOT, 'src-tauri/gen/apple/build');
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
+// Fixed home for the .ipa the sessions install, copied here by onPrepare. The
+// capabilities `appium:app` reads are resolved when wdio.conf.ts loads — before
+// onPrepare builds anything — so it can't name a path under the build dir,
+// whose layout the tauri build rearranges (it exports the .ipa to the build
+// dir, then moves it into an arch subdir).
+const SESSION_IPA = path.join(E2E_DIR, '.appium', 'dash-chat-e2e.ipa');
 
 // The app project signs with Automatic signing under this team (see
 // src-tauri/gen/apple/dash-chat.xcodeproj); WebDriverAgent reuses it so Appium
@@ -106,23 +112,24 @@ function ensureXcuitestDriver() {
 	}
 }
 
-// First .ipa under the build dir, or undefined if none is built yet
-function findIpa(): string | undefined {
-	if (!existsSync(IOS_BUILD_DIR)) return undefined;
-	const out = execSync(`find "${IOS_BUILD_DIR}" -maxdepth 3 -name '*.ipa'`, {
-		encoding: 'utf8',
-	}).trim();
-	return out.split('\n').filter(Boolean)[0];
-}
-
+/** The freshest .ipa under the build dir. Newest wins because earlier layouts
+ *  leave their .ipa behind when the build writes the next one elsewhere. */
 function builtIpa(): string {
-	const ipa = findIpa();
-	if (ipa === undefined) {
+	const out = existsSync(IOS_BUILD_DIR)
+		? execSync(`find "${IOS_BUILD_DIR}" -maxdepth 3 -name '*.ipa'`, {
+				encoding: 'utf8',
+			}).trim()
+		: '';
+	const ipas = out
+		.split('\n')
+		.filter(Boolean)
+		.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+	if (ipas.length === 0) {
 		throw new Error(
 			`No .ipa found under ${IOS_BUILD_DIR} after 'tauri ios build'`,
 		);
 	}
-	return ipa;
+	return ipas[0];
 }
 
 // Tail the app's device console and echo it with an agent prefix
@@ -150,7 +157,6 @@ export class IosPlatform implements AgentPlatform {
 	readonly slots: number[];
 	readonly appiumPort: number;
 	private udids: Map<number, string>;
-	private ipaPath: string | undefined;
 	private loggers = new Map<number, ChildProcess>();
 
 	constructor(slots: number[]) {
@@ -173,9 +179,7 @@ export class IosPlatform implements AgentPlatform {
 				platformName: 'iOS',
 				'appium:automationName': 'XCUITest',
 				'appium:udid': udid,
-				// ipaPath is set in onPrepare (launcher); worker config loads read
-				// the same build output, so recompute it lazily if unset.
-				'appium:app': this.ipaPath ?? findIpa(),
+				'appium:app': SESSION_IPA,
 				'appium:bundleId': APP_BUNDLE_ID,
 				'appium:autoWebview': true,
 				'appium:autoWebviewTimeout': 30_000,
@@ -248,7 +252,9 @@ export class IosPlatform implements AgentPlatform {
 			}),
 		});
 
-		this.ipaPath = builtIpa();
+		mkdirSync(path.dirname(SESSION_IPA), { recursive: true });
+		// COPYFILE_FICLONE: APFS clones instead of duplicating the ~135MB payload.
+		copyFileSync(builtIpa(), SESSION_IPA, constants.COPYFILE_FICLONE);
 
 		// Install the freshly-built app on each device up front — uninstall first
 		// for a clean slate, then install and let it settle — so the Appium session
@@ -280,7 +286,7 @@ export class IosPlatform implements AgentPlatform {
 		for (let attempt = 1; attempt <= 3; attempt++) {
 			try {
 				execSync(
-					`xcrun devicectl device install app --device ${udid} "${this.ipaPath}"`,
+					`xcrun devicectl device install app --device ${udid} "${SESSION_IPA}"`,
 					{ stdio: 'inherit' },
 				);
 				return;
