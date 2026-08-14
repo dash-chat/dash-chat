@@ -119,7 +119,6 @@
 					? m.errorLeavingGroupOnlyAdmin()
 					: m.errorLeavingGroup();
 
-			dialogType = null;
 			return {
 				success: false as const,
 				error: errorMessage,
@@ -403,6 +402,7 @@
 				dialogActorId = null;
 			}}
 			title={m.removeMember()}
+			description={m.areYouSureRemoveMember()}
 			actions={[
 				{
 					text: m.remove(),
@@ -411,14 +411,13 @@
 					onClick: handleRemove,
 				},
 			]}
-		>
-			<span>{m.areYouSureRemoveMember()}</span>
-		</ActionDialog>
+		/>
 
 		<ActionDialog
 			opened={dialogType === 'leave'}
 			onCancel={() => (dialogType = null)}
 			title={m.leaveGroup()}
+			description={m.areYouSureLeaveGroup()}
 			actions={[
 				{
 					text: m.leave(),
@@ -427,9 +426,7 @@
 					onClick: handleLeaveGroup,
 				},
 			]}
-		>
-			<span>{m.areYouSureLeaveGroup()}</span>
-		</ActionDialog>
+		/>
 
 		<!-- <Dialog
 			opened={dialogType === 'delete'}
