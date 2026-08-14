@@ -1,5 +1,5 @@
 #[cfg(target_os = "android")]
-use crate::background::ExampleBackgroundService;
+use crate::background::NodeBackgroundService;
 
 #[cfg(target_os = "android")]
 mod background;
@@ -185,7 +185,7 @@ pub fn run() {
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(tauri_plugin_background_service::init_with_service(|| {
-            ExampleBackgroundService::new()
+            NodeBackgroundService::new()
         }));
     }
 

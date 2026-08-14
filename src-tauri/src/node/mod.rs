@@ -6,4 +6,4 @@ pub mod node_slot;
 pub use app_node_manager::AppNodeManager;
 
 #[cfg_attr(not(target_os = "android"), allow(unused_imports))]
-pub use node_context::NodeContext;
+pub use node_context::{NodeContext, NodeRole};
