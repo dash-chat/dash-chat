@@ -34,6 +34,11 @@ const DEVICE_PUSH_PORT = 3201;
 /** `android` = physical device, `android-emulator` = running emulator. */
 export type AndroidKind = 'android' | 'android-emulator';
 
+/** Appium's extension home — the uiautomator2 driver installs here, not in
+ *  node_modules. Without it appium falls back to the pnpm workspace, where
+ *  npm-driven driver installs break on pnpm-managed packages. */
+const APPIUM_HOME = path.join(E2E_DIR, '.appium');
+
 /** Flake-pinned chromedrivers (one per device WebView major), provided at
  *  this path by the androidDev shellHook; Appium picks the matching one per
  *  device. */
@@ -186,14 +191,14 @@ function ensureUiautomator2Driver() {
 		{
 			encoding: 'utf8',
 			cwd: E2E_DIR,
-			env: envWithoutWdioLoader({}, androidEnv),
+			env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
 		},
 	);
 	if (!installed.includes('uiautomator2')) {
 		execSync('pnpm exec appium driver install uiautomator2@4.2.9', {
 			stdio: 'inherit',
 			cwd: E2E_DIR,
-			env: envWithoutWdioLoader({}, androidEnv),
+			env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
 		});
 	}
 }
@@ -304,7 +309,7 @@ export class AndroidPlatform implements AgentPlatform {
 		ensureAndroidEnv();
 		this.slots = [...kindBySlot.keys()];
 		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
-		process.env.APPIUM_HOME = path.join(E2E_DIR, '.appium');
+		process.env.APPIUM_HOME = APPIUM_HOME;
 		// Workers reload this module; device provisioning belongs to the
 		// launcher, which claims before any worker starts.
 		if (process.env.WDIO_WORKER_ID === undefined) {
