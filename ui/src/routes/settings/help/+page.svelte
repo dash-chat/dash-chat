@@ -47,16 +47,14 @@
 				/>
 				{#if isAndroid || import.meta.env.DEV}
 					<ListItem
-						link
-						chevron={false}
 						title={m.startOfflineMode()}
 						data-testid="help-start-offline-mode"
-						onClick={() => offlineMode.toggle()}
 					>
 						{#snippet after()}
 							<Toggle
 								checked={offlineMode.enabled}
 								onChange={() => offlineMode.toggle()}
+								data-testid="help-start-offline-mode-switch"
 							/>
 						{/snippet}
 					</ListItem>
