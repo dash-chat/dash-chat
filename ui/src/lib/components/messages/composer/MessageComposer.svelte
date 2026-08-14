@@ -135,7 +135,7 @@
 		messageInput?.focus();
 	}
 
-	/** Returns whether the message was sent (so callers can keep the draft on failure). */
+	/** Returns whether the message was sent. */
 	async function send(): Promise<boolean> {
 		if (editing) {
 			await submitEdit();
@@ -148,16 +148,12 @@
 		sending = true;
 		const message = value;
 		const draft = media;
+		value = '';
+		media = undefined;
+		messageInput?.reset();
 		try {
 			const wireMedia = draft ? await draftToMedia(draft) : null;
 			const hash = await store.sendMessage({ message, media: wireMedia });
-			// Only clear what this send actually consumed: the user may have
-			// typed or staged new attachments while the send was confirming.
-			if (value === message) value = '';
-			if (media === draft) {
-				media = undefined;
-			}
-			messageInput?.reset();
 			onSent?.(hash);
 			return true;
 		} catch (e) {

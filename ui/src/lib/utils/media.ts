@@ -175,6 +175,9 @@ function totalMediaBytes(media: OutgoingMedia): number {
 	if (media.kind === 'photos') {
 		return media.photos.reduce((sum, p) => sum + p.data.byteLength, 0);
 	}
+	if (media.kind === 'voice_note') {
+		return media.voice_note.data.byteLength;
+	}
 	return media.file.data.byteLength;
 }
 

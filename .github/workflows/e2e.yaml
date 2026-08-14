@@ -63,6 +63,8 @@ jobs:
       # org.freedesktop.portal.Desktop hangs (headless), stalling every app
       # launch ~30s before window creation plus ~5s in the theme query.
       - name: Run E2E tests
+        env:
+          E2E_SPEC_FILE_RETRIES: '3' # TODO: make the e2e tests less flaky on CI
         run: set -o pipefail && dbus-run-session -- xvfb-run just test e2e 2>&1 | tee e2e-output.log
 
       - name: Upload test logs on failure

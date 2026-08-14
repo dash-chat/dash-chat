@@ -40,11 +40,12 @@ impl NodeRole {
         if *self == requested {
             return true;
         }
-        matches!(
-            (*self, requested),
-            // A full app (or background-task) Node can satisfy push handling.
-            (Self::App, Self::PushNotification) | (Self::BackgroundTask, Self::PushNotification)
-        )
+        match (*self, requested) {
+            // A full app Node can satisfy push handling.
+            (Self::App, Self::PushNotification) => true,
+            (Self::App, Self::BackgroundTask) => true,
+            _ => false,
+        }
     }
 }
 
@@ -76,6 +77,19 @@ impl NodeContext {
     pub fn for_push_notifications() -> Self {
         Self {
             role: NodeRole::PushNotification,
+            notification_tx: None,
+            topic_subscribed_tx: None,
+            app_handle: None,
+        }
+    }
+
+    /// Context used when a long-lived background service is keeping a Node alive
+    /// without the main app running: no P2P, no blob sync, and no app-lifetime
+    /// channels.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub fn for_background_task() -> Self {
+        Self {
+            role: NodeRole::BackgroundTask,
             notification_tx: None,
             topic_subscribed_tx: None,
             app_handle: None,
