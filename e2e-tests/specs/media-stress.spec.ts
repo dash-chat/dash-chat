@@ -4,7 +4,7 @@
  * the cost of a chat that keeps growing shows up.
  *
  * Skips itself unless E2E_STRESS=1. Run it with:
- *   PLATFORMS=android,desktop just test e2e media-stress
+ *   PLATFORMS=android,desktop just e2e run media-stress
  */
 import { statSync } from 'node:fs';
 

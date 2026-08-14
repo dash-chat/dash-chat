@@ -4,7 +4,7 @@
  * (tauri-driver against the built binary), `android` (physical device via
  * Appium), `android-emulator` (running emulator via Appium), or `ios`
  * (connected iPhone via Appium/XCUITest) — so any combo runs through this one
- * config, e.g. `PLATFORMS=ios,ios just test e2e send-messages`. Combos are bound
+ * config, e.g. `PLATFORMS=ios,ios just e2e run send-messages`. Combos are bound
  * by host OS, though: `desktop` needs Linux (tauri-driver/WebKitGTK), `ios` needs
  * macOS + a device, so they can't share one host.
  */

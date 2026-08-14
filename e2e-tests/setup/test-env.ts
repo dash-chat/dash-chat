@@ -24,7 +24,9 @@ const ALLOWED_MAILBOX_URL_PATTERNS: RegExp[] = (
 ).map(pattern => new RegExp(pattern));
 
 export function getSpecFileRetries(): number {
-	const rawRetries = process.env.E2E_SPEC_FILE_RETRIES ?? '1';
+	const rawRetries =
+		process.env.E2E_SPEC_FILE_RETRIES ??
+		(process.env.CI === 'true' ? '1' : '0');
 	const retries = Number.parseInt(rawRetries, 10);
 	if (Number.isNaN(retries) || retries < 0) {
 		throw new Error(

@@ -33,7 +33,7 @@ bundle:
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build"
 
 # boot a headless Android emulator (keeps running in the background); it then
-# counts as a connected device, e.g. for `PLATFORMS=android-emulator just test e2e`
+# counts as a connected device, e.g. for `PLATFORMS=android-emulator just e2e`
 boot-emulator:
     nix run .#boot-emulator
 
