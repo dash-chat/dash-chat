@@ -255,7 +255,10 @@ impl OpProjection {
     /// Every tombstone in `topic`, paired with its reason. The frontend uses
     /// this to drop delete-for-me messages (and their edits) from view while
     /// keeping the delete-for-everyone placeholders.
-    pub async fn tombstones(&self, topic: TopicId) -> anyhow::Result<Vec<(Hash, TombstoneReason)>> {
+    pub async fn tombstones(
+        &self,
+        topic: TopicId,
+    ) -> anyhow::Result<HashMap<Hash, TombstoneReason>> {
         let rows: Vec<(Vec<u8>, String)> =
             sqlx::query_as("SELECT op_hash, reason FROM tombstones WHERE topic_id = ?")
                 .bind(topic.as_bytes().to_vec())

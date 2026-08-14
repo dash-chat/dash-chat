@@ -206,6 +206,8 @@ export interface Tombstone {
 	reason: TombstoneReason;
 }
 
+export type Tombstones = Record<Hash, TombstoneReason>;
+
 export type DeviceGroupPayload =
 	| { type: 'AddContact'; payload: { agent_id: AgentId } }
 	| {

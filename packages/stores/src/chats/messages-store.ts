@@ -13,6 +13,7 @@ import {
 	OutgoingMedia,
 	Payload,
 	Tombstone,
+	Tombstones,
 	hasBody,
 	mediaBundleToAttachment,
 } from '../types';
@@ -69,7 +70,7 @@ export class MessagesStore {
 			reactionsByTarget,
 			editsByTarget,
 			deleteTargets,
-		} = collectMessageActionsByType(logs);
+		} = logsToMessages(logs);
 
 		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
 			const message = messages[target];
@@ -96,7 +97,7 @@ export class MessagesStore {
 
 		// Completely remove any message with a DeletedForMe tombstone.
 		const tombstones = await this.tombstoneStore.tombstones(chatId);
-		for (const { hash, reason } of tombstones) {
+		for (const [hash, reason] of Object.entries(tombstones)) {
 			if (reason === 'DeletedForMe') delete messages[hash];
 		}
 
@@ -219,13 +220,11 @@ export class MessagesStore {
 	}
 }
 
-function deletedForMeHashes(tombstones: Tombstone[]): Set<Hash> {
-	return new Set(
-		tombstones.filter(t => t.reason === 'DeletedForMe').map(t => t.hash),
-	);
+function deletedForMeHashes(tombstones: Tombstones): Set<Hash> {
+	return new Set(Object.keys(tombstones).filter(hash => tombstones[hash] === 'DeletedForMe'));
 }
 
-function collectMessageActionsByType(
+function logsToMessages(
 	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
 ): {
 	messages: Record<Hash, Message>;

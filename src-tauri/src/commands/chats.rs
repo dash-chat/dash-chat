@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use dashchat_node::{
     stores::TombstoneReason, AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia,
     RemoveGroupMemberError,
@@ -139,16 +141,11 @@ pub struct Tombstone {
 pub async fn get_tombstones(
     chat_id: ChatId,
     app_node: State<'_, AppNode>,
-) -> Result<Vec<Tombstone>, String> {
+) -> Result<HashMap<Hash, TombstoneReason>, String> {
     let node = app_node.get().await?;
-    let rows = node
-        .chat_tombstones(chat_id)
+    node.chat_tombstones(chat_id)
         .await
-        .map_err(|err| format!("{err:?}"))?;
-    Ok(rows
-        .into_iter()
-        .map(|(hash, reason)| Tombstone { hash, reason })
-        .collect())
+        .map_err(|err| format!("{err:?}"))
 }
 
 #[tauri::command]
