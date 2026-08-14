@@ -279,6 +279,34 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	return agent;
 }
 
+/** Make webview clicks tap the element's own on-screen rect.
+ *
+ *  XCUITest's `nativeWebTap` taps the native accessibility element matching the
+ *  web element's text, and falls back to a web→native coordinate translation
+ *  whenever there is no text (icon-only buttons) or the text matches several
+ *  native elements (a confirm dialog over the row that opened it). That
+ *  fallback assumes Safari's browser chrome — it insets by a URL bar and scales
+ *  the viewport onto a shorter "real" area — so in this app's full-screen
+ *  webview it lands tens of points off and the tap silently misses. CSS pixels
+ *  here already are screen points, so the rect is the tap point. */
+function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
+	agent.overwriteCommand(
+		'click',
+		async function (this: WebdriverIO.Element, origClick) {
+			const context = await agent.getContext();
+			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+				return await origClick();
+			}
+			const { x, y } = await agent.execute((el: HTMLElement) => {
+				const rect = el.getBoundingClientRect();
+				return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+			}, this);
+			await agent.execute('mobile: tap', { x, y });
+		},
+		true,
+	);
+}
+
 /** Attach to the app's webview context, which a relaunch drops out of. */
 async function switchToWebview(agent: WebdriverIO.Browser): Promise<void> {
 	let webview: string | undefined;
@@ -319,6 +347,9 @@ async function setupAgent(
 ): Promise<Agent> {
 	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
+	// Before makeAgent: it resolves every page object's element, and an element
+	// built before the overwrite keeps the original click.
+	if (platform === 'ios') tapWebElementsAtTheirRect(b);
 	const agent = makeAgent(b);
 	agent.platform = platform;
 	agent.waitForOpenedUrls = async (count = 1) => {
