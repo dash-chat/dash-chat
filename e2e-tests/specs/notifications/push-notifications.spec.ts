@@ -1,10 +1,10 @@
 import {
 	type NotificationHelper,
 	notificationHelperFor,
-} from '../helpers/components/notifications';
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { pushTestingEnabled } from '../setup/push-server';
-import { type Agent, setupAgents } from '../setup/setup-agents';
+} from '../../helpers/components/notifications';
+import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { pushTestingEnabled } from '../../setup/push-server';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 /**
  * Real-device, end-to-end push test: a message sent by one agent must arrive on
