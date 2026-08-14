@@ -218,12 +218,33 @@ async function reinstallApp(udid: string): Promise<void> {
 	}
 }
 
+/** Kill any tail still attached to `udid`.
+ *
+ *  Each spec runs in its own worker, so `afterSession`'s kill only ever reaches
+ *  that worker's own tails and a worker that exits early leaves its own behind.
+ *  The device relay serves one consumer, so a single survivor makes every later
+ *  tail connect to a stream that stays empty — which is silent, and looks
+ *  exactly like an app that logged nothing. */
+function killStaleSyslogLoggers(udid: string): void {
+	try {
+		execSync(`pkill -f "idevicesyslog -u ${udid}"`, { stdio: 'ignore' });
+	} catch {
+		/* nothing was attached */
+	}
+}
+
+/** Processes whose output the run cares about, in idevicesyslog's `a|b` form.
+ *  The push extension is a separate process, so filtering to the app alone
+ *  leaves every push failure undiagnosable. */
+const LOGGED_PROCESSES = 'Dash Chat|PushNotificationsExtension';
+
 // Tail the app's device console and echo it with an agent prefix
 function startSyslogLogger(agent: string, udid: string): ChildProcess | null {
+	killStaleSyslogLoggers(udid);
 	try {
 		const proc = spawn(
 			'idevicesyslog',
-			['-u', udid, '--process', 'Dash Chat'],
+			['-u', udid, '--process', LOGGED_PROCESSES],
 			{ stdio: ['ignore', 'pipe', 'ignore'] },
 		);
 		proc.on('error', () => {});
@@ -383,5 +404,8 @@ export class IosPlatform implements AgentPlatform {
 
 	async onComplete() {
 		for (const logger of this.loggers.values()) logger.kill();
+		// The launcher never owned the workers' tails, so kill them by device or
+		// the run leaves one attached per spec, blocking the next run's logging.
+		for (const udid of this.udids.values()) killStaleSyslogLoggers(udid);
 	}
 }

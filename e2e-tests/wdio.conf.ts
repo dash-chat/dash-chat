@@ -178,7 +178,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		timeout: 120_000,
 	},
 
-	reporters: ['spec'],
+	// The spec reporter writes the assertion that failed to stdout and nowhere
+	// else, so a finished run leaves only screenshots to reconstruct it from.
+	// The json one keeps each test's error and stack next to them on disk.
+	reporters: [
+		'spec',
+		['json', { outputDir: path.join(ROOT, '.dbs', 'e2e', 'results') }],
+	],
 
 	async onPrepare() {
 		// A failed onPrepare must abort the run: wdio only logs hook errors and
