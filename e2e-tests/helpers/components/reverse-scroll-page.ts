@@ -79,6 +79,17 @@ export class ReverseScrollPage extends TestHelper {
 		}, this.scrollSelector);
 	}
 
+	/** Jump to the far `edge` and resolve with the in-page ms until the next
+	 * animation frame — any main-thread stall the jump causes included. */
+	async jumpMs(edge: 'top' | 'bottom'): Promise<number> {
+		return await this.agent.execute(
+			(sel: string, e: 'top' | 'bottom') =>
+				window.__test.measureScrollJumpMs(sel, e),
+			this.scrollSelector,
+			edge,
+		);
+	}
+
 	/** Inline opacity of the transparent navbar bg element ReverseScrollPage drives. */
 	navbarBgOpacity(): Promise<string | null> {
 		return this.agent.execute((sel: string) => {

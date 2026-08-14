@@ -10,6 +10,7 @@
 import { invokeAfterSetup } from 'dash-chat-stores';
 
 import type { m } from '../src/lib/paraglide/messages.js';
+import { performanceUtils } from './performance';
 
 type Messages = typeof m;
 
@@ -259,6 +260,7 @@ export const testUtils = {
 	simulateUpdate,
 	hasText,
 	disableP2p,
+	...performanceUtils,
 	pasteFiles,
 	pasteNoisePhoto,
 	dropFiles,

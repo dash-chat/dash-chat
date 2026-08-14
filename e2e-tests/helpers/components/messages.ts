@@ -85,6 +85,26 @@ export class Messages extends TestHelper {
 		return message!;
 	}
 
+	/** Dispatch Enter on the composer to send its current draft and resolve
+	 * with the in-page ms until `text` renders in this message list. The
+	 * composer must already hold the draft. */
+	async sendRenderMs(text: string): Promise<number> {
+		return await this.agent.execute(
+			(sel: string, t: string) => window.__test.measureSendMs(sel, t),
+			this.messagesSelector,
+			text,
+		);
+	}
+
+	/** Number of message bubbles currently rendered in this list. */
+	renderedCount(): Promise<number> {
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelectorAll(`${sel} [data-message-hash]`).length,
+			this.messagesSelector,
+		);
+	}
+
 	async unreadBadgeText(): Promise<string | null> {
 		if (!(await this.unreadBadge.isExisting())) return null;
 		const text = (await this.unreadBadge.getText()).trim();

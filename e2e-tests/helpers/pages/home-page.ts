@@ -62,6 +62,35 @@ export class HomePage extends TestHelper {
 		await this.agent.$(tid('direct-chat-messages')).waitForExist();
 	}
 
+	/** Click the chat-list row for `name` and resolve with the in-page ms from
+	 * the click until `expectedMessages` bubbles are rendered in the group
+	 * chat. The long timeout is deliberate: a slow chat should fail on the
+	 * reported number, not on the poll. */
+	async openGroupChatRenderMs(
+		name: string,
+		expectedMessages: number,
+	): Promise<number> {
+		await this.chatListItem(name).waitForExist();
+		await this.agent.execute(
+			(n: string, count: number) =>
+				window.__test.measureGroupChatOpen(n, count),
+			name,
+			expectedMessages,
+		);
+		let ms: number | null = null;
+		await this.agent.waitUntil(
+			async () => {
+				ms = await this.agent.execute(() => window.__test.groupChatOpenMs());
+				return ms !== null;
+			},
+			{
+				timeout: 300_000,
+				timeoutMsg: `Group chat "${name}" never rendered ${expectedMessages} messages`,
+			},
+		);
+		return ms!;
+	}
+
 	getStartedCard(id: GetStartedCardId) {
 		return this.agent.$(tid(`get-started-${id}`));
 	}
