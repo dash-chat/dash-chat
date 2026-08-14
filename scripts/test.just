@@ -27,7 +27,9 @@ e2e NAME='' *ARGS:
     set -euo pipefail
     cd e2e-tests
     spec=''
-    wdio_args=()
+    # seeded with the config so it is never empty: bash 3.2 (macOS) treats
+    # "${arr[@]}" on an empty array as an unbound variable under `set -u`.
+    wdio_args=(wdio.conf.ts)
     export E2E_SPEC_FILE_RETRIES=1
     for arg in {{NAME}} {{ARGS}}; do
         case "$arg" in
@@ -47,9 +49,9 @@ e2e NAME='' *ARGS:
     # over the caller's default dev shell so tauri-driver/pnpm stay on PATH.
     if [[ "${PLATFORMS:-}" == *android* ]]; then
         exec nix develop "git+file:$(git rev-parse --show-toplevel)#androidDev" \
-            --command pnpm wdio run wdio.conf.ts "${wdio_args[@]}"
+            --command pnpm wdio run "${wdio_args[@]}"
     else
-        exec pnpm wdio run wdio.conf.ts "${wdio_args[@]}"
+        exec pnpm wdio run "${wdio_args[@]}"
     fi
 
 # run backwards compatibility tests against version tags (e.g. just test compat v0.10.0 v0.10.1)
