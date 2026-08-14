@@ -6,6 +6,10 @@
 	import { TOAST_TTL_MS, type ToastEvent } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages.js';
 	import SendErrorReportDialog from '$lib/components/SendErrorReportDialog.svelte';
+	import { keyboard } from 'tauri-plugin-virtual-keyboard';
+	import { useSignal } from '$lib/stores/use-signal';
+
+	const keyboardHeight = useSignal(() => keyboard.height.value);
 
 	let toastOpen = $state(false);
 	let toastMessage = $state('');
@@ -59,7 +63,7 @@
 	whatever sits in the bottom corners (the new-message FAB). Only the controls
 	take pointer events. -->
 <Toast
-	style="pointer-events: none"
+	style="pointer-events: none; --keyboard-visible-height: {$keyboardHeight}px"
 	position="center"
 	class={toastVariant === 'error' || toastVariant === 'unexpected'
 		? 'k-color-brand-red'
