@@ -49,20 +49,67 @@ function assertIosToolsAvailable() {
 	}
 }
 
-// Host IPv4 the device reaches the mailbox at
+/** Whether the device could route to this address over the LAN. 169.254 is
+ *  excluded on purpose: a tethered iPhone shows up as a USB network interface
+ *  with a self-assigned address in that range, and baking one of those leaves
+ *  the mailbox unreachable from every device. */
+function isPrivateLanAddress(address: string): boolean {
+	const [a, b] = address.split('.').map(Number);
+	return a === 10 || a === 192 || (a === 172 && b >= 16 && b <= 31);
+}
+
+/** Built-in wifi/ethernet (en0, en1, …) ahead of USB and virtual interfaces,
+ *  lowest number first. A tethered iPhone sharing its connection hands out a
+ *  private address too, and it must not win over the real LAN. */
+function interfaceRank(name: string): number {
+	const en = /^en(\d+)$/.exec(name);
+	return en === null ? 1000 : Number(en[1]);
+}
+
+/** Host IPv4 the device reaches the mailbox at. Baked into the build, so
+ *  picking a wrong-but-plausible one costs a whole run: every cross-device
+ *  assertion times out with the app quietly showing its offline state. */
 function detectHostIp(): string {
 	const override = process.env.E2E_HOST_IP;
 	if (override !== undefined && override !== '') return override;
-	const ifaces = networkInterfaces();
-	const candidates = ['en0', ...Object.keys(ifaces)];
-	for (const name of candidates) {
-		for (const addr of ifaces[name] ?? []) {
-			if (addr.family === 'IPv4' && !addr.internal) return addr.address;
-		}
+	const found = Object.entries(networkInterfaces())
+		.flatMap(([name, addrs]) => (addrs ?? []).map(addr => ({ name, addr })))
+		.filter(({ addr }) => addr.family === 'IPv4' && !addr.internal);
+	const usable = found
+		.filter(({ addr }) => isPrivateLanAddress(addr.address))
+		.sort((a, b) => interfaceRank(a.name) - interfaceRank(b.name));
+	if (usable.length === 0) {
+		const seen = found.map(f => `${f.name}=${f.addr.address}`).join(', ');
+		throw new Error(
+			'No private LAN IPv4 for the iOS devices to reach the mailbox on — ' +
+				`set E2E_HOST_IP. Non-internal IPv4 seen: ${seen || 'none'}`,
+		);
 	}
+	const { name, addr } = usable[0];
+	console.log(`[ios] baking mailbox host ip ${addr.address} (${name})`);
+	return addr.address;
+}
+
+/** Fail the moment the address baked into the app stops being ours.
+ *
+ *  The mailbox url is fixed at build time, so a DHCP lease moving the host mid
+ *  run leaves every device pointed at an address nobody answers on. Nothing
+ *  surfaces that: the apps just show their offline state and each cross-device
+ *  wait burns its full timeout, so a run can rot for half an hour and the
+ *  failures all look like unrelated sync bugs. */
+function assertBakedHostIpIsStillOurs(): void {
+	const baked = process.env._WDIO_IOS_HOST_IP;
+	if (baked === undefined) return;
+	const current = Object.values(networkInterfaces())
+		.flatMap(addrs => addrs ?? [])
+		.filter(addr => addr.family === 'IPv4' && !addr.internal)
+		.map(addr => addr.address);
+	if (current.includes(baked)) return;
 	throw new Error(
-		'Could not detect a host LAN IP for the iOS device to reach the mailbox — ' +
-			'set E2E_HOST_IP',
+		`The mailbox url baked into the app points at ${baked}, which this host ` +
+			`no longer holds (now: ${current.join(', ') || 'no LAN address'}). The ` +
+			'devices cannot reach the mailbox, so every cross-device wait would ' +
+			'time out. Rebuild, or pin E2E_HOST_IP and rerun.',
 	);
 }
 
@@ -277,6 +324,9 @@ export class IosPlatform implements AgentPlatform {
 		// real-device push spec — the push-notifications server URL so the device
 		// registers its FCM token with the host's local push server.
 		const hostIp = detectHostIp();
+		// Workers inherit the launcher's env, so this is what they check the
+		// host still holds before each session.
+		process.env._WDIO_IOS_HOST_IP = hostIp;
 		const mailboxUrl = `http://${hostIp}:${ctx.mailboxPort}`;
 		const bakedEnv: Record<string, string> = { MAILBOX_URL: mailboxUrl };
 		if (ctx.pushPort !== null) {
@@ -304,6 +354,7 @@ export class IosPlatform implements AgentPlatform {
 	}
 
 	async beforeSession() {
+		assertBakedHostIpIsStillOurs();
 		for (const logger of this.loggers.values()) logger.kill();
 		this.loggers.clear();
 		// Every spec's `before` creates a profile, so each session needs the app
