@@ -3,7 +3,7 @@ import type { UnsubscribeFunction } from 'emittery';
 import type { SimplifiedOperation } from '../p2panda/simplified-types';
 import type { Hash, TopicId } from '../p2panda/types';
 import type { ITombstoneClient } from '../tombstones/tombstone-client';
-import type { ChatId, Payload, Tombstone } from '../types';
+import type { ChatId, Payload, Tombstone, Tombstones } from '../types';
 import { type LocalStorageLogsClient } from './client';
 
 type Op = SimplifiedOperation<Payload>;
@@ -14,13 +14,14 @@ export class MockTombstoneClient implements ITombstoneClient {
 		private deviceGroupTopicId: TopicId,
 	) {}
 
-	async getTombstones(chatId: ChatId): Promise<Tombstone[]> {
+	async getTombstones(chatId: ChatId): Promise<Tombstones> {
 		const chatOps = await this.allOps(chatId);
 		const deviceGroupOps = await this.allOps(this.deviceGroupTopicId);
-		return [
-			...deletedForEveryoneTombstones(chatOps),
-			...deletedForMeTombstones(chatId, chatOps, deviceGroupOps),
-		];
+		const tombstones: Tombstones = {};
+		for (const tombstone of [...deletedForEveryoneTombstones(chatOps), ...deletedForMeTombstones(chatId, chatOps, deviceGroupOps)]) {
+			tombstones[tombstone.hash] = tombstone.reason;
+		}
+		return tombstones;
 	}
 
 	onNewTombstones(
@@ -31,16 +32,16 @@ export class MockTombstoneClient implements ITombstoneClient {
 		// The store fetches the current tombstones itself, so record those without
 		// emitting them and only push what shows up afterwards.
 		const primed = this.getTombstones(chatId).then(tombstones =>
-			tombstones.forEach(t => seen.add(tombstoneKey(t))),
+			Object.entries(tombstones).forEach(([hash, reason]) => seen.add(tombstoneKey({ hash, reason }))),
 		);
 
 		const emitNew = async () => {
 			await primed;
-			for (const tombstone of await this.getTombstones(chatId)) {
-				const key = tombstoneKey(tombstone);
+			for (const [hash, reason] of Object.entries(await this.getTombstones(chatId))) {
+				const key = tombstoneKey({ hash, reason });
 				if (seen.has(key)) continue;
 				seen.add(key);
-				handler(tombstone);
+				handler({ hash, reason });
 			}
 		};
 

@@ -1,3 +1,4 @@
+import { Bodyless, Message } from './chats/messages-store';
 import { Profile } from './contacts/contacts-client';
 import {
 	AgentId,
@@ -335,6 +336,10 @@ export type MessageDisplay = MessageBody | 'deleted-for-everyone';
  * `true` branch narrows `content` to `MessageBody`. */
 export function hasBody(content: MessageDisplay): content is MessageBody {
 	return typeof content !== 'string';
+}
+
+export function isMessage(message: Message | Bodyless): message is Message {
+	return 'content' in message;
 }
 
 /** Whether a message was deleted for everyone. */

@@ -15,6 +15,7 @@ import {
 	Tombstone,
 	Tombstones,
 	hasBody,
+	isMessage,
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
@@ -44,6 +45,13 @@ export interface Message {
 	replyTo?: Hash;
 	/** The reply resolved for rendering; unset when the annotation is invalid. */
 	reply?: MessageReply;
+}
+
+export type Bodyless = {
+	hash: string,
+	timestamp: number,
+	author: DeviceId,
+	seqNum: number,
 }
 
 // The messages of a single chat, direct or group alike: the message log with
@@ -185,23 +193,19 @@ function logsToMessages(
 	opsOrdered: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,
 ): Record<Hash, Message> {
-	const messages: Record<Hash, Message> = {};
+	const messages: Record<Hash, Message | Bodyless> = {};
 	const predecessors: Record<Hash, Hash> = {};
 
 	for (const op of opsOrdered) {
 		const author = op.header.verifying_key;
 		const body = op.body;
 
-		if (!body) {
-			const tombstoneReason = tombstones[op.hash];
-			if (tombstoneReason) {
-				if (tombstoneReason === 'DeletedForEveryone') {
-					const root = walkToRoot(op.hash, predecessors);
-					messages[root] = placeholderFor(op);
-				} else if (tombstoneReason === 'DeletedForMe') {
-					// Just don't include it in the messages map
-				}
-			}
+		if (tombstones[op.hash] || !body) {
+			// Put a bodyless placeholder for any deleted messages,
+			// because we need something in place for the rest of the rendering to work.
+			// Later we'll remove these and replace the original message with a proper 
+			// deleted-for-everyone placeholder if applicable.
+			messages[op.hash] = { hash: op.hash, author, seqNum: op.header.seq_num, timestamp: op.header.timestamp };
 			continue;
 		}
 		if (body.type !== 'Chat') continue;
@@ -226,7 +230,7 @@ function logsToMessages(
 			};
 		} else if (body.payload.type === 'Reaction') {
 			const { target, emoji } = body.payload.payload;
-			if (messages[target] && hasBody(messages[target].content)) {
+			if (messages[target] && isMessage(messages[target]) && hasBody(messages[target].content)) {
 				if (emoji) {
 					messages[target].content.reactions[author] = emoji;
 				} else {
@@ -236,7 +240,7 @@ function logsToMessages(
 		} else if (body.payload.type === 'EditMessage') {
 			const target = body.payload.payload.edit_hash;
 			const root = walkToRoot(target, predecessors);
-			if (messages[root] && hasBody(messages[root].content)) {
+			if (messages[root] && isMessage(messages[root]) && hasBody(messages[root].content)) {
 				predecessors[op.hash] = target;
 				messages[root].content.message = body.payload.payload.message;
 				messages[root].content.editHistory.push({
@@ -246,13 +250,36 @@ function logsToMessages(
 				});
 			}
 		} else if (body.payload.type === 'DeleteMessage') {
-			// Body was already tombstoned and removed, nothing to do here.
+			const hashes = body.payload.payload.hashes;
+			const deletes = hashes.map(hash => messages[hash]).filter(message => message !== undefined);
+			if (deletes.length === 0) {
+				console.warn('No deletes, skipping');
+				// The original message was already tombstoned
+				continue;
+			}
+			const root = deletes.sort((a, b) => a.timestamp - b.timestamp)[0];
+			const tombstoneReason = tombstones[root.hash];
+			if (tombstoneReason) {
+				if (tombstoneReason === 'DeletedForEveryone') {
+					messages[root.hash] = placeholderFor(root);
+				} else if (tombstoneReason === 'DeletedForMe') {
+					// Just don't include it in the messages map
+				}
+			}
 		}
-
 	}
 	
+	// Filter out all bodyless placeholders
+	const result: Record<Hash, Message> = {};
+	for (const [hash, message] of Object.entries(messages)) {
+		if (isMessage(message)) {
+			result[hash] = message;
+		} else {
+			delete result[hash];
+		}
+	}
 
-	return messages;
+	return result;
 }
 
 function walkToRoot(hash: Hash, predecessors: Record<Hash, Hash>): Hash {
@@ -263,66 +290,20 @@ function walkToRoot(hash: Hash, predecessors: Record<Hash, Hash>): Hash {
 	return current;
 }
 
-/** The placeholder each delete leaves behind, keyed by the hash it stands in
- * for. Merged over `messages` these replace the original's live entry, the only
- * covered op that can be there — edits live in `editsByTarget`. `placeholderFor`
- * maps every hash the delete covers (original and edits alike) to that same
- * placeholder hash, so a reply targeting any of them resolves to where the
- * tombstone actually renders. */
-function deletedMessages(
-	deleteTargets: Hash[][],
-	messages: Record<Hash, Message>,
-	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
-): { deleted: Record<Hash, Message>; placeholderFor: Record<Hash, Hash> } {
-	const deleted: Record<Hash, Message> = {};
-	const placeholderFor: Record<Hash, Hash> = {};
-	for (const hashes of deleteTargets) {
-		const original = earliestOp(hashes, messages, bodylessOps);
-		if (original === undefined) continue;
-		deleted[original.hash] = { ...original, content: 'deleted-for-everyone' };
-		for (const hash of hashes) placeholderFor[hash] = original.hash;
-	}
-	return { deleted, placeholderFor };
+function earliestMessage(hashes: Hash[], messages: Record<Hash, Message>): Message {
+	return hashes.map(hash => messages[hash]).sort((a, b) => a.timestamp - b.timestamp)[0];
 }
 
-/** The earliest of `hashes` this peer has — the original message, since its
- * edits are authored after it. Ordered by timestamp, as the message list itself
- * is, so the placeholder lands in the slot the original occupied. `seq_num`
- * can't be used: once devices are linked an edit may come from another device,
- * and positions in different logs aren't comparable. The hash breaks ties so
- * every peer eventually picks the same op. */
-function earliestOp(
-	hashes: Hash[],
-	messages: Record<Hash, Message>,
-	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
-): Message | undefined {
-	let earliest: Message | undefined;
-	for (const hash of hashes) {
-		const bodyless = bodylessOps[hash];
-		const op =
-			messages[hash] ??
-			(bodyless === undefined ? undefined : placeholderFor(bodyless));
-		if (op === undefined) continue;
-		if (
-			earliest === undefined ||
-			op.timestamp < earliest.timestamp ||
-			(op.timestamp === earliest.timestamp && op.hash < earliest.hash)
-		) {
-			earliest = op;
-		}
-	}
-	return earliest;
-}
 
 /** The placeholder a tombstoned operation renders as, built from its header
  * since its payload is gone. */
-function placeholderFor<T>(op: SimplifiedOperation<T>): Message {
+function placeholderFor(message: Bodyless): Message {
 	return {
-		hash: op.hash,
+		hash: message.hash,
 		content: 'deleted-for-everyone',
-		author: op.header.verifying_key,
-		seqNum: op.header.seq_num,
-		timestamp: op.header.timestamp,
+		author: message.author,
+		seqNum: message.seqNum,
+		timestamp: message.timestamp,
 	};
 }
 
