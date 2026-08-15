@@ -62,55 +62,11 @@ export class MessagesStore {
 		const chatId = await this.chatId();
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
-
-		const {
-			messages,
-			ops,
-			bodylessOps,
-			reactionsByTarget,
-			editsByTarget,
-			deleteTargets,
-		} = logsToMessages(logs);
-
-		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
-			const message = messages[target];
-			if (message === undefined) {
-				// A reaction on a tombstoned op is moot, not a missing target.
-				if (bodylessOps[target] === undefined) {
-					console.warn('reaction for missing message');
-				}
-			} else if (hasBody(message.content)) {
-				message.content.reactions = byAuthor;
-			}
-		}
-
-		for (const [hash, message] of Object.entries(messages)) {
-			messages[hash] = applyEdits(message, editsByTarget);
-		}
-
-		const { deleted, placeholderFor } = deletedMessages(
-			deleteTargets,
-			messages,
-			bodylessOps,
-		);
-		Object.assign(messages, deleted);
-
-		// Completely remove any message with a DeletedForMe tombstone.
+		
+		const opsOrdered = Object.values(logs).flat().sort((a, b) => a.header.timestamp - b.header.timestamp || a.hash.localeCompare(b.hash));
 		const tombstones = await this.tombstoneStore.tombstones(chatId);
-		for (const [hash, reason] of Object.entries(tombstones)) {
-			if (reason === 'DeletedForMe') delete messages[hash];
-		}
 
-		const deletedForMe = deletedForMeHashes(tombstones);
-		for (const [hash, message] of Object.entries(messages)) {
-			messages[hash] = applyReply(
-				message,
-				messages,
-				ops,
-				placeholderFor,
-				deletedForMe,
-			);
-		}
+		const messages = logsToMessages(opsOrdered, tombstones);
 
 		return messages;
 	});
@@ -224,91 +180,87 @@ function deletedForMeHashes(tombstones: Tombstones): Set<Hash> {
 	return new Set(Object.keys(tombstones).filter(hash => tombstones[hash] === 'DeletedForMe'));
 }
 
+// Apply each log item to the set of messages incrementally
 function logsToMessages(
-	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
-): {
-	messages: Record<Hash, Message>;
-	/** Every operation in the chat's logs by hash, the lookup reply resolution
-	 * walks: quotes and scroll targets point at ops that may not render as
-	 * messages themselves (edits, tombstoned bodies). */
-	ops: Record<Hash, OpInfo>;
-	// Operations whose payload is gone, keyed by hash
-	bodylessOps: Record<Hash, SimplifiedOperation<void>>;
-	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
-	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
-	/** One entry per delete: every hash it covers — the original message and its
-	 * edits. */
-	deleteTargets: Hash[][];
-} {
+	opsOrdered: SimplifiedOperation<Payload>[],
+	tombstones: Tombstones,
+): Record<Hash, Message> {
 	const messages: Record<Hash, Message> = {};
-	const ops: Record<Hash, OpInfo> = {};
-	const bodylessOps: Record<Hash, SimplifiedOperation<void>> = {};
-	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
-	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
-	const deleteTargets: Hash[][] = [];
+	const predecessors: Record<Hash, Hash> = {};
 
-	for (const [author, operations] of Object.entries(logs)) {
-		for (const operation of operations) {
-			const body = operation.body;
-			ops[operation.hash] = {
-				author,
-				timestamp: operation.header.timestamp,
-				body,
-			};
-			if (!body) {
-				if (operation.header.auth) continue;
-				bodylessOps[operation.hash] = { ...operation, body: undefined };
-				continue;
+	for (const op of opsOrdered) {
+		const author = op.header.verifying_key;
+		const body = op.body;
+
+		if (!body) {
+			const tombstoneReason = tombstones[op.hash];
+			if (tombstoneReason) {
+				if (tombstoneReason === 'DeletedForEveryone') {
+					const root = walkToRoot(op.hash, predecessors);
+					messages[root] = placeholderFor(op);
+				} else if (tombstoneReason === 'DeletedForMe') {
+					// Just don't include it in the messages map
+				}
 			}
-			if (body.type !== 'Chat') continue;
-			if (body.payload.type === 'Message') {
-				messages[operation.hash] = {
-					hash: operation.hash,
-					content: {
-						message: body.payload.payload.message,
-						media: mediaBundleToAttachment(body.payload.payload.media),
-						reactions: {},
-						editHistory: [],
-					},
-					author,
-					seqNum: operation.header.seq_num,
-					timestamp: operation.header.timestamp,
-					replyTo: body.payload.payload.reply,
-				};
-			} else if (body.payload.type === 'Reaction') {
-				const { target, emoji } = body.payload.payload;
-				if (reactionsByTarget[target] === undefined) {
-					reactionsByTarget[target] = {};
-				}
-				if (emoji) {
-					reactionsByTarget[target][author] = emoji;
-				} else {
-					delete reactionsByTarget[target][author];
-				}
-			} else if (body.payload.type === 'EditMessage') {
-				const target = body.payload.payload.edit_hash;
-				if (editsByTarget[target] === undefined) {
-					editsByTarget[target] = {};
-				}
-				editsByTarget[target][operation.hash] = {
-					hash: operation.hash,
-					text: body.payload.payload.message,
-					timestamp: operation.header.timestamp,
-				};
-			} else if (body.payload.type === 'DeleteMessage') {
-				deleteTargets.push(body.payload.payload.hashes);
-			}
+			continue;
 		}
-	}
+		if (body.type !== 'Chat') continue;
 
-	return {
-		messages,
-		ops,
-		bodylessOps,
-		reactionsByTarget,
-		editsByTarget,
-		deleteTargets,
-	};
+		if (body.payload.type === 'Message') {
+			const replyQuote = body.payload.payload.reply ? messages[body.payload.payload.reply] : undefined;
+			if (replyQuote) {
+				throw new Error('Reply quote is not supported yet');
+			}
+			messages[op.hash] = {
+				hash: op.hash,
+				content: {
+					message: body.payload.payload.message,
+					media: mediaBundleToAttachment(body.payload.payload.media),
+					reactions: {},
+					editHistory: [],
+				},
+				author,
+				seqNum: op.header.seq_num,
+				timestamp: op.header.timestamp,
+				replyTo: body.payload.payload.reply,
+			};
+		} else if (body.payload.type === 'Reaction') {
+			const { target, emoji } = body.payload.payload;
+			if (messages[target] && hasBody(messages[target].content)) {
+				if (emoji) {
+					messages[target].content.reactions[author] = emoji;
+				} else {
+					delete messages[target].content.reactions[author];
+				}
+			}
+		} else if (body.payload.type === 'EditMessage') {
+			const target = body.payload.payload.edit_hash;
+			const root = walkToRoot(target, predecessors);
+			if (messages[root] && hasBody(messages[root].content)) {
+				predecessors[op.hash] = target;
+				messages[root].content.message = body.payload.payload.message;
+				messages[root].content.editHistory.push({
+					hash: op.hash,
+					text: body.payload.payload.message,
+					timestamp: op.header.timestamp,
+				});
+			}
+		} else if (body.payload.type === 'DeleteMessage') {
+			// Body was already tombstoned and removed, nothing to do here.
+		}
+
+	}
+	
+
+	return messages;
+}
+
+function walkToRoot(hash: Hash, predecessors: Record<Hash, Hash>): Hash {
+	let current = hash;
+	while (predecessors[current]) {
+		current = predecessors[current];
+	}
+	return current;
 }
 
 /** The placeholder each delete leaves behind, keyed by the hash it stands in
@@ -364,7 +316,7 @@ function earliestOp(
 
 /** The placeholder a tombstoned operation renders as, built from its header
  * since its payload is gone. */
-function placeholderFor(op: SimplifiedOperation<void>): Message {
+function placeholderFor<T>(op: SimplifiedOperation<T>): Message {
 	return {
 		hash: op.hash,
 		content: 'deleted-for-everyone',
