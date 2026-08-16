@@ -12,7 +12,6 @@ import {
 	MessageVersion,
 	OutgoingMedia,
 	Payload,
-	Tombstone,
 	Tombstones,
 	hasBody,
 	isMessage,
@@ -185,12 +184,6 @@ export class MessagesStore {
 	}
 }
 
-function deletedForMeHashes(tombstones: Tombstones): Set<Hash> {
-	return new Set(
-		Object.keys(tombstones).filter(hash => tombstones[hash] === 'DeletedForMe'),
-	);
-}
-
 // Apply each log item to the set of messages incrementally.
 //
 // `opsOrdered` is the interleaved list of all operations from all authors in the chat topic.
@@ -203,7 +196,7 @@ function logsToMessages(
 	tombstones: Tombstones,
 ): Record<Hash, Message> {
 	const messages: Record<Hash, Message | Bodyless> = {};
-	/// Map of EditMessage -> the target they reference
+	// Map of EditMessage -> the target they reference
 	const editTargets: Record<Hash, Hash> = {};
 
 	for (const op of opsOrdered) {
@@ -220,7 +213,7 @@ function logsToMessages(
 				author,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
-			} as Bodyless;
+			};
 			continue;
 		}
 		if (body.type !== 'Chat') continue;
@@ -255,12 +248,8 @@ function logsToMessages(
 						scrollTarget: replyTarget ? quoteHash : undefined,
 					};
 				} else {
-					// Not covered.
-					// Target was never received by this peer or was invalid.
-					console.warn(
-						'Unexpected tombstone for reply target',
-						tombstones[quoteHash],
-					);
+					// Reply target was never received by this peer, or was invalid.
+					console.warn('Reply target not covered:', quoteHash);
 				}
 			}
 			messages[op.hash] = {
@@ -290,6 +279,15 @@ function logsToMessages(
 				}
 			}
 		} else if (body.payload.type === 'EditMessage') {
+			// TODO(after p2panda-spaces integration): this trusts every edit op in
+			// the raw logs and enforces none of the backend's edit-validation
+			// rules (`ValidChatOps::validate_edit` in
+			// crates/dashchat-node/src/chat/edit.rs): author-only, at most one
+			// edit per target resolved by (seq_num, hash), the 24h edit window,
+			// and target-must-be-editable. A misbehaving peer's ops would
+			// therefore render here. Once p2panda-spaces is integrated the
+			// frontend should consume validated logs (or mirror
+			// validate_edit) instead.
 			const target = body.payload.payload.edit_hash;
 			const root = walkToRoot(target, editTargets);
 			if (
@@ -311,11 +309,12 @@ function logsToMessages(
 				.map(hash => messages[hash])
 				.filter(message => message !== undefined);
 			if (deletes.length === 0) {
-				console.warn('No deletes, skipping');
-				// The original message was already tombstoned
+				// The original message was already tombstoned.
 				continue;
 			}
-			const root = deletes.sort((a, b) => a.timestamp - b.timestamp)[0];
+			const root = deletes.sort(
+				(a, b) => a.timestamp - b.timestamp || a.hash.localeCompare(b.hash),
+			)[0];
 			const tombstoneReason = tombstones[root.hash];
 			if (tombstoneReason) {
 				if (tombstoneReason === 'DeletedForEveryone') {
@@ -348,15 +347,6 @@ function walkToRoot(hash: Hash, predecessors: Record<Hash, Hash>): Hash {
 	return current;
 }
 
-function earliestMessage(
-	hashes: Hash[],
-	messages: Record<Hash, Message>,
-): Message {
-	return hashes
-		.map(hash => messages[hash])
-		.sort((a, b) => a.timestamp - b.timestamp)[0];
-}
-
 /** The placeholder a tombstoned operation renders as, built from its header
  * since its payload is gone. */
 function placeholderFor(message: Bodyless): Message {
@@ -366,48 +356,6 @@ function placeholderFor(message: Bodyless): Message {
 		author: message.author,
 		seqNum: message.seqNum,
 		timestamp: message.timestamp,
-	};
-}
-
-// Apply the message's edits and return the resulting message. Every edit
-// reachable from the message — following chains through `editsByTarget`,
-// across forks — becomes a version; the one with the highest timestamp is the
-// displayed text.
-//
-// TODO(after p2panda-spaces integration): this trusts every edit op in the
-// raw logs and enforces none of the backend's edit-validation rules
-// (`ValidChatOps::validate_edit` in crates/dashchat-node/src/chat/edit.rs):
-// author-only, at most one edit per target resolved by (seq_num, hash), the
-// 24h edit window, and target-must-be-editable. A misbehaving peer's ops
-// would therefore render here. Once p2panda-spaces is integrated the
-// frontend should consume validated logs (or mirror validate_edit) instead.
-function applyEdits(
-	message: Message,
-	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>,
-): Message {
-	// Deletes are applied after edits, so live content is always present here.
-	if (!hasBody(message.content)) return message;
-	const versions: MessageVersion[] = [];
-	const seen = new Set<Hash>([message.hash]);
-	const pending = Object.values(editsByTarget[message.hash] ?? {});
-	while (pending.length > 0) {
-		const edit = pending.pop();
-		if (edit === undefined || seen.has(edit.hash)) continue;
-		seen.add(edit.hash);
-		versions.push(edit);
-		pending.push(...Object.values(editsByTarget[edit.hash] ?? {}));
-	}
-	if (versions.length === 0) return message;
-
-	versions.sort((v1, v2) => v1.timestamp - v2.timestamp);
-	const latest = versions[versions.length - 1];
-	return {
-		...message,
-		content: {
-			...message.content,
-			message: latest.text,
-			editHistory: versions,
-		},
 	};
 }
 
