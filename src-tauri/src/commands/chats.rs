@@ -130,13 +130,6 @@ pub async fn delete_message_for_me(
     Ok(header.hash())
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Tombstone {
-    pub hash: Hash,
-    pub reason: TombstoneReason,
-}
-
 #[tauri::command]
 pub async fn get_tombstones(
     chat_id: ChatId,

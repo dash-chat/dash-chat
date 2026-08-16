@@ -16,7 +16,11 @@ export class TombstoneStore {
 			relay(state => {
 				const fetchTombstones = async () => {
 					const tombstones = await this.client.getTombstones(topic);
-					state.value = tombstones;
+					// Merge rather than replace: an `onNewTombstones` event can
+					// arrive and merge into `state.value` before this in-flight
+					// fetch (started before that tombstone was persisted)
+					// resolves, and a wholesale replace would clobber it.
+					state.value = { ...tombstones, ...(state.value || {}) };
 				};
 
 				fetchTombstones();
