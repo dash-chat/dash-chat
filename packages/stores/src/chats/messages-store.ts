@@ -248,7 +248,7 @@ function logsToMessages(
 					replyQuote = {
 						kind: 'deleted-for-me',
 					};
-				} else  if (tombstones[quoteHash] === 'DeletedForEveryone'){
+				} else if (tombstones[quoteHash] === 'DeletedForEveryone') {
 					replyQuote = {
 						kind: 'deleted',
 						author: replyTarget?.author,
@@ -257,7 +257,10 @@ function logsToMessages(
 				} else {
 					// Not covered.
 					// Target was never received by this peer or was invalid.
-					console.warn('Unexpected tombstone for reply target', tombstones[quoteHash]);
+					console.warn(
+						'Unexpected tombstone for reply target',
+						tombstones[quoteHash],
+					);
 				}
 			}
 			messages[op.hash] = {

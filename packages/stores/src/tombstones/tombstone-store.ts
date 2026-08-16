@@ -14,7 +14,6 @@ export class TombstoneStore {
 	tombstones = reactive(
 		(topic: TopicId): ReactivePromise<Tombstones> =>
 			relay(state => {
-				state.value = {};
 				const fetchTombstones = async () => {
 					const tombstones = await this.client.getTombstones(topic);
 					state.value = tombstones;
