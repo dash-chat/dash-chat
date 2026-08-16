@@ -192,7 +192,7 @@ function deletedForMeHashes(tombstones: Tombstones): Set<Hash> {
 }
 
 // Apply each log item to the set of messages incrementally.
-// 
+//
 // `opsOrdered` is the interleaved list of all operations from all authors in the chat topic.
 // It must be ordered so that any partial ordering constraints are upheld, i.e. items
 // which reference prior items must appear after them.
@@ -226,11 +226,17 @@ function logsToMessages(
 		if (body.type !== 'Chat') continue;
 
 		if (body.payload.type === 'Message') {
-			const quoteHash = body.payload.payload.reply ? walkToRoot(body.payload.payload.reply, editTargets) : undefined;
+			const quoteHash = body.payload.payload.reply
+				? walkToRoot(body.payload.payload.reply, editTargets)
+				: undefined;
 			let replyQuote: MessageReply | undefined;
-			let replyTarget = quoteHash ? messages[quoteHash] : undefined;
-			if (replyTarget && isMessage(replyTarget)) {
-				if (hasBody(replyTarget.content)) {
+			if (quoteHash) {
+				const replyTarget = messages[quoteHash];
+				if (
+					replyTarget &&
+					isMessage(replyTarget) &&
+					hasBody(replyTarget.content)
+				) {
 					replyQuote = {
 						kind: 'content',
 						author: replyTarget.author,
@@ -238,18 +244,20 @@ function logsToMessages(
 						media: replyTarget.content.media,
 						scrollTarget: quoteHash,
 					};
-				} else if (replyTarget.content === 'deleted-for-everyone') {
-					replyQuote = {
-						kind: 'deleted',
-						author: replyTarget.author,
-						scrollTarget: quoteHash,
-					};
-				} else {
-					// XXX: If there is no other designation, we consider the message deleted for me.
-					// This branch could also be reached if a message were missing and not accounted for.
+				} else if (tombstones[quoteHash] === 'DeletedForMe') {
 					replyQuote = {
 						kind: 'deleted-for-me',
 					};
+				} else  if (tombstones[quoteHash] === 'DeletedForEveryone'){
+					replyQuote = {
+						kind: 'deleted',
+						author: replyTarget?.author,
+						scrollTarget: replyTarget ? quoteHash : undefined,
+					};
+				} else {
+					// Not covered.
+					// Target was never received by this peer or was invalid.
+					console.warn('Unexpected tombstone for reply target', tombstones[quoteHash]);
 				}
 			}
 			messages[op.hash] = {
