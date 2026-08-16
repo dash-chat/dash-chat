@@ -1,4 +1,4 @@
-use crate::app_node::AppNode;
+use crate::node::AppNodeManager;
 use tauri::{Manager, Runtime, UriSchemeContext, UriSchemeResponder};
 
 /// Handle an `irohblob://{hash}` request by loading the blob's bytes from the
@@ -31,6 +31,7 @@ pub fn handle<R: Runtime>(
                 // The webview's `fetch()` (save path) reads these cross-origin.
                 .header("Access-Control-Allow-Origin", "*")
                 .header("Cache-Control", "public, max-age=31536000, immutable")
+                .header("Content-Type", sniff_content_type(&bytes))
                 .body(bytes)
                 .expect("valid response"),
             Err(err) => {
@@ -47,9 +48,31 @@ pub fn handle<R: Runtime>(
     });
 }
 
+/// Best-effort MIME type from a blob’s magic bytes, falling back to a generic
+/// type for anything that is not stored media.
+fn sniff_content_type(bytes: &[u8]) -> &'static str {
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" {
+        match &bytes[8..12] {
+            b"WAVE" => return "audio/wav",
+            b"WEBP" => return "image/webp",
+            _ => {}
+        }
+    }
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return "image/jpeg";
+    }
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return "image/png";
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return "image/gif";
+    }
+    "application/octet-stream"
+}
+
 async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Result<Vec<u8>> {
     let node = app
-        .try_state::<AppNode>()
+        .try_state::<AppNodeManager>()
         .ok_or_else(|| anyhow::anyhow!("node not yet initialized"))?
         .get()
         .await

@@ -24,7 +24,6 @@
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
 		onReply?: () => void;
-		onDelete?: () => void;
 		/** Flip the visual order so the ⋯ button sits away from the bubble. */
 		reverse?: boolean;
 	}
@@ -34,7 +33,6 @@
 		myDeviceId,
 		onEdit,
 		onReply,
-		onDelete,
 		reverse = false,
 	}: Props = $props();
 
@@ -85,11 +83,6 @@
 	function reply() {
 		close();
 		onReply?.();
-	}
-
-	function del() {
-		close();
-		onDelete?.();
 	}
 
 	async function copy() {
@@ -185,7 +178,7 @@
 			onEdit={edit}
 			onReply={onReply ? reply : undefined}
 			onCopy={copy}
-			onDelete={del}
+			onDelete={close}
 		/>
 	</Popover>
 </div>

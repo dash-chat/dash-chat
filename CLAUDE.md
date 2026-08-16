@@ -374,21 +374,21 @@ The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. 
 
 ```bash
 # Build the Tauri binary and run the e2e suite (recommended)
-just test e2e
+just e2e
 
 # Build and run a single spec
-just test e2e full-flow
+just e2e run full-flow
 
 # Phone + desktop, two phones, two auto-booted emulators, or a single desktop
-PLATFORMS=android,desktop just test e2e send-messages
-PLATFORMS=android,android just test e2e send-messages
-PLATFORMS=android-emulator,android-emulator just test e2e send-messages
-PLATFORMS=desktop just test e2e settings-pages
+PLATFORMS=android,desktop just e2e run send-messages
+PLATFORMS=android,android just e2e run send-messages
+PLATFORMS=android-emulator,android-emulator just e2e run send-messages
+PLATFORMS=desktop just e2e run settings-pages
 
 # Connected iPhone; pair two iPhones for two-agent specs (desktop needs Linux,
 # so it can't share a Mac host with an iOS agent)
-PLATFORMS=ios,ios just test e2e send-messages
-PLATFORMS=ios just test e2e settings-pages
+PLATFORMS=ios,ios just e2e run send-messages
+PLATFORMS=ios just e2e run settings-pages
 ```
 
 **Key details:**

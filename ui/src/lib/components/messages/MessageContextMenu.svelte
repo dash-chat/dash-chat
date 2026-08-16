@@ -11,7 +11,6 @@
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
 		onReply?: () => void;
-		onDelete?: () => void;
 		/** Viewport point to anchor the menu at; undefined = closed. Bindable so
 		 * the caller opens it from its own right-click/long-press handler. */
 		point?: { x: number; y: number };
@@ -22,7 +21,6 @@
 		myDeviceId,
 		onEdit,
 		onReply,
-		onDelete,
 		point = $bindable(),
 	}: Props = $props();
 
@@ -62,11 +60,6 @@
 	function reply() {
 		close();
 		onReply?.();
-	}
-
-	function del() {
-		close();
-		onDelete?.();
 	}
 
 	async function copy() {
@@ -110,7 +103,7 @@
 			onEdit={edit}
 			onReply={onReply ? reply : undefined}
 			onCopy={copy}
-			onDelete={del}
+			onDelete={close}
 			testid="message-context-menu"
 		/>
 	</Popover>

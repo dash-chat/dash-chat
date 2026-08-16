@@ -151,7 +151,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("media metadata present on bobbi's copy of the message");
-    let hash = meta.first().expect("at least one media item").hash;
+    let hash = meta.first().expect("at least one media item").hash();
 
     // Restart Bobbi from the same store. The media op is already persisted and
     // is not re-delivered, so only startup hydration can re-queue its blob.

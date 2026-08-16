@@ -9,7 +9,7 @@ use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::app_node::AppNode;
+use crate::node::AppNodeManager;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -22,9 +22,9 @@ pub struct GroupMember {
 #[tauri::command]
 pub async fn create_group(
     initial_members: Vec<AgentId>,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<ChatId, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let mut members = std::collections::BTreeMap::new();
     for agent_id in initial_members {
         let device_id = node
@@ -44,9 +44,9 @@ pub async fn create_group(
 pub async fn set_group_info(
     chat_id: ChatId,
     info: GroupInfo,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     node.set_group_info(chat_id, info)
         .await
         .map_err(|e| format!("Failed to set group info: {e:?}"))?;
@@ -57,9 +57,9 @@ pub async fn set_group_info(
 pub async fn add_group_member(
     chat_id: ChatId,
     agent_id: AgentId,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let device_id = node
         .projection
         .lookup_contact_by_agent_id(agent_id)
@@ -77,9 +77,9 @@ pub async fn send_message(
     message: String,
     media: Option<OutgoingMedia>,
     reply: Option<Hash>,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Hash, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let header = node
         .send_message(chat_id, message, media, reply)
         .await
@@ -92,9 +92,9 @@ pub async fn edit_message(
     chat_id: ChatId,
     edit_hash: Hash,
     message: String,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Hash, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let header = node
         .edit_message(chat_id, edit_hash, message)
         .await
@@ -106,9 +106,9 @@ pub async fn edit_message(
 pub async fn delete_message(
     chat_id: ChatId,
     target_hash: Hash,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Hash, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let header = node
         .delete_message_for_everyone(chat_id, target_hash)
         .await
@@ -120,9 +120,9 @@ pub async fn delete_message(
 pub async fn delete_message_for_me(
     chat_id: ChatId,
     target_hash: Hash,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Hash, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let header = node
         .delete_message_for_me(chat_id, target_hash)
         .await
@@ -140,9 +140,9 @@ pub struct Tombstone {
 #[tauri::command]
 pub async fn get_tombstones(
     chat_id: ChatId,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<HashMap<Hash, TombstoneReason>, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     node.chat_tombstones(chat_id)
         .await
         .map_err(|err| format!("{err:?}"))
@@ -152,9 +152,9 @@ pub async fn get_tombstones(
 pub async fn send_reaction(
     chat_id: ChatId,
     content: ChatReaction,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     node.add_reaction(chat_id, content)
         .await
         .map_err(|err| format!("{err:?}"))?;
@@ -165,17 +165,19 @@ pub async fn send_reaction(
 pub async fn mark_messages_read(
     chat_id: ChatId,
     message_hashes: Vec<Hash>,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     node.mark_messages_read(chat_id, message_hashes)
         .await
         .map_err(|e| format!("Failed to mark messages as read: {e:?}"))
 }
 
 #[tauri::command]
-pub async fn get_group_chats(app_node: State<'_, AppNode>) -> Result<Vec<ChatId>, String> {
-    let node = app_node.get().await?;
+pub async fn get_group_chats(
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<Vec<ChatId>, String> {
+    let node = app_node_manager.get().await?;
     node.get_groups()
         .await
         .map_err(|e| format!("Failed to get groups: {e:?}"))
@@ -184,9 +186,9 @@ pub async fn get_group_chats(app_node: State<'_, AppNode>) -> Result<Vec<ChatId>
 #[tauri::command]
 pub async fn get_group_members(
     chat_id: ChatId,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Vec<GroupMember>, String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let members = node
         .get_group_members(chat_id)
         .await
@@ -224,9 +226,9 @@ pub async fn get_group_members(
 pub async fn remove_group_member(
     chat_id: ChatId,
     agent_id: AgentId,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), String> {
-    let node = app_node.get().await?;
+    let node = app_node_manager.get().await?;
     let device_id = node
         .projection
         .lookup_contact_by_agent_id(agent_id)
@@ -241,9 +243,9 @@ pub async fn remove_group_member(
 #[tauri::command]
 pub async fn leave_group(
     chat_id: ChatId,
-    app_node: State<'_, AppNode>,
+    app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<(), RemoveGroupMemberError> {
-    let node = app_node
+    let node = app_node_manager
         .get()
         .await
         .map_err(|e| RemoveGroupMemberError::from(anyhow::anyhow!(e)))?;

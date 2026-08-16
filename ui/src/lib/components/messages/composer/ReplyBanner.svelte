@@ -3,7 +3,11 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiClose, mdiReply } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { type Message, hasBody } from 'dash-chat-stores';
+	import {
+		type Message,
+		hasBody,
+		mediaBundleToAttachment,
+	} from 'dash-chat-stores';
 
 	let {
 		message,
@@ -17,11 +21,16 @@
 	} = $props();
 
 	const body = $derived(hasBody(message.content) ? message.content : null);
+	const media = $derived(mediaBundleToAttachment(body?.media));
 	const preview = $derived(
 		body?.message ||
-			(body?.media?.kind === 'photos'
+			(media?.kind === 'photos'
 				? m.photo()
-				: (body?.media?.file.name ?? '')),
+				: media?.kind === 'file'
+					? media.file.name
+					: media?.kind === 'voice_note'
+						? m.voiceMessage()
+						: ''),
 	);
 </script>
 

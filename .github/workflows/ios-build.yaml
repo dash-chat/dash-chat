@@ -41,7 +41,7 @@ jobs:
           cache-shared-key: ios
 
       - name: Install pnpm dependencies
-        run: pnpm install
+        run: pnpm install --reporter=append-only
 
       - name: Stub GoogleService-Info.plist for compile check
         run: |

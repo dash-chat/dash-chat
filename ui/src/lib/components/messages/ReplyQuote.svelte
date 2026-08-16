@@ -66,6 +66,8 @@
 					{m.photo()}
 				{:else if reply.media?.kind === 'file'}
 					{reply.media.file.name}
+				{:else if reply.media?.kind === 'voice_note'}
+					{m.voiceMessage()}
 				{/if}
 			</span>
 		{:else}

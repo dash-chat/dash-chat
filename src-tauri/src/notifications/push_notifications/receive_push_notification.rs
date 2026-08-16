@@ -10,6 +10,8 @@ use p2panda::operation::LogId;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
+use crate::node::node_slot;
+use crate::node::NodeContext;
 use crate::notifications;
 
 #[cfg(target_os = "android")]
@@ -151,9 +153,13 @@ async fn handle_push_notification(
         app_data_dir
     );
 
-    let node = super::node_cache::get_node(app_data_dir)
-        .await
-        .context("failed to get node")?;
+    let acquired = node_slot::get_node_for_push_notification(
+        app_data_dir,
+        NodeContext::for_push_notifications(),
+    )
+    .await
+    .context("failed to get node")?;
+    let node = acquired.node;
 
     log::info!("dashchat node built successfully.");
 

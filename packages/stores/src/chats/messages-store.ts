@@ -241,7 +241,7 @@ function logsToMessages(
 						kind: 'content',
 						author: replyTarget.author,
 						text: replyTarget.content.message,
-						media: replyTarget.content.media,
+						media: mediaBundleToAttachment(replyTarget.content.media),
 						scrollTarget: quoteHash,
 					};
 				} else if (tombstones[quoteHash] === 'DeletedForMe') {
@@ -267,7 +267,7 @@ function logsToMessages(
 				hash: op.hash,
 				content: {
 					message: body.payload.payload.message,
-					media: mediaBundleToAttachment(body.payload.payload.media),
+					media: body.payload.payload.media,
 					reactions: {},
 					editHistory: [],
 				},

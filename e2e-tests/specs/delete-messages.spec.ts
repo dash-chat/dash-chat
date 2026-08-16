@@ -30,6 +30,25 @@ describe('Deleting messages', () => {
 		);
 	});
 
+	it('ignores the long-press and right-click gestures on a deleted message', async () => {
+		await agent1.directChatPage.composer.sendMessage('Quiet when gone');
+		const mine =
+			await agent1.directChatPage.messages.waitForMessage('Quiet when gone');
+		const theirs =
+			await agent2.directChatPage.messages.waitForMessage('Quiet when gone');
+
+		await mine.deleteForEveryone();
+		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
+		await theirs.waitForDeleted(
+			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice Test' }),
+		);
+
+		expect(await mine.rightClickPrevented()).toBe(false);
+		expect(await mine.actionsGestureOpensMenu()).toBe(false);
+		expect(await theirs.rightClickPrevented()).toBe(false);
+		expect(await theirs.actionsGestureOpensMenu()).toBe(false);
+	});
+
 	it('deletes an edited message via its latest edit', async () => {
 		await agent1.directChatPage.composer.sendMessage('Draft v1');
 		const mine =

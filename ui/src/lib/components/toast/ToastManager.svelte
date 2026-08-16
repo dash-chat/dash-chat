@@ -6,6 +6,10 @@
 	import { TOAST_TTL_MS, type ToastEvent } from '$lib/utils/toasts';
 	import { m } from '$lib/paraglide/messages.js';
 	import SendErrorReportDialog from '$lib/components/SendErrorReportDialog.svelte';
+	import { keyboard } from 'tauri-plugin-virtual-keyboard';
+	import { useSignal } from '$lib/stores/use-signal';
+
+	const keyboardHeight = useSignal(() => keyboard.height.value);
 
 	let toastOpen = $state(false);
 	let toastMessage = $state('');
@@ -24,7 +28,9 @@
 		if (event.detail.error !== undefined) {
 			errorReportError = event.detail.error;
 		}
-		if (toastVariant !== 'unexpected') {
+		// Without Sentry there is no report action to wait for, so even
+		// unexpected toasts auto-hide.
+		if (toastVariant !== 'unexpected' || !import.meta.env.VITE_SENTRY_ENABLED) {
 			toastTimeout = setTimeout(() => {
 				toastOpen = false;
 			}, TOAST_TTL_MS);
@@ -57,7 +63,7 @@
 	whatever sits in the bottom corners (the new-message FAB). Only the controls
 	take pointer events. -->
 <Toast
-	style="pointer-events: none"
+	style="pointer-events: none; --keyboard-visible-height: {$keyboardHeight}px"
 	position="center"
 	class={toastVariant === 'error' || toastVariant === 'unexpected'
 		? 'k-color-brand-red'
@@ -66,13 +72,11 @@
 >
 	<span data-testid="toast">{toastMessage}</span>
 	{#snippet button()}
-		{#if toastVariant === 'unexpected'}
+		{#if toastVariant === 'unexpected' && import.meta.env.VITE_SENTRY_ENABLED}
 			<div class="pointer-events-auto">
-				{#if import.meta.env.VITE_SENTRY_ENABLED}
-					<Button inline clear onClick={handleSendErrorReport}>
-						{m.sendErrorReport()}
-					</Button>
-				{/if}
+				<Button inline clear onClick={handleSendErrorReport}>
+					{m.sendErrorReport()}
+				</Button>
 				<button
 					class="ms-1 opacity-70 active:opacity-100"
 					onclick={dismissToast}

@@ -43,6 +43,7 @@
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
 	import MobileLayout from '$lib/components/layout/MobileLayout.svelte';
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
+	import { modalHost } from '$lib/stores/modal-host.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
@@ -63,6 +64,7 @@
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
+	import { startOfflineModeLifecycle } from '$lib/offline-mode/service-lifecycle';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
@@ -227,6 +229,11 @@
 		if (!isTauriEnv()) return;
 		return listenForDeepLinks(contactsStore);
 	});
+
+	$effect(() => {
+		if (!isTauriEnv()) return;
+		return startOfflineModeLifecycle();
+	});
 </script>
 
 {#if showToolbar}
@@ -261,5 +268,6 @@
 		{#if import.meta.env.VITE_SENTRY_ENABLED}
 			<CrashReportDialog />
 		{/if}
+		<div class="contents" bind:this={modalHost.element}></div>
 	</App>
 </KonstaProvider>

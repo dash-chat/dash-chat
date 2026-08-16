@@ -7,6 +7,7 @@
 	import { type DraftMedia } from '$lib/utils/media';
 	import { isAndroid, isIos } from '$lib/utils/environment';
 	import { lightSystemBars } from '$lib/actions/light-system-bars';
+	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import StagedPhotosCarousel from '$lib/components/messages/composer/StagedPhotosCarousel.svelte';
@@ -122,6 +123,7 @@
 		class="staged-footer absolute inset-x-0 bottom-0 flex flex-col pb-keyboard-safe"
 		class:bg-black={!isIos}
 		use:renderAboveKeyboard
+		use:keepKeyboardOpen
 	>
 		{#if media?.kind === 'photos'}
 			<StagedPhotosStrip bind:media bind:index {onAddMore} {onClose} />
