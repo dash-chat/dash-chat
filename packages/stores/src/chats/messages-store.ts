@@ -19,7 +19,7 @@ import {
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
-import { type MessageReply, type OpInfo, applyReply } from './replies';
+import { type MessageReply } from './replies';
 
 /** The window during which a message may be edited, measured from the original
  * message timestamp. Frontend operation timestamps are milliseconds since the
@@ -41,18 +41,15 @@ export interface Message {
 	timestamp: number;
 	author: DeviceId;
 	seqNum: number;
-	/** Raw hash of the operation this message replies to, straight from the log. */
-	replyTo?: Hash;
-	/** The reply resolved for rendering; unset when the annotation is invalid. */
-	reply?: MessageReply;
+	replyQuote?: MessageReply;
 }
 
 export type Bodyless = {
-	hash: string,
-	timestamp: number,
-	author: DeviceId,
-	seqNum: number,
-}
+	hash: string;
+	timestamp: number;
+	author: DeviceId;
+	seqNum: number;
+};
 
 // The messages of a single chat, direct or group alike: the message log with
 // reactions and read-tracking, plus the actions to publish into it.
@@ -70,12 +67,16 @@ export class MessagesStore {
 		const chatId = await this.chatId();
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
-		
-		const opsOrdered = Object.values(logs).flat().sort((a, b) => a.header.timestamp - b.header.timestamp || a.hash.localeCompare(b.hash));
+
+		const opsOrdered = Object.values(logs)
+			.flat()
+			.sort(
+				(a, b) =>
+					a.header.timestamp - b.header.timestamp ||
+					a.hash.localeCompare(b.hash),
+			);
 		const tombstones = await this.tombstoneStore.tombstones(chatId);
-
 		const messages = logsToMessages(opsOrdered, tombstones);
-
 		return messages;
 	});
 
@@ -185,16 +186,25 @@ export class MessagesStore {
 }
 
 function deletedForMeHashes(tombstones: Tombstones): Set<Hash> {
-	return new Set(Object.keys(tombstones).filter(hash => tombstones[hash] === 'DeletedForMe'));
+	return new Set(
+		Object.keys(tombstones).filter(hash => tombstones[hash] === 'DeletedForMe'),
+	);
 }
 
-// Apply each log item to the set of messages incrementally
+// Apply each log item to the set of messages incrementally.
+// 
+// `opsOrdered` is the interleaved list of all operations from all authors in the chat topic.
+// It must be ordered so that any partial ordering constraints are upheld, i.e. items
+// which reference prior items must appear after them.
+//
+// It is also assumed that all operations are valid.
 function logsToMessages(
 	opsOrdered: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,
 ): Record<Hash, Message> {
 	const messages: Record<Hash, Message | Bodyless> = {};
-	const predecessors: Record<Hash, Hash> = {};
+	/// Map of EditMessage -> the target they reference
+	const editTargets: Record<Hash, Hash> = {};
 
 	for (const op of opsOrdered) {
 		const author = op.header.verifying_key;
@@ -203,17 +213,44 @@ function logsToMessages(
 		if (tombstones[op.hash] || !body) {
 			// Put a bodyless placeholder for any deleted messages,
 			// because we need something in place for the rest of the rendering to work.
-			// Later we'll remove these and replace the original message with a proper 
+			// Later we'll remove these and replace the original message with a proper
 			// deleted-for-everyone placeholder if applicable.
-			messages[op.hash] = { hash: op.hash, author, seqNum: op.header.seq_num, timestamp: op.header.timestamp };
+			messages[op.hash] = {
+				hash: op.hash,
+				author,
+				seqNum: op.header.seq_num,
+				timestamp: op.header.timestamp,
+			} as Bodyless;
 			continue;
 		}
 		if (body.type !== 'Chat') continue;
 
 		if (body.payload.type === 'Message') {
-			const replyQuote = body.payload.payload.reply ? messages[body.payload.payload.reply] : undefined;
-			if (replyQuote) {
-				throw new Error('Reply quote is not supported yet');
+			const quoteHash = body.payload.payload.reply;
+			let replyQuote: MessageReply | undefined;
+			let replyTarget = quoteHash ? messages[quoteHash] : undefined;
+			if (replyTarget && isMessage(replyTarget)) {
+				if (hasBody(replyTarget.content)) {
+					replyQuote = {
+						kind: 'content',
+						author: replyTarget.author,
+						text: replyTarget.content.message,
+						media: replyTarget.content.media,
+						scrollTarget: quoteHash,
+					};
+				} else if (replyTarget.content === 'deleted-for-everyone') {
+					replyQuote = {
+						kind: 'deleted',
+						author: replyTarget.author,
+						scrollTarget: quoteHash,
+					};
+				} else {
+					// XXX: If there is no other designation, we consider the message deleted for me.
+					// This branch could also be reached if a message were missing and not accounted for.
+					replyQuote = {
+						kind: 'deleted-for-me',
+					};
+				}
 			}
 			messages[op.hash] = {
 				hash: op.hash,
@@ -226,11 +263,15 @@ function logsToMessages(
 				author,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
-				replyTo: body.payload.payload.reply,
+				replyQuote: replyQuote,
 			};
 		} else if (body.payload.type === 'Reaction') {
 			const { target, emoji } = body.payload.payload;
-			if (messages[target] && isMessage(messages[target]) && hasBody(messages[target].content)) {
+			if (
+				messages[target] &&
+				isMessage(messages[target]) &&
+				hasBody(messages[target].content)
+			) {
 				if (emoji) {
 					messages[target].content.reactions[author] = emoji;
 				} else {
@@ -239,9 +280,13 @@ function logsToMessages(
 			}
 		} else if (body.payload.type === 'EditMessage') {
 			const target = body.payload.payload.edit_hash;
-			const root = walkToRoot(target, predecessors);
-			if (messages[root] && isMessage(messages[root]) && hasBody(messages[root].content)) {
-				predecessors[op.hash] = target;
+			const root = walkToRoot(target, editTargets);
+			if (
+				messages[root] &&
+				isMessage(messages[root]) &&
+				hasBody(messages[root].content)
+			) {
+				editTargets[op.hash] = target;
 				messages[root].content.message = body.payload.payload.message;
 				messages[root].content.editHistory.push({
 					hash: op.hash,
@@ -251,7 +296,9 @@ function logsToMessages(
 			}
 		} else if (body.payload.type === 'DeleteMessage') {
 			const hashes = body.payload.payload.hashes;
-			const deletes = hashes.map(hash => messages[hash]).filter(message => message !== undefined);
+			const deletes = hashes
+				.map(hash => messages[hash])
+				.filter(message => message !== undefined);
 			if (deletes.length === 0) {
 				console.warn('No deletes, skipping');
 				// The original message was already tombstoned
@@ -268,7 +315,7 @@ function logsToMessages(
 			}
 		}
 	}
-	
+
 	// Filter out all bodyless placeholders
 	const result: Record<Hash, Message> = {};
 	for (const [hash, message] of Object.entries(messages)) {
@@ -290,10 +337,14 @@ function walkToRoot(hash: Hash, predecessors: Record<Hash, Hash>): Hash {
 	return current;
 }
 
-function earliestMessage(hashes: Hash[], messages: Record<Hash, Message>): Message {
-	return hashes.map(hash => messages[hash]).sort((a, b) => a.timestamp - b.timestamp)[0];
+function earliestMessage(
+	hashes: Hash[],
+	messages: Record<Hash, Message>,
+): Message {
+	return hashes
+		.map(hash => messages[hash])
+		.sort((a, b) => a.timestamp - b.timestamp)[0];
 }
-
 
 /** The placeholder a tombstoned operation renders as, built from its header
  * since its payload is gone. */

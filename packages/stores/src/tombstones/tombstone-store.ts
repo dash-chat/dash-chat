@@ -26,7 +26,10 @@ export class TombstoneStore {
 					: undefined;
 
 				const unsub = this.client.onNewTombstones(topic, tombstone => {
-					state.value = { ...(state.value || {}), [tombstone.hash]: tombstone.reason };
+					state.value = {
+						...(state.value || {}),
+						[tombstone.hash]: tombstone.reason,
+					};
 				});
 
 				return () => {

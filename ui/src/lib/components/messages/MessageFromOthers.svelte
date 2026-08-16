@@ -155,9 +155,9 @@
 					contentWrapPadding="p-2"
 					class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 				>
-					{#if message.reply}
+					{#if message.replyQuote}
 						<ReplyQuote
-							reply={message.reply}
+							reply={message.replyQuote}
 							authorName={replyAuthorName}
 							{myDeviceId}
 							onNavigate={onNavigateToMessage}

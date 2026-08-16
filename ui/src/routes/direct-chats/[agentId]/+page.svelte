@@ -235,7 +235,7 @@
 		myDeviceId: DeviceId,
 		profile: Profile | undefined,
 	): string | undefined {
-		const author = replyAuthor(message.reply);
+		const author = replyAuthor(message.replyQuote);
 		if (author === undefined) return undefined;
 		return deviceDisplayName(author, myDeviceId, profile);
 	}

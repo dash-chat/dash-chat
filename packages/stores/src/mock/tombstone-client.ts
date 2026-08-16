@@ -18,7 +18,10 @@ export class MockTombstoneClient implements ITombstoneClient {
 		const chatOps = await this.allOps(chatId);
 		const deviceGroupOps = await this.allOps(this.deviceGroupTopicId);
 		const tombstones: Tombstones = {};
-		for (const tombstone of [...deletedForEveryoneTombstones(chatOps), ...deletedForMeTombstones(chatId, chatOps, deviceGroupOps)]) {
+		for (const tombstone of [
+			...deletedForEveryoneTombstones(chatOps),
+			...deletedForMeTombstones(chatId, chatOps, deviceGroupOps),
+		]) {
 			tombstones[tombstone.hash] = tombstone.reason;
 		}
 		return tombstones;
@@ -32,12 +35,16 @@ export class MockTombstoneClient implements ITombstoneClient {
 		// The store fetches the current tombstones itself, so record those without
 		// emitting them and only push what shows up afterwards.
 		const primed = this.getTombstones(chatId).then(tombstones =>
-			Object.entries(tombstones).forEach(([hash, reason]) => seen.add(tombstoneKey({ hash, reason }))),
+			Object.entries(tombstones).forEach(([hash, reason]) =>
+				seen.add(tombstoneKey({ hash, reason })),
+			),
 		);
 
 		const emitNew = async () => {
 			await primed;
-			for (const [hash, reason] of Object.entries(await this.getTombstones(chatId))) {
+			for (const [hash, reason] of Object.entries(
+				await this.getTombstones(chatId),
+			)) {
 				const key = tombstoneKey({ hash, reason });
 				if (seen.has(key)) continue;
 				seen.add(key);
