@@ -226,7 +226,7 @@ function logsToMessages(
 		if (body.type !== 'Chat') continue;
 
 		if (body.payload.type === 'Message') {
-			const quoteHash = body.payload.payload.reply;
+			const quoteHash = body.payload.payload.reply ? walkToRoot(body.payload.payload.reply, editTargets) : undefined;
 			let replyQuote: MessageReply | undefined;
 			let replyTarget = quoteHash ? messages[quoteHash] : undefined;
 			if (replyTarget && isMessage(replyTarget)) {
