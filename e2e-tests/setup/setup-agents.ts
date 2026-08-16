@@ -9,6 +9,8 @@
  * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
  * multiset can't fulfill the requirements.
  */
+import { execSync } from 'node:child_process';
+
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
@@ -37,7 +39,11 @@ import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
-import { APP_PACKAGE, stopAndroidApp } from './platforms/android';
+import {
+	APP_PACKAGE,
+	stopAndroidApp,
+	waitForAppLinksVerified,
+} from './platforms/android';
 import { readOpenedUrls } from './platforms/desktop';
 import { type AgentPlatformName, platformNames } from './test-env';
 
@@ -75,8 +81,15 @@ export type Agent = WebdriverIO.Browser & {
 
 	/** SvelteKit `goto` — uses `window.__test.goto` for client-side nav. */
 	goto(path: string): Promise<void>;
-	/** Dispatch a URL through the app's deep link routing logic. */
+	/** Deliver a deep link the way the OS would: a real VIEW intent on Android,
+	 *  `mobile: deepLink` on iOS. Desktop e2e builds skip the single-instance
+	 *  plugin — the OS delivery path for runtime deep links — so there it falls
+	 *  back to [`injectDeepLink`]. */
 	handleDeepLink(url: string): Promise<void>;
+	/** Dispatch a URL through the app's deep link routing logic directly,
+	 *  bypassing OS delivery — for links the OS wouldn't route to the app
+	 *  (e.g. the dash-chat:// scheme is only registered on desktop). */
+	injectDeepLink(url: string): Promise<void>;
 	/** Resolve a paraglide message key in the agent's current locale. */
 	tr(key: string, params?: Record<string, unknown>): Promise<string>;
 	/** Scan the whole page for horizontal-overflow issues. */
@@ -97,6 +110,9 @@ export type Agent = WebdriverIO.Browser & {
 	 *  down there reinstalls the APK on the next session, so the app would
 	 *  return as a fresh install with no profile. */
 	stopApp(): Promise<void>;
+	/** Send the app to the background (home button) without killing it.
+	 *  On Android this is a home-key press; on desktop it is currently a no-op. */
+	backgroundApp(): Promise<void>;
 	/** Relaunch after [`stopApp`] and wait until the app is interactive again. */
 	startApp(): Promise<void>;
 	/** Switch the Konsta theme. */
@@ -166,8 +182,25 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			await window.__test.goto(p);
 		}, path);
 	};
-	agent.handleDeepLink = async (url: string) => {
+	agent.injectDeepLink = async (url: string) => {
 		await b.execute((u: string) => window.__test.handleDeepLink(u), url);
+	};
+	agent.handleDeepLink = async (url: string) => {
+		if (agent.platform === 'desktop') {
+			await agent.injectDeepLink(url);
+		} else if (agent.platform === 'ios') {
+			// Unlike Android's pm get-app-links, the device's AASA validation
+			// state can't be asserted from the harness, and a failed validation
+			// would open Safari — so route the URL to the app explicitly.
+			await b.execute('mobile: deepLink', { url, bundleId: APP_PACKAGE });
+		} else {
+			// No package pin: the OS resolves the link itself, so this covers the
+			// verified App Links association, not just the intent filter. No
+			// waitForLaunch: `am start -W` can block forever on a cold launch;
+			// callers already wait for the app via page ready()/startApp().
+			await waitForAppLinksVerified(androidUdid(b));
+			await b.execute('mobile: deepLink', { url, waitForLaunch: false });
+		}
 	};
 	agent.tr = async (key: string, params?: Record<string, unknown>) =>
 		await b.execute(
@@ -243,6 +276,20 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 		}
 		stopAndroidApp(androidUdid(b));
 	};
+	agent.backgroundApp = async () => {
+		if (agent.platform === 'desktop') {
+			return;
+		}
+		if (agent.platform === 'ios') {
+			await b.terminateApp(APP_PACKAGE);
+			return;
+		}
+		// Home button press: keeps the process alive so the background service
+		// can continue syncing, unlike am stop-app which tears the app down.
+		execSync(`adb -s ${androidUdid(b)} shell input keyevent KEYCODE_HOME`, {
+			stdio: 'ignore',
+		});
+	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
 			await b.reloadSession();
@@ -250,7 +297,7 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			await b.activateApp(APP_PACKAGE);
 			// A relaunch drops back to the native context; only the session's
 			// initial `autoWebview` does this for us.
-			await switchToWebview(b);
+			await switchToWebview(b, agent.platform);
 		}
 		await waitForTestUtils(b);
 		attachPages(agent, b);
@@ -260,18 +307,154 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	return agent;
 }
 
-/** Attach to the app's webview context, which a relaunch drops out of. */
-async function switchToWebview(agent: WebdriverIO.Browser): Promise<void> {
+/** Held long enough that WebKit reads the touch as a tap instead of the start of
+ *  a scroll, and well under the app's 500ms long-press threshold. */
+const TAP_HOLD_MS = 100;
+
+/** How many times to re-tap an element whose tap never reached the page. */
+const TAP_ATTEMPTS = 3;
+
+/** The centre of `element`, once a touch there would actually reach it.
+ *
+ *  A tap is aimed at a point, so it hits whatever is topmost there — during a
+ *  page transition that is still the outgoing page, and the tap is swallowed
+ *  with the target sitting at exactly the right coordinates. `elementFromPoint`
+ *  is the same hit test WebKit will do, so waiting on it makes the tap
+ *  self-verifying rather than hoping the transition has finished. */
+async function tapPoint(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+): Promise<{ x: number; y: number }> {
+	// Without this the wait below spends its whole timeout re-throwing "not a
+	// valid element" from execute, and reports that instead of the real problem:
+	// the app is on a different page than the test thinks.
+	if (!(await element.isExisting())) {
+		throw new Error(
+			`Cannot tap ${String(element.selector)}: it is not in the page`,
+		);
+	}
+	return await agent.waitUntil(
+		async () =>
+			await agent.execute((el: HTMLElement) => {
+				const rect = el.getBoundingClientRect();
+				const x = rect.x + rect.width / 2;
+				const y = rect.y + rect.height / 2;
+				const topmost = document.elementFromPoint(x, y);
+				return topmost !== null && (topmost === el || el.contains(topmost))
+					? { x, y }
+					: null;
+			}, element),
+		{
+			timeoutMsg:
+				`${String(element.selector)} is in the page but never became the ` +
+				'topmost element at its own centre, so a tap there would have hit ' +
+				'whatever is covering it',
+		},
+	);
+}
+
+/** Touch (x, y) and report whether `element` actually received a click.
+ *
+ *  WDA reports a successful touch that WebKit sometimes never turns into a
+ *  click, so the tap has to be confirmed rather than assumed. It has to be
+ *  confirmed *on the target*: the point is checked before the touch and the
+ *  round trip takes most of a second, so a page that moves in between leaves
+ *  the tap landing on something else — which still fires a click, just not the
+ *  one that was asked for. The flag lives on documentElement because a click
+ *  that lands usually starts a navigation and takes the element with it. */
+async function clickReachedElement(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+	x: number,
+	y: number,
+): Promise<boolean> {
+	await agent.execute((el: HTMLElement) => {
+		delete document.documentElement.dataset.e2eClick;
+		document.addEventListener(
+			'click',
+			event => {
+				const target = event.target;
+				if (target instanceof Node && (el === target || el.contains(target))) {
+					document.documentElement.dataset.e2eClick = 'seen';
+				}
+			},
+			{ once: true, capture: true },
+		);
+	}, element);
+	await agent
+		.action('pointer', { parameters: { pointerType: 'touch' } })
+		.move({ x: Math.round(x), y: Math.round(y) })
+		.down()
+		.pause(TAP_HOLD_MS)
+		.up()
+		.perform();
+	return await agent.execute(
+		() => document.documentElement.dataset.e2eClick === 'seen',
+	);
+}
+
+/** Make webview clicks tap the element's own on-screen rect.
+ *
+ *  XCUITest's `nativeWebTap` taps the native accessibility element matching the
+ *  web element's text, and falls back to a web→native coordinate translation
+ *  whenever there is no text (icon-only buttons) or the text matches several
+ *  native elements (a confirm dialog over the row that opened it). That
+ *  fallback assumes Safari's browser chrome — it insets by a URL bar and scales
+ *  the viewport onto a shorter "real" area — so in this app's full-screen
+ *  webview it lands tens of points off and the tap silently misses. CSS pixels
+ *  here already are screen points, so the rect is the tap point. A pointer
+ *  action rather than `mobile: tap`: that one is an instantaneous
+ *  XCUICoordinate tap, which WebKit drops inside a scrolling container. */
+function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
+	agent.overwriteCommand(
+		'click',
+		async function (this: WebdriverIO.Element, origClick) {
+			const context = await agent.getContext();
+			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+				return await origClick();
+			}
+			for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
+				const { x, y } = await tapPoint(agent, this);
+				if (await clickReachedElement(agent, this, x, y)) return;
+				console.warn(
+					`[ios] tap at ${x},${y} did not reach ${String(this.selector)} ` +
+						`(attempt ${attempt}/${TAP_ATTEMPTS})`,
+				);
+			}
+			throw new Error(
+				`tapped ${String(this.selector)} ${TAP_ATTEMPTS} times and it never ` +
+					'received a click',
+			);
+		},
+		true,
+	);
+}
+
+/** Attach to the app's webview context, which a relaunch drops out of.
+ *
+ *  On Android the app's context must be matched by name: other apps' webviews
+ *  can be listed too (a backgrounded Chrome appears as WEBVIEW_chrome, and it
+ *  can be the only one listed while the app is still starting). iOS names
+ *  WKWebView contexts WEBVIEW_<id> with no package, but the app's webview is
+ *  the only one there. */
+async function switchToWebview(
+	agent: WebdriverIO.Browser,
+	platform: AgentPlatformName,
+): Promise<void> {
+	const isAppWebview = (id: string) =>
+		platform === 'ios'
+			? id.startsWith('WEBVIEW')
+			: id === `WEBVIEW_${APP_PACKAGE}`;
 	let webview: string | undefined;
 	await agent.waitUntil(
 		async () => {
 			const contexts = await agent.getContexts();
 			webview = contexts
 				.map(context => (typeof context === 'string' ? context : context.id))
-				.find(id => id.startsWith('WEBVIEW'));
+				.find(isAppWebview);
 			return webview !== undefined;
 		},
-		{ timeoutMsg: 'no WEBVIEW context after relaunch' },
+		{ timeoutMsg: 'no app WEBVIEW context after relaunch' },
 	);
 	await agent.switchContext(webview!);
 }
@@ -300,6 +483,9 @@ async function setupAgent(
 ): Promise<Agent> {
 	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
+	// Before makeAgent: it resolves every page object's element, and an element
+	// built before the overwrite keeps the original click.
+	if (platform === 'ios') tapWebElementsAtTheirRect(b);
 	const agent = makeAgent(b);
 	agent.platform = platform;
 	agent.waitForOpenedUrls = async (count = 1) => {

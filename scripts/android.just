@@ -5,6 +5,13 @@ set working-directory := '..'
 dev:
     nix develop git+file:.#androidDev --command pnpm tauri android dev --host
 
+# type-check the Rust app crate against the Android target (no build/link). The
+# WRY_ANDROID_*/TAURI_ANDROID_* vars are normally injected by the Tauri CLI; the
+# plugin build scripts panic without them, so we set them here to match
+# `tauri android`.
+check TARGET='aarch64-linux-android':
+    nix develop git+file:.#androidDev --command bash -c 'export WRY_ANDROID_PACKAGE=studio.darksoil.dashchat WRY_ANDROID_LIBRARY=tauri_app_lib WRY_ANDROID_KOTLIN_FILES_OUT_DIR="$PWD/src-tauri/gen/android/app/src/main/java/studio/darksoil/dashchat/generated" TAURI_ANDROID_PROJECT_PATH="$PWD/src-tauri/gen/android"; cargo check -p dash-chat --target {{TARGET}}'
+
 # build the android app in an APK format in debug mode
 build TARGETS='aarch64 armv7 i686 x86_64':
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --debug --apk -t {{TARGETS}}"
@@ -26,7 +33,7 @@ bundle:
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build"
 
 # boot a headless Android emulator (keeps running in the background); it then
-# counts as a connected device, e.g. for `PLATFORMS=android-emulator just test e2e`
+# counts as a connected device, e.g. for `PLATFORMS=android-emulator just e2e`
 boot-emulator:
     nix run .#boot-emulator
 

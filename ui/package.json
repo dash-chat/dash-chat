@@ -47,7 +47,7 @@
 		"tauri-plugin-background-service": "^1.0.0",
 		"tauri-plugin-system-theme": "github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d",
 		"tauri-plugin-view-api": "^0.0.5",
-		"tauri-plugin-virtual-keyboard": "github:dash-chat/tauri-plugin-virtual-keyboard#a20b82e5091fa9834b1ea1014fc336ebfe7c4547",
+		"tauri-plugin-virtual-keyboard": "github:dash-chat/tauri-plugin-virtual-keyboard#99be13fce0c81f23b877fee5593a29afe582f569",
 		"vite-plugin-babel": "^1.3.2"
 	},
 	"devDependencies": {

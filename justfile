@@ -9,6 +9,9 @@ mod android 'scripts/android.just'
 # running tests
 mod test 'scripts/test.just'
 
+# running e2e tests
+mod e2e 'scripts/e2e.just'
+
 # mailbox server
 mod mailbox 'scripts/mailbox.just'
 

@@ -1,5 +1,11 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import {
+	constants,
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	statSync,
+} from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +23,12 @@ const E2E_DIR = path.resolve(__dirname, '..', '..');
 const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
 const IOS_BUILD_DIR = path.join(ROOT, 'src-tauri/gen/apple/build');
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
+// Fixed home for the .ipa the sessions install, copied here by onPrepare. The
+// capabilities `appium:app` reads are resolved when wdio.conf.ts loads — before
+// onPrepare builds anything — so it can't name a path under the build dir,
+// whose layout the tauri build rearranges (it exports the .ipa to the build
+// dir, then moves it into an arch subdir).
+const SESSION_IPA = path.join(E2E_DIR, '.appium', 'dash-chat-e2e.ipa');
 
 // The app project signs with Automatic signing under this team (see
 // src-tauri/gen/apple/dash-chat.xcodeproj); WebDriverAgent reuses it so Appium
@@ -37,20 +49,67 @@ function assertIosToolsAvailable() {
 	}
 }
 
-// Host IPv4 the device reaches the mailbox at
+/** Whether the device could route to this address over the LAN. 169.254 is
+ *  excluded on purpose: a tethered iPhone shows up as a USB network interface
+ *  with a self-assigned address in that range, and baking one of those leaves
+ *  the mailbox unreachable from every device. */
+function isPrivateLanAddress(address: string): boolean {
+	const [a, b] = address.split('.').map(Number);
+	return a === 10 || a === 192 || (a === 172 && b >= 16 && b <= 31);
+}
+
+/** Built-in wifi/ethernet (en0, en1, …) ahead of USB and virtual interfaces,
+ *  lowest number first. A tethered iPhone sharing its connection hands out a
+ *  private address too, and it must not win over the real LAN. */
+function interfaceRank(name: string): number {
+	const en = /^en(\d+)$/.exec(name);
+	return en === null ? 1000 : Number(en[1]);
+}
+
+/** Host IPv4 the device reaches the mailbox at. Baked into the build, so
+ *  picking a wrong-but-plausible one costs a whole run: every cross-device
+ *  assertion times out with the app quietly showing its offline state. */
 function detectHostIp(): string {
 	const override = process.env.E2E_HOST_IP;
 	if (override !== undefined && override !== '') return override;
-	const ifaces = networkInterfaces();
-	const candidates = ['en0', ...Object.keys(ifaces)];
-	for (const name of candidates) {
-		for (const addr of ifaces[name] ?? []) {
-			if (addr.family === 'IPv4' && !addr.internal) return addr.address;
-		}
+	const found = Object.entries(networkInterfaces())
+		.flatMap(([name, addrs]) => (addrs ?? []).map(addr => ({ name, addr })))
+		.filter(({ addr }) => addr.family === 'IPv4' && !addr.internal);
+	const usable = found
+		.filter(({ addr }) => isPrivateLanAddress(addr.address))
+		.sort((a, b) => interfaceRank(a.name) - interfaceRank(b.name));
+	if (usable.length === 0) {
+		const seen = found.map(f => `${f.name}=${f.addr.address}`).join(', ');
+		throw new Error(
+			'No private LAN IPv4 for the iOS devices to reach the mailbox on — ' +
+				`set E2E_HOST_IP. Non-internal IPv4 seen: ${seen || 'none'}`,
+		);
 	}
+	const { name, addr } = usable[0];
+	console.log(`[ios] baking mailbox host ip ${addr.address} (${name})`);
+	return addr.address;
+}
+
+/** Fail the moment the address baked into the app stops being ours.
+ *
+ *  The mailbox url is fixed at build time, so a DHCP lease moving the host mid
+ *  run leaves every device pointed at an address nobody answers on. Nothing
+ *  surfaces that: the apps just show their offline state and each cross-device
+ *  wait burns its full timeout, so a run can rot for half an hour and the
+ *  failures all look like unrelated sync bugs. */
+function assertBakedHostIpIsStillOurs(): void {
+	const baked = process.env._WDIO_IOS_HOST_IP;
+	if (baked === undefined) return;
+	const current = Object.values(networkInterfaces())
+		.flatMap(addrs => addrs ?? [])
+		.filter(addr => addr.family === 'IPv4' && !addr.internal)
+		.map(addr => addr.address);
+	if (current.includes(baked)) return;
 	throw new Error(
-		'Could not detect a host LAN IP for the iOS device to reach the mailbox — ' +
-			'set E2E_HOST_IP',
+		`The mailbox url baked into the app points at ${baked}, which this host ` +
+			`no longer holds (now: ${current.join(', ') || 'no LAN address'}). The ` +
+			'devices cannot reach the mailbox, so every cross-device wait would ' +
+			'time out. Rebuild, or pin E2E_HOST_IP and rerun.',
 	);
 }
 
@@ -106,23 +165,57 @@ function ensureXcuitestDriver() {
 	}
 }
 
-// First .ipa under the build dir, or undefined if none is built yet
-function findIpa(): string | undefined {
-	if (!existsSync(IOS_BUILD_DIR)) return undefined;
-	const out = execSync(`find "${IOS_BUILD_DIR}" -maxdepth 3 -name '*.ipa'`, {
-		encoding: 'utf8',
-	}).trim();
-	return out.split('\n').filter(Boolean)[0];
-}
-
+/** The freshest .ipa under the build dir. Newest wins because earlier layouts
+ *  leave their .ipa behind when the build writes the next one elsewhere. */
 function builtIpa(): string {
-	const ipa = findIpa();
-	if (ipa === undefined) {
+	const out = existsSync(IOS_BUILD_DIR)
+		? execSync(`find "${IOS_BUILD_DIR}" -maxdepth 3 -name '*.ipa'`, {
+				encoding: 'utf8',
+			}).trim()
+		: '';
+	const ipas = out
+		.split('\n')
+		.filter(Boolean)
+		.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+	if (ipas.length === 0) {
 		throw new Error(
 			`No .ipa found under ${IOS_BUILD_DIR} after 'tauri ios build'`,
 		);
 	}
-	return ipa;
+	return ipas[0];
+}
+
+/** Put a device back to a freshly-installed app, retrying the install: CoreDevice
+ * intermittently fails with a transient "unable to create bookmark data" /
+ * "No such file" error even though the .ipa exists. Best-effort — a device left
+ * without the app falls back to the session's own `appium:app` install. */
+async function reinstallApp(udid: string): Promise<void> {
+	try {
+		execSync(
+			`xcrun devicectl device uninstall app --device ${udid} ${APP_BUNDLE_ID}`,
+			{ stdio: 'ignore' },
+		);
+	} catch {
+		/* not installed */
+	}
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		try {
+			execSync(
+				`xcrun devicectl device install app --device ${udid} "${SESSION_IPA}"`,
+				{ stdio: 'inherit' },
+			);
+			return;
+		} catch (err) {
+			if (attempt === 3) {
+				console.warn(
+					`[ios] devicectl install failed for ${udid} after ${attempt} ` +
+						`attempts; falling back to the session's appium:app install: ${err}`,
+				);
+				return;
+			}
+			await new Promise(resolve => setTimeout(resolve, 2000));
+		}
+	}
 }
 
 // Tail the app's device console and echo it with an agent prefix
@@ -150,7 +243,6 @@ export class IosPlatform implements AgentPlatform {
 	readonly slots: number[];
 	readonly appiumPort: number;
 	private udids: Map<number, string>;
-	private ipaPath: string | undefined;
 	private loggers = new Map<number, ChildProcess>();
 
 	constructor(slots: number[]) {
@@ -173,10 +265,15 @@ export class IosPlatform implements AgentPlatform {
 				platformName: 'iOS',
 				'appium:automationName': 'XCUITest',
 				'appium:udid': udid,
-				// ipaPath is set in onPrepare (launcher); worker config loads read
-				// the same build output, so recompute it lazily if unset.
-				'appium:app': this.ipaPath ?? findIpa(),
+				'appium:app': SESSION_IPA,
 				'appium:bundleId': APP_BUNDLE_ID,
+				// beforeSession already reinstalled this exact build through
+				// devicectl; without this the driver installs it a second time
+				// (`enforceAppInstall` defaults to reinstall-every-session), which is
+				// the usbmux traffic that breaks session creation. Left as `false`
+				// rather than dropping `appium:app`, so a device the devicectl install
+				// failed on is still recovered by the session.
+				'appium:enforceAppInstall': false,
 				'appium:autoWebview': true,
 				'appium:autoWebviewTimeout': 30_000,
 				'appium:webviewConnectTimeout': 30_000,
@@ -205,7 +302,9 @@ export class IosPlatform implements AgentPlatform {
 				'appium:wdaLocalPort': allocatePinnedPort(`_WDIO_WDA_PORT${slot}`),
 				'appium:mjpegServerPort': allocatePinnedPort(`_WDIO_MJPEG_PORT${slot}`),
 				'appium:wdaLaunchTimeout': 120_000,
-				'appium:newCommandTimeout': 240,
+				// 0 disables idle expiry: specs like review-checks park one agent
+				// for the whole spec after setup, far beyond any sane timeout.
+				'appium:newCommandTimeout': 0,
 				// Surface the WDA xcodebuild output so signing/config failures are
 				// diagnosable instead of a bare "xcodebuild failed with code 65".
 				'appium:showXcodeLog': true,
@@ -227,6 +326,9 @@ export class IosPlatform implements AgentPlatform {
 		// real-device push spec — the push-notifications server URL so the device
 		// registers its FCM token with the host's local push server.
 		const hostIp = detectHostIp();
+		// Workers inherit the launcher's env, so this is what they check the
+		// host still holds before each session.
+		process.env._WDIO_IOS_HOST_IP = hostIp;
 		const mailboxUrl = `http://${hostIp}:${ctx.mailboxPort}`;
 		const bakedEnv: Record<string, string> = { MAILBOX_URL: mailboxUrl };
 		if (ctx.pushPort !== null) {
@@ -248,58 +350,29 @@ export class IosPlatform implements AgentPlatform {
 			}),
 		});
 
-		this.ipaPath = builtIpa();
-
-		// Install the freshly-built app on each device up front — uninstall first
-		// for a clean slate, then install and let it settle — so the Appium session
-		// only has to *launch* it. Letting the session install the .ipa races the
-		// launch on real devices: the app is still "installing or uninstalling" when
-		// FrontBoard is asked to open it, which surfaces intermittently as
-		// "Application … is unknown to FrontBoard" (worse with two devices installing
-		// at once). See the XCUITest troubleshooting guide. Best-effort: if devicectl
-		// can't install (e.g. a device not yet registered in the provisioning
-		// profile), the session's own `appium:app` install still covers it.
-		for (const udid of this.udids.values()) {
-			try {
-				execSync(
-					`xcrun devicectl device uninstall app --device ${udid} ${APP_BUNDLE_ID}`,
-					{ stdio: 'ignore' },
-				);
-			} catch {
-				/* not installed */
-			}
-			await this.installApp(udid);
-		}
-	}
-
-	/** Install the freshly-built app on a device, retrying a few times: CoreDevice
-	 * intermittently fails with a transient "unable to create bookmark data" /
-	 * "No such file" error even though the .ipa exists. Falls back to the
-	 * session's own `appium:app` install if every attempt fails. */
-	private async installApp(udid: string): Promise<void> {
-		for (let attempt = 1; attempt <= 3; attempt++) {
-			try {
-				execSync(
-					`xcrun devicectl device install app --device ${udid} "${this.ipaPath}"`,
-					{ stdio: 'inherit' },
-				);
-				return;
-			} catch (err) {
-				if (attempt === 3) {
-					console.warn(
-						`[ios] devicectl install failed for ${udid} after ${attempt} ` +
-							`attempts; falling back to the session's appium:app install: ${err}`,
-					);
-					return;
-				}
-				await new Promise(resolve => setTimeout(resolve, 2000));
-			}
-		}
+		mkdirSync(path.dirname(SESSION_IPA), { recursive: true });
+		// COPYFILE_FICLONE: APFS clones instead of duplicating the ~135MB payload.
+		copyFileSync(builtIpa(), SESSION_IPA, constants.COPYFILE_FICLONE);
 	}
 
 	async beforeSession() {
+		assertBakedHostIpIsStillOurs();
+		for (const logger of this.loggers.values()) logger.kill();
+		this.loggers.clear();
+		// Every spec's `before` creates a profile, so each session needs the app
+		// back at first launch — hence a reinstall per spec, not just per run.
+		// Doing it here, one device at a time, keeps it off the session's own
+		// `appium:app` install, which pushes the same ~135MB .ipa on both devices
+		// at once and starves the 5s usbmuxd read timeouts inside appium-ios-device
+		// ("Failed to receive any data within the timeout: 5000" out of POST
+		// /session). It also stops the app being "installing or uninstalling" when
+		// FrontBoard is asked to open it ("Application … is unknown to FrontBoard").
+		for (const udid of this.udids.values()) {
+			await reinstallApp(udid);
+		}
+		// Attach the console tails only once the installs are done: idevicesyslog
+		// streams the whole device log over the same usbmux channel.
 		for (const [slot, udid] of this.udids) {
-			this.loggers.get(slot)?.kill();
 			const logger = startSyslogLogger(`agent-${slot}`, udid);
 			if (logger) this.loggers.set(slot, logger);
 		}

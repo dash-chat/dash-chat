@@ -95,7 +95,7 @@ export function spawnPushServer(
 	const bin = path.join(ROOT, 'target', 'debug', 'push-notifications-server');
 	if (!existsSync(bin)) {
 		throw new Error(
-			`${bin} not found — run the suite via 'just test e2e' (which builds ` +
+			`${bin} not found — run the suite via 'just e2e' (which builds ` +
 				`it) or 'cargo build -p push-notifications-server'`,
 		);
 	}

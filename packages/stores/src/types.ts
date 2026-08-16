@@ -46,14 +46,22 @@ export interface FileAttachment {
 	mime_type: string;
 }
 
+export interface VoiceNote {
+	hash: Hash;
+	mime_type: string;
+	duration_ms: number;
+	waveform: Uint8Array;
+}
+
 /**
  * Renderable media attached to a chat message. A message has either a set of
- * photos or a single file — not both. Built from a log's `MediaMetaCollection`
- * via `mediaMetaToMedia`; carries hashes, not bytes.
+ * photos, a single file, or a single voice note. Built from a log's
+ * `MediaBundle` via `mediaBundleToAttachment`; carries hashes, not bytes.
  */
 export type MediaAttachment =
 	| { kind: 'photos'; photos: PhotoAttachment[] }
-	| { kind: 'file'; file: FileAttachment };
+	| { kind: 'file'; file: FileAttachment }
+	| { kind: 'voice_note'; voice_note: VoiceNote };
 
 /**
  * Raw bytes leaving the composer for the backend to store. `data` carries raw
@@ -64,7 +72,8 @@ export type MediaAttachment =
  */
 export type OutgoingMedia =
 	| { kind: 'photos'; photos: OutgoingPhoto[] }
-	| { kind: 'file'; file: OutgoingFile };
+	| { kind: 'file'; file: OutgoingFile }
+	| { kind: 'voice_note'; voice_note: OutgoingVoiceNote };
 
 export interface OutgoingPhoto {
 	data: Uint8Array;
@@ -78,20 +87,30 @@ export interface OutgoingFile {
 	mime_type: string;
 }
 
-export type MediaMetaKind = 'Photo' | 'File';
+export interface OutgoingVoiceNote {
+	data: Uint8Array;
+	mime_type: string;
+	duration_ms: number;
+	waveform: Uint8Array;
+}
 
 /**
  * Metadata for a single stored blob. A message log carries these in place of
  * the raw bytes; the bytes live in the iroh-blobs store and are fetched lazily
- * via the `irohblob://` URI scheme. Matches `dashchat_node::MediaMetaItem`.
+ * via the `irohblob://` URI scheme. Mirrors the `#[serde(tag = "kind")]` enum
+ * `dashchat_node::MediaMetadata`: each variant carries only what its kind needs.
  */
-export interface MediaMetadata {
-	name: string;
-	mime_type: string;
-	size: number;
-	kind: MediaMetaKind;
-	hash: Hash;
-}
+export type MediaMetadata =
+	| { kind: 'Photo'; name: string; mime_type: string; size: number; hash: Hash }
+	| { kind: 'File'; name: string; mime_type: string; size: number; hash: Hash }
+	| {
+			kind: 'VoiceNote';
+			mime_type: string;
+			size: number;
+			duration_ms: number;
+			waveform: Uint8Array;
+			hash: Hash;
+	  };
 
 /** Matches `dashchat_node::MediaBundle`, which serializes as a flat array. */
 export type MediaBundle = MediaMetadata[];
@@ -118,24 +137,38 @@ export function mediaBundleToAttachment(
 			},
 		};
 	}
-	const photos: PhotoAttachment[] = meta.map(item => ({
-		name: item.name,
-		mime_type: item.mime_type,
-		size: item.size,
-		hash: item.hash,
-	}));
-	return { kind: 'photos', photos };
+	const voiceNote = meta.find(item => item.kind === 'VoiceNote');
+	if (voiceNote) {
+		return {
+			kind: 'voice_note',
+			voice_note: {
+				mime_type: voiceNote.mime_type,
+				duration_ms: voiceNote.duration_ms,
+				waveform: voiceNote.waveform,
+				hash: voiceNote.hash,
+			},
+		};
+	}
+	const photos: PhotoAttachment[] = meta
+		.filter(item => item.kind === 'Photo')
+		.map(item => ({
+			name: item.name,
+			mime_type: item.mime_type,
+			size: item.size,
+			hash: item.hash,
+		}));
+	return photos.length > 0 ? { kind: 'photos', photos } : null;
 }
 
 /**
- * Matches the serialization of `ChatMessageContentV1` in
- * `crates/dashchat-node/src/chat/message.rs`.
+ * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
+ * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
  */
 export type MessageContentV1 = {
 	message: string;
-	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob
-	 * store, fetched lazily via `irohblob://`). `mediaBundleToAttachment` turns this
-	 * into the renderable `MediaAttachment`. */
+	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob store,
+	 * fetched lazily via `irohblob://`). Consumers derive the photos/file
+	 * grouping from this list at render time. */
 	media: MediaBundle | null;
 	/** Hash of the operation this message replies to (a `Message` or
 	 * `EditMessage` in the same chat, any author's log). Absent on the wire
@@ -319,7 +352,7 @@ export interface MessageVersion {
  * history. */
 export interface MessageBody {
 	message: string;
-	media: MediaAttachment | null;
+	media: MediaBundle | null;
 	reactions: Record<DeviceId, string>;
 	editHistory: MessageVersion[];
 }

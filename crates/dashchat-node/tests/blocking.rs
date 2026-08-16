@@ -46,7 +46,7 @@ async fn media_hash(node: &TestNode, chat: ChatId, text: &str) -> iroh_blobs::Ha
         .unwrap()
         .into_iter()
         .find(|m| m.content.message() == text)
-        .and_then(|m| m.content.media().and_then(|b| b.first()).map(|i| i.hash))
+        .and_then(|m| m.content.media().and_then(|b| b.first()).map(|i| i.hash()))
         .expect("media hash for message")
 }
 

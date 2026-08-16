@@ -150,7 +150,10 @@ async fn receiver_renders_reply_to_unknown_message_as_a_normal_message() {
     let bobbi_messages = bobbi.get_messages(chat_id).await.unwrap();
     let content = &bobbi_messages.first().unwrap().content;
     assert_eq!(content.message(), "nope");
-    assert_eq!(content.reply(), Some(p2panda_core::Hash::from_bytes([9; 32])));
+    assert_eq!(
+        content.reply(),
+        Some(p2panda_core::Hash::from_bytes([9; 32]))
+    );
 
     for node in [&alice, &bobbi] {
         let replies = node.valid_replies(chat_id).await.unwrap();

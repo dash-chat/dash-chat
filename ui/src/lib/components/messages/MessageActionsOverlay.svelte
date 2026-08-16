@@ -23,7 +23,6 @@
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
 		onReply?: () => void;
-		onDelete?: () => void;
 	}
 
 	let {
@@ -33,7 +32,6 @@
 		myDeviceId,
 		onEdit,
 		onReply,
-		onDelete,
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
@@ -64,11 +62,6 @@
 		onReply?.();
 	}
 
-	function del() {
-		close();
-		onDelete?.();
-	}
-
 	async function copy() {
 		close();
 		if (!hasBody(message.content)) return;
@@ -93,7 +86,7 @@
 			onEdit={edit}
 			onReply={onReply ? reply : undefined}
 			onCopy={copy}
-			onDelete={del}
+			onDelete={close}
 		/>
 	{/snippet}
 </SpotlightOverlay>

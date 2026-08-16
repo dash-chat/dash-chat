@@ -36,7 +36,7 @@ jobs:
 
       - name: Install and Build 🔧
         run: |
-          nix develop --accept-flake-config --command bash -c "pnpm install && pnpm -F site build"
+          nix develop --accept-flake-config --command bash -c "pnpm install --reporter=append-only && pnpm -F site build"
 
       - name: Upload artifact 📦
         uses: actions/upload-pages-artifact@v3

@@ -376,11 +376,18 @@ emoji-picker {
 }
 
 /* Ride the keyboard: the toast can't join the FLIP (it animates its own
-   entrance transform, which the FLIP would clobber), so it follows
-   --keyboard-safe-bottom with a transition on `bottom` instead. The property
-   list extends Konsta's --transition-transform-opacity. */
+   entrance transform, which the FLIP would clobber), so it follows the
+   keyboard height with a transition on `bottom` instead. The property
+   list extends Konsta's --transition-transform-opacity.
+   --keyboard-visible-height (set by ToastManager from the plugin's keyboard
+   signal) is the actual keyboard, not --keyboard-safe-bottom: the reserved
+   slot may be held while app content (the media panel) occupies it, and the
+   toast should cover that content instead of floating above the composer. */
 .k-toast {
-	bottom: calc(var(--keyboard-safe-bottom, 0px) + 1rem);
+	bottom: calc(
+		max(var(--keyboard-visible-height, 0px), env(safe-area-inset-bottom, 0px)) +
+			1rem
+	);
 	transition-property: transform, translate, scale, opacity, rotate, bottom;
 }
 
