@@ -21,8 +21,6 @@
 			: 0,
 	);
 
-	let width = $state(0);
-
 	function seekFromPointer(clientX: number, el: HTMLElement) {
 		if (durationSec <= 0) return;
 		const rect = el.getBoundingClientRect();
@@ -73,8 +71,7 @@
 {/snippet}
 
 <div
-	bind:clientWidth={width}
-	class="relative h-7 min-w-0 flex-1 cursor-pointer"
+	class="@container relative h-7 min-w-0 flex-1 cursor-pointer"
 	data-testid="voice-scrubber"
 	role="slider"
 	tabindex="0"
@@ -92,7 +89,7 @@
 		data-testid="voice-scrubber-played"
 		style="width: {progress * 100}%"
 	>
-		<div class="h-full" style="width: {width}px">
+		<div class="h-full w-[100cqw]">
 			{@render bars(0.95)}
 		</div>
 	</div>

@@ -52,7 +52,7 @@ export class RecordingLevels {
 			const read = await handle.read(this.#buffer);
 			if (read === null || read < 2) return;
 			this.#offset += read - (read % 2);
-			this.levels = [...this.levels, rms(this.#buffer, read)];
+			this.levels.push(rms(this.#buffer, read));
 		} catch {
 			// The file is mid-write or already gone; skip this tick.
 		}

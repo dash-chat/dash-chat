@@ -6,7 +6,6 @@ import { showToast } from '$lib/utils/toasts';
 import { VoiceRecorder, warmUpRecorder } from './useVoiceRecorder.svelte';
 
 export interface DragState {
-	active: boolean;
 	cancelProgress: number;
 	lockProgress: number;
 }
@@ -18,7 +17,7 @@ const LOCK_THRESHOLD = 80;
 /** A press shorter than this is treated as a tap, not a recording. */
 const MIN_DURATION_MS = 600;
 
-const idle: DragState = { active: false, cancelProgress: 0, lockProgress: 0 };
+const idle: DragState = { cancelProgress: 0, lockProgress: 0 };
 
 function clamp01(value: number): number {
 	return Math.max(0, Math.min(1, value));
@@ -113,7 +112,6 @@ export class VoiceRecording {
 		const up = this.startY - event.clientY;
 		this.willCancel = inlineTowardStart >= CANCEL_THRESHOLD;
 		this.drag = {
-			active: true,
 			cancelProgress: clamp01(inlineTowardStart / CANCEL_THRESHOLD),
 			lockProgress: clamp01(up / LOCK_THRESHOLD),
 		};

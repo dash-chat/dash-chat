@@ -13,15 +13,14 @@ type ObjectUrlSource = Blob | { data: Uint8Array; mimeType: string } | string;
  * so unrelated re-renders don't reload the image. A plain string source is set
  * directly with no object URL to manage.
  */
-export const objectUrl: Action<
-	HTMLImageElement | HTMLAudioElement,
-	ObjectUrlSource | undefined
-> = (node, source) => {
+export const objectUrl: Action<HTMLImageElement, ObjectUrlSource> = (
+	node,
+	source,
+) => {
 	let url = '';
 	let current: Blob | Uint8Array | null = null;
 
-	function apply(s: ObjectUrlSource | undefined) {
-		if (!s) return;
+	function apply(s: ObjectUrlSource) {
 		if (typeof s === 'string') {
 			if (url) URL.revokeObjectURL(url);
 			url = '';

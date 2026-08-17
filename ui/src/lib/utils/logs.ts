@@ -72,20 +72,6 @@ export function forwardConsoleToTauriLog(): void {
 		orig.debug(...args);
 		debug(fmt(args)).catch(() => {});
 	};
-
-	// The engine prints these through an internal channel that bypasses our
-	// patched `console.*`, so they never reach the Tauri log otherwise.
-	window.addEventListener('unhandledrejection', event => {
-		error(`Unhandled promise rejection: ${fmtOne(event.reason)}`).catch(
-			() => {},
-		);
-	});
-	window.addEventListener('error', event => {
-		const detail = event.error
-			? fmtOne(event.error)
-			: `${event.message} (${event.filename}:${event.lineno}:${event.colno})`;
-		error(`Uncaught error: ${detail}`).catch(() => {});
-	});
 }
 
 let errorHandlersInstalled = false;

@@ -297,16 +297,6 @@ export class Messages extends TestHelper {
 	async voicePlayLoading(): Promise<boolean> {
 		return (await this.voicePlayButton.getAttribute('aria-busy')) === 'true';
 	}
-
-	async voiceMessageCount(): Promise<number> {
-		return this.agent.execute(
-			(messagesSel: string, voiceSel: string) =>
-				document.querySelector(messagesSel)?.querySelectorAll(voiceSel)
-					.length ?? 0,
-			this.messagesSelector,
-			tid('message-attachment-voice'),
-		);
-	}
 }
 
 /**

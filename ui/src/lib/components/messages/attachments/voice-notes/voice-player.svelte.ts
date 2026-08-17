@@ -105,9 +105,12 @@ export class VoicePlayer {
 	// first play and set as an object URL, with concurrent callers sharing it.
 	#ensureLoaded(): Promise<boolean> {
 		if (this.#loaded) return Promise.resolve(true);
-		return (this.#loadPromise ??= this.#load().finally(
-			() => (this.#loadPromise = undefined),
-		));
+		if (!this.#loadPromise) {
+			this.#loadPromise = this.#load().finally(() => {
+				this.#loadPromise = undefined;
+			});
+		}
+		return this.#loadPromise;
 	}
 
 	async #load(): Promise<boolean> {
