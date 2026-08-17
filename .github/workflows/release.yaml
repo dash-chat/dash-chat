@@ -158,7 +158,13 @@ jobs:
             libasound2-dev \
             javascriptcoregtk-4.1 \
             libsoup-3.0 \
-            webkit2gtk-4.1
+            webkit2gtk-4.1 \
+            patchelf \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-alsa \
+            gstreamer1.0-pulseaudio
 
       - name: Load server URLs and ENV from .env
         shell: bash
@@ -205,7 +211,7 @@ jobs:
 
       # Backstop: fail the release if the wayland client stack leaked back into
       # the AppImage (e.g. if tauri-bundler changes its cached-tool handling).
-      - name: Assert no wayland libs bundled (ubuntu only)
+      - name: Assert no wayland libs and gstreamer bundled (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: ./scripts/assert-no-wayland-in-appimage.sh
 
