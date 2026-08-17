@@ -4,7 +4,7 @@
  * (tauri-driver against the built binary), `android` (physical device via
  * Appium), `android-emulator` (running emulator via Appium), or `ios`
  * (connected iPhone via Appium/XCUITest) — so any combo runs through this one
- * config, e.g. `PLATFORMS=ios,ios just test e2e send-messages`. Combos are bound
+ * config, e.g. `PLATFORMS=ios,ios just e2e run send-messages`. Combos are bound
  * by host OS, though: `desktop` needs Linux (tauri-driver/WebKitGTK), `ios` needs
  * macOS + a device, so they can't share one host.
  */
@@ -149,8 +149,23 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		[...nameBySlot.keys()].map(slot => [`agent${slot}`, agentEntry(slot)]),
 	),
 
+	// The appium server's own log only reaches the console as truncated warnings,
+	// so keep the full one on disk — device-side failures (usbmux timeouts, WDA
+	// signing) are only diagnosable from it.
 	services:
-		appiumPort !== null ? [['appium', { args: { port: appiumPort } }]] : [],
+		appiumPort !== null
+			? [
+					[
+						'appium',
+						{
+							args: {
+								port: appiumPort,
+								log: path.join(ROOT, '.dbs', 'e2e', 'appium.log'),
+							},
+						},
+					],
+				]
+			: [],
 
 	logLevel: 'warn',
 	waitforTimeout: UI_TIMEOUT,
@@ -163,7 +178,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		timeout: 120_000,
 	},
 
-	reporters: ['spec'],
+	// The spec reporter writes the assertion that failed to stdout and nowhere
+	// else, so a finished run leaves only screenshots to reconstruct it from.
+	// The json one keeps each test's error and stack next to them on disk.
+	reporters: [
+		'spec',
+		['json', { outputDir: path.join(ROOT, '.dbs', 'e2e', 'results') }],
+	],
 
 	async onPrepare() {
 		// A failed onPrepare must abort the run: wdio only logs hook errors and
@@ -176,6 +197,9 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			} catch {
 				// ignore
 			}
+			// The appium service starts right after this hook and writes its log
+			// here, so the directory has to exist before the first server does.
+			mkdirSync(dataDir, { recursive: true });
 
 			killLeftoverMailboxServers();
 
@@ -247,13 +271,16 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes
-	 * that only reproduce on slow devices leave usable evidence behind. */
+	 * that only reproduce on slow devices leave usable evidence behind. A skip
+	 * is reported as `passed: false` with no error (wdio sets
+	 * `passed: !error && !skip`), so only an error counts as a failure — a spec
+	 * that skips itself for the launched platforms must not leave one behind. */
 	async afterTest(test, _context, result) {
-		if (!result.passed) await saveFailureScreenshots(test);
+		if (result.error !== undefined) await saveFailureScreenshots(test);
 	},
 
 	async afterHook(test, _context, result) {
-		if (!result.passed) await saveFailureScreenshots(test);
+		if (result.error !== undefined) await saveFailureScreenshots(test);
 	},
 
 	async afterSession() {

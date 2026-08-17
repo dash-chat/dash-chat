@@ -46,11 +46,6 @@ export interface FileAttachment {
 	mime_type: string;
 }
 
-/**
- * A renderable voice note, carrying only the blob `hash` and metadata. The
- * `waveform` (peak-normalized bars, 0..=255) rides in the message metadata so
- * the scrubber renders before the audio downloads.
- */
 export interface VoiceNote {
 	hash: Hash;
 	mime_type: string;

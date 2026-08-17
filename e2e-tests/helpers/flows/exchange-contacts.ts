@@ -3,6 +3,7 @@ import type { Agent } from '../../setup/setup-agents';
 /** Walk from the home screen to the add-contact page. */
 export async function navigateToAddContact(agent: Agent): Promise<void> {
 	await agent.homePage.newMessageButton.click();
+	await agent.newMessagePage.ready();
 	await agent.newMessagePage.addContact.click();
 	await agent.addContactPage.ready();
 }

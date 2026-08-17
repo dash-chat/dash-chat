@@ -2,7 +2,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use sentry::protocol::Envelope;
-use sentry::transports::DefaultTransportFactory;
+use sentry::transports::ReqwestHttpTransportOptions;
 use sentry::{Transport, TransportFactory, TransportOptions};
 
 #[derive(Default)]
@@ -36,11 +36,35 @@ pub(crate) struct UserInitiatedTransportFactory(pub(crate) Arc<UserInitiatedTran
 
 impl TransportFactory for UserInitiatedTransportFactory {
     fn create_transport_with_options(&self, options: TransportOptions) -> Arc<dyn Transport> {
-        self.0
-            .inner
-            .get_or_init(|| DefaultTransportFactory.create_transport_with_options(options));
+        self.0.inner.get_or_init(|| {
+            Arc::new(
+                ReqwestHttpTransportOptions::from(options)
+                    .with_client(webpki_roots_client())
+                    .build(),
+            )
+        });
         self.0.clone()
     }
+}
+
+/// Reqwest's default rustls verifier is `rustls-platform-verifier`, which on Android
+/// aborts the process unless its JNI side is initialized; embedded webpki roots need no
+/// platform setup.
+fn webpki_roots_client() -> reqwest::Client {
+    let roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("ring provider supports the default protocol versions")
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    reqwest::Client::builder()
+        .tls_backend_preconfigured(tls)
+        .build()
+        .expect("failed to build the sentry HTTP client")
 }
 
 #[cfg(test)]

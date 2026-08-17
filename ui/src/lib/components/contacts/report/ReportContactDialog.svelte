@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Dialog, DialogButton } from 'konsta/svelte';
 	import { getContext } from 'svelte';
 	import type { AgentId, ContactsStore } from 'dash-chat-stores';
+	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
 	import { showToast } from '$lib/utils/toasts';
 
 	let {
@@ -31,33 +31,33 @@
 			opened = false;
 			showToast(toast);
 			onDone?.();
+			return { success: true as const };
 		} catch (e) {
 			console.error(e);
-			opened = false;
-			showToast(m.contactReportFailedToast(), 'unexpected', e);
+			return {
+				success: false as const,
+				error: m.contactReportFailedToast(),
+				cause: e,
+			};
 		}
 	}
 </script>
 
-<Dialog
+<ActionDialog
 	{opened}
-	onBackdropClick={() => (opened = false)}
+	onCancel={() => (opened = false)}
 	title={m.reportContactTitle({ name })}
->
-	<span>{m.reportContactDescription()}</span>
-	{#snippet buttons()}
-		<DialogButton onClick={() => (opened = false)}>{m.cancel()}</DialogButton>
-		<DialogButton
-			data-testid="report-contact-and-block-confirm"
-			onClick={() => confirm(true)}
-		>
-			{m.reportAndBlock()}
-		</DialogButton>
-		<DialogButton
-			data-testid="report-contact-confirm"
-			onClick={() => confirm(false)}
-		>
-			{m.report()}
-		</DialogButton>
-	{/snippet}
-</Dialog>
+	description={m.reportContactDescription()}
+	actions={[
+		{
+			text: m.reportAndBlock(),
+			testid: 'report-contact-and-block-confirm',
+			onClick: () => confirm(true),
+		},
+		{
+			text: m.report(),
+			testid: 'report-contact-confirm',
+			onClick: () => confirm(false),
+		},
+	]}
+/>

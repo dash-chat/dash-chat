@@ -310,16 +310,17 @@ export class Messages extends TestHelper {
 }
 
 /**
- * Dispatch a right-click at the centre of a message's bubble. Serialized into
- * the page by `execute`, so it has to stay self-contained.
+ * Dispatch a right-click at the centre of a message's bubble and report whether
+ * the app prevented the browser's native context menu. Serialized into the page
+ * by `execute`, so it has to stay self-contained.
  */
 function dispatchBubbleContextMenu(wrapperSel: string) {
 	const wrapper = document.querySelector<HTMLElement>(wrapperSel);
-	if (!wrapper) return;
+	if (!wrapper) return false;
 	const msg = wrapper.querySelector('.message') as HTMLElement | null;
 	const el = msg ?? wrapper;
 	const rect = el.getBoundingClientRect();
-	el.dispatchEvent(
+	return !el.dispatchEvent(
 		new MouseEvent('contextmenu', {
 			bubbles: true,
 			cancelable: true,
@@ -435,6 +436,27 @@ export class Message extends TestHelper {
 	async openActionsByRightClick() {
 		await this.agent.execute(dispatchBubbleContextMenu, this.wrapperSelector);
 		await this.contextMenu.waitForDisplayed();
+	}
+
+	/** Right-click the bubble and report whether the app swallowed the event,
+	 * preventing the browser's native context menu. */
+	rightClickPrevented(): Promise<boolean> {
+		return this.agent.execute(dispatchBubbleContextMenu, this.wrapperSelector);
+	}
+
+	/** Make the platform's message-actions gesture — a long-press on mobile, a
+	 * right-click on desktop — and report whether any actions menu opened. */
+	async actionsGestureOpensMenu(): Promise<boolean> {
+		if (await this.isMobileBuild()) {
+			await this.longPressBubble();
+		} else {
+			await this.agent.execute(dispatchBubbleContextMenu, this.wrapperSelector);
+		}
+		await this.agent.pause(RENDER_SETTLE_WINDOW);
+		return (
+			(await this.actionsMenu.isDisplayed()) ||
+			(await this.contextMenu.isDisplayed())
+		);
 	}
 
 	/** Long-press the bubble the way a mobile user opens the actions menu. */

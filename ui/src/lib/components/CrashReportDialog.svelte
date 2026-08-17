@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Dialog, DialogButton } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
 	import {
 		discardPendingCrashReport,
 		hasPendingCrashReport,
@@ -21,24 +21,23 @@
 	}
 
 	async function send() {
-		opened = false;
 		try {
 			await sendPendingCrashReport();
+			opened = false;
 			showToast(m.reportSent());
+			return { success: true as const };
 		} catch {
-			showToast(m.errorSendErrorReport(), 'error');
+			return { success: false as const, error: m.errorSendErrorReport() };
 		}
 	}
 </script>
 
-<Dialog {opened} onBackdropClick={discard} title={m.appClosedUnexpectedly()}>
-	<p class="text-sm opacity-60">{m.crashReportExplanation()}</p>
-	{#snippet buttons()}
-		<DialogButton data-testid="crash-report-discard" onClick={discard}>
-			{m.dontSend()}
-		</DialogButton>
-		<DialogButton data-testid="crash-report-send" strong onClick={send}>
-			{m.send()}
-		</DialogButton>
-	{/snippet}
-</Dialog>
+<ActionDialog
+	{opened}
+	onCancel={discard}
+	title={m.appClosedUnexpectedly()}
+	description={m.crashReportExplanation()}
+	cancelText={m.dontSend()}
+	cancelTestId="crash-report-discard"
+	actions={[{ text: m.send(), testid: 'crash-report-send', onClick: send }]}
+/>

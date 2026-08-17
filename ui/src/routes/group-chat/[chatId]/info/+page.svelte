@@ -31,7 +31,8 @@
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
-	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
+	import RemoveMemberDialog from '$lib/components/chats/RemoveMemberDialog.svelte';
+	import LeaveGroupDialog from '$lib/components/chats/LeaveGroupDialog.svelte';
 	let chatId = page.params.chatId!;
 
 	const chatsStore: ChatsStore = getContext('chats-store');
@@ -83,49 +84,6 @@
 	// 	}
 	// 	loading = false;
 	// }
-
-	async function handleRemove() {
-		if (!dialogActorId) {
-			return {
-				success: false as const,
-				error: m.errorUnexpected(),
-			};
-		}
-
-		try {
-			await groupChatStore.client.removeMember(chatId, dialogActorId);
-			dialogType = null;
-			dialogActorId = null;
-			return { success: true as const };
-		} catch (e) {
-			console.error(e);
-			return {
-				success: false as const,
-				error: m.errorUnexpected(),
-			};
-		}
-	}
-
-	async function handleLeaveGroup() {
-		try {
-			await chatsStore.leaveGroup(chatId);
-			goto('/');
-			dialogType = null;
-			return { success: true as const };
-		} catch (e) {
-			console.error(e);
-			const errorMessage =
-				(e as { kind?: string }).kind === 'LastAdmin'
-					? m.errorLeavingGroupOnlyAdmin()
-					: m.errorLeavingGroup();
-
-			dialogType = null;
-			return {
-				success: false as const,
-				error: errorMessage,
-			};
-		}
-	}
 
 	// async function handleDeleteGroup() {
 	// 	loading = true;
@@ -396,30 +354,29 @@
 			{/snippet}
 		</Dialog> -->
 
-		<ActionDialog
-			opened={dialogType === 'remove' && dialogActorId !== null}
-			onCancel={() => {
-				dialogType = null;
-				dialogActorId = null;
-			}}
-			onConfirm={handleRemove}
-			title={m.removeMember()}
-			confirmText={m.remove()}
-			confirmTestId="group-info-remove-member-confirm"
-		>
-			<span>{m.areYouSureRemoveMember()}</span>
-		</ActionDialog>
+		<RemoveMemberDialog
+			bind:opened={
+				() => dialogType === 'remove' && dialogActorId !== null,
+				opened => {
+					if (!opened) {
+						dialogType = null;
+						dialogActorId = null;
+					}
+				}
+			}
+			{chatId}
+			actorId={dialogActorId}
+		/>
 
-		<ActionDialog
-			opened={dialogType === 'leave'}
-			onCancel={() => (dialogType = null)}
-			onConfirm={handleLeaveGroup}
-			title={m.leaveGroup()}
-			confirmText={m.leave()}
-			confirmTestId="group-info-leave-confirm"
-		>
-			<span>{m.areYouSureLeaveGroup()}</span>
-		</ActionDialog>
+		<LeaveGroupDialog
+			bind:opened={
+				() => dialogType === 'leave',
+				opened => {
+					if (!opened) dialogType = null;
+				}
+			}
+			{chatId}
+		/>
 
 		<!-- <Dialog
 			opened={dialogType === 'delete'}

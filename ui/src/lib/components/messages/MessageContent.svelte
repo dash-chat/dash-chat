@@ -27,11 +27,9 @@
 	const body = $derived(hasBody(message.content) ? message.content : null);
 	const media = $derived(body?.media ?? null);
 	const voiceNote = $derived(media?.find(m => m.kind === 'VoiceNote'));
-	const file = $derived(
-		voiceNote ? undefined : media?.find(m => m.kind === 'File'),
-	);
+	const file = $derived(media?.find(m => m.kind === 'File'));
 	const photos = $derived(
-		voiceNote || file ? [] : (media?.filter(m => m.kind === 'Photo') ?? []),
+		file ? [] : (media?.filter(m => m.kind === 'Photo') ?? []),
 	);
 	const hasText = $derived(!!body?.message);
 	const isPhotoOnly = $derived(photos.length > 0 && !hasText);

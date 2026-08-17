@@ -1973,7 +1973,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.19.13"
+version = "0.19.17"
 dependencies = [
  "anyhow",
  "app_dirs2",
@@ -1996,7 +1996,7 @@ dependencies = [
  "mailbox-local-server",
  "mailbox-server",
  "mdns-sd",
- "nanoid 0.5.0",
+ "nanoid 0.4.0",
  "ndk-context",
  "ndk-sys 0.6.0+11769913",
  "netdev 0.43.0",
@@ -10825,6 +10825,8 @@ dependencies = [
  "anyhow",
  "log",
  "regex",
+ "reqwest 0.13.4",
+ "rustls 0.23.43",
  "sentry",
  "serde",
  "serde_json",
@@ -10832,6 +10834,7 @@ dependencies = [
  "tauri-plugin",
  "tauri-plugin-log",
  "tempfile",
+ "webpki-roots",
 ]
 
 [[package]]

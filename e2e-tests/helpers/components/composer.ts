@@ -1,3 +1,4 @@
+import type { Agent } from '../../setup/setup-agents';
 import { TINY_PNG_BYTES } from '../images';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
@@ -26,6 +27,11 @@ export class Composer extends TestHelper {
 	attachPhotosItem = this.el(tid('message-input-attach-photos'));
 	attachFileItem = this.el(tid('message-input-attach-file'));
 	stagedMediaPage = this.el(tid('staged-media-page'));
+	private stagedSendSelector = `${tid('staged-media-page')} ${tid('message-input-send')}`;
+	stagedSendButton = this.el(this.stagedSendSelector);
+	stagedCaptionInput = this.el(
+		`${tid('staged-media-page')} ${tid('message-input-textarea')}`,
+	);
 
 	removeAttachmentButton(index: number) {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
@@ -296,9 +302,7 @@ export class Composer extends TestHelper {
 			// The staged-media page's send button (the composer's is covered by the
 			// overlay and shares its testid) sits in a virtual-keyboard-composited
 			// surface, so a WDA native tap misses it — click it via the DOM instead.
-			await this.domClick(
-				`${tid('staged-media-page')} ${tid('message-input-send')}`,
-			);
+			await this.domClick(this.stagedSendSelector);
 			return;
 		}
 		if (await this.sendButton.isExisting()) {
@@ -337,6 +341,43 @@ export class Composer extends TestHelper {
 			return;
 		}
 		await this.removeAttachmentButton(index).click();
+	}
+
+	/** Focus the staged-media caption input and wait until the soft keyboard
+	 * is up. The click alone raises the keyboard on iOS (user-initiated
+	 * focus); on Android a WebDriver click focuses but does not reliably raise
+	 * the IME, so it is summoned natively the way the app does (a no-op on
+	 * iOS). */
+	async focusStagedCaption(): Promise<void> {
+		await this.stagedCaptionInput.click();
+		await this.agent.execute(() => window.__test.showKeyboard());
+		await this.agent.waitUntil(() => this.agent.isKeyboardShown(), {
+			timeoutMsg: 'Keyboard did not open after focusing the caption input',
+		});
+	}
+
+	/** Send from the staged-media page with the platform's most faithful
+	 * gesture: a real WebDriver click, whose mousedown is what the footer's
+	 * keepKeyboardOpen intercepts to stop the send button from stealing
+	 * focus. On iOS a native tap misses the keyboard-composited footer, so
+	 * the DOM click is the only option there — no mousedown, but the keyboard
+	 * surviving the page close is still covered. */
+	async sendFromStagedMediaPage(): Promise<void> {
+		if ((this.agent as Agent).platform === 'ios') {
+			await this.domClick(this.stagedSendSelector);
+			return;
+		}
+		await this.stagedSendButton.click();
+	}
+
+	/** Whether the composer textarea currently holds focus. With the staged
+	 * media page open this reads the composer's own textarea (the first match),
+	 * not the staged caption input. */
+	isInputFocused(): Promise<boolean> {
+		return this.agent.execute(
+			(sel: string) => document.activeElement === document.querySelector(sel),
+			tid('message-input-textarea'),
+		);
 	}
 
 	async hasMediaPreview(): Promise<boolean> {

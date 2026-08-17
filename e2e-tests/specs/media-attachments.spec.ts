@@ -51,6 +51,22 @@ describe('Media attachments', () => {
 		await agent2.directChatPage.messages.waitForMessage('three pics');
 	});
 
+	it('keeps the keyboard open when sending from the staged media page', async function () {
+		if (agent1.platform === 'desktop') this.skip();
+		const composer = agent1.directChatPage.composer;
+		await composer.attachPhotos('kbd');
+		await composer.focusStagedCaption();
+		await composer.type('keyboard stays');
+		await composer.sendFromStagedMediaPage();
+		await composer.stagedMediaPage.waitForExist({ reverse: true });
+		await agent1.directChatPage.messages.waitForMessage('keyboard stays');
+		await agent1.waitUntil(() => composer.isInputFocused(), {
+			timeoutMsg:
+				'Composer input did not regain focus after sending staged media',
+		});
+		expect(await agent1.isKeyboardShown()).toBe(true);
+	});
+
 	it('sends a file attachment and renders on both ends', async () => {
 		await agent1.directChatPage.composer.attachFile(
 			'e2e-notes.txt',

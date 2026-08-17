@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Dialog, DialogButton } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
 	import { describeError, sendErrorReport } from '$lib/utils/error-report';
 	import { showToast } from '$lib/utils/toasts';
 
@@ -15,28 +15,21 @@
 	} = $props();
 
 	async function send() {
-		opened = false;
 		try {
 			await sendErrorReport({ message, error: describeError(error) });
+			opened = false;
 			showToast(m.reportSent());
+			return { success: true as const };
 		} catch {
-			showToast(m.errorSendErrorReport(), 'error');
+			return { success: false as const, error: m.errorSendErrorReport() };
 		}
 	}
 </script>
 
-<Dialog
+<ActionDialog
 	{opened}
-	onBackdropClick={() => (opened = false)}
+	onCancel={() => (opened = false)}
 	title={m.sendErrorReport()}
->
-	<p class="text-sm opacity-60">{m.errorReportExplanation()}</p>
-	{#snippet buttons()}
-		<DialogButton onClick={() => (opened = false)}>
-			{m.cancel()}
-		</DialogButton>
-		<DialogButton strong onClick={send}>
-			{m.send()}
-		</DialogButton>
-	{/snippet}
-</Dialog>
+	description={m.errorReportExplanation()}
+	actions={[{ text: m.send(), onClick: send }]}
+/>

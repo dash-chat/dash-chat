@@ -21,7 +21,7 @@ describe('Group chat inline system messages', () => {
 		const created = await agent1.groupChatPage.messages
 			.systemMessage('group_created')
 			.getText();
-		expect(created).toContain('You created the group.');
+		expect(created).toContain(await agent1.tr('youCreatedTheGroup'));
 	});
 
 	it('renders "{creator} added you to the group." for the invited member', async () => {
@@ -38,7 +38,9 @@ describe('Group chat inline system messages', () => {
 		const added = await agent2.groupChatPage.messages
 			.systemMessage('group_created')
 			.getText();
-		expect(added).toContain('Alice Test added you to the group.');
+		expect(added).toContain(
+			await agent2.tr('someoneAddedYouToTheGroup', { name: 'Alice Test' }),
+		);
 	});
 
 	it('renders regular chat bubbles separately from system messages', async () => {

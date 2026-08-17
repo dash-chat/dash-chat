@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  konsta@5.0.6: e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f
+  konsta@5.0.6: 1e038298da6b55fe1f7ffd625b171603997dbdc355849796317ad1087f5dc569
   signalium@3.0.1: 2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97
 
 importers:
@@ -75,6 +75,9 @@ importers:
       '@wdio/cli':
         specifier: ^9.29.1
         version: 9.29.1(@types/node@24.10.0)(expect-webdriverio@5.7.0)(supports-color@8.1.1)
+      '@wdio/json-reporter':
+        specifier: ^9.30.1
+        version: 9.30.1
       '@wdio/local-runner':
         specifier: ^9.12.1
         version: 9.24.0(@wdio/globals@9.29.1)(supports-color@8.1.1)(webdriverio@9.29.1(supports-color@8.1.1))
@@ -246,7 +249,7 @@ importers:
         version: 1.4.0
       konsta:
         specifier: ^5.0.6
-        version: 5.0.6(patch_hash=e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f)
+        version: 5.0.6(patch_hash=1e038298da6b55fe1f7ffd625b171603997dbdc355849796317ad1087f5dc569)
       linkifyjs:
         specifier: ^4.3.3
         version: 4.3.3
@@ -278,8 +281,8 @@ importers:
         specifier: ^0.0.5
         version: 0.0.5
       tauri-plugin-virtual-keyboard:
-        specifier: github:dash-chat/tauri-plugin-virtual-keyboard#a20b82e5091fa9834b1ea1014fc336ebfe7c4547
-        version: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97))
+        specifier: github:dash-chat/tauri-plugin-virtual-keyboard#99be13fce0c81f23b877fee5593a29afe582f569
+        version: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/99be13fce0c81f23b877fee5593a29afe582f569(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97))
       vite-plugin-babel:
         specifier: ^1.3.2
         version: 1.3.2(@babel/core@7.28.5(supports-color@8.1.1))(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.0))
@@ -2235,6 +2238,10 @@ packages:
       expect-webdriverio: ^5.6.5
       webdriverio: ^9.0.0
 
+  '@wdio/json-reporter@9.30.1':
+    resolution: {integrity: sha512-BVHRN4wH0/8M2cFAA2zG3yxcztmML094hdgtemB0jgj9zHeyknbuyFu+D6aS5GNZJh8WgqggRjcvzBqPVSpFGA==}
+    engines: {node: '>=18.20.0'}
+
   '@wdio/local-runner@9.24.0':
     resolution: {integrity: sha512-SUs5HEGHXEl/fVdkkhY1+of+Dv8AlceulRTpmYMmSR4Nu+tHUXSPkzjoYgVa+xVu0MpVrD+dhTm13hOtlDAlMg==}
     engines: {node: '>=18.20.0'}
@@ -2269,6 +2276,10 @@ packages:
     resolution: {integrity: sha512-CKAcVy9BGwvufokMcl3H+yNcvD11Klku/1BPz8bKSRv7/KzueXR06s1cPbJH3tv9r9zxPErxgdVMpulN8I0qAg==}
     engines: {node: '>=18.20.0'}
 
+  '@wdio/reporter@9.30.1':
+    resolution: {integrity: sha512-0whWaLfJtOAy3PzbGUxGrCAGitgaUCMe8qUgAuP2l7ess70AXqvp1wJibw74a/Z2giegJlJiAc4PxS0abs9/tw==}
+    engines: {node: '>=18.20.0'}
+
   '@wdio/runner@9.24.0':
     resolution: {integrity: sha512-B1ezRtvR/eJCKQSVyLbERpyyMG3bP7RKaQBHT7bNxGsuEuarkUU7cS/T/aB+woZb4UtWotlrBFY4icAS0HqOkA==}
     engines: {node: '>=18.20.0'}
@@ -2286,6 +2297,10 @@ packages:
 
   '@wdio/types@9.29.1':
     resolution: {integrity: sha512-jp8jgMv6TS35G96YzHZxw3PVN0Dz6xQ6tnMAicndAJ8Jt9AIXb0ywIse4TjaFywakO3dLoEhlyA3ZtR26vmt+w==}
+    engines: {node: '>=18.20.0'}
+
+  '@wdio/types@9.30.1':
+    resolution: {integrity: sha512-umKQDbSmu3/ucUsIA5UUTK5gCWnClyVpWz3fC39044rCXQ3zCd1a3GoJibbAITKiwnPFf2yU3LvTa+C78sh9Lg==}
     engines: {node: '>=18.20.0'}
 
   '@wdio/utils@9.24.0':
@@ -5249,8 +5264,8 @@ packages:
   tauri-plugin-view-api@0.0.5:
     resolution: {integrity: sha512-W5Q3eGT1qQSUUkdoZ4nKlr52GhNtfSQA+4jXi/JlwFizhOTAbbMLa2vTGvOVjq8tVzpFmx9qYU7JBeWFXwacxA==}
 
-  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547:
-    resolution: {gitHosted: true, integrity: sha512-frmgFITRhnHuij8F3PnYmE1b/G4JoWM3CHPiZ1u8u+j+yL3UiDTWwLhF19U7axfZFdlO++o5BZkjxeWCCmBnug==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547}
+  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/99be13fce0c81f23b877fee5593a29afe582f569:
+    resolution: {gitHosted: true, integrity: sha512-9APJ9s/IGT0k4kqzjDr1mCrsg8MDFaVJ6/lqiOpsHqwjzekuAeDygmWntRVscRCz3GTDfzqydCLZFIZ5axUfGw==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/99be13fce0c81f23b877fee5593a29afe582f569}
     version: 0.1.0
     peerDependencies:
       signalium: ^3
@@ -7803,6 +7818,12 @@ snapshots:
       expect-webdriverio: 5.7.0(@wdio/globals@9.29.1)(@wdio/logger@9.18.0)(webdriverio@9.29.1(supports-color@8.1.1))
       webdriverio: 9.29.1(supports-color@8.1.1)
 
+  '@wdio/json-reporter@9.30.1':
+    dependencies:
+      '@wdio/reporter': 9.30.1
+      '@wdio/types': 9.30.1
+      safe-regex2: 5.0.0
+
   '@wdio/local-runner@9.24.0(@wdio/globals@9.29.1)(supports-color@8.1.1)(webdriverio@9.29.1(supports-color@8.1.1))':
     dependencies:
       '@types/node': 20.19.34
@@ -7879,6 +7900,14 @@ snapshots:
       diff: 8.0.3
       object-inspect: 1.13.3
 
+  '@wdio/reporter@9.30.1':
+    dependencies:
+      '@types/node': 20.19.34
+      '@wdio/logger': 9.29.1
+      '@wdio/types': 9.30.1
+      diff: 8.0.3
+      object-inspect: 1.13.3
+
   '@wdio/runner@9.24.0(expect-webdriverio@5.6.4(@wdio/globals@9.29.1)(@wdio/logger@9.18.0)(webdriverio@9.29.1(supports-color@8.1.1)))(supports-color@8.1.1)(webdriverio@9.29.1(supports-color@8.1.1))':
     dependencies:
       '@types/node': 20.19.34
@@ -7913,6 +7942,10 @@ snapshots:
       '@types/node': 20.19.34
 
   '@wdio/types@9.29.1':
+    dependencies:
+      '@types/node': 20.19.34
+
+  '@wdio/types@9.30.1':
     dependencies:
       '@types/node': 20.19.34
 
@@ -9798,7 +9831,7 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  konsta@5.0.6(patch_hash=e70007b99d027b357f8b0862f178e53f1dc4878a61608ef0768e2d9ddb06491f):
+  konsta@5.0.6(patch_hash=1e038298da6b55fe1f7ffd625b171603997dbdc355849796317ad1087f5dc569):
     dependencies:
       tailwind-merge: 3.4.0
 
@@ -11188,7 +11221,7 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.10.1
 
-  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a20b82e5091fa9834b1ea1014fc336ebfe7c4547(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)):
+  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/99be13fce0c81f23b877fee5593a29afe582f569(signalium@3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)):
     dependencies:
       '@tauri-apps/api': 2.11.0
       signalium: 3.0.1(patch_hash=2434c32ec6541581a3371ef13e18f9c98602a03fc523506343db8fb7b23caa97)

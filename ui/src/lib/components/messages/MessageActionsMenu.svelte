@@ -5,12 +5,15 @@
 	import type { DeviceId, Message } from 'dash-chat-stores';
 	import { canEditMessage } from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
+	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 
 	interface Props {
 		message: Message;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
 		onCopy: () => void;
+		/** Called when the delete action is pressed, before the confirm dialog
+		 * opens — the hosting popover/overlay closes itself here. */
 		onDelete?: () => void;
 		/** Names this mount. A desktop message hosts two of these menus at once —
 		 * the hover toolbar's and the right-click one — so they need distinct
@@ -28,6 +31,8 @@
 	}: Props = $props();
 
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
+
+	let confirmingDelete = $state(false);
 </script>
 
 <List nested data-testid={testid}>
@@ -45,13 +50,16 @@
 		onClick={onCopy}
 		data-testid="message-action-copy"
 	/>
-	{#if onDelete}
-		<ListAction
-			title={m.delete()}
-			icon={mdiDeleteOutline}
-			actionType="danger"
-			onClick={onDelete}
-			data-testid="message-action-delete"
-		/>
-	{/if}
+	<ListAction
+		title={m.delete()}
+		icon={mdiDeleteOutline}
+		actionType="danger"
+		onClick={() => {
+			onDelete?.();
+			confirmingDelete = true;
+		}}
+		data-testid="message-action-delete"
+	/>
 </List>
+
+<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />

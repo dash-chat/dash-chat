@@ -1,5 +1,5 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,24 +34,79 @@ const DEVICE_PUSH_PORT = 3201;
 /** `android` = physical device, `android-emulator` = running emulator. */
 export type AndroidKind = 'android' | 'android-emulator';
 
+/** Appium's extension home — the uiautomator2 driver installs here, not in
+ *  node_modules. Without it appium falls back to the pnpm workspace, where
+ *  npm-driven driver installs break on pnpm-managed packages. */
+const APPIUM_HOME = path.join(E2E_DIR, '.appium');
+
 /** Flake-pinned chromedrivers (one per device WebView major), provided at
  *  this path by the androidDev shellHook; Appium picks the matching one per
  *  device. */
 const CHROMEDRIVERS_DIR = path.join(E2E_DIR, '.appium', 'chromedrivers');
 
-function assertAndroidToolsAvailable() {
+// Lives in .appium, not .dbs/e2e: onPrepare wipes .dbs/e2e after the launcher
+// (config load) has already written the capture.
+const ANDROID_ENV_FILE = path.join(E2E_DIR, '.appium', 'android-env.json');
+
+/** Env the android commands (adb, boot-emulator, the APK build) run with:
+ *  process.env when the harness already has the androidDev shell's tools,
+ *  otherwise the shell env captured by ensureAndroidEnv. */
+let androidEnv: NodeJS.ProcessEnv = process.env;
+
+function androidToolsAvailable(env: NodeJS.ProcessEnv): boolean {
 	try {
-		execSync('command -v adb', { stdio: 'ignore' });
+		execSync('command -v adb', { stdio: 'ignore', env });
 	} catch {
-		throw new Error(
-			'adb not found — Android agents run inside the androidDev dev ' +
-				"shell ('just test e2e' handles this)",
-		);
+		return false;
 	}
-	if (!existsSync(CHROMEDRIVERS_DIR)) {
+	return existsSync(CHROMEDRIVERS_DIR);
+}
+
+/** One `nix develop` call captures the androidDev shell's full env; its
+ *  shellHook also materializes CHROMEDRIVERS_DIR as a side effect. */
+function captureAndroidDevShellEnv(): NodeJS.ProcessEnv {
+	console.log('Capturing the androidDev shell env (nix develop)...');
+	const out = execSync(
+		`nix develop "git+file:${ROOT}#androidDev" --command env -0`,
+		{ encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+	);
+	const env: NodeJS.ProcessEnv = {};
+	for (const entry of out.split('\0')) {
+		const i = entry.indexOf('=');
+		if (i > 0) env[entry.slice(0, i)] = entry.slice(i + 1);
+	}
+	return env;
+}
+
+// The appium server is spawned by @wdio/appium-service with this process's
+// env, and its uiautomator2 driver locates adb through PATH/ANDROID_HOME —
+// the one part of the captured shell env that must land in process.env.
+function applyAppiumServerEnv() {
+	for (const key of ['PATH', 'ANDROID_HOME', 'ANDROID_SDK_ROOT']) {
+		const value = androidEnv[key];
+		if (value !== undefined) process.env[key] = value;
+	}
+}
+
+/** Make the androidDev shell's tools reachable without wrapping the whole
+ *  harness in `nix develop`: capture the shell env once in the launcher and
+ *  pass it explicitly to every android command. The capture is pinned to a
+ *  file so wdio workers reuse it instead of re-evaluating the flake. */
+function ensureAndroidEnv() {
+	const pinned = process.env._WDIO_ANDROID_ENV_FILE;
+	if (pinned !== undefined) {
+		androidEnv = JSON.parse(readFileSync(pinned, 'utf8')) as NodeJS.ProcessEnv;
+		return;
+	}
+	if (androidToolsAvailable(process.env)) return;
+	androidEnv = captureAndroidDevShellEnv();
+	mkdirSync(path.dirname(ANDROID_ENV_FILE), { recursive: true });
+	writeFileSync(ANDROID_ENV_FILE, JSON.stringify(androidEnv));
+	process.env._WDIO_ANDROID_ENV_FILE = ANDROID_ENV_FILE;
+	applyAppiumServerEnv();
+	if (!androidToolsAvailable(androidEnv)) {
 		throw new Error(
-			`${CHROMEDRIVERS_DIR} not found — the androidDev shellHook ` +
-				"provides it ('just test e2e' handles this)",
+			'adb or the chromedrivers dir still missing after capturing the androidDev shell env',
 		);
 	}
 }
@@ -59,7 +114,7 @@ function assertAndroidToolsAvailable() {
 function deviceAbi(udid: string): string {
 	const abilist = execSync(
 		`adb -s ${udid} shell getprop ro.product.cpu.abilist`,
-		{ encoding: 'utf8' },
+		{ encoding: 'utf8', env: androidEnv },
 	).trim();
 	const abi = abilist.split(',').find(a => a in ABIS);
 	if (abi === undefined) {
@@ -74,7 +129,7 @@ function apkForDevice(udid: string): string {
 }
 
 function warnAboutUnauthorizedDevices() {
-	const out = execSync('adb devices', { encoding: 'utf8' });
+	const out = execSync('adb devices', { encoding: 'utf8', env: androidEnv });
 	if (/unauthorized$/m.test(out)) {
 		console.warn(
 			'Note: an unauthorized device is connected — accept its USB ' +
@@ -115,7 +170,11 @@ function bootMissingEmulators(needed: number) {
 		for pid in "\${pids[@]}"; do wait "$pid"; done
 	`;
 	try {
-		execSync(script, { shell: 'bash', timeout: 600_000 * toBoot });
+		execSync(script, {
+			shell: 'bash',
+			timeout: 600_000 * toBoot,
+			env: androidEnv,
+		});
 	} catch (err) {
 		const lines = readFileSync(logFile, 'utf8').split('\n');
 		console.error(lines.slice(-100).join('\n'));
@@ -129,19 +188,23 @@ function bootMissingEmulators(needed: number) {
 function ensureUiautomator2Driver() {
 	const installed = execSync(
 		'pnpm exec appium driver list --installed 2>&1 || true',
-		{ encoding: 'utf8', cwd: E2E_DIR, env: envWithoutWdioLoader() },
+		{
+			encoding: 'utf8',
+			cwd: E2E_DIR,
+			env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
+		},
 	);
 	if (!installed.includes('uiautomator2')) {
 		execSync('pnpm exec appium driver install uiautomator2@4.2.9', {
 			stdio: 'inherit',
 			cwd: E2E_DIR,
-			env: envWithoutWdioLoader(),
+			env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
 		});
 	}
 }
 
 function connectedDevices(): string[] {
-	const out = execSync('adb devices', { encoding: 'utf8' });
+	const out = execSync('adb devices', { encoding: 'utf8', env: androidEnv });
 	return out
 		.split('\n')
 		.slice(1)
@@ -211,10 +274,31 @@ function startLogcatLogger(agent: string, udid: string): ChildProcess {
 			`until uid=$(pm list packages -U ${APP_PACKAGE} | sed -n 's/.*uid://p') && ` +
 				'[ -n "$uid" ]; do sleep 1; done; logcat -T 1 --uid=$uid',
 		],
-		{ stdio: ['ignore', 'pipe', 'ignore'] },
+		{ stdio: ['ignore', 'pipe', 'ignore'], env: androidEnv },
 	);
 	echoLinesWithPrefix(agent, proc.stdout!);
 	return proc;
+}
+
+/** Wait until the OS has verified the app's App Links domains. Verification
+ *  runs asynchronously after install (the debug key is listed in the hosted
+ *  assetlinks.json), and an unforced VIEW intent sent before it completes
+ *  would resolve to the browser instead of the app. */
+export async function waitForAppLinksVerified(udid: string): Promise<void> {
+	const deadline = Date.now() + 30_000;
+	for (;;) {
+		const out = execSync(
+			`adb -s ${udid} shell pm get-app-links ${APP_PACKAGE}`,
+			{ encoding: 'utf8', timeout: 10_000, env: androidEnv },
+		);
+		if (/:\s*verified/.test(out)) return;
+		if (Date.now() > deadline) {
+			throw new Error(
+				`App Links for ${APP_PACKAGE} never became verified:\n${out}`,
+			);
+		}
+		await new Promise(resolve => setTimeout(resolve, 500));
+	}
 }
 
 /** Kill the app on `udid` and wait for its process to die. Unlike
@@ -223,7 +307,7 @@ export function stopAndroidApp(udid: string): void {
 	execSync(
 		`adb -s ${udid} shell "am stop-app ${APP_PACKAGE} && ` +
 			`until ! pidof ${APP_PACKAGE} >/dev/null; do sleep 0.2; done"`,
-		{ stdio: 'ignore', timeout: 30_000 },
+		{ stdio: 'ignore', timeout: 30_000, env: androidEnv },
 	);
 }
 
@@ -243,10 +327,10 @@ export class AndroidPlatform implements AgentPlatform {
 	private loggers = new Map<number, ChildProcess>();
 
 	constructor(kindBySlot: Map<number, AndroidKind>) {
-		assertAndroidToolsAvailable();
+		ensureAndroidEnv();
 		this.slots = [...kindBySlot.keys()];
 		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
-		process.env.APPIUM_HOME = path.join(E2E_DIR, '.appium');
+		process.env.APPIUM_HOME = APPIUM_HOME;
 		// Workers reload this module; device provisioning belongs to the
 		// launcher, which claims before any worker starts.
 		if (process.env.WDIO_WORKER_ID === undefined) {
@@ -284,7 +368,9 @@ export class AndroidPlatform implements AgentPlatform {
 				// session gets handed back stale on the next context switch.
 				'appium:recreateChromeDriverSessions': true,
 				'appium:adbExecTimeout': 60_000,
-				'appium:newCommandTimeout': 240,
+				// 0 disables idle expiry: specs like review-checks park one agent
+				// for the whole spec after setup, far beyond any sane timeout.
+				'appium:newCommandTimeout': 0,
 			} as WebdriverIO.Capabilities,
 		};
 	}
@@ -305,11 +391,14 @@ export class AndroidPlatform implements AgentPlatform {
 		const targets = new Set(
 			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
 		);
-		const buildEnv: NodeJS.ProcessEnv = envWithoutWdioLoader({
-			MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
-			CARGO_PROFILE_DEV_DEBUG: '0',
-			CARGO_PROFILE_DEV_STRIP: 'symbols',
-		});
+		const buildEnv: NodeJS.ProcessEnv = envWithoutWdioLoader(
+			{
+				MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
+				CARGO_PROFILE_DEV_DEBUG: '0',
+				CARGO_PROFILE_DEV_STRIP: 'symbols',
+			},
+			androidEnv,
+		);
 		// Real-device push spec: bake the push-server URL so the device registers
 		// its FCM token with the host's local push server (bridged below).
 		if (ctx.pushPort !== null) {
@@ -337,6 +426,7 @@ export class AndroidPlatform implements AgentPlatform {
 			try {
 				execSync(`adb -s ${udid} uninstall ${APP_PACKAGE}`, {
 					stdio: 'ignore',
+					env: androidEnv,
 				});
 			} catch {
 				/* not installed */
@@ -346,11 +436,13 @@ export class AndroidPlatform implements AgentPlatform {
 			// host's mailbox server over USB.
 			execSync(
 				`adb -s ${udid} reverse tcp:${DEVICE_MAILBOX_PORT} tcp:${ctx.mailboxPort}`,
+				{ env: androidEnv },
 			);
 			// Same for the push server, when the real-device push spec is enabled.
 			if (ctx.pushPort !== null) {
 				execSync(
 					`adb -s ${udid} reverse tcp:${DEVICE_PUSH_PORT} tcp:${ctx.pushPort}`,
+					{ env: androidEnv },
 				);
 			}
 		}
@@ -374,7 +466,9 @@ export class AndroidPlatform implements AgentPlatform {
 		for (const udid of this.udids.values()) {
 			for (const port of [DEVICE_MAILBOX_PORT, DEVICE_PUSH_PORT]) {
 				try {
-					execSync(`adb -s ${udid} reverse --remove tcp:${port}`);
+					execSync(`adb -s ${udid} reverse --remove tcp:${port}`, {
+						env: androidEnv,
+					});
 				} catch {
 					/* device gone or reverse already removed */
 				}

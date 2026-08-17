@@ -26,7 +26,7 @@
 				showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		} finally {
-			imageFilePicker.value = '';
+			if (imageFilePicker) imageFilePicker.value = '';
 		}
 	}
 

@@ -32,6 +32,13 @@ pub async fn report(
             )
         })?;
 
+    tracing::info!(
+        "Stored report from {} against {} device(s): {:?}",
+        payload.reporter_pubkey,
+        payload.reported_device_ids.len(),
+        payload.reported_device_ids
+    );
+
     Ok(StatusCode::CREATED)
 }
 

@@ -4,7 +4,7 @@
  * the cost of a chat that keeps growing shows up.
  *
  * Skips itself unless E2E_STRESS=1. Run it with:
- *   PLATFORMS=android,desktop just test e2e media-stress
+ *   PLATFORMS=android,android-emulator just e2e run media-stress
  */
 import { statSync } from 'node:fs';
 
@@ -77,15 +77,10 @@ describe('Media stress', function () {
 		if (process.env.E2E_STRESS !== '1') this.skip();
 		// The blob count is read straight off the local mailbox's store.
 		if (isRemoteMailbox()) this.skip();
-		const [agent1, agent2] = await setupAgents(this, [
+		[sender, receiver] = await setupAgents(this, [
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		// Prefer a phone as the receiver: fetching is the leg under test.
-		[sender, receiver] =
-			agent1.platform !== 'desktop' && agent2.platform === 'desktop'
-				? [agent2, agent1]
-				: [agent1, agent2];
 		await sender.createProfilePage.createProfile(senderName, 'Stress');
 		await receiver.createProfilePage.createProfile(receiverName, 'Stress');
 		await exchangeContacts(sender, receiver);

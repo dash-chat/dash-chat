@@ -4,11 +4,12 @@
 // as collateral, which makes nested pnpm calls fail.
 export function envWithoutWdioLoader(
 	extra: NodeJS.ProcessEnv = {},
+	base: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-	const base = Object.fromEntries(
-		Object.entries(process.env).filter(
+	const filtered = Object.fromEntries(
+		Object.entries(base).filter(
 			([k]) => k !== 'NODE_OPTIONS' && !/^(npm_|pnpm_)/i.test(k),
 		),
 	);
-	return { ...base, ...extra };
+	return { ...filtered, ...extra };
 }

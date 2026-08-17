@@ -1,4 +1,4 @@
-use crate::app_node::AppNode;
+use crate::node::AppNodeManager;
 use tauri::{Manager, Runtime, UriSchemeContext, UriSchemeResponder};
 
 /// Handle an `irohblob://{hash}` request by loading the blob's bytes from the
@@ -72,7 +72,7 @@ fn sniff_content_type(bytes: &[u8]) -> &'static str {
 
 async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Result<Vec<u8>> {
     let node = app
-        .try_state::<AppNode>()
+        .try_state::<AppNodeManager>()
         .ok_or_else(|| anyhow::anyhow!("node not yet initialized"))?
         .get()
         .await

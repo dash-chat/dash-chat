@@ -39,7 +39,7 @@ describe('Group chat list last-event summary', () => {
 		await agent1.homePage.ready();
 
 		const row = await agent1.homePage.chatRowText('mygroup');
-		expect(row).toContain('You created the group.');
+		expect(row).toContain(await agent1.tr('youCreatedTheGroup'));
 	});
 
 	it('shows "Member added." after a member is added to the group', async () => {
@@ -60,14 +60,18 @@ describe('Group chat list last-event summary', () => {
 		await agent1.homePage.ready();
 
 		const aliceRow = await agent1.homePage.chatRowText('mygroup');
-		expect(aliceRow).toContain('You added Bob Test.');
+		expect(aliceRow).toContain(
+			await agent1.tr('youAddedMember', { name: 'Bob Test' }),
+		);
 
 		// The group arrives over p2p sync, which can be slow on real devices.
 		await agent2.homePage.chatListItem('mygroup').waitForExist({
 			timeout: SYNC_TIMEOUT,
 		});
 		const bobRow = await agent2.homePage.chatRowText('mygroup');
-		expect(bobRow).toContain('Alice Test added you to the group.');
+		expect(bobRow).toContain(
+			await agent2.tr('someoneAddedYouToTheGroup', { name: 'Alice Test' }),
+		);
 	});
 
 	it('shows the latest message text once a message is sent', async () => {

@@ -50,12 +50,12 @@ export function spawnMailboxServer(
 ): ChildProcess {
 	// The prebuilt binary (built by wdio.conf's onPrepare) is spawned
 	// directly: `cargo run` here would rebuild with whatever toolchain is on
-	// PATH — under the androidDev shell of an Android combo that means
-	// recompiling the world and blowing the readiness timeout.
+	// PATH, which can mean recompiling the world and blowing the readiness
+	// timeout.
 	const bin = path.join(ROOT, 'target', 'debug', 'mailbox-server');
 	if (!existsSync(bin)) {
 		throw new Error(
-			`${bin} not found — run the suite via 'just test e2e' (which builds ` +
+			`${bin} not found — run the suite via 'just e2e' (which builds ` +
 				`it) or 'cargo build -p mailbox-server'`,
 		);
 	}

@@ -20,7 +20,6 @@
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
-	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -67,10 +66,8 @@
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
-	let confirmingDelete = $state(false);
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
-		if (!hasBody(message.content)) return;
 		if (isMobile) {
 			reactionsOpened = true;
 		} else if (e instanceof MouseEvent) {
@@ -111,14 +108,10 @@
 	{/if}
 {/snippet}
 
-<div class="group flex justify-start" use:longpress={{ onLongPress }}>
+{#snippet bubble()}
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile && hasBody(message.content)}
-			<MessageHoverToolbar
-				{message}
-				{myDeviceId}
-				onDelete={() => (confirmingDelete = true)}
-			/>
+			<MessageHoverToolbar {message} {myDeviceId} />
 		{/if}
 		<div class="row items-end gap-2">
 			{#if showAvatar}
@@ -166,22 +159,22 @@
 			</div>
 		{/if}
 	</div>
-</div>
+{/snippet}
+
+{#if deleted}
+	<div class="group flex justify-start">{@render bubble()}</div>
+{:else}
+	<div class="group flex justify-start" use:longpress={{ onLongPress }}>
+		{@render bubble()}
+	</div>
+{/if}
 {#if isMobile}
 	<MessageActionsOverlay
 		{message}
 		{myDeviceId}
-		onDelete={() => (confirmingDelete = true)}
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
 {:else}
-	<MessageContextMenu
-		{message}
-		{myDeviceId}
-		onDelete={() => (confirmingDelete = true)}
-		bind:point={contextMenuPoint}
-	/>
+	<MessageContextMenu {message} {myDeviceId} bind:point={contextMenuPoint} />
 {/if}
-
-<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />
