@@ -314,6 +314,21 @@ const TAP_HOLD_MS = 100;
 /** How many times to re-tap an element whose tap never reached the page. */
 const TAP_ATTEMPTS = 3;
 
+/** A fresh handle for `element`, resolved again through the same parent chain
+ *  it was originally found by, or null if it is no longer in the page. */
+async function refetch(
+	element: WebdriverIO.Element,
+): Promise<WebdriverIO.Element | null> {
+	const parent = element.parent;
+	const scope =
+		'selector' in parent && parent.selector !== undefined
+			? await refetch(parent as WebdriverIO.Element)
+			: parent;
+	if (scope === null) return null;
+	const fresh = await scope.$(element.selector).getElement();
+	return (await fresh.isExisting()) ? fresh : null;
+}
+
 /** The centre of `element`, once a touch there would actually reach it.
  *
  *  A tap is aimed at a point, so it hits whatever is topmost there — during a
@@ -324,7 +339,7 @@ const TAP_ATTEMPTS = 3;
 async function tapPoint(
 	agent: WebdriverIO.Browser,
 	element: WebdriverIO.Element,
-): Promise<{ x: number; y: number }> {
+): Promise<{ x: number; y: number; live: WebdriverIO.Element }> {
 	// Without this the wait below spends its whole timeout re-throwing "not a
 	// valid element" from execute, and reports that instead of the real problem:
 	// the app is on a different page than the test thinks.
@@ -333,9 +348,18 @@ async function tapPoint(
 			`Cannot tap ${String(element.selector)}: it is not in the page`,
 		);
 	}
+	// A re-render between resolving the handle and polling it invalidates the
+	// handle, and `isExisting()` cannot tell: it re-queries the selector and
+	// answers for the replacement node. So the poll re-fetches through the
+	// handle's own parent/selector chain each time (which is what WDIO does for
+	// stale elements) rather than reusing the one it was given. Selectors here
+	// are not all CSS — `a*=name` chains off a parent — so this cannot be a
+	// `document.querySelector` inside the page.
 	return await agent.waitUntil(
-		async () =>
-			await agent.execute((el: HTMLElement) => {
+		async () => {
+			const live = await refetch(element);
+			if (live === null) return null;
+			const point = await agent.execute((el: HTMLElement) => {
 				const rect = el.getBoundingClientRect();
 				const x = rect.x + rect.width / 2;
 				const y = rect.y + rect.height / 2;
@@ -343,7 +367,9 @@ async function tapPoint(
 				return topmost !== null && (topmost === el || el.contains(topmost))
 					? { x, y }
 					: null;
-			}, element),
+			}, live);
+			return point === null ? null : { ...point, live };
+		},
 		{
 			timeoutMsg:
 				`${String(element.selector)} is in the page but never became the ` +
@@ -414,8 +440,8 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 				return await origClick();
 			}
 			for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
-				const { x, y } = await tapPoint(agent, this);
-				if (await clickReachedElement(agent, this, x, y)) return;
+				const { x, y, live } = await tapPoint(agent, this);
+				if (await clickReachedElement(agent, live, x, y)) return;
 				console.warn(
 					`[ios] tap at ${x},${y} did not reach ${String(this.selector)} ` +
 						`(attempt ${attempt}/${TAP_ATTEMPTS})`,
