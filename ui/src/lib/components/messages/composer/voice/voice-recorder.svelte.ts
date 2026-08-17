@@ -9,16 +9,18 @@ import {
 	stopRecording,
 } from 'tauri-plugin-audio-recorder-api';
 
-import { computeWaveform, decodeToBuffer } from './audioBuffer';
+import { isMobile } from '$lib/utils/environment';
+
 import { RecordingLevels } from './recording-levels.svelte';
 
 let warmUpPromise: Promise<unknown> | undefined;
 
 /** Touches the cpal host up front so the first recording doesn't pay its ~2s
- * cold init. Only helps a press that follows soon after: Linux/ALSA suspends an
- * idle capture device and reopening costs ~1.9s again within seconds. */
+ * cold init (desktop-only; mobile recorders don't use cpal). Only helps a
+ * press that follows soon after: Linux/ALSA suspends an idle capture device
+ * and reopening costs ~1.9s again within seconds. */
 export function warmUpRecorder(): void {
-	if (warmUpPromise) return;
+	if (isMobile || warmUpPromise) return;
 	warmUpPromise = getDevices().catch(() => {});
 }
 
@@ -186,4 +188,51 @@ async function cleanup(paths: string[]): Promise<void> {
 			// Best-effort temp cleanup.
 		}
 	}
+}
+
+const WAVEFORM_BARS = 48;
+
+let audioContext: AudioContext | undefined;
+
+function sharedAudioContext(): AudioContext {
+	if (!audioContext) audioContext = new AudioContext();
+	return audioContext;
+}
+
+async function decodeToBuffer(bytes: Uint8Array): Promise<AudioBuffer> {
+	// `decodeAudioData` detaches the passed ArrayBuffer, so hand it a copy.
+	const copy = bytes.slice().buffer;
+	return sharedAudioContext().decodeAudioData(copy);
+}
+
+/**
+ * Reduces a decoded buffer into `WAVEFORM_BARS` amplitudes (0..=255) for the
+ * scrubber, with the loudest mapped to 255 so quiet recordings still fill the
+ * waveform.
+ */
+function computeWaveform(buffer: AudioBuffer): Uint8Array {
+	const data = buffer.getChannelData(0);
+	const bucketSize = Math.max(1, Math.floor(data.length / WAVEFORM_BARS));
+	const peaks = new Float32Array(WAVEFORM_BARS);
+	let max = 0;
+	for (let i = 0; i < WAVEFORM_BARS; i++) {
+		peaks[i] = bucketPeak(data, i * bucketSize, bucketSize);
+		if (peaks[i] > max) max = peaks[i];
+	}
+	const out = new Uint8Array(WAVEFORM_BARS);
+	if (max === 0) return out;
+	for (let i = 0; i < WAVEFORM_BARS; i++) {
+		out[i] = Math.round((peaks[i] / max) * 255);
+	}
+	return out;
+}
+
+function bucketPeak(data: Float32Array, start: number, size: number): number {
+	const end = Math.min(start + size, data.length);
+	let peak = 0;
+	for (let i = start; i < end; i++) {
+		const amp = Math.abs(data[i]);
+		if (amp > peak) peak = amp;
+	}
+	return peak;
 }

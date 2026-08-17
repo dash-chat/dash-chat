@@ -8,6 +8,7 @@
 	import IconButton from '$lib/components/IconButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import type { VoiceControl } from './voice-control.svelte';
+	import { warmUpRecorder } from './voice-recorder.svelte';
 
 	interface Props {
 		voice: VoiceControl;
@@ -15,7 +16,7 @@
 
 	let { voice }: Props = $props();
 
-	onMount(() => voice.warmUp());
+	onMount(warmUpRecorder);
 
 	// Free the mic if we leave the chat mid-recording.
 	onDestroy(() => void voice.cancel());

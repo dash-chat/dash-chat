@@ -3,7 +3,7 @@ import { isMobile } from '$lib/utils/environment';
 import type { DraftVoiceNote } from '$lib/utils/media';
 import { showToast } from '$lib/utils/toasts';
 
-import { VoiceRecorder, warmUpRecorder } from './voice-recorder.svelte';
+import { VoiceRecorder } from './voice-recorder.svelte';
 
 interface DragState {
 	cancelProgress: number;
@@ -57,21 +57,16 @@ export class VoiceControl {
 		return active ? 'locked' : 'idle';
 	}
 
-	warmUp() {
-		if (!isMobile) warmUpRecorder();
-	}
-
-	async stopAndSend(): Promise<boolean> {
+	async stopAndSend(): Promise<void> {
 		let draft: DraftVoiceNote | undefined;
 		try {
 			draft = await this.recorder.stop();
 		} catch (e) {
 			console.error('Failed to finish voice recording', e);
 			showToast(m.voiceRecordFailed(), 'error');
-			return false;
+			return;
 		}
 		if (draft) this.onRecorded(draft);
-		return !!draft;
 	}
 
 	cancel(): Promise<void> {

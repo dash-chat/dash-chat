@@ -7,7 +7,7 @@
 		elapsedMs: number;
 		levels: number[];
 		onCancel: () => void;
-		onSend: () => Promise<boolean>;
+		onSend: () => Promise<void>;
 	}
 
 	let { elapsedMs, levels, onCancel, onSend }: Props = $props();
