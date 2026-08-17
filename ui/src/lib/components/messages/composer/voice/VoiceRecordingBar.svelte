@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { useTheme } from 'konsta/svelte';
+	import { Button, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiChevronLeft } from '@mdi/js';
@@ -46,15 +46,18 @@
 
 		<div class="flex-1"></div>
 
-		<button
-			type="button"
-			class="px-2 py-1 text-base font-medium text-red-500 active:opacity-60"
-			onclick={() => void voice.cancel()}
+		<Button
+			clear
+			rounded
+			inline
+			onClick={() => void voice.cancel()}
+			colors={{ textIos: 'text-red-500', textMaterial: 'text-red-500' }}
 			aria-label={m.voiceCancel()}
 			data-testid="voice-cancel"
+			style="width: auto"
 		>
 			{m.cancel()}
-		</button>
+		</Button>
 	</div>
 {:else if voice.view === 'desktop'}
 	<div class="voice-bar voice-bar-flush bg-page-surface">
