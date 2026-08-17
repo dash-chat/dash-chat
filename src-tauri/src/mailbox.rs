@@ -7,7 +7,7 @@ use tokio_util::task::AbortOnDropHandle;
 // (which would otherwise show up as a connected "local" mailbox and break
 // offline-UX assertions).
 #[cfg(not(feature = "e2e-tests"))]
-const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
+const MDNS_SERVICE_TYPE: &str = mailbox_local_server::MDNS_SERVICE_TYPE;
 #[cfg(feature = "e2e-tests")]
 const MDNS_SERVICE_TYPE: &str = "_dashchat-e2e._tcp.local.";
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
