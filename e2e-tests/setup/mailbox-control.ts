@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { spawnMailboxServer, waitForMailboxReady } from './mailbox-server';
+import { remoteMailboxUrl } from './test-env';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MAILBOX_INFO_PATH = path.join(
@@ -26,11 +27,9 @@ const MAILBOX_INFO_PATH = path.join(
 
 interface MailboxInfo {
 	url: string;
-	/** Set when the suite runs against a remote environment mailbox (MAILBOX_URL). */
-	remote?: boolean;
-	pid?: number;
-	port?: number;
-	dbPath?: string;
+	pid: number;
+	port: number;
+	dbPath: string;
 	pushNotificationsUrl?: string;
 }
 
@@ -39,33 +38,21 @@ function readInfo(): MailboxInfo {
 }
 
 /**
- * True when the suite runs against a remote environment mailbox, whose
- * lifecycle specs cannot control. Specs using the helpers below should skip
- * themselves when this returns true.
+ * True when the suite runs against a remote environment mailbox (MAILBOX_URL),
+ * whose lifecycle specs cannot control. Specs using the helpers below should
+ * skip themselves when this returns true.
  */
 export function isRemoteMailbox(): boolean {
-	return readInfo().remote === true;
+	return remoteMailboxUrl() !== null;
 }
 
-function localInfo(): {
-	pid: number;
-	port: number;
-	url: string;
-	dbPath: string;
-	pushNotificationsUrl?: string;
-} {
-	const { remote, pid, port, url, dbPath, pushNotificationsUrl } = readInfo();
-	if (
-		remote === true ||
-		pid === undefined ||
-		port === undefined ||
-		dbPath === undefined
-	) {
+function localInfo(): MailboxInfo {
+	if (isRemoteMailbox()) {
 		throw new Error(
 			'mailbox lifecycle control is unavailable against a remote environment mailbox (MAILBOX_URL)',
 		);
 	}
-	return { pid, port, url, dbPath, pushNotificationsUrl };
+	return readInfo();
 }
 
 function mailboxBlobsDir(): string {
