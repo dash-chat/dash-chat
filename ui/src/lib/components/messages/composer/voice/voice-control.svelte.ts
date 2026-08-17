@@ -57,16 +57,17 @@ export class VoiceControl {
 		return active ? 'locked' : 'idle';
 	}
 
-	async stopAndSend(): Promise<void> {
+	async stopAndSend(): Promise<boolean> {
 		let draft: DraftVoiceNote | undefined;
 		try {
 			draft = await this.recorder.stop();
 		} catch (e) {
 			console.error('Failed to finish voice recording', e);
 			showToast(m.voiceRecordFailed(), 'error');
-			return;
+			return false;
 		}
 		if (draft) this.onRecorded(draft);
+		return !!draft;
 	}
 
 	cancel(): Promise<void> {

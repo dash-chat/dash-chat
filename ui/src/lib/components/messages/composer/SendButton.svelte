@@ -6,7 +6,7 @@
 	import { mdiCheck, mdiSend } from '@mdi/js';
 
 	interface Props {
-		onSend: () => Promise<void>;
+		onSend: () => Promise<boolean>;
 		/** Show a checkmark (save edit) instead of the send arrow. */
 		editing?: boolean;
 		testid?: string;

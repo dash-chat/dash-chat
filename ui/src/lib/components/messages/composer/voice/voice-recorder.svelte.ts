@@ -1,3 +1,4 @@
+import { isMobile } from '$lib/utils/environment';
 import type { DraftVoiceNote } from '$lib/utils/media';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, remove } from '@tauri-apps/plugin-fs';
@@ -8,8 +9,6 @@ import {
 	startRecording,
 	stopRecording,
 } from 'tauri-plugin-audio-recorder-api';
-
-import { isMobile } from '$lib/utils/environment';
 
 import { RecordingLevels } from './recording-levels.svelte';
 
@@ -24,7 +23,7 @@ export function warmUpRecorder(): void {
 	warmUpPromise = getDevices().catch(() => {});
 }
 
-export type RecorderPhase =
+type RecorderPhase =
 	| 'idle'
 	| 'requesting'
 	| 'recording'
