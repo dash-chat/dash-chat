@@ -83,16 +83,6 @@
             pango
             # libatk-1.0
             at-spi2-core
-            # GStreamer so WebKitGTK can play voice-note audio (<audio> WAV).
-            gst_all_1.gstreamer
-            gst_all_1.gst-plugins-base
-            gst_all_1.gst-plugins-good
-            pkgsPnpm.alsa-lib
-          ];
-          gstPluginPath = pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" [
-            pkgs.gst_all_1.gstreamer
-            pkgs.gst_all_1.gst-plugins-base
-            pkgs.gst_all_1.gst-plugins-good
           ];
           nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
           # One toolchain (host + android targets) shared by the default and
@@ -120,10 +110,6 @@
               export LD_LIBRARY_PATH="${pkgs.mesa}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             fi
           '';
-          # Voice notes: let WebKitGTK find GStreamer plugins for <audio> playback.
-          voiceHostEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
-            export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPluginPath}"
-          '';
           packages = [
             pkgs.mprocs
             pkgs.just
@@ -133,16 +119,13 @@
             pkgs.doctl
             inputs'.tauri-driver.packages.tauri-driver
           ]
-          ++ lib.optionals pkgs.stdenv.isLinux [
-            pkgs.mold
-            pkgsPnpm.alsa-lib
-          ];
+          ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
         in
         rec {
           devShells.default = pkgs.mkShell {
             packages = [ rust ] ++ packages;
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            shellHook = hostBuildEnvHook + voiceHostEnvHook;
+            shellHook = hostBuildEnvHook;
           };
 
           # Opt-in faster dev builds: nightly rustc with the Cranelift codegen backend
@@ -151,7 +134,6 @@
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
             shellHook =
               hostBuildEnvHook
-              + voiceHostEnvHook
               + lib.optionalString pkgs.stdenv.isLinux ''
                 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS -Zcodegen-backend=cranelift"
               '';
