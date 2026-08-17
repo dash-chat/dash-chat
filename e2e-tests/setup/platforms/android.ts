@@ -8,7 +8,11 @@ import { allocatePinnedPort } from '../allocate-port';
 import { hashFile } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
 import { runTurboBuild } from '../turbo-build';
-import type { AgentPlatform, PrepareContext } from './platform';
+import {
+	type AgentPlatform,
+	type PrepareContext,
+	remoteBakedEnv,
+} from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -440,12 +444,6 @@ export class AndroidPlatform implements AgentPlatform {
 	}
 
 	async onPrepare(ctx: PrepareContext) {
-		if (ctx.mailboxPort === null) {
-			throw new Error(
-				'Android agents need a local mailbox server (the e2e APK bakes http://127.0.0.1:3200)',
-			);
-		}
-
 		ensureUiautomator2Driver();
 
 		// Build the e2e APKs only for the claimed devices' architectures.
@@ -455,17 +453,26 @@ export class AndroidPlatform implements AgentPlatform {
 		const targets = new Set(
 			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
 		);
+		// Against a local mailbox the APK bakes the device's own loopback ports,
+		// bridged to the host below; against a remote deployment it bakes that
+		// deployment's urls directly and there is nothing to bridge.
+		const mailboxEnv: Record<string, string> =
+			ctx.mailboxPort === null
+				? remoteBakedEnv()
+				: {
+						MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
+						...(ctx.pushPort !== null
+							? {
+									PUSH_NOTIFICATIONS_SERVER_URL: `http://127.0.0.1:${DEVICE_PUSH_PORT}`,
+								}
+							: {}),
+					};
 		const bakedEnv: Record<string, string> = {
-			MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
+			...mailboxEnv,
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
 			E2E_ANDROID_TARGETS: [...targets].join(' '),
 		};
-		// Real-device push spec: bake the push-server URL so the device registers
-		// its FCM token with the host's local push server (bridged below).
-		if (ctx.pushPort !== null) {
-			bakedEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://127.0.0.1:${DEVICE_PUSH_PORT}`;
-		}
 		runTurboBuild(
 			'e2e:build:android',
 			envWithoutWdioLoader(bakedEnv, androidEnv),
@@ -474,6 +481,8 @@ export class AndroidPlatform implements AgentPlatform {
 		for (const udid of this.udids.values()) {
 			ensureApkInstalled(udid);
 
+			// A remote mailbox is reached directly; only a local one is bridged.
+			if (ctx.mailboxPort === null) continue;
 			// Bridge the device's loopback port (baked into the APK) to the
 			// host's mailbox server over USB.
 			execSync(

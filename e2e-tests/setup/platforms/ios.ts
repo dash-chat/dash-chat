@@ -10,7 +10,11 @@ import { deviceHasBuild, recordInstalled } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
 import { runTurboBuild } from '../turbo-build';
 import { switchToWebview, waitForTestUtils } from '../webview';
-import type { AgentPlatform, PrepareContext } from './platform';
+import {
+	type AgentPlatform,
+	type PrepareContext,
+	remoteBakedEnv,
+} from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..', '..');
@@ -336,28 +340,36 @@ export class IosPlatform implements AgentPlatform {
 		};
 	}
 
-	async onPrepare(ctx: PrepareContext) {
-		if (ctx.mailboxPort === null) {
-			throw new Error(
-				'iOS agents need a local mailbox server (the e2e build bakes ' +
-					'http://<host-ip>:<port>)',
-			);
-		}
-
-		ensureXcuitestDriver();
-
-		// Bake the LAN-reachable mailbox URL into the build, plus — for the
-		// real-device push spec — the push-notifications server URL so the device
-		// registers its FCM token with the host's local push server.
+	/** The host's LAN address for the local mailbox and push server. */
+	private localBakedEnv(
+		mailboxPort: number,
+		pushPort: number | null,
+	): Record<string, string> {
 		const hostIp = detectHostIp();
 		// Workers inherit the launcher's env, so this is what they check the
 		// host still holds before each session.
 		process.env._WDIO_IOS_HOST_IP = hostIp;
-		const mailboxUrl = `http://${hostIp}:${ctx.mailboxPort}`;
-		const bakedEnv: Record<string, string> = { MAILBOX_URL: mailboxUrl };
-		if (ctx.pushPort !== null) {
-			bakedEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://${hostIp}:${ctx.pushPort}`;
+		const bakedEnv: Record<string, string> = {
+			MAILBOX_URL: `http://${hostIp}:${mailboxPort}`,
+		};
+		if (pushPort !== null) {
+			bakedEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://${hostIp}:${pushPort}`;
 		}
+		return bakedEnv;
+	}
+
+	async onPrepare(ctx: PrepareContext) {
+		ensureXcuitestDriver();
+
+		// The app reaches its mailbox and push server at whatever this bakes in.
+		// Against a local mailbox that is the host's LAN address; against a
+		// remote deployment it is that deployment's own mailbox and push server —
+		// they must match, since the mailbox notifies its own push server and the
+		// device registers its token with the one it was built for.
+		const bakedEnv =
+			ctx.mailboxPort === null
+				? remoteBakedEnv()
+				: this.localBakedEnv(ctx.mailboxPort, ctx.pushPort);
 		syncXcodeEnv(bakedEnv);
 		// The task's last step (scripts/export-session-ipa.ts) copies the built
 		// .ipa to SESSION_IPA, so turbo snapshots and restores the final artifact.
