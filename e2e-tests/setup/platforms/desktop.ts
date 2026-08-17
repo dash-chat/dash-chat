@@ -13,6 +13,7 @@ import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import { killAllE2EProcesses, killAndWait, killPortHolders } from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
+import { runTurboBuild } from '../turbo-build';
 import { waitForPortFree, waitForPortListening } from '../wait-for-port';
 import type { AgentPlatform } from './platform';
 
@@ -116,14 +117,13 @@ export class DesktopPlatform implements AgentPlatform {
 	}
 
 	async onPrepare() {
-		execSync('pnpm tauri build --debug --no-bundle --features e2e-tests', {
-			cwd: ROOT,
-			stdio: 'inherit',
-			env: envWithoutWdioLoader({
+		runTurboBuild(
+			'e2e:build:desktop',
+			envWithoutWdioLoader({
 				VITE_E2E: 'true',
 				CARGO_PROFILE_DEV_DEBUG: '0',
 			}),
-		});
+		);
 		// Kill any leftover processes from previous interrupted runs.
 		killAllE2EProcesses();
 		killPortHolders(this.ports);

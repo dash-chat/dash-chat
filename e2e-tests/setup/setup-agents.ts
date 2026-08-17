@@ -45,7 +45,9 @@ import {
 	waitForAppLinksVerified,
 } from './platforms/android';
 import { readOpenedUrls } from './platforms/desktop';
+import { resetIosAppState } from './platforms/ios';
 import { type AgentPlatformName, platformNames } from './test-env';
+import { switchToWebview, waitForTestUtils } from './webview';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
@@ -106,9 +108,9 @@ export type Agent = WebdriverIO.Browser & {
 	 *  to the new session, and restore narrow layout. */
 	restart(): Promise<void>;
 	/** Close the app, leaving its on-disk state intact so [`startApp`] brings
-	 *  the same user back. Android keeps the WebDriver session alive: tearing it
-	 *  down there reinstalls the APK on the next session, so the app would
-	 *  return as a fresh install with no profile. */
+	 *  the same user back. Android keeps the WebDriver session alive: a new
+	 *  session there fast-resets (`pm clear`), so the app would return with no
+	 *  profile. */
 	stopApp(): Promise<void>;
 	/** Send the app to the background (home button) without killing it.
 	 *  On Android this is a home-key press; on desktop it is currently a no-op. */
@@ -456,49 +458,6 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 	);
 }
 
-/** Attach to the app's webview context, which a relaunch drops out of.
- *
- *  On Android the app's context must be matched by name: other apps' webviews
- *  can be listed too (a backgrounded Chrome appears as WEBVIEW_chrome, and it
- *  can be the only one listed while the app is still starting). iOS names
- *  WKWebView contexts WEBVIEW_<id> with no package, but the app's webview is
- *  the only one there. */
-async function switchToWebview(
-	agent: WebdriverIO.Browser,
-	platform: AgentPlatformName,
-): Promise<void> {
-	const isAppWebview = (id: string) =>
-		platform === 'ios'
-			? id.startsWith('WEBVIEW')
-			: id === `WEBVIEW_${APP_PACKAGE}`;
-	let webview: string | undefined;
-	await agent.waitUntil(
-		async () => {
-			const contexts = await agent.getContexts();
-			webview = contexts
-				.map(context => (typeof context === 'string' ? context : context.id))
-				.find(isAppWebview);
-			return webview !== undefined;
-		},
-		{ timeoutMsg: 'no app WEBVIEW context after relaunch' },
-	);
-	await agent.switchContext(webview!);
-}
-
-/** Wait for window.__test to be registered on a single agent. */
-export async function waitForTestUtils(
-	agent: WebdriverIO.Browser,
-): Promise<void> {
-	await agent.waitUntil(
-		async () => agent.execute(() => typeof window.__test !== 'undefined'),
-		{
-			timeout: 30_000,
-			interval: 500,
-			timeoutMsg: 'window.__test not registered',
-		},
-	);
-}
-
 /** Build an agent by capability name and wait for window.__test to be ready.
  *  Defaults to narrow (mobile) layout so back buttons and FABs render — review
  *  checks switch to wide explicitly when they need the desktop two-panel UI. */
@@ -509,9 +468,14 @@ async function setupAgent(
 ): Promise<Agent> {
 	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
-	// Before makeAgent: it resolves every page object's element, and an element
-	// built before the overwrite keeps the original click.
-	if (platform === 'ios') tapWebElementsAtTheirRect(b);
+	if (platform === 'ios') {
+		// Each spec file gets fresh sessions but not a fresh install, so state
+		// from the previous spec is wiped here.
+		await resetIosAppState(b);
+		// Before makeAgent: it resolves every page object's element, and an
+		// element built before the overwrite keeps the original click.
+		tapWebElementsAtTheirRect(b);
+	}
 	const agent = makeAgent(b);
 	agent.platform = platform;
 	agent.waitForOpenedUrls = async (count = 1) => {
