@@ -38,9 +38,9 @@ export class VoiceRecording {
 	// A hold-and-release also passes through `encoding`, but must not surface the
 	// locked bar while the WAV encodes — only a genuinely locked take should.
 	private wasLocked = $state(false);
-	// The pointer can be released while `recorder.start()` is still awaiting the
-	// native start, which would otherwise leave it stuck recording.
-	private releasedWhileStarting = false;
+	// The pointer can be released while the native start is still in flight, so
+	// the up/cancel handlers await this before acting on the recorder.
+	private starting: Promise<void> | undefined;
 
 	constructor(private onRecorded: (draft: DraftVoiceNote) => void) {
 		this.recorder.onMaxDuration = () => void this.stopAndSend();
@@ -93,30 +93,16 @@ export class VoiceRecording {
 		return this.recorder.cancel();
 	}
 
-	onPointerDown = async (event: PointerEvent) => {
+	onPointerDown = (event: PointerEvent) => {
 		event.preventDefault();
 		const el = event.currentTarget as HTMLElement;
 		el.setPointerCapture(event.pointerId);
 		this.startX = event.clientX;
 		this.startY = event.clientY;
 		this.willCancel = false;
-		this.releasedWhileStarting = false;
 		this.wasLocked = false;
 		this.isRtl = getComputedStyle(el).direction === 'rtl';
-		await this.recorder.start();
-		if (this.recorder.phase === 'denied') {
-			showToast(m.voiceMicDenied(), 'error');
-			this.recorder.phase = 'idle';
-			return;
-		}
-		if (this.recorder.phase !== 'recording') return;
-		// A mouse can't comfortably press-and-hold, so a click records hands-free.
-		if (event.pointerType === 'mouse') {
-			this.recorder.lock();
-			this.wasLocked = true;
-			return;
-		}
-		if (this.releasedWhileStarting) await this.finishHold();
+		this.starting = this.startRecording(event.pointerType === 'mouse');
 	};
 
 	onPointerMove = (event: PointerEvent) => {
@@ -140,31 +126,40 @@ export class VoiceRecording {
 
 	onPointerUp = async () => {
 		this.drag = idle;
-		// Released before the async start finished: defer the finish to onPointerDown.
-		if (this.recorder.phase === 'requesting') {
-			this.releasedWhileStarting = true;
-			return;
-		}
+		await this.starting;
 		if (this.recorder.phase !== 'recording') return;
-		await this.finishHold();
-	};
-
-	onPointerCancel = async () => {
-		this.drag = idle;
-		if (this.recorder.phase === 'requesting') {
-			this.willCancel = true;
-			this.releasedWhileStarting = true;
-			return;
-		}
-		await this.recorder.cancel();
-	};
-
-	private async finishHold() {
 		if (this.willCancel || this.recorder.elapsedMs < MIN_DURATION_MS) {
 			await this.recorder.cancel();
 			if (!this.willCancel) showToast(m.voiceRecordHint(), 'default');
 			return;
 		}
 		await this.stopAndSend();
+	};
+
+	onPointerCancel = async () => {
+		this.drag = idle;
+		await this.starting;
+		// A locked take is hands-free, so a stray pointercancel must not end it.
+		if (this.recorder.phase === 'recording') await this.recorder.cancel();
+	};
+
+	private async startRecording(handsFree: boolean): Promise<void> {
+		let granted: boolean;
+		try {
+			granted = await this.recorder.start();
+		} catch (e) {
+			console.error('Failed to start voice recording', e);
+			showToast(m.voiceRecordFailed(), 'error');
+			return;
+		}
+		if (!granted) {
+			showToast(m.voiceMicDenied(), 'error');
+			return;
+		}
+		// A mouse can't comfortably press-and-hold, so a click records hands-free.
+		if (handsFree && this.recorder.phase === 'recording') {
+			this.recorder.lock();
+			this.wasLocked = true;
+		}
 	}
 }

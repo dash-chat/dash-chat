@@ -1,7 +1,6 @@
 import type { DraftVoiceNote } from '$lib/utils/media';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, remove } from '@tauri-apps/plugin-fs';
-import audioBufferToWav from 'audiobuffer-to-wav';
 import {
 	getDevices,
 	getStatus,
@@ -10,7 +9,7 @@ import {
 	stopRecording,
 } from 'tauri-plugin-audio-recorder-api';
 
-import { computeWaveform, decodeToBuffer, resampleToMono } from './audioBuffer';
+import { computeWaveform, decodeToBuffer } from './audioBuffer';
 import { RecordingLevels } from './recording-levels.svelte';
 
 let warmUpPromise: Promise<unknown> | undefined;
@@ -28,11 +27,21 @@ export type RecorderPhase =
 	| 'requesting'
 	| 'recording'
 	| 'locked'
-	| 'denied'
 	| 'encoding';
 
 const MAX_DURATION_SECONDS = 300;
-const TARGET_SAMPLE_RATE = 16000;
+
+// What each platform's recorder writes: desktop WAV, Android M4A, iOS ADTS AAC.
+const MIME_BY_EXTENSION: Record<string, string> = {
+	wav: 'audio/wav',
+	m4a: 'audio/mp4',
+	aac: 'audio/aac',
+};
+
+function mimeTypeFromPath(path: string): string {
+	const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+	return MIME_BY_EXTENSION[extension] ?? 'application/octet-stream';
+}
 
 /** Owns the voice-note recording lifecycle and is the only place that touches
  * the audio plugins. */
@@ -49,8 +58,10 @@ export class VoiceRecorder {
 		return this.phase === 'recording' || this.phase === 'locked';
 	}
 
-	async start(): Promise<void> {
-		if (this.isActive || this.phase === 'requesting') return;
+	/** Starts a recording. Resolves `false` when the mic permission was denied,
+	 * `true` otherwise (including when a recording is already active). */
+	async start(): Promise<boolean> {
+		if (this.isActive || this.phase === 'requesting') return true;
 		this.phase = 'requesting';
 		// The overlay is already up during `requesting`, so clear the prior take's
 		// time before it can render.
@@ -58,8 +69,8 @@ export class VoiceRecorder {
 		try {
 			const permission = await requestPermission();
 			if (!permission.granted) {
-				this.phase = 'denied';
-				return;
+				this.phase = 'idle';
+				return false;
 			}
 			// Straight into the cache dir, no subdirectory: that keeps the path
 			// within the granted `scope-appcache`.
@@ -85,6 +96,7 @@ export class VoiceRecorder {
 			// the `outputPath` we asked for.
 			const status = await getStatus();
 			if (status.outputPath) await this.levels.start(status.outputPath);
+			return true;
 		} catch (e) {
 			this.phase = 'idle';
 			throw e;
@@ -108,19 +120,13 @@ export class VoiceRecorder {
 			filePath = result.filePath;
 			const recorded = await readFile(result.filePath);
 			const decoded = await decodeToBuffer(recorded);
-			// Desktop records WAV already; mobile records AAC/M4A and is re-encoded
-			// here rather than natively, since iOS `AVAssetExportSession` can't emit WAV.
-			const isWav = result.filePath.toLowerCase().endsWith('.wav');
-			const buffer = isWav
-				? decoded
-				: await resampleToMono(decoded, TARGET_SAMPLE_RATE);
 			return {
-				bytes: isWav ? recorded : new Uint8Array(audioBufferToWav(buffer)),
-				mimeType: 'audio/wav',
+				bytes: recorded,
+				mimeType: mimeTypeFromPath(result.filePath),
 				// The recorder's wall-clock duration overshoots the decoded audio and
 				// leaves the scrubber short of the end.
-				durationMs: Math.round(buffer.duration * 1000),
-				waveform: computeWaveform(buffer),
+				durationMs: Math.round(decoded.duration * 1000),
+				waveform: computeWaveform(decoded),
 			};
 		} finally {
 			this.phase = 'idle';

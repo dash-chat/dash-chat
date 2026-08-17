@@ -1,5 +1,3 @@
-import WebaudioPeaks from 'webaudio-peaks';
-
 export const WAVEFORM_BARS = 48;
 
 let audioContext: AudioContext | undefined;
@@ -16,23 +14,6 @@ export async function decodeToBuffer(bytes: Uint8Array): Promise<AudioBuffer> {
 }
 
 /**
- * Renders a decoded buffer down to mono at `sampleRate`, normalizing mobile
- * recordings to the low-rate WAV the desktop recorder already produces.
- */
-export async function resampleToMono(
-	buffer: AudioBuffer,
-	sampleRate: number,
-): Promise<AudioBuffer> {
-	const frames = Math.max(1, Math.ceil(buffer.duration * sampleRate));
-	const offline = new OfflineAudioContext(1, frames, sampleRate);
-	const source = offline.createBufferSource();
-	source.buffer = buffer;
-	source.connect(offline.destination);
-	source.start();
-	return offline.startRendering();
-}
-
-/**
  * Reduces a decoded buffer into `bars` amplitudes (0..=255) for the scrubber,
  * with the loudest mapped to 255 so quiet recordings still fill the waveform.
  */
@@ -40,33 +21,28 @@ export function computeWaveform(
 	buffer: AudioBuffer,
 	bars = WAVEFORM_BARS,
 ): Uint8Array {
-	const samplesPerPixel = Math.max(1, Math.floor(buffer.length / bars));
-	// `data[0]` holds 8-bit min/max pairs per pixel. `cueOut` must be the sample
-	// count: it is not defaulted at 0, which would yield a flat waveform.
-	const { data } = WebaudioPeaks(
-		buffer,
-		samplesPerPixel,
-		true,
-		0,
-		buffer.length,
-		8,
-	);
-	const peaks = data[0];
-	const pixels = Math.floor(peaks.length / 2);
-	if (pixels === 0) return new Uint8Array(bars);
-
-	const amplitudes = new Float32Array(bars);
+	const data = buffer.getChannelData(0);
+	const bucketSize = Math.max(1, Math.floor(data.length / bars));
+	const peaks = new Float32Array(bars);
 	let max = 0;
 	for (let i = 0; i < bars; i++) {
-		const p = Math.min(i, pixels - 1);
-		const amp = Math.max(Math.abs(peaks[p * 2]), Math.abs(peaks[p * 2 + 1]));
-		amplitudes[i] = amp;
-		if (amp > max) max = amp;
+		peaks[i] = bucketPeak(data, i * bucketSize, bucketSize);
+		if (peaks[i] > max) max = peaks[i];
 	}
-
 	const out = new Uint8Array(bars);
+	if (max === 0) return out;
 	for (let i = 0; i < bars; i++) {
-		out[i] = max > 0 ? Math.round((amplitudes[i] / max) * 255) : 0;
+		out[i] = Math.round((peaks[i] / max) * 255);
 	}
 	return out;
+}
+
+function bucketPeak(data: Float32Array, start: number, size: number): number {
+	const end = Math.min(start + size, data.length);
+	let peak = 0;
+	for (let i = start; i < end; i++) {
+		const amp = Math.abs(data[i]);
+		if (amp > peak) peak = amp;
+	}
+	return peak;
 }

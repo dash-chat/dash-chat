@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import WaveSurfer from 'wavesurfer.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { VoicePlayer } from './voice-player.svelte';
 
@@ -13,79 +11,17 @@
 
 	let { peaks, durationSec, player }: Props = $props();
 
-	let container: HTMLDivElement;
-	let wavesurfer: WaveSurfer | undefined;
+	const MIN_HEIGHT_PERCENT = 12;
+	const heights = $derived(
+		peaks.map(p => MIN_HEIGHT_PERCENT + p * (100 - MIN_HEIGHT_PERCENT)),
+	);
+	const progress = $derived(
+		player.durationSec > 0
+			? Math.min(1, player.currentTime / player.durationSec)
+			: 0,
+	);
 
-	function parseRgb(color: string): [number, number, number] {
-		const [r = '0', g = '0', b = '0'] = color.match(/\d+(\.\d+)?/g) ?? [];
-		return [Number(r), Number(g), Number(b)];
-	}
-
-	// wavesurfer composites `progressColor` onto the wave canvas with `source-in`,
-	// multiplying alphas — a translucent `waveColor` would make progress invisible,
-	// so bake opaque colors against the surface behind the bars instead.
-	function mixOver(color: string, background: string, alpha: number): string {
-		const [r, g, b] = parseRgb(color);
-		const [br, bg, bb] = parseRgb(background);
-		const mix = (f: number, b: number) =>
-			Math.round(f * alpha + b * (1 - alpha));
-		return `rgb(${mix(r, br)}, ${mix(g, bg)}, ${mix(b, bb)})`;
-	}
-
-	/** First ancestor background that isn’t fully transparent. */
-	function resolveBackground(el: HTMLElement): string {
-		let node: HTMLElement | null = el;
-		while (node) {
-			const bg = getComputedStyle(node).backgroundColor;
-			const parts = bg.match(/\d+(\.\d+)?/g);
-			if (parts && (parts.length < 4 || Number(parts[3]) > 0)) return bg;
-			node = node.parentElement;
-		}
-		return 'rgb(0, 0, 0)';
-	}
-
-	// wavesurfer renders only the static bars: its media element doesn’t advance
-	// `currentTime` for blob audio on iOS WKWebView, so the shared player drives
-	// the played region instead.
-	function renderProgress() {
-		const duration = player.durationSec;
-		if (!wavesurfer || duration <= 0) return;
-		wavesurfer
-			.getRenderer()
-			.renderProgress(
-				Math.min(1, player.currentTime / duration),
-				!player.paused,
-			);
-	}
-
-	$effect(() => {
-		player.currentTime;
-		player.paused;
-		renderProgress();
-	});
-
-	onMount(() => {
-		const color = getComputedStyle(container).color;
-		const background = resolveBackground(container);
-		wavesurfer = WaveSurfer.create({
-			container,
-			height: 28,
-			barWidth: 2,
-			barGap: 2,
-			barRadius: 2,
-			cursorWidth: 0,
-			interact: false,
-			normalize: false,
-			waveColor: mixOver(color, background, 0.35),
-			progressColor: mixOver(color, background, 0.95),
-			peaks: [peaks],
-			duration: durationSec,
-		});
-	});
-
-	onDestroy(() => {
-		wavesurfer?.destroy();
-	});
+	let width = $state(0);
 
 	function seekFromPointer(clientX: number, el: HTMLElement) {
 		if (durationSec <= 0) return;
@@ -110,8 +46,8 @@
 	function onKeyDown(event: KeyboardEvent) {
 		if (durationSec <= 0) return;
 		const el = event.currentTarget as HTMLElement;
-		// The scrubber is visually mirrored in RTL, so the arrow keys follow the
-		// visual fill: leftward moves forward in time.
+		// The fill grows from the inline-start, so the arrow keys follow the
+		// visual fill: in RTL, leftward moves forward in time.
 		const rtl = getComputedStyle(el).direction === 'rtl';
 		const backKey = rtl ? 'ArrowRight' : 'ArrowLeft';
 		const forwardKey = rtl ? 'ArrowLeft' : 'ArrowRight';
@@ -122,9 +58,23 @@
 	}
 </script>
 
+{#snippet bars(opacity: number)}
+	<div
+		class="flex h-full w-full items-center justify-between"
+		aria-hidden="true"
+	>
+		{#each heights as height, i (i)}
+			<span
+				class="w-0.5 shrink-0 rounded-full"
+				style="height: {height}%; background: currentColor; opacity: {opacity}"
+			></span>
+		{/each}
+	</div>
+{/snippet}
+
 <div
-	bind:this={container}
-	class="h-7 min-w-0 flex-1 cursor-pointer rtl:-scale-x-100"
+	bind:clientWidth={width}
+	class="relative h-7 min-w-0 flex-1 cursor-pointer"
 	data-testid="voice-scrubber"
 	role="slider"
 	tabindex="0"
@@ -135,4 +85,15 @@
 	onpointerdown={onPointerDown}
 	onpointermove={onPointerMove}
 	onkeydown={onKeyDown}
-></div>
+>
+	{@render bars(0.35)}
+	<div
+		class="absolute inset-y-0 start-0 overflow-hidden"
+		data-testid="voice-scrubber-played"
+		style="width: {progress * 100}%"
+	>
+		<div class="h-full" style="width: {width}px">
+			{@render bars(0.95)}
+		</div>
+	</div>
+</div>

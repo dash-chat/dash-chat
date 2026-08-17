@@ -229,9 +229,6 @@ importers:
       '@universalappfactory/tauri-plugin-medialibrary':
         specifier: ^0.13.0
         version: 0.13.0
-      audiobuffer-to-wav:
-        specifier: ^1.0.0
-        version: 1.0.0
       cbor:
         specifier: ^10.0.11
         version: 10.0.11
@@ -286,12 +283,6 @@ importers:
       vite-plugin-babel:
         specifier: ^1.3.2
         version: 1.3.2(@babel/core@7.28.5(supports-color@8.1.1))(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.0))
-      wavesurfer.js:
-        specifier: ^7.12.8
-        version: 7.12.11
-      webaudio-peaks:
-        specifier: ^1.0.0
-        version: 1.0.0
     devDependencies:
       '@inlang/paraglide-js':
         specifier: ^2.5.0
@@ -311,9 +302,6 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.1.18(vite@6.3.6(@types/node@24.10.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.0))
-      '@types/audiobuffer-to-wav':
-        specifier: ^1.0.4
-        version: 1.0.4
       svelte:
         specifier: ^5.49.2
         version: 5.49.2
@@ -2041,9 +2029,6 @@ packages:
   '@tsconfig/node16@1.0.4':
     resolution: {integrity: sha512-vxhUy4J8lyeyinH7Azl1pdd43GJhZH/tP2weN8TntQblOY+A0XbT8DJk1/oCPuOOyg/Ja757rG0CgHcWC8OfMA==}
 
-  '@types/audiobuffer-to-wav@1.0.4':
-    resolution: {integrity: sha512-lxIdj8z6koV3CEVW6wEXQiH2XBeTzxq1WWa3BtNtCtH++LO7ivWkciki4to0gmphhDKhSSxlce1zJaHIKJMolw==}
-
   '@types/cookie@0.6.0':
     resolution: {integrity: sha512-4Kh9a6B2bQciAhf7FSuMRRkUWecJgJu9nPnx3yzpsfXX/c50REIqpHY4C82bXP90qrLtXtkDxTZosYO3UpOwlA==}
 
@@ -2488,9 +2473,6 @@ packages:
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
-
-  audiobuffer-to-wav@1.0.0:
-    resolution: {integrity: sha512-CAoir4NRrAzAgYo20tEMiKZR84coE8bq/L+H2kwAaULVY4+0xySsEVtNT5raqpzmH6y0pqzY6EmoViLd9W8F/w==}
 
   axios@1.9.0:
     resolution: {integrity: sha512-re4CqKTJaURpzbLHtIi6XpDv20/CnpXOtjRY5/CU32L8gU8ek9UIivcfvSWvmKEngmVbrUtPpdDwWDWL7DNHvg==}
@@ -5628,17 +5610,11 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  wavesurfer.js@7.12.11:
-    resolution: {integrity: sha512-Sx0yZIz7jRJ9J9p7UL+pl9y0UQBB6UN/XNo+R7Gy4tCR5xZI9jMyA0dnt1R8TMVSQ4LZ10SeB2HJYQ+dV2dPSA==}
-
   wbuf@1.7.3:
     resolution: {integrity: sha512-O84QOnr0icsbFGLS0O3bI5FswxzRr8/gHwWkDlQFskhSPryQXvrTMxjxGP4+iWYoauLoBvfDpkrOauZ+0iZpDA==}
 
   wcwidth@1.0.1:
     resolution: {integrity: sha512-XHPEwS0q6TaxcvG85+8EYkbiCux2XtWG2mkc47Ng2A77BQu9+DqIOJldST4HgPkuea7dvKSj5VgX3P1d4rW8Tg==}
-
-  webaudio-peaks@1.0.0:
-    resolution: {integrity: sha512-N7ck946hz2LNZxVveeMA3nWawFwYxfd0LYVXBwLJJvOrOx/8QBTFMuqqz+qUZecjDPpMxgNWsRSU/pTy5B7CSw==}
 
   webbuf@3.0.28:
     resolution: {integrity: sha512-1szv8g4lR6wjSiUIO/13mLzwloidbNHlC4dh7inTVuA2FWvbNvIignrO1+XM77BqiDOVbnFJF4YfvSUPB1rsew==}
@@ -7503,8 +7479,6 @@ snapshots:
 
   '@tsconfig/node16@1.0.4': {}
 
-  '@types/audiobuffer-to-wav@1.0.4': {}
-
   '@types/cookie@0.6.0': {}
 
   '@types/estree@1.0.8': {}
@@ -8183,8 +8157,6 @@ snapshots:
       source-map-support: 0.5.21
 
   asynckit@0.4.0: {}
-
-  audiobuffer-to-wav@1.0.0: {}
 
   axios@1.9.0(debug@4.4.3(supports-color@8.1.1)):
     dependencies:
@@ -11511,8 +11483,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  wavesurfer.js@7.12.11: {}
-
   wbuf@1.7.3:
     dependencies:
       minimalistic-assert: 1.0.1
@@ -11521,8 +11491,6 @@ snapshots:
   wcwidth@1.0.1:
     dependencies:
       defaults: 1.0.4
-
-  webaudio-peaks@1.0.0: {}
 
   webbuf@3.0.28:
     dependencies:

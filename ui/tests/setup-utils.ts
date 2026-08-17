@@ -267,36 +267,48 @@ function voiceSeekFraction(fraction: number): number {
 }
 
 function voiceProgress(): number {
-	const scrubber = document.querySelector('[data-testid="voice-scrubber"]');
-	const progress = scrubber
-		?.querySelector('div')
-		?.shadowRoot?.querySelector<HTMLElement>('.progress');
-	if (!progress) return 0;
-	return parseFloat(progress.style.width) / 100 || 0;
+	const played = document.querySelector<HTMLElement>(
+		'[data-testid="voice-scrubber-played"]',
+	);
+	if (!played) return 0;
+	return parseFloat(played.style.width) / 100 || 0;
 }
 
-/** Peak bar luminance of the unplayed vs played canvases: wavesurfer composites
- * with `source-in`, so a translucent waveColor makes the two indistinguishable. */
+/** On-screen luminance of an unplayed vs played waveform bar (the bar's color
+ * alpha-composited over the bubble background), to prove the played region is
+ * visibly distinct. */
 function voiceBarLuminance(): { unplayed: number; played: number } {
-	const shadow = document
-		.querySelector('[data-testid="voice-scrubber"]')
-		?.querySelector('div')?.shadowRoot;
-	const peak = (canvas: HTMLCanvasElement | null | undefined): number => {
-		if (!canvas) return 0;
-		const ctx = canvas.getContext('2d');
-		if (!ctx) return 0;
-		const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-		let max = 0;
-		for (let i = 0; i < data.length; i += 4) {
-			const lum =
-				((data[i] + data[i + 1] + data[i + 2]) / 3) * (data[i + 3] / 255);
-			if (lum > max) max = lum;
+	const scrubber = document.querySelector<HTMLElement>(
+		'[data-testid="voice-scrubber"]',
+	);
+	if (!scrubber) return { unplayed: 0, played: 0 };
+	const channels = (color: string): number[] =>
+		(color.match(/\d+(\.\d+)?/g) ?? []).map(Number);
+	let background = [255, 255, 255];
+	for (
+		let el: HTMLElement | null = scrubber;
+		el !== null;
+		el = el.parentElement
+	) {
+		const parts = channels(getComputedStyle(el).backgroundColor);
+		if (parts.length >= 3 && (parts.length < 4 || parts[3] > 0)) {
+			background = parts;
+			break;
 		}
-		return max;
+	}
+	const backgroundLum = (background[0] + background[1] + background[2]) / 3;
+	const composite = (span: Element | null): number => {
+		if (!span) return 0;
+		const style = getComputedStyle(span);
+		const [r = 0, g = 0, b = 0] = channels(style.color);
+		const alpha = parseFloat(style.opacity);
+		return ((r + g + b) / 3) * alpha + backgroundLum * (1 - alpha);
 	};
 	return {
-		unplayed: peak(shadow?.querySelector('.canvases canvas')),
-		played: peak(shadow?.querySelector('.progress canvas')),
+		unplayed: composite(scrubber.querySelector(':scope > div > span')),
+		played: composite(
+			scrubber.querySelector('[data-testid="voice-scrubber-played"] span'),
+		),
 	};
 }
 
