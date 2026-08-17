@@ -3,7 +3,7 @@ import { isMobile } from '$lib/utils/environment';
 import type { DraftVoiceNote } from '$lib/utils/media';
 import { showToast } from '$lib/utils/toasts';
 
-import { VoiceRecorder, warmUpRecorder } from './useVoiceRecorder.svelte';
+import { VoiceRecorder, warmUpRecorder } from './voice-recorder.svelte';
 
 export interface DragState {
 	cancelProgress: number;
@@ -23,10 +23,10 @@ function clamp01(value: number): number {
 	return Math.max(0, Math.min(1, value));
 }
 
-/** The press-and-hold recording gesture and its phase. Lives outside both
- * components because the mic sits inside the input pill while the bars span the
- * composer row. */
-export class VoiceRecording {
+/** The press-and-hold recording gesture and which composer surface it shows.
+ * Lives outside both components because the mic sits inside the input pill
+ * while the bars span the composer row. */
+export class VoiceControl {
 	readonly recorder = new VoiceRecorder();
 	drag: DragState = $state(idle);
 
@@ -45,30 +45,16 @@ export class VoiceRecording {
 		this.recorder.onMaxDuration = () => void this.stopAndSend();
 	}
 
-	get showLockedBar(): boolean {
-		return (
-			this.recorder.phase === 'locked' ||
-			(this.recorder.phase === 'encoding' && this.wasLocked)
-		);
-	}
-
-	// Hold visuals are touch-only (desktop click-records straight into the locked
-	// bar), and show from `requesting` so they appear on press, not after startup.
-	get recordingHoldMobile(): boolean {
-		return (
-			(this.recorder.phase === 'recording' ||
-				this.recorder.phase === 'requesting') &&
-			isMobile
-		);
-	}
-
-	// The mic overlaps the bar’s own send button and, painting later, would steal
-	// its taps.
-	get barReplacesButton(): boolean {
-		return (
-			!this.recordingHoldMobile &&
-			(this.showLockedBar || this.recorder.isActive)
-		);
+	/** Which composer surface the recording UI occupies right now. Mobile holds
+	 * show from `requesting` so they appear on press, not after startup; a
+	 * locked take keeps its surface while the recording encodes. */
+	get view(): 'idle' | 'hold' | 'locked' | 'desktop' {
+		const { phase } = this.recorder;
+		const active =
+			this.recorder.isActive || (phase === 'encoding' && this.wasLocked);
+		if (!isMobile) return active ? 'desktop' : 'idle';
+		if (phase === 'recording' || phase === 'requesting') return 'hold';
+		return active ? 'locked' : 'idle';
 	}
 
 	warmUp() {

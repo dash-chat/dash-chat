@@ -4,7 +4,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiChevronLeft } from '@mdi/js';
 	import RecordingIndicator from './RecordingIndicator.svelte';
-	import type { DragState } from './voice-recording.svelte';
+	import type { DragState } from './voice-control.svelte';
 
 	interface Props {
 		elapsedMs: number;

@@ -7,10 +7,10 @@
 	import { isMobile } from '$lib/utils/environment';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
-	import type { VoiceRecording } from './voice-recording.svelte';
+	import type { VoiceControl } from './voice-control.svelte';
 
 	interface Props {
-		voice: VoiceRecording;
+		voice: VoiceControl;
 	}
 
 	let { voice }: Props = $props();
@@ -21,13 +21,13 @@
 	onDestroy(() => void voice.cancel());
 </script>
 
-{#if voice.barReplacesButton && isMobile}
+{#if voice.view === 'locked'}
 	<div class="relative z-30 shrink-0">
 		<SendButton onSend={() => voice.stopAndSend()} testid="voice-send" />
 	</div>
-{:else if !voice.barReplacesButton}
-	<div class="relative shrink-0 {voice.recordingHoldMobile ? 'z-30' : ''}">
-		{#if voice.recordingHoldMobile}
+{:else if voice.view !== 'desktop'}
+	<div class="relative shrink-0 {voice.view === 'hold' ? 'z-30' : ''}">
+		{#if voice.view === 'hold'}
 			<div
 				class="lock-pill pointer-events-none absolute bottom-full start-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
 				style="transform: translate(-50%, {-8 * voice.drag.lockProgress}px)"
@@ -46,8 +46,8 @@
 			label={m.voiceRecordHint()}
 			testid="message-input-voice-record"
 			loading={voice.recorder.phase === 'requesting' && !isMobile}
-			iconClass={voice.recordingHoldMobile ? 'text-2xl text-white' : 'text-2xl'}
-			class="!h-[42px] !w-[42px] shrink-0 touch-none {voice.recordingHoldMobile
+			iconClass={voice.view === 'hold' ? 'text-2xl text-white' : 'text-2xl'}
+			class="!h-[42px] !w-[42px] shrink-0 touch-none {voice.view === 'hold'
 				? '!bg-red-500 !opacity-100'
 				: ''}"
 			onpointerdown={voice.onPointerDown}

@@ -18,7 +18,7 @@
 	} from '$lib/utils/media';
 	import VoiceRecordButton from '$lib/components/messages/composer/voice/VoiceRecordButton.svelte';
 	import VoiceRecordingBar from '$lib/components/messages/composer/voice/VoiceRecordingBar.svelte';
-	import { VoiceRecording } from '$lib/components/messages/composer/voice/voice-recording.svelte';
+	import { VoiceControl } from '$lib/components/messages/composer/voice/voice-control.svelte';
 	import {
 		type Hash,
 		type Message,
@@ -223,7 +223,7 @@
 		if (editing) messageInput?.focus();
 	});
 
-	const voice = new VoiceRecording(draft => {
+	const voice = new VoiceControl(draft => {
 		media = { kind: 'voice_note', voice: draft };
 		void send();
 	});
@@ -284,7 +284,7 @@
 		{/if}
 
 		<div class="m-2 row relative gap-2" style="align-items: flex-end;">
-			<VoiceRecordingBar {voice} endButtons={isMobile ? 1 : 2} />
+			<VoiceRecordingBar {voice} />
 
 			{#if editing}
 				{#if !isWideScreen.value}
@@ -308,7 +308,7 @@
 				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
 				banner={editing !== null ? editingBanner : undefined}
-				class={voice.recordingHoldMobile ? 'relative z-30' : ''}
+				class={voice.view === 'hold' ? 'relative z-30' : ''}
 			>
 				{#snippet after()}
 					{#if !editing && isMobile && theme === 'material' && hasContent}

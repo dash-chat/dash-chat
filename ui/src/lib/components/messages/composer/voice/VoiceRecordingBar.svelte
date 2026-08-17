@@ -1,18 +1,15 @@
 <script lang="ts">
 	import { useTheme } from 'konsta/svelte';
-	import { isMobile } from '$lib/utils/environment';
-	import type { VoiceRecording } from './voice-recording.svelte';
+	import type { VoiceControl } from './voice-control.svelte';
 	import VoiceRecordingOverlay from './VoiceRecordingOverlay.svelte';
 	import VoiceLockedBar from './VoiceLockedBar.svelte';
 	import VoiceDesktopBar from './VoiceDesktopBar.svelte';
 
 	interface Props {
-		voice: VoiceRecording;
-		/** Trailing buttons the bar leaves uncovered so they stay reachable. */
-		endButtons: 1 | 2;
+		voice: VoiceControl;
 	}
 
-	let { voice, endButtons }: Props = $props();
+	let { voice }: Props = $props();
 
 	const theme = $derived(useTheme());
 	const surfaceClass = $derived(
@@ -22,39 +19,29 @@
 	);
 </script>
 
-{#if voice.recordingHoldMobile}
-	<div
-		class="voice-bar pointer-events-none {surfaceClass}"
-		class:has-end-button={endButtons === 1}
-		class:has-two-end-buttons={endButtons === 2}
-	>
+{#if voice.view === 'hold'}
+	<div class="voice-bar has-end-button pointer-events-none {surfaceClass}">
 		<VoiceRecordingOverlay
 			elapsedMs={voice.recorder.elapsedMs}
 			drag={voice.drag}
 		/>
 	</div>
-{:else if voice.showLockedBar || voice.recorder.isActive}
-	{#if isMobile}
-		<div
-			class="voice-bar {surfaceClass}"
-			class:has-end-button={endButtons === 1}
-			class:has-two-end-buttons={endButtons === 2}
-		>
-			<VoiceLockedBar
-				elapsedMs={voice.recorder.elapsedMs}
-				onCancel={() => void voice.cancel()}
-			/>
-		</div>
-	{:else}
-		<div class="voice-bar voice-bar-flush bg-page-surface">
-			<VoiceDesktopBar
-				elapsedMs={voice.recorder.elapsedMs}
-				levels={voice.recorder.levels.levels}
-				onCancel={() => void voice.cancel()}
-				onSend={() => voice.stopAndSend()}
-			/>
-		</div>
-	{/if}
+{:else if voice.view === 'locked'}
+	<div class="voice-bar has-end-button {surfaceClass}">
+		<VoiceLockedBar
+			elapsedMs={voice.recorder.elapsedMs}
+			onCancel={() => void voice.cancel()}
+		/>
+	</div>
+{:else if voice.view === 'desktop'}
+	<div class="voice-bar voice-bar-flush bg-page-surface">
+		<VoiceDesktopBar
+			elapsedMs={voice.recorder.elapsedMs}
+			levels={voice.recorder.levels.levels}
+			onCancel={() => void voice.cancel()}
+			onSend={() => voice.stopAndSend()}
+		/>
+	</div>
 {/if}
 
 <style>
@@ -74,10 +61,6 @@
 	   the bordered pill, mirroring the message input's send button. */
 	.voice-bar.has-end-button {
 		inset-inline-end: calc(42px + 0.5rem);
-	}
-	/* Desktop keeps the attach button alongside the mic in that trailing area. */
-	.voice-bar.has-two-end-buttons {
-		inset-inline-end: calc(2 * 42px + 1rem);
 	}
 	/* On desktop the bar spans the full row and lays out its own inner pill plus
 	   the Cancel/Send buttons, so it must not look like a pill — it just paints
