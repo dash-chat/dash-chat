@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Guard: fail if libwayland-client leaked into the built AppImage.
+# Guard: fail if libwayland-client leaked into the built AppImage, or if the
+# GStreamer plugins voice notes need did not get bundled.
 #
 # Backstop for install-ci-linuxdeploy-wrapper.sh. If a future tauri-bundler
 # changes the cached-tool path/filename or the skip-if-exists behaviour, the
-# shim silently stops applying and wayland leaks back in. This converts that
-# silent regression into a loud failure.
+# shim and patched plugins silently stop applying. This converts that silent
+# regression into a loud failure.
 set -euo pipefail
 
 # The bundle lands in the Cargo workspace target dir (repo-root `target/`), but
@@ -42,3 +43,15 @@ if [ -n "$leaked" ]; then
 fi
 
 echo "assert-no-wayland: OK, no libwayland-client bundled in $(basename "$appimage")"
+
+# Same silent-regression risk for bundleMediaFramework: if the gstreamer
+# plugin stops running, voice-note playback breaks only on end-user machines.
+# faad (AAC decode, from plugins-bad) and the alsa/pulse sinks must ship.
+for plugin in libgstfaad.so libgstalsa.so libgstpulseaudio.so; do
+  if [ ! -f "$work/squashfs-root/usr/lib/gstreamer-1.0/$plugin" ]; then
+    echo "assert-gstreamer: $plugin missing from $(basename "$appimage")" >&2
+    exit 1
+  fi
+done
+
+echo "assert-gstreamer: OK, faad and audio sinks bundled in $(basename "$appimage")"

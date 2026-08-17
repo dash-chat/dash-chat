@@ -47,6 +47,11 @@
 		"iOS": {
 			"minimumSystemVersion": "17.0"
 		},
+		"linux": {
+			"appimage": {
+				"bundleMediaFramework": true
+			}
+		},
 		"createUpdaterArtifacts": true
 	},
 	"plugins": {
