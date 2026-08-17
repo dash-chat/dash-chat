@@ -39,11 +39,7 @@
 	<div
 		class="voice-pill flex min-h-[42px] min-w-0 flex-1 items-center gap-3 ps-3 pe-3 bg-white dark:bg-gray-800"
 	>
-		<RecordingIndicator
-			{elapsedMs}
-			micSize={18}
-			timerTestid="voice-recording-timer"
-		/>
+		<RecordingIndicator {elapsedMs} micSize={18} />
 
 		<div class="wave flex h-7 min-w-0 flex-1 items-center" aria-hidden="true">
 			{#each heights as height, i (i)}

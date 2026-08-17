@@ -5,7 +5,7 @@ import { showToast } from '$lib/utils/toasts';
 
 import { VoiceRecorder, warmUpRecorder } from './voice-recorder.svelte';
 
-export interface DragState {
+interface DragState {
 	cancelProgress: number;
 	lockProgress: number;
 }

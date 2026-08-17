@@ -7,10 +7,9 @@
 	interface Props {
 		elapsedMs: number;
 		micSize?: number;
-		timerTestid?: string;
 	}
 
-	let { elapsedMs, micSize = 22, timerTestid }: Props = $props();
+	let { elapsedMs, micSize = 22 }: Props = $props();
 </script>
 
 <wa-icon
@@ -18,7 +17,7 @@
 	style="width: {micSize}px; height: {micSize}px"
 	src={wrapPathInSvg(mdiMicrophone)}
 ></wa-icon>
-<span class="text-sm tabular-nums" data-testid={timerTestid}
+<span class="text-sm tabular-nums" data-testid="voice-recording-timer"
 	>{formatDuration(elapsedMs)}</span
 >
 
