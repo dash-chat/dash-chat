@@ -15,7 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
-import { allocatePort } from './allocate-port';
+import { allocatePreferredPort } from './allocate-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -92,7 +92,9 @@ export async function startLocalMailboxServer(
 	port: number;
 	url: string;
 }> {
-	const port = allocatePort();
+	// A stable port keeps the mailbox URL baked into iOS builds valid across
+	// runs, so turbo's build skip can actually fire (the URL is a hashed input).
+	const port = await allocatePreferredPort(3300);
 	const url = `http://localhost:${port}`;
 	const dbPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-server', 'mailbox.db');
 	mkdirSync(path.dirname(dbPath), { recursive: true });

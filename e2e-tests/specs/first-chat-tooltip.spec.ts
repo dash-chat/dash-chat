@@ -6,11 +6,8 @@
  *
  * Only needs one agent — uses agent1.
  */
-import {
-	type Agent,
-	setupAgents,
-	waitForTestUtils,
-} from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
+import { waitForTestUtils } from '../setup/webview';
 
 describe('FirstChatTooltip', () => {
 	let agent: Agent;

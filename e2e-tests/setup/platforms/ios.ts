@@ -1,11 +1,4 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import {
-	constants,
-	copyFileSync,
-	existsSync,
-	mkdirSync,
-	statSync,
-} from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,19 +6,21 @@ import { fileURLToPath } from 'node:url';
 import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import { deviceHasBuild, recordInstalled } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
+import { runTurboBuild } from '../turbo-build';
+import { switchToWebview, waitForTestUtils } from '../webview';
 import type { AgentPlatform, PrepareContext } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..', '..', '..');
 const E2E_DIR = path.resolve(__dirname, '..', '..');
 
 const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
-const IOS_BUILD_DIR = path.join(ROOT, 'src-tauri/gen/apple/build');
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
-// Fixed home for the .ipa the sessions install, copied here by onPrepare. The
-// capabilities `appium:app` reads are resolved when wdio.conf.ts loads — before
-// onPrepare builds anything — so it can't name a path under the build dir,
+// Fixed home for the .ipa the sessions install, copied here by the
+// e2e:build:ios task's export-session-ipa.ts step. The capabilities
+// `appium:app` reads are resolved when wdio.conf.ts loads — before onPrepare
+// builds anything — so it can't name a path under the build dir,
 // whose layout the tauri build rearranges (it exports the .ipa to the build
 // dir, then moves it into an arch subdir).
 const SESSION_IPA = path.join(E2E_DIR, '.appium', 'dash-chat-e2e.ipa');
@@ -165,31 +160,38 @@ function ensureXcuitestDriver() {
 	}
 }
 
-/** The freshest .ipa under the build dir. Newest wins because earlier layouts
- *  leave their .ipa behind when the build writes the next one elsewhere. */
-function builtIpa(): string {
-	const out = existsSync(IOS_BUILD_DIR)
-		? execSync(`find "${IOS_BUILD_DIR}" -maxdepth 3 -name '*.ipa'`, {
-				encoding: 'utf8',
-			}).trim()
-		: '';
-	const ipas = out
-		.split('\n')
-		.filter(Boolean)
-		.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
-	if (ipas.length === 0) {
-		throw new Error(
-			`No .ipa found under ${IOS_BUILD_DIR} after 'tauri ios build'`,
-		);
-	}
-	return ipas[0];
+/** `mobile: queryAppState` value for "the app is not running". */
+const APP_STATE_NOT_RUNNING = 1;
+
+/** Reset an iOS agent to first-launch state without reinstalling the app.
+ *
+ *  iOS has no adb-style data clear, and reinstalling the ~135MB .ipa per spec
+ *  is what made device runs slow — so the reset is the app's own
+ *  delete_account (the Settings → Account → Delete account code path), which
+ *  wipes the data dir and exits the process. Relaunch, and the spec starts
+ *  from the same state a fresh install would. */
+export async function resetIosAppState(b: WebdriverIO.Browser): Promise<void> {
+	await b.execute(() => window.__test.resetToFirstLaunch());
+	// The command exits the app; leave the webview before it dies under us.
+	await b.switchContext('NATIVE_APP');
+	await b.waitUntil(
+		async () =>
+			Number(
+				await b.execute('mobile: queryAppState', { bundleId: APP_BUNDLE_ID }),
+			) <= APP_STATE_NOT_RUNNING,
+		{ timeoutMsg: 'the app never exited after delete_account' },
+	);
+	await b.activateApp(APP_BUNDLE_ID);
+	await switchToWebview(b, 'ios');
+	await waitForTestUtils(b);
 }
 
 /** Put a device back to a freshly-installed app, retrying the install: CoreDevice
  * intermittently fails with a transient "unable to create bookmark data" /
  * "No such file" error even though the .ipa exists. Best-effort — a device left
- * without the app falls back to the session's own `appium:app` install. */
-async function reinstallApp(udid: string): Promise<void> {
+ * without the app falls back to the session's own `appium:app` install.
+ * Returns whether the devicectl install actually succeeded. */
+async function reinstallApp(udid: string): Promise<boolean> {
 	try {
 		execSync(
 			`xcrun devicectl device uninstall app --device ${udid} ${APP_BUNDLE_ID}`,
@@ -204,18 +206,19 @@ async function reinstallApp(udid: string): Promise<void> {
 				`xcrun devicectl device install app --device ${udid} "${SESSION_IPA}"`,
 				{ stdio: 'inherit' },
 			);
-			return;
+			return true;
 		} catch (err) {
 			if (attempt === 3) {
 				console.warn(
 					`[ios] devicectl install failed for ${udid} after ${attempt} ` +
 						`attempts; falling back to the session's appium:app install: ${err}`,
 				);
-				return;
+				return false;
 			}
 			await new Promise(resolve => setTimeout(resolve, 2000));
 		}
 	}
+	return false;
 }
 
 /** Kill any tail still attached to `udid`.
@@ -288,8 +291,8 @@ export class IosPlatform implements AgentPlatform {
 				'appium:udid': udid,
 				'appium:app': SESSION_IPA,
 				'appium:bundleId': APP_BUNDLE_ID,
-				// beforeSession already reinstalled this exact build through
-				// devicectl; without this the driver installs it a second time
+				// onPrepare already installed this exact build through devicectl;
+				// without this the driver installs it again every session
 				// (`enforceAppInstall` defaults to reinstall-every-session), which is
 				// the usbmux traffic that breaks session creation. Left as `false`
 				// rather than dropping `appium:app`, so a device the devicectl install
@@ -356,10 +359,11 @@ export class IosPlatform implements AgentPlatform {
 			bakedEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://${hostIp}:${ctx.pushPort}`;
 		}
 		syncXcodeEnv(bakedEnv);
-		execSync('pnpm tauri ios build --debug --features e2e-tests', {
-			cwd: ROOT,
-			stdio: 'inherit',
-			env: envWithoutWdioLoader({
+		// The task's last step (scripts/export-session-ipa.ts) copies the built
+		// .ipa to SESSION_IPA, so turbo snapshots and restores the final artifact.
+		runTurboBuild(
+			'e2e:build:ios',
+			envWithoutWdioLoader({
 				...bakedEnv,
 				VITE_E2E: 'true',
 				IPHONEOS_DEPLOYMENT_TARGET: '17.0',
@@ -369,30 +373,32 @@ export class IosPlatform implements AgentPlatform {
 				// churn that made the .ipa export's codesign fail.
 				CARGO_PROFILE_DEV_DEBUG: '0',
 			}),
-		});
+		);
 
-		mkdirSync(path.dirname(SESSION_IPA), { recursive: true });
-		// COPYFILE_FICLONE: APFS clones instead of duplicating the ~135MB payload.
-		copyFileSync(builtIpa(), SESSION_IPA, constants.COPYFILE_FICLONE);
+		// Install once per run (not per spec — specs reset state through the
+		// app's own delete_account instead), and only on devices that don't
+		// already hold this exact build from a previous run.
+		for (const udid of this.udids.values()) {
+			if (deviceHasBuild(udid, SESSION_IPA)) {
+				console.log(
+					`[ios] ${udid} already has the current e2e build — skipping install`,
+				);
+				continue;
+			}
+			if (await reinstallApp(udid)) {
+				recordInstalled(udid, SESSION_IPA);
+			}
+		}
 	}
 
 	async beforeSession() {
 		assertBakedHostIpIsStillOurs();
 		for (const logger of this.loggers.values()) logger.kill();
 		this.loggers.clear();
-		// Every spec's `before` creates a profile, so each session needs the app
-		// back at first launch — hence a reinstall per spec, not just per run.
-		// Doing it here, one device at a time, keeps it off the session's own
-		// `appium:app` install, which pushes the same ~135MB .ipa on both devices
-		// at once and starves the 5s usbmuxd read timeouts inside appium-ios-device
-		// ("Failed to receive any data within the timeout: 5000" out of POST
-		// /session). It also stops the app being "installing or uninstalling" when
-		// FrontBoard is asked to open it ("Application … is unknown to FrontBoard").
-		for (const udid of this.udids.values()) {
-			await reinstallApp(udid);
-		}
-		// Attach the console tails only once the installs are done: idevicesyslog
-		// streams the whole device log over the same usbmux channel.
+		// No reinstall here: onPrepare installed the build once for the whole
+		// run, and each spec resets to first-launch state through the app's own
+		// delete_account (see resetIosAppState above) — far faster than pushing
+		// the ~135MB .ipa over usbmux for every spec.
 		for (const [slot, udid] of this.udids) {
 			const logger = startSyslogLogger(`agent-${slot}`, udid);
 			if (logger) this.loggers.set(slot, logger);
