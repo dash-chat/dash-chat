@@ -49,8 +49,12 @@ describe('Push notifications (real device, end-to-end)', () => {
 
 		await sender.directChatPage.composer.sendMessage(message);
 
-		// The notification body must contain the message text, not a generic fallback.
-		const text = await notifications.waitForNotification(marker);
+		// Wait for *any* notification from the app, then check its content. Waiting
+		// for one that already contains the marker would make the generic-fallback
+		// case ("You have a new message") indistinguishable from no push arriving:
+		// both would time out. This way a fallback fails with its actual body in
+		// the message.
+		const text = await notifications.waitForAppNotification();
 		expect(text).toContain(marker);
 
 		// Tap-to-navigate needs an unlocked device; best-effort, so the content
