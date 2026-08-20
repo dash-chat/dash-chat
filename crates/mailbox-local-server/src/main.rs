@@ -15,9 +15,7 @@ struct Args {
     #[arg(short, long, default_value = "mailbox.redb")]
     db_path: PathBuf,
 
-    /// Address to bind the server to. Binding dual-stack lets peers reach the
-    /// server over both the IPv4 and IPv6 addresses the mDNS record
-    /// auto-announces.
+    /// Address to bind the server to.
     #[arg(short, long, default_value = "[::]:3000")]
     addr: SocketAddr,
 }
