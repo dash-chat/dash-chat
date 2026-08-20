@@ -5089,6 +5089,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mailbox-local-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures",
+ "mailbox-server",
+ "mdns-sd",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "mailbox-server"
 version = "0.1.0"
 dependencies = [

@@ -16,6 +16,9 @@ mod ios 'scripts/ios.just'
 # build digital ocean droplet images
 mod droplet 'scripts/droplet.just'
 
+# build docker images for the mailbox, LAN mailbox and push notifications servers
+mod docker 'scripts/docker.just'
+
 # build dash chat as a binary
 build:
     pnpm tauri build --no-bundle

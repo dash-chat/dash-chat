@@ -37,8 +37,10 @@
       imports = [
         ./nix/servers.nix
         ./nix/digital-ocean.nix
+        ./nix/docker.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
+        ./crates/mailbox-local-server/default.nix
         ./crates/push-notifications-server/default.nix
       ];
 
