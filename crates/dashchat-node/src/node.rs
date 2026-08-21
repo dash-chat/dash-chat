@@ -3,7 +3,7 @@ mod app_processing;
 pub(crate) mod publish;
 mod report;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -1172,7 +1172,7 @@ impl Node {
     pub async fn chat_tombstones(
         &self,
         chat_id: impl Into<ChatId>,
-    ) -> anyhow::Result<Vec<(Hash, crate::stores::TombstoneReason)>> {
+    ) -> anyhow::Result<HashMap<Hash, crate::stores::TombstoneReason>> {
         self.projection.tombstones(chat_id.into().into()).await
     }
 

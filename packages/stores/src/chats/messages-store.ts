@@ -12,11 +12,13 @@ import {
 	MessageVersion,
 	OutgoingMedia,
 	Payload,
-	Tombstone,
+	Tombstones,
 	hasBody,
+	isMessage,
+	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
-import { type MessageReply, type OpInfo, applyReply } from './replies';
+import { type MessageReply } from './replies';
 
 /** The window during which a message may be edited, measured from the original
  * message timestamp. Frontend operation timestamps are milliseconds since the
@@ -38,11 +40,15 @@ export interface Message {
 	timestamp: number;
 	author: DeviceId;
 	seqNum: number;
-	/** Raw hash of the operation this message replies to, straight from the log. */
-	replyTo?: Hash;
-	/** The reply resolved for rendering; unset when the annotation is invalid. */
-	reply?: MessageReply;
+	replyQuote?: MessageReply;
 }
+
+export type Bodyless = {
+	hash: string;
+	timestamp: number;
+	author: DeviceId;
+	seqNum: number;
+};
 
 // The messages of a single chat, direct or group alike: the message log with
 // reactions and read-tracking, plus the actions to publish into it.
@@ -61,55 +67,15 @@ export class MessagesStore {
 		if (chatId === '') return {} as Record<Hash, Message>;
 		const logs = await this.logsStore.logsForAllAuthors(chatId);
 
-		const {
-			messages,
-			ops,
-			bodylessOps,
-			reactionsByTarget,
-			editsByTarget,
-			deleteTargets,
-		} = collectMessageActionsByType(logs);
-
-		for (const [target, byAuthor] of Object.entries(reactionsByTarget)) {
-			const message = messages[target];
-			if (message === undefined) {
-				// A reaction on a tombstoned op is moot, not a missing target.
-				if (bodylessOps[target] === undefined) {
-					console.warn('reaction for missing message');
-				}
-			} else if (hasBody(message.content)) {
-				message.content.reactions = byAuthor;
-			}
-		}
-
-		for (const [hash, message] of Object.entries(messages)) {
-			messages[hash] = applyEdits(message, editsByTarget);
-		}
-
-		const { deleted, placeholderFor } = deletedMessages(
-			deleteTargets,
-			messages,
-			bodylessOps,
-		);
-		Object.assign(messages, deleted);
-
-		// Completely remove any message with a DeletedForMe tombstone.
-		const tombstones = await this.tombstoneStore.tombstones(chatId);
-		for (const { hash, reason } of tombstones) {
-			if (reason === 'DeletedForMe') delete messages[hash];
-		}
-
-		const deletedForMe = deletedForMeHashes(tombstones);
-		for (const [hash, message] of Object.entries(messages)) {
-			messages[hash] = applyReply(
-				message,
-				messages,
-				ops,
-				placeholderFor,
-				deletedForMe,
+		const opsOrdered = Object.values(logs)
+			.flat()
+			.sort(
+				(a, b) =>
+					a.header.timestamp - b.header.timestamp ||
+					a.hash.localeCompare(b.hash),
 			);
-		}
-
+		const tombstones = await this.tombstoneStore.tombstones(chatId);
+		const messages = logsToMessages(opsOrdered, tombstones);
 		return messages;
 	});
 
@@ -218,201 +184,178 @@ export class MessagesStore {
 	}
 }
 
-function deletedForMeHashes(tombstones: Tombstone[]): Set<Hash> {
-	return new Set(
-		tombstones.filter(t => t.reason === 'DeletedForMe').map(t => t.hash),
-	);
-}
+// Apply each log item to the set of messages incrementally.
+//
+// `opsOrdered` is the interleaved list of all operations from all authors in the chat topic.
+// It must be ordered so that any partial ordering constraints are upheld, i.e. items
+// which reference prior items must appear after them.
+//
+// It is also assumed that all operations are valid.
+function logsToMessages(
+	opsOrdered: SimplifiedOperation<Payload>[],
+	tombstones: Tombstones,
+): Record<Hash, Message> {
+	const messages: Record<Hash, Message | Bodyless> = {};
+	// Map of EditMessage -> the target they reference
+	const editTargets: Record<Hash, Hash> = {};
 
-function collectMessageActionsByType(
-	logs: Record<DeviceId, SimplifiedOperation<Payload>[]>,
-): {
-	messages: Record<Hash, Message>;
-	/** Every operation in the chat's logs by hash, the lookup reply resolution
-	 * walks: quotes and scroll targets point at ops that may not render as
-	 * messages themselves (edits, tombstoned bodies). */
-	ops: Record<Hash, OpInfo>;
-	// Operations whose payload is gone, keyed by hash
-	bodylessOps: Record<Hash, SimplifiedOperation<void>>;
-	reactionsByTarget: Record<Hash, Record<DeviceId, string>>;
-	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>;
-	/** One entry per delete: every hash it covers — the original message and its
-	 * edits. */
-	deleteTargets: Hash[][];
-} {
-	const messages: Record<Hash, Message> = {};
-	const ops: Record<Hash, OpInfo> = {};
-	const bodylessOps: Record<Hash, SimplifiedOperation<void>> = {};
-	const reactionsByTarget: Record<Hash, Record<DeviceId, string>> = {};
-	const editsByTarget: Record<Hash, Record<Hash, MessageVersion>> = {};
-	const deleteTargets: Hash[][] = [];
+	for (const op of opsOrdered) {
+		const author = op.header.verifying_key;
+		const body = op.body;
 
-	for (const [author, operations] of Object.entries(logs)) {
-		for (const operation of operations) {
-			const body = operation.body;
-			ops[operation.hash] = {
+		if (tombstones[op.hash] || !body) {
+			// Put a bodyless placeholder for any deleted messages,
+			// because we need something in place for the rest of the rendering to work.
+			// Later we'll remove these and replace the original message with a proper
+			// deleted-for-everyone placeholder if applicable.
+			messages[op.hash] = {
+				hash: op.hash,
 				author,
-				timestamp: operation.header.timestamp,
-				body,
+				seqNum: op.header.seq_num,
+				timestamp: op.header.timestamp,
 			};
-			if (!body) {
-				if (operation.header.auth) continue;
-				bodylessOps[operation.hash] = { ...operation, body: undefined };
+			continue;
+		}
+		if (body.type !== 'Chat') continue;
+
+		if (body.payload.type === 'Message') {
+			const quoteHash = body.payload.payload.reply
+				? walkToRoot(body.payload.payload.reply, editTargets)
+				: undefined;
+			let replyQuote: MessageReply | undefined;
+			if (quoteHash) {
+				const replyTarget = messages[quoteHash];
+				if (
+					replyTarget &&
+					isMessage(replyTarget) &&
+					hasBody(replyTarget.content)
+				) {
+					replyQuote = {
+						kind: 'content',
+						author: replyTarget.author,
+						text: replyTarget.content.message,
+						media: mediaBundleToAttachment(replyTarget.content.media),
+						scrollTarget: quoteHash,
+					};
+				} else if (tombstones[quoteHash] === 'DeletedForMe') {
+					replyQuote = {
+						kind: 'deleted-for-me',
+					};
+				} else if (tombstones[quoteHash] === 'DeletedForEveryone') {
+					replyQuote = {
+						kind: 'deleted',
+						author: replyTarget?.author,
+						scrollTarget: replyTarget ? quoteHash : undefined,
+					};
+				} else {
+					// Reply target was never received by this peer, or was invalid.
+					console.warn('Reply target not covered:', quoteHash);
+				}
+			}
+			messages[op.hash] = {
+				hash: op.hash,
+				content: {
+					message: body.payload.payload.message,
+					media: body.payload.payload.media,
+					reactions: {},
+					editHistory: [],
+				},
+				author,
+				seqNum: op.header.seq_num,
+				timestamp: op.header.timestamp,
+				replyQuote: replyQuote,
+			};
+		} else if (body.payload.type === 'Reaction') {
+			const { target, emoji } = body.payload.payload;
+			if (
+				messages[target] &&
+				isMessage(messages[target]) &&
+				hasBody(messages[target].content)
+			) {
+				if (emoji) {
+					messages[target].content.reactions[author] = emoji;
+				} else {
+					delete messages[target].content.reactions[author];
+				}
+			}
+		} else if (body.payload.type === 'EditMessage') {
+			// TODO(after p2panda-spaces integration): this trusts every edit op in
+			// the raw logs and enforces none of the backend's edit-validation
+			// rules (`ValidChatOps::validate_edit` in
+			// crates/dashchat-node/src/chat/edit.rs): author-only, at most one
+			// edit per target resolved by (seq_num, hash), the 24h edit window,
+			// and target-must-be-editable. A misbehaving peer's ops would
+			// therefore render here. Once p2panda-spaces is integrated the
+			// frontend should consume validated logs (or mirror
+			// validate_edit) instead.
+			const target = body.payload.payload.edit_hash;
+			const root = walkToRoot(target, editTargets);
+			if (
+				messages[root] &&
+				isMessage(messages[root]) &&
+				hasBody(messages[root].content)
+			) {
+				editTargets[op.hash] = target;
+				messages[root].content.message = body.payload.payload.message;
+				messages[root].content.editHistory.push({
+					hash: op.hash,
+					text: body.payload.payload.message,
+					timestamp: op.header.timestamp,
+				});
+			}
+		} else if (body.payload.type === 'DeleteMessage') {
+			const hashes = body.payload.payload.hashes;
+			const deletes = hashes
+				.map(hash => messages[hash])
+				.filter(message => message !== undefined);
+			if (deletes.length === 0) {
+				// The original message was already tombstoned.
 				continue;
 			}
-			if (body.type !== 'Chat') continue;
-			if (body.payload.type === 'Message') {
-				messages[operation.hash] = {
-					hash: operation.hash,
-					content: {
-						message: body.payload.payload.message,
-						media: body.payload.payload.media,
-						reactions: {},
-						editHistory: [],
-					},
-					author,
-					seqNum: operation.header.seq_num,
-					timestamp: operation.header.timestamp,
-					replyTo: body.payload.payload.reply,
-				};
-			} else if (body.payload.type === 'Reaction') {
-				const { target, emoji } = body.payload.payload;
-				if (reactionsByTarget[target] === undefined) {
-					reactionsByTarget[target] = {};
+			const root = deletes.sort(
+				(a, b) => a.timestamp - b.timestamp || a.hash.localeCompare(b.hash),
+			)[0];
+			const tombstoneReason = tombstones[root.hash];
+			if (tombstoneReason) {
+				if (tombstoneReason === 'DeletedForEveryone') {
+					messages[root.hash] = placeholderFor(root);
+				} else if (tombstoneReason === 'DeletedForMe') {
+					// Just don't include it in the messages map
 				}
-				if (emoji) {
-					reactionsByTarget[target][author] = emoji;
-				} else {
-					delete reactionsByTarget[target][author];
-				}
-			} else if (body.payload.type === 'EditMessage') {
-				const target = body.payload.payload.edit_hash;
-				if (editsByTarget[target] === undefined) {
-					editsByTarget[target] = {};
-				}
-				editsByTarget[target][operation.hash] = {
-					hash: operation.hash,
-					text: body.payload.payload.message,
-					timestamp: operation.header.timestamp,
-				};
-			} else if (body.payload.type === 'DeleteMessage') {
-				deleteTargets.push(body.payload.payload.hashes);
 			}
 		}
 	}
 
-	return {
-		messages,
-		ops,
-		bodylessOps,
-		reactionsByTarget,
-		editsByTarget,
-		deleteTargets,
-	};
-}
-
-/** The placeholder each delete leaves behind, keyed by the hash it stands in
- * for. Merged over `messages` these replace the original's live entry, the only
- * covered op that can be there — edits live in `editsByTarget`. `placeholderFor`
- * maps every hash the delete covers (original and edits alike) to that same
- * placeholder hash, so a reply targeting any of them resolves to where the
- * tombstone actually renders. */
-function deletedMessages(
-	deleteTargets: Hash[][],
-	messages: Record<Hash, Message>,
-	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
-): { deleted: Record<Hash, Message>; placeholderFor: Record<Hash, Hash> } {
-	const deleted: Record<Hash, Message> = {};
-	const placeholderFor: Record<Hash, Hash> = {};
-	for (const hashes of deleteTargets) {
-		const original = earliestOp(hashes, messages, bodylessOps);
-		if (original === undefined) continue;
-		deleted[original.hash] = { ...original, content: 'deleted-for-everyone' };
-		for (const hash of hashes) placeholderFor[hash] = original.hash;
-	}
-	return { deleted, placeholderFor };
-}
-
-/** The earliest of `hashes` this peer has — the original message, since its
- * edits are authored after it. Ordered by timestamp, as the message list itself
- * is, so the placeholder lands in the slot the original occupied. `seq_num`
- * can't be used: once devices are linked an edit may come from another device,
- * and positions in different logs aren't comparable. The hash breaks ties so
- * every peer eventually picks the same op. */
-function earliestOp(
-	hashes: Hash[],
-	messages: Record<Hash, Message>,
-	bodylessOps: Record<Hash, SimplifiedOperation<void>>,
-): Message | undefined {
-	let earliest: Message | undefined;
-	for (const hash of hashes) {
-		const bodyless = bodylessOps[hash];
-		const op =
-			messages[hash] ??
-			(bodyless === undefined ? undefined : placeholderFor(bodyless));
-		if (op === undefined) continue;
-		if (
-			earliest === undefined ||
-			op.timestamp < earliest.timestamp ||
-			(op.timestamp === earliest.timestamp && op.hash < earliest.hash)
-		) {
-			earliest = op;
+	// Filter out all bodyless placeholders
+	const result: Record<Hash, Message> = {};
+	for (const [hash, message] of Object.entries(messages)) {
+		if (isMessage(message)) {
+			result[hash] = message;
+		} else {
+			delete result[hash];
 		}
 	}
-	return earliest;
+
+	return result;
+}
+
+function walkToRoot(hash: Hash, predecessors: Record<Hash, Hash>): Hash {
+	let current = hash;
+	while (predecessors[current]) {
+		current = predecessors[current];
+	}
+	return current;
 }
 
 /** The placeholder a tombstoned operation renders as, built from its header
  * since its payload is gone. */
-function placeholderFor(op: SimplifiedOperation<void>): Message {
+function placeholderFor(message: Bodyless): Message {
 	return {
-		hash: op.hash,
+		hash: message.hash,
 		content: 'deleted-for-everyone',
-		author: op.header.verifying_key,
-		seqNum: op.header.seq_num,
-		timestamp: op.header.timestamp,
-	};
-}
-
-// Apply the message's edits and return the resulting message. Every edit
-// reachable from the message — following chains through `editsByTarget`,
-// across forks — becomes a version; the one with the highest timestamp is the
-// displayed text.
-//
-// TODO(after p2panda-spaces integration): this trusts every edit op in the
-// raw logs and enforces none of the backend's edit-validation rules
-// (`ValidChatOps::validate_edit` in crates/dashchat-node/src/chat/edit.rs):
-// author-only, at most one edit per target resolved by (seq_num, hash), the
-// 24h edit window, and target-must-be-editable. A misbehaving peer's ops
-// would therefore render here. Once p2panda-spaces is integrated the
-// frontend should consume validated logs (or mirror validate_edit) instead.
-function applyEdits(
-	message: Message,
-	editsByTarget: Record<Hash, Record<Hash, MessageVersion>>,
-): Message {
-	// Deletes are applied after edits, so live content is always present here.
-	if (!hasBody(message.content)) return message;
-	const versions: MessageVersion[] = [];
-	const seen = new Set<Hash>([message.hash]);
-	const pending = Object.values(editsByTarget[message.hash] ?? {});
-	while (pending.length > 0) {
-		const edit = pending.pop();
-		if (edit === undefined || seen.has(edit.hash)) continue;
-		seen.add(edit.hash);
-		versions.push(edit);
-		pending.push(...Object.values(editsByTarget[edit.hash] ?? {}));
-	}
-	if (versions.length === 0) return message;
-
-	versions.sort((v1, v2) => v1.timestamp - v2.timestamp);
-	const latest = versions[versions.length - 1];
-	return {
-		...message,
-		content: {
-			...message.content,
-			message: latest.text,
-			editHistory: versions,
-		},
+		author: message.author,
+		seqNum: message.seqNum,
+		timestamp: message.timestamp,
 	};
 }
 

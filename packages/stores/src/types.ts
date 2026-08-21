@@ -1,3 +1,4 @@
+import { Bodyless, Message } from './chats/messages-store';
 import { Profile } from './contacts/contacts-client';
 import {
 	AgentId,
@@ -239,6 +240,8 @@ export interface Tombstone {
 	reason: TombstoneReason;
 }
 
+export type Tombstones = Record<Hash, TombstoneReason>;
+
 export type DeviceGroupPayload =
 	| { type: 'AddContact'; payload: { agent_id: AgentId } }
 	| {
@@ -282,19 +285,6 @@ export type Payload =
 	| { type: 'GroupControl'; payload: GroupControlPayload };
 
 export type MessageId = string;
-
-// export type MessageContent = {
-// 	type: 'TextMessage';
-// 	message: string;
-// 	replyTo: MessageId | undefined;
-// };
-
-// export interface Message {
-// 	id: MessageId;
-// 	content: MessageContent;
-// 	author: VerifyingKey;
-// 	timestamp: number;
-// }
 
 export type GroupControlEvent =
 	| {
@@ -366,6 +356,10 @@ export type MessageDisplay = MessageBody | 'deleted-for-everyone';
  * `true` branch narrows `content` to `MessageBody`. */
 export function hasBody(content: MessageDisplay): content is MessageBody {
 	return typeof content !== 'string';
+}
+
+export function isMessage(message: Message | Bodyless): message is Message {
+	return 'content' in message;
 }
 
 /** Whether a message was deleted for everyone. */

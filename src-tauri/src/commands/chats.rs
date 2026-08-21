@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use dashchat_node::{
     stores::TombstoneReason, AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia,
     RemoveGroupMemberError,
@@ -128,27 +130,15 @@ pub async fn delete_message_for_me(
     Ok(header.hash())
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Tombstone {
-    pub hash: Hash,
-    pub reason: TombstoneReason,
-}
-
 #[tauri::command]
 pub async fn get_tombstones(
     chat_id: ChatId,
     app_node_manager: State<'_, AppNodeManager>,
-) -> Result<Vec<Tombstone>, String> {
+) -> Result<HashMap<Hash, TombstoneReason>, String> {
     let node = app_node_manager.get().await?;
-    let rows = node
-        .chat_tombstones(chat_id)
+    node.chat_tombstones(chat_id)
         .await
-        .map_err(|err| format!("{err:?}"))?;
-    Ok(rows
-        .into_iter()
-        .map(|(hash, reason)| Tombstone { hash, reason })
-        .collect())
+        .map_err(|err| format!("{err:?}"))
 }
 
 #[tauri::command]

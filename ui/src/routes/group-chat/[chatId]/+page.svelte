@@ -176,7 +176,7 @@
 		myDeviceId: DeviceId,
 		members: Record<string, GroupMemberWithProfile>,
 	): string | undefined {
-		const author = replyAuthor(message.reply);
+		const author = replyAuthor(message.replyQuote);
 		if (author === undefined) return undefined;
 		return deviceDisplayName(author, myDeviceId, members);
 	}
