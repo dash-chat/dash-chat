@@ -1,5 +1,8 @@
 import { AppiumNotificationHelper } from './notification-helper';
 
+/** The app name as SpringBoard shows it on every notification of ours. */
+const APP_NAME = 'Dash Chat';
+
 /** iOS (XCUITest) notification observation via SpringBoard Notification Center. */
 export class IosNotifications extends AppiumNotificationHelper {
 	/** Pull Notification Center down from the top edge of the screen. */
@@ -48,6 +51,26 @@ export class IosNotifications extends AppiumNotificationHelper {
 			timeoutMsg: `No notification containing "${textIncludes}" arrived within ${timeout}ms`,
 		});
 		return (await cell.getAttribute('label')) ?? '';
+	}
+
+	async waitForAppNotification(timeout = 60_000): Promise<string> {
+		await this.switchToNative();
+		await this.openNotificationCenter();
+		// SpringBoard labels a cell "<app>, <when>, <title>, <body>", so the app
+		// name is the one thing every notification of ours carries.
+		const cell = this.cellFor(APP_NAME);
+		await cell.waitForExist({
+			timeout,
+			timeoutMsg: `No ${APP_NAME} notification arrived within ${timeout}ms`,
+		});
+		// Notification Center lists newest first, and the first match is what
+		// `$` returns; older ones from earlier steps (a contact request, say) sit
+		// below it. Return every label so the caller sees them all if the
+		// content assertion fails.
+		const labels = await this.agent
+			.$$(`-ios predicate string:label CONTAINS "${APP_NAME}"`)
+			.map(async c => (await c.getAttribute('label')) ?? '');
+		return labels.join('\n');
 	}
 
 	async tapNotification(textIncludes: string): Promise<void> {

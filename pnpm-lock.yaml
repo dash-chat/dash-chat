@@ -51,6 +51,9 @@ importers:
       svelte-language-server:
         specifier: ^0.17.25
         version: 0.17.25(picomatch@4.0.3)
+      turbo:
+        specifier: ^2.10.10
+        version: 2.10.10
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -75,6 +78,9 @@ importers:
       '@wdio/cli':
         specifier: ^9.29.1
         version: 9.29.1(@types/node@24.10.0)(expect-webdriverio@5.7.0)(supports-color@8.1.1)
+      '@wdio/json-reporter':
+        specifier: ^9.30.1
+        version: 9.30.1
       '@wdio/local-runner':
         specifier: ^9.12.1
         version: 9.24.0(@wdio/globals@9.29.1)(supports-color@8.1.1)(webdriverio@9.29.1(supports-color@8.1.1))
@@ -2020,6 +2026,36 @@ packages:
   '@tsconfig/node16@1.0.4':
     resolution: {integrity: sha512-vxhUy4J8lyeyinH7Azl1pdd43GJhZH/tP2weN8TntQblOY+A0XbT8DJk1/oCPuOOyg/Ja757rG0CgHcWC8OfMA==}
 
+  '@turbo/darwin-64@2.10.10':
+    resolution: {integrity: sha512-gFDD+wRP5hWxBRghGyEbjpbLOY7aIU/wvsnKdMM7odQcp/wHMrnI83p0FyxxMRZnFH9ZD+S59MvcpOC5b+nrCA==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@turbo/darwin-arm64@2.10.10':
+    resolution: {integrity: sha512-VZYsxZ6yjyDosUqtiroAVSXPLmx/qBxdHJgIxdMH9RyNmLdOLOWtJnYMnI4qckwCgQMK85G3fu94/xk5+iBCgw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@turbo/linux-64@2.10.10':
+    resolution: {integrity: sha512-lAvW+yEnmsCKMEIwNugjozawvYytHKPhU0kfLBizu83MIs8OUb9KobYvkZ56L5akSM6K7+gBFLEIfQkaceh90g==}
+    cpu: [x64]
+    os: [android, linux]
+
+  '@turbo/linux-arm64@2.10.10':
+    resolution: {integrity: sha512-MSJ+NkRTd79Z9+YEZpUV9VOWVOOigFhE+v/ETNYJEuTJp3r00y9YgFvDXrmM+DP8Kal6tk3U6xSugD2/Ojh+Jg==}
+    cpu: [arm64]
+    os: [android, linux]
+
+  '@turbo/windows-64@2.10.10':
+    resolution: {integrity: sha512-ycWpXDkUfnDFDY9d+4Qna/UZotDB0wj+s9agrlmNt0Q7a3XHORhK8GPKJdzgzeutXu9EW5P/jyabTEHlohuDXw==}
+    cpu: [x64]
+    os: [win32]
+
+  '@turbo/windows-arm64@2.10.10':
+    resolution: {integrity: sha512-PMk6zQN0csUFklLe+1hz/5G9uU1YmV0cEIey2R/bSeA6o69qcBTlN4A3jOqkgenOO5dOpMHmq2sEUZo8r1+Ssg==}
+    cpu: [arm64]
+    os: [win32]
+
   '@types/cookie@0.6.0':
     resolution: {integrity: sha512-4Kh9a6B2bQciAhf7FSuMRRkUWecJgJu9nPnx3yzpsfXX/c50REIqpHY4C82bXP90qrLtXtkDxTZosYO3UpOwlA==}
 
@@ -2214,6 +2250,10 @@ packages:
       expect-webdriverio: ^5.6.5
       webdriverio: ^9.0.0
 
+  '@wdio/json-reporter@9.30.1':
+    resolution: {integrity: sha512-BVHRN4wH0/8M2cFAA2zG3yxcztmML094hdgtemB0jgj9zHeyknbuyFu+D6aS5GNZJh8WgqggRjcvzBqPVSpFGA==}
+    engines: {node: '>=18.20.0'}
+
   '@wdio/local-runner@9.24.0':
     resolution: {integrity: sha512-SUs5HEGHXEl/fVdkkhY1+of+Dv8AlceulRTpmYMmSR4Nu+tHUXSPkzjoYgVa+xVu0MpVrD+dhTm13hOtlDAlMg==}
     engines: {node: '>=18.20.0'}
@@ -2248,6 +2288,10 @@ packages:
     resolution: {integrity: sha512-CKAcVy9BGwvufokMcl3H+yNcvD11Klku/1BPz8bKSRv7/KzueXR06s1cPbJH3tv9r9zxPErxgdVMpulN8I0qAg==}
     engines: {node: '>=18.20.0'}
 
+  '@wdio/reporter@9.30.1':
+    resolution: {integrity: sha512-0whWaLfJtOAy3PzbGUxGrCAGitgaUCMe8qUgAuP2l7ess70AXqvp1wJibw74a/Z2giegJlJiAc4PxS0abs9/tw==}
+    engines: {node: '>=18.20.0'}
+
   '@wdio/runner@9.24.0':
     resolution: {integrity: sha512-B1ezRtvR/eJCKQSVyLbERpyyMG3bP7RKaQBHT7bNxGsuEuarkUU7cS/T/aB+woZb4UtWotlrBFY4icAS0HqOkA==}
     engines: {node: '>=18.20.0'}
@@ -2265,6 +2309,10 @@ packages:
 
   '@wdio/types@9.29.1':
     resolution: {integrity: sha512-jp8jgMv6TS35G96YzHZxw3PVN0Dz6xQ6tnMAicndAJ8Jt9AIXb0ywIse4TjaFywakO3dLoEhlyA3ZtR26vmt+w==}
+    engines: {node: '>=18.20.0'}
+
+  '@wdio/types@9.30.1':
+    resolution: {integrity: sha512-umKQDbSmu3/ucUsIA5UUTK5gCWnClyVpWz3fC39044rCXQ3zCd1a3GoJibbAITKiwnPFf2yU3LvTa+C78sh9Lg==}
     engines: {node: '>=18.20.0'}
 
   '@wdio/utils@9.24.0':
@@ -5326,6 +5374,10 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
+  turbo@2.10.10:
+    resolution: {integrity: sha512-/90KTW+USzvYOPmafRZHVKLBsHXQ5810Ao/HdtJYAqguIhZ+XruS6eIUjqJUDtrSxaZYynNFht68qckGKAOWTA==}
+    hasBin: true
+
   type-check@0.4.0:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
@@ -7453,6 +7505,24 @@ snapshots:
 
   '@tsconfig/node16@1.0.4': {}
 
+  '@turbo/darwin-64@2.10.10':
+    optional: true
+
+  '@turbo/darwin-arm64@2.10.10':
+    optional: true
+
+  '@turbo/linux-64@2.10.10':
+    optional: true
+
+  '@turbo/linux-arm64@2.10.10':
+    optional: true
+
+  '@turbo/windows-64@2.10.10':
+    optional: true
+
+  '@turbo/windows-arm64@2.10.10':
+    optional: true
+
   '@types/cookie@0.6.0': {}
 
   '@types/estree@1.0.8': {}
@@ -7766,6 +7836,12 @@ snapshots:
       expect-webdriverio: 5.7.0(@wdio/globals@9.29.1)(@wdio/logger@9.18.0)(webdriverio@9.29.1(supports-color@8.1.1))
       webdriverio: 9.29.1(supports-color@8.1.1)
 
+  '@wdio/json-reporter@9.30.1':
+    dependencies:
+      '@wdio/reporter': 9.30.1
+      '@wdio/types': 9.30.1
+      safe-regex2: 5.0.0
+
   '@wdio/local-runner@9.24.0(@wdio/globals@9.29.1)(supports-color@8.1.1)(webdriverio@9.29.1(supports-color@8.1.1))':
     dependencies:
       '@types/node': 20.19.34
@@ -7842,6 +7918,14 @@ snapshots:
       diff: 8.0.3
       object-inspect: 1.13.3
 
+  '@wdio/reporter@9.30.1':
+    dependencies:
+      '@types/node': 20.19.34
+      '@wdio/logger': 9.29.1
+      '@wdio/types': 9.30.1
+      diff: 8.0.3
+      object-inspect: 1.13.3
+
   '@wdio/runner@9.24.0(expect-webdriverio@5.6.4(@wdio/globals@9.29.1)(@wdio/logger@9.18.0)(webdriverio@9.29.1(supports-color@8.1.1)))(supports-color@8.1.1)(webdriverio@9.29.1(supports-color@8.1.1))':
     dependencies:
       '@types/node': 20.19.34
@@ -7876,6 +7960,10 @@ snapshots:
       '@types/node': 20.19.34
 
   '@wdio/types@9.29.1':
+    dependencies:
+      '@types/node': 20.19.34
+
+  '@wdio/types@9.30.1':
     dependencies:
       '@types/node': 20.19.34
 
@@ -11246,6 +11334,15 @@ snapshots:
       get-tsconfig: 4.13.6
     optionalDependencies:
       fsevents: 2.3.3
+
+  turbo@2.10.10:
+    optionalDependencies:
+      '@turbo/darwin-64': 2.10.10
+      '@turbo/darwin-arm64': 2.10.10
+      '@turbo/linux-64': 2.10.10
+      '@turbo/linux-arm64': 2.10.10
+      '@turbo/windows-64': 2.10.10
+      '@turbo/windows-arm64': 2.10.10
 
   type-check@0.4.0:
     dependencies:

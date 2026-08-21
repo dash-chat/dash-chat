@@ -1890,7 +1890,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.19.17"
+version = "0.19.18"
 dependencies = [
  "anyhow",
  "app_dirs2",
@@ -2015,7 +2015,6 @@ dependencies = [
  "p2panda-store",
  "pretty_assertions",
  "rand 0.9.5",
- "regex",
  "reporting",
  "serde",
  "serde_bytes",

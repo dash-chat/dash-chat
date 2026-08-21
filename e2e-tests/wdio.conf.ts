@@ -9,7 +9,7 @@
  * macOS + a device, so they can't share one host.
  */
 import type { ChildProcess } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -178,7 +178,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		timeout: 120_000,
 	},
 
-	reporters: ['spec'],
+	// The spec reporter writes the assertion that failed to stdout and nowhere
+	// else, so a finished run leaves only screenshots to reconstruct it from.
+	// The json one keeps each test's error and stack next to them on disk.
+	reporters: [
+		'spec',
+		['json', { outputDir: path.join(ROOT, '.dbs', 'e2e', 'results') }],
+	],
 
 	async onPrepare() {
 		// A failed onPrepare must abort the run: wdio only logs hook errors and
@@ -197,27 +203,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 			killLeftoverMailboxServers();
 
-			const mailboxInfoPath = path.join(
-				ROOT,
-				'.dbs',
-				'e2e',
-				'mailbox-info.json',
-			);
-
-			// When MAILBOX_URL names an allowlisted deployment environment, run
-			// against its cloud mailbox instead of spawning a local server. Specs
-			// that drive the mailbox's lifecycle skip themselves via
-			// isRemoteMailbox().
+			// When MAILBOX_URL names a deployment environment, run against its
+			// cloud mailbox instead of spawning a local server. Specs that drive
+			// the mailbox's lifecycle skip themselves via isRemoteMailbox().
 			const remoteUrl = remoteMailboxUrl();
 			let mailboxPort: number | null = null;
 			let pushPort: number | null = null;
 			if (remoteUrl !== null) {
-				process.env.MAILBOX_URL = remoteUrl;
-				mkdirSync(path.dirname(mailboxInfoPath), { recursive: true });
-				writeFileSync(
-					mailboxInfoPath,
-					JSON.stringify({ remote: true, url: remoteUrl }),
-				);
 				console.log(`Using remote mailbox at ${remoteUrl}`);
 			} else {
 				// Real-device push tests: start the push-notifications server first

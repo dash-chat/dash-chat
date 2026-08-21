@@ -7,6 +7,11 @@ export interface NotificationHelper {
 	/** Wait for a delivered notification whose text contains `textIncludes`;
 	 * returns its full text (title + body). */
 	waitForNotification(textIncludes: string, timeout?: number): Promise<string>;
+	/** Wait for any notification from this app and return its full text — for
+	 * asserting *what* was delivered. Matching on the expected content instead
+	 * would make a wrong body (the generic "You have a new message" fallback)
+	 * indistinguishable from no delivery at all: both just time out. */
+	waitForAppNotification(timeout?: number): Promise<string>;
 	/** Tap the matching notification. */
 	tapNotification(textIncludes: string): Promise<void>;
 	/** Return to the app's webview context. */
@@ -62,5 +67,6 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 		textIncludes: string,
 		timeout?: number,
 	): Promise<string>;
+	abstract waitForAppNotification(timeout?: number): Promise<string>;
 	abstract tapNotification(textIncludes: string): Promise<void>;
 }
