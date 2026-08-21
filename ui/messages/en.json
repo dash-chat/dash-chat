@@ -322,7 +322,6 @@
 	"help": "Help",
 	"contactUs": "Contact us",
 	"version": "Version",
-	"startOfflineMode": "Start offline mode",
 	"startBackgroundMode": "Start background mode",
 	"backgroundModeDescription": "Will continue to run in the background and receive messages even when the app is closed. This may use more battery.",
 	"previewFeatures": "Preview features",
