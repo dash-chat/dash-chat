@@ -1,4 +1,3 @@
-import { offlineMode } from '$lib/stores/offline-mode.svelte';
 import {
 	isServiceRunning,
 	startService,
@@ -6,9 +5,7 @@ import {
 } from 'tauri-plugin-background-service';
 
 export function startOfflineModeLifecycle(): () => void {
-	const handleVisibilityChange = () => {
-		if (!offlineMode.enabled) return;
-
+	const handleVisibilityChange: () => void = () => {
 		if (document.visibilityState === 'hidden') {
 			startService({ serviceLabel: 'Dash Chat' }).catch(e => {
 				console.error('[background-service] startService failed:', e);

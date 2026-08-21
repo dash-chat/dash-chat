@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { getContext } from 'svelte';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { m } from '$lib/paraglide/messages.js';
-	import { offlineMode } from '$lib/stores/offline-mode.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
+	import { useReactivePromise } from '$lib/stores/use-signal';
+	import type { SettingsStore } from 'dash-chat-stores';
 	import {
 		BlockTitle,
 		List,
@@ -15,8 +17,12 @@
 		Toggle,
 		useTheme,
 	} from 'konsta/svelte';
+	import { isAndroid } from '$lib/utils/environment';
 
 	const theme = $derived(useTheme());
+
+	const settingsStore = getContext<SettingsStore>('settings-store');
+	const backgroundModeEnabled = useReactivePromise(settingsStore.backgroundModeEnabled);
 
 	const versionPromise = getVersion();
 </script>
@@ -44,18 +50,19 @@
 					title={m.contactUs()}
 					data-testid="help-contact-us"
 				/>
-				<!-- Disabling the background service for now -->
-				{#if false}
+				{#if true || isAndroid}
 					<ListItem
 						title={m.startOfflineMode()}
 						data-testid="help-start-offline-mode"
 					>
 						{#snippet after()}
-							<Toggle
-								checked={offlineMode.enabled}
-								onChange={() => offlineMode.toggle()}
-								data-testid="help-start-offline-mode-switch"
-							/>
+							{#await $backgroundModeEnabled then enabled}
+								<Toggle
+									checked={enabled}
+									onChange={() => settingsStore.setBackgroundModeEnabled(!enabled)}
+									data-testid="help-start-offline-mode-switch"
+								/>
+							{/await}
 						{/snippet}
 					</ListItem>
 				{/if}

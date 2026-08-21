@@ -45,7 +45,7 @@
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 	import { modalHost } from '$lib/stores/modal-host.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useSignal } from '$lib/stores/use-signal';
+	import { useReactiveValue, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import {
@@ -190,6 +190,7 @@
 	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
 	const applied = useSignal(settingsStore.colorScheme);
+	const backgroundModeEnabled = useReactiveValue(settingsStore.backgroundModeEnabled);
 
 	let darkOverride: boolean | null = $state(null);
 	const effectiveDark = $derived(darkOverride ?? $applied === 'dark');
@@ -231,8 +232,9 @@
 	});
 
 	$effect(() => {
-		if (!isTauriEnv()) return;
-		return startOfflineModeLifecycle();
+		if (isTauriEnv() && $backgroundModeEnabled) {
+			return startOfflineModeLifecycle();
+		}
 	});
 </script>
 
