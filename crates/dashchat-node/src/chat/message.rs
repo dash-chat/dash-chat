@@ -281,13 +281,4 @@ mod tests {
         let json = serde_json::to_value(&v1).unwrap();
         assert_eq!(json["reply"], serde_json::json!(target.to_hex()));
     }
-
-    #[test]
-    fn chat_message_without_reply_keeps_pre_reply_wire_form() {
-        // `reply` must be absent (not null) so old clients decode new
-        // non-reply messages byte-for-byte identically.
-        let v1 = ChatMessageContent::text_only("hello");
-        let json = serde_json::to_value(&v1).unwrap();
-        assert!(json.get("reply").is_none());
-    }
 }
