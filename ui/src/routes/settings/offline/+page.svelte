@@ -17,7 +17,7 @@
 		Toggle,
 		useTheme,
 	} from 'konsta/svelte';
-	import { isAndroid } from '$lib/utils/environment';
+	import { isAndroid, isMobile } from '$lib/utils/environment';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
@@ -58,29 +58,32 @@
 	</Navbar>
 
 	<div class="column" style="flex: 1">
-		<div class="column center-in-desktop">
-			<BlockTitle>{m.localMessageServer()}</BlockTitle>
-			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-				<ListItem
-					title={m.enableLocalMessageServer()}
-					data-testid="offline-local-mailbox-toggle"
+		{#if !isMobile}
+			<div class="column center-in-desktop">
+				<BlockTitle>{m.localMessageServer()}</BlockTitle>
+				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
+					<ListItem
+						title={m.enableLocalMessageServer()}
+						data-testid="offline-local-mailbox-toggle"
+					>
+						{#snippet after()}
+							{#await $localMailboxEnabled then enabled}
+								<Toggle
+									checked={enabled}
+									disabled={toggling}
+									onChange={() => toggle(enabled)}
+								/>
+							{/await}
+						{/snippet}
+					</ListItem>
+				</List>
+				<BlockFooter class="px-4"
+					>{m.localMessageServerDescription()}</BlockFooter
 				>
-					{#snippet after()}
-						{#await $localMailboxEnabled then enabled}
-							<Toggle
-								checked={enabled}
-								disabled={toggling}
-								onChange={() => toggle(enabled)}
-							/>
-						{/await}
-					{/snippet}
-				</ListItem>
-			</List>
-			<BlockFooter class="px-4">{m.localMessageServerDescription()}</BlockFooter
-			>
-		</div>
+			</div>
+		{/if}
 
-		{#if true || isAndroid}
+		{#if isAndroid}
 			<div class="column center-in-desktop">
 				<BlockTitle>Background Mode</BlockTitle>
 				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
