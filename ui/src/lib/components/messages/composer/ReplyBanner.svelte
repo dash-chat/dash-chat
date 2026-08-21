@@ -8,6 +8,7 @@
 		hasBody,
 		mediaBundleToAttachment,
 	} from 'dash-chat-stores';
+	import IconButton from '$lib/components/IconButton.svelte';
 
 	let {
 		message,
@@ -47,13 +48,10 @@
 			{preview}
 		</span>
 	</span>
-	<button
-		type="button"
-		class="quiet flex h-7 w-7 items-center justify-center"
-		aria-label={m.cancel()}
-		data-testid="composer-cancel-reply"
-		onclick={onCancel}
-	>
-		<wa-icon src={wrapPathInSvg(mdiClose)} style="font-size: 1.1rem"></wa-icon>
-	</button>
+	<IconButton
+		icon={mdiClose}
+		label={m.cancel()}
+		testid="composer-cancel-reply"
+		onClick={onCancel}
+	/>
 </div>
