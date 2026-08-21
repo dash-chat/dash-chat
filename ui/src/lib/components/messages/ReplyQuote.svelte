@@ -99,7 +99,6 @@
 		/* A <button>'s intrinsic block size does not follow its flex content, so
 		   the author and text lines get shrunk and clipped without this. */
 		height: fit-content;
-		margin-bottom: 0.25rem;
 		border-radius: 0.5rem;
 		overflow: hidden;
 		text-align: start;

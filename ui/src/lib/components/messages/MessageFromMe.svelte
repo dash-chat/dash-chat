@@ -133,21 +133,23 @@
 				}}
 				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 			>
-				{#if message.replyQuote}
-					<ReplyQuote
-						reply={message.replyQuote}
-						authorName={replyAuthorName}
-						{myDeviceId}
-						mine
-						onNavigate={onNavigateToMessage}
+				<div class="flex flex-col gap-1">
+					{#if message.replyQuote}
+						<ReplyQuote
+							reply={message.replyQuote}
+							authorName={replyAuthorName}
+							{myDeviceId}
+							mine
+							onNavigate={onNavigateToMessage}
+						/>
+					{/if}
+					<MessageContent
+						{message}
+						{searchQuery}
+						senderName={m.you()}
+						metadata={isLast || editHistory.length > 0 ? metadata : undefined}
 					/>
-				{/if}
-				<MessageContent
-					{message}
-					{searchQuery}
-					senderName={m.you()}
-					metadata={isLast || editHistory.length > 0 ? metadata : undefined}
-				/>
+				</div>
 			</Card>
 		{/if}
 		{#if Object.keys(reactions).length > 0}

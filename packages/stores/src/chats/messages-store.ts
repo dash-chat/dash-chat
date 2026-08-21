@@ -230,6 +230,10 @@ function logsToMessages(
 					isMessage(replyTarget) &&
 					hasBody(replyTarget.content)
 				) {
+					// It's intended that the quoted text is the version of the message at the time of the reply.
+					// This works as is only because messages are ordered by timestamp and we set this quote while
+					// traversing the partial conversation. If replies were resolved during a second pass over the
+					// conversation, we might pick up the current edited text instead, so be careful.
 					replyQuote = {
 						kind: 'content',
 						author: replyTarget.author,
