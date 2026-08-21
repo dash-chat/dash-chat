@@ -323,6 +323,8 @@
 	"contactUs": "Contact us",
 	"version": "Version",
 	"startOfflineMode": "Start offline mode",
+	"startBackgroundMode": "Start background mode",
+	"backgroundModeDescription": "Will continue to run in the background and receive messages even when the app is closed. This may use more battery.",
 	"previewFeatures": "Preview features",
 	"tellUsWhatsGoingOn": "Tell us what's going on",
 	"tellUsWhyReachingOut": "Tell us why you're reaching out.",

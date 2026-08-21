@@ -17,11 +17,15 @@
 		Toggle,
 		useTheme,
 	} from 'konsta/svelte';
+	import { isAndroid } from '$lib/utils/environment';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
 	const localMailboxEnabled = useReactivePromise(
 		settingsStore.localMailboxEnabled,
+	);
+	const backgroundModeEnabled = useReactivePromise(
+		settingsStore.backgroundModeEnabled,
 	);
 	let toggling = $state(false);
 
@@ -75,5 +79,28 @@
 			<BlockFooter class="px-4">{m.localMessageServerDescription()}</BlockFooter
 			>
 		</div>
+
+		{#if true || isAndroid}
+			<div class="column center-in-desktop">
+				<BlockTitle>Background Mode</BlockTitle>
+				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
+					<ListItem
+						title={m.startBackgroundMode()}
+						data-testid="offline-background-mode-toggle"
+					>
+						{#snippet after()}
+							{#await $backgroundModeEnabled then enabled}
+								<Toggle
+									checked={enabled}
+									onChange={() =>
+										settingsStore.setBackgroundModeEnabled(!enabled)}
+								/>
+							{/await}
+						{/snippet}
+					</ListItem>
+				</List>
+				<BlockFooter class="px-4">{m.backgroundModeDescription()}</BlockFooter>
+			</div>
+		{/if}
 	</div>
 </Page>
