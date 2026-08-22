@@ -97,7 +97,10 @@ function afterScrollSettles(
 	const onScrollStart = () => {
 		root.removeEventListener('scroll', onScrollStart, { capture: true });
 		clearTimeout(timeoutId);
-		root.addEventListener('scrollend', onScrollEnd, { capture: true, once: true });
+		root.addEventListener('scrollend', onScrollEnd, {
+			capture: true,
+			once: true,
+		});
 		timeoutId = setTimeout(() => finish(true), SCROLL_SETTLE_TIMEOUT_MS);
 	};
 
