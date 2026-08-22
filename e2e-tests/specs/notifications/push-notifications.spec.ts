@@ -40,32 +40,49 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await exchangeContacts(receiver, sender);
 	});
 
-	it('delivers a backgrounded push carrying the message content', async () => {
-		const marker = `PUSH_${Date.now()}`;
+	it('delivers a push to a backgrounded app, carrying the message content', async () => {
+		const marker = `PUSH_BG_${Date.now()}`;
 		const message = `hi ${marker}`;
 
 		await receiver.pause(5_000);
-		await receiver.stopApp();
+		await receiver.backgroundApp();
 
 		await sender.directChatPage.composer.sendMessage(message);
 
-		// Wait for *any* notification from the app, then check its content. Waiting
-		// for one that already contains the marker would make the generic-fallback
-		// case ("You have a new message") indistinguishable from no push arriving:
-		// both would time out. This way a fallback fails with its actual body in
-		// the message.
+		// Wait for *any* notification of ours, then check its content. Waiting
+		// for one that already contains the marker would make the generic
+		// fallback ("You have a new message") indistinguishable from no push
+		// arriving — both just time out — whereas this fails with the actual body
+		// in the message.
 		const text = await notifications.waitForAppNotification();
 		expect(text).toContain(marker);
 
 		// Tap-to-navigate needs an unlocked device; best-effort, so the content
 		// assertion above is the pass criterion.
 		try {
-			await notifications.tapNotification(marker);
+			await notifications.tapNotification(message);
 			await notifications.returnToApp();
 			await receiver.directChatPage.ready();
 			await receiver.directChatPage.messages.waitForMessage(message);
 		} catch (err) {
 			console.warn(`push tap-to-navigate skipped: ${err}`);
 		}
+	});
+
+	it('delivers a push to a force-quit app, carrying the message content', async () => {
+		const marker = `PUSH_QUIT_${Date.now()}`;
+		const message = `hi ${marker}`;
+
+		// Bring the app back so it can be quit properly, then terminate it — what
+		// a user swiping it away in the app switcher does
+		await receiver.startApp();
+		await receiver.homePage.ready();
+		await receiver.pause(5_000);
+		await receiver.stopApp();
+
+		await sender.directChatPage.composer.sendMessage(message);
+
+		const text = await notifications.waitForAppNotification();
+		expect(text).toContain(marker);
 	});
 });
