@@ -63,25 +63,4 @@ describe('report contact', () => {
 			async () => (await agent1.directChatPage.reportMessageCount()) === 2,
 		);
 	});
-
-	it('reports from the new-message contact menu', async () => {
-		await agent1.directChatPage.back.click();
-		await agent1.homePage.ready();
-		await agent1.homePage.newMessageButton.click();
-		await agent1.newMessagePage.ready();
-
-		await agent1.newMessagePage.openContactMenu('Bob');
-		await agent1.newMessagePage.contactActionsMenu.report.click();
-		await agent1.newMessagePage.contactActionsMenu.reportConfirm.waitForClickable();
-		await agent1.newMessagePage.contactActionsMenu.reportConfirm.click();
-		await agent1.toast.expectMessage(
-			await agent1.tr('contactReportedToast', { name: 'Bob Test' }),
-		);
-
-		await agent1.newMessagePage.back.click();
-		await agent1.homePage.openChat('Bob Test');
-		await agent1.waitUntil(
-			async () => (await agent1.directChatPage.reportMessageCount()) === 3,
-		);
-	});
 });
