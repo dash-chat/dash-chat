@@ -31,11 +31,13 @@ export class IosNotifications extends AppiumNotificationHelper {
 	}
 
 	/** Any SpringBoard element whose label or value contains `textIncludes` — the
-	 * lock-screen banner or Notification Center cell. */
+	 * lock-screen banner or Notification Center cell. `CONTAINS[c]` is
+	 * case-insensitive: SpringBoard renders the source app name upper-cased
+	 * ("DASH CHAT"), so a case-sensitive match on "Dash Chat" never fires. */
 	private cellFor(textIncludes: string) {
 		const escaped = textIncludes.replace(/"/g, '\\"');
 		return this.agent.$(
-			`-ios predicate string:label CONTAINS "${escaped}" OR value CONTAINS "${escaped}"`,
+			`-ios predicate string:label CONTAINS[c] "${escaped}" OR value CONTAINS[c] "${escaped}"`,
 		);
 	}
 
@@ -82,7 +84,7 @@ export class IosNotifications extends AppiumNotificationHelper {
 		// below it. Return every label so the caller sees them all if the
 		// content assertion fails.
 		const labels = await this.agent
-			.$$(`-ios predicate string:label CONTAINS "${APP_NAME}"`)
+			.$$(`-ios predicate string:label CONTAINS[c] "${APP_NAME}"`)
 			.map(async c => (await c.getAttribute('label')) ?? '');
 		return labels.join('\n');
 	}
