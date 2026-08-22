@@ -61,32 +61,11 @@ pub fn run() {
             tauri_plugin_lifecycle::Builder::new()
                 .on_pause(|app| async move {
                     log::info!("[android-lifecycle] on_pause fired (onStop)");
-                    if !crate::settings::load_settings(&app).background_mode_enabled {
-                        return;
-                    }
-                    use tauri::Manager;
-                    let manager = app
-                        .state::<tauri_plugin_background_service::ServiceManagerHandle<tauri::Wry>>(
-                        );
-                    let config = tauri_plugin_background_service::StartConfig {
-                        service_label: "Dash Chat".into(),
-                        foreground_service_type: "remoteMessaging".into(),
-                    };
-                    if let Err(e) = manager.start(app.clone(), config).await {
-                        log::error!("[android-lifecycle] startService failed: {e:?}");
-                    }
+                    background::lifecycle::on_pause(app).await;
                 })
                 .on_resume(|app| async move {
                     log::info!("[android-lifecycle] on_resume fired (onStart)");
-                    use tauri::Manager;
-                    let manager = app
-                        .state::<tauri_plugin_background_service::ServiceManagerHandle<tauri::Wry>>(
-                        );
-                    if manager.is_running().await {
-                        if let Err(e) = manager.stop().await {
-                            log::error!("[android-lifecycle] stopService failed: {e:?}");
-                        }
-                    }
+                    background::lifecycle::on_resume(app).await;
                 })
                 .build(),
         );
