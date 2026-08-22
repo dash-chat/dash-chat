@@ -283,7 +283,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			return;
 		}
 		if (agent.platform === 'ios') {
-			await b.terminateApp(APP_PACKAGE);
+			// A real home-button press. `terminateApp` is not a substitute here:
+			// XCUITest's terminate reads to iOS as a user force-quit
+			await b.execute('mobile: backgroundApp');
 			return;
 		}
 		// Home button press: keeps the process alive so the background service
