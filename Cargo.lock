@@ -1942,9 +1942,9 @@ dependencies = [
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
- "tauri-plugin-ios-lifecycle",
  "tauri-plugin-ios-photos",
  "tauri-plugin-keepawake",
+ "tauri-plugin-lifecycle",
  "tauri-plugin-log",
  "tauri-plugin-mcp-bridge",
  "tauri-plugin-medialibrary",
@@ -10449,16 +10449,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tauri-plugin-ios-lifecycle"
-version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-ios-lifecycle?branch=main#4ba5fc59c3b67c7b2daee07d26ec009cb9332ff8"
-dependencies = [
- "serde",
- "tauri",
- "tauri-plugin",
-]
-
-[[package]]
 name = "tauri-plugin-ios-photos"
 version = "0.3.0"
 source = "git+https://github.com/dash-chat/tauri-plugin-ios-photos?rev=ec723636ddf248dd6542e02fb2e83d91d1da36c9#ec723636ddf248dd6542e02fb2e83d91d1da36c9"
@@ -10480,6 +10470,17 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "tauri-plugin-lifecycle"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-lifecycle?rev=27e2776#27e27760bd85288c4b13d2b92ffa3e2a630cb383"
+dependencies = [
+ "jni 0.21.1",
+ "serde",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]
