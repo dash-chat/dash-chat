@@ -45,7 +45,7 @@
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 	import { modalHost } from '$lib/stores/modal-host.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactiveValue, useSignal } from '$lib/stores/use-signal';
+	import { useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import {
@@ -64,7 +64,6 @@
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
-	import { startOfflineModeLifecycle } from '$lib/offline-mode/service-lifecycle';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
@@ -190,7 +189,6 @@
 	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
 	const applied = useSignal(settingsStore.colorScheme);
-	const backgroundModeEnabled = useReactiveValue(settingsStore.backgroundModeEnabled);
 
 	let darkOverride: boolean | null = $state(null);
 	const effectiveDark = $derived(darkOverride ?? $applied === 'dark');
@@ -229,12 +227,6 @@
 	$effect(() => {
 		if (!isTauriEnv()) return;
 		return listenForDeepLinks(contactsStore);
-	});
-
-	$effect(() => {
-		if (isTauriEnv() && $backgroundModeEnabled) {
-			return startOfflineModeLifecycle();
-		}
 	});
 </script>
 
