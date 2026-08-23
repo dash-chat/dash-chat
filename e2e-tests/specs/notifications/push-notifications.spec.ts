@@ -44,7 +44,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 		const marker = `PUSH_BG_${Date.now()}`;
 		const message = `hi ${marker}`;
 
-		await receiver.pause(5_000);
+		await receiver.pause(1_000);
 		await receiver.backgroundApp();
 
 		await sender.directChatPage.composer.sendMessage(message);
@@ -76,6 +76,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 		// Bring the app back so it can be quit properly, then terminate it — what
 		// a user swiping it away in the app switcher does
 		await receiver.startApp();
+		await receiver.goto('/');
 		await receiver.homePage.ready();
 		await receiver.pause(5_000);
 		await receiver.stopApp();
