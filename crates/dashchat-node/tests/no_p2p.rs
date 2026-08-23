@@ -152,7 +152,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -303,7 +303,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 

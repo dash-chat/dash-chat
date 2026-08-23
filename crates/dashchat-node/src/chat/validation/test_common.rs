@@ -13,7 +13,7 @@ pub fn message(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
         author,
         timestamp,
         seq_num,
-        kind: ChatOpKind::Message,
+        kind: ChatOpKind::Message { reply: None },
     }
 }
 

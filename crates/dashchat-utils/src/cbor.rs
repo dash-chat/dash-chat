@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 
 /// Serializes a value into CBOR format.
+#[allow(unused)]
 pub fn encode_cbor<T: Serialize>(
     value: &T,
 ) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
@@ -11,6 +12,7 @@ pub fn encode_cbor<T: Serialize>(
 }
 
 /// Deserializes a value which was formatted in CBOR.
+#[allow(unused)]
 pub fn decode_cbor<T: for<'a> Deserialize<'a>, R: Read>(
     reader: R,
 ) -> Result<T, ciborium::de::Error<std::io::Error>> {

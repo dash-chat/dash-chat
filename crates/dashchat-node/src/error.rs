@@ -46,6 +46,23 @@ pub enum AddContactError {
 
 #[derive(Debug, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
+pub enum SendMessageError {
+    #[error("Failed to send message: {0}")]
+    Internal(String),
+
+    #[error(transparent)]
+    #[serde(untagged)]
+    Validation(#[from] crate::chat::ReplyError),
+}
+
+impl From<anyhow::Error> for SendMessageError {
+    fn from(e: anyhow::Error) -> Self {
+        SendMessageError::Internal(e.to_string())
+    }
+}
+
+#[derive(Debug, Error, Serialize)]
+#[serde(tag = "kind", content = "message")]
 pub enum EditMessageError {
     #[error("Failed to edit message: {0}")]
     Internal(String),

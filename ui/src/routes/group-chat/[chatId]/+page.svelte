@@ -8,12 +8,15 @@
 	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
-	import type {
-		ChatsStore,
-		ContactsStore,
-		DeviceId,
-		Hash,
-		Message,
+	import {
+		fullName,
+		replyAuthor,
+		type ChatsStore,
+		type ContactsStore,
+		type DeviceId,
+		type Hash,
+		type GroupMemberWithProfile,
+		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
@@ -30,7 +33,10 @@
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		scrollToMessage,
+	} from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -63,6 +69,8 @@
 
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
+	let messagesEl: HTMLDivElement | undefined = $state();
+
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
 		$state();
 
@@ -143,6 +151,34 @@
 		}
 
 		return { hash: capturedUnreadHash, count };
+	}
+
+	function navigateToMessage(hash: Hash) {
+		scrollToMessage(messagesEl, hash);
+	}
+
+	function deviceDisplayName(
+		deviceId: DeviceId,
+		myDeviceId: DeviceId,
+		members: Record<string, GroupMemberWithProfile>,
+	): string {
+		if (deviceId === myDeviceId) return m.you();
+		const member = Object.values(members).find(m =>
+			m.deviceIds.includes(deviceId),
+		);
+		return member?.profile ? fullName(member.profile) : m.unknownSender();
+	}
+
+	/** Display name of the author quoted by `message`'s reply, if that author is
+	 * known — a quote of a message this peer never received has none. */
+	function quotedAuthorName(
+		message: Message,
+		myDeviceId: DeviceId,
+		members: Record<string, GroupMemberWithProfile>,
+	): string | undefined {
+		const author = replyAuthor(message.replyQuote);
+		if (author === undefined) return undefined;
+		return deviceDisplayName(author, myDeviceId, members);
 	}
 </script>
 
@@ -226,7 +262,11 @@
 				{/await}
 			</div>
 
-			<div class="column m-2 gap-1" data-testid="group-chat-messages">
+			<div
+				bind:this={messagesEl}
+				class="column m-2 gap-1"
+				data-testid="group-chat-messages"
+			>
 				{#await $readMessageHashes then readHashes}
 					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
 						{@const unreadDivider = getUnreadDividerInfo(
@@ -271,6 +311,21 @@
 														{chatId}
 														searchQuery=""
 														onEdit={() => composer?.editMessage(message)}
+														onReply={() =>
+															composer?.replyToMessage(
+																message,
+																deviceDisplayName(
+																	message.author,
+																	myDeviceId,
+																	members,
+																),
+															)}
+														replyAuthorName={quotedAuthorName(
+															message,
+															myDeviceId,
+															members,
+														)}
+														onNavigateToMessage={navigateToMessage}
 													/>
 												</div>
 											{:else}
@@ -294,6 +349,21 @@
 														showSenderName={position === 'first' ||
 															position === 'single'}
 														showAvatar
+														onReply={() =>
+															composer?.replyToMessage(
+																message,
+																deviceDisplayName(
+																	message.author,
+																	myDeviceId,
+																	members,
+																),
+															)}
+														replyAuthorName={quotedAuthorName(
+															message,
+															myDeviceId,
+															members,
+														)}
+														onNavigateToMessage={navigateToMessage}
 													/>
 												</div>
 											{/if}
