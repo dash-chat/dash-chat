@@ -19,6 +19,11 @@ export function hash<T>(obj: T): Hash {
 	return blake2bHex(JSON.stringify(obj));
 }
 
+/** Mirrors the backend's direct-chat topic derivation from the two device ids. */
+export function chatIdForDevices(deviceA: string, deviceB: string): string {
+	return hash([deviceA, deviceB].sort().join(':'));
+}
+
 export class LocalStorageLogsClient implements LogsClient<any> {
 	emitter = new Emittery();
 

@@ -344,7 +344,7 @@ impl OpProjection {
             }
 
             Payload::DeviceGroup(p) => match p {
-                DeviceGroupPayload::AddContact { agent_id } => {
+                DeviceGroupPayload::AddContact { agent_id, .. } => {
                     self.save_agent_mapping(author, *agent_id).await?;
                     None
                 }

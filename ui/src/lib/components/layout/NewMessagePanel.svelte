@@ -16,7 +16,7 @@
 	import { isMobile } from '$lib/utils/environment';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
@@ -41,6 +41,7 @@
 	const contacts = useReactivePromise(
 		contactsStore.profilesForUnblockedContacts,
 	);
+	const contactChats = useReactiveValue(contactsStore.contacts);
 	const theme = $derived(useTheme());
 
 	let menuFor = $state<{
@@ -156,7 +157,7 @@
 							link
 							class="hover-scope"
 							linkProps={{
-								href: `/direct-chats/${actorId}`,
+								href: `/direct-chats/${$contactChats?.[actorId]}`,
 								...(isMobile &&
 									longPressHandlers({
 										onLongPress: (_, row) => openMenu(actorId, profile, row),

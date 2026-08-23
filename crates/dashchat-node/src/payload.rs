@@ -175,6 +175,7 @@ pub struct DeleteForMePayload {
 pub enum DeviceGroupPayload {
     AddContact {
         agent_id: AgentId,
+        direct_chat_topic_id: ChatId,
     },
     /// Recorded by the scanner the moment it sends a contact request, before it
     /// knows the owner's agent id (the QR code no longer carries it). Keyed on
@@ -186,6 +187,7 @@ pub enum DeviceGroupPayload {
         device_pubkey: DeviceId,
         #[serde(default)]
         profile_name: String,
+        direct_chat_topic_id: ChatId,
     },
     RejectContactRequest(AgentId),
     BlockAgent(AgentId),

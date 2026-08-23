@@ -1519,6 +1519,13 @@ impl Node {
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
 
+        // Subscribe to the shared direct-chat topic right away so messages sent
+        // before the owner accepts already sync in both directions.
+        let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
+        self.register_topic(direct_chat_topic_id)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
         // SPACES: Register the member in the spaces manager
 
         let inbox_topic = InboxTopic::from_nonce(
@@ -1624,6 +1631,7 @@ impl Node {
             Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
                 device_pubkey: contact.device_pubkey,
                 profile_name: contact.profile_name,
+                direct_chat_topic_id,
             }),
             Some(&format!(
                 "add_contact/pending({:?})",
@@ -1639,10 +1647,17 @@ impl Node {
     /// Record a mutual contact by publishing the contact marker into our own
     /// device group. Contact establishment (mapping, topics, bootstrap) is done
     /// separately via [`Self::establish_contact`].
-    pub(crate) async fn publish_add_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+    pub(crate) async fn publish_add_contact(
+        &self,
+        agent_id: AgentId,
+        direct_chat_topic_id: ChatId,
+    ) -> Result<(), Error> {
         self.publish(
             self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }),
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact {
+                agent_id,
+                direct_chat_topic_id,
+            }),
             Some(&format!("add_contact({:?})", agent_id.aliased())),
         )
         .await
@@ -1690,9 +1705,10 @@ impl Node {
             );
         }
 
-        self.publish_add_contact(agent_id).await?;
-
         let fake_agent_id = FakeAgentId::from(device_pubkey);
+        self.publish_add_contact(agent_id, self.direct_chat_topic(fake_agent_id))
+            .await?;
+
         self.create_direct_chat_space(fake_agent_id)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
