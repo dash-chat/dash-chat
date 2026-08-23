@@ -161,7 +161,7 @@ function ensureXcuitestDriver() {
 }
 
 /** `mobile: queryAppState` value for "the app is not running". */
-const APP_STATE_NOT_RUNNING = 1;
+export const APP_STATE_NOT_RUNNING = 1;
 
 /** Reset an iOS agent to first-launch state without reinstalling the app.
  *

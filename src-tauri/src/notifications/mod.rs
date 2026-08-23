@@ -40,6 +40,19 @@ pub(crate) async fn show_sync_notification(
         return;
     };
 
+    let Ok(node) = app_node_manager.get().await else {
+        return;
+    };
+    let data = build_notification_data(
+        &node,
+        notification.topic,
+        &notification.header,
+        notification.payload.as_ref(),
+    )
+    .await;
+
+    let Some(data) = data else { return };
+
     match app_node_manager
         .notified_operations_store()
         .record_notified_operation(notification.header.hash())
@@ -54,19 +67,6 @@ pub(crate) async fn show_sync_notification(
             log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
         }
     }
-
-    let Ok(node) = app_node_manager.get().await else {
-        return;
-    };
-    let data = build_notification_data(
-        &node,
-        notification.topic,
-        &notification.header,
-        notification.payload.as_ref(),
-    )
-    .await;
-
-    let Some(data) = data else { return };
 
     if let Err(err) = show_notification_from_data(app_handle, data) {
         log::error!("Failed to show sync-path notification: {err:?}");
