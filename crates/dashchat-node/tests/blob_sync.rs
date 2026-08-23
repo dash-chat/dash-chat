@@ -39,7 +39,7 @@ async fn media_blob_syncs_between_nodes() {
     };
 
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -126,7 +126,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 

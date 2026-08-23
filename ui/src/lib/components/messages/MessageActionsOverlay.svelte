@@ -22,6 +22,7 @@
 		target: HTMLElement | undefined;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		onReply?: () => void;
 	}
 
 	let {
@@ -30,6 +31,7 @@
 		target,
 		myDeviceId,
 		onEdit,
+		onReply,
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
@@ -55,6 +57,11 @@
 		onEdit?.();
 	}
 
+	function reply() {
+		close();
+		onReply?.();
+	}
+
 	async function copy() {
 		close();
 		if (!hasBody(message.content)) return;
@@ -77,6 +84,7 @@
 			{message}
 			{myDeviceId}
 			onEdit={edit}
+			onReply={onReply ? reply : undefined}
 			onCopy={copy}
 			onDelete={close}
 		/>

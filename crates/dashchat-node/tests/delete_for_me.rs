@@ -7,6 +7,8 @@
 
 #![cfg(test)]
 
+use std::time::Duration;
+
 use dashchat_node::stores::TombstoneReason;
 use dashchat_node::{testing::*, *};
 use p2panda::Hash;
@@ -355,4 +357,70 @@ async fn delete_for_me_of_an_already_deleted_for_everyone_message() {
     })
     .await
     .unwrap();
+}
+
+/// The `Tombstones` notification a delete-for-me emits must list every hash it
+/// tombstoned, not just the original message: the frontend's live tombstone
+/// map is built entirely from these notifications (a fresh fetch only happens
+/// on reload), so a notification missing an edit hash leaves that edit's
+/// reply quotes unresolved until the app is reloaded.
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_for_me_notification_covers_the_whole_edit_chain() {
+    setup();
+
+    let mb = TestMailbox::from_env();
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mb)
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_topic(bobbi.agent_id());
+
+    let msg = alice
+        .send_message_raw(chat, "original".into())
+        .await
+        .unwrap();
+    let edit = alice
+        .edit_message(chat, msg.hash(), "edited")
+        .await
+        .unwrap();
+
+    // Delete for me targets the tip of the chain (the edit), same as the
+    // frontend does: a reply always targets the latest known edit.
+    alice
+        .delete_message_for_me(chat, edit.hash())
+        .await
+        .unwrap();
+
+    let notified_hashes = alice
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(Duration::from_secs(30), |n: &Notification| match n {
+            Notification::System(SystemNotification::Tombstones {
+                topic,
+                hashes,
+                reason: TombstoneReason::DeletedForMe,
+            }) if *topic == (*chat).into() => Some(hashes.clone()),
+            _ => None,
+        })
+        .await
+        .expect("alice is notified of the delete-for-me tombstones");
+
+    assert_eq!(
+        notified_hashes,
+        std::collections::BTreeSet::from([msg.hash(), edit.hash()]),
+        "notification must cover the original message and its edit, not just the target hash"
+    );
 }

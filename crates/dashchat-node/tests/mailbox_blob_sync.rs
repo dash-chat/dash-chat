@@ -113,7 +113,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -314,7 +314,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
