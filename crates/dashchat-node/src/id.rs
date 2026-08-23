@@ -1,4 +1,7 @@
-use derive_more::{Deref, From, derive::Display};
+use derive_more::{
+    Deref, From,
+    derive::{Display, Into},
+};
 use p2panda::VerifyingKey;
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize};
@@ -52,6 +55,25 @@ impl AgentId {
         Ok(Self(ActorId::from_bytes(bytes)?))
     }
 }
+
+#[cfg(feature = "fake-agent-id")]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    From,
+    Into,
+    Deref,
+)]
+pub struct FakeAgentId(DeviceId);
 
 // TODO: when device groups are implemented, this switches to AgentId.
 pub type ChatMember = DeviceId;

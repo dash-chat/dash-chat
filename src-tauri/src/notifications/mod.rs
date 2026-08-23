@@ -6,7 +6,7 @@ pub mod push_notifications;
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
-use dashchat_node::{DeviceId, Node, Payload, Topic, TopicId};
+use dashchat_node::{DeviceId, FakeAgentId, Node, Payload, Topic, TopicId};
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
@@ -183,8 +183,9 @@ async fn chat_message_notification(
         .and_then(|p| p.avatar)
         .filter(|s| s.starts_with("data:image/"));
 
-    let direct_chat_agent_id = sender_agent_id
-        .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic);
+    let direct_chat_agent_id = sender_agent_id.filter(|_| {
+        *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic
+    });
     let chat_route = match direct_chat_agent_id {
         Some(agent_id) => format!("/direct-chats/{}", agent_id),
         None => format!("/group-chat/{}", topic),

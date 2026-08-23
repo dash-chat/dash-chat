@@ -77,7 +77,7 @@ async fn test_block_and_unblock_contact() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let chat_topic: TopicId = chat.into();
 
     // Baseline: Bob's message reaches Alice and notifies her.

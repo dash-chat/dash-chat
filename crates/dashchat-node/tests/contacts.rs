@@ -200,7 +200,7 @@ async fn test_inbox_two_way_flow() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Some(Payload::Inbox(InboxPayload::ContactRequestAck { profile, .. })) =
+            let Some(Payload::Inbox(InboxPayload::ContactRequestAccept { profile, .. })) =
                 n.op()?.payload.as_ref()
             else {
                 return None;

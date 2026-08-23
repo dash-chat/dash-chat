@@ -374,7 +374,7 @@ impl OpProjection {
             Payload::Inbox(InboxPayload::ContactRequest {
                 agent_id, profile, ..
             })
-            | Payload::Inbox(InboxPayload::ContactRequestAck { agent_id, profile }) => {
+            | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
                 None

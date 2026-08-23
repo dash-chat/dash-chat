@@ -57,7 +57,7 @@ pub enum InboxPayload {
     /// immediately rather than waiting for announcements sync. `agent_id` is the
     /// owner's agent id; the scanner records it against the op author
     /// (device_pubkey), a step toward dropping `agent_id` from the QR code.
-    ContactRequestAck { profile: Profile, agent_id: AgentId },
+    ContactRequestAccept { profile: Profile, agent_id: AgentId },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

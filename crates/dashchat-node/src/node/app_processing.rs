@@ -572,7 +572,7 @@ impl Node {
                             }
                         }
                     }
-                    InboxPayload::ContactRequestAck { agent_id, .. } => {
+                    InboxPayload::ContactRequestAccept { agent_id, .. } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
