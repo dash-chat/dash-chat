@@ -173,6 +173,7 @@
 	"waitingForProfile": "Waiting for profile…",
 
 	"newMessage": "New message",
+	"backgroundServiceRunning": "Dash Chat is running in the background, to ensure you receive messages while offline.",
 	"youHaveANewMessage": "You have a new message",
 	"newContactRequest": "New contact request",
 	"contactRequestAccepted": "{{name}} has accepted your contact request",

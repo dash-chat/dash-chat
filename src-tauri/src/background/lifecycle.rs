@@ -8,9 +8,7 @@ pub(crate) async fn on_pause(app: AppHandle<Wry>) {
     }
     let manager = app.state::<ServiceManagerHandle<Wry>>();
     let config = tauri_plugin_background_service::StartConfig {
-        service_label:
-            "Dash Chat is running in the background, to ensure you receive messages while offline."
-                .into(),
+        service_label: sonix_i18n::t!("backgroundServiceRunning"),
         foreground_service_type: "remoteMessaging".into(),
     };
     if let Err(e) = manager.start(app.clone(), config).await {
