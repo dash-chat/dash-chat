@@ -22,6 +22,7 @@
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import ReplyQuote from './ReplyQuote.svelte';
+	import SwipeToReply from './SwipeToReply.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -183,9 +184,11 @@
 {#if deleted}
 	<div class="group flex justify-start">{@render bubble()}</div>
 {:else}
-	<div class="group flex justify-start" use:longpress={{ onLongPress }}>
-		{@render bubble()}
-	</div>
+	<SwipeToReply {onReply}>
+		<div class="group flex justify-start" use:longpress={{ onLongPress }}>
+			{@render bubble()}
+		</div>
+	</SwipeToReply>
 {/if}
 {#if isMobile}
 	<MessageActionsOverlay
