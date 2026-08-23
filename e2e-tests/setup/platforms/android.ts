@@ -100,7 +100,6 @@ function ensureAndroidEnv() {
 		androidEnv = JSON.parse(readFileSync(pinned, 'utf8')) as NodeJS.ProcessEnv;
 		return;
 	}
-	if (androidToolsAvailable(process.env)) return;
 	androidEnv = captureAndroidDevShellEnv();
 	mkdirSync(path.dirname(ANDROID_ENV_FILE), { recursive: true });
 	writeFileSync(ANDROID_ENV_FILE, JSON.stringify(androidEnv));
