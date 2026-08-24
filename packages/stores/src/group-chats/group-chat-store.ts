@@ -51,7 +51,7 @@ export class GroupChatStore {
 			logsStore,
 			contactsStore,
 			tombstoneStore,
-			reactive(async () => chatId),
+			chatId,
 			messagesClient,
 		);
 		this.logsStore.logsClient.onNewOperation((topicId, op) => {

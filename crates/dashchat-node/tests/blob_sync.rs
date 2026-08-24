@@ -27,7 +27,7 @@ async fn media_blob_syncs_between_nodes() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
@@ -114,7 +114,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let chat_topic: TopicId = chat.into();
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();

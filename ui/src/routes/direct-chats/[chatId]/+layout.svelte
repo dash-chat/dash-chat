@@ -5,7 +5,7 @@
 	let { children } = $props();
 </script>
 
-{#key page.params.agentId}
+{#key page.params.chatId}
 	<KeepAliveScope>
 		{@render children()}
 	</KeepAliveScope>
