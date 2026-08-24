@@ -85,7 +85,7 @@
 
 		{#if isAndroid}
 			<div class="column center-in-desktop">
-				<BlockTitle>Background Mode</BlockTitle>
+				<BlockTitle>{m.backgroundMode()}</BlockTitle>
 				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<ListItem
 						title={m.startBackgroundMode()}
