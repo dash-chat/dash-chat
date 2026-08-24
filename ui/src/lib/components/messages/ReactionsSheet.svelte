@@ -49,44 +49,53 @@
 		onToggleReaction(emoji);
 		close();
 	}
+
+	const tabColors = {
+		textIos: 'text-inherit',
+		textMaterial: 'text-inherit',
+		tonalTextIos: 'text-inherit',
+		tonalTextMaterial: 'text-inherit',
+	};
 </script>
 
-{#snippet tab(target: string | null, label: string, testid: string)}
+{#snippet emojiTab(emoji: string, count: number)}
 	<Button
 		inline
 		small
 		rounded
-		clear={filter !== target}
-		tonal={filter === target}
-		class={filter === target ? 'neutral-tonal-button' : ''}
-		colors={{
-			textIos: 'text-inherit',
-			textMaterial: 'text-inherit',
-			tonalTextIos: 'text-inherit',
-			tonalTextMaterial: 'text-inherit',
-		}}
+		clear={filter !== emoji}
+		tonal={filter === emoji}
+		class={filter === emoji ? 'neutral-tonal-button' : ''}
+		colors={tabColors}
 		role="tab"
-		aria-selected={filter === target}
-		onClick={() => (filter = target)}
-		data-testid={testid}
+		aria-selected={filter === emoji}
+		onClick={() => (filter = emoji)}
+		data-testid={`reactions-tab-${emoji}`}
 	>
-		{label}
+		{emoji}
+		{count}
 	</Button>
 {/snippet}
 
 {#snippet content()}
 	<div class="flex flex-wrap items-center gap-1.5 px-3 pt-3" role="tablist">
-		{@render tab(
-			null,
-			`${m.reactionsAll()} · ${entries.length}`,
-			'reactions-tab-all',
-		)}
+		<Button
+			inline
+			small
+			rounded
+			clear={filter !== null}
+			tonal={filter === null}
+			class={filter === null ? 'neutral-tonal-button' : ''}
+			colors={tabColors}
+			role="tab"
+			aria-selected={filter === null}
+			onClick={() => (filter = null)}
+			data-testid="reactions-tab-all"
+		>
+			{m.reactionsAll()} · {entries.length}
+		</Button>
 		{#each condensed as reaction (reaction.emoji)}
-			{@render tab(
-				reaction.emoji,
-				`${reaction.emoji} ${reaction.count}`,
-				`reactions-tab-${reaction.emoji}`,
-			)}
+			{@render emojiTab(reaction.emoji, reaction.count)}
 		{/each}
 	</div>
 	{#await $profiles then profiles}

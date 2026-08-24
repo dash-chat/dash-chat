@@ -389,8 +389,6 @@ export class ContactsStore {
 		return profile;
 	});
 
-	/** The profile of each given agent; agents with no known profile are
-	 * omitted. */
 	profilesForAgents = reactive(async (agentIds: Set<AgentId>) => {
 		const entries = await Promise.all(
 			Array.from(agentIds).map(async agentId => {
