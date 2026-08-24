@@ -53,7 +53,9 @@ export class OfflinePage extends TestHelper {
 	 */
 	async setBackgroundModeEnabled(enabled: boolean): Promise<void> {
 		await this.backgroundModeToggleInput.waitForExist();
-		if ((await this.checkedFor(BACKGROUND_MODE_TOGGLE_INPUT_SELECTOR)) === enabled)
+		if (
+			(await this.checkedFor(BACKGROUND_MODE_TOGGLE_INPUT_SELECTOR)) === enabled
+		)
 			return;
 		await this.agent.execute((sel: string) => {
 			(document.querySelector(sel) as HTMLInputElement | null)?.click();
