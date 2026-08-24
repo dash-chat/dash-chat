@@ -152,7 +152,6 @@
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
 					)}
 					{#each filteredContacts as { contact, profile }}
-						{@const actorId = contact.agentId}
 						<TitleTruncatedListItem
 							link
 							class="hover-scope"
@@ -160,7 +159,8 @@
 								href: `/direct-chats/${contact.chatId}`,
 								...(isMobile &&
 									longPressHandlers({
-										onLongPress: (_, row) => openMenu(actorId, profile, row),
+										onLongPress: (_, row) =>
+											openMenu(contact.agentId, profile, row),
 									})),
 							}}
 							title={profile.name}
@@ -181,7 +181,8 @@
 											icon={mdiDotsVertical}
 											label={m.contactMenu()}
 											testid="contact-menu-button"
-											onClick={e => openMenu(actorId, profile, e.currentTarget)}
+											onClick={e =>
+												openMenu(contact.agentId, profile, e.currentTarget)}
 										/>
 									</span>
 								{/if}
