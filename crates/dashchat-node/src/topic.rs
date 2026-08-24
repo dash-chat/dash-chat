@@ -214,6 +214,7 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
+    #[cfg(feature = "fake-agent-id")]
     pub fn direct_chat(mut pks: [FakeAgentId; 2]) -> Self {
         pks.sort();
         let mut hasher = blake3::Hasher::new();

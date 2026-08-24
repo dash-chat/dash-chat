@@ -63,7 +63,11 @@ tempfile = "3"
 p2panda-store = { workspace = true, features = ["test_utils"] }
 
 [features]
-default = ["instrument"]
+default = ["instrument", "fake-agent-id"]
 instrument = []
 testing = ["tempfile", "nanoid", "p2panda-store/test_utils"]
 p2p = []
+
+# Represents our current false equivalence between DeviceId and AgentId.
+# This must be removed and cleaned up before device groups can work.
+fake-agent-id = []

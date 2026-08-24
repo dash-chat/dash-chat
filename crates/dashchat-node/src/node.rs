@@ -483,6 +483,7 @@ impl Node {
         self.node_keys.device_id()
     }
 
+    #[cfg(feature = "fake-agent-id")]
     pub fn fake_agent_id(&self) -> FakeAgentId {
         self.device_id().into()
     }
@@ -637,6 +638,7 @@ impl Node {
     /// Create a new direct chat Space.
     /// Note that only one node should create the space!
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    #[cfg(feature = "fake-agent-id")]
     pub async fn create_direct_chat_space(&self, other: FakeAgentId) -> anyhow::Result<()> {
         let topic = self.direct_chat_topic(other);
 
