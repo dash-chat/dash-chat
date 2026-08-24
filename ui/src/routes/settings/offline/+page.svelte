@@ -27,16 +27,28 @@
 	const backgroundModeEnabled = useReactivePromise(
 		settingsStore.backgroundModeEnabled,
 	);
-	let toggling = $state(false);
+	let togglingLocalMailbox = $state(false);
+	let togglingBackgroundMode = $state(false);
 
-	async function toggle(currentEnabled: boolean) {
-		toggling = true;
+	async function toggleLocalMailbox(currentEnabled: boolean) {
+		togglingLocalMailbox = true;
 		try {
 			await settingsStore.setLocalMailboxEnabled(!currentEnabled);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		} finally {
-			toggling = false;
+			togglingLocalMailbox = false;
+		}
+	}
+
+	async function toggleBackgroundMode(currentEnabled: boolean) {
+		togglingBackgroundMode = true;
+		try {
+			await settingsStore.setBackgroundModeEnabled(!currentEnabled);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		} finally {
+			togglingBackgroundMode = false;
 		}
 	}
 </script>
@@ -70,8 +82,8 @@
 							{#await $localMailboxEnabled then enabled}
 								<Toggle
 									checked={enabled}
-									disabled={toggling}
-									onChange={() => toggle(enabled)}
+									disabled={togglingLocalMailbox}
+									onChange={() => toggleLocalMailbox(enabled)}
 								/>
 							{/await}
 						{/snippet}
@@ -95,8 +107,8 @@
 							{#await $backgroundModeEnabled then enabled}
 								<Toggle
 									checked={enabled}
-									onChange={() =>
-										settingsStore.setBackgroundModeEnabled(!enabled)}
+									disabled={togglingBackgroundMode}
+									onChange={() => toggleBackgroundMode(enabled)}
 								/>
 							{/await}
 						{/snippet}
