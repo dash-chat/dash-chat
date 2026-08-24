@@ -34,6 +34,11 @@ export interface Contact {
 	addedTimestamp: number;
 }
 
+export interface ContactWithProfile {
+	contact: Contact;
+	profile: Profile;
+}
+
 /** One filed report against a contact, as recorded in the device group log. */
 export interface ContactReport {
 	timestamp: number;
@@ -359,41 +364,25 @@ export class ContactsStore {
 		return profile;
 	});
 
-	profilesForAllContacts = reactive(async () => {
-		const contacts = await this.contactsAgentIds();
+	profilesForUnblockedContacts = reactive(
+		async (): Promise<ContactWithProfile[]> => {
+			const [contacts, blocked] = await Promise.all([
+				this.contacts(),
+				this.blockedContactAgentIds(),
+			]);
+			const unblocked = Object.values(contacts).filter(
+				contact => !blocked.has(contact.agentId),
+			);
 
-		const profiles = await Promise.all(
-			contacts.map(contact => this.profiles(contact)),
-		);
+			const profiles = await Promise.all(
+				unblocked.map(contact => this.profiles(contact.agentId)),
+			);
 
-		const profilesWithContacts: Array<[AgentId, Profile]> = contacts
-			.map(
-				(contact, i) =>
-					[contact, profiles[i]] as [AgentId, Profile | undefined],
-			)
-			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
-
-		return profilesWithContacts;
-	});
-
-	profilesForUnblockedContacts = reactive(async () => {
-		const [contacts, blocked] = await Promise.all([
-			this.contactsAgentIds(),
-			this.blockedContactAgentIds(),
-		]);
-		const unblocked = contacts.filter(contact => !blocked.has(contact));
-
-		const profiles = await Promise.all(
-			unblocked.map(contact => this.profiles(contact)),
-		);
-
-		const profilesWithContacts: Array<[AgentId, Profile]> = unblocked
-			.map(
-				(contact, i) =>
-					[contact, profiles[i]] as [AgentId, Profile | undefined],
-			)
-			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
-
-		return profilesWithContacts;
-	});
+			return unblocked
+				.map((contact, i) => ({ contact, profile: profiles[i] }))
+				.filter(
+					(entry): entry is ContactWithProfile => entry.profile !== undefined,
+				);
+		},
+	);
 }

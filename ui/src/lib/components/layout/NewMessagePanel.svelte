@@ -16,7 +16,7 @@
 	import { isMobile } from '$lib/utils/environment';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import {
@@ -41,7 +41,6 @@
 	const contacts = useReactivePromise(
 		contactsStore.profilesForUnblockedContacts,
 	);
-	const contactChats = useReactiveValue(contactsStore.contacts);
 	const theme = $derived(useTheme());
 
 	let menuFor = $state<{
@@ -149,15 +148,16 @@
 						data-testid="new-message-contacts-empty"
 					/>
 				{:else}
-					{@const filteredContacts = contacts.filter(([_, profile]) =>
+					{@const filteredContacts = contacts.filter(({ profile }) =>
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
 					)}
-					{#each filteredContacts as [actorId, profile]}
+					{#each filteredContacts as { contact, profile }}
+						{@const actorId = contact.agentId}
 						<TitleTruncatedListItem
 							link
 							class="hover-scope"
 							linkProps={{
-								href: `/direct-chats/${$contactChats?.[actorId]}`,
+								href: `/direct-chats/${contact.chatId}`,
 								...(isMobile &&
 									longPressHandlers({
 										onLongPress: (_, row) => openMenu(actorId, profile, row),
