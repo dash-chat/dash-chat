@@ -108,7 +108,7 @@ export class ChatsStore {
 			this.contactsStore.outgoingContactRequests(),
 		]);
 		const chatIds = new Set<ChatId>();
-		for (const chatId of Object.values(contacts)) chatIds.add(chatId);
+		for (const contact of Object.values(contacts)) chatIds.add(contact.chatId);
 		for (const request of requests) chatIds.add(request.chatId);
 		for (const request of outgoing) chatIds.add(request.chatId);
 		return Array.from(chatIds);

@@ -56,7 +56,8 @@ impl AgentId {
     }
 }
 
-#[cfg(feature = "fake-agent-id")]
+/// Represents our current false equivalence between DeviceId and AgentId.
+/// This must be removed and cleaned up before device groups can work.
 #[derive(
     Clone,
     Copy,

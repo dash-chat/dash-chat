@@ -396,7 +396,5 @@ export interface ChatSummary {
 	name: string;
 	avatar: string | undefined;
 	lastEvent: ChatSummaryLastEvent;
-	/** Set while the peer's profile is unknown (nothing synced yet); tells the
-	 * chat list to render the placeholder-person avatar instead of initials. */
 	waitingForProfile?: true;
 }

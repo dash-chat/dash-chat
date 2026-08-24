@@ -28,6 +28,12 @@ export interface OutgoingContactRequest {
 	profileName: string;
 }
 
+export interface Contact {
+	agentId: AgentId;
+	chatId: ChatId;
+	addedTimestamp: number;
+}
+
 /** One filed report against a contact, as recorded in the device group log. */
 export interface ContactReport {
 	timestamp: number;
@@ -71,17 +77,21 @@ export class ContactsStore {
 		}),
 	);
 
-	/** The direct chat topic of each established contact, keyed by agent id. */
-	contacts = reactive(async (): Promise<Record<AgentId, ChatId>> => {
+	/** The established contacts, keyed by agent id. */
+	contacts = reactive(async (): Promise<Record<AgentId, Contact>> => {
 		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
 
-		const contacts: Record<AgentId, ChatId> = {};
+		const contacts: Record<AgentId, Contact> = {};
 
 		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
 			for (const op of ops) {
 				if (op.body?.payload?.type === 'AddContact') {
 					const { agent_id, direct_chat_topic_id } = op.body.payload.payload;
-					contacts[agent_id] = direct_chat_topic_id;
+					contacts[agent_id] = {
+						agentId: agent_id,
+						chatId: direct_chat_topic_id,
+						addedTimestamp: op.header.timestamp,
+					};
 				}
 			}
 		}
@@ -211,23 +221,6 @@ export class ContactsStore {
 		}
 
 		return Object.values(latestByDevice);
-	});
-
-	contactAddedTimestamp = reactive(async (agentId: AgentId) => {
-		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
-
-		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
-			for (const op of ops) {
-				if (
-					op.body?.payload?.type === 'AddContact' &&
-					op.body.payload.payload.agent_id === agentId
-				) {
-					return op.header.timestamp;
-				}
-			}
-		}
-
-		return undefined;
 	});
 
 	rejectedContactRequests = reactive(async () => {

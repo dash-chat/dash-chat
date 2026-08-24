@@ -39,11 +39,11 @@ export class DirectChatStore {
 		);
 	}
 
-	/** The agent id of the established contact on the other side, if any. */
-	private contactAgentId = reactive(async () => {
+	/** The established contact on the other side, if any. */
+	private contact = reactive(async () => {
 		const contacts = await this.contactsStore.contacts();
-		return Object.keys(contacts).find(
-			agentId => contacts[agentId] === this.chatId,
+		return Object.values(contacts).find(
+			contact => contact.chatId === this.chatId,
 		);
 	});
 
@@ -54,8 +54,8 @@ export class DirectChatStore {
 	});
 
 	peerAgentId = reactive(async (): Promise<AgentId | undefined> => {
-		const contactAgentId = await this.contactAgentId();
-		if (contactAgentId !== undefined) return contactAgentId;
+		const contact = await this.contact();
+		if (contact !== undefined) return contact.agentId;
 		const request = await this.contactRequest();
 		return request?.agentId;
 	});
@@ -158,13 +158,13 @@ export class DirectChatStore {
 
 	summary = reactive(async (): Promise<ChatSummary> => {
 		const profile = await this.peerProfile();
-		const contactAgentId = await this.contactAgentId();
+		const contact = await this.contact();
 		const request = await this.contactRequest();
 		const outgoing = await this.outgoingRequest();
 		const message = await this.messages.lastMessage();
 
 		const pendingRequest =
-			contactAgentId === undefined ? (request ?? outgoing) : undefined;
+			contact === undefined ? (request ?? outgoing) : undefined;
 		const lastEvent: ChatSummary['lastEvent'] = message
 			? {
 					kind: 'message',
@@ -178,12 +178,7 @@ export class DirectChatStore {
 					}
 				: {
 						kind: 'contact_added',
-						timestamp:
-							(contactAgentId === undefined
-								? undefined
-								: await this.contactsStore.contactAddedTimestamp(
-										contactAgentId,
-									)) ?? 0,
+						timestamp: contact?.addedTimestamp ?? 0,
 					};
 
 		return {
