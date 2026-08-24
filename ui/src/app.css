@@ -232,6 +232,13 @@ li.plain span {
 .outgoing-message.last-message {
 	border-start-end-radius: 4px;
 }
+/* Incoming bubble fills matched to Signal (light #E7EBF3, dark #303133). */
+.incoming-message {
+	background-color: #e7ebf3;
+}
+.dark .incoming-message {
+	background-color: #303133;
+}
 .incoming-message.first-message {
 	border-end-start-radius: 4px;
 }

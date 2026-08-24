@@ -37,12 +37,15 @@
 	}
 
 	.quote-frame-mine {
-		background-color: rgba(255, 255, 255, 0.45);
+		background-color: rgba(255, 255, 255, 0.7);
 		color: rgba(0, 0, 0, 0.87);
+	}
+	:global(.dark) .quote-frame-mine {
+		background-color: rgba(255, 255, 255, 0.45);
 	}
 
 	.quote-frame-others {
-		background-color: rgba(0, 0, 0, 0.06);
+		background-color: rgba(255, 255, 255, 0.55);
 	}
 	:global(.dark) .quote-frame-others {
 		background-color: rgba(255, 255, 255, 0.16);
