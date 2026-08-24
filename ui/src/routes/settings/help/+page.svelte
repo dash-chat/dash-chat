@@ -2,9 +2,11 @@
 	import { goto } from '$app/navigation';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { m } from '$lib/paraglide/messages.js';
+	import { developerMode } from '$lib/stores/developer-mode.svelte';
 	import { offlineMode } from '$lib/stores/offline-mode.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
+	import { showToast } from '$lib/utils/toasts';
 	import {
 		BlockTitle,
 		List,
@@ -19,6 +21,23 @@
 	const theme = $derived(useTheme());
 
 	const versionPromise = getVersion();
+
+	const UNLOCK_TAP_COUNT = 7;
+	const MAX_TAP_GAP_MS = 300;
+
+	let tapCount = 0;
+	let lastTapAt = 0;
+
+	function onVersionTap() {
+		if (developerMode.unlocked) return;
+		const now = Date.now();
+		tapCount = now - lastTapAt < MAX_TAP_GAP_MS ? tapCount + 1 : 1;
+		lastTapAt = now;
+		if (tapCount < UNLOCK_TAP_COUNT) return;
+		tapCount = 0;
+		developerMode.unlock();
+		showToast(m.developerModeEnabled());
+	}
 </script>
 
 <Page>
@@ -63,6 +82,7 @@
 					<ListItem
 						title={m.version()}
 						after={version}
+						onClick={onVersionTap}
 						data-testid="help-version"
 					/>
 				{/await}

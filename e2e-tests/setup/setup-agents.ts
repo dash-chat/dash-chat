@@ -28,6 +28,7 @@ import { AddContactPage } from '../helpers/pages/new-message/add-contact-page';
 import { NewMessagePage } from '../helpers/pages/new-message/new-message-page';
 import { AccountPage } from '../helpers/pages/settings/account-page';
 import { AppearancePage } from '../helpers/pages/settings/appearance-page';
+import { DeveloperPage } from '../helpers/pages/settings/developer-page';
 import { ContactUsPage } from '../helpers/pages/settings/help/contact-us-page';
 import { HelpPage } from '../helpers/pages/settings/help/help-page';
 import { NotificationsPage } from '../helpers/pages/settings/notifications-page';
@@ -59,6 +60,7 @@ export type Agent = WebdriverIO.Browser & {
 	chatSettingsPage: ChatSettingsPage;
 	contactUsPage: ContactUsPage;
 	createProfilePage: CreateProfilePage;
+	developerPage: DeveloperPage;
 	directChatPage: DirectChatPage;
 	editAboutPage: EditAboutPage;
 	editNamePage: EditNamePage;
@@ -159,6 +161,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.chatSettingsPage = new ChatSettingsPage(b);
 	agent.contactUsPage = new ContactUsPage(b);
 	agent.createProfilePage = new CreateProfilePage(b);
+	agent.developerPage = new DeveloperPage(b);
 	agent.directChatPage = new DirectChatPage(b);
 	agent.editAboutPage = new EditAboutPage(b);
 	agent.editNamePage = new EditNamePage(b);

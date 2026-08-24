@@ -11,6 +11,7 @@
 		mdiPaletteOutline,
 		mdiHelpCircleOutline,
 		mdiServerOutline,
+		mdiCodeTags,
 	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
@@ -24,6 +25,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
+	import { developerMode } from '$lib/stores/developer-mode.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
@@ -197,6 +199,28 @@
 				{/snippet}
 			</ListItem>
 		</List>
+
+		{#if developerMode.unlocked}
+			<List
+				strongIos
+				nested={theme !== 'ios'}
+				inset={isWideScreen.value || theme === 'ios'}
+			>
+				<ListItem
+					link
+					class={isActive('/settings/developer') ? 'active' : ''}
+					linkProps={{ href: '/settings/developer' }}
+					data-testid="settings-developer-link"
+					title={m.developer()}
+					chevron={false}
+				>
+					{#snippet media()}
+						<wa-icon src={wrapPathInSvg(mdiCodeTags)} style="font-size: 28px"
+						></wa-icon>
+					{/snippet}
+				</ListItem>
+			</List>
+		{/if}
 	{/await}
 </div>
 
