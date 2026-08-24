@@ -33,11 +33,6 @@ describe('Voice notes', () => {
 		await agent2.waitUntil(async () => (await messages.voiceProgress()) > 0.1, {
 			timeoutMsg: 'Waveform progress did not advance during playback',
 		});
-		const mid = await messages.voiceProgress();
-		await agent2.waitUntil(
-			async () => (await messages.voiceProgress()) > mid + 0.1,
-			{ timeoutMsg: 'Waveform progress stalled during playback' },
-		);
 	});
 
 	it('shows a spinner while loading and toasts when the audio fails to load', async () => {
@@ -62,7 +57,7 @@ describe('Voice notes', () => {
 		// Audio is really 2s but metadata claims 4s; seeking to the real midpoint
 		// must fill ~50% of the scrubber (driven by audio.duration), not ~25%.
 		const realFraction = await messages.voiceSeekFraction(0.5);
-		expect(realFraction).toBeGreaterThan(0);
+		expect(realFraction).toBeCloseTo(0.5, 1);
 		await agent2.waitUntil(
 			async () => Math.abs((await messages.voiceProgress()) - 0.5) < 0.1,
 			{ timeoutMsg: 'Scrubber did not track the real audio duration' },

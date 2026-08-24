@@ -84,14 +84,10 @@
             pango
             # libatk-1.0
             at-spi2-core
-            # GStreamer so WebKitGTK can play voice-note audio: WAV from desktop
-            # recorders (base/good) and AAC/M4A from mobile ones (bad).
-            gst_all_1.gstreamer
-            gst_all_1.gst-plugins-base
-            gst_all_1.gst-plugins-good
-            gst_all_1.gst-plugins-bad
             pkgsPnpm.alsa-lib
           ];
+          # GStreamer so WebKitGTK can play voice-note audio: WAV from desktop
+          # recorders (base/good) and AAC/M4A from mobile ones (bad).
           gstPluginPath = pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" [
             pkgs.gst_all_1.gstreamer
             pkgs.gst_all_1.gst-plugins-base

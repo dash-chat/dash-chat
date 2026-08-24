@@ -28,12 +28,12 @@
 {:else if voice.view !== 'desktop'}
 	<div class="relative shrink-0 {voice.view === 'hold' ? 'z-30' : ''}">
 		{#if voice.view === 'hold'}
+			<!-- left-1/2 + translate(-50%) is symmetric centering, so RTL doesn't apply. -->
 			<div
-				class="lock-pill pointer-events-none absolute bottom-full start-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
+				class="lock-pill pointer-events-none absolute bottom-full left-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
 				style="transform: translate(-50%, {-8 * voice.drag.lockProgress}px)"
 			>
 				<wa-icon
-					class="lock-icon"
 					src={wrapPathInSvg(mdiLockOutline)}
 					style="opacity: {0.55 + 0.45 * voice.drag.lockProgress}"
 				></wa-icon>
@@ -46,7 +46,7 @@
 			label={m.voiceRecordHint()}
 			testid="message-input-voice-record"
 			loading={voice.phase === 'requesting' && !isMobile}
-			iconClass={voice.view === 'hold' ? 'text-2xl text-white' : 'text-2xl'}
+			iconClass={voice.view === 'hold' ? 'text-2xl text-white' : undefined}
 			class="!h-[42px] !w-[42px] shrink-0 touch-none {voice.view === 'hold'
 				? '!bg-red-500 !opacity-100'
 				: ''}"

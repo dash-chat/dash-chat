@@ -16,7 +16,6 @@
 		/** Full-width row rendered inside the pill, above the textarea (e.g.
 		 * the editing banner). */
 		banner?: Snippet;
-		class?: string;
 	}
 
 	let {
@@ -28,7 +27,6 @@
 		before,
 		after,
 		banner,
-		class: className = '',
 	}: Props = $props();
 
 	const theme = $derived(useTheme());
@@ -69,7 +67,7 @@
 	class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
 	'ios'
 		? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-		: 'bg-white dark:bg-gray-800'} {className}"
+		: 'bg-white dark:bg-gray-800'}"
 	{onpaste}
 >
 	{@render banner?.()}

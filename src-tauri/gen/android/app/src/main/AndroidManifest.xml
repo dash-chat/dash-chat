@@ -4,7 +4,6 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- tauri-plugin-background-service declares these in its own manifest and the
          merger pulls them into ours; `tools:node="remove"` strips them back out. -->

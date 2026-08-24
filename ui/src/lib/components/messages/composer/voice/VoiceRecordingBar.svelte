@@ -52,7 +52,6 @@
 			inline
 			onClick={() => void voice.cancel()}
 			colors={{ textIos: 'text-red-500', textMaterial: 'text-red-500' }}
-			aria-label={m.voiceCancel()}
 			data-testid="voice-cancel"
 			style="width: auto"
 		>

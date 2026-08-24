@@ -17,8 +17,6 @@
 		"sharekit:allow-share-file",
 		"fs:allow-appcache-write-recursive",
 		"fs:allow-appcache-read-recursive",
-		"fs:allow-appcache-write",
-		"fs:allow-appcache-read",
 		"core:path:default",
 		"virtual-keyboard:default",
 		"sentry-reporting:default",

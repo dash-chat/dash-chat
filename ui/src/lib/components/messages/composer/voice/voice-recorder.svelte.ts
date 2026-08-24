@@ -86,8 +86,7 @@ export class VoiceRecorder {
 	 * locked take keeps its surface while the recording encodes. */
 	get view(): 'idle' | 'hold' | 'locked' | 'desktop' {
 		const active =
-			this.phase === 'recording' ||
-			(this.phase === 'encoding' && this.locked);
+			this.phase === 'recording' || (this.phase === 'encoding' && this.locked);
 		if (!isMobile) return active ? 'desktop' : 'idle';
 		if (
 			this.phase === 'requesting' ||
@@ -116,7 +115,7 @@ export class VoiceRecorder {
 		if (this.phase === 'recording') {
 			try {
 				const result = await stopRecording();
-				await cleanup([result.filePath]);
+				await cleanup(result.filePath);
 			} catch {
 				// Not actually recording (e.g. permission was pending).
 			}
@@ -221,7 +220,6 @@ export class VoiceRecorder {
 				maxDuration: MAX_DURATION_SECONDS,
 			});
 			this.#startedAt = Date.now();
-			this.elapsedMs = 0;
 			this.phase = 'recording';
 			this.#startTimer();
 			// The plugin appends its own extension, so the file being written is not
@@ -258,7 +256,7 @@ export class VoiceRecorder {
 			};
 		} finally {
 			this.phase = 'idle';
-			if (filePath) await cleanup([filePath]);
+			if (filePath) await cleanup(filePath);
 		}
 	}
 
@@ -291,13 +289,11 @@ export class VoiceRecorder {
 	}
 }
 
-async function cleanup(paths: string[]): Promise<void> {
-	for (const path of new Set(paths)) {
-		try {
-			await remove(path);
-		} catch {
-			// Best-effort temp cleanup.
-		}
+async function cleanup(path: string): Promise<void> {
+	try {
+		await remove(path);
+	} catch {
+		// Best-effort temp cleanup.
 	}
 }
 

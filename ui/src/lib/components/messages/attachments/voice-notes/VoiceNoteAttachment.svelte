@@ -17,7 +17,6 @@
 	let { voice, metadata }: Props = $props();
 
 	const peaks = $derived(Array.from(voice.waveform, v => v / 255));
-	const durationSec = $derived(voice.duration_ms / 1000);
 
 	const player = untrack(
 		() => new VoicePlayer(voice, () => showToast(m.voicePlayFailed(), 'error')),
@@ -49,7 +48,7 @@
 			onclick={() => void player.toggle()}
 		/>
 
-		<Waveform {peaks} {durationSec} {player} />
+		<Waveform {peaks} {player} />
 	</div>
 
 	<div class="flex items-center justify-between text-xs opacity-70">

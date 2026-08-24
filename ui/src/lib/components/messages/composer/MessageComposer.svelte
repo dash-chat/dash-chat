@@ -343,7 +343,6 @@
 				onpaste={onPaste}
 				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
-				class={voice.view === 'hold' ? 'relative z-30' : ''}
 				banner={editing !== null
 					? editingBanner
 					: replying !== null

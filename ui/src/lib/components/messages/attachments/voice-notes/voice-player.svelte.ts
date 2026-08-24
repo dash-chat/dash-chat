@@ -14,12 +14,11 @@ export class VoicePlayer {
 
 	#audio: HTMLAudioElement | undefined;
 	#objectUrl: string | undefined;
-	#loaded = false;
 	#loadPromise: Promise<boolean> | undefined;
 	readonly #voice: VoiceNote;
-	readonly #onError: (() => void) | undefined;
+	readonly #onError: () => void;
 
-	constructor(voice: VoiceNote, onError?: () => void) {
+	constructor(voice: VoiceNote, onError: () => void) {
 		this.#voice = voice;
 		this.#onError = onError;
 	}
@@ -75,7 +74,7 @@ export class VoicePlayer {
 		try {
 			await audio.play();
 		} catch {
-			this.#onError?.();
+			this.#onError();
 		}
 	}
 
@@ -99,7 +98,7 @@ export class VoicePlayer {
 	// pipeline bypasses the webview's scheme handler — so bytes are fetched on
 	// first play and set as an object URL, with concurrent callers sharing it.
 	#ensureLoaded(): Promise<boolean> {
-		if (this.#loaded) return Promise.resolve(true);
+		if (this.#objectUrl) return Promise.resolve(true);
 		if (!this.#loadPromise) {
 			this.#loadPromise = this.#load().finally(() => {
 				this.#loadPromise = undefined;
@@ -111,33 +110,27 @@ export class VoicePlayer {
 	async #load(): Promise<boolean> {
 		this.loading = true;
 		try {
-			const source = await this.#fetchAudio();
-			if (!source) {
-				this.#onError?.();
+			const data = await this.#fetchAudio();
+			if (!data) {
+				this.#onError();
 				return false;
 			}
 			if (!this.#audio) return false;
 			this.#objectUrl = URL.createObjectURL(
-				new Blob([source.data as BlobPart], { type: source.mimeType }),
+				new Blob([data as BlobPart], { type: this.#voice.mime_type }),
 			);
 			this.#audio.src = this.#objectUrl;
-			this.#loaded = true;
 			return true;
 		} finally {
 			this.loading = false;
 		}
 	}
 
-	async #fetchAudio(): Promise<
-		{ data: Uint8Array; mimeType: string } | undefined
-	> {
+	async #fetchAudio(): Promise<Uint8Array | undefined> {
 		try {
 			const res = await fetch(blobUrl(this.#voice.hash));
 			if (!res.ok) return undefined;
-			return {
-				data: new Uint8Array(await res.arrayBuffer()),
-				mimeType: this.#voice.mime_type,
-			};
+			return new Uint8Array(await res.arrayBuffer());
 		} catch {
 			return undefined;
 		}

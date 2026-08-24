@@ -5,11 +5,10 @@
 	interface Props {
 		/** Peak amplitudes in 0..1, one per bar. */
 		peaks: number[];
-		durationSec: number;
 		player: VoicePlayer;
 	}
 
-	let { peaks, durationSec, player }: Props = $props();
+	let { peaks, player }: Props = $props();
 
 	let scrubbing = $state(false);
 
@@ -24,7 +23,6 @@
 	);
 
 	function seekFromPointer(clientX: number, el: HTMLElement) {
-		if (durationSec <= 0) return;
 		const rect = el.getBoundingClientRect();
 		let fraction = (clientX - rect.left) / rect.width;
 		if (getComputedStyle(el).direction === 'rtl') fraction = 1 - fraction;
@@ -45,7 +43,6 @@
 	}
 
 	function onKeyDown(event: KeyboardEvent) {
-		if (durationSec <= 0) return;
 		const el = event.currentTarget as HTMLElement;
 		// The fill grows from the inline-start, so the arrow keys follow the
 		// visual fill: in RTL, leftward moves forward in time.
@@ -80,7 +77,7 @@
 	tabindex="0"
 	aria-label={m.voiceSeek()}
 	aria-valuemin={0}
-	aria-valuemax={Math.round(durationSec)}
+	aria-valuemax={Math.round(player.durationSec)}
 	aria-valuenow={Math.round(player.currentTime)}
 	onpointerdown={onPointerDown}
 	onpointermove={onPointerMove}

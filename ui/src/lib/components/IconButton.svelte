@@ -57,7 +57,9 @@
 	// Svelte delegates pointerdown to the root, so stopping propagation would also
 	// swallow a forwarded `onPointerDown` — hence never for a button that has one.
 	const stopAncestorPress = $derived(
-		onPointerDown ? undefined : (event: PointerEvent) => event.stopPropagation(),
+		onPointerDown
+			? undefined
+			: (event: PointerEvent) => event.stopPropagation(),
 	);
 </script>
 
