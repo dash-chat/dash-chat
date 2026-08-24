@@ -15,6 +15,9 @@ use sentry::Envelope;
 pub(crate) const USER_AGENT: &str = concat!("dash-chat/", env!("CARGO_PKG_VERSION"));
 const CONTENT_TYPE: &str = "application/x-sentry-envelope";
 const TIMEOUT: Duration = Duration::from_secs(30);
+/// Short, so the offline case — the whole point of the outbox — reaches the
+/// "saved for later" answer without a long stall.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Delivery {
@@ -114,6 +117,7 @@ pub(crate) fn webpki_roots_client() -> reqwest::Client {
     .with_no_client_auth();
     reqwest::Client::builder()
         .tls_backend_preconfigured(tls)
+        .connect_timeout(CONNECT_TIMEOUT)
         .build()
         .expect("failed to build the sentry HTTP client")
 }

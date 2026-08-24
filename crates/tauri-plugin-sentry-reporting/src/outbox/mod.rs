@@ -43,10 +43,10 @@ impl Outbox {
         &self.root
     }
 
-    /// User-approved: waiting only for a connection.
-    pub(crate) fn enqueue(&self, envelope: &Envelope) -> anyhow::Result<()> {
-        entry::write(&self.root, State::Queued, envelope)?;
-        Ok(())
+    /// User-approved: waiting only for a connection. Returns where it landed,
+    /// so the caller can follow that one report's fate.
+    pub(crate) fn enqueue(&self, envelope: &Envelope) -> anyhow::Result<PathBuf> {
+        entry::write(&self.root, State::Queued, envelope)
     }
 
     /// Kept for the next launch to offer. Never sent without approval.
@@ -66,11 +66,12 @@ impl Outbox {
             .any(|held| entry::read(&held.path).is_some())
     }
 
-    pub(crate) fn approve_held(&self) -> anyhow::Result<()> {
-        for held in entry::list(&self.root, State::Held) {
-            entry::move_to(&held.path, &self.root, State::Queued)?;
-        }
-        Ok(())
+    /// Returns where each approved crash now waits, oldest first.
+    pub(crate) fn approve_held(&self) -> anyhow::Result<Vec<PathBuf>> {
+        entry::list(&self.root, State::Held)
+            .iter()
+            .map(|held| entry::move_to(&held.path, &self.root, State::Queued))
+            .collect()
     }
 
     pub(crate) fn discard_held(&self) {

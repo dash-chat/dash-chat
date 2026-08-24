@@ -7,7 +7,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::logs::PendingLogs;
-use crate::outbox::drain::{DrainResult, Drainer};
+use crate::outbox::drain::{Drainer, EntryFate};
 use crate::outbox::sender::HttpSender;
 use crate::outbox::Outbox;
 use crate::{client, Config};
@@ -24,12 +24,13 @@ pub enum SendOutcome {
     Queued,
 }
 
-impl From<DrainResult> for SendOutcome {
-    fn from(result: DrainResult) -> Self {
-        match result {
-            DrainResult::Emptied => SendOutcome::Sent,
-            DrainResult::Pending => SendOutcome::Queued,
-        }
+/// `Sent` only ever means Sentry has this report; anything else it could have
+/// become is either still waiting or an outright failure.
+pub(crate) fn outcome(fate: EntryFate) -> anyhow::Result<SendOutcome> {
+    match fate {
+        EntryFate::Delivered => Ok(SendOutcome::Sent),
+        EntryFate::Waiting => Ok(SendOutcome::Queued),
+        EntryFate::Dropped => Err(anyhow::anyhow!("the report could not be filed")),
     }
 }
 
@@ -62,10 +63,11 @@ impl SentryState {
         })
     }
 
-    /// Queue a user-approved report and try to deliver it now.
+    /// Queue a user-approved report and try to deliver it now. The answer is
+    /// about this report, not about whatever else the drain found.
     pub(crate) async fn send(&self, envelope: Envelope) -> anyhow::Result<SendOutcome> {
-        self.outbox.enqueue(&envelope)?;
-        Ok(self.drainer.drain_now().await.into())
+        let queued = self.outbox.enqueue(&envelope)?;
+        outcome(self.drainer.drain_watching(&queued).await)
     }
 }
 
@@ -76,6 +78,7 @@ mod tests {
     use std::net::TcpListener;
 
     use sentry::protocol::Event;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use crate::testing::config;
 
@@ -104,5 +107,59 @@ mod tests {
 
         assert_eq!(outcome, SendOutcome::Queued);
         assert_eq!(state.outbox.queued().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_report_sentry_refuses_is_never_reported_as_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut sink = [0u8; 4096];
+            let read = stream.read(&mut sink).await.unwrap();
+            assert!(read > 0, "no request arrived");
+            stream
+                .write_all(b"HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\n\r\n")
+                .await
+                .ok();
+        });
+        let mut config = config(dir.path());
+        config.dsn = format!("http://key@{addr}/1").parse().unwrap();
+        let state = SentryState::new(config);
+
+        let sent = state
+            .send(
+                Event {
+                    message: Some("a refused report".into()),
+                    ..Default::default()
+                }
+                .into(),
+            )
+            .await;
+
+        assert!(sent.is_err(), "got: {sent:?}");
+        assert!(state.outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_report_too_big_to_keep_is_never_reported_as_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = config(dir.path());
+        config.dsn = "http://key@127.0.0.1:1/1".parse().unwrap();
+        let state = SentryState::new(config);
+
+        let sent = state
+            .send(
+                Event {
+                    message: Some("x".repeat(crate::outbox::retention::MAX_BYTES as usize + 1)),
+                    ..Default::default()
+                }
+                .into(),
+            )
+            .await;
+
+        assert!(sent.is_err(), "got: {sent:?}");
+        assert!(state.outbox.queued().is_empty());
     }
 }

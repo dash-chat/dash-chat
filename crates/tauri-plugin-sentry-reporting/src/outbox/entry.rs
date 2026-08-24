@@ -48,15 +48,22 @@ pub(crate) fn write(root: &Path, state: State, envelope: &Envelope) -> anyhow::R
     let path = dir.join(file_name(envelope));
     let partial = with_suffix(&path, PARTIAL);
 
-    let file = std::fs::File::create(&partial).context("the entry could not be created")?;
+    let written = write_partial(&partial, envelope)
+        .and_then(|()| std::fs::rename(&partial, &path).context("the entry could not be finished"));
+    if let Err(err) = written {
+        let _ = std::fs::remove_file(&partial);
+        return Err(err);
+    }
+    Ok(path)
+}
+
+fn write_partial(partial: &Path, envelope: &Envelope) -> anyhow::Result<()> {
+    let file = std::fs::File::create(partial).context("the entry could not be created")?;
     envelope
         .to_writer(&file)
         .context("the entry could not be written")?;
     file.sync_all().context("the entry could not be flushed")?;
-    drop(file);
-
-    std::fs::rename(&partial, &path).context("the entry could not be finished")?;
-    Ok(path)
+    Ok(())
 }
 
 /// Oldest first, which the timestamp prefix makes a plain sort.
@@ -76,6 +83,8 @@ pub(crate) fn list(root: &Path, state: State) -> Vec<Entry> {
             })
         })
         .collect();
+    // Chronological only because `file_name` prefixes a zero-padded
+    // `{millis:013}`, which makes lexical order time order.
     entries.sort_by_key(|entry| entry.path.clone());
     entries
 }

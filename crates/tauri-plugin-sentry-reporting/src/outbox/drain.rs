@@ -1,6 +1,7 @@
 //! Emptying the outbox: one pass at a time, woken by anything that suggests a
 //! connection might exist.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,6 +16,8 @@ use crate::outbox::Outbox;
 
 const INITIAL_BACKOFF: Duration = Duration::from_secs(60);
 const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
+/// How long to wait before rescanning an outbox that had nothing in it.
+const IDLE_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DrainResult {
@@ -24,11 +27,42 @@ pub(crate) enum DrainResult {
     Pending,
 }
 
+/// What became of one particular entry, as opposed to the pass as a whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntryFate {
+    /// Sentry has it.
+    Delivered,
+    /// Still on disk, waiting for a connection.
+    Waiting,
+    /// Gone without being delivered: refused by Sentry, or evicted by retention.
+    Dropped,
+}
+
+/// The outcome of one pass: its verdict, plus what it delivered.
+pub(crate) struct DrainReport {
+    pub(crate) result: DrainResult,
+    delivered: Vec<PathBuf>,
+}
+
+impl DrainReport {
+    /// What became of the entry originally written at `path`.
+    pub(crate) fn fate(&self, path: &Path) -> EntryFate {
+        if self.delivered.iter().any(|done| done == path) {
+            EntryFate::Delivered
+        } else if path.exists() {
+            EntryFate::Waiting
+        } else {
+            EntryFate::Dropped
+        }
+    }
+}
+
 /// One pass over `queued/`, oldest first. Never touches `held/`.
-pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) -> DrainResult {
+pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) -> DrainReport {
     retention::enforce(outbox.root());
 
     let mut result = DrainResult::Emptied;
+    let mut delivered = Vec::new();
     for queued in outbox.queued() {
         // Renamed out of the way first, so no other drainer — in this process
         // or another sharing the data directory — picks up the same entry.
@@ -44,7 +78,11 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
         };
 
         match sender.post(&envelope).await {
-            Delivery::Delivered | Delivery::Rejected => {
+            Delivery::Delivered => {
+                let _ = std::fs::remove_file(&in_flight);
+                delivered.push(queued.path.clone());
+            }
+            Delivery::Rejected => {
                 let _ = std::fs::remove_file(&in_flight);
             }
             Delivery::Retry { .. } => {
@@ -56,7 +94,7 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
             }
         }
     }
-    result
+    DrainReport { result, delivered }
 }
 
 /// Owns the background drain loop and serializes every trigger through it.
@@ -81,16 +119,25 @@ impl<S: EnvelopeSender + 'static> Drainer<S> {
             let mut settled = dashchat_utils::network_settled();
             let mut backoff = INITIAL_BACKOFF;
             loop {
-                match background.drain_now().await {
-                    DrainResult::Emptied => backoff = INITIAL_BACKOFF,
-                    DrainResult::Pending => {
-                        backoff = (backoff * 2).min(MAX_BACKOFF);
+                let delay = match background.drain_now().await {
+                    DrainResult::Emptied => {
+                        backoff = INITIAL_BACKOFF;
+                        IDLE_INTERVAL
                     }
-                }
+                    DrainResult::Pending => {
+                        let delay = backoff;
+                        backoff = (backoff * 2).min(MAX_BACKOFF);
+                        delay
+                    }
+                };
                 tokio::select! {
-                    _ = tokio::time::sleep(backoff) => {}
+                    _ = tokio::time::sleep(delay) => {}
                     changed = settled.recv() => {
                         if matches!(changed, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
+                            log::warn!(
+                                "sentry-reporting: the network-settled channel closed; \
+                                 reports will only go out on the next launch"
+                            );
                             return;
                         }
                         backoff = INITIAL_BACKOFF;
@@ -105,7 +152,15 @@ impl<S: EnvelopeSender + 'static> Drainer<S> {
     /// Waits for any drain already running, so a report is never posted twice.
     pub(crate) async fn drain_now(&self) -> DrainResult {
         let _guard = self.draining.lock().await;
-        drain_once(&self.outbox, self.sender.as_ref()).await
+        drain_once(&self.outbox, self.sender.as_ref()).await.result
+    }
+
+    /// Drains, and reports what became of `watched` rather than of the pass.
+    pub(crate) async fn drain_watching(&self, watched: &Path) -> EntryFate {
+        let _guard = self.draining.lock().await;
+        drain_once(&self.outbox, self.sender.as_ref())
+            .await
+            .fate(watched)
     }
 }
 
@@ -164,9 +219,12 @@ mod tests {
         outbox.enqueue(&envelope("feedback")).unwrap();
         let sender = FakeSender::always(Delivery::Delivered);
 
-        let result = drain_once(&outbox, &sender).await;
+        let queued = outbox.queued()[0].path.clone();
 
-        assert_eq!(result, DrainResult::Emptied);
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(report.result, DrainResult::Emptied);
+        assert_eq!(report.fate(&queued), EntryFate::Delivered);
         assert_eq!(sender.posted(), 1);
         assert!(outbox.queued().is_empty());
     }
@@ -177,10 +235,12 @@ mod tests {
         let outbox = Outbox::new(dir.path());
         outbox.enqueue(&envelope("feedback")).unwrap();
         let sender = FakeSender::always(Delivery::Retry { after: None });
+        let queued = outbox.queued()[0].path.clone();
 
-        let result = drain_once(&outbox, &sender).await;
+        let report = drain_once(&outbox, &sender).await;
 
-        assert_eq!(result, DrainResult::Pending);
+        assert_eq!(report.result, DrainResult::Pending);
+        assert_eq!(report.fate(&queued), EntryFate::Waiting);
         assert_eq!(outbox.queued().len(), 1);
     }
 
@@ -188,13 +248,44 @@ mod tests {
     async fn a_rejected_report_is_dropped_rather_than_retried_forever() {
         let dir = tempfile::tempdir().unwrap();
         let outbox = Outbox::new(dir.path());
-        outbox.enqueue(&envelope("feedback")).unwrap();
+        let queued = outbox.enqueue(&envelope("feedback")).unwrap();
         let sender = FakeSender::always(Delivery::Rejected);
 
-        let result = drain_once(&outbox, &sender).await;
+        let report = drain_once(&outbox, &sender).await;
 
-        assert_eq!(result, DrainResult::Emptied);
+        // The pass has nothing left to do, but this report was never filed.
+        assert_eq!(report.result, DrainResult::Emptied);
+        assert_eq!(report.fate(&queued), EntryFate::Dropped);
         assert!(outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_report_evicted_by_retention_is_never_reported_as_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        let oversized = "x".repeat(retention::MAX_BYTES as usize + 1);
+        let queued = outbox.enqueue(&envelope(&oversized)).unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(sender.posted(), 0);
+        assert_eq!(report.fate(&queued), EntryFate::Dropped);
+    }
+
+    #[tokio::test]
+    async fn a_delivered_report_is_not_dragged_down_by_a_corrupt_sibling() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        let corrupt = outbox.enqueue(&envelope("first")).unwrap();
+        std::fs::write(&corrupt, "half an envelope").unwrap();
+        let mine = outbox.enqueue(&envelope("second")).unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(report.result, DrainResult::Pending);
+        assert_eq!(report.fate(&mine), EntryFate::Delivered);
     }
 
     #[tokio::test]
@@ -205,9 +296,9 @@ mod tests {
         std::fs::write(&outbox.queued()[0].path, "half an envelope").unwrap();
         let sender = FakeSender::always(Delivery::Delivered);
 
-        let result = drain_once(&outbox, &sender).await;
+        let report = drain_once(&outbox, &sender).await;
 
-        assert_eq!(result, DrainResult::Pending);
+        assert_eq!(report.result, DrainResult::Pending);
         assert_eq!(sender.posted(), 0);
         assert!(outbox.queued().is_empty());
     }

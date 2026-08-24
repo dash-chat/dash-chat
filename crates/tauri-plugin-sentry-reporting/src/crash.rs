@@ -3,7 +3,7 @@ use std::sync::Weak;
 use sentry::integrations::panic::PanicIntegration;
 
 use crate::envelope;
-use crate::state::{SendOutcome, Sentry, SentryState};
+use crate::state::{outcome, SendOutcome, Sentry, SentryState};
 
 #[tauri::command]
 pub(crate) async fn pending_crash_report(state: Sentry<'_>) -> Result<bool, String> {
@@ -15,8 +15,11 @@ pub(crate) async fn send_pending_crash_report(state: Sentry<'_>) -> Result<SendO
     if !state.outbox.has_held() {
         return Err("there is no crash report to send".into());
     }
-    state.outbox.approve_held().map_err(|err| err.to_string())?;
-    Ok(state.drainer.drain_now().await.into())
+    let approved = state.outbox.approve_held().map_err(|err| err.to_string())?;
+    let Some(queued) = approved.first() else {
+        return Err("there is no crash report to send".into());
+    };
+    outcome(state.drainer.drain_watching(queued).await).map_err(|err| err.to_string())
 }
 
 #[tauri::command]
