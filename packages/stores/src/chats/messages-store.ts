@@ -60,11 +60,6 @@ export class MessagesStore {
 		/** Resolves to '' while a pending direct chat has no topic yet. */
 		public chatId: ReactiveFn<Promise<ChatId>, []>,
 		public client: IMessagesClient,
-		/** Resolves the agent owning the given device among this chat's participants. */
-		public agentIdForDeviceId: ReactiveFn<
-			Promise<AgentId | undefined>,
-			[DeviceId]
-		>,
 	) {}
 
 	messages = reactive(async () => {
@@ -80,8 +75,26 @@ export class MessagesStore {
 					a.hash.localeCompare(b.hash),
 			);
 		const tombstones = await this.tombstoneStore.tombstones(chatId);
-		const messages = logsToMessages(opsOrdered, tombstones);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		const messages = logsToMessages(opsOrdered, tombstones, deviceAgents);
 		return messages;
+	});
+
+	members = reactive(async (): Promise<Array<AgentId>> => {
+		const chatId = await this.chatId();
+		if (chatId === '') return [];
+		const logs = await this.logsStore.logsForAllAuthors(chatId);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		return Array.from(new Set(Object.values(deviceAgents)));
+	});
+
+	membersProfiles = reactive(async () => {
+		const members = await this.members();
+		return await this.contactsStore.profilesForAgents(new Set(members));
 	});
 
 	lastMessage = reactive(async () => {
@@ -162,6 +175,14 @@ export class MessagesStore {
 		await this.client.sendReaction(chatId, reaction);
 	}
 
+	async toggleReaction(message: Message, emoji: string) {
+		if (!hasBody(message.content)) return;
+		const myAgentId = await this.contactsStore.myAgentId();
+		const newEmoji =
+			message.content.reactions[myAgentId] === emoji ? null : emoji;
+		await this.sendReaction({ target: message.hash, emoji: newEmoji });
+	}
+
 	async editMessage(message: Message, newText: string): Promise<Hash> {
 		const chatId = await this.chatId();
 
@@ -199,6 +220,7 @@ export class MessagesStore {
 function logsToMessages(
 	opsOrdered: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,
+	deviceAgents: Record<DeviceId, AgentId>,
 ): Record<Hash, Message> {
 	const messages: Record<Hash, Message | Bodyless> = {};
 	// Map of EditMessage -> the target they reference
@@ -276,15 +298,17 @@ function logsToMessages(
 			};
 		} else if (body.payload.type === 'Reaction') {
 			const { target, emoji } = body.payload.payload;
+			const agent = deviceAgents[author];
 			if (
+				agent !== undefined &&
 				messages[target] &&
 				isMessage(messages[target]) &&
 				hasBody(messages[target].content)
 			) {
 				if (emoji) {
-					messages[target].content.reactions[author] = emoji;
+					messages[target].content.reactions[agent] = emoji;
 				} else {
-					delete messages[target].content.reactions[author];
+					delete messages[target].content.reactions[agent];
 				}
 			}
 		} else if (body.payload.type === 'EditMessage') {

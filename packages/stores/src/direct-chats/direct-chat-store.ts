@@ -39,7 +39,6 @@ export class DirectChatStore {
 			tombstoneStore,
 			this.chatId,
 			messagesClient,
-			this.agentIdForDeviceId,
 		);
 	}
 
@@ -82,12 +81,6 @@ export class DirectChatStore {
 	contactRequest = reactive(async () => {
 		const contactRequests = await this.contactsStore.contactRequests();
 		return contactRequests.find(cr => cr.agentId === this.peer);
-	});
-
-	agentIdForDeviceId = reactive(async (deviceId: DeviceId) => {
-		const myDeviceId = await this.contactsStore.myDeviceId();
-		if (deviceId === myDeviceId) return await this.contactsStore.myAgentId();
-		return this.peer;
 	});
 
 	groupedEvents = reactive(async () => {

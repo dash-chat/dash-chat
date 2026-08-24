@@ -53,7 +53,6 @@ export class GroupChatStore {
 			tombstoneStore,
 			reactive(async () => chatId),
 			messagesClient,
-			this.agentIdForDeviceId,
 		);
 		this.logsStore.logsClient.onNewOperation((topicId, op) => {
 			if (topicId === this.chatId && op.header.auth) {
@@ -233,11 +232,6 @@ export class GroupChatStore {
 			AgentId,
 			GroupMemberWithProfile
 		>;
-	});
-
-	agentIdForDeviceId = reactive(async (deviceId: DeviceId) => {
-		const members = await this.membersData();
-		return members.find(member => member.deviceIds.includes(deviceId))?.agentId;
 	});
 
 	private buildMember = reactive(

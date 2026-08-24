@@ -343,7 +343,7 @@ export interface MessageVersion {
 export interface MessageBody {
 	message: string;
 	media: MediaBundle | null;
-	reactions: Record<DeviceId, string>;
+	reactions: Record<AgentId, string>;
 	editHistory: MessageVersion[];
 }
 

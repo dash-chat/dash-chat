@@ -1,29 +1,35 @@
 <script lang="ts">
-	import { Sheet, Dialog, List } from 'konsta/svelte';
-	import type { DeviceId } from 'dash-chat-stores';
+	import { Sheet, Dialog, List, ListItem, Button } from 'konsta/svelte';
+	import { getContext } from 'svelte';
+	import { fullName, type AgentId, type MessagesStore } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { condenseReactions } from '$lib/utils/emojis';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { useMyAgentId } from '$lib/stores/my-agent-id';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import Modal from '$lib/components/Modal.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
-	import ReactionsSheetRow from './ReactionsSheetRow.svelte';
+	import Avatar from '$lib/components/profiles/Avatar.svelte';
 
 	let {
 		reactions,
-		myDeviceId,
 		onToggleReaction,
 		opened = $bindable(),
 	}: {
-		reactions: Record<DeviceId, string>;
-		myDeviceId: DeviceId;
+		reactions: Record<AgentId, string>;
 		onToggleReaction: (emoji: string) => void;
 		opened: boolean;
 	} = $props();
 
+	const store: MessagesStore = getContext('messages-store');
+	const myAgentId = useMyAgentId();
+
+	const profiles = useReactivePromise(store.membersProfiles);
+
 	const entries = $derived(
-		Object.entries(reactions) as Array<[DeviceId, string]>,
+		Object.entries(reactions) as Array<[AgentId, string]>,
 	);
-	const condensed = $derived(condenseReactions(reactions, myDeviceId));
+	const condensed = $derived(condenseReactions(reactions, myAgentId));
 
 	let filter = $state<string | null>(null);
 
@@ -43,52 +49,82 @@
 		onToggleReaction(emoji);
 		close();
 	}
-
-	function tabClass(active: boolean): string {
-		return `flex items-center gap-1 rounded-full px-3 py-1 text-sm ${
-			active
-				? 'bg-gray-200 dark:bg-gray-600 border border-gray-400 dark:border-gray-400'
-				: 'border border-transparent'
-		}`;
-	}
 </script>
+
+{#snippet tab(target: string | null, label: string, testid: string)}
+	<Button
+		inline
+		small
+		rounded
+		clear={filter !== target}
+		tonal={filter === target}
+		class={filter === target ? 'neutral-tonal-button' : ''}
+		colors={{
+			textIos: 'text-inherit',
+			textMaterial: 'text-inherit',
+			tonalTextIos: 'text-inherit',
+			tonalTextMaterial: 'text-inherit',
+		}}
+		role="tab"
+		aria-selected={filter === target}
+		onClick={() => (filter = target)}
+		data-testid={testid}
+	>
+		{label}
+	</Button>
+{/snippet}
 
 {#snippet content()}
 	<div class="flex flex-wrap items-center gap-1.5 px-3 pt-3" role="tablist">
-		<button
-			role="tab"
-			aria-selected={filter === null}
-			class={tabClass(filter === null)}
-			onclick={() => (filter = null)}
-			data-testid="reactions-tab-all"
-		>
-			{m.reactionsAll()} · {entries.length}
-		</button>
-		{#each condensed as reaction}
-			<button
-				role="tab"
-				aria-selected={filter === reaction.emoji}
-				class={tabClass(filter === reaction.emoji)}
-				onclick={() => (filter = reaction.emoji)}
-				data-testid={`reactions-tab-${reaction.emoji}`}
-			>
-				{reaction.emoji}
-				{reaction.count}
-			</button>
+		{@render tab(
+			null,
+			`${m.reactionsAll()} · ${entries.length}`,
+			'reactions-tab-all',
+		)}
+		{#each condensed as reaction (reaction.emoji)}
+			{@render tab(
+				reaction.emoji,
+				`${reaction.emoji} ${reaction.count}`,
+				`reactions-tab-${reaction.emoji}`,
+			)}
 		{/each}
 	</div>
-	<List class="!my-2">
-		{#each filtered as [deviceId, emoji] (deviceId)}
-			{@const own = deviceId === myDeviceId}
-			<ReactionsSheetRow
-				{deviceId}
-				{emoji}
-				{own}
-				removable={own && !isWideScreen.value}
-				onRemove={() => removeOwn(emoji)}
-			/>
-		{/each}
-	</List>
+	{#await $profiles then profiles}
+		<List class="!my-2">
+			{#each filtered as [agentId, emoji] (agentId)}
+				{@const own = agentId === myAgentId}
+				{@const removable = own && !isWideScreen.value}
+				{@const profile = profiles[agentId]}
+				<ListItem
+					link={removable}
+					chevron={false}
+					title={own
+						? m.you()
+						: profile
+							? fullName(profile)
+							: m.unknownSender()}
+					subtitle={removable ? m.tapToRemove() : undefined}
+					onClick={removable ? () => removeOwn(emoji) : undefined}
+					data-testid={own ? 'reaction-row-own' : 'reaction-row'}
+				>
+					{#snippet media()}
+						{#if profile}
+							<Avatar
+								image={profile.avatar}
+								initials={profile.name.slice(0, 2)}
+								size="2.5rem"
+							/>
+						{:else}
+							<Avatar waitingForProfile size="2.5rem" />
+						{/if}
+					{/snippet}
+					{#snippet after()}
+						<span class="text-xl">{emoji}</span>
+					{/snippet}
+				</ListItem>
+			{/each}
+		</List>
+	{/await}
 {/snippet}
 
 <Modal bind:opened>

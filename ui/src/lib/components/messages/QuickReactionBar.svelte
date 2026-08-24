@@ -4,22 +4,24 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiDotsHorizontal } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { type Message, type DeviceId, hasBody } from 'dash-chat-stores';
+	import { type Message, hasBody } from 'dash-chat-stores';
 	import IconButton from '$lib/components/IconButton.svelte';
+	import { useMyAgentId } from '$lib/stores/my-agent-id';
 
 	interface Props {
 		message: Message;
-		myDeviceId: DeviceId;
 		onReact: (emoji: string) => void;
 		/** Open the full emoji picker. */
 		onExpand: () => void;
 	}
 
-	let { message, myDeviceId, onReact, onExpand }: Props = $props();
+	let { message, onReact, onExpand }: Props = $props();
+
+	const myAgentId = useMyAgentId();
 
 	function hasReacted(emoji: string): boolean {
 		if (!hasBody(message.content)) return false;
-		return message.content.reactions[myDeviceId] === emoji;
+		return message.content.reactions[myAgentId] === emoji;
 	}
 </script>
 
