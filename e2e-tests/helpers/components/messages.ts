@@ -472,9 +472,6 @@ export class Message extends TestHelper {
 		);
 	}
 
-	/** Whether the who-reacted sheet is open. The sheet is portaled to the
-	 * layout's modal host and only one is mounted at a time, so it resolves at
-	 * document level. */
 	reactionsSheetOpen(): Promise<boolean> {
 		return this.agent.execute((sheetSel: string) => {
 			const sheet = document
@@ -488,8 +485,6 @@ export class Message extends TestHelper {
 		}, tid('reactions-sheet'));
 	}
 
-	/** Tap this message's reaction chip for `emoji` to open the who-reacted
-	 * sheet, and wait for it to slide in. */
 	async openReactionsSheet(emoji: string) {
 		await this.wrapper.$(tid(`reaction-chip-${emoji}`)).click();
 		await this.agent.waitUntil(() => this.reactionsSheetOpen(), {
@@ -497,7 +492,6 @@ export class Message extends TestHelper {
 		});
 	}
 
-	/** Whether the open who-reacted sheet shows a reactor row with `name`. */
 	reactionsSheetShowsReactor(name: string): Promise<boolean> {
 		return this.agent.execute((n: string) => {
 			const rows = document.querySelectorAll('[data-testid^="reaction-row"]');
@@ -505,20 +499,14 @@ export class Message extends TestHelper {
 		}, name);
 	}
 
-	/** Click a filter tab in the open who-reacted sheet: 'all' or an emoji. */
 	async clickReactionsTab(tab: string) {
 		await this.agent.$(tid(`reactions-tab-${tab}`)).click();
 	}
 
-	/** Tap the own-reaction row in the open who-reacted sheet to remove the
-	 * reaction (the sheet closes itself). */
 	async removeOwnReaction() {
 		await this.agent.$(tid('reaction-row-own')).click();
 	}
 
-	/** Close the who-reacted sheet by clicking the backdrop above it. The
-	 * backdrop is Konsta's untagged sibling div, so it can't be clicked via a
-	 * testid selector. */
 	async closeReactionsSheet() {
 		await this.agent.execute((sheetSel: string) => {
 			const root = document
