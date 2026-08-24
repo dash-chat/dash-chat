@@ -12,6 +12,8 @@ use crate::compat::Capabilities;
 use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
 use crate::filesystem::Filesystem;
 use crate::node::actor::{Actor, Command};
+#[cfg(feature = "testing")]
+use crate::testing::TestNode;
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
@@ -40,8 +42,8 @@ use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
-    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetadata,
-    OutgoingFile, OutgoingMedia, SendMessageError,
+    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
+    MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -481,6 +483,10 @@ impl Node {
         self.node_keys.device_id()
     }
 
+    pub fn fake_agent_id(&self) -> FakeAgentId {
+        self.device_id().into()
+    }
+
     pub fn blob_sync_optional(&self) -> Option<&crate::blob_sync::BlobSync> {
         self.blob_sync.as_ref()
     }
@@ -611,8 +617,8 @@ impl Node {
     /// The topic is the hashed sorted public keys.
     /// Anyone who knows the two public keys can derive the same topic.
     // TODO: is this a problem? Should we use a random topic instead?
-    pub fn direct_chat_topic(&self, other: AgentId) -> DirectChatId {
-        let me = self.agent_id();
+    pub fn direct_chat_topic(&self, other: FakeAgentId) -> DirectChatId {
+        let me = self.fake_agent_id();
         // TODO: use two secrets from each party to construct the topic
         let topic = Topic::direct_chat([me, other]);
         if me > other {
@@ -622,20 +628,22 @@ impl Node {
         }
     }
 
+    #[cfg(feature = "testing")]
+    pub fn direct_chat_with(&self, other: &TestNode) -> DirectChatId {
+        let other = other.fake_agent_id();
+        self.direct_chat_topic(other)
+    }
+
     /// Create a new direct chat Space.
     /// Note that only one node should create the space!
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn create_direct_chat_space(&self, other: AgentId) -> anyhow::Result<()> {
+    pub async fn create_direct_chat_space(&self, other: FakeAgentId) -> anyhow::Result<()> {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
         self.register_topic(topic).await?;
 
-        let other_device_id = self
-            .projection
-            .lookup_contact_by_agent_id(other)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
+        let other_device_id = DeviceId::from(other);
 
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*topic).await?;
@@ -752,6 +760,12 @@ impl Node {
             person.aliased(),
             chat_id.aliased(),
         );
+        let device_id = self
+            .projection
+            .lookup_contact_by_agent_id(person)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
+        let person = FakeAgentId::from(device_id);
         self.publish(
             self.direct_chat_topic(person),
             payload,
@@ -1459,13 +1473,13 @@ impl Node {
     /// inbox request/ack handlers can call it.
     pub(crate) async fn establish_contact(
         &self,
-        device_pubkey: DeviceId,
+        device_id: DeviceId,
         agent_id: AgentId,
     ) -> Result<(), Error> {
         // Register the contact as a bootstrap so p2panda discovery can reach it
         // directly over the internet (relay + pkarr), rather than depending on a
         // mutually-reachable mailbox to introduce the two nodes.
-        self.register_bootstrap_node(*device_pubkey)
+        self.register_bootstrap_node(*device_id)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
         // Subscribe to the contact's announcements to receive their group
@@ -1473,7 +1487,8 @@ impl Node {
         self.register_topic(Topic::announcements(agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-        self.register_topic(self.direct_chat_topic(agent_id))
+        let fake_agent_id = FakeAgentId::from(device_id);
+        self.register_topic(self.direct_chat_topic(fake_agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         Ok(())
@@ -1501,6 +1516,13 @@ impl Node {
         self.register_bootstrap_node(*contact.device_pubkey)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
+
+        // Subscribe to the shared direct-chat topic right away so messages sent
+        // before the owner accepts already sync in both directions.
+        let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
+        self.register_topic(direct_chat_topic_id)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
 
@@ -1607,6 +1629,7 @@ impl Node {
             Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
                 device_pubkey: contact.device_pubkey,
                 profile_name: contact.profile_name,
+                direct_chat_topic_id,
             }),
             Some(&format!(
                 "add_contact/pending({:?})",
@@ -1622,10 +1645,17 @@ impl Node {
     /// Record a mutual contact by publishing the contact marker into our own
     /// device group. Contact establishment (mapping, topics, bootstrap) is done
     /// separately via [`Self::establish_contact`].
-    pub(crate) async fn publish_add_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+    pub(crate) async fn publish_add_contact(
+        &self,
+        agent_id: AgentId,
+        direct_chat_topic_id: ChatId,
+    ) -> Result<(), Error> {
         self.publish(
             self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }),
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact {
+                agent_id,
+                direct_chat_topic_id,
+            }),
             Some(&format!("add_contact({:?})", agent_id.aliased())),
         )
         .await
@@ -1673,9 +1703,11 @@ impl Node {
             );
         }
 
-        self.publish_add_contact(agent_id).await?;
+        let fake_agent_id = FakeAgentId::from(device_pubkey);
+        self.publish_add_contact(agent_id, self.direct_chat_topic(fake_agent_id))
+            .await?;
 
-        self.create_direct_chat_space(agent_id)
+        self.create_direct_chat_space(fake_agent_id)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
 
@@ -1742,7 +1774,7 @@ impl Node {
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.publish(
             reply_topic,
-            Payload::Inbox(InboxPayload::ContactRequestAck {
+            Payload::Inbox(InboxPayload::ContactRequestAccept {
                 profile,
                 agent_id: self.agent_id(),
             }),

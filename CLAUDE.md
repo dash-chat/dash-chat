@@ -174,7 +174,7 @@ Create Profile (first launch only)
   ├─ [avatar] ──────────── /settings
   ├─ [contacts icon] ───── /contacts
   ├─ [new message] ─────── /new-message        (FAB on Material, navbar link on iOS)
-  └─ [chat item] ──────── /direct-chats/{agentId}  or  /group-chat/{chatId}
+  └─ [chat item] ──────── /direct-chats/{chatId}  or  /group-chat/{chatId}
 
 /settings
   ├─ [profile item] ────── /settings/profile
@@ -196,7 +196,7 @@ Create Profile (first launch only)
 
 /new-message
   ├─ [add contact] ────── /new-message/add-contact
-  └─ [contact item] ───── /direct-chats/{agentId}
+  └─ [contact item] ───── /direct-chats/{chatId}
 
 /new-message/add-contact
   ├─ code tab ──── shows QR + code input
@@ -206,13 +206,13 @@ Create Profile (first launch only)
   ├─ step 1: member selection ─── [next] ──► step 2: group info ─── [create]
   └─ step 2 back ──► step 1
 
-/direct-chats/{agentId}
-  ├─ [navbar title] ────── /direct-chats/{agentId}/chat-settings
+/direct-chats/{chatId}
+  ├─ [navbar title] ────── /direct-chats/{chatId}/chat-settings
   └─ [back] ────────────── /
 
-/direct-chats/{agentId}/chat-settings
-  ├─ [search button] ───── /direct-chats/{agentId}?search=true
-  └─ [back] ────────────── /direct-chats/{agentId}
+/direct-chats/{chatId}/chat-settings
+  ├─ [search button] ───── /direct-chats/{chatId}?search=true
+  └─ [back] ────────────── /direct-chats/{chatId}
 
 /group-chat/{chatId}
   ├─ [navbar title] ────── /group-chat/{chatId}/info
