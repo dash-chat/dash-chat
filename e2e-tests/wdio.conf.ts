@@ -176,6 +176,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	mochaOpts: {
 		ui: 'bdd',
 		timeout: 120_000,
+		// Fails any test during which an agent hit an uncaught error.
+		require: [path.join(__dirname, 'setup', 'fail-on-uncaught-errors.ts')],
 	},
 
 	// The spec reporter writes the assertion that failed to stdout and nowhere

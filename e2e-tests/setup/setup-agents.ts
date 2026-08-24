@@ -44,8 +44,8 @@ import {
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
-import { readOpenedUrls } from './platforms/desktop';
-import { resetIosAppState } from './platforms/ios';
+import { killAgentApp, readOpenedUrls } from './platforms/desktop';
+import { APP_STATE_NOT_RUNNING, resetIosAppState } from './platforms/ios';
 import { type AgentPlatformName, platformNames } from './test-env';
 import { switchToWebview, waitForTestUtils } from './webview';
 
@@ -110,12 +110,15 @@ export type Agent = WebdriverIO.Browser & {
 	/** Close the app, leaving its on-disk state intact so [`startApp`] brings
 	 *  the same user back. Android keeps the WebDriver session alive: a new
 	 *  session there fast-resets (`pm clear`), so the app would return with no
-	 *  profile. */
+	 *  profile. On desktop this also force-kills any app process left on the
+	 *  agent's data dir outside the session (e.g. the instance delete_account
+	 *  self-restarts into). */
 	stopApp(): Promise<void>;
 	/** Send the app to the background (home button) without killing it.
 	 *  On Android this is a home-key press; on desktop it is currently a no-op. */
 	backgroundApp(): Promise<void>;
-	/** Relaunch after [`stopApp`] and wait until the app is interactive again. */
+	/** Relaunch after [`stopApp`] or [`waitForAppExit`] and wait until the app
+	 *  is interactive again. */
 	startApp(): Promise<void>;
 	/** Switch the Konsta theme. */
 	setTheme(theme: 'material' | 'ios'): Promise<void>;
@@ -132,6 +135,10 @@ export type Agent = WebdriverIO.Browser & {
 	/** The urls this agent asked the OS to open, once at least `count` have
 	 *  arrived. Recorded by the harness's `xdg-open` stub, so desktop only. */
 	waitForOpenedUrls(count?: number): Promise<string[]>;
+	/** Wait until the app process this agent was driving is gone, after an
+	 *  action that makes the app shut itself down (today only delete_account).
+	 *  Follow with [`startApp`] to get a driveable session again. */
+	waitForAppExit(): Promise<void>;
 };
 
 /** The device serial this Appium session was launched against. */
@@ -175,7 +182,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.welcomePage = new WelcomePage(b);
 }
 
-export function makeAgent(b: WebdriverIO.Browser): Agent {
+export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	const agent = b as Agent;
 	attachPages(agent, b);
 
@@ -266,7 +273,13 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	};
 	agent.stopApp = async () => {
 		if (agent.platform === 'desktop') {
-			await b.deleteSession();
+			try {
+				await b.deleteSession();
+			} catch {
+				// The session is already gone when the app shut itself down; the
+				// kill below still reaps whatever is left on the data dir.
+			}
+			killAgentApp(slot);
 			return;
 		}
 		// Leave the webview first: the session drives it through chromedriver, so
@@ -283,7 +296,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			return;
 		}
 		if (agent.platform === 'ios') {
-			await b.terminateApp(APP_PACKAGE);
+			// A real home-button press. `terminateApp` is not a substitute here:
+			// XCUITest's terminate reads to iOS as a user force-quit
+			await b.execute('mobile: backgroundApp');
 			return;
 		}
 		// Home button press: keeps the process alive so the background service
@@ -476,8 +491,32 @@ async function setupAgent(
 		// element built before the overwrite keeps the original click.
 		tapWebElementsAtTheirRect(b);
 	}
-	const agent = makeAgent(b);
+	const agent = makeAgent(b, slot);
 	agent.platform = platform;
+	agent.waitForAppExit = async () => {
+		if (platform === 'desktop') {
+			// The session breaking is the exit signal: tauri-driver has no other
+			// way to report that the process it launched is gone.
+			await b.waitUntil(
+				async () => {
+					try {
+						await b.getTitle();
+						return false;
+					} catch {
+						return true;
+					}
+				},
+				{ timeoutMsg: 'the app never shut itself down' },
+			);
+			return;
+		}
+		await b.switchContext('NATIVE_APP');
+		await b.waitUntil(
+			async () =>
+				Number(await b.queryAppState(APP_PACKAGE)) <= APP_STATE_NOT_RUNNING,
+			{ timeoutMsg: 'the app never shut itself down' },
+		);
+	};
 	agent.waitForOpenedUrls = async (count = 1) => {
 		let urls: string[] = [];
 		await b.waitUntil(

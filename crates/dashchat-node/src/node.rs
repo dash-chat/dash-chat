@@ -3,7 +3,7 @@ mod app_processing;
 pub(crate) mod publish;
 mod report;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -30,7 +30,7 @@ use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
 use crate::chat::{
-    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps,
+    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
     collect_deletable_edit_chain, resolve_message_root,
 };
 use crate::contact::{AddContactQrCode, InboxTopic};
@@ -41,7 +41,7 @@ use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetadata,
-    OutgoingFile, OutgoingMedia,
+    OutgoingFile, OutgoingMedia, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
@@ -953,14 +953,28 @@ impl Node {
         Ok(messages)
     }
 
+    /// Send a message to a chat, optionally with media and/or a previous message to reply to.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn send_message(
         &self,
         topic: impl Into<ChatId>,
         message: impl Into<String>,
         media: Option<OutgoingMedia>,
-    ) -> anyhow::Result<Header> {
+        reply: Option<Hash>,
+    ) -> Result<Header, SendMessageError> {
         let chat_id: ChatId = topic.into();
+
+        if let Some(target) = reply {
+            let valid_ops = self.valid_chat_ops(chat_id).await?;
+            let now = u64::from(p2panda_core::Timestamp::now());
+            ReplyCandidate {
+                target,
+                timestamp: now,
+                self_hash: None,
+            }
+            .validate(&valid_ops)?;
+        }
+
         let meta = if let Some(media) = media {
             Some(
                 self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
@@ -969,7 +983,7 @@ impl Node {
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta.clone());
+        let message = ChatMessageContent::new(message, meta.clone(), reply);
         let header = self.send_message_raw(chat_id, message).await?;
         if let Some(bundle) = meta {
             let topic_id: TopicId = chat_id.into();
@@ -1158,7 +1172,7 @@ impl Node {
     pub async fn chat_tombstones(
         &self,
         chat_id: impl Into<ChatId>,
-    ) -> anyhow::Result<Vec<(Hash, crate::stores::TombstoneReason)>> {
+    ) -> anyhow::Result<HashMap<Hash, crate::stores::TombstoneReason>> {
         self.projection.tombstones(chat_id.into().into()).await
     }
 
@@ -1202,7 +1216,7 @@ impl Node {
                     continue;
                 };
                 let kind = match chat {
-                    ChatPayload::Message(_) => ChatOpKind::Message,
+                    ChatPayload::Message(m) => ChatOpKind::Message { reply: m.reply() },
                     ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
                     ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
                     _ => ChatOpKind::Other,
@@ -1260,6 +1274,52 @@ impl Node {
         }
 
         Ok(edits)
+    }
+
+    /// Return every message in the topic carrying a reply annotation that
+    /// passes receiving-side validation — i.e. the replies an honest node
+    /// would render as quotes rather than ignore. Mirrors the rule applied in
+    /// `process_app`, exposed for tests.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn valid_replies(
+        &self,
+        topic: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<crate::chat::ValidReply>> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut replies = Vec::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
+                else {
+                    continue;
+                };
+                let op_hash = op.header.hash();
+                let Some(ChatOp {
+                    kind:
+                        ChatOpKind::Message {
+                            reply: Some(target),
+                        },
+                    ..
+                }) = valid_ops.get(&op_hash)
+                else {
+                    continue;
+                };
+                replies.push(crate::chat::ValidReply {
+                    op_hash,
+                    target: *target,
+                    text: message.message().to_string(),
+                });
+            }
+        }
+
+        Ok(replies)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]

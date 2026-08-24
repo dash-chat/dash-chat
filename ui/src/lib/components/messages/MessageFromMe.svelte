@@ -3,6 +3,7 @@
 	import {
 		type ChatId,
 		type DeviceId,
+		type Hash,
 		type MailboxTrackerStore,
 		type Message,
 		type MessagesStore,
@@ -18,6 +19,7 @@
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
+	import ReplyQuote from './ReplyQuote.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { m } from '$lib/paraglide/messages.js';
@@ -33,6 +35,9 @@
 		searchQuery,
 		chatId,
 		onEdit,
+		onReply,
+		replyAuthorName,
+		onNavigateToMessage,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -40,6 +45,10 @@
 		chatId: ChatId;
 		searchQuery: string;
 		onEdit?: () => void;
+		onReply?: () => void;
+		/** Display name of the author quoted by this message's reply. */
+		replyAuthorName?: string;
+		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -108,7 +117,7 @@
 {#snippet bubble()}
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile && hasBody(message.content)}
-			<MessageHoverToolbar {message} {myDeviceId} {onEdit} reverse />
+			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onReply} reverse />
 		{/if}
 		{#if deleted}
 			<DeletedMessage {message} {position} {myDeviceId} />
@@ -124,12 +133,23 @@
 				}}
 				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 			>
-				<MessageContent
-					{message}
-					{searchQuery}
-					senderName={m.you()}
-					metadata={isLast || editHistory.length > 0 ? metadata : undefined}
-				/>
+				<div class="flex flex-col gap-1">
+					{#if message.replyQuote}
+						<ReplyQuote
+							reply={message.replyQuote}
+							authorName={replyAuthorName}
+							{myDeviceId}
+							mine
+							onNavigate={onNavigateToMessage}
+						/>
+					{/if}
+					<MessageContent
+						{message}
+						{searchQuery}
+						senderName={m.you()}
+						metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+					/>
+				</div>
 			</Card>
 		{/if}
 		{#if Object.keys(reactions).length > 0}
@@ -157,6 +177,7 @@
 		{message}
 		{myDeviceId}
 		{onEdit}
+		{onReply}
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
@@ -165,6 +186,7 @@
 		{message}
 		{myDeviceId}
 		{onEdit}
+		{onReply}
 		bind:point={contextMenuPoint}
 	/>
 {/if}

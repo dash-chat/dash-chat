@@ -82,7 +82,7 @@ async fn test_block_and_unblock_contact() {
 
     // Baseline: Bob's message reaches Alice and notifies her.
     bobbi
-        .send_message(chat, "hello before block", None)
+        .send_message(chat, "hello before block", None, None)
         .await
         .unwrap();
     alice
@@ -102,7 +102,7 @@ async fn test_block_and_unblock_contact() {
     // While blocked, Bob sends a text message and a media message.
     let blocked_photo = rand::random::<[u8; 8192]>().to_vec();
     bobbi
-        .send_message(chat, "blocked text", None)
+        .send_message(chat, "blocked text", None, None)
         .await
         .unwrap();
     bobbi
@@ -110,6 +110,7 @@ async fn test_block_and_unblock_contact() {
             chat,
             "blocked media",
             Some(photo(blocked_photo, "blocked.png")),
+            None,
         )
         .await
         .unwrap();
@@ -149,7 +150,7 @@ async fn test_block_and_unblock_contact() {
 
     let allowed_photo = rand::random::<[u8; 8192]>().to_vec();
     bobbi
-        .send_message(chat, "after unblock", None)
+        .send_message(chat, "after unblock", None, None)
         .await
         .unwrap();
     bobbi
@@ -157,6 +158,7 @@ async fn test_block_and_unblock_contact() {
             chat,
             "unblocked media",
             Some(photo(allowed_photo.clone(), "allowed.png")),
+            None,
         )
         .await
         .unwrap();
@@ -274,7 +276,7 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
 
     // Baseline: while unblocked, cammy's message reaches and notifies alice.
     cammy
-        .send_message(chat, "hello before block", None)
+        .send_message(chat, "hello before block", None, None)
         .await
         .unwrap();
     alice
@@ -304,7 +306,7 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
     };
     cammy.set_group_info(chat, renamed.clone()).await.unwrap();
     cammy
-        .send_message(chat, "blocked group text", None)
+        .send_message(chat, "blocked group text", None, None)
         .await
         .unwrap();
     cammy

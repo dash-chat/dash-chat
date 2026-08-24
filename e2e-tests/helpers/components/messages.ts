@@ -310,6 +310,15 @@ export class Message extends TestHelper {
 		return this.wrapper.$(tid('message-action-delete'));
 	}
 
+	get replyAction() {
+		return this.wrapper.$(tid('message-action-reply'));
+	}
+
+	/** The reply quote rendered inside this message's bubble. */
+	get replyQuote() {
+		return this.wrapper.$(tid('reply-quote'));
+	}
+
 	/** The deleted-for-everyone placeholder that replaces this message's body. */
 	get deletedPlaceholder() {
 		return this.wrapper.$(tid('message-deleted-placeholder'));
@@ -549,6 +558,81 @@ export class Message extends TestHelper {
 		);
 		await this.composer.type(newText);
 		await this.composer.send();
+	}
+
+	/** The hover toolbar's Reply shortcut, which sits alongside React on desktop. */
+	get hoverReplyButton() {
+		return this.wrapper.$(tid('message-hover-reply'));
+	}
+
+	/** Open the actions menu, tap Reply, type `replyText`, and send it. */
+	async reply(replyText: string): Promise<void> {
+		await this.openActions();
+		await this.replyAction.waitForClickable();
+		await this.replyAction.click();
+		await this.composeReply(replyText);
+	}
+
+	/** Reply via the hover toolbar's Reply shortcut rather than the actions
+	 * menu. Desktop only — mobile has no hover toolbar. */
+	async replyFromHoverToolbar(replyText: string): Promise<void> {
+		await this.clickHoverButton('message-hover-reply');
+		await this.composeReply(replyText);
+	}
+
+	/** Type `replyText` into the composer waiting in its replying state and send. */
+	private async composeReply(replyText: string): Promise<void> {
+		await this.composer.replyBanner.waitForExist();
+		await this.composer.type(replyText);
+		await this.composer.send();
+	}
+
+	/** Trimmed text of this message's reply quote, or null when it has none.
+	 * Read from the DOM rather than with `getText()`: the quote is a clipped
+	 * `<button>`, whose text WebKit's rendered-text algorithm leaves out. */
+	async replyQuoteText(): Promise<string | null> {
+		const text = await this.agent.execute(
+			(wrapperSel: string, quoteSel: string) =>
+				document.querySelector(wrapperSel)?.querySelector(quoteSel)
+					?.textContent ?? null,
+			this.wrapperSelector,
+			tid('reply-quote'),
+		);
+		return text === null ? null : text.trim();
+	}
+
+	/** Wait until this message renders a reply quote containing `quotedText`. */
+	async waitForReplyQuote(
+		quotedText: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				const text = await this.replyQuoteText();
+				return text !== null && text.includes(quotedText);
+			},
+			{ timeout, timeoutMsg: `Reply quote "${quotedText}" not found` },
+		);
+	}
+
+	async clickReplyQuote(): Promise<void> {
+		await this.replyQuote.waitForClickable();
+		await this.replyQuote.click();
+	}
+
+	/** Whether this message's quote shows the deleted-message tombstone. */
+	replyQuoteIsDeleted(): Promise<boolean> {
+		return this.wrapper.$(tid('reply-quote-deleted')).isExisting();
+	}
+
+	/** Whether this message is currently flash-highlighted (the effect applied
+	 * after scrolling to it). */
+	isFlashed(): Promise<boolean> {
+		return this.agent.execute(
+			(wrapperSel: string) =>
+				!!document.querySelector(wrapperSel)?.querySelector('.search-flash'),
+			this.wrapperSelector,
+		);
 	}
 
 	/** Open the actions menu, tap Delete, and confirm "Delete for everyone". */

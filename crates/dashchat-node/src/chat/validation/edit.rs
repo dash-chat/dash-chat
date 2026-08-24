@@ -13,9 +13,6 @@ pub const EDIT_WINDOW_MICROS: u64 = 24 * 60 * 60 * 1_000_000;
 
 /// Why an edit operation is considered invalid
 /// (not allowed to be applied to its target).
-///
-/// The same validation rules are enforced on the author's side (as a hard error before
-/// publishing) and on the receiving side (the edit is ignored with a warning).
 #[derive(Debug, Clone, PartialEq, Eq, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
 pub enum EditError {
@@ -80,7 +77,7 @@ impl EditCandidate {
             .get(&self.target)
             .ok_or(EditError::TargetNotFound)?;
         match target.kind {
-            ChatOpKind::Message | ChatOpKind::Edit(_) => Ok(()),
+            ChatOpKind::Message { .. } | ChatOpKind::Edit(_) => Ok(()),
             ChatOpKind::Delete(_) | ChatOpKind::Other => Err(EditError::TargetNotEditable),
         }
     }
@@ -176,7 +173,7 @@ impl ValidChatOps {
         for _ in 0..self.len() + 1 {
             let op = self.get(current)?;
             match &op.kind {
-                ChatOpKind::Message => return Some(op.timestamp),
+                ChatOpKind::Message { .. } => return Some(op.timestamp),
                 ChatOpKind::Edit(target) => current = target,
                 ChatOpKind::Delete(_) | ChatOpKind::Other => return None,
             }

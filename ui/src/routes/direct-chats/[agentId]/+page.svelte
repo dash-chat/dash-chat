@@ -7,12 +7,14 @@
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
+		replyAuthor,
 		type ChatsStore,
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
 		type Hash,
 		type Message,
+		type Profile,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import type { AddContactError } from 'dash-chat-stores';
@@ -55,7 +57,10 @@
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		scrollToMessage,
+	} from '$lib/components/messages/message-helpers';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
@@ -203,19 +208,36 @@
 	});
 
 	function scrollToMatch() {
-		if (!matchingHashes.length) return;
-		const hash = matchingHashes[currentMatchIndex];
-		const el = parentDivEl?.querySelector(`[data-message-hash="${hash}"]`);
-		if (!el) return;
-		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-		// Remove flash from any previously flashing message
-		parentDivEl
-			?.querySelectorAll('.search-flash')
-			.forEach(e => e.classList.remove('search-flash'));
-		// Flash the current match's message card
-		const card = el.closest('.message') ?? el.querySelector('.message') ?? el;
-		void (card as HTMLElement).offsetWidth;
-		card.classList.add('search-flash');
+		if (matchingHashes.length === 0) return;
+		scrollToMessage(
+			parentDivEl ?? undefined,
+			matchingHashes[currentMatchIndex],
+		);
+	}
+
+	function navigateToMessage(hash: Hash) {
+		scrollToMessage(parentDivEl ?? undefined, hash);
+	}
+
+	function deviceDisplayName(
+		deviceId: DeviceId,
+		myDeviceId: DeviceId,
+		profile: Profile | undefined,
+	): string {
+		if (deviceId === myDeviceId) return m.you();
+		return profile ? fullName(profile) : m.unknownSender();
+	}
+
+	/** Display name of the author quoted by `message`'s reply, if that author is
+	 * known — a quote of a message this peer never received has none. */
+	function quotedAuthorName(
+		message: Message,
+		myDeviceId: DeviceId,
+		profile: Profile | undefined,
+	): string | undefined {
+		const author = replyAuthor(message.replyQuote);
+		if (author === undefined) return undefined;
+		return deviceDisplayName(author, myDeviceId, profile);
 	}
 
 	function goToPreviousMatch() {
@@ -580,6 +602,21 @@
 																				: ''}
 																			onEdit={() =>
 																				composer?.editMessage(message)}
+																			onReply={() =>
+																				composer?.replyToMessage(
+																					message,
+																					deviceDisplayName(
+																						message.author,
+																						myDeviceId,
+																						profile,
+																					),
+																				)}
+																			replyAuthorName={quotedAuthorName(
+																				message,
+																				myDeviceId,
+																				profile,
+																			)}
+																			onNavigateToMessage={navigateToMessage}
 																		/>
 																	{/await}
 																</div>
@@ -603,6 +640,21 @@
 																				? searchQuery
 																				: ''}
 																			sender={profile}
+																			onReply={() =>
+																				composer?.replyToMessage(
+																					message,
+																					deviceDisplayName(
+																						message.author,
+																						myDeviceId,
+																						profile,
+																					),
+																				)}
+																			replyAuthorName={quotedAuthorName(
+																				message,
+																				myDeviceId,
+																				profile,
+																			)}
+																			onNavigateToMessage={navigateToMessage}
 																		/>
 																	{/await}
 																</div>

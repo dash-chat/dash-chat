@@ -200,6 +200,25 @@ async fn handle_push_notification(
         return Ok(Some(notifications::new_message_generic_notification()));
     };
 
+    let payload = match operation.body.as_ref() {
+        Some(body) => Some(
+            Payload::try_from_body(body)
+                .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?,
+        ),
+        None => None,
+    };
+
+    let Some(data) = notifications::build_notification_data(
+        &node,
+        topic_id,
+        &operation.header,
+        payload.as_ref(),
+    )
+    .await
+    else {
+        return Ok(None);
+    };
+
     let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
         &filesystem.notified_operations_db_path(),
     )
@@ -219,21 +238,5 @@ async fn handle_push_notification(
         }
     }
 
-    let payload = match operation.body.as_ref() {
-        Some(body) => Some(
-            Payload::try_from_body(body)
-                .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?,
-        ),
-        None => None,
-    };
-
-    Ok(
-        notifications::build_notification_data(
-            &node,
-            topic_id,
-            &operation.header,
-            payload.as_ref(),
-        )
-        .await,
-    )
+    Ok(Some(data))
 }
