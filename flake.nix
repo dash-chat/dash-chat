@@ -46,6 +46,7 @@
         ./nix/e2e-chromedrivers.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
+        ./crates/mailbox-local-server/default.nix
         ./crates/push-notifications-server/default.nix
       ];
 
