@@ -5525,13 +5525,16 @@ name = "mailbox-local-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "dashchat-utils",
+ "futures",
  "iroh",
  "iroh-blobs",
  "log",
  "mailbox-server",
  "mdns-sd",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
