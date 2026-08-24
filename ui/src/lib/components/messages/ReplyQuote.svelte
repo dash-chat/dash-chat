@@ -112,10 +112,6 @@
 		font-size: 0.8125rem;
 	}
 
-	.reply-quote:not(.mine) .reply-quote-author {
-		color: var(--color-brand-primary);
-	}
-
 	.reply-quote-text {
 		max-width: 100%;
 		display: -webkit-box;

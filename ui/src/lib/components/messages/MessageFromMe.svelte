@@ -166,14 +166,18 @@
 	</div>
 {/snippet}
 
+{#snippet row()}
+	<div class="group flex justify-end" use:longpress={{ onLongPress }}>
+		{@render bubble()}
+	</div>
+{/snippet}
+
 {#if deleted}
 	<div class="group flex justify-end">{@render bubble()}</div>
+{:else if isMobile}
+	<SwipeToReply {onReply}>{@render row()}</SwipeToReply>
 {:else}
-	<SwipeToReply {onReply}>
-		<div class="group flex justify-end" use:longpress={{ onLongPress }}>
-			{@render bubble()}
-		</div>
-	</SwipeToReply>
+	{@render row()}
 {/if}
 {#if isMobile}
 	<MessageActionsOverlay

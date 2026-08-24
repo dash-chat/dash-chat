@@ -1,7 +1,11 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiDotsHorizontal, mdiHeartPlusOutline, mdiReply } from '@mdi/js';
+	import {
+		mdiDotsHorizontal,
+		mdiHeartPlusOutline,
+		mdiReplyOutline,
+	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { Popover } from 'konsta/svelte';
 	import { getContext } from 'svelte';
@@ -129,7 +133,7 @@
 				testid="message-hover-reply"
 				class="!h-9 !w-9"
 			>
-				<wa-icon class="text-xl" src={wrapPathInSvg(mdiReply)}></wa-icon>
+				<wa-icon class="text-xl" src={wrapPathInSvg(mdiReplyOutline)}></wa-icon>
 			</IconButton>
 		{/if}
 		<span bind:this={menuEl}>

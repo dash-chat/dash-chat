@@ -66,8 +66,8 @@
 <div
 	class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
 	'ios'
-		? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-		: 'bg-white dark:bg-gray-800'}"
+		? 'input-container-border bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+		: 'bg-gray-100 dark:bg-gray-800'}"
 	{onpaste}
 >
 	{@render banner?.()}
@@ -94,8 +94,11 @@
 
 <style>
 	.input-container {
-		border: 1px solid var(--k-hairline-color);
 		border-radius: 22px;
+	}
+
+	.input-container-border {
+		border: 1px solid var(--k-hairline-color);
 	}
 
 	.message-textarea {

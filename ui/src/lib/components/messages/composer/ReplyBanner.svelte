@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiClose, mdiReply } from '@mdi/js';
+	import { mdiClose } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		type Message,
@@ -42,8 +42,6 @@
 >
 	<QuoteFrame>
 		<span class="row min-w-0 flex-1 items-center gap-2 ps-2 py-1.5">
-			<wa-icon src={wrapPathInSvg(mdiReply)} style="font-size: 0.9rem"
-			></wa-icon>
 			<span class="column min-w-0 flex-1">
 				<span class="truncate font-semibold">
 					{m.replyingTo({ name: authorName })}
@@ -54,10 +52,12 @@
 			</span>
 		</span>
 		<IconButton
-			icon={mdiClose}
 			label={m.cancel()}
 			testid="composer-cancel-reply"
 			onClick={onCancel}
-		/>
+			class="!h-7 !w-7 shrink-0 self-start"
+		>
+			<wa-icon class="text-xl" src={wrapPathInSvg(mdiClose)}></wa-icon>
+		</IconButton>
 	</QuoteFrame>
 </div>

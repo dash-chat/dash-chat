@@ -33,25 +33,18 @@
 	.quote-frame-bar {
 		flex-shrink: 0;
 		width: 4px;
+		background-color: white;
 	}
 
-	/* Inside my (brand-colored) bubble: translucent white over the brand color. */
 	.quote-frame-mine {
-		background-color: rgba(255, 255, 255, 0.18);
-		color: white;
-	}
-	.quote-frame-mine .quote-frame-bar {
-		background-color: rgba(255, 255, 255, 0.85);
+		background-color: rgba(255, 255, 255, 0.45);
+		color: rgba(0, 0, 0, 0.87);
 	}
 
-	/* On a surface: subtle tint + brand accent bar. */
 	.quote-frame-others {
 		background-color: rgba(0, 0, 0, 0.06);
 	}
 	:global(.dark) .quote-frame-others {
-		background-color: rgba(255, 255, 255, 0.08);
-	}
-	.quote-frame-others .quote-frame-bar {
-		background-color: var(--color-brand-primary);
+		background-color: rgba(255, 255, 255, 0.16);
 	}
 </style>
