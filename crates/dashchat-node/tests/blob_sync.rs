@@ -23,7 +23,7 @@ async fn media_blob_syncs_between_nodes() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -39,7 +39,7 @@ async fn media_blob_syncs_between_nodes() {
     };
 
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -110,7 +110,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -126,7 +126,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -151,7 +151,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("media metadata present on bobbi's copy of the message");
-    let hash = meta.first().expect("at least one media item").hash;
+    let hash = meta.first().expect("at least one media item").hash();
 
     // Restart Bobbi from the same store. The media op is already persisted and
     // is not re-delivered, so only startup hydration can re-queue its blob.

@@ -14,6 +14,7 @@ import {
 import { GroupChatStore } from '../group-chats/group-chat-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { AgentId, VerifyingKey } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
 import { pendingChatKey } from './chat-key';
@@ -26,10 +27,18 @@ export class ChatsStore {
 	constructor(
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
+		protected tombstoneStore: TombstoneStore,
 		public client: IChatsClient,
 	) {
 		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
-			if (op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') {
+			// GroupControl bumps are what reveal a newly joined group: the backend
+			// marks a chat as a group chat while reducing the group's Create op
+			// (before emitting this notification), which happens after the
+			// JoinGroup notification has already triggered a (too early) refetch.
+			if (
+				(op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') ||
+				op.body?.type === 'GroupControl'
+			) {
 				this.groupChatVersion.value++;
 			}
 		});
@@ -72,6 +81,7 @@ export class ChatsStore {
 			new GroupChatStore(
 				this.logsStore,
 				this.contactsStore,
+				this.tombstoneStore,
 				this.groupChatClient(),
 				chatId,
 				this.messagesClient(),
@@ -83,6 +93,7 @@ export class ChatsStore {
 			new DirectChatStore(
 				this.logsStore,
 				this.contactsStore,
+				this.tombstoneStore,
 				this.directChatClient(),
 				peer,
 				this.messagesClient(),
@@ -149,7 +160,7 @@ export class ChatsStore {
 			return pending.map(request => ({
 				type: 'DirectChat',
 				chatId: pendingChatKey(request.devicePubkey),
-				name: '',
+				name: request.profileName,
 				avatar: undefined,
 				waitingForProfile: true as const,
 				lastEvent: {

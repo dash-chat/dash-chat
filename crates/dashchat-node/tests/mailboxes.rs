@@ -25,10 +25,7 @@ async fn mailbox_late_join() {
     let alice = TestNode::new(config.clone(), "alice").await;
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-    let qr = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
     alice.add_mailbox(&mailbox).await;
@@ -43,7 +40,7 @@ async fn mailbox_late_join() {
     //
     // alice
     //     .behavior()
-    //     .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+    //     .initiate_and_establish_contact(&bobbi)
     //     .await
     //     .unwrap();
 
@@ -100,10 +97,7 @@ async fn test_mailbox_restart_relay() {
     let alice_agent_id = alice.agent_id();
     let bobbi_agent_id = bobbi.agent_id();
 
-    let qr = alice
-        .new_qr_code(ShareIntent::AddContact, true)
-        .await
-        .unwrap();
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
     let dummy_key = || iroh::SecretKey::generate().public();
@@ -235,13 +229,13 @@ async fn test_multiple_mailboxes_group_pivot() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
     carol
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 

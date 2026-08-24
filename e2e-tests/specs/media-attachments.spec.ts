@@ -5,23 +5,24 @@
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { tid } from '../helpers/selectors';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Media attachments', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Media');
 		await agent2.createProfilePage.createProfile('Bob', 'Media');
 		await exchangeContacts(agent1, agent2);
 	});
 
-	it('opens the desktop attach dropdown and renders the Photos and File items', async () => {
+	it('opens the desktop attach dropdown and renders the Photos and File items', async function () {
+		if (agent1.platform !== 'desktop') this.skip();
 		const composer = agent1.directChatPage.composer;
 		await composer.openAttachMenu();
 		expect(await composer.attachItemLabel('photos')).toBe(
@@ -48,6 +49,22 @@ describe('Media attachments', () => {
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForMessage('three pics');
 		await agent2.directChatPage.messages.waitForMessage('three pics');
+	});
+
+	it('keeps the keyboard open when sending from the staged media page', async function () {
+		if (agent1.platform === 'desktop') this.skip();
+		const composer = agent1.directChatPage.composer;
+		await composer.attachPhotos('kbd');
+		await composer.focusStagedCaption();
+		await composer.type('keyboard stays');
+		await composer.sendFromStagedMediaPage();
+		await composer.stagedMediaPage.waitForExist({ reverse: true });
+		await agent1.directChatPage.messages.waitForMessage('keyboard stays');
+		await agent1.waitUntil(() => composer.isInputFocused(), {
+			timeoutMsg:
+				'Composer input did not regain focus after sending staged media',
+		});
+		expect(await agent1.isKeyboardShown()).toBe(true);
 	});
 
 	it('sends a file attachment and renders on both ends', async () => {
@@ -115,9 +132,9 @@ describe('Media attachments', () => {
 		const composer = agent1.directChatPage.composer;
 		for (let i = 0; i < 3; i++) await composer.attachPhotos('staged');
 		await composer.expectStagedPhotoCount(3);
-		await composer.removeAttachmentButton(1).click();
+		await composer.removeStagedPhoto(1);
 		await composer.expectStagedPhotoCount(2);
-		await composer.clearAttachments.click();
+		await composer.clearAll();
 		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
 			timeoutMsg: 'Preview still present after clear all',
 		});
@@ -137,7 +154,7 @@ describe('Media attachments', () => {
 		await composer.expectStagedPhotoCount(2);
 		await composer.pastePhotos('pasted');
 		await composer.expectStagedPhotoCount(3);
-		await composer.clearAttachments.click();
+		await composer.clearAll();
 		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
 			timeoutMsg: 'Preview still present after clear all',
 		});
@@ -152,12 +169,11 @@ describe('Media attachments', () => {
 		await agent1.toast.expectMessageContaining('cannot add any more');
 		await composer.expectStagedPhotoCount(32);
 
-		// Leave and re-enter the chat to discard the bulky draft without
-		// sending 32 photos through the network.
-		await agent1.directChatPage.back.click();
-		await agent1.homePage.ready();
-		await agent1.homePage.openChat('Bob');
-		await agent1.directChatPage.ready();
+		// Discard the bulky draft without sending 32 photos through the network.
+		await composer.clearAll();
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg: 'Preview still present after clear all',
+		});
 	});
 
 	it('shows a retry control and recovers after a failed image load', async () => {

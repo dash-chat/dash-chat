@@ -9,7 +9,6 @@ export * from './types.js';
 
 export * from './contacts/contacts-store.js';
 export * from './contacts/contacts-client.js';
-export * from './contacts/contact-code.js';
 export * from './contacts/errors.js';
 
 export * from './devices/devices-store.js';
@@ -26,9 +25,13 @@ export * from './chats/chats-client.js';
 export * from './chats/chat-key.js';
 export * from './chats/messages-store.js';
 export * from './chats/messages-client.js';
+export * from './chats/replies.js';
 
 export * from './settings/settings-client.js';
 export * from './settings/settings-store.js';
+
+export * from './tombstones/tombstone-store.js';
+export * from './tombstones/tombstone-client.js';
 
 export * from './mailbox-tracker/mailbox-tracker-store.js';
 export * from './mailbox-tracker/types.js';

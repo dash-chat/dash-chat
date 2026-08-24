@@ -1,8 +1,6 @@
 import type { IContactsClient, Profile } from '../contacts/contacts-client';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import type { ContactCode, InboxTopic } from '../types';
-import { ShareIntent } from '../types';
 import type { LocalStorageLogsClient } from './client';
 
 export class MockContactsClient implements IContactsClient {
@@ -33,21 +31,19 @@ export class MockContactsClient implements IContactsClient {
 		});
 	}
 
-	async createContactCode(): Promise<ContactCode> {
-		return {
-			device_pubkey: this.deviceId,
-			inbox_topic: this.inboxTopics[0]
-				? { topic: this.inboxTopics[0], expires_at: Date.now() + 86400000 }
-				: undefined,
-			share_intent: ShareIntent.AddContact,
-		};
+	async createContactCode(): Promise<string> {
+		const bytes = new Uint8Array(45);
+		crypto.getRandomValues(bytes);
+		return btoa(String.fromCharCode(...Array.from(bytes)));
 	}
 
 	async activeInboxTopics(): Promise<TopicId[]> {
 		return this.inboxTopics;
 	}
 
-	async addContact(_contactCode: ContactCode): Promise<void> {}
+	async addContact(_contactCode: string): Promise<DeviceId> {
+		return this.deviceId;
+	}
 
 	async acceptContact(agentId: AgentId): Promise<void> {
 		await this.logsClient.create(this.deviceGroupTopicId, {
@@ -56,10 +52,27 @@ export class MockContactsClient implements IContactsClient {
 		});
 	}
 
-	async rejectContactRequest(agentId: AgentId): Promise<void> {
+	async blockContact(agentId: AgentId): Promise<void> {
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',
-			payload: { type: 'RejectContactRequest', payload: agentId },
+			payload: { type: 'BlockAgent', payload: agentId },
+		});
+	}
+
+	async unblockContact(agentId: AgentId): Promise<void> {
+		await this.logsClient.create(this.deviceGroupTopicId, {
+			type: 'DeviceGroupPayload',
+			payload: { type: 'UnblockAgent', payload: agentId },
+		});
+	}
+
+	async reportContact(agentId: AgentId): Promise<void> {
+		await this.logsClient.create(this.deviceGroupTopicId, {
+			type: 'DeviceGroupPayload',
+			payload: {
+				type: 'ReportContact',
+				payload: { agent_id: agentId, device_ids: [], mailbox_ids: [] },
+			},
 		});
 	}
 }

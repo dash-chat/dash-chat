@@ -100,7 +100,7 @@ async fn test_direct_chat() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -114,14 +114,6 @@ async fn test_direct_chat() {
         .send_message_raw(chat_id, "Hello".into())
         .await
         .unwrap();
-
-    // consistency(
-    //     [&alice, &bobbi],
-    //     &[chat_id.into()],
-    //     &ClusterConfig::default(),
-    // )
-    // .await
-    // .unwrap();
 
     poll.wait_for(|| async {
         let msgs = [
@@ -141,6 +133,12 @@ async fn test_direct_chat() {
         bobbi_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())
     );
+
+    // A direct chat must never be registered as a group chat.
+    for node in [&alice, &bobbi] {
+        let ids = node.projection.get_group_chat_ids().await.unwrap();
+        assert!(!ids.contains(&chat_id));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -160,7 +158,7 @@ async fn test_p2p_direct_chat() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -178,7 +176,8 @@ async fn test_p2p_direct_chat() {
 
     for mut rx in [alice.watcher.lock().await, bobbi.watcher.lock().await] {
         while let Some(notification) = rx.recv().await {
-            if let Some(Payload::Chat(ChatPayload::Message(content))) = notification.payload {
+            let payload = notification.op().as_ref().and_then(|n| n.payload.as_ref());
+            if let Some(Payload::Chat(ChatPayload::Message(content))) = payload {
                 assert_eq!(message, content.message());
                 break;
             }
@@ -198,12 +197,12 @@ async fn test_group_chat() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     cammy
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -302,7 +301,7 @@ async fn test_group_chat() {
     .unwrap();
 
     let alice_profile = cammy
-        .local_store
+        .projection
         .get_profile(alice.agent_id())
         .await
         .unwrap();
@@ -317,7 +316,7 @@ async fn test_group_chat() {
     );
 
     let cammy_profile = alice
-        .local_store
+        .projection
         .get_profile(cammy.agent_id())
         .await
         .unwrap();
@@ -337,6 +336,49 @@ async fn test_group_chat() {
     let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;
     let alice_members = alice.get_group_members(chat_id).await.unwrap();
     assert_eq!(alice_members, expected_members);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_chat_registered_in_op_projection() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    for node in [&alice, &bobbi] {
+        poll.wait_for(|| async {
+            let ids = node.projection.get_group_chat_ids().await.unwrap();
+            ids.contains(&chat_id).then_some(()).ok_or(ids)
+        })
+        .await
+        .unwrap();
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -372,7 +414,7 @@ async fn test_admin_removes_themself_there_is_another_admin() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -422,7 +464,7 @@ async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -453,7 +495,7 @@ async fn test_non_admin_removes_themself() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -505,7 +547,7 @@ async fn test_admin_removes_non_admin() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -557,12 +599,12 @@ async fn test_non_admin_cannot_remove_admin() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&andi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&andi)
         .await
         .unwrap();
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 

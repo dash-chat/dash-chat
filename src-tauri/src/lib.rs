@@ -1,4 +1,8 @@
-mod app_node;
+#[cfg(target_os = "android")]
+use crate::background::NodeBackgroundService;
+
+#[cfg(target_os = "android")]
+mod background;
 mod blob_protocol;
 mod commands;
 mod device_info;
@@ -8,7 +12,10 @@ mod i18n;
 mod mailbox;
 #[cfg(desktop)]
 mod media_drop;
+mod node;
 mod notifications;
+mod redaction;
+mod sentry;
 mod settings;
 mod setup;
 mod utils;
@@ -35,15 +42,13 @@ pub fn run() {
 
     i18n::init_i18n();
 
-    let mut builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_system_theme::init());
 
     #[cfg(mobile)]
     {
         builder = builder
-            .plugin(tauri_plugin_virtual_keyboard_padding::init())
             .plugin(tauri_plugin_barcode_scanner::init())
-            .plugin(tauri_plugin_view::init())
-            .plugin(tauri_plugin_system_bars_styles::init());
+            .plugin(tauri_plugin_view::init());
     }
     #[cfg(target_os = "android")]
     {
@@ -62,20 +67,20 @@ pub fn run() {
             tauri_plugin_ios_lifecycle::Builder::new()
                 .on_pause(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node) = app
-                        .try_state::<app_node::AppNode>()
+                    if let Some(app_node_manager) = app
+                        .try_state::<node::AppNodeManager>()
                         .map(|s| s.inner().clone())
                     {
-                        app_node.pause().await;
+                        app_node_manager.pause().await;
                     }
                 })
                 .on_resume(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node) = app
-                        .try_state::<app_node::AppNode>()
+                    if let Some(app_node_manager) = app
+                        .try_state::<node::AppNodeManager>()
                         .map(|s| s.inner().clone())
                     {
-                        if let Err(err) = app_node.resume(&app).await {
+                        if let Err(err) = app_node_manager.resume(&app).await {
                             log::error!("Failed to rebuild node on foreground: {err:?}");
                         }
                     }
@@ -88,10 +93,7 @@ pub fn run() {
         if cfg!(feature = "e2e-tests") {
             // E2E tests run multiple built instances side-by-side;
             // skip single-instance, updater, and MCP bridge plugins.
-        } else if tauri::is_dev() {
-            // MCP for Claude Code to control the tauri app
-            builder = builder.plugin(tauri_plugin_mcp_bridge::init());
-        } else {
+        } else if !tauri::is_dev() {
             // single-instance must be registered before deep-link so it can
             // forward deep link URLs from a second process to this one.
             builder = builder
@@ -115,13 +117,19 @@ pub fn run() {
         }
     }
 
-    builder
+    // MCP bridge for Claude Code to drive the running app, on every platform.
+    // Dev-only: the WebSocket server never starts in production builds. E2E runs
+    // its own multi-instance harness, so skip it there.
+    if tauri::is_dev() && !cfg!(feature = "e2e-tests") {
+        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    builder = builder
         .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
             commands::logs::get_log,
             commands::logs::get_authors,
-            commands::redact_log::get_redacted_log,
             commands::profile::set_profile,
             commands::account::delete_account,
             commands::devices::my_device_group_topic,
@@ -132,9 +140,15 @@ pub fn run() {
             commands::contacts::add_contact,
             commands::contacts::accept_contact,
             commands::contacts::active_inbox_topics,
-            commands::contacts::reject_contact_request,
+            commands::contacts::block_contact,
+            commands::contacts::unblock_contact,
+            commands::contacts::report_contact,
             commands::direct_chats::direct_chat_id,
             commands::chats::send_message,
+            commands::chats::edit_message,
+            commands::chats::delete_message,
+            commands::chats::delete_message_for_me,
+            commands::chats::get_tombstones,
             commands::chats::send_reaction,
             commands::chats::mark_messages_read,
             commands::chats::create_group,
@@ -157,15 +171,25 @@ pub fn run() {
             #[cfg(feature = "e2e-tests")]
             commands::testing::close_iroh_endpoint,
         ])
+        .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_sharekit::init())
-        .plugin(tauri_plugin_mailto::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_opener::init());
+
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.plugin(tauri_plugin_background_service::init_with_service(|| {
+            NodeBackgroundService::new()
+        }));
+    }
+
+    builder
         .on_window_event(|window, event| match event {
             #[cfg(desktop)]
             tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {

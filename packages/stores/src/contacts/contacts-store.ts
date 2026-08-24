@@ -3,14 +3,13 @@ import { reactive, relay } from 'signalium';
 import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { AgentId, DeviceId, TopicId } from '../p2panda/types';
+import { AgentId, DeviceId, Hash, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import { AnnouncementPayload, ContactCode, Payload } from '../types';
+import { AnnouncementPayload, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
 
 export interface ContactRequest {
 	profile: Profile;
-	code: ContactCode;
 	agentId: AgentId;
 	timestamp: number;
 	topicId: TopicId;
@@ -24,6 +23,14 @@ export interface ContactRequest {
 export interface OutgoingContactRequest {
 	devicePubkey: DeviceId;
 	timestamp: number;
+	profileName: string;
+}
+
+/** One filed report against a contact, as recorded in the device group log. */
+export interface ContactReport {
+	timestamp: number;
+	author: DeviceId;
+	mailboxCount: number;
 }
 
 export class ContactsStore {
@@ -78,6 +85,94 @@ export class ContactsStore {
 		return Array.from(contacts);
 	});
 
+	blockedContactAgentIds = reactive(async () => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const latestByAgent: Record<
+			AgentId,
+			{ blocked: boolean; timestamp: number }
+		> = {};
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				const payload = op.body?.payload;
+				if (payload?.type !== 'BlockAgent' && payload?.type !== 'UnblockAgent')
+					continue;
+				const agentId = payload.payload;
+				const existing = latestByAgent[agentId];
+				if (!existing || op.header.timestamp > existing.timestamp) {
+					latestByAgent[agentId] = {
+						blocked: payload.type === 'BlockAgent',
+						timestamp: op.header.timestamp,
+					};
+				}
+			}
+		}
+
+		const blocked = new Set<AgentId>();
+		for (const [agentId, v] of Object.entries(latestByAgent)) {
+			if (v.blocked) blocked.add(agentId as AgentId);
+		}
+		return blocked;
+	});
+
+	/**
+	 * Every report this device group has filed against `agentId`, keyed by the
+	 * hash of the `ReportContact` operation. Reporting stays available after a
+	 * report, so an agent can have any number of these.
+	 */
+	reports = reactive(async (agentId: AgentId) => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const reports: Record<Hash, ContactReport> = {};
+		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				const payload = op.body?.payload;
+				if (payload?.type !== 'ReportContact') continue;
+				if (payload.payload.agent_id !== agentId) continue;
+				reports[op.hash] = {
+					timestamp: op.header.timestamp,
+					author: op.header.verifying_key,
+					mailboxCount: payload.payload.mailbox_ids.length,
+				};
+			}
+		}
+		return reports;
+	});
+
+	reportContact = async (agentId: AgentId) => {
+		await this.client.reportContact(agentId);
+	};
+
+	/** Every block/unblock operation for `agentId`, keyed by operation hash. */
+	blockHistory = reactive(async (agentId: AgentId) => {
+		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
+
+		const events: Record<
+			Hash,
+			{ blocked: boolean; timestamp: number; author: DeviceId }
+		> = {};
+		for (const ops of Object.values(myDeviceGroupTopic)) {
+			for (const op of ops) {
+				const payload = op.body?.payload;
+				if (payload?.type !== 'BlockAgent' && payload?.type !== 'UnblockAgent')
+					continue;
+				if (payload.payload !== agentId) continue;
+				events[op.hash] = {
+					blocked: payload.type === 'BlockAgent',
+					timestamp: op.header.timestamp,
+					author: op.header.verifying_key,
+				};
+			}
+		}
+		return events;
+	});
+
+	isBlocked = reactive(async (agentId: AgentId) => {
+		const blocked = await this.blockedContactAgentIds();
+
+		return blocked.has(agentId);
+	});
+
 	/**
 	 * Outgoing contact requests we've sent but whose ack hasn't arrived yet.
 	 * A pending marker is dropped once its device pubkey resolves to an
@@ -87,14 +182,23 @@ export class ContactsStore {
 	outgoingPendingRequests = reactive(async () => {
 		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
 
-		const latestByDevice: Record<DeviceId, number> = {};
+		const latestByDevice: Record<
+			DeviceId,
+			{ timestamp: number; profileName: string }
+		> = {};
 		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
 			for (const op of ops) {
 				if (op.body?.payload?.type !== 'PendingContactRequest') continue;
-				const { device_pubkey } = op.body.payload.payload;
+				const { device_pubkey, profile_name } = op.body.payload.payload;
 				const existing = latestByDevice[device_pubkey];
-				if (existing === undefined || op.header.timestamp > existing) {
-					latestByDevice[device_pubkey] = op.header.timestamp;
+				if (
+					existing === undefined ||
+					op.header.timestamp > existing.timestamp
+				) {
+					latestByDevice[device_pubkey] = {
+						timestamp: op.header.timestamp,
+						profileName: profile_name ?? '',
+					};
 				}
 			}
 		}
@@ -109,7 +213,8 @@ export class ContactsStore {
 			if (resolved[i] !== undefined) continue;
 			pending.push({
 				devicePubkey: devices[i],
-				timestamp: latestByDevice[devices[i]],
+				timestamp: latestByDevice[devices[i]].timestamp,
+				profileName: latestByDevice[devices[i]].profileName,
 			});
 		}
 		return pending;
@@ -173,7 +278,7 @@ export class ContactsStore {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
 					if (operation.body.payload.type !== 'ContactRequest') continue;
-					const { code, profile, agent_id } = operation.body.payload.payload;
+					const { profile, agent_id } = operation.body.payload.payload;
 					if (!agent_id) continue;
 					const agentId = agent_id;
 
@@ -189,7 +294,6 @@ export class ContactsStore {
 						continue;
 
 					contactRequests.push({
-						code,
 						profile,
 						agentId,
 						topicId,
@@ -273,6 +377,27 @@ export class ContactsStore {
 		);
 
 		const profilesWithContacts: Array<[AgentId, Profile]> = contacts
+			.map(
+				(contact, i) =>
+					[contact, profiles[i]] as [AgentId, Profile | undefined],
+			)
+			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
+
+		return profilesWithContacts;
+	});
+
+	profilesForUnblockedContacts = reactive(async () => {
+		const [contacts, blocked] = await Promise.all([
+			this.contactsAgentIds(),
+			this.blockedContactAgentIds(),
+		]);
+		const unblocked = contacts.filter(contact => !blocked.has(contact));
+
+		const profiles = await Promise.all(
+			unblocked.map(contact => this.profiles(contact)),
+		);
+
+		const profilesWithContacts: Array<[AgentId, Profile]> = unblocked
 			.map(
 				(contact, i) =>
 					[contact, profiles[i]] as [AgentId, Profile | undefined],

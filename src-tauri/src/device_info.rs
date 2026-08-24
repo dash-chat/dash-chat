@@ -1,4 +1,4 @@
-mod build;
+pub(crate) mod build;
 mod device_model;
 pub mod display;
 mod filesystem;

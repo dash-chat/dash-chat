@@ -1,15 +1,22 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import {
+		useReactivePromise,
+		useReactivePromises,
+	} from '$lib/stores/use-signal';
 	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
 	import { goto } from '$app/navigation';
-	import type {
-		ChatsStore,
-		ContactsStore,
-		DeviceId,
-		Hash,
+	import {
+		fullName,
+		replyAuthor,
+		type ChatsStore,
+		type ContactsStore,
+		type DeviceId,
+		type Hash,
+		type GroupMemberWithProfile,
+		type Message,
 	} from 'dash-chat-stores';
 	import { createReadMessagesTracker } from '$lib/actions/track-read-messages';
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
@@ -26,13 +33,15 @@
 	import MessageComposer from '$lib/components/messages/composer/MessageComposer.svelte';
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
-	import { messagePosition } from '$lib/components/messages/message-helpers';
+	import {
+		messagePosition,
+		scrollToMessage,
+	} from '$lib/components/messages/message-helpers';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const store = chatsStore.groupChats(chatId);
@@ -41,22 +50,34 @@
 	const readTracker = createReadMessagesTracker(store.messages);
 	const readMessageOnObserve = readTracker.observe;
 
-	const messageGroups = useReactivePromise(store.groupedEvents);
 	const info = useReactivePromise(store.info);
-	const allMembers = useReactivePromise(store.allMembers);
-	const me = useReactivePromise(store.me);
 	const readMessageHashes = useReactivePromise(
 		store.messages.readMessageHashes,
 	);
 	const unreadCount = useReactivePromise(store.messages.unreadCount);
 
+	const headerData = useReactivePromises(() => [
+		store.info(),
+		store.allMembers(),
+	]);
+	const messageListData = useReactivePromises(() => [
+		contactsStore.myDeviceId(),
+		store.groupedEvents(),
+		store.allMembers(),
+	]);
+	const composerData = useReactivePromises(() => [store.me(), store.info()]);
+
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
+	let messagesEl: HTMLDivElement | undefined = $state();
+
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
 		$state();
 
 	let capturedUnreadHash: Hash | null = null;
 	let unreadDividerCaptured = false;
+
+	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 
 	// Scroll the message we just sent into view once its bubble mounts.
 	let justSentMessageHash: Hash | null = $state(null);
@@ -68,7 +89,14 @@
 	};
 
 	function onMessageSent(messageHash: Hash) {
-		justSentMessageHash = messageHash;
+		// The bubble renders off the new-operation event, which can beat
+		// sendMessage's response — if it already mounted, the action missed
+		// the handshake, so scroll now.
+		if (document.querySelector(`[data-message-hash="${messageHash}"]`)) {
+			setTimeout(() => reverseScrollPage?.scrollToBottom());
+		} else {
+			justSentMessageHash = messageHash;
+		}
 		capturedUnreadHash = null;
 		unreadDividerCaptured = false;
 	}
@@ -76,7 +104,7 @@
 	const theme = $derived(useTheme());
 
 	function getUnreadDividerInfo(
-		messageGroupsInDays: Awaited<typeof $messageGroups>,
+		messageGroupsInDays: Awaited<ReturnType<typeof store.groupedEvents>>,
 		readHashes: Set<Hash> | undefined,
 		deviceId: DeviceId | undefined,
 	): { hash: Hash | null; count: number } {
@@ -123,6 +151,34 @@
 		}
 
 		return { hash: capturedUnreadHash, count };
+	}
+
+	function navigateToMessage(hash: Hash) {
+		scrollToMessage(messagesEl, hash);
+	}
+
+	function deviceDisplayName(
+		deviceId: DeviceId,
+		myDeviceId: DeviceId,
+		members: Record<string, GroupMemberWithProfile>,
+	): string {
+		if (deviceId === myDeviceId) return m.you();
+		const member = Object.values(members).find(m =>
+			m.deviceIds.includes(deviceId),
+		);
+		return member?.profile ? fullName(member.profile) : m.unknownSender();
+	}
+
+	/** Display name of the author quoted by `message`'s reply, if that author is
+	 * known — a quote of a message this peer never received has none. */
+	function quotedAuthorName(
+		message: Message,
+		myDeviceId: DeviceId,
+		members: Record<string, GroupMemberWithProfile>,
+	): string | undefined {
+		const author = replyAuthor(message.replyQuote);
+		if (author === undefined) return undefined;
+		return deviceDisplayName(author, myDeviceId, members);
 	}
 </script>
 
@@ -173,7 +229,7 @@
 
 		<div class="column" style={`padding-bottom: ${bottomBarHeight}px`}>
 			<div class="mt-16 mb-6 px-4" data-testid="group-chat-header">
-				{#await Promise.all([$info, $allMembers]) then [info, members]}
+				{#await $headerData then [info, members]}
 					<div class="column items-center">
 						<div
 							class="outline-card"
@@ -206,9 +262,13 @@
 				{/await}
 			</div>
 
-			<div class="column m-2 gap-1" data-testid="group-chat-messages">
+			<div
+				bind:this={messagesEl}
+				class="column m-2 gap-1"
+				data-testid="group-chat-messages"
+			>
 				{#await $readMessageHashes then readHashes}
-					{#await Promise.all( [$myDeviceId, $messageGroups, $allMembers], ) then [myDeviceId, messageGroupsInDays, members]}
+					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
 						{@const unreadDivider = getUnreadDividerInfo(
 							messageGroupsInDays,
 							readHashes,
@@ -240,7 +300,7 @@
 											)}
 											{#if myDeviceId === message.author}
 												<div
-													class="self-end max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:scrollToBottomOnMount={hash}
 												>
@@ -250,6 +310,22 @@
 														{myDeviceId}
 														{chatId}
 														searchQuery=""
+														onEdit={() => composer?.editMessage(message)}
+														onReply={() =>
+															composer?.replyToMessage(
+																message,
+																deviceDisplayName(
+																	message.author,
+																	myDeviceId,
+																	members,
+																),
+															)}
+														replyAuthorName={quotedAuthorName(
+															message,
+															myDeviceId,
+															members,
+														)}
+														onNavigateToMessage={navigateToMessage}
 													/>
 												</div>
 											{:else}
@@ -257,7 +333,7 @@
 													m.deviceIds.includes(message.author),
 												)}
 												<div
-													class="self-start max-w-[85%]"
+													class="w-full"
 													data-message-hash={hash}
 													use:readMessageOnObserve={readHashes?.has(hash)
 														? null
@@ -273,6 +349,21 @@
 														showSenderName={position === 'first' ||
 															position === 'single'}
 														showAvatar
+														onReply={() =>
+															composer?.replyToMessage(
+																message,
+																deviceDisplayName(
+																	message.author,
+																	myDeviceId,
+																	members,
+																),
+															)}
+														replyAuthorName={quotedAuthorName(
+															message,
+															myDeviceId,
+															members,
+														)}
+														onNavigateToMessage={navigateToMessage}
 													/>
 												</div>
 											{/if}
@@ -299,25 +390,27 @@
 	{/if}
 
 	<div
-		bind:clientHeight={bottomBarHeight}
 		class="absolute bottom-0 inset-x-0 z-30"
 		class:bg-page-surface={theme === 'material'}
 	>
-		{#await Promise.all([$me, $info]) then [me, info]}
-			{#if me.member}
-				<MessageComposer
-					store={store.messages}
-					destinationName={info.name}
-					onSent={onMessageSent}
-				/>
-			{:else}
-				<div
-					class="pb-safe-4 quiet px-6 pt-4 text-center text-sm"
-					data-testid="group-chat-not-member"
-				>
-					{m.youAreNoLongerAMember()}
-				</div>
-			{/if}
-		{/await}
+		<div bind:clientHeight={bottomBarHeight}>
+			{#await $composerData then [me, info]}
+				{#if me.member}
+					<MessageComposer
+						bind:this={composer}
+						store={store.messages}
+						destinationName={info.name}
+						onSent={onMessageSent}
+					/>
+				{:else}
+					<div
+						class="quiet px-6 py-4 text-center text-sm"
+						data-testid="group-chat-not-member"
+					>
+						{m.youAreNoLongerAMember()}
+					</div>
+				{/if}
+			{/await}
+		</div>
 	</div>
 </div>

@@ -45,7 +45,14 @@ export function killAllE2EProcesses() {
 /** Kill leftover mailbox-server processes from previous interrupted runs. */
 export function killLeftoverMailboxServers() {
 	try {
-		execSync('pkill -9 -f mailbox-server', { stdio: 'ignore' });
+		execSync('pkill -9 -f target/debug/mailbox-server', { stdio: 'ignore' });
+	} catch {
+		/* ignore */
+	}
+	try {
+		execSync('pkill -9 -f target/debug/push-notifications-server', {
+			stdio: 'ignore',
+		});
 	} catch {
 		/* ignore */
 	}

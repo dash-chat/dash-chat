@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { Message } from 'dash-chat-stores';
+	import { type Message, hasBody } from 'dash-chat-stores';
 	import { senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
@@ -23,10 +23,15 @@
 		showSenderName?: boolean;
 	} = $props();
 
-	const media = $derived(message.content.media);
-	const hasText = $derived(!!message.content.message);
-	const isPhotoOnly = $derived(media?.kind === 'photos' && !hasText);
-	const isFileOnly = $derived(media?.kind === 'file' && !hasText);
+	const body = $derived(hasBody(message.content) ? message.content : null);
+	const media = $derived(body?.media ?? null);
+	const file = $derived(media?.find(m => m.kind === 'File'));
+	const photos = $derived(
+		file ? [] : (media?.filter(m => m.kind === 'Photo') ?? []),
+	);
+	const hasText = $derived(!!body?.message);
+	const isPhotoOnly = $derived(photos.length > 0 && !hasText);
+	const isFileOnly = $derived(!!file && !hasText);
 
 	let metadataWidth = $state(0);
 </script>
@@ -40,13 +45,9 @@
 		{senderName}
 	</div>
 {/if}
-{#if media?.kind === 'photos'}
+{#if photos.length > 0}
 	<div class="media photos">
-		<PhotosAttachment
-			photos={media.photos}
-			{senderName}
-			timestamp={message.timestamp}
-		/>
+		<PhotosAttachment {photos} {senderName} timestamp={message.timestamp} />
 		{#if isPhotoOnly && metadata}
 			<div
 				class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
@@ -55,12 +56,9 @@
 			</div>
 		{/if}
 	</div>
-{:else if media?.kind === 'file'}
+{:else if file}
 	<div class="media file">
-		<FileAttachment
-			file={media.file}
-			metadata={isFileOnly ? metadata : undefined}
-		/>
+		<FileAttachment {file} metadata={isFileOnly ? metadata : undefined} />
 	</div>
 {/if}
 {#if hasText || (metadata && !isPhotoOnly && !isFileOnly)}
@@ -74,7 +72,7 @@
 			</div>
 		{/if}
 		<div class="max-w-full" use:shrinkToWidestLine>
-			<MessageText text={message.content.message} {searchQuery} />
+			<MessageText text={body?.message ?? ''} {searchQuery} />
 			<!-- Reserves the metadata's space in the bottom-end corner, since
 			     wrapped text cannot be made to avoid an absolute box via CSS. -->
 			{#if metadata}

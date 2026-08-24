@@ -12,7 +12,6 @@ pub(crate) struct Settings {
     #[serde(default = "default_notifications_enabled")]
     pub notifications_enabled: bool,
     pub qr_color: Option<String>,
-    pub color_scheme: Option<String>,
 }
 
 impl Default for Settings {
@@ -21,7 +20,6 @@ impl Default for Settings {
             local_mailbox_enabled: false,
             notifications_enabled: default_notifications_enabled(),
             qr_color: None,
-            color_scheme: None,
         }
     }
 }

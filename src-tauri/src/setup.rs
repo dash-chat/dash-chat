@@ -59,8 +59,11 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
-    // Manage the mDNS service daemon
-    app_handle.manage(mdns_sd::ServiceDaemon::new()?);
+    let mdns = mdns_sd::ServiceDaemon::new()?;
+    if let Err(err) = mdns.set_ip_check_interval(1) {
+        log::warn!("Failed to set mDNS ip check interval: {err:?}");
+    }
+    app_handle.manage(mdns);
 
     let fs = FileSystem::new(&app_handle)?;
     let local_data_path = fs.app_data_dir().clone();
@@ -85,10 +88,10 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     // Keep the node behind a swappable container so it can be torn down when the
     // iOS app is backgrounded (releasing SQLite locks) and rebuilt on foreground.
-    // AppNode::spawn owns the notification and topic-subscribed channels and wires
+    // AppNodeManager::spawn owns the notification and topic-subscribed channels and wires
     // up the notification loop and push notifications internally.
-    let app_node = crate::app_node::AppNode::spawn(&app_handle, local_data_path).await?;
-    app_handle.manage(app_node);
+    let app_node_manager = crate::node::AppNodeManager::spawn(&app_handle, local_data_path).await?;
+    app_handle.manage(app_node_manager);
 
     // Start the local mailbox server after the node is managed so it can
     // derive a stable mDNS instance name from the device id.
@@ -100,64 +103,108 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Build & register `tauri-plugin-log` once we have an `AppHandle` to log in the correct path
+/// os_log is the only log channel that leaves an iOS device, so it is what any
+/// on-device debugging reads. Redacted, unlike the other targets: the unified
+/// log is swept into sysdiagnose archives, which users hand to Apple and attach
+/// to bug reports, and nothing sensitive may leave that way.
+#[cfg(target_os = "ios")]
+fn device_console_target() -> tauri_plugin_log::Target {
+    let logger =
+        oslog::OsLogger::new("studio.darksoil.dashchat").level_filter(log::LevelFilter::Debug);
+    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Dispatch(
+        tauri_plugin_log::fern::Dispatch::new().chain(Box::new(logger) as Box<dyn log::Log>),
+    ))
+    .format(format_redacted_record)
+}
+
+#[cfg(target_os = "ios")]
+fn format_redacted_record(
+    out: tauri_plugin_log::fern::FormatCallback,
+    message: &std::fmt::Arguments,
+    record: &log::Record,
+) {
+    let redacted = tauri_plugin_sentry_reporting::redact(
+        &crate::redaction::REDACTION_REGEXES,
+        &message.to_string(),
+    );
+    format_record(out, &format_args!("{redacted}"), record);
+}
+
 fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
     let fs = FileSystem::new(handle)?;
-    handle.plugin(
-        tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Warn)
-            .level_for("dashchat_node", log::LevelFilter::Debug)
-            .level_for("mailbox_client", log::LevelFilter::Debug)
-            .level_for("mailbox_server", log::LevelFilter::Debug)
-            .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
-            .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
-            // This is the default formatter for desktop, also use it in mobile platforms to record time
-            // in the log file, as the logcat timestamp does not get included there
-            .format(move |out, message, record| {
-                let format = time::macros::format_description!(
-                    "[[[year]-[month]-[day]][[[hour]:[minute]:[second]]"
-                );
-                let args = if let (Some(file), Some(line)) = (record.file(), record.line()) {
-                    format_args!(
-                        "{}[{} {}:{}][{}] {}",
-                        tauri_plugin_log::TimezoneStrategy::UseUtc
-                            .get_now()
-                            .format(&format)
-                            .unwrap(),
-                        record.target(),
-                        file.to_string(),
-                        line.to_string(),
-                        record.level(),
-                        message
-                    )
-                } else {
-                    format_args!(
-                        "{}[{}][{}] {}",
-                        tauri_plugin_log::TimezoneStrategy::UseUtc
-                            .get_now()
-                            .format(&format)
-                            .unwrap(),
-                        record.target(),
-                        record.level(),
-                        message
-                    )
-                };
-                out.finish(args)
-            })
-            .clear_targets()
-            .max_file_size(5 * 1024 * 1024)
-            .targets([
-                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-                    path: fs.logs_dir(),
-                    file_name: None,
-                }),
-            ])
-            .build(),
-    )?;
 
-    // Now that the log plugin is registered, route panics through it.
+    // Only iOS pushes to it, below.
+    #[cfg_attr(not(target_os = "ios"), allow(unused_mut))]
+    let mut targets = vec![
+        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout).format(format_record),
+        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+            path: fs.logs_dir(),
+            file_name: None,
+        })
+        .format(format_record),
+        tauri_plugin_sentry_reporting::log_target(handle),
+    ];
+    #[cfg(target_os = "ios")]
+    targets.push(device_console_target());
+
+    let log_plugin = tauri_plugin_log::Builder::default()
+        .level(log::LevelFilter::Warn)
+        .level_for("dashchat_node", log::LevelFilter::Debug)
+        .level_for("dashchat_utils", log::LevelFilter::Debug)
+        .level_for("mailbox_client", log::LevelFilter::Debug)
+        .level_for("mailbox_server", log::LevelFilter::Debug)
+        .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
+        .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
+        .format(|out, message, _record| out.finish(format_args!("{message}")))
+        .clear_targets()
+        .max_file_size(5 * 1024 * 1024)
+        .targets(targets)
+        .build();
+
     crate::utils::install_panic_hook();
 
+    let error_reporting_dir = fs.error_reporting_dir();
+    if let Some(config) = crate::sentry::config(fs.logs_dir(), error_reporting_dir.clone()) {
+        std::fs::create_dir_all(&error_reporting_dir)?;
+        handle.plugin(tauri_plugin_sentry_reporting::init(config))?;
+    }
+
+    handle.plugin(log_plugin)?;
+
     Ok(())
+}
+
+fn format_record(
+    out: tauri_plugin_log::fern::FormatCallback,
+    message: &std::fmt::Arguments,
+    record: &log::Record,
+) {
+    let format =
+        time::macros::format_description!("[[[year]-[month]-[day]][[[hour]:[minute]:[second]]");
+    let args = if let (Some(file), Some(line)) = (record.file(), record.line()) {
+        format_args!(
+            "{}[{} {}:{}][{}] {}",
+            tauri_plugin_log::TimezoneStrategy::UseUtc
+                .get_now()
+                .format(&format)
+                .unwrap(),
+            record.target(),
+            file.to_string(),
+            line.to_string(),
+            record.level(),
+            message
+        )
+    } else {
+        format_args!(
+            "{}[{}][{}] {}",
+            tauri_plugin_log::TimezoneStrategy::UseUtc
+                .get_now()
+                .format(&format)
+                .unwrap(),
+            record.target(),
+            record.level(),
+            message
+        )
+    };
+    out.finish(args)
 }

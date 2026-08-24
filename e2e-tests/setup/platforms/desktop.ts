@@ -1,0 +1,240 @@
+import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { startAgentLogger } from '../agent-logger';
+import { allocatePinnedPort } from '../allocate-port';
+import { killAllE2EProcesses, killAndWait, killPortHolders } from '../cleanup';
+import { envWithoutWdioLoader } from '../harness-env';
+import { runTurboBuild } from '../turbo-build';
+import { waitForPortFree, waitForPortListening } from '../wait-for-port';
+import type { AgentPlatform } from './platform';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..', '..', '..');
+
+/** The desktop agent drives the app through `tauri-driver`, which targets
+ *  Linux/WebKitGTK (see the GTK/XDG env in beforeSession). tauri-driver has no
+ *  macOS backend — it exits with "not supported on this platform" — so a desktop
+ *  agent can't run on a Mac; pair iOS agents with each other (PLATFORMS=ios,ios)
+ *  or run desktop on Linux. */
+function assertTauriDriverAvailable() {
+	if (process.platform === 'darwin') {
+		throw new Error(
+			'Desktop e2e agents are not supported on macOS: tauri-driver has no macOS ' +
+				'WebView WebDriver backend and the desktop path targets Linux/WebKitGTK. ' +
+				'On a Mac run iOS-only (PLATFORMS=ios) or two devices (PLATFORMS=ios,ios); ' +
+				'the desktop agent must run on Linux.',
+		);
+	}
+	try {
+		execSync('command -v tauri-driver', { stdio: 'ignore' });
+	} catch {
+		throw new Error(
+			'tauri-driver not found — the desktop agent drives the app through it. ' +
+				'Run inside the nix dev shell, or install it with `cargo install tauri-driver`.',
+		);
+	}
+}
+
+interface DesktopAgent {
+	slot: number;
+	port: number;
+	nativePort: number;
+	driver?: ChildProcess;
+	logger?: ChildProcess | null;
+}
+
+function agentDir(slot: number): string {
+	return path.join(ROOT, '.dbs', 'e2e', `agent-${slot}`);
+}
+
+function openedUrlsPath(slot: number): string {
+	return path.join(agentDir(slot), 'opened-urls');
+}
+
+/**
+ * Put an `xdg-open` stub at the front of the agent's PATH. `open`, the crate
+ * behind tauri-plugin-opener, launches urls with `Command::new("xdg-open")`, so
+ * the stub records what the app asked the OS to open — exercising the whole
+ * real stack without a browser window appearing mid-run.
+ */
+function installXdgOpenStub(slot: number): string {
+	const binDir = path.join(agentDir(slot), 'bin');
+	mkdirSync(binDir, { recursive: true });
+	writeFileSync(
+		path.join(binDir, 'xdg-open'),
+		`#!/bin/sh\nprintf '%s\\n' "$1" >> ${JSON.stringify(openedUrlsPath(slot))}\n`,
+		{ mode: 0o755 },
+	);
+	return binDir;
+}
+
+/** SIGKILL any app process running against this agent's data dir — e.g. the
+ *  instance `delete_account` self-restarts into (`tauri::process::restart`),
+ *  which tauri-driver doesn't own and can't reattach to. */
+export function killAgentApp(slot: number) {
+	try {
+		execSync(
+			'for pid in $(pgrep -f "target/(debug|release)/dash-chat"); do ' +
+				`grep -qzF "DATA_DIR=${agentDir(slot)}" /proc/$pid/environ 2>/dev/null ` +
+				'&& kill -9 $pid 2>/dev/null; ' +
+				'done',
+			{ stdio: 'ignore' },
+		);
+	} catch {
+		/* ignore */
+	}
+}
+
+/** The urls this agent asked the OS to open, oldest first. */
+export function readOpenedUrls(slot: number): string[] {
+	const file = openedUrlsPath(slot);
+	if (!existsSync(file)) return [];
+	return readFileSync(file, 'utf8')
+		.split('\n')
+		.filter(line => line !== '');
+}
+
+/** Agents running the desktop binary, one tauri-driver instance per slot. */
+export class DesktopPlatform implements AgentPlatform {
+	private agents: DesktopAgent[];
+
+	constructor(readonly slots: number[]) {
+		assertTauriDriverAvailable();
+		this.agents = slots.map(slot => ({
+			slot,
+			port: allocatePinnedPort(`_WDIO_PORT${slot}`),
+			nativePort: allocatePinnedPort(`_WDIO_NATIVE_PORT${slot}`),
+		}));
+	}
+
+	private get ports(): number[] {
+		return this.agents.flatMap(a => [a.port, a.nativePort]);
+	}
+
+	remoteOptions(slot: number) {
+		const agent = this.agents.find(a => a.slot === slot)!;
+		return {
+			port: agent.port,
+			capabilities: {
+				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
+				'tauri:options': {
+					application: path.join(ROOT, 'target', 'debug', 'dash-chat'),
+				},
+			} as WebdriverIO.Capabilities,
+		};
+	}
+
+	async onPrepare() {
+		runTurboBuild(
+			'e2e:build:desktop',
+			envWithoutWdioLoader({
+				VITE_E2E: 'true',
+				CARGO_PROFILE_DEV_DEBUG: '0',
+			}),
+		);
+		// Kill any leftover processes from previous interrupted runs.
+		killAllE2EProcesses();
+		killPortHolders(this.ports);
+	}
+
+	async beforeSession() {
+		// Force-kill any leftover processes from the previous session.
+		await Promise.all(this.agents.map(a => killAndWait(a.driver)));
+		killAllE2EProcesses();
+		// Kill anything still holding our specific ports (handles orphaned
+		// dash-chat processes that inherited tauri-driver's listening sockets).
+		killPortHolders(this.ports);
+		// Wait for ports to be fully released after SIGKILL.
+		await Promise.all(this.ports.map(p => waitForPortFree(p)));
+
+		const mailboxUrl = process.env.MAILBOX_URL;
+		if (mailboxUrl === undefined) {
+			throw new Error('MAILBOX_URL not set — onPrepare must run first');
+		}
+
+		for (const agent of this.agents) {
+			// Clean all agent data for a fresh start (important for
+			// specFileRetries). Must remove the entire agent directory, not just
+			// the Rust backend data, because WebKitGTK stores
+			// localStorage/IndexedDB under the XDG dirs (.local/share/, .config/,
+			// .cache/) inside the agent directory.
+			const dataDir = agentDir(agent.slot);
+			try {
+				rmSync(dataDir, { recursive: true, force: true });
+			} catch {
+				/* ignore */
+			}
+
+			mkdirSync(dataDir, { recursive: true });
+			const binDir = installXdgOpenStub(agent.slot);
+
+			// tauri-plugin-log names the file after productName (tauri.conf.json).
+			agent.logger = startAgentLogger(
+				`agent-${agent.slot}`,
+				path.join(dataDir, 'logs', 'Dash Chat.log'),
+			);
+
+			agent.driver = spawn(
+				'tauri-driver',
+				[
+					'--port',
+					String(agent.port),
+					'--native-port',
+					String(agent.nativePort),
+				],
+				{
+					stdio: ['ignore', 'ignore', 'pipe'],
+					env: {
+						...process.env,
+						DATA_DIR: dataDir,
+						MAILBOX_URL: mailboxUrl,
+						PATH: `${binDir}:${process.env.PATH}`,
+						// Disable AT-SPI accessibility bridge to prevent D-Bus
+						// contention.
+						NO_AT_BRIDGE: '1',
+						GTK_A11Y: 'none',
+						// Disable the DMA-BUF renderer — it causes
+						// non-deterministic WebKitGTK freezes. See
+						// https://github.com/tauri-apps/tauri/issues/13498
+						WEBKIT_DISABLE_DMABUF_RENDERER: '1',
+					},
+				},
+			);
+			agent.driver.stderr?.on('data', (data: Buffer) => {
+				console.error(`[tauri-driver:${agent.port}] ${data.toString().trim()}`);
+			});
+		}
+
+		// Wait for tauri-driver instances to accept connections.
+		await Promise.all(this.agents.map(a => waitForPortListening(a.port)));
+	}
+
+	async afterSession() {
+		// SIGKILL tauri-drivers and wait for exit to free ports.
+		await Promise.all(this.agents.map(a => killAndWait(a.driver)));
+		// Kill orphaned dash-chat E2E instances and anything holding our ports.
+		killAllE2EProcesses();
+		killPortHolders(this.ports);
+		for (const agent of this.agents) {
+			agent.logger?.kill();
+			agent.logger = null;
+		}
+	}
+
+	async onComplete() {
+		killAllE2EProcesses();
+		killPortHolders(this.ports);
+		for (const agent of this.agents) {
+			agent.logger?.kill();
+		}
+	}
+}

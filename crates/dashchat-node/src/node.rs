@@ -1,8 +1,9 @@
 pub(crate) mod actor;
 mod app_processing;
 pub(crate) mod publish;
+mod report;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -14,7 +15,6 @@ use crate::node::actor::{Actor, Command};
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use dashchat_compat::VersionConvert;
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
@@ -29,19 +29,23 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
-use crate::chat::ChatMessageContent;
-use crate::contact::{InboxTopic, QrCode, ShareIntent};
+use crate::chat::{
+    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
+    collect_deletable_edit_chain, resolve_message_root,
+};
+use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpStore};
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile, OutgoingMedia,
+    AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
+    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetadata,
+    OutgoingFile, OutgoingMedia, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
-pub use app_processing::Notification;
+pub use app_processing::{Notification, OpNotification, SystemNotification};
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -185,6 +189,7 @@ pub struct Node {
     registered_bootstraps: Arc<Mutex<HashSet<(NodeId, RelayUrl)>>>,
 
     pub local_store: LocalStore,
+    pub projection: OpProjection,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
@@ -219,12 +224,15 @@ impl Node {
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
-        let local_store = LocalStore::new(filesystem.local_store_path()).await?;
+        let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path()).await?;
+        let local_store = LocalStore::new(pool.clone()).await?;
+        let projection = OpProjection::new(pool.clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
         Self::init(
             filesystem,
             local_store,
+            projection,
             node_keys,
             config,
             notification_tx,
@@ -237,6 +245,7 @@ impl Node {
     pub async fn init(
         filesystem: Filesystem,
         local_store: LocalStore,
+        projection: OpProjection,
         node_keys: NodeKeys,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
@@ -263,7 +272,10 @@ impl Node {
             .network_id(config.network_id)
             .signing_key(node_keys.private_key.clone())
             .database_url(&url)
-            .mdns_mode(config.mdns_mode.clone());
+            .mdns_mode(config.mdns_mode.clone())
+            // Acknowledge operations explicitly, only once application-layer
+            // processing has finished (see `spawn_application_processor_task`).
+            .ack_policy(p2panda::node::AckPolicy::Explicit);
 
         if config.use_relay {
             builder = builder.relay_url(RELAY_URL.clone());
@@ -362,7 +374,8 @@ impl Node {
             mailboxes,
             config,
             filesystem,
-            local_store: local_store.clone(),
+            local_store,
+            projection,
             group_store,
             node_keys,
             notification_tx,
@@ -420,11 +433,6 @@ impl Node {
 
         node.initialize_stored_topics().await?;
 
-        // === announce === //
-
-        node.announce_device_capabilities(node.config.capabilities)
-            .await?;
-
         Ok(node)
     }
 
@@ -441,34 +449,28 @@ impl Node {
 
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
-    pub async fn new_qr_code(
-        &self,
-        share_intent: ShareIntent,
-        inbox: bool,
-    ) -> Result<QrCode, crate::Error> {
-        let inbox_topic = if inbox {
-            let inbox_topic = InboxTopic {
-                topic: Topic::inbox()
-                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
-                expires_at: Utc::now() + self.config.contact_code_expiry,
-            };
-            self.initialize_topic(*inbox_topic.topic)
-                .await
-                .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
-            self.local_store
-                .add_active_inbox_topic(inbox_topic.clone())
-                .await
-                .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
-            Some(inbox_topic)
-        } else {
-            None
-        };
+    pub async fn create_add_contact_qr_code(&self) -> Result<AddContactQrCode, crate::Error> {
+        let (inbox_topic, nonce) = InboxTopic::new_random(
+            &self.device_id(),
+            Utc::now() + self.config.contact_code_expiry,
+        );
+        self.initialize_topic(*inbox_topic.topic)
+            .await
+            .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
+        self.local_store
+            .add_active_inbox_topic(inbox_topic.clone())
+            .await
+            .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
 
-        Ok(QrCode {
-            device_pubkey: self.device_id(),
-            inbox_topic,
-            share_intent,
-        })
+        let profile_name = self
+            .my_profile()
+            .await
+            .ok()
+            .flatten()
+            .map(|profile| profile.full_name())
+            .unwrap_or_default();
+
+        Ok(AddContactQrCode::new(self.device_id(), nonce, profile_name))
     }
 
     pub fn agent_id(&self) -> AgentId {
@@ -630,7 +632,7 @@ impl Node {
         self.register_topic(topic).await?;
 
         let other_device_id = self
-            .local_store
+            .projection
             .lookup_contact_by_agent_id(other)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
@@ -677,7 +679,7 @@ impl Node {
             .map(|verifying_key| DeviceId::from(*verifying_key))
             .collect();
 
-        let contacts = self.local_store.lookup_contacts(&device_ids).await?;
+        let contacts = self.projection.lookup_contacts(&device_ids).await?;
         let device_to_agent: BTreeMap<DeviceId, AgentId> = device_ids
             .iter()
             .filter_map(|did| match contacts.get(did) {
@@ -720,9 +722,6 @@ impl Node {
         introduced_agents.insert(self.device_id(), self.agent_id());
         self.introduce_agents_to_group(chat_id, introduced_agents)
             .await?;
-
-        self.local_store.save_group_chat_subscribed(chat_id).await?;
-        self.initialize_topic(*chat_id).await?;
 
         for agent in agents {
             self.invite_to_group(chat_id, agent).await?;
@@ -796,7 +795,7 @@ impl Node {
         .await?;
 
         let agent_id = self
-            .local_store
+            .projection
             .lookup_contact_by_device_id(DeviceId::from(member))
             .await?;
         if let Some(agent_id) = agent_id {
@@ -891,11 +890,11 @@ impl Node {
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
         self.register_topic(chat_id).await?;
-        self.local_store.save_group_chat_subscribed(chat_id).await
+        Ok(())
     }
 
     pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
-        self.local_store.get_group_chat_ids().await
+        self.projection.get_group_chat_ids().await
     }
 
     pub async fn set_profile(&self, profile: Profile) -> Result<Header, crate::Error> {
@@ -912,17 +911,15 @@ impl Node {
     }
 
     pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        self.local_store.get_profile(self.agent_id()).await
+        self.projection.get_profile(self.agent_id()).await
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
-        self.local_store
-            .lookup_contact_by_device_id(device_id)
-            .await
+        self.projection.lookup_contact_by_device_id(device_id).await
     }
 
-    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<Vec<AgentId>> {
-        self.local_store.all_contact_agent_ids().await
+    pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
+        self.projection.all_contact_agent_ids().await
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
@@ -956,14 +953,28 @@ impl Node {
         Ok(messages)
     }
 
+    /// Send a message to a chat, optionally with media and/or a previous message to reply to.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn send_message(
         &self,
         topic: impl Into<ChatId>,
         message: impl Into<String>,
         media: Option<OutgoingMedia>,
-    ) -> anyhow::Result<Header> {
+        reply: Option<Hash>,
+    ) -> Result<Header, SendMessageError> {
         let chat_id: ChatId = topic.into();
+
+        if let Some(target) = reply {
+            let valid_ops = self.valid_chat_ops(chat_id).await?;
+            let now = u64::from(p2panda_core::Timestamp::now());
+            ReplyCandidate {
+                target,
+                timestamp: now,
+                self_hash: None,
+            }
+            .validate(&valid_ops)?;
+        }
+
         let meta = if let Some(media) = media {
             Some(
                 self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
@@ -972,14 +983,14 @@ impl Node {
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta.clone());
+        let message = ChatMessageContent::new(message, meta.clone(), reply);
         let header = self.send_message_raw(chat_id, message).await?;
         if let Some(bundle) = meta {
             let topic_id: TopicId = chat_id.into();
             for item in bundle.iter() {
                 if let Err(err) = self
                     .require_blob_sync()?
-                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash)
+                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash())
                     .await
                 {
                     tracing::warn!(?err, "failed to retag blob after operation creation");
@@ -997,27 +1008,8 @@ impl Node {
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
 
-        let (capabilities, num_agents) = self.get_group_capabilities(topic).await?;
-        let capabilities = capabilities.ok_or(anyhow::anyhow!(
-            "no capabilities found for chat: {:?}",
-            topic.aliased()
-        ))?;
-
-        // NOTE: we may need logic for an agent to re-send a downgraded message if they later discover
-        //       intended recipients who don't have the proper capabilities for receiving this message
-        if num_agents == 1 {
-            tracing::warn!(
-                "sending message to group without knowing any other members' capabilities",
-            );
-        }
-        let message = message.to_version(&capabilities)?;
-
         let header = self
-            .publish(
-                topic,
-                Payload::Chat(ChatPayload::Message(message.clone())),
-                None,
-            )
+            .publish(topic, Payload::Chat(ChatPayload::Message(message)), None)
             .await?;
 
         Ok(header)
@@ -1035,6 +1027,299 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// Edit the text content of a previously-sent message.
+    ///
+    /// `edit_hash` must refer to a `Message` or `EditMessage` operation in this
+    /// chat authored by us, within the edit window, and not already edited. The
+    /// edit is validated before publishing; see [`EditError`](crate::EditError).
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn edit_message(
+        &self,
+        topic: impl Into<ChatId>,
+        edit_hash: Hash,
+        message: impl Into<String>,
+    ) -> Result<Header, EditMessageError> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let now = u64::from(p2panda_core::Timestamp::now());
+        EditCandidate {
+            target: edit_hash,
+            editor: self.device_id(),
+            timestamp: now,
+            self_hash: None,
+        }
+        .validate(&valid_ops)?;
+
+        let header = self
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::EditMessage {
+                    message: message.into(),
+                    edit_hash,
+                }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Publish an edit without validating it. For testing the receiving-side
+    /// handling of invalid edits, which the author-side validation would
+    /// otherwise prevent from ever being created.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn edit_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
+        edit_hash: Hash,
+        message: impl Into<String>,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(
+                topic.into(),
+                Payload::Chat(ChatPayload::EditMessage {
+                    message: message.into(),
+                    edit_hash,
+                }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Delete a previously-sent message for everyone in the chat.
+    ///
+    /// `target` must be the most recent edit of the message (or the message
+    /// itself when unedited), authored by us, within the delete window, and not
+    /// already deleted. The full edit chain is collected and published in a
+    /// `DeleteMessage` payload; processing it tombstones every operation in the
+    /// chain. See [`DeleteError`](crate::chat::DeleteError).
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message_for_everyone(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let topic = topic.into();
+        let ops = self.valid_chat_ops(topic).await?;
+        let hashes = collect_deletable_edit_chain(&ops, &target)?;
+        let now = u64::from(p2panda_core::Timestamp::now());
+        DeleteCandidate {
+            hashes: hashes.clone(),
+            deleter: self.device_id(),
+            delete_timestamp: now,
+            self_hash: None,
+        }
+        .validate(&ops)?;
+
+        let header = self
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Delete a previously-sent message only for my own device group.
+    ///
+    /// Unlike [`Self::delete_message_for_everyone`], which requires the tip of
+    /// the edit chain, `target` here may be any operation in the chain — it is
+    /// resolved back to the original message before publishing, so the whole
+    /// chain is captured whichever version the caller names.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message_for_me(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let chat_id = topic.into();
+        let ops = self.valid_chat_ops(chat_id).await?;
+        // Resolve to the original message when we can, but fall back to the raw
+        // target when its body is gone (already deleted for everyone) or never
+        // fetched — such an op isn't in `valid_chat_ops`, and delete-for-me should
+        // still just remove it locally instead of erroring. Pruning guarantees
+        // every edit in `ops` has its target, so resolution fails only when
+        // `target` itself is absent, leaving nothing to walk back through.
+        //
+        // TODO: ACID: this is something to tighten up when revisiting tombstone logic.
+        let message_hash = resolve_message_root(&ops, &target).unwrap_or(target);
+
+        let header = self
+            .publish(
+                self.device_group_topic(),
+                Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(
+                    crate::payload::DeleteForMePayload {
+                        chat_id,
+                        message_hash,
+                    },
+                )),
+                Some(&format!("delete_message_for_me({:?})", chat_id.aliased())),
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Every tombstone in a chat, paired with why it was tombstoned. The
+    /// frontend uses this to drop delete-for-me messages (and their edits) from
+    /// view while keeping the delete-for-everyone placeholders.
+    pub async fn chat_tombstones(
+        &self,
+        chat_id: impl Into<ChatId>,
+    ) -> anyhow::Result<HashMap<Hash, crate::stores::TombstoneReason>> {
+        self.projection.tombstones(chat_id.into().into()).await
+    }
+
+    /// Publish a delete without validating it. For testing the receiving-side
+    /// handling of invalid deletes, which the author-side validation would
+    /// otherwise prevent from ever being created.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn delete_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
+        hashes: BTreeSet<Hash>,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(
+                topic.into(),
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Collect all chat operations in a topic, reduced to the fields edit
+    /// validation needs, keyed by operation hash.
+    //
+    // TODO: performance: this triggers a full log traversal on processing every
+    // edit operation. We can improve this by building up the parallel ChatOp list
+    // reduced state as part of the ACID refactors.
+    pub(crate) async fn valid_chat_ops(&self, topic: ChatId) -> anyhow::Result<ValidChatOps> {
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut ops = std::collections::HashMap::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
+                    continue;
+                };
+                let kind = match chat {
+                    ChatPayload::Message(m) => ChatOpKind::Message { reply: m.reply() },
+                    ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+                    ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
+                    _ => ChatOpKind::Other,
+                };
+                ops.insert(
+                    op.header.hash(),
+                    ChatOp {
+                        author: DeviceId::from(op.header.verifying_key),
+                        timestamp: op.header.timestamp.into(),
+                        seq_num: op.header.seq_num,
+                        kind,
+                    },
+                );
+            }
+        }
+
+        let mut ops = ValidChatOps::new(ops);
+        ops.prune();
+        Ok(ops)
+    }
+
+    /// Return every edit operation in the topic that passes validation — i.e.
+    /// the edits a receiving node would honor rather than ignore. Mirrors the
+    /// rule applied in `process_app`, exposed for tests.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn valid_edits(
+        &self,
+        topic: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<crate::chat::ValidEdit>> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut edits = Vec::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) =
+                    Payload::try_from_body(body)
+                else {
+                    continue;
+                };
+                let op_hash = op.header.hash();
+                if valid_ops.contains(&op_hash) {
+                    edits.push(crate::chat::ValidEdit {
+                        op_hash,
+                        target: edit_hash,
+                        text: message,
+                    });
+                }
+            }
+        }
+
+        Ok(edits)
+    }
+
+    /// Return every message in the topic carrying a reply annotation that
+    /// passes receiving-side validation — i.e. the replies an honest node
+    /// would render as quotes rather than ignore. Mirrors the rule applied in
+    /// `process_app`, exposed for tests.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn valid_replies(
+        &self,
+        topic: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<crate::chat::ValidReply>> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut replies = Vec::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
+                else {
+                    continue;
+                };
+                let op_hash = op.header.hash();
+                let Some(ChatOp {
+                    kind:
+                        ChatOpKind::Message {
+                            reply: Some(target),
+                        },
+                    ..
+                }) = valid_ops.get(&op_hash)
+                else {
+                    continue;
+                };
+                replies.push(crate::chat::ValidReply {
+                    op_hash,
+                    target: *target,
+                    text: message.message().to_string(),
+                });
+            }
+        }
+
+        Ok(replies)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -1081,33 +1366,6 @@ impl Node {
             }
         }
         Ok(latest.map(|(_, d)| d))
-    }
-
-    /// Tombstone an operation: record its hash in the topic's persisted
-    /// tombstone set so its payload is never stored or synced again, and
-    /// immediately drop any payload already stored for it.
-    ///
-    /// This has the effect that when the operation is played back, it will
-    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
-    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
-    /// so that they leave behind no traces in local state.
-    pub async fn tombstone_operation(
-        &self,
-        topic: TopicId,
-        operation: &Operation,
-    ) -> anyhow::Result<()> {
-        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
-            return Ok(());
-        };
-        if self.is_tombstoneable(&payload) {
-            let hash = operation.hash;
-            self.local_store.add_tombstone(topic, hash.clone()).await?;
-            self.unprocess_app(operation).await?;
-            self.op_store.delete_body(&hash).await?;
-        } else {
-            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
-        }
-        Ok(())
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
@@ -1192,19 +1450,18 @@ impl Node {
     }
 
     /// Register the shared, idempotent state for a contact identified by their
-    /// device pubkey and agent id: record the device -> agent mapping, register
-    /// them as a bootstrap peer, and subscribe to their announcements and our
-    /// direct-chat topic. Safe to call repeatedly, so both the initiating
-    /// `add_contact` path and the inbox request/ack handlers can call it.
+    /// device pubkey and agent id:
+    /// - register the contact as a bootstrap peer,
+    /// - subscribe to their announcements, and
+    /// - subscribe to our direct-chat topic.
+    ///
+    /// Safe to call repeatedly, so both the initiating `add_contact` path and the
+    /// inbox request/ack handlers can call it.
     pub(crate) async fn establish_contact(
         &self,
         device_pubkey: DeviceId,
         agent_id: AgentId,
     ) -> Result<(), Error> {
-        self.local_store
-            .save_agent_mapping(device_pubkey, agent_id)
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
         // Register the contact as a bootstrap so p2panda discovery can reach it
         // directly over the internet (relay + pkarr), rather than depending on a
         // mutually-reachable mailbox to introduce the two nodes.
@@ -1228,18 +1485,30 @@ impl Node {
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
+    pub async fn add_contact(&self, contact: AddContactQrCode) -> Result<(), AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
-            inbox_topic = ?contact.inbox_topic,
             "adding contact",
         );
 
-        let Some(inbox_topic) = contact.inbox_topic.clone() else {
-            return Err(AddContactError::CreateQrCode(
-                "contact code has no inbox to send a request to".to_string(),
-            ));
-        };
+        if contact.device_pubkey == self.device_id() {
+            return Err(AddContactError::CannotAddSelf);
+        }
+
+        // Register the scanned contact as a bootstrap so p2panda discovery can
+        // reach it directly over the internet (relay + pkarr), rather than
+        // depending on a mutually-reachable mailbox to introduce the two nodes.
+        self.register_bootstrap_node(*contact.device_pubkey)
+            .await
+            .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
+
+        // SPACES: Register the member in the spaces manager
+
+        let inbox_topic = InboxTopic::from_nonce(
+            &contact.device_pubkey,
+            &contact.inbox_nonce,
+            Utc::now() + self.config.contact_code_expiry,
+        );
 
         // TODO: use all of this commented out stuff when spaces are possible again
         // // XXX: there should be a better way to wait for the device group to be created,
@@ -1285,6 +1554,7 @@ impl Node {
         self.initialize_topic(*inbox_topic.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
         // Mint a private reply inbox for this exchange and listen on it for
         // the owner's ack. We do NOT persist the (possibly shared) advertised
         // inbox we scanned — only the owner keeps camping on that — so other
@@ -1297,17 +1567,15 @@ impl Node {
             )),
             expires_at: Utc::now() + self.config.contact_code_expiry,
         };
+
         self.initialize_topic(*reply_inbox.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
         self.local_store
             .add_reply_inbox_topic(reply_inbox.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
-        let code = self
-            .new_qr_code(ShareIntent::AddContact, false)
-            .await
-            .map_err(|e| AddContactError::CreateQrCode(e.to_string()))?;
         let Some(profile) = self
             .my_profile()
             .await
@@ -1315,10 +1583,10 @@ impl Node {
         else {
             return Err(AddContactError::ProfileNotCreated);
         };
+
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
-                code,
                 profile,
                 agent_id: self.agent_id(),
                 reply_topic: reply_inbox.topic.clone(),
@@ -1338,6 +1606,7 @@ impl Node {
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
                 device_pubkey: contact.device_pubkey,
+                profile_name: contact.profile_name,
             }),
             Some(&format!(
                 "add_contact/pending({:?})",
@@ -1376,7 +1645,7 @@ impl Node {
         // The requester's device was mapped to their agent_id when the request
         // arrived; recover it to establish their network presence.
         let device_pubkey = self
-            .local_store
+            .projection
             .lookup_contact_by_agent_id(agent_id)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
@@ -1502,6 +1771,41 @@ impl Node {
         Ok(())
     }
 
+    /// Block a contact. While blocked, all operations authored by the contact's
+    /// devices are invalidated by the projection layer (except those needed to
+    /// maintain group chats), so their messages never reach us.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn block_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+        tracing::debug!("blocking contact: {:?}", agent_id.aliased());
+
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::BlockAgent(agent_id)),
+            Some(&format!("block_contact({:?})", agent_id.aliased())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Unblock a previously blocked contact, allowing their operations to be
+    /// processed again.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn unblock_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+        tracing::debug!("unblocking contact: {:?}", agent_id.aliased());
+
+        self.publish(
+            self.device_group_topic(),
+            Payload::DeviceGroup(DeviceGroupPayload::UnblockAgent(agent_id)),
+            Some(&format!("unblock_contact({:?})", agent_id.aliased())),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn remove_contact(&self, _chat_actor_id: ActorId) -> anyhow::Result<()> {
         // TODO: shutdown inbox task, etc.
@@ -1574,64 +1878,6 @@ impl Node {
         Ok(())
     }
 
-    pub async fn announce_device_capabilities(
-        &self,
-        capabilities: Capabilities,
-    ) -> anyhow::Result<()> {
-        let announcements = Topic::announcements(self.agent_id());
-        let latest_capability = self.local_store.get_capabilities(self.device_id()).await?;
-
-        // If the capability is unset or different from the current one, set it now.
-        if latest_capability != Some(capabilities) {
-            self.publish(
-                announcements,
-                Payload::Announcements(AnnouncementsPayload::SetCapabilities { capabilities }),
-                Some(&format!(
-                    "set_device_capabilities({:?})",
-                    self.device_id().aliased()
-                )),
-            )
-            .await?;
-        }
-
-        Ok(())
-    }
-
-    /// Find the infimum of the capabilities of all other members of the group with read access or above.
-    ///
-    /// This is dependent on eventual consistency, and as other members join, the capabilities may change.
-    pub async fn get_group_capabilities(
-        &self,
-        topic: ChatId,
-    ) -> anyhow::Result<(Option<Capabilities>, usize)> {
-        let members = self.group_store.members(topic).await?;
-        let mut devices = members
-            .iter()
-            .filter_map(|(member, access)| {
-                // Only include members with read access or above
-                // TODO: make sure this pubkey corresponds to a DeviceId and not an AgentId,
-                //       once device groups are implemented
-                (*access >= Access::read()).then_some(*member)
-            })
-            .collect::<BTreeSet<_>>();
-        devices.insert(self.device_id());
-
-        // Collect capabilities for all agents
-        let caps = futures::future::join_all(
-            devices
-                .into_iter()
-                .map(|device| self.local_store.get_capabilities(device)),
-        )
-        .await
-        .into_iter()
-        .collect::<Result<Vec<Option<Capabilities>>>>()?;
-
-        let caps = caps.into_iter().flatten().collect::<Vec<_>>();
-        let num = caps.len();
-
-        Ok((caps.into_iter().reduce(|a, b| a.infimum(&b)), num))
-    }
-
     pub async fn store_media(
         &self,
         topic: TopicId,
@@ -1648,12 +1894,11 @@ impl Node {
                         .require_blob_sync()?
                         .store_blob(topic, self.device_id(), operation_hash, photo.data)
                         .await?;
-                    items.push(MediaMetadata {
+                    items.push(MediaMetadata::Photo {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
                         hash,
-                        kind: MediaMetaKind::Photo,
                     });
                 }
             }
@@ -1664,12 +1909,27 @@ impl Node {
                     .require_blob_sync()?
                     .store_blob(topic, self.device_id(), operation_hash, file.data)
                     .await?;
-                items.push(MediaMetadata {
+                items.push(MediaMetadata::File {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
                     hash,
-                    kind: MediaMetaKind::File,
+                });
+            }
+            OutgoingMedia::VoiceNote { voice_note } => {
+                let size = voice_note.data.len() as u64;
+                ensure_blob_size(size, "voice note")?;
+
+                let hash = self
+                    .require_blob_sync()?
+                    .store_blob(topic, self.device_id(), operation_hash, voice_note.data)
+                    .await?;
+                items.push(MediaMetadata::VoiceNote {
+                    mime_type: voice_note.mime_type,
+                    size,
+                    duration_ms: voice_note.duration_ms,
+                    waveform: voice_note.waveform,
+                    hash,
                 });
             }
         }
@@ -1725,44 +1985,64 @@ impl Node {
             let data = self
                 .require_blob_sync()?
                 .blobs
-                .get_bytes(item.hash)
+                .get_bytes(item.hash())
                 .await
                 .context(format!("failed to load blob: {item:?}"))?;
             items.push((item, data));
         }
 
-        let (photos, mut other): (Vec<_>, Vec<_>) = items
-            .into_iter()
-            .partition(|(item, _)| item.kind == MediaMetaKind::Photo);
-
-        if other.len() > 1 {
-            return Err(anyhow::anyhow!(
-                "multiple files are not supported. photos: {photos:?}, other: {other:?}",
-            ));
-        } else if photos.len() >= 1 && other.len() == 1 {
-            return Err(anyhow::anyhow!(
-                "photos and other media in the same message are not supported. photos: {photos:?}, other: {other:?}",
-            ));
-        } else if other.len() == 1 {
-            let (item, data) = other.pop().unwrap();
-            return Ok(OutgoingMedia::File {
-                file: OutgoingFile {
-                    data: data.to_vec(),
-                    name: item.name,
-                    mime_type: item.mime_type,
-                },
-            });
-        } else {
-            let photos = photos
-                .into_iter()
-                .map(|(item, data)| crate::chat::OutgoingPhoto {
-                    data: data.to_vec(),
-                    name: item.name,
-                    mime_type: item.mime_type,
-                })
-                .collect();
-            return Ok(OutgoingMedia::Photos { photos });
+        // A voice note or a file is always a single-item bundle; photos may be many.
+        if items.len() == 1
+            && matches!(
+                items[0].0,
+                MediaMetadata::VoiceNote { .. } | MediaMetadata::File { .. }
+            )
+        {
+            let (item, data) = items.pop().unwrap();
+            let outgoing_media = match item {
+                MediaMetadata::VoiceNote {
+                    mime_type,
+                    duration_ms,
+                    waveform,
+                    ..
+                } => Ok(OutgoingMedia::VoiceNote {
+                    voice_note: crate::chat::OutgoingVoiceNote {
+                        data: data.to_vec(),
+                        mime_type,
+                        duration_ms,
+                        waveform,
+                    },
+                }),
+                MediaMetadata::File {
+                    name, mime_type, ..
+                } => Ok(OutgoingMedia::File {
+                    file: OutgoingFile {
+                        data: data.to_vec(),
+                        name,
+                        mime_type,
+                    },
+                }),
+                MediaMetadata::Photo { .. } => unreachable!(),
+            };
+            return outgoing_media;
         }
+
+        let photos = items
+            .into_iter()
+            .map(|(item, data)| match item {
+                MediaMetadata::Photo {
+                    name, mime_type, ..
+                } => Ok(crate::chat::OutgoingPhoto {
+                    data: data.to_vec(),
+                    name,
+                    mime_type,
+                }),
+                other => Err(anyhow::anyhow!(
+                    "unsupported media combination in a single message: {other:?}"
+                )),
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(OutgoingMedia::Photos { photos })
     }
 }
 

@@ -3,10 +3,9 @@
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { settled, useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
-		Button,
 		Link,
 		Navbar,
 		NavbarBackLink,
@@ -14,6 +13,7 @@
 		Preloader,
 		useTheme,
 	} from 'konsta/svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import Form from '$lib/components/form/Form.svelte';
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import { showToast } from '$lib/utils/toasts';
@@ -29,15 +29,13 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	let initialized = false;
 	$effect(() => {
-		$myProfile.then(profile => {
-			if (!initialized) {
-				initialized = true;
-				name = profile?.name || '';
-				surname = profile?.surname;
-				avatar = profile?.avatar;
-				about = profile?.about;
-			}
-		});
+		const profile = $myProfile;
+		if (!settled(profile) || initialized) return;
+		initialized = true;
+		name = profile?.name || '';
+		surname = profile?.surname;
+		avatar = profile?.avatar;
+		about = profile?.about;
 	});
 
 	function saveDisabled(
@@ -125,15 +123,13 @@
 		</Container>
 
 		{#if !isIos}
-			<Button
+			<FixedActionButton
 				onClick={save}
-				class="fixed-action-btn"
-				rounded
-				data-testid="edit-name-save-btn"
+				testId="edit-name-save-btn"
 				disabled={saveDisabled(myProfile)}
 			>
 				{m.save()}
-			</Button>
+			</FixedActionButton>
 		{/if}
 	{/await}
 </Page>

@@ -8,7 +8,7 @@
 		mdiClose,
 		mdiTrayArrowDown,
 	} from '@mdi/js';
-	import { darkOverlay } from '$lib/actions/dark-overlay';
+	import { lightSystemBars } from '$lib/actions/light-system-bars';
 	import type { PhotoAttachment } from 'dash-chat-stores';
 	import { savePhoto, loadMediaBytes, BlobLoadError } from '$lib/utils/media';
 	import { shareFile } from '$lib/utils/files';
@@ -160,8 +160,8 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="fixed inset-0 z-50 bg-black"
-	use:darkOverlay
+	class="dark fixed inset-0 z-50 bg-black"
+	use:lightSystemBars
 	role="dialog"
 	aria-modal="true"
 	aria-label={photo.name}
@@ -204,7 +204,7 @@
 					onClick={onClose}
 					label={m.closeLightbox()}
 					testid="lightbox-back"
-					class="!p-2 opacity-85 hover:opacity-100"
+					class="opacity-85 hover:!bg-white/10"
 				/>
 			{/if}
 			<div class="flex min-w-0 flex-col">
@@ -221,7 +221,7 @@
 				onClick={handleSave}
 				label={m.saveFile()}
 				testid="lightbox-save"
-				class="!p-2 opacity-85 hover:opacity-100"
+				class="opacity-85 hover:!bg-white/10"
 			/>
 			{#if !isAndroid}
 				<IconButton
@@ -229,7 +229,7 @@
 					onClick={onClose}
 					label={m.closeLightbox()}
 					testid="lightbox-close"
-					class="!p-2 opacity-85 hover:opacity-100"
+					class="opacity-85 hover:!bg-white/10"
 				/>
 			{/if}
 		</div>
@@ -244,8 +244,8 @@
 			onClick={() => select(index - 1)}
 			label={m.previousPhoto()}
 			testid="lightbox-prev"
-			circle
-			class="absolute top-1/2 left-3 -translate-y-1/2 opacity-85 hover:opacity-100 {zoomed
+			filled
+			class="absolute top-1/2 start-3 -translate-y-1/2 opacity-85 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
@@ -256,8 +256,8 @@
 			onClick={() => select(index + 1)}
 			label={m.nextPhoto()}
 			testid="lightbox-next"
-			circle
-			class="absolute top-1/2 right-3 -translate-y-1/2 opacity-85 hover:opacity-100 {zoomed
+			filled
+			class="absolute top-1/2 end-3 -translate-y-1/2 opacity-85 {zoomed
 				? '!opacity-0 pointer-events-none'
 				: ''}"
 		/>
@@ -276,7 +276,7 @@
 					<ShareButton
 						onClick={handleShare}
 						testid="lightbox-share"
-						class="!p-2 opacity-85 hover:opacity-100"
+						class="opacity-85 hover:!bg-white/10"
 					/>
 				</div>
 			{/if}

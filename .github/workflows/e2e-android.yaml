@@ -1,0 +1,96 @@
+name: E2E Android Tests
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  e2e-android:
+    runs-on: ubuntu-8-core
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # The headless emulators need hardware acceleration; runners have
+      # /dev/kvm but it's not accessible to the runner user by default.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_path: nixpkgs=channel:nixos-25.11
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: holochain-ci
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: darksoil-studio
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: dash-chat
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # The e2e harness enters the androidDev shell inside the test step to
+      # capture its env; its extra inputs (android SDK, chromedriver nixpkgs pins) take ~2 min
+      # to realize. Realize it in the background so that cost overlaps the
+      # remaining setup steps — nix's own locking reconciles this with the
+      # test step's `nix develop` if it hasn't finished by then. Stdio must go
+      # to a file so the step doesn't wait on the background process's pipes.
+      - name: Warm the androidDev shell in the background
+        run: |
+          nix develop "git+file:$(git rev-parse --show-toplevel)#androidDev" --command true \
+            > /tmp/warm-android-dev-shell.log 2>&1 &
+
+      # The default dev shell provides just/pnpm/node/cargo; the e2e harness
+      # captures the androidDev shell env for the adb/Appium parts, same as locally.
+      - name: Load nix dev shell environment
+        uses: nicknovitski/nix-develop@v1
+        with:
+          arguments: --accept-flake-config .
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: e2e-android
+
+      - name: Install pnpm dependencies
+        run: pnpm install --reporter=append-only
+
+      - name: Build UI packages
+        run: pnpm -F ./packages/stores build
+
+      - name: Run E2E tests on two Android emulators
+        env:
+          PLATFORMS: android-emulator,android-emulator
+        run: set -o pipefail && just e2e 2>&1 | tee e2e-android-output.log
+
+      - name: Upload test logs on failure
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-android-logs
+          path: |
+            e2e-android-output.log
+            .dbs/e2e/emulator.log
+          retention-days: 7
+
+      - name: Cleanup E2E data
+        if: always()
+        run: rm -rf .dbs/e2e

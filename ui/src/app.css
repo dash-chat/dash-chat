@@ -88,6 +88,23 @@ wa-icon[slot='end'] {
 	font-size: 20px;
 }
 
+/* Konsta gives its popover backdrop no class; it precedes the popover. */
+.wide-layout div:has(+ .k-popover) {
+	background-color: transparent;
+}
+
+/* Scoping the hiding keeps an unscoped or pointer-less control visible. */
+@media (hover: hover) {
+	.hover-scope .hover-reveal {
+		opacity: 0;
+		transition: opacity 150ms;
+	}
+	.hover-scope:hover .hover-reveal,
+	.hover-scope .hover-reveal:focus-within {
+		opacity: 1;
+	}
+}
+
 .quiet {
 	color: #64748b;
 }
@@ -165,6 +182,22 @@ li.plain span {
 	background-color: transparent !important;
 }
 
+/* A page's surface must reach the physical screen edges (under the status and
+   navigation bars), but its box stops at the layout's safe-area padding (or
+   its own height calc, e.g. the create-profile page). Project the page's own
+   background-color onto a fixed full-viewport underlay behind all content:
+   opaque pages fill the insets with their surface, while a transparent page
+   (the QR scanner, wide-layout pages) keeps the webview see-through for
+   whatever native surface sits behind it. */
+.k-page::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	background-color: inherit;
+	pointer-events: none;
+}
+
 .k-toolbar.transparent .bg-gradient-to-t {
 	display: none;
 }
@@ -176,9 +209,47 @@ li.plain span {
 */
 .message {
 	font-weight: 425;
+	margin: 0;
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
 .wide-layout .message {
 	font-weight: 500;
+}
+
+/* Bubbles I sent hang on the end side, incoming ones on the start side. Both
+   square off the corner facing their neighbours within a run. */
+.outgoing-message {
+	align-self: end;
+}
+.outgoing-message.first-message {
+	border-end-end-radius: 4px;
+}
+.outgoing-message.middle-message {
+	border-start-end-radius: 4px;
+	border-end-end-radius: 4px;
+}
+.outgoing-message.last-message {
+	border-start-end-radius: 4px;
+}
+.incoming-message.first-message {
+	border-end-start-radius: 4px;
+}
+.incoming-message.middle-message {
+	border-start-start-radius: 4px;
+	border-end-start-radius: 4px;
+}
+.incoming-message.last-message {
+	border-start-start-radius: 4px;
+}
+
+/* A message still waiting to reach the cloud mailbox while we are offline. */
+.offline-message {
+	border: 3px dashed rgb(255, 182, 193);
+	background-clip: padding-box;
+}
+.offline-message > div {
+	padding: calc(0.5rem - 2px) !important;
 }
 
 .icon-only-card {
@@ -226,7 +297,7 @@ li.plain span {
 }
 
 .search-flash {
-	animation: search-flash-anim 0.8s ease-out;
+	animation: search-flash-anim 1.5s ease-out;
 }
 
 @keyframes search-flash-anim {
@@ -294,17 +365,30 @@ emoji-picker {
 	opacity: 0.5;
 }
 
-.fixed-action-btn {
-	position: fixed;
-	inset-inline-end: 1rem;
-	bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem);
+/* --keyboard-safe-bottom is injected by tauri-plugin-virtual-keyboard: the
+   bottom space the app must not lay out into. */
+.pb-keyboard-safe {
+	padding-bottom: var(--keyboard-safe-bottom);
 }
+
 .k-block-title {
 	margin-top: 1rem;
 }
 
-.k-button.fixed-action-btn {
-	width: auto;
+/* Ride the keyboard: the toast can't join the FLIP (it animates its own
+   entrance transform, which the FLIP would clobber), so it follows the
+   keyboard height with a transition on `bottom` instead. The property
+   list extends Konsta's --transition-transform-opacity.
+   --keyboard-visible-height (set by ToastManager from the plugin's keyboard
+   signal) is the actual keyboard, not --keyboard-safe-bottom: the reserved
+   slot may be held while app content (the media panel) occupies it, and the
+   toast should cover that content instead of floating above the composer. */
+.k-toast {
+	bottom: calc(
+		max(var(--keyboard-visible-height, 0px), env(safe-area-inset-bottom, 0px)) +
+			1rem
+	);
+	transition-property: transform, translate, scale, opacity, rotate, bottom;
 }
 
 /* Konsta's iOS-themed centered navbar title uses `top: 50%; left: 50%; translate: -50%

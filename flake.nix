@@ -4,6 +4,8 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
 
+    nixpkgs-pnpm.url = "github:nixos/nixpkgs/nixos-26.05";
+
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
     crane.url = "github:ipetkov/crane";
@@ -11,6 +13,15 @@
     tauri-driver.url = "github:dash-chat/tauri-driver";
 
     tauri-plugin-holochain.url = "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
+
+    # nixpkgs revs pinned only for the chromedrivers matching the e2e Android
+    # devices' WebView majors (physical phones on 149-151, the emulator image
+    # on 124). The harness materializes packages.e2e-chromedrivers via
+    # `nix build --out-link` and Appium picks the right one per device.
+    nixpkgs-chromedriver-151.url = "github:nixos/nixpkgs/0e251e24a4f24e036a084b6b4b2d2491af4167f4";
+    nixpkgs-chromedriver-150.url = "github:nixos/nixpkgs/421eebfd0ec7bccd4abe826ce62d7e6e83129493";
+    nixpkgs-chromedriver-149.url = "github:nixos/nixpkgs/d25a391ba507bc1cb32a8a732a2deb0d9dd16ad6";
+    nixpkgs-chromedriver-124.url = "github:nixos/nixpkgs/fcc7d2be753560cdf34228a398f7a44202f09aaa";
   };
 
   nixConfig = {
@@ -31,8 +42,11 @@
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         ./nix/docker.nix
+        ./nix/android-emulator.nix
+        ./nix/e2e-chromedrivers.nix
         ./nix/tauri-app.nix
         ./crates/mailbox-server/default.nix
+        ./crates/mailbox-local-server/default.nix
         ./crates/push-notifications-server/default.nix
       ];
 
@@ -54,6 +68,7 @@
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
+          pkgsPnpm = import inputs.nixpkgs-pnpm { inherit system; };
 
           tauriLibraries = with pkgs; [
             webkitgtk_4_1
@@ -67,61 +82,93 @@
             libsoup_3
             libayatana-appindicator
             pango
+            # libatk-1.0
+            at-spi2-core
           ];
           nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
+          # One toolchain (host + android targets) shared by the default and
+          # androidDev shells: identical rustc + host-build env keep artifacts
+          # in the shared target dir fingerprint-compatible across shells.
+          rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          rustCranelift = pkgs.rust-bin.nightly."2025-12-15".default.override {
+            extensions = [ "rustc-codegen-cranelift-preview" ];
+          };
+          hostBuildEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
+            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries} -C link-arg=-fuse-ld=mold"
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+            export SOURCE_DATE_EPOCH=315532800
+
+            # Off NixOS there is no /run/opengl-driver, so glvnd finds no GL
+            # driver, WebKitGTK aborts its web process with "Could not create
+            # default EGL display: EGL_BAD_PARAMETER", and every desktop e2e
+            # spec dies in its first hook with "page crash or hang". Point
+            # glvnd at this shell's Mesa and rasterize in software, which is
+            # what CI does under xvfb.
+            if [ ! -d /run/opengl-driver ]; then
+              export LIBGL_ALWAYS_SOFTWARE=1
+              export LIBGL_DRIVERS_PATH="${pkgs.mesa}/lib/dri"
+              export __EGL_VENDOR_LIBRARY_DIRS="${pkgs.mesa}/share/glvnd/egl_vendor.d"
+              export LD_LIBRARY_PATH="${pkgs.mesa}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            fi
+          '';
           packages = [
             pkgs.mprocs
             pkgs.just
             pkgs."nodejs_${nodeVersion}"
-            pkgs.pnpm
+            pkgsPnpm.pnpm
             pkgs.cargo-nextest
             pkgs.doctl
             inputs'.tauri-driver.packages.tauri-driver
-          ];
+          ]
+          ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
         in
         rec {
-          devShells.default =
-            let
-              rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-            in
-            pkgs.mkShell {
-              packages = [ rust ] ++ packages;
-              inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-              shellHook = lib.optionalString pkgs.stdenv.isLinux ''
-                export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
-                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+          devShells.default = pkgs.mkShell {
+            packages = [ rust ] ++ packages;
+            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
+            shellHook = hostBuildEnvHook;
+          };
+
+          # Opt-in faster dev builds: nightly rustc with the Cranelift codegen backend
+          devShells.cranelift = pkgs.mkShell {
+            packages = [ rustCranelift ] ++ packages;
+            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
+            shellHook =
+              hostBuildEnvHook
+              + lib.optionalString pkgs.stdenv.isLinux ''
+                export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS -Zcodegen-backend=cranelift"
               '';
-            };
+          };
 
-          devShells.androidDev =
-            let
-              rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.android.toml;
-            in
-            pkgs.mkShell {
-              packages = [
-                rust
-                pkgs."nodejs_${nodeVersion}"
-                pkgs.jdk
-              ];
-              inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
-            };
+          devShells.androidDev = pkgs.mkShell {
+            packages = [
+              rust
+              pkgs."nodejs_${nodeVersion}"
+              pkgs.jdk
+            ]
+            ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ]
+            ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
+            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
+            # The e2e harness consumes tools and artifacts from PATH and
+            # conventional paths; this hook provides the chromedrivers dir.
+            shellHook = hostBuildEnvHook + ''
+              mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.appium"
+              ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.appium/chromedrivers"
+            '';
+          };
 
-          devShells.iosDev =
-            let
-              rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.ios.toml;
-            in
-            pkgs.mkShell {
-              inputsFrom = [ devShells.default ];
-              packages = [ rust ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
-              shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
-                # Make libiconv findable by the linker even when xcodebuild
-                # strips NIX_LDFLAGS from the environment.
-                export LIBRARY_PATH="${lib.makeLibraryPath [ pkgs.libiconv ]}''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+          devShells.iosDev = pkgs.mkShell {
+            inputsFrom = [ devShells.default ];
+            packages = [ rust ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
+            shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
+              # Make libiconv findable by the linker even when xcodebuild
+              # strips NIX_LDFLAGS from the environment.
+              export LIBRARY_PATH="${lib.makeLibraryPath [ pkgs.libiconv ]}''${LIBRARY_PATH:+:$LIBRARY_PATH}"
 
-                # Unset SDKROOT so xcrun can locate the iOS SDK from Xcode.
-                unset SDKROOT
-              '';
-            };
+              # Unset SDKROOT so xcrun can locate the iOS SDK from Xcode.
+              unset SDKROOT
+            '';
+          };
 
         };
     };

@@ -26,15 +26,13 @@ async fn test_inbox_2() {
     println!("alice: {}", alice.device_id());
     println!("bobbi: {}", bobbi.device_id());
 
-    // @TODO: comment out unsupported feature for now.
-    // #[cfg(feature = "p2p")]
-    // introduce([&alice.network, &bobbi.network]).await;
+    introduce_peers([&alice, &bobbi]).await.unwrap();
 
     println!("peers see each other");
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
@@ -63,7 +61,7 @@ async fn test_p2p_inbox_2() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 

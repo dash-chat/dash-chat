@@ -32,15 +32,10 @@ async fn device_group_solo() {
 
     println!("peers see each other");
 
-    alice
-        .add_contact(
-            alicia
-                .new_qr_code(ShareIntent::AddDevice, true)
-                .await
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    // alice
+    //     .add_device(alicia.create_add_device_qr_code().await.unwrap())
+    //     .await
+    //     .unwrap();
 
     todo!("accept");
 }

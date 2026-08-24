@@ -1,7 +1,12 @@
 import { m } from '$lib/paraglide/messages.js';
 import { compressImage } from '$lib/utils/compress';
 import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
-import { pickFiles, pickNativeFiles, saveFile } from '$lib/utils/files';
+import {
+	openFileInput,
+	pickFiles,
+	pickNativeFiles,
+	saveFile,
+} from '$lib/utils/files';
 import { saveAndOpenFile, savePhotoToGallery } from '$lib/utils/gallery';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { downloadDir } from '@tauri-apps/api/path';
@@ -78,6 +83,15 @@ export async function pickMedia(
 	const accept = mode === 'image' ? PHOTO_ACCEPT : undefined;
 	const list = await pickFiles({ accept, multiple });
 	return list ? Array.from(list) : null;
+}
+
+/**
+ * Take a photo with the device camera, resolving with it or `null` if the user
+ * backed out.
+ */
+export async function capturePhoto(): Promise<File | null> {
+	const list = await openFileInput({ accept: 'image/*', capture: true });
+	return list?.[0] ?? null;
 }
 
 function isVisualFile(file: File): boolean {
@@ -160,6 +174,9 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 function totalMediaBytes(media: OutgoingMedia): number {
 	if (media.kind === 'photos') {
 		return media.photos.reduce((sum, p) => sum + p.data.byteLength, 0);
+	}
+	if (media.kind === 'voice_note') {
+		return media.voice_note.data.byteLength;
 	}
 	return media.file.data.byteLength;
 }

@@ -1,14 +1,14 @@
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Full messaging flow', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 	});
 
@@ -22,20 +22,20 @@ describe('Full messaging flow', () => {
 	});
 
 	it('sends a message from Alice to Bob', async () => {
-		await agent1.directChatPage.sendMessage('Hello from Alice!');
+		await agent1.directChatPage.composer.sendMessage('Hello from Alice!');
 		await agent1.directChatPage.messages.waitForMessage('Hello from Alice!');
 		await agent2.directChatPage.messages.waitForMessage('Hello from Alice!');
 	});
 
 	it('sends a reply from Bob to Alice', async () => {
-		await agent2.directChatPage.sendMessage('Hello from Bob!');
+		await agent2.directChatPage.composer.sendMessage('Hello from Bob!');
 		await agent2.directChatPage.messages.waitForMessage('Hello from Bob!');
 		await agent1.directChatPage.messages.waitForMessage('Hello from Bob!');
 	});
 
 	it('truncates a long message and reveals it on Read more', async () => {
 		const long = `${'A'.repeat(900)} TAIL_MARKER ${'B'.repeat(100)}`;
-		await agent1.directChatPage.sendMessage(long);
+		await agent1.directChatPage.composer.sendMessage(long);
 		await agent1.directChatPage.readMore.waitForExist();
 		// The hidden tail is not rendered until expanded.
 		expect(
@@ -47,7 +47,7 @@ describe('Full messaging flow', () => {
 
 	it('finds a search match hidden in a truncated message tail', async () => {
 		const long = `${'C'.repeat(900)} HIDDEN_NEEDLE ${'D'.repeat(100)}`;
-		await agent1.directChatPage.sendMessage(long);
+		await agent1.directChatPage.composer.sendMessage(long);
 		await agent1.directChatPage.readMore.waitForExist();
 		expect(
 			await agent1.directChatPage.messages.messageAreaContains('HIDDEN_NEEDLE'),

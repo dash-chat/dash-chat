@@ -19,7 +19,7 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	let selectedContacts = $state<VerifyingKey[]>([]);
 
-	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
+	const contacts = useReactiveValue(contactsStore.profilesForUnblockedContacts);
 	const groupChatStore = chatsStore.groupChats(chatId);
 	const members = useReactiveValue(groupChatStore.allMembers);
 	const loading = $derived($contacts === undefined || $members === undefined);

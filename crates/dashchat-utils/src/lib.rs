@@ -5,6 +5,9 @@ mod fetch_loop;
 mod retry_with_backoff;
 mod singleton_task_with_retries;
 
+#[cfg(feature = "cbor")]
+pub mod cbor;
+
 pub use derive_watch::derive_watch;
 pub use fetch_loop::{fetch_loop, FetchConfig, FetchPool};
 pub use retry_with_backoff::retry_with_backoff;

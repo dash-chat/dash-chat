@@ -13,6 +13,11 @@
 			"allow": [{ "source": "ExternalStorage" }, { "source": "VolumeExternalPrimary" }]
 		},
 		"medialibrary:allow-get-images",
-		"medialibrary:allow-request-permissions"
+		"medialibrary:allow-request-permissions",
+		"mcp-bridge:default",
+		"background-service:allow-start",
+		"background-service:allow-stop",
+		"background-service:allow-is-running",
+		"background-service:allow-get-service-state"
 	]
 }

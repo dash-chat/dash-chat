@@ -6,7 +6,7 @@ use aliased::Aliasing;
 use anyhow::Context;
 
 use super::*;
-use crate::{compat::Capabilities, *};
+use crate::*;
 
 #[derive(derive_more::Deref, derive_more::From)]
 pub struct Behavior {
@@ -22,15 +22,11 @@ impl Behavior {
     /// Simulate sending a contact a QR code and them using it to add me as a contact,
     /// and sending me an Inbox message with their contact info so I can add them too.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
-    pub async fn initiate_and_establish_contact(
-        &mut self,
-        other: &TestNode,
-        share_intent: ShareIntent,
-    ) -> anyhow::Result<()> {
-        let qr = self.new_qr_code(share_intent, true).await?;
+    pub async fn initiate_and_establish_contact(&mut self, other: &TestNode) -> anyhow::Result<()> {
+        let qr = self.create_add_contact_qr_code().await?;
         other.add_contact(qr).await?;
         self.accept_next_contact().await?;
-        self.await_first_capabilities(other.device_id()).await?;
+
         // The scanner records the contact asynchronously when it receives our
         // ack (it learns our agent_id only then), so wait for it to land before
         // returning a fully-established mutual contact.
@@ -54,6 +50,7 @@ impl Behavior {
         let mut watcher = self.watcher.lock().await;
         let agent_id = watcher
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
+                let n = n.op()?;
                 tracing::debug!(
                     hash = ?n.header.hash(),
                     "checking for contact invitation"
@@ -73,30 +70,6 @@ impl Behavior {
         Ok(agent_id)
     }
 
-    // NOTE: we technically want to wait for the *last* capabilities announcement.
-    //       this is an approximation, assuming that this signals the entire announcement topic being synced.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
-    pub async fn await_first_capabilities(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Capabilities> {
-        let mut watcher = self.watcher.lock().await;
-        watcher
-            .watch_mapped(Duration::from_secs(15), |n: &Notification| {
-                if n.header.verifying_key != *device_id {
-                    return None;
-                }
-                match n.payload {
-                    Some(Payload::Announcements(AnnouncementsPayload::SetCapabilities {
-                        capabilities,
-                    })) => Some(capabilities),
-                    _ => None,
-                }
-            })
-            .await
-            .context("no capabilities announcement found")
-    }
-
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
     pub async fn accept_next_group_invitation(&self) -> anyhow::Result<ChatId> {
         let chat_id = self
@@ -104,6 +77,7 @@ impl Behavior {
             .lock()
             .await
             .watch_mapped(Duration::from_secs(15), |n: &Notification| {
+                let n = n.op()?;
                 tracing::debug!(
                     hash = ?n.header.hash(),
                     "checking for group invitation"

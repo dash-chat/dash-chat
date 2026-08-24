@@ -19,14 +19,10 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
           cache: true
 
       - name: Install xcodegen and just
         run: brew install xcodegen just
-
-      - name: Use iOS rust toolchain
-        run: cp rust-toolchain.ios.toml rust-toolchain.toml
 
       # Workaround for actions/runner-images#14097: on macos-15-arm64/20260511.0048+
       # /opt/homebrew/bin/{cargo,rustc,rustup,rustup-init} are broken rustup-init shims
@@ -45,7 +41,7 @@ jobs:
           cache-shared-key: ios
 
       - name: Install pnpm dependencies
-        run: pnpm install
+        run: pnpm install --reporter=append-only
 
       - name: Stub GoogleService-Info.plist for compile check
         run: |

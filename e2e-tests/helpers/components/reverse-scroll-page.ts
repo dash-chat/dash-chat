@@ -12,10 +12,7 @@ export class ReverseScrollPage extends TestHelper {
 	private readonly scrollSelector: string;
 	readonly scroll;
 
-	constructor(
-		agent: WebdriverIO.Browser,
-		scrollTestId: string,
-	) {
+	constructor(agent: WebdriverIO.Browser, scrollTestId: string) {
 		super(agent);
 		this.scrollSelector = tid(scrollTestId);
 		this.scroll = this.el(this.scrollSelector);
