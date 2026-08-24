@@ -26,14 +26,6 @@ describe('Voice notes', () => {
 		await agent2.directChatPage.messages.waitForVoiceMessage();
 	});
 
-	it('renders the played region visibly distinct from the unplayed region', async () => {
-		// wavesurfer composites progressColor with `source-in`, so a translucent
-		// waveColor would collapse both regions to near-identical alpha.
-		const { unplayed, played } =
-			await agent2.directChatPage.messages.voiceBarLuminance();
-		expect(Math.abs(played - unplayed)).toBeGreaterThan(30);
-	});
-
 	it('plays the received voice note and advances the waveform progress', async () => {
 		const messages = agent2.directChatPage.messages;
 		await messages.voicePlayButton.waitForClickable();

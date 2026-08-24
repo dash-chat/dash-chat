@@ -270,12 +270,6 @@ export class Messages extends TestHelper {
 		return this.agent.execute(() => window.__test.voiceProgress());
 	}
 
-	/** Peak bar luminance of the unplayed vs played regions, to prove the played
-	 * region is visibly distinct. */
-	async voiceBarLuminance(): Promise<{ unplayed: number; played: number }> {
-		return this.agent.execute(() => window.__test.voiceBarLuminance());
-	}
-
 	/** Seeks to `fraction` of the real audio length, resolving to that fraction
 	 * (or -1 if the audio isn’t loaded). */
 	async voiceSeekFraction(fraction: number): Promise<number> {

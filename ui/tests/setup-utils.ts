@@ -287,44 +287,6 @@ function voiceProgress(): number {
 	return parseFloat(played.style.width) / 100 || 0;
 }
 
-/** On-screen luminance of an unplayed vs played waveform bar (the bar's color
- * alpha-composited over the bubble background), to prove the played region is
- * visibly distinct. */
-function voiceBarLuminance(): { unplayed: number; played: number } {
-	const scrubber = document.querySelector<HTMLElement>(
-		'[data-testid="voice-scrubber"]',
-	);
-	if (!scrubber) return { unplayed: 0, played: 0 };
-	const channels = (color: string): number[] =>
-		(color.match(/\d+(\.\d+)?/g) ?? []).map(Number);
-	let background = [255, 255, 255];
-	for (
-		let el: HTMLElement | null = scrubber;
-		el !== null;
-		el = el.parentElement
-	) {
-		const parts = channels(getComputedStyle(el).backgroundColor);
-		if (parts.length >= 3 && (parts.length < 4 || parts[3] > 0)) {
-			background = parts;
-			break;
-		}
-	}
-	const backgroundLum = (background[0] + background[1] + background[2]) / 3;
-	const composite = (span: Element | null): number => {
-		if (!span) return 0;
-		const style = getComputedStyle(span);
-		const [r = 0, g = 0, b = 0] = channels(style.color);
-		const alpha = parseFloat(style.opacity);
-		return ((r + g + b) / 3) * alpha + backgroundLum * (1 - alpha);
-	};
-	return {
-		unplayed: composite(scrubber.querySelector(':scope > div > span')),
-		played: composite(
-			scrubber.querySelector('[data-testid="voice-scrubber-played"] span'),
-		),
-	};
-}
-
 /** Fails the next voice-note byte fetch after `delayMs` so the spinner stays
  * observable. Only `irohblob` is intercepted, and `fetch` is restored at once. */
 function failNextVoiceLoad(delayMs = 0) {
@@ -405,7 +367,6 @@ export const testUtils = {
 	injectVoiceNote,
 	voiceSeekFraction,
 	voiceProgress,
-	voiceBarLuminance,
 	failNextVoiceLoad,
 	recordMediaDownloads,
 	photoDownloadMs,
