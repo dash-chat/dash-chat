@@ -1,77 +1,55 @@
-use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::sync::Arc;
 
 use sentry::protocol::Envelope;
-use sentry::transports::ReqwestHttpTransportOptions;
 use sentry::{Transport, TransportFactory, TransportOptions};
-
-use crate::outbox::sender::webpki_roots_client;
 
 /// The SDK captures freely; nothing it hands this transport is ever sent. Real
 /// delivery goes through the outbox, which the user's Send button feeds.
-#[derive(Default)]
-pub(crate) struct UserInitiatedTransport {
-    pub(crate) inner: OnceLock<Arc<dyn Transport>>,
-}
-
-impl UserInitiatedTransport {
-    /// Actually send the envelope to sentry
-    pub(crate) fn send(&self, envelope: Envelope) {
-        if let Some(inner) = self.inner.get() {
-            inner.send_envelope(envelope);
-        }
-    }
-}
+struct UserInitiatedTransport;
 
 impl Transport for UserInitiatedTransport {
     /// Drops it: whatever reached here, the SDK sent of its own accord.
     fn send_envelope(&self, _envelope: Envelope) {}
-
-    fn flush(&self, timeout: Duration) -> bool {
-        self.inner.get().is_none_or(|inner| inner.flush(timeout))
-    }
-
-    fn shutdown(&self, timeout: Duration) -> bool {
-        self.inner.get().is_none_or(|inner| inner.shutdown(timeout))
-    }
 }
 
-pub(crate) struct UserInitiatedTransportFactory(pub(crate) Arc<UserInitiatedTransport>);
+pub(crate) struct UserInitiatedTransportFactory;
 
 impl TransportFactory for UserInitiatedTransportFactory {
-    fn create_transport_with_options(&self, options: TransportOptions) -> Arc<dyn Transport> {
-        self.0.inner.get_or_init(|| {
-            Arc::new(
-                ReqwestHttpTransportOptions::from(options)
-                    .with_client(webpki_roots_client())
-                    .build(),
-            )
-        });
-        self.0.clone()
+    fn create_transport_with_options(&self, _options: TransportOptions) -> Arc<dyn Transport> {
+        Arc::new(UserInitiatedTransport)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::io::ErrorKind;
+    use std::net::TcpListener;
+    use std::time::Duration;
 
     use sentry::protocol::Event;
 
-    use crate::testing::recording_transport;
+    use crate::state::SentryState;
+    use crate::testing::config;
 
     #[test]
     fn what_the_sdk_sends_by_itself_goes_nowhere() {
-        let (transport, recorder) = recording_transport();
+        let dir = tempfile::tempdir().unwrap();
+        // A local socket, so an attempt to send shows up as a connection.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let mut config = config(dir.path());
+        config.dsn = format!("http://key@{}/1", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        let state = SentryState::new(config);
 
-        transport.send_envelope(Event::default().into());
+        state.client.capture_event(Event::default(), None);
+        state.client.close(Some(Duration::from_secs(2)));
 
-        assert!(recorder.sent().is_empty());
-    }
-
-    #[test]
-    fn closing_before_anything_could_have_been_sent_is_fine() {
-        let transport = UserInitiatedTransport::default();
-
-        assert!(transport.shutdown(Duration::from_secs(2)));
+        let accepted = listener.accept();
+        assert!(
+            matches!(&accepted, Err(err) if err.kind() == ErrorKind::WouldBlock),
+            "the SDK reached the network on its own: {accepted:?}"
+        );
     }
 }

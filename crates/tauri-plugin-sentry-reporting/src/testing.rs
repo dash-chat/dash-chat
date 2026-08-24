@@ -1,15 +1,11 @@
 //! Scaffolding shared by the crate's tests.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Arc;
 
-use sentry::protocol::{Envelope, Log, LogLevel};
-use sentry::Transport;
+use sentry::protocol::{Log, LogLevel};
 
 use crate::state::SentryState;
-use crate::transport::UserInitiatedTransport;
 use crate::Config;
 
 pub(crate) fn config(dir: &Path) -> Config {
@@ -34,43 +30,7 @@ pub(crate) fn log_saying(body: &str) -> Log {
     }
 }
 
-pub(crate) fn recording_transport() -> (UserInitiatedTransport, Arc<TestRecorderTransport>) {
-    let recorder = Arc::new(TestRecorderTransport::default());
-    let transport = UserInitiatedTransport::default();
-    let _ = transport.inner.set(recorder.clone());
-    (transport, recorder)
-}
-
-/// A plugin wired exactly as `init` wires one, but recording instead of sending.
-pub(crate) fn plugin(dir: &Path) -> (Arc<SentryState>, Arc<TestRecorderTransport>) {
-    let (transport, recorder) = recording_transport();
-    (SentryState::new(config(dir), Arc::new(transport)), recorder)
-}
-
-#[derive(Default)]
-pub(crate) struct TestRecorderTransport {
-    envelopes: Mutex<Vec<Envelope>>,
-    drained: AtomicBool,
-}
-
-impl TestRecorderTransport {
-    pub(crate) fn sent(&self) -> Vec<Envelope> {
-        self.envelopes.lock().unwrap().clone()
-    }
-
-    pub(crate) fn drained(&self) -> bool {
-        self.drained.load(Ordering::Relaxed)
-    }
-}
-
-impl Transport for TestRecorderTransport {
-    fn send_envelope(&self, envelope: Envelope) {
-        self.envelopes.lock().unwrap().push(envelope);
-    }
-
-    /// `shutdown` defaults to this, so it records both ways of draining.
-    fn flush(&self, _timeout: Duration) -> bool {
-        self.drained.store(true, Ordering::Relaxed);
-        true
-    }
+/// A plugin wired exactly as `init` wires one.
+pub(crate) fn plugin(dir: &Path) -> Arc<SentryState> {
+    SentryState::new(config(dir))
 }

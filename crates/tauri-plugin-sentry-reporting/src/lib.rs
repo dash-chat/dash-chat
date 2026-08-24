@@ -1,8 +1,9 @@
 //! Sentry error reporting on a strict rule: **nothing leaves the device unless
 //! the user explicitly presses Send.**
 //!
-//! The SDK captures freely; [`transport::UserInitiatedTransport`] is what holds
-//! every envelope until a report is sent.
+//! The SDK captures freely; nothing it hands the transport is ever sent. A
+//! report the user pressed Send on goes to the outbox, which delivers it and
+//! keeps it on disk until it can.
 
 mod attachment;
 mod client;
@@ -27,9 +28,9 @@ use tauri::{Manager, Runtime};
 pub use logs::log_target;
 pub use redaction::redact;
 pub use sentry::types::Dsn;
+pub use state::SendOutcome;
 
 use crate::state::SentryState;
-use crate::transport::UserInitiatedTransport;
 
 pub struct Config {
     /// Parsed by the caller, so registering the plugin cannot fail.
@@ -46,8 +47,7 @@ pub struct Config {
 }
 
 pub fn init<R: Runtime>(config: Config) -> TauriPlugin<R> {
-    let transport = Arc::new(UserInitiatedTransport::default());
-    let state = SentryState::new(config, transport);
+    let state = SentryState::new(config);
     crash::install_panic_hook(Arc::downgrade(&state));
 
     Builder::<R>::new("sentry-reporting")
