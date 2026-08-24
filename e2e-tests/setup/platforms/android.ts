@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import { hashFile } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
+import { runTurboBuild } from '../turbo-build';
 import type { AgentPlatform, PrepareContext } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -98,7 +100,6 @@ function ensureAndroidEnv() {
 		androidEnv = JSON.parse(readFileSync(pinned, 'utf8')) as NodeJS.ProcessEnv;
 		return;
 	}
-	if (androidToolsAvailable(process.env)) return;
 	androidEnv = captureAndroidDevShellEnv();
 	mkdirSync(path.dirname(ANDROID_ENV_FILE), { recursive: true });
 	writeFileSync(ANDROID_ENV_FILE, JSON.stringify(androidEnv));
@@ -301,6 +302,62 @@ export async function waitForAppLinksVerified(udid: string): Promise<void> {
 	}
 }
 
+/** The md5 of the APK installed on `udid`, or null when not installed. */
+function installedApkMd5(udid: string): string | null {
+	try {
+		const paths = execSync(`adb -s ${udid} shell pm path ${APP_PACKAGE}`, {
+			encoding: 'utf8',
+			env: androidEnv,
+		});
+		const base = paths
+			.split('\n')
+			.map(line => line.trim())
+			.find(line => line.startsWith('package:') && line.endsWith('base.apk'));
+		if (base === undefined) return null;
+		const sum = execSync(
+			`adb -s ${udid} shell md5sum "${base.slice('package:'.length)}"`,
+			{ encoding: 'utf8', env: androidEnv },
+		);
+		return sum.trim().split(/\s+/)[0];
+	} catch {
+		return null;
+	}
+}
+
+/** Install the e2e APK on `udid` unless it already has this exact build.
+ *  Sessions carry no `appium:app`, so this per-run install is the only one —
+ *  each session then just fast-resets (`pm clear`) instead of reinstalling. */
+function ensureApkInstalled(udid: string): void {
+	const apk = apkForDevice(udid);
+	if (!existsSync(apk)) {
+		throw new Error(
+			`e2e APK not found at ${apk} (for device ${udid}) after the tauri android build`,
+		);
+	}
+	if (installedApkMd5(udid) === hashFile(apk, 'md5')) {
+		console.log(
+			`[android] ${udid} already has the current e2e APK — skipping install`,
+		);
+		return;
+	}
+	// Uninstall first: a previous dash-chat (dev build, older e2e APK) fails
+	// the install on a signature or version mismatch.
+	try {
+		execSync(`adb -s ${udid} uninstall ${APP_PACKAGE}`, {
+			stdio: 'ignore',
+			env: androidEnv,
+		});
+	} catch {
+		/* not installed */
+	}
+	console.log(`[android] installing the e2e APK on ${udid}...`);
+	execSync(`adb -s ${udid} install "${apk}"`, {
+		stdio: 'inherit',
+		timeout: 300_000,
+		env: androidEnv,
+	});
+}
+
 /** Kill the app on `udid` and wait for its process to die. Unlike
  *  `force-stop`, `stop-app` leaves the package eligible for FCM delivery. */
 export function stopAndroidApp(udid: string): void {
@@ -350,7 +407,13 @@ export class AndroidPlatform implements AgentPlatform {
 				platformName: 'Android',
 				'appium:automationName': 'UiAutomator2',
 				'appium:udid': udid,
-				'appium:app': apkForDevice(udid),
+				// No `appium:app`: onPrepare installs the APK once per run, so a
+				// session doesn't push and install it all over again per spec. With
+				// only appPackage set, the driver's default fast reset puts each spec
+				// back to first-launch state with a ~1s `pm clear` (re-granting
+				// permissions per autoGrantPermissions) instead of a reinstall.
+				'appium:appPackage': APP_PACKAGE,
+				'appium:appActivity': '.MainActivity',
 				'appium:autoGrantPermissions': true,
 				'appium:autoWebview': true,
 				'appium:autoWebviewTimeout': 30_000,
@@ -391,46 +454,24 @@ export class AndroidPlatform implements AgentPlatform {
 		const targets = new Set(
 			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
 		);
-		const buildEnv: NodeJS.ProcessEnv = envWithoutWdioLoader(
-			{
-				MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
-				CARGO_PROFILE_DEV_DEBUG: '0',
-				CARGO_PROFILE_DEV_STRIP: 'symbols',
-			},
-			androidEnv,
-		);
+		const bakedEnv: Record<string, string> = {
+			MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
+			CARGO_PROFILE_DEV_DEBUG: '0',
+			CARGO_PROFILE_DEV_STRIP: 'symbols',
+			E2E_ANDROID_TARGETS: [...targets].join(' '),
+		};
 		// Real-device push spec: bake the push-server URL so the device registers
 		// its FCM token with the host's local push server (bridged below).
 		if (ctx.pushPort !== null) {
-			buildEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://127.0.0.1:${DEVICE_PUSH_PORT}`;
+			bakedEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://127.0.0.1:${DEVICE_PUSH_PORT}`;
 		}
-		execSync(
-			'pnpm tauri android build --debug --apk --split-per-abi ' +
-				`--features e2e-tests -t ${[...targets].join(' ')}`,
-			{ cwd: ROOT, stdio: 'inherit', env: buildEnv },
+		runTurboBuild(
+			'e2e:build:android',
+			envWithoutWdioLoader(bakedEnv, androidEnv),
 		);
 
 		for (const udid of this.udids.values()) {
-			const apk = apkForDevice(udid);
-			if (!existsSync(apk)) {
-				throw new Error(
-					`e2e APK not found at ${apk} (for device ${udid}) after the tauri android build`,
-				);
-			}
-		}
-
-		for (const udid of this.udids.values()) {
-			// Uninstall any previous dash-chat (dev build, older e2e APK) so the
-			// session installs the fresh APK instead of failing on a signature or
-			// version mismatch.
-			try {
-				execSync(`adb -s ${udid} uninstall ${APP_PACKAGE}`, {
-					stdio: 'ignore',
-					env: androidEnv,
-				});
-			} catch {
-				/* not installed */
-			}
+			ensureApkInstalled(udid);
 
 			// Bridge the device's loopback port (baked into the APK) to the
 			// host's mailbox server over USB.

@@ -1,3 +1,4 @@
+import { Bodyless, Message } from './chats/messages-store';
 import { Profile } from './contacts/contacts-client';
 import {
 	AgentId,
@@ -54,6 +55,16 @@ export interface VoiceNote {
 }
 
 /**
+ * Renderable media attached to a chat message. A message has either a set of
+ * photos, a single file, or a single voice note. Built from a log's
+ * `MediaBundle` via `mediaBundleToAttachment`; carries hashes, not bytes.
+ */
+export type MediaAttachment =
+	| { kind: 'photos'; photos: PhotoAttachment[] }
+	| { kind: 'file'; file: FileAttachment }
+	| { kind: 'voice_note'; voice_note: VoiceNote };
+
+/**
  * Raw bytes leaving the composer for the backend to store. `data` carries raw
  * bytes — NOT base64; in-process it is a `Uint8Array`, and over Tauri JSON IPC
  * a `Vec<u8>` arrives as `number[]`. This is the *only* media shape that holds
@@ -106,16 +117,64 @@ export type MediaMetadata =
 export type MediaBundle = MediaMetadata[];
 
 /**
+ * Convert the blob metadata stored in a message log into the renderable
+ * `MediaAttachment` shape. Mirrors `Node::load_media`: a lone file becomes a `file`
+ * attachment, otherwise the items become `photos`. The resulting photos/file
+ * carry only a `hash` (no bytes).
+ */
+export function mediaBundleToAttachment(
+	meta: MediaBundle | null | undefined,
+): MediaAttachment | null {
+	if (!meta || meta.length === 0) return null;
+	const file = meta.find(item => item.kind === 'File');
+	if (file) {
+		return {
+			kind: 'file',
+			file: {
+				name: file.name,
+				mime_type: file.mime_type,
+				size: file.size,
+				hash: file.hash,
+			},
+		};
+	}
+	const voiceNote = meta.find(item => item.kind === 'VoiceNote');
+	if (voiceNote) {
+		return {
+			kind: 'voice_note',
+			voice_note: {
+				mime_type: voiceNote.mime_type,
+				duration_ms: voiceNote.duration_ms,
+				waveform: voiceNote.waveform,
+				hash: voiceNote.hash,
+			},
+		};
+	}
+	const photos: PhotoAttachment[] = meta
+		.filter(item => item.kind === 'Photo')
+		.map(item => ({
+			name: item.name,
+			mime_type: item.mime_type,
+			size: item.size,
+			hash: item.hash,
+		}));
+	return photos.length > 0 ? { kind: 'photos', photos } : null;
+}
+
+/**
  * V1 (Versioned) form of `ChatMessageContent` — matches the serialization in
  * `crates/dashchat-node/src/chat/message.rs`. Sent messages are always V1.
  */
 export type MessageContentV1 = {
-	v: '1';
 	message: string;
 	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob store,
 	 * fetched lazily via `irohblob://`). Consumers derive the photos/file/voice
 	 * grouping from this list at render time. */
 	media: MediaBundle | null;
+	/** Hash of the operation this message replies to (a `Message` or
+	 * `EditMessage` in the same chat, any author's log). Absent on the wire
+	 * for non-replies. */
+	reply?: Hash;
 };
 export type MessageContent = MessageContentV1;
 
@@ -181,6 +240,8 @@ export interface Tombstone {
 	reason: TombstoneReason;
 }
 
+export type Tombstones = Record<Hash, TombstoneReason>;
+
 export type DeviceGroupPayload =
 	| { type: 'AddContact'; payload: { agent_id: AgentId } }
 	| {
@@ -224,19 +285,6 @@ export type Payload =
 	| { type: 'GroupControl'; payload: GroupControlPayload };
 
 export type MessageId = string;
-
-// export type MessageContent = {
-// 	type: 'TextMessage';
-// 	message: string;
-// 	replyTo: MessageId | undefined;
-// };
-
-// export interface Message {
-// 	id: MessageId;
-// 	content: MessageContent;
-// 	author: VerifyingKey;
-// 	timestamp: number;
-// }
 
 export type GroupControlEvent =
 	| {
@@ -308,6 +356,10 @@ export type MessageDisplay = MessageBody | 'deleted-for-everyone';
  * `true` branch narrows `content` to `MessageBody`. */
 export function hasBody(content: MessageDisplay): content is MessageBody {
 	return typeof content !== 'string';
+}
+
+export function isMessage(message: Message | Bodyless): message is Message {
+	return 'content' in message;
 }
 
 /** Whether a message was deleted for everyone. */

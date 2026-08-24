@@ -9,7 +9,7 @@
  * macOS + a device, so they can't share one host.
  */
 import type { ChildProcess } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -176,6 +176,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	mochaOpts: {
 		ui: 'bdd',
 		timeout: 120_000,
+		// Fails any test during which an agent hit an uncaught error.
+		require: [path.join(__dirname, 'setup', 'fail-on-uncaught-errors.ts')],
 	},
 
 	// The spec reporter writes the assertion that failed to stdout and nowhere
@@ -203,27 +205,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 			killLeftoverMailboxServers();
 
-			const mailboxInfoPath = path.join(
-				ROOT,
-				'.dbs',
-				'e2e',
-				'mailbox-info.json',
-			);
-
-			// When MAILBOX_URL names an allowlisted deployment environment, run
-			// against its cloud mailbox instead of spawning a local server. Specs
-			// that drive the mailbox's lifecycle skip themselves via
-			// isRemoteMailbox().
+			// When MAILBOX_URL names a deployment environment, run against its
+			// cloud mailbox instead of spawning a local server. Specs that drive
+			// the mailbox's lifecycle skip themselves via isRemoteMailbox().
 			const remoteUrl = remoteMailboxUrl();
 			let mailboxPort: number | null = null;
 			let pushPort: number | null = null;
 			if (remoteUrl !== null) {
-				process.env.MAILBOX_URL = remoteUrl;
-				mkdirSync(path.dirname(mailboxInfoPath), { recursive: true });
-				writeFileSync(
-					mailboxInfoPath,
-					JSON.stringify({ remote: true, url: remoteUrl }),
-				);
 				console.log(`Using remote mailbox at ${remoteUrl}`);
 			} else {
 				// Real-device push tests: start the push-notifications server first

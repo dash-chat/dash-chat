@@ -44,8 +44,10 @@ import {
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
-import { readOpenedUrls } from './platforms/desktop';
+import { killAgentApp, readOpenedUrls } from './platforms/desktop';
+import { APP_STATE_NOT_RUNNING, resetIosAppState } from './platforms/ios';
 import { type AgentPlatformName, platformNames } from './test-env';
+import { switchToWebview, waitForTestUtils } from './webview';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
@@ -106,14 +108,17 @@ export type Agent = WebdriverIO.Browser & {
 	 *  to the new session, and restore narrow layout. */
 	restart(): Promise<void>;
 	/** Close the app, leaving its on-disk state intact so [`startApp`] brings
-	 *  the same user back. Android keeps the WebDriver session alive: tearing it
-	 *  down there reinstalls the APK on the next session, so the app would
-	 *  return as a fresh install with no profile. */
+	 *  the same user back. Android keeps the WebDriver session alive: a new
+	 *  session there fast-resets (`pm clear`), so the app would return with no
+	 *  profile. On desktop this also force-kills any app process left on the
+	 *  agent's data dir outside the session (e.g. the instance delete_account
+	 *  self-restarts into). */
 	stopApp(): Promise<void>;
 	/** Send the app to the background (home button) without killing it.
 	 *  On Android this is a home-key press; on desktop it is currently a no-op. */
 	backgroundApp(): Promise<void>;
-	/** Relaunch after [`stopApp`] and wait until the app is interactive again. */
+	/** Relaunch after [`stopApp`] or [`waitForAppExit`] and wait until the app
+	 *  is interactive again. */
 	startApp(): Promise<void>;
 	/** Switch the Konsta theme. */
 	setTheme(theme: 'material' | 'ios'): Promise<void>;
@@ -130,6 +135,10 @@ export type Agent = WebdriverIO.Browser & {
 	/** The urls this agent asked the OS to open, once at least `count` have
 	 *  arrived. Recorded by the harness's `xdg-open` stub, so desktop only. */
 	waitForOpenedUrls(count?: number): Promise<string[]>;
+	/** Wait until the app process this agent was driving is gone, after an
+	 *  action that makes the app shut itself down (today only delete_account).
+	 *  Follow with [`startApp`] to get a driveable session again. */
+	waitForAppExit(): Promise<void>;
 };
 
 /** The device serial this Appium session was launched against. */
@@ -173,7 +182,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.welcomePage = new WelcomePage(b);
 }
 
-export function makeAgent(b: WebdriverIO.Browser): Agent {
+export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	const agent = b as Agent;
 	attachPages(agent, b);
 
@@ -264,7 +273,13 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 	};
 	agent.stopApp = async () => {
 		if (agent.platform === 'desktop') {
-			await b.deleteSession();
+			try {
+				await b.deleteSession();
+			} catch {
+				// The session is already gone when the app shut itself down; the
+				// kill below still reaps whatever is left on the data dir.
+			}
+			killAgentApp(slot);
 			return;
 		}
 		// Leave the webview first: the session drives it through chromedriver, so
@@ -281,7 +296,9 @@ export function makeAgent(b: WebdriverIO.Browser): Agent {
 			return;
 		}
 		if (agent.platform === 'ios') {
-			await b.terminateApp(APP_PACKAGE);
+			// A real home-button press. `terminateApp` is not a substitute here:
+			// XCUITest's terminate reads to iOS as a user force-quit
+			await b.execute('mobile: backgroundApp');
 			return;
 		}
 		// Home button press: keeps the process alive so the background service
@@ -314,6 +331,21 @@ const TAP_HOLD_MS = 100;
 /** How many times to re-tap an element whose tap never reached the page. */
 const TAP_ATTEMPTS = 3;
 
+/** A fresh handle for `element`, resolved again through the same parent chain
+ *  it was originally found by, or null if it is no longer in the page. */
+async function refetch(
+	element: WebdriverIO.Element,
+): Promise<WebdriverIO.Element | null> {
+	const parent = element.parent;
+	const scope =
+		'selector' in parent && parent.selector !== undefined
+			? await refetch(parent as WebdriverIO.Element)
+			: parent;
+	if (scope === null) return null;
+	const fresh = await scope.$(element.selector).getElement();
+	return (await fresh.isExisting()) ? fresh : null;
+}
+
 /** The centre of `element`, once a touch there would actually reach it.
  *
  *  A tap is aimed at a point, so it hits whatever is topmost there — during a
@@ -324,7 +356,7 @@ const TAP_ATTEMPTS = 3;
 async function tapPoint(
 	agent: WebdriverIO.Browser,
 	element: WebdriverIO.Element,
-): Promise<{ x: number; y: number }> {
+): Promise<{ x: number; y: number; live: WebdriverIO.Element }> {
 	// Without this the wait below spends its whole timeout re-throwing "not a
 	// valid element" from execute, and reports that instead of the real problem:
 	// the app is on a different page than the test thinks.
@@ -333,9 +365,18 @@ async function tapPoint(
 			`Cannot tap ${String(element.selector)}: it is not in the page`,
 		);
 	}
+	// A re-render between resolving the handle and polling it invalidates the
+	// handle, and `isExisting()` cannot tell: it re-queries the selector and
+	// answers for the replacement node. So the poll re-fetches through the
+	// handle's own parent/selector chain each time (which is what WDIO does for
+	// stale elements) rather than reusing the one it was given. Selectors here
+	// are not all CSS — `a*=name` chains off a parent — so this cannot be a
+	// `document.querySelector` inside the page.
 	return await agent.waitUntil(
-		async () =>
-			await agent.execute((el: HTMLElement) => {
+		async () => {
+			const live = await refetch(element);
+			if (live === null) return null;
+			const point = await agent.execute((el: HTMLElement) => {
 				const rect = el.getBoundingClientRect();
 				const x = rect.x + rect.width / 2;
 				const y = rect.y + rect.height / 2;
@@ -343,7 +384,9 @@ async function tapPoint(
 				return topmost !== null && (topmost === el || el.contains(topmost))
 					? { x, y }
 					: null;
-			}, element),
+			}, live);
+			return point === null ? null : { ...point, live };
+		},
 		{
 			timeoutMsg:
 				`${String(element.selector)} is in the page but never became the ` +
@@ -414,8 +457,8 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 				return await origClick();
 			}
 			for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
-				const { x, y } = await tapPoint(agent, this);
-				if (await clickReachedElement(agent, this, x, y)) return;
+				const { x, y, live } = await tapPoint(agent, this);
+				if (await clickReachedElement(agent, live, x, y)) return;
 				console.warn(
 					`[ios] tap at ${x},${y} did not reach ${String(this.selector)} ` +
 						`(attempt ${attempt}/${TAP_ATTEMPTS})`,
@@ -430,49 +473,6 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 	);
 }
 
-/** Attach to the app's webview context, which a relaunch drops out of.
- *
- *  On Android the app's context must be matched by name: other apps' webviews
- *  can be listed too (a backgrounded Chrome appears as WEBVIEW_chrome, and it
- *  can be the only one listed while the app is still starting). iOS names
- *  WKWebView contexts WEBVIEW_<id> with no package, but the app's webview is
- *  the only one there. */
-async function switchToWebview(
-	agent: WebdriverIO.Browser,
-	platform: AgentPlatformName,
-): Promise<void> {
-	const isAppWebview = (id: string) =>
-		platform === 'ios'
-			? id.startsWith('WEBVIEW')
-			: id === `WEBVIEW_${APP_PACKAGE}`;
-	let webview: string | undefined;
-	await agent.waitUntil(
-		async () => {
-			const contexts = await agent.getContexts();
-			webview = contexts
-				.map(context => (typeof context === 'string' ? context : context.id))
-				.find(isAppWebview);
-			return webview !== undefined;
-		},
-		{ timeoutMsg: 'no app WEBVIEW context after relaunch' },
-	);
-	await agent.switchContext(webview!);
-}
-
-/** Wait for window.__test to be registered on a single agent. */
-export async function waitForTestUtils(
-	agent: WebdriverIO.Browser,
-): Promise<void> {
-	await agent.waitUntil(
-		async () => agent.execute(() => typeof window.__test !== 'undefined'),
-		{
-			timeout: 30_000,
-			interval: 500,
-			timeoutMsg: 'window.__test not registered',
-		},
-	);
-}
-
 /** Build an agent by capability name and wait for window.__test to be ready.
  *  Defaults to narrow (mobile) layout so back buttons and FABs render — review
  *  checks switch to wide explicitly when they need the desktop two-panel UI. */
@@ -483,11 +483,40 @@ async function setupAgent(
 ): Promise<Agent> {
 	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
-	// Before makeAgent: it resolves every page object's element, and an element
-	// built before the overwrite keeps the original click.
-	if (platform === 'ios') tapWebElementsAtTheirRect(b);
-	const agent = makeAgent(b);
+	if (platform === 'ios') {
+		// Each spec file gets fresh sessions but not a fresh install, so state
+		// from the previous spec is wiped here.
+		await resetIosAppState(b);
+		// Before makeAgent: it resolves every page object's element, and an
+		// element built before the overwrite keeps the original click.
+		tapWebElementsAtTheirRect(b);
+	}
+	const agent = makeAgent(b, slot);
 	agent.platform = platform;
+	agent.waitForAppExit = async () => {
+		if (platform === 'desktop') {
+			// The session breaking is the exit signal: tauri-driver has no other
+			// way to report that the process it launched is gone.
+			await b.waitUntil(
+				async () => {
+					try {
+						await b.getTitle();
+						return false;
+					} catch {
+						return true;
+					}
+				},
+				{ timeoutMsg: 'the app never shut itself down' },
+			);
+			return;
+		}
+		await b.switchContext('NATIVE_APP');
+		await b.waitUntil(
+			async () =>
+				Number(await b.queryAppState(APP_PACKAGE)) <= APP_STATE_NOT_RUNNING,
+			{ timeoutMsg: 'the app never shut itself down' },
+		);
+	};
 	agent.waitForOpenedUrls = async (count = 1) => {
 		let urls: string[] = [];
 		await b.waitUntil(

@@ -606,6 +606,23 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::Message(m)) => {
+                // Mirror the author-side reply validation, but only for
+                // observability: an invalid reply annotation is ignored at
+                // render time (the frontend applies the same rules), while the
+                // message carrying it is still processed and shown.
+                if let Some(target) = m.reply() {
+                    let chat_id = ChatId::from_topic_id(topic)?;
+                    let valid_ops = self.valid_chat_ops(chat_id).await?;
+                    let candidate = crate::chat::ReplyCandidate {
+                        target,
+                        timestamp: operation.processed().header().timestamp.into(),
+                        self_hash: Some(hash),
+                    };
+                    if let Err(err) = candidate.validate(&valid_ops) {
+                        warn!(?err, op = ?hash.aliased(), "message carries an invalid reply annotation");
+                    }
+                }
+
                 if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                     for item in media.iter() {
                         blob_sync

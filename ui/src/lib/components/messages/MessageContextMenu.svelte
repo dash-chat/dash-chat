@@ -10,12 +10,19 @@
 		message: Message;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		onReply?: () => void;
 		/** Viewport point to anchor the menu at; undefined = closed. Bindable so
 		 * the caller opens it from its own right-click/long-press handler. */
 		point?: { x: number; y: number };
 	}
 
-	let { message, myDeviceId, onEdit, point = $bindable() }: Props = $props();
+	let {
+		message,
+		myDeviceId,
+		onEdit,
+		onReply,
+		point = $bindable(),
+	}: Props = $props();
 
 	let pointAnchorEl = $state<HTMLElement>();
 
@@ -48,6 +55,11 @@
 	function edit() {
 		close();
 		onEdit?.();
+	}
+
+	function reply() {
+		close();
+		onReply?.();
 	}
 
 	async function copy() {
@@ -89,6 +101,7 @@
 			{message}
 			{myDeviceId}
 			onEdit={edit}
+			onReply={onReply ? reply : undefined}
 			onCopy={copy}
 			onDelete={close}
 			testid="message-context-menu"

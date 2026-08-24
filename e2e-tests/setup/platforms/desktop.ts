@@ -13,6 +13,7 @@ import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import { killAllE2EProcesses, killAndWait, killPortHolders } from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
+import { runTurboBuild } from '../turbo-build';
 import { waitForPortFree, waitForPortListening } from '../wait-for-port';
 import type { AgentPlatform } from './platform';
 
@@ -76,6 +77,23 @@ function installXdgOpenStub(slot: number): string {
 	return binDir;
 }
 
+/** SIGKILL any app process running against this agent's data dir — e.g. the
+ *  instance `delete_account` self-restarts into (`tauri::process::restart`),
+ *  which tauri-driver doesn't own and can't reattach to. */
+export function killAgentApp(slot: number) {
+	try {
+		execSync(
+			'for pid in $(pgrep -f "target/(debug|release)/dash-chat"); do ' +
+				`grep -qzF "DATA_DIR=${agentDir(slot)}" /proc/$pid/environ 2>/dev/null ` +
+				'&& kill -9 $pid 2>/dev/null; ' +
+				'done',
+			{ stdio: 'ignore' },
+		);
+	} catch {
+		/* ignore */
+	}
+}
+
 /** The urls this agent asked the OS to open, oldest first. */
 export function readOpenedUrls(slot: number): string[] {
 	const file = openedUrlsPath(slot);
@@ -116,14 +134,13 @@ export class DesktopPlatform implements AgentPlatform {
 	}
 
 	async onPrepare() {
-		execSync('pnpm tauri build --debug --no-bundle --features e2e-tests', {
-			cwd: ROOT,
-			stdio: 'inherit',
-			env: envWithoutWdioLoader({
+		runTurboBuild(
+			'e2e:build:desktop',
+			envWithoutWdioLoader({
 				VITE_E2E: 'true',
 				CARGO_PROFILE_DEV_DEBUG: '0',
 			}),
-		});
+		);
 		// Kill any leftover processes from previous interrupted runs.
 		killAllE2EProcesses();
 		killPortHolders(this.ports);

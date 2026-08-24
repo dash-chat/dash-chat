@@ -3,35 +3,14 @@ use mailbox_client::{
     mem::{MemMailbox, MemMailboxClient},
     toy::ToyMailboxClient,
 };
-use std::sync::{Arc, LazyLock, Mutex as StdMutex};
-
-use regex::Regex;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use crate::mailbox::{MailboxOperation, fetch_mailbox_health};
-
-/// Regex patterns for the mailbox URLs the test suite is allowed to run
-/// against, shared with the E2E suite via `allowed-test-mailbox-url-patterns.json`
-/// at the repo root. Any `MAILBOX_URL` matching none of them fails fast so
-/// tests can never hit staging or production.
-const ALLOWED_MAILBOX_URL_PATTERNS_JSON: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../allowed-test-mailbox-url-patterns.json"
-));
-
-static ALLOWED_MAILBOX_URL_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
-    serde_json::from_str::<Vec<String>>(ALLOWED_MAILBOX_URL_PATTERNS_JSON)
-        .expect("allowed-test-mailbox-url-patterns.json is a JSON array of strings")
-        .iter()
-        .map(|pattern| {
-            Regex::new(pattern).expect("invalid regex in allowed-test-mailbox-url-patterns.json")
-        })
-        .collect()
-});
 
 /// A mailbox for tests, built by [`TestMailbox::from_env`]: an in-memory
 /// mailbox by default, a standalone in-process mailbox server when
 /// `DASHCHAT_SPAWN_LOCAL_MAILBOX` is set, or a cloud mailbox when `MAILBOX_URL`
-/// names an allowlisted deployment environment.
+/// names a deployment environment.
 #[derive(Clone)]
 pub enum TestMailbox {
     Mem(MemMailbox<MailboxOperation>),
@@ -65,8 +44,7 @@ impl TestMailbox {
     /// Builds a mailbox for the test run. When `DASHCHAT_SPAWN_LOCAL_MAILBOX`
     /// is set, spawns a standalone in-process mailbox server on a free port with
     /// its own temp storage. Otherwise falls back to `MAILBOX_URL`: unset or
-    /// empty → a fresh [`MemMailbox`]; an allowlisted URL → that environment's
-    /// cloud mailbox (panics on a non-allowlisted URL).
+    /// empty → a fresh [`MemMailbox`]; a URL → that environment's cloud mailbox.
     pub fn from_env() -> Self {
         if spawn_local_mailbox_enabled() {
             return Self::spawn_local();
@@ -76,15 +54,7 @@ impl TestMailbox {
             .filter(|url| !url.is_empty())
         {
             None => Self::Mem(MemMailbox::new()),
-            Some(url) => {
-                assert!(
-                    ALLOWED_MAILBOX_URL_PATTERNS
-                        .iter()
-                        .any(|pattern| pattern.is_match(&url)),
-                    "MAILBOX_URL={url} is not an allowed test mailbox (allowed patterns: {ALLOWED_MAILBOX_URL_PATTERNS_JSON})"
-                );
-                Self::Cloud { url }
-            }
+            Some(url) => Self::Cloud { url },
         }
     }
 

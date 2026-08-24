@@ -15,6 +15,9 @@ export class Composer extends TestHelper {
 	addMoreTile = this.el(tid('message-input-add-more'));
 	editingBanner = this.el(tid('composer-editing-banner'));
 	cancelEditButton = this.el(tid('composer-cancel-edit'));
+	replyBanner = this.el(tid('composer-reply-banner'));
+	replyPreview = this.el(tid('composer-reply-preview'));
+	cancelReplyButton = this.el(tid('composer-cancel-reply'));
 	discardDraftDialog = this.el(tid('composer-discard-draft-dialog'));
 	discardDraftCancel = this.el(tid('composer-discard-draft-cancel'));
 	discardDraftConfirm = this.el(tid('composer-discard-draft-confirm'));
@@ -261,6 +264,21 @@ export class Composer extends TestHelper {
 					bubbles: true,
 					cancelable: true,
 				}),
+			);
+		}, tid('message-input-textarea'));
+	}
+
+	/** Pixels between the bottom of the input bar and the bottom of the
+	 * viewport. Anything but 0 means something scrolled the app shell out from
+	 * under the composer. */
+	bottomGap(): Promise<number> {
+		return this.agent.execute((sel: string) => {
+			const bar = document
+				.querySelector(sel)
+				?.closest('.message-input-bar') as HTMLElement | null;
+			if (!bar) throw new Error('bottomGap: input bar not found');
+			return Math.round(
+				window.innerHeight - bar.getBoundingClientRect().bottom,
 			);
 		}, tid('message-input-textarea'));
 	}

@@ -13,12 +13,13 @@ export class MockMessagesClient implements IMessagesClient {
 		chatId: ChatId,
 		message: string,
 		_media: OutgoingMedia | null,
+		reply: Hash | null,
 	): Promise<Hash> {
 		return this.logsClient.create(chatId, {
 			type: 'Chat',
 			payload: {
 				type: 'Message',
-				payload: { v: '1', message, media: null },
+				payload: { message, media: null, reply: reply ?? undefined },
 			},
 		});
 	}

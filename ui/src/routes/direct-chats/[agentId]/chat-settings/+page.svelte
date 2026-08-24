@@ -49,6 +49,7 @@
 	const store = chatsStore.directChats(agentId);
 
 	const peerProfile = useReactivePromise(store.peerProfile);
+	const peerName = useReactivePromise(store.peerName);
 	const blocked =
 		peerAgentId === undefined
 			? undefined
@@ -119,7 +120,14 @@
 						{/if}
 					{:else}
 						<Avatar waitingForProfile size={80} />
-						<span class="quiet text-xl">{m.waitingForProfile()}</span>
+						{#await $peerName then peerName}
+							<span
+								class="text-xl {peerName ? 'font-semibold' : 'quiet'}"
+								data-testid="chat-settings-peer-name"
+							>
+								{peerName || m.waitingForProfile()}
+							</span>
+						{/await}
 					{/if}
 				</div>
 

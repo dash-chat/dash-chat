@@ -7,6 +7,7 @@
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
+		type Hash,
 		type Message,
 		type MessagesStore,
 		type Profile,
@@ -20,6 +21,7 @@
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
+	import ReplyQuote from './ReplyQuote.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -37,6 +39,9 @@
 		sender,
 		showSenderName = false,
 		showAvatar = false,
+		onReply,
+		replyAuthorName,
+		onNavigateToMessage,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -46,6 +51,10 @@
 		sender: Profile | undefined;
 		showSenderName?: boolean;
 		showAvatar?: boolean;
+		onReply?: () => void;
+		/** Display name of the author quoted by this message's reply. */
+		replyAuthorName?: string;
+		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -111,7 +120,7 @@
 {#snippet bubble()}
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile && hasBody(message.content)}
-			<MessageHoverToolbar {message} {myDeviceId} />
+			<MessageHoverToolbar {message} {myDeviceId} {onReply} />
 		{/if}
 		<div class="row items-end gap-2">
 			{#if showAvatar}
@@ -138,13 +147,23 @@
 					contentWrapPadding="p-2"
 					class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 				>
-					<MessageContent
-						{message}
-						{searchQuery}
-						senderName={senderDisplayName}
-						{showSenderName}
-						metadata={isLast || editHistory.length > 0 ? metadata : undefined}
-					/>
+					<div class="flex flex-col gap-1">
+						{#if message.replyQuote}
+							<ReplyQuote
+								reply={message.replyQuote}
+								authorName={replyAuthorName}
+								{myDeviceId}
+								onNavigate={onNavigateToMessage}
+							/>
+						{/if}
+						<MessageContent
+							{message}
+							{searchQuery}
+							senderName={senderDisplayName}
+							{showSenderName}
+							metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+						/>
+					</div>
 				</Card>
 			{/if}
 		</div>
@@ -172,9 +191,15 @@
 	<MessageActionsOverlay
 		{message}
 		{myDeviceId}
+		{onReply}
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
 {:else}
-	<MessageContextMenu {message} {myDeviceId} bind:point={contextMenuPoint} />
+	<MessageContextMenu
+		{message}
+		{myDeviceId}
+		{onReply}
+		bind:point={contextMenuPoint}
+	/>
 {/if}

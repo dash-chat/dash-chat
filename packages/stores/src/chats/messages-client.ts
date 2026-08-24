@@ -7,6 +7,7 @@ export interface IMessagesClient {
 		chatId: ChatId,
 		message: string,
 		media: OutgoingMedia | null,
+		reply: Hash | null,
 	): Promise<Hash>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
 	sendReaction(chatId: ChatId, content: ChatReaction): Promise<void>;
@@ -20,11 +21,13 @@ export class MessagesClient implements IMessagesClient {
 		chatId: ChatId,
 		message: string,
 		media: OutgoingMedia | null,
+		reply: Hash | null,
 	): Promise<Hash> {
 		return invokeAfterSetup('send_message', {
 			chatId,
 			message,
 			media,
+			reply,
 		});
 	}
 

@@ -1973,7 +1973,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.19.17"
+version = "0.19.18"
 dependencies = [
  "anyhow",
  "app_dirs2",
@@ -2099,7 +2099,6 @@ dependencies = [
  "p2panda-store",
  "pretty_assertions",
  "rand 0.9.5",
- "regex",
  "reporting",
  "serde",
  "serde_bytes",
@@ -2122,10 +2121,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "ciborium",
  "futures",
  "iroh",
  "iroh-blobs",
  "log",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]
@@ -10878,7 +10880,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-system-theme"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-system-theme?rev=6f1b63c2a831b291bed936237a1ef9c850de3b0d#6f1b63c2a831b291bed936237a1ef9c850de3b0d"
+source = "git+https://github.com/dash-chat/tauri-plugin-system-theme?rev=1145bd4c3ccf4c09c667f3c54afa4e72d53988cb#1145bd4c3ccf4c09c667f3c54afa4e72d53988cb"
 dependencies = [
  "log",
  "serde",

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiDotsHorizontal, mdiHeartPlusOutline } from '@mdi/js';
+	import { mdiDotsHorizontal, mdiHeartPlusOutline, mdiReply } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { Popover } from 'konsta/svelte';
 	import { getContext } from 'svelte';
@@ -23,11 +23,18 @@
 		message: Message;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		onReply?: () => void;
 		/** Flip the visual order so the ⋯ button sits away from the bubble. */
 		reverse?: boolean;
 	}
 
-	let { message, myDeviceId, onEdit, reverse = false }: Props = $props();
+	let {
+		message,
+		myDeviceId,
+		onEdit,
+		onReply,
+		reverse = false,
+	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
 
@@ -73,6 +80,11 @@
 		onEdit?.();
 	}
 
+	function reply() {
+		close();
+		onReply?.();
+	}
+
 	async function copy() {
 		close();
 		if (!hasBody(message.content)) return;
@@ -110,6 +122,16 @@
 				></wa-icon>
 			</IconButton>
 		</span>
+		{#if onReply}
+			<IconButton
+				onClick={reply}
+				label={m.reply()}
+				testid="message-hover-reply"
+				class="!h-9 !w-9"
+			>
+				<wa-icon class="text-xl" src={wrapPathInSvg(mdiReply)}></wa-icon>
+			</IconButton>
+		{/if}
 		<span bind:this={menuEl}>
 			<IconButton
 				onClick={() => (open = 'menu')}
@@ -154,6 +176,7 @@
 			{message}
 			{myDeviceId}
 			onEdit={edit}
+			onReply={onReply ? reply : undefined}
 			onCopy={copy}
 			onDelete={close}
 		/>
