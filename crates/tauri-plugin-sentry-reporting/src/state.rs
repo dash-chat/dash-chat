@@ -34,8 +34,8 @@ impl From<DrainResult> for SendOutcome {
 }
 
 pub struct SentryState {
-    /// A guard rather than a `Client` because dropping it at shutdown is the
-    /// point: `close` flushes the transport queue. Derefs to the client.
+    /// A guard rather than a `Client` so the SDK stays initialized for this
+    /// state's lifetime. Derefs to the client.
     pub(crate) client: sentry::ClientInitGuard,
     pub(crate) redact: Vec<Regex>,
     pub(crate) logs_dir: PathBuf,

@@ -24,7 +24,7 @@ impl TransportFactory for UserInitiatedTransportFactory {
 mod tests {
     use std::io::ErrorKind;
     use std::net::TcpListener;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use sentry::protocol::Event;
 
@@ -43,13 +43,30 @@ mod tests {
             .unwrap();
         let state = SentryState::new(config);
 
-        state.client.capture_event(Event::default(), None);
+        let captured = state.client.capture_event(Event::default(), None);
         state.client.close(Some(Duration::from_secs(2)));
 
-        let accepted = listener.accept();
+        // Otherwise a transport that never captured would pass for the wrong reason.
+        assert!(!captured.is_nil(), "the event never reached the transport");
+        let accepted = accept_within(&listener, Duration::from_millis(500));
         assert!(
             matches!(&accepted, Err(err) if err.kind() == ErrorKind::WouldBlock),
             "the SDK reached the network on its own: {accepted:?}"
         );
+    }
+
+    fn accept_within(
+        listener: &TcpListener,
+        patience: Duration,
+    ) -> std::io::Result<(std::net::TcpStream, std::net::SocketAddr)> {
+        let deadline = Instant::now() + patience;
+        loop {
+            let accepted = listener.accept();
+            let waiting = matches!(&accepted, Err(err) if err.kind() == ErrorKind::WouldBlock);
+            if !waiting || Instant::now() >= deadline {
+                return accepted;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 }

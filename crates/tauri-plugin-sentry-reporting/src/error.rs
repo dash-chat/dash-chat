@@ -37,9 +37,10 @@ pub(crate) async fn send_error_report(
     }
 
     let logs = state.pending.snapshot();
-    // A report `before_send` dropped is not waiting on anything.
+    // Dropped by `before_send`, which means redaction failed: never report that
+    // as sent.
     let Some(mut envelope) = envelope::build_envelope(&state, event, logs) else {
-        return Ok(SendOutcome::Sent);
+        return Err("the report could not be prepared".into());
     };
     if let Some(log_file) = attachment::build_logs_attachment(&state.redact, &state.logs_dir).await
     {

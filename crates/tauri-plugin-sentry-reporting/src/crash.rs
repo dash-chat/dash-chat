@@ -12,6 +12,9 @@ pub(crate) async fn pending_crash_report(state: Sentry<'_>) -> Result<bool, Stri
 
 #[tauri::command]
 pub(crate) async fn send_pending_crash_report(state: Sentry<'_>) -> Result<SendOutcome, String> {
+    if !state.outbox.has_held() {
+        return Err("there is no crash report to send".into());
+    }
     state.outbox.approve_held().map_err(|err| err.to_string())?;
     Ok(state.drainer.drain_now().await.into())
 }

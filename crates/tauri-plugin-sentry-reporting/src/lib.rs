@@ -42,7 +42,7 @@ pub struct Config {
     pub redact: Vec<regex::Regex>,
     /// Where the log files a report attaches live.
     pub logs_dir: PathBuf,
-    /// This crate's own folder, holding a crash kept for the next launch.
+    /// This crate's own folder, holding the outbox of reports waiting to go out.
     pub data_dir: PathBuf,
 }
 

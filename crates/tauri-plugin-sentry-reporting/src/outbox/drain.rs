@@ -32,10 +32,14 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
     for queued in outbox.queued() {
         // Renamed out of the way first, so no other drainer — in this process
         // or another sharing the data directory — picks up the same entry.
+        // A skipped entry was never delivered, so the pass cannot claim the
+        // outbox is empty.
         let Ok(in_flight) = entry::mark_sending(&queued.path) else {
+            result = DrainResult::Pending;
             continue;
         };
         let Some(envelope) = entry::read(&in_flight) else {
+            result = DrainResult::Pending;
             continue;
         };
 
@@ -190,6 +194,21 @@ mod tests {
         let result = drain_once(&outbox, &sender).await;
 
         assert_eq!(result, DrainResult::Emptied);
+        assert!(outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_entry_is_never_reported_as_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.enqueue(&envelope("feedback")).unwrap();
+        std::fs::write(&outbox.queued()[0].path, "half an envelope").unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        let result = drain_once(&outbox, &sender).await;
+
+        assert_eq!(result, DrainResult::Pending);
+        assert_eq!(sender.posted(), 0);
         assert!(outbox.queued().is_empty());
     }
 

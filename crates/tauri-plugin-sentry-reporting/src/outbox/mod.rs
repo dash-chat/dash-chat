@@ -59,7 +59,11 @@ impl Outbox {
     }
 
     pub(crate) fn has_held(&self) -> bool {
-        !entry::list(&self.root, State::Held).is_empty()
+        // `entry::read` deletes what it cannot parse, so a corrupt crash file
+        // stops being offered rather than prompting for an unsendable report.
+        entry::list(&self.root, State::Held)
+            .iter()
+            .any(|held| entry::read(&held.path).is_some())
     }
 
     pub(crate) fn approve_held(&self) -> anyhow::Result<()> {
@@ -158,6 +162,18 @@ mod tests {
 
         assert!(!outbox.has_held());
         assert!(outbox.queued().is_empty());
+    }
+
+    #[test]
+    fn an_unreadable_held_crash_is_no_crash() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.hold(&envelope("crash")).unwrap();
+        let held = entry::list(outbox.root(), State::Held);
+        std::fs::write(&held[0].path, "half an envelope").unwrap();
+
+        assert!(!outbox.has_held());
+        assert!(!held[0].path.exists());
     }
 
     #[test]
