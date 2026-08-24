@@ -4,6 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(test)]
 use sentry::Envelope;
 use tokio::sync::Mutex;
 
