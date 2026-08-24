@@ -344,7 +344,7 @@ impl OpProjection {
             }
 
             Payload::DeviceGroup(p) => match p {
-                DeviceGroupPayload::AddContact { agent_id } => {
+                DeviceGroupPayload::AddContact { agent_id, .. } => {
                     self.save_agent_mapping(author, *agent_id).await?;
                     None
                 }
@@ -374,7 +374,7 @@ impl OpProjection {
             Payload::Inbox(InboxPayload::ContactRequest {
                 agent_id, profile, ..
             })
-            | Payload::Inbox(InboxPayload::ContactRequestAck { agent_id, profile }) => {
+            | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
                 None

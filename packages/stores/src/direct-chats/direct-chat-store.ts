@@ -1,6 +1,5 @@
 import { reactive } from 'signalium';
 
-import { isPendingChatKey, pendingChatKeyDevice } from '../chats/chat-key';
 import { type IMessagesClient } from '../chats/messages-client';
 import { Message, MessagesStore } from '../chats/messages-store';
 import { fullName } from '../contacts/contacts-client';
@@ -9,12 +8,11 @@ import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import { TombstoneStore } from '../tombstones/tombstone-store';
-import { BlockEvent, ChatSummary, Payload } from '../types';
+import { BlockEvent, ChatId, ChatSummary, Payload } from '../types';
 import {
 	EventWithProvenance,
 	groupEventsInDays,
 } from '../utils/group-events-in-days';
-import { type IDirectChatClient } from './direct-chat-client';
 
 export type DirectChatEvent =
 	| { kind: 'message'; message: Message }
@@ -29,68 +27,74 @@ export class DirectChatStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		protected tombstoneStore: TombstoneStore,
-		public client: IDirectChatClient,
-		public peer: AgentId,
+		public chatId: ChatId,
 		messagesClient: IMessagesClient,
 	) {
 		this.messages = new MessagesStore(
 			logsStore,
 			contactsStore,
 			tombstoneStore,
-			this.chatId,
+			chatId,
 			messagesClient,
 		);
 	}
 
-	get isPending(): boolean {
-		return isPendingChatKey(this.peer);
-	}
-
-	resolvedPendingAgent = reactive(async () => {
-		const device = pendingChatKeyDevice(this.peer);
-		if (device === undefined) return undefined;
-		// Depend on the reactive contacts list so this re-runs once the contact
-		// is established (the device→agent mapping is saved around the same time
-		// the AddContact marker is published).
-		await this.contactsStore.contactsAgentIds();
-		return await this.contactsStore.client.agentForDevice(device);
+	/** The established contact on the other side, if any. */
+	private contact = reactive(async () => {
+		const contacts = await this.contactsStore.contacts();
+		return Object.values(contacts).find(
+			contact => contact.chatId === this.chatId,
+		);
 	});
 
-	chatId = reactive(async () => {
-		if (this.isPending) return '';
-		return await this.client.chatId(this.peer);
+	/** The outgoing contact request this chat originated from, if any. */
+	private outgoingRequest = reactive(async () => {
+		const requests = await this.contactsStore.outgoingContactRequests();
+		return requests.find(request => request.chatId === this.chatId);
+	});
+
+	peerAgentId = reactive(async (): Promise<AgentId | undefined> => {
+		const contact = await this.contact();
+		if (contact !== undefined) return contact.agentId;
+		const request = await this.contactRequest();
+		return request?.agentId;
+	});
+
+	isBlocked = reactive(async (): Promise<boolean> => {
+		const agentId = await this.peerAgentId();
+		if (agentId === undefined) return false;
+		return await this.contactsStore.isBlocked(agentId);
 	});
 
 	peerProfile = reactive(async () => {
-		if (this.isPending) return undefined;
+		const agentId = await this.peerAgentId();
+		if (agentId === undefined) return undefined;
 		const request = await this.contactRequest();
 		if (request) return request.profile;
-		return await this.contactsStore.profiles(this.peer);
+		return await this.contactsStore.profiles(agentId);
 	});
 
 	peerName = reactive(async (): Promise<string> => {
 		const profile = await this.peerProfile();
 		if (profile) return fullName(profile);
-		if (!this.isPending) return '';
-		const pending = (await this.contactsStore.outgoingPendingRequests()).find(
-			request => request.devicePubkey === pendingChatKeyDevice(this.peer),
-		);
-		return pending?.profileName ?? '';
+		const request = await this.outgoingRequest();
+		return request?.profileName ?? '';
 	});
 
 	contactRequest = reactive(async () => {
 		const contactRequests = await this.contactsStore.contactRequests();
-		return contactRequests.find(cr => cr.agentId === this.peer);
+		return contactRequests.find(request => request.chatId === this.chatId);
 	});
 
 	groupedEvents = reactive(async () => {
 		const messages = await this.messages.messages();
-		const reports = this.isPending
-			? {}
-			: await this.contactsStore.reports(this.peer);
-		const blockHistory = this.isPending
-			? {}
-			: await this.contactsStore.blockHistory(this.peer);
+		const agentId = await this.peerAgentId();
+		const reports =
+			agentId === undefined ? {} : await this.contactsStore.reports(agentId);
+		const blockHistory =
+			agentId === undefined
+				? {}
+				: await this.contactsStore.blockHistory(agentId);
 		const peerName = await this.peerName();
 
 		const eventsWithProvenance: Record<
@@ -144,9 +148,8 @@ export class DirectChatStore {
 	onNewMessage(
 		handler: (operation: SimplifiedOperation<Payload>, message: string) => void,
 	) {
-		return this.logsStore.logsClient.onNewOperation(async (topicId, op) => {
-			const chatId = await this.chatId();
-			if (topicId !== chatId) return;
+		return this.logsStore.logsClient.onNewOperation((topicId, op) => {
+			if (topicId !== this.chatId) return;
 			if (!(op.body?.type === 'Chat' && op.body.payload.type === 'Message'))
 				return;
 			handler(op, op.body.payload.payload.message);
@@ -155,28 +158,41 @@ export class DirectChatStore {
 
 	summary = reactive(async (): Promise<ChatSummary> => {
 		const profile = await this.peerProfile();
+		const contact = await this.contact();
+		const request = await this.contactRequest();
+		const outgoing = await this.outgoingRequest();
 		const message = await this.messages.lastMessage();
-		const unreadCount = await this.messages.unreadCount();
 
+		const pendingRequest =
+			contact === undefined ? (request ?? outgoing) : undefined;
 		const lastEvent: ChatSummary['lastEvent'] = message
 			? {
 					kind: 'message',
 					content: message.content,
 					timestamp: message.timestamp,
 				}
-			: {
-					kind: 'contact_added',
-					timestamp:
-						(await this.contactsStore.contactAddedTimestamp(this.peer)) ?? 0,
-				};
+			: pendingRequest !== undefined
+				? {
+						kind: 'contact_request',
+						timestamp: pendingRequest.timestamp,
+					}
+				: {
+						kind: 'contact_added',
+						timestamp: contact?.addedTimestamp ?? 0,
+					};
 
 		return {
 			type: 'DirectChat',
-			chatId: this.peer,
+			chatId: this.chatId,
+			blocked: await this.isBlocked(),
 			name: await this.peerName(),
 			avatar: profile?.avatar,
 			lastEvent,
-			unreadMessages: unreadCount,
+			unreadMessages: Math.max(
+				await this.messages.unreadCount(),
+				request !== undefined ? 1 : 0,
+			),
+			waitingForProfile: profile === undefined ? true : undefined,
 		};
 	});
 }

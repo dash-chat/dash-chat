@@ -1,4 +1,4 @@
-import { type ReactiveFn, reactive } from 'signalium';
+import { reactive } from 'signalium';
 
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
@@ -57,15 +57,12 @@ export class MessagesStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		protected tombstoneStore: TombstoneStore,
-		/** Resolves to '' while a pending direct chat has no topic yet. */
-		public chatId: ReactiveFn<Promise<ChatId>, []>,
+		public chatId: ChatId,
 		public client: IMessagesClient,
 	) {}
 
 	messages = reactive(async () => {
-		const chatId = await this.chatId();
-		if (chatId === '') return {} as Record<Hash, Message>;
-		const logs = await this.logsStore.logsForAllAuthors(chatId);
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 
 		const opsOrdered = Object.values(logs)
 			.flat()
@@ -74,7 +71,7 @@ export class MessagesStore {
 					a.header.timestamp - b.header.timestamp ||
 					a.hash.localeCompare(b.hash),
 			);
-		const tombstones = await this.tombstoneStore.tombstones(chatId);
+		const tombstones = await this.tombstoneStore.tombstones(this.chatId);
 		const messages = logsToMessages(opsOrdered, tombstones);
 		return messages;
 	});
@@ -89,7 +86,6 @@ export class MessagesStore {
 	});
 
 	readMessageHashes = reactive(async () => {
-		const chatId = await this.chatId();
 		const myDeviceGroupTopic =
 			await this.contactsStore.devicesStore.myDeviceGroupTopic();
 		const readHashes: Set<Hash> = new Set();
@@ -98,7 +94,7 @@ export class MessagesStore {
 			for (const op of ops) {
 				if (
 					op.body?.payload?.type === 'ReadMessages' &&
-					op.body.payload.payload.chat_id === chatId
+					op.body.payload.payload.chat_id === this.chatId
 				) {
 					for (const hash of op.body.payload.payload.message_hashes) {
 						readHashes.add(hash);
@@ -133,8 +129,6 @@ export class MessagesStore {
 		media: OutgoingMedia | null;
 		replyTo?: Message | null;
 	}): Promise<Hash> {
-		const chatId = await this.chatId();
-
 		// A reply targets the latest known edit of the message, like edits and
 		// deletes do. Same staleness concern as `editMessage`: re-resolve from
 		// the current map rather than the caller's snapshot.
@@ -144,43 +138,42 @@ export class MessagesStore {
 				(await this.messages())[input.replyTo.hash] ?? input.replyTo;
 			reply = currentVersion(fresh).hash;
 		}
-		return this.client.sendMessage(chatId, input.message, input.media, reply);
+		return this.client.sendMessage(
+			this.chatId,
+			input.message,
+			input.media,
+			reply,
+		);
 	}
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {
-		const chatId = await this.chatId();
-		await this.client.markMessagesRead(chatId, messageHashes);
+		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
 	async sendReaction(reaction: ChatReaction) {
-		const chatId = await this.chatId();
-		await this.client.sendReaction(chatId, reaction);
+		await this.client.sendReaction(this.chatId, reaction);
 	}
 
 	async editMessage(message: Message, newText: string): Promise<Hash> {
-		const chatId = await this.chatId();
-
 		// Callers hold a snapshot captured when editing began; re-resolve so an
 		// edit that arrived mid-compose is chained from, not forked off.
 		const fresh = (await this.messages())[message.hash] ?? message;
 		const current = currentVersion(fresh);
-		return this.client.editMessage(chatId, current.hash, newText);
+		return this.client.editMessage(this.chatId, current.hash, newText);
 	}
 
 	async deleteMessageForEveryone(message: Message): Promise<Hash> {
-		const chatId = await this.chatId();
 		// Same staleness concern as `editMessage`: the caller's snapshot may
 		// predate an edit that arrived since.
 		const fresh = (await this.messages())[message.hash] ?? message;
 		const current = currentVersion(fresh);
-		return this.client.deleteMessageForEveryone(chatId, current.hash);
+		return this.client.deleteMessageForEveryone(this.chatId, current.hash);
 	}
 
 	async deleteMessageForMe(message: Message): Promise<Hash> {
-		const chatId = await this.chatId();
 		// The whole message is deleted regardless of which version is shown, so
 		// target the original op; the backend tombstones its edit chain.
-		return this.client.deleteMessageForMe(chatId, message.hash);
+		return this.client.deleteMessageForMe(this.chatId, message.hash);
 	}
 }
 

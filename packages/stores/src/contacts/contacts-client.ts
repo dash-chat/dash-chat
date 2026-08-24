@@ -1,6 +1,6 @@
 import { LogsClient, waitForOperation } from '../p2panda/logs-client';
 import { AgentId, DeviceId, type TopicId } from '../p2panda/types';
-import { Payload } from '../types';
+import { ChatId, Payload } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
 export interface Profile {
@@ -25,6 +25,9 @@ export interface IContactsClient {
 	// established. Undefined while an outgoing request is still pending.
 	agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined>;
 
+	// The direct-chat topic id shared with the peer device.
+	directChatId(devicePubkey: DeviceId): Promise<ChatId>;
+
 	// Sets the profile for this user
 	setProfile(profile: Profile): Promise<void>;
 
@@ -37,8 +40,9 @@ export interface IContactsClient {
 
 	// getContacts(): Promise<Array<VerifyingKey>>;
 
-	// Add a contact from the given encoded contact code string; returns the device pubkey
-	addContact(code: string): Promise<DeviceId>;
+	// Add a contact from the given encoded contact code string; returns the
+	// id of the direct chat created for it
+	addContact(code: string): Promise<ChatId>;
 
 	// Accept an incoming contact request
 	acceptContact(agentId: AgentId): Promise<void>;
@@ -89,6 +93,10 @@ export class ContactsClient implements IContactsClient {
 		);
 	}
 
+	directChatId(devicePubkey: DeviceId): Promise<ChatId> {
+		return invokeAfterSetup('direct_chat_id', { peer: devicePubkey });
+	}
+
 	async setProfile(profile: Profile): Promise<void> {
 		return invokeAfterSetup('set_profile', {
 			profile,
@@ -103,7 +111,7 @@ export class ContactsClient implements IContactsClient {
 		return invokeAfterSetup('active_inbox_topics');
 	}
 
-	async addContact(contactCode: string): Promise<DeviceId> {
+	async addContact(contactCode: string): Promise<ChatId> {
 		return invokeAfterSetup('add_contact', { contactCode });
 	}
 

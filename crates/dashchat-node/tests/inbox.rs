@@ -39,7 +39,7 @@ async fn test_inbox_2() {
     assert_eq!(alice.get_contacts().await.unwrap(), vec![bobbi.agent_id()]);
     assert_eq!(bobbi.get_contacts().await.unwrap(), vec![alice.agent_id()]);
 
-    let direct_chat_topic = alice.direct_chat_topic(bobbi.agent_id());
+    let direct_chat_topic = alice.direct_chat_with(&bobbi);
 
     tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
@@ -68,7 +68,7 @@ async fn test_p2p_inbox_2() {
     assert_eq!(alice.get_contacts().await.unwrap(), vec![bobbi.agent_id()]);
     assert_eq!(bobbi.get_contacts().await.unwrap(), vec![alice.agent_id()]);
 
-    let direct_chat_topic = alice.direct_chat_topic(bobbi.agent_id());
+    let direct_chat_topic = alice.direct_chat_with(&bobbi);
 
     tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 

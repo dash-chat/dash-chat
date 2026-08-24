@@ -25,7 +25,9 @@
 	const loading = $derived($contacts === undefined || $members === undefined);
 
 	const nonMemberContacts = $derived(
-		($contacts ?? []).filter(([agentId]) => !($members && agentId in $members)),
+		($contacts ?? []).filter(
+			({ contact }) => !($members && contact.agentId in $members),
+		),
 	);
 	let filteredContacts = $state<typeof nonMemberContacts>([]);
 	let searchQuery = $state('');

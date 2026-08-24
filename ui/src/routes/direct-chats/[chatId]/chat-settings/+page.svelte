@@ -1,14 +1,13 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import {
-		chatKeyAgentId,
 		fullName,
 		type ChatsStore,
 		type ContactsStore,
 	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiBellOutline,
 		mdiMagnify,
@@ -40,20 +39,17 @@
 	import { page } from '$app/state';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import Divider from '$lib/components/Divider.svelte';
-	let agentId = page.params.agentId!;
-	const peerAgentId = chatKeyAgentId(agentId);
+	let chatId = page.params.chatId!;
 
 	const theme = $derived(useTheme());
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const store = chatsStore.directChats(agentId);
+	const store = chatsStore.directChats(chatId);
 
+	const peerAgentId = useReactiveValue(store.peerAgentId);
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const peerName = useReactivePromise(store.peerName);
-	const blocked =
-		peerAgentId === undefined
-			? undefined
-			: useReactivePromise(contactsStore.isBlocked, peerAgentId);
+	const blocked = useReactivePromise(store.isBlocked);
 
 	let showPeerProfile = $state(false);
 	let showBlockDialog = $state(false);
@@ -76,7 +72,7 @@
 		<Navbar transparent={true}>
 			{#snippet left()}
 				<NavbarBackLink
-					onClick={() => goto(`/direct-chats/${agentId}`)}
+					onClick={() => goto(`/direct-chats/${chatId}`)}
 					data-testid="chat-settings-back"
 				/>
 			{/snippet}
@@ -145,7 +141,7 @@
 						<Button
 							class="icon-only"
 							tonal
-							onClick={() => goto(`/direct-chats/${agentId}?search=true`)}
+							onClick={() => goto(`/direct-chats/${chatId}?search=true`)}
 							data-testid="chat-settings-search-btn"
 						>
 							<wa-icon src={wrapPathInSvg(mdiMagnify)}></wa-icon>
@@ -160,7 +156,7 @@
 					</div>
 				{/if}
 
-				{#if peerAgentId !== undefined}
+				{#if $peerAgentId}
 					{#await $blocked then isBlocked}
 						<List
 							nested
@@ -279,25 +275,25 @@
 			/>
 		{/if}
 
-		{#if peerAgentId !== undefined}
+		{#if $peerAgentId}
 			{#await $blocked then isBlocked}
 				{@const peerName = profile ? fullName(profile) : ''}
 				{#if isBlocked}
 					<UnblockContactDialog
 						bind:opened={showBlockDialog}
-						agentId={peerAgentId}
+						agentId={$peerAgentId}
 						name={peerName}
 					/>
 				{:else}
 					<BlockContactDialog
 						bind:opened={showBlockDialog}
-						agentId={peerAgentId}
+						agentId={$peerAgentId}
 						name={peerName}
 					/>
 				{/if}
 				<ReportContactDialog
 					bind:opened={showReportDialog}
-					agentId={peerAgentId}
+					agentId={$peerAgentId}
 					name={peerName}
 					onDone={() => goto('/')}
 				/>
