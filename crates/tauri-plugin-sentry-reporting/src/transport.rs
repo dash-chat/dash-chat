@@ -2,7 +2,10 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use sentry::protocol::Envelope;
+use sentry::transports::ReqwestHttpTransportOptions;
 use sentry::{Transport, TransportFactory, TransportOptions};
+
+use crate::outbox::sender::webpki_roots_client;
 
 /// The SDK captures freely; nothing it hands this transport is ever sent. Real
 /// delivery goes through the outbox, which the user's Send button feeds.
@@ -36,7 +39,14 @@ impl Transport for UserInitiatedTransport {
 pub(crate) struct UserInitiatedTransportFactory(pub(crate) Arc<UserInitiatedTransport>);
 
 impl TransportFactory for UserInitiatedTransportFactory {
-    fn create_transport_with_options(&self, _options: TransportOptions) -> Arc<dyn Transport> {
+    fn create_transport_with_options(&self, options: TransportOptions) -> Arc<dyn Transport> {
+        self.0.inner.get_or_init(|| {
+            Arc::new(
+                ReqwestHttpTransportOptions::from(options)
+                    .with_client(webpki_roots_client())
+                    .build(),
+            )
+        });
         self.0.clone()
     }
 }
