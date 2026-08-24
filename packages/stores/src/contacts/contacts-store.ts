@@ -5,25 +5,38 @@ import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import { AnnouncementPayload, Payload } from '../types';
+import { AnnouncementPayload, ChatId, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
 
 export interface ContactRequest {
 	profile: Profile;
 	agentId: AgentId;
+	devicePubkey: DeviceId;
+	chatId: ChatId;
 	timestamp: number;
 	topicId: TopicId;
 }
 
 /**
- * An outgoing contact request we've sent by scanning a QR code, before the
- * owner's ack has arrived. Keyed on the owner's device pubkey, since we don't
- * yet know their agent id or profile.
+ * An outgoing contact request we've sent by scanning a QR code. Keyed on the
+ * owner's device pubkey, since we don't know their agent id at scan time.
  */
 export interface OutgoingContactRequest {
 	devicePubkey: DeviceId;
+	chatId: ChatId;
 	timestamp: number;
 	profileName: string;
+}
+
+export interface Contact {
+	agentId: AgentId;
+	chatId: ChatId;
+	addedTimestamp: number;
+}
+
+export interface ContactWithProfile {
+	contact: Contact;
+	profile: Profile;
 }
 
 /** One filed report against a contact, as recorded in the device group log. */
@@ -43,6 +56,26 @@ export class ContactsStore {
 	myAgentId = reactive(async () => await this.client.myAgentId());
 
 	myDeviceId = reactive(async () => await this.client.myDeviceId());
+
+	agentForDevice = reactive(
+		async (deviceId: DeviceId): Promise<AgentId | undefined> => {
+			const myDeviceId = await this.myDeviceId();
+			if (deviceId === myDeviceId) return await this.myAgentId();
+			return await this.client.agentForDevice(deviceId);
+		},
+	);
+
+	agentsForDevices = reactive(async (deviceIds: Set<DeviceId>) => {
+		const entries = await Promise.all(
+			Array.from(deviceIds).map(async deviceId => {
+				const agent = await this.agentForDevice(deviceId);
+				return [deviceId, agent] as const;
+			}),
+		);
+		return Object.fromEntries(
+			entries.filter(([, agent]) => agent !== undefined),
+		) as Record<DeviceId, AgentId>;
+	});
 
 	myProfile = reactive(async () => {
 		const myAgentId = await this.myAgentId();
@@ -69,20 +102,30 @@ export class ContactsStore {
 		}),
 	);
 
-	contactsAgentIds = reactive(async () => {
+	/** The established contacts, keyed by agent id. */
+	contacts = reactive(async (): Promise<Record<AgentId, Contact>> => {
 		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
 
-		const contacts: Set<AgentId> = new Set();
+		const contacts: Record<AgentId, Contact> = {};
 
 		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
 			for (const op of ops) {
 				if (op.body?.payload?.type === 'AddContact') {
-					contacts.add(op.body.payload.payload.agent_id);
+					const { agent_id, direct_chat_topic_id } = op.body.payload.payload;
+					contacts[agent_id] = {
+						agentId: agent_id,
+						chatId: direct_chat_topic_id,
+						addedTimestamp: op.header.timestamp,
+					};
 				}
 			}
 		}
 
-		return Array.from(contacts);
+		return contacts;
+	});
+
+	contactsAgentIds = reactive(async () => {
+		return Object.keys(await this.contacts());
 	});
 
 	blockedContactAgentIds = reactive(async () => {
@@ -174,28 +217,27 @@ export class ContactsStore {
 	});
 
 	/**
-	 * Outgoing contact requests we've sent but whose ack hasn't arrived yet.
-	 * A pending marker is dropped once its device pubkey resolves to an
-	 * established contact (the ack was processed and the `AddContact` marker
-	 * created a real chat that supersedes the placeholder).
+	 * Outgoing contact requests we've sent, latest per device pubkey. Kept
+	 * even after the contact is established: the QR name recorded here is the
+	 * only name we have for the peer until their profile syncs.
 	 */
-	outgoingPendingRequests = reactive(async () => {
+	outgoingContactRequests = reactive(async () => {
 		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
 
-		const latestByDevice: Record<
-			DeviceId,
-			{ timestamp: number; profileName: string }
-		> = {};
+		const latestByDevice: Record<DeviceId, OutgoingContactRequest> = {};
 		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
 			for (const op of ops) {
 				if (op.body?.payload?.type !== 'PendingContactRequest') continue;
-				const { device_pubkey, profile_name } = op.body.payload.payload;
+				const { device_pubkey, profile_name, direct_chat_topic_id } =
+					op.body.payload.payload;
 				const existing = latestByDevice[device_pubkey];
 				if (
 					existing === undefined ||
 					op.header.timestamp > existing.timestamp
 				) {
 					latestByDevice[device_pubkey] = {
+						devicePubkey: device_pubkey,
+						chatId: direct_chat_topic_id,
 						timestamp: op.header.timestamp,
 						profileName: profile_name ?? '',
 					};
@@ -203,38 +245,7 @@ export class ContactsStore {
 			}
 		}
 
-		const devices = Object.keys(latestByDevice);
-		const resolved = await Promise.all(
-			devices.map(device => this.client.agentForDevice(device)),
-		);
-
-		const pending: OutgoingContactRequest[] = [];
-		for (let i = 0; i < devices.length; i++) {
-			if (resolved[i] !== undefined) continue;
-			pending.push({
-				devicePubkey: devices[i],
-				timestamp: latestByDevice[devices[i]].timestamp,
-				profileName: latestByDevice[devices[i]].profileName,
-			});
-		}
-		return pending;
-	});
-
-	contactAddedTimestamp = reactive(async (agentId: AgentId) => {
-		const myDeviceGroupTopic = await this.devicesStore.myDeviceGroupTopic();
-
-		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
-			for (const op of ops) {
-				if (
-					op.body?.payload?.type === 'AddContact' &&
-					op.body.payload.payload.agent_id === agentId
-				) {
-					return op.header.timestamp;
-				}
-			}
-		}
-
-		return undefined;
+		return Object.values(latestByDevice);
 	});
 
 	rejectedContactRequests = reactive(async () => {
@@ -257,6 +268,10 @@ export class ContactsStore {
 
 		return rejected;
 	});
+
+	private directChatId = reactive(async (devicePubkey: DeviceId) =>
+		this.client.directChatId(devicePubkey),
+	);
 
 	contactRequests = reactive(async () => {
 		const activeInboxTopics = await this.activeInboxTopics();
@@ -296,6 +311,8 @@ export class ContactsStore {
 					contactRequests.push({
 						profile,
 						agentId,
+						devicePubkey: operation.header.verifying_key,
+						chatId: await this.directChatId(operation.header.verifying_key),
 						topicId,
 						timestamp: operation.header.timestamp,
 					});
@@ -369,41 +386,37 @@ export class ContactsStore {
 		return profile;
 	});
 
-	profilesForAllContacts = reactive(async () => {
-		const contacts = await this.contactsAgentIds();
-
-		const profiles = await Promise.all(
-			contacts.map(contact => this.profiles(contact)),
+	profilesForAgents = reactive(async (agentIds: Set<AgentId>) => {
+		const entries = await Promise.all(
+			Array.from(agentIds).map(async agentId => {
+				const profile = await this.profiles(agentId);
+				return [agentId, profile] as const;
+			}),
 		);
-
-		const profilesWithContacts: Array<[AgentId, Profile]> = contacts
-			.map(
-				(contact, i) =>
-					[contact, profiles[i]] as [AgentId, Profile | undefined],
-			)
-			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
-
-		return profilesWithContacts;
+		return Object.fromEntries(
+			entries.filter(([, profile]) => profile !== undefined),
+		) as Record<AgentId, Profile>;
 	});
 
-	profilesForUnblockedContacts = reactive(async () => {
-		const [contacts, blocked] = await Promise.all([
-			this.contactsAgentIds(),
-			this.blockedContactAgentIds(),
-		]);
-		const unblocked = contacts.filter(contact => !blocked.has(contact));
+	profilesForUnblockedContacts = reactive(
+		async (): Promise<ContactWithProfile[]> => {
+			const [contacts, blocked] = await Promise.all([
+				this.contacts(),
+				this.blockedContactAgentIds(),
+			]);
+			const unblocked = Object.values(contacts).filter(
+				contact => !blocked.has(contact.agentId),
+			);
 
-		const profiles = await Promise.all(
-			unblocked.map(contact => this.profiles(contact)),
-		);
+			const profiles = await Promise.all(
+				unblocked.map(contact => this.profiles(contact.agentId)),
+			);
 
-		const profilesWithContacts: Array<[AgentId, Profile]> = unblocked
-			.map(
-				(contact, i) =>
-					[contact, profiles[i]] as [AgentId, Profile | undefined],
-			)
-			.filter((pair): pair is [AgentId, Profile] => !!pair[1]);
-
-		return profilesWithContacts;
-	});
+			return unblocked
+				.map((contact, i) => ({ contact, profile: profiles[i] }))
+				.filter(
+					(entry): entry is ContactWithProfile => entry.profile !== undefined,
+				);
+		},
+	);
 }

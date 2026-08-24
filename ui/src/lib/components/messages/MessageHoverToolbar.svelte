@@ -71,7 +71,7 @@
 	}
 
 	function react(emoji: string) {
-		toggleReaction(store, message, myDeviceId, emoji);
+		toggleReaction(store, message, emoji);
 		close();
 	}
 
@@ -160,7 +160,6 @@
 	>
 		<QuickReactionBar
 			{message}
-			{myDeviceId}
 			onReact={react}
 			onExpand={() => (expanded = true)}
 		/>
@@ -184,10 +183,5 @@
 </div>
 
 {#if open !== null}
-	<ExpandedReactionsSheet
-		{message}
-		{myDeviceId}
-		opened={expanded}
-		onReact={react}
-	/>
+	<ExpandedReactionsSheet {message} opened={expanded} onReact={react} />
 {/if}

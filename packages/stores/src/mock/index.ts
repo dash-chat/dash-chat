@@ -3,7 +3,6 @@ export * from './contacts-client.js';
 export * from './devices-client.js';
 export * from './chats-client.js';
 export * from './chats-store.js';
-export * from './direct-chat-client.js';
 export * from './group-chat-client.js';
 export * from './messages-client.js';
 export * from './settings-client.js';

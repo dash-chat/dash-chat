@@ -243,10 +243,17 @@ export interface Tombstone {
 export type Tombstones = Record<Hash, TombstoneReason>;
 
 export type DeviceGroupPayload =
-	| { type: 'AddContact'; payload: { agent_id: AgentId } }
+	| {
+			type: 'AddContact';
+			payload: { agent_id: AgentId; direct_chat_topic_id: ChatId };
+	  }
 	| {
 			type: 'PendingContactRequest';
-			payload: { device_pubkey: DeviceId; profile_name: string };
+			payload: {
+				device_pubkey: DeviceId;
+				profile_name: string;
+				direct_chat_topic_id: ChatId;
+			};
 	  }
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'BlockAgent'; payload: AgentId }
@@ -343,7 +350,7 @@ export interface MessageVersion {
 export interface MessageBody {
 	message: string;
 	media: MediaBundle | null;
-	reactions: Record<DeviceId, string>;
+	reactions: Record<AgentId, string>;
 	editHistory: MessageVersion[];
 }
 
@@ -383,6 +390,8 @@ export type ChatSummaryLastEvent =
 export interface ChatSummary {
 	type: 'GroupChat' | 'DirectChat';
 	chatId: TopicId;
+	/** Whether the direct-chat peer is blocked. Absent for group chats. */
+	blocked?: boolean;
 	unreadMessages: number;
 	name: string;
 	avatar: string | undefined;

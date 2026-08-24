@@ -33,6 +33,7 @@
 		TombstoneStore,
 		seedDemoData,
 		DEMO_IDS,
+		DEMO_CONTACT_DEVICES,
 	} from 'dash-chat-stores';
 	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
@@ -125,6 +126,7 @@
 			DEMO_IDS.MY_DEVICE_ID,
 			DEMO_IDS.DEVICE_GROUP_TOPIC,
 			[DEMO_IDS.INBOX_TOPIC],
+			DEMO_CONTACT_DEVICES,
 		);
 		contactsStore = new ContactsStore(
 			logsStore,
@@ -143,7 +145,6 @@
 			tombstoneStore,
 			mockChatsClient,
 			mockLogsClient,
-			DEMO_IDS.MY_AGENT_ID,
 			DEMO_IDS.DEVICE_GROUP_TOPIC,
 		);
 
