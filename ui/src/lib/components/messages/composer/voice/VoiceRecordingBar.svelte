@@ -33,7 +33,8 @@
 			class="flex flex-1 items-center justify-center gap-1 text-sm"
 			style="opacity: {0.6 * (1 - voice.drag.cancelProgress)}"
 		>
-			<wa-icon class="chevron" src={wrapPathInSvg(mdiChevronLeft)}></wa-icon>
+			<wa-icon class="rtl:-scale-x-100" src={wrapPathInSvg(mdiChevronLeft)}
+			></wa-icon>
 			<span>{m.voiceSlideToCancel()}</span>
 		</div>
 	</div>
@@ -60,12 +61,7 @@
 	</div>
 {:else if voice.view === 'desktop'}
 	<div class="voice-bar voice-bar-flush bg-page-surface">
-		<VoiceDesktopBar
-			elapsedMs={voice.elapsedMs}
-			recordingPath={voice.recordingPath}
-			onCancel={() => void voice.cancel()}
-			onSend={() => voice.stopAndSend()}
-		/>
+		<VoiceDesktopBar {voice} />
 	</div>
 {/if}
 
@@ -93,8 +89,5 @@
 	.voice-bar.voice-bar-flush {
 		border: none;
 		border-radius: 0;
-	}
-	.chevron:dir(rtl) {
-		transform: scaleX(-1);
 	}
 </style>

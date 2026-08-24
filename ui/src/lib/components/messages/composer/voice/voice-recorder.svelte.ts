@@ -74,7 +74,6 @@ export class VoiceRecorder {
 	#startX = 0;
 	#startY = 0;
 	#isRtl = false;
-	#willCancel = false;
 	// The pointer can be released while the native start is still in flight, so
 	// the up/cancel handlers await this before acting on the recorder.
 	#starting: Promise<void> | undefined;
@@ -130,7 +129,6 @@ export class VoiceRecorder {
 		el.setPointerCapture(event.pointerId);
 		this.#startX = event.clientX;
 		this.#startY = event.clientY;
-		this.#willCancel = false;
 		this.locked = false;
 		this.#isRtl = getComputedStyle(el).direction === 'rtl';
 		this.#starting = this.#startRecording(event.pointerType === 'mouse');
@@ -142,7 +140,6 @@ export class VoiceRecorder {
 			? event.clientX - this.#startX
 			: this.#startX - event.clientX;
 		const up = this.#startY - event.clientY;
-		this.#willCancel = inlineTowardStart >= CANCEL_THRESHOLD;
 		this.drag = {
 			cancelProgress: clamp01(inlineTowardStart / CANCEL_THRESHOLD),
 			lockProgress: clamp01(up / LOCK_THRESHOLD),
@@ -154,12 +151,13 @@ export class VoiceRecorder {
 	};
 
 	onPointerUp = async () => {
+		const willCancel = this.drag.cancelProgress >= 1;
 		this.drag = idle;
 		await this.#starting;
 		if (this.phase !== 'recording' || this.locked) return;
-		if (this.#willCancel || this.elapsedMs < MIN_DURATION_MS) {
+		if (willCancel || this.elapsedMs < MIN_DURATION_MS) {
 			await this.cancel();
-			if (!this.#willCancel) showToast(m.voiceRecordHint(), 'default');
+			if (!willCancel) showToast(m.voiceRecordHint(), 'default');
 			return;
 		}
 		await this.stopAndSend();
@@ -173,26 +171,7 @@ export class VoiceRecorder {
 	};
 
 	async #startRecording(handsFree: boolean): Promise<void> {
-		let granted: boolean;
-		try {
-			granted = await this.#start();
-		} catch (e) {
-			console.error('Failed to start voice recording', e);
-			showToast(m.voiceRecordFailed(), 'error');
-			return;
-		}
-		if (!granted) {
-			showToast(m.voiceMicDenied(), 'error');
-			return;
-		}
-		// A mouse can't comfortably press-and-hold, so a click records hands-free.
-		if (handsFree && this.phase === 'recording') this.locked = true;
-	}
-
-	/** Starts a recording. Resolves `false` when the mic permission was denied,
-	 * `true` otherwise (including when a recording is already active). */
-	async #start(): Promise<boolean> {
-		if (this.phase === 'recording' || this.phase === 'requesting') return true;
+		if (this.phase === 'recording' || this.phase === 'requesting') return;
 		this.phase = 'requesting';
 		// The overlay is already up during `requesting`, so clear the prior take's
 		// time before it can render.
@@ -201,7 +180,8 @@ export class VoiceRecorder {
 			const permission = await requestPermission();
 			if (!permission.granted) {
 				this.phase = 'idle';
-				return false;
+				showToast(m.voiceMicDenied(), 'error');
+				return;
 			}
 			// Straight into the cache dir, no subdirectory: that keeps the path
 			// within the granted `scope-appcache`.
@@ -222,14 +202,19 @@ export class VoiceRecorder {
 			this.#startedAt = Date.now();
 			this.phase = 'recording';
 			this.#startTimer();
-			// The plugin appends its own extension, so the file being written is not
-			// the `outputPath` we asked for.
-			const status = await getStatus();
-			this.recordingPath = status.outputPath ?? undefined;
-			return true;
+			if (!isMobile) {
+				// The plugin appends its own extension, so the file being written is
+				// not the `outputPath` we asked for. Mobile never shows levels, so it
+				// skips the lookup.
+				const status = await getStatus();
+				this.recordingPath = status.outputPath ?? undefined;
+			}
+			// A mouse can't comfortably press-and-hold, so a click records hands-free.
+			if (handsFree) this.locked = true;
 		} catch (e) {
 			this.phase = 'idle';
-			throw e;
+			console.error('Failed to start voice recording', e);
+			showToast(m.voiceRecordFailed(), 'error');
 		}
 	}
 

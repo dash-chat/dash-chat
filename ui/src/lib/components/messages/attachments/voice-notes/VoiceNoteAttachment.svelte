@@ -22,11 +22,6 @@
 		() => new VoicePlayer(voice, () => showToast(m.voicePlayFailed(), 'error')),
 	);
 
-	let audioEl: HTMLAudioElement | undefined = $state();
-	$effect(() => {
-		if (audioEl) return player.attach(audioEl);
-	});
-
 	const labelMs = $derived(
 		player.paused && player.currentTime === 0
 			? voice.duration_ms
@@ -35,11 +30,10 @@
 </script>
 
 <div
-	class="flex flex-col gap-1 px-1 py-0.5"
-	style="width: 240px; max-width: 100%"
+	class="flex w-60 max-w-full flex-col gap-1 px-1 py-0.5"
 	data-testid="message-attachment-voice"
 >
-	<audio bind:this={audioEl}></audio>
+	<audio {@attach (el: HTMLAudioElement) => player.attach(el)}></audio>
 
 	<div class="flex items-center gap-3">
 		<VoicePlayButton

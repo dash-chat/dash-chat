@@ -15,6 +15,8 @@
 
 	let { voice }: Props = $props();
 
+	const hold = $derived(voice.view === 'hold');
+
 	onMount(warmUpRecorder);
 
 	// Free the mic if we leave the chat mid-recording.
@@ -26,8 +28,8 @@
 		<SendButton onSend={() => voice.stopAndSend()} testid="voice-send" />
 	</div>
 {:else if voice.view !== 'desktop'}
-	<div class="relative shrink-0 {voice.view === 'hold' ? 'z-30' : ''}">
-		{#if voice.view === 'hold'}
+	<div class="relative shrink-0 {hold ? 'z-30' : ''}">
+		{#if hold}
 			<!-- left-1/2 + translate(-50%) is symmetric centering, so RTL doesn't apply. -->
 			<div
 				class="lock-pill pointer-events-none absolute bottom-full left-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
@@ -46,8 +48,8 @@
 			label={m.voiceRecordHint()}
 			testid="message-input-voice-record"
 			loading={voice.phase === 'requesting' && !isMobile}
-			iconClass={voice.view === 'hold' ? 'text-2xl text-white' : undefined}
-			class="!h-[42px] !w-[42px] shrink-0 touch-none {voice.view === 'hold'
+			iconClass={hold ? 'text-2xl text-white' : undefined}
+			class="!h-[42px] !w-[42px] shrink-0 touch-none {hold
 				? '!bg-red-500 !opacity-100'
 				: ''}"
 			onPointerDown={voice.onPointerDown}

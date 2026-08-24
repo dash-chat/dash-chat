@@ -3,16 +3,15 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { type FileHandle, SeekMode, open } from '@tauri-apps/plugin-fs';
 	import RecordingIndicator from './RecordingIndicator.svelte';
+	import type { VoiceRecorder } from './voice-recorder.svelte';
 
 	interface Props {
-		elapsedMs: number;
-		/** Path of the WAV the recorder is still writing, tailed for live levels. */
-		recordingPath: string | undefined;
-		onCancel: () => void;
-		onSend: () => Promise<boolean>;
+		voice: VoiceRecorder;
 	}
 
-	let { elapsedMs, recordingPath, onCancel, onSend }: Props = $props();
+	let { voice }: Props = $props();
+
+	const sending = $derived(voice.phase === 'encoding');
 
 	// Skip the canonical WAV header to reach the PCM frames.
 	const WAV_HEADER_BYTES = 44;
@@ -29,7 +28,8 @@
 	// the plugin has no metering API and the webview is denied `getUserMedia`, so
 	// the file on disk is the only source. Each tick reads only new frames.
 	$effect(() => {
-		if (!recordingPath) return;
+		const path = voice.recordingPath;
+		if (!path) return;
 		levels = [];
 		let handle: FileHandle | undefined;
 		let offset = WAV_HEADER_BYTES;
@@ -47,7 +47,7 @@
 			}
 		};
 		// Levels are decoration; a recording that can't be tailed still records.
-		const opening = open(recordingPath, { read: true })
+		const opening = open(path, { read: true })
 			.then(h => (handle = h))
 			.catch(() => undefined);
 		const timer = setInterval(() => void sample(), SAMPLE_INTERVAL_MS);
@@ -70,18 +70,6 @@
 		return Math.min(1, Math.sqrt(sum / frames) / FULL_SCALE_RMS);
 	}
 
-	let sending = $state(false);
-
-	async function handleSend() {
-		if (sending) return;
-		sending = true;
-		try {
-			await onSend();
-		} finally {
-			sending = false;
-		}
-	}
-
 	const CAPACITY = 88;
 	const MIN_HEIGHT = 8;
 
@@ -95,13 +83,21 @@
 
 <div class="flex w-full items-center gap-2" data-testid="voice-desktop-bar">
 	<div
-		class="voice-pill flex min-h-[42px] min-w-0 flex-1 items-center gap-3 ps-3 pe-3 bg-white dark:bg-gray-800"
+		class="flex min-h-[42px] min-w-0 flex-1 items-center gap-3 rounded-[22px] border border-[var(--k-hairline-color)] bg-white ps-3 pe-3 dark:bg-gray-800"
 	>
-		<RecordingIndicator {elapsedMs} micSize={18} />
+		<RecordingIndicator elapsedMs={voice.elapsedMs} micSize={18} />
 
-		<div class="wave flex h-7 min-w-0 flex-1 items-center" aria-hidden="true">
+		<!-- Fills from the trailing edge so the first bars appear where the newest
+		     audio is, rather than stretching across an empty track. -->
+		<div
+			class="flex h-7 min-w-0 flex-1 items-center justify-end gap-0.5 overflow-hidden"
+			aria-hidden="true"
+		>
 			{#each heights as height, i (i)}
-				<span style="height: {height}%"></span>
+				<span
+					class="w-0.5 flex-none rounded-full bg-current opacity-50"
+					style="height: {height}%"
+				></span>
 			{/each}
 		</div>
 	</div>
@@ -110,7 +106,7 @@
 		clear
 		rounded
 		inline
-		onClick={onCancel}
+		onClick={() => void voice.cancel()}
 		data-testid="voice-cancel"
 		style="width: auto"
 	>
@@ -120,7 +116,7 @@
 	<Button
 		rounded
 		inline
-		onClick={handleSend}
+		onClick={() => void voice.stopAndSend()}
 		disabled={sending}
 		data-testid="voice-send"
 		style="width: auto"
@@ -132,24 +128,3 @@
 		{/if}
 	</Button>
 </div>
-
-<style>
-	.voice-pill {
-		border: 1px solid var(--k-hairline-color);
-		border-radius: 22px;
-	}
-	/* Fills from the trailing edge so the first bars appear where the newest
-	   audio is, rather than stretching across an empty track. */
-	.wave {
-		justify-content: flex-end;
-		gap: 2px;
-		overflow: hidden;
-	}
-	.wave span {
-		flex: none;
-		width: 2px;
-		border-radius: 9999px;
-		background: currentColor;
-		opacity: 0.5;
-	}
-</style>

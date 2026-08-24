@@ -13,7 +13,7 @@
 </script>
 
 <wa-icon
-	class="rec-mic"
+	class="rec-mic text-red-500"
 	style="width: {micSize}px; height: {micSize}px"
 	src={wrapPathInSvg(mdiMicrophone)}
 ></wa-icon>
@@ -23,7 +23,6 @@
 
 <style>
 	.rec-mic {
-		color: #ef4444;
 		animation: pulse 1.2s ease-in-out infinite;
 	}
 	@keyframes pulse {
