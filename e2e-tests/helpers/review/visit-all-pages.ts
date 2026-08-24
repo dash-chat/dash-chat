@@ -170,6 +170,8 @@ export async function visitOtherPages(
 	pages.push(await runCheck(agent, 'help', co));
 	await breathe();
 
+	await agent.helpPage.tapVersion(7);
+
 	await agent.helpPage.contactUsLink.click();
 	await agent.contactUsPage.ready();
 	pages.push(await runCheck(agent, 'contact-us', co));
@@ -189,6 +191,15 @@ export async function visitOtherPages(
 		await agent.accountPage.back.click();
 		await agent.settingsPage.ready();
 	}
+
+	// Unlocked by the seven taps on the version row above.
+	await agent.settingsPage.developerLink.click();
+	await agent.developerPage.ready();
+	pages.push(await runCheck(agent, 'developer', co));
+	await breathe();
+	// Leaves developer mode locked again so the next visit starts from baseline.
+	await agent.developerPage.disable.click();
+	await agent.settingsPage.ready();
 
 	await agent.settingsPage.back.click();
 	await agent.homePage.ready();

@@ -357,5 +357,9 @@
 	"updateTapToRetry": "Tap to retry.",
 	"testBanner": "Early access test",
 	"feedback": "Feedback",
-	"reportSent": "Report sent. Thank you!"
+	"reportSent": "Report sent. Thank you!",
+	"developer": "Developer",
+	"developerModeEnabled": "Developer mode enabled",
+	"developerModeDisabled": "Developer mode disabled",
+	"disableDeveloperMode": "Disable developer mode"
 }
