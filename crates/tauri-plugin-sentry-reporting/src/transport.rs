@@ -2,9 +2,10 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use sentry::protocol::Envelope;
-use sentry::transports::ReqwestHttpTransportOptions;
 use sentry::{Transport, TransportFactory, TransportOptions};
 
+/// The SDK captures freely; nothing it hands this transport is ever sent. Real
+/// delivery goes through the outbox, which the user's Send button feeds.
 #[derive(Default)]
 pub(crate) struct UserInitiatedTransport {
     pub(crate) inner: OnceLock<Arc<dyn Transport>>,
@@ -35,36 +36,9 @@ impl Transport for UserInitiatedTransport {
 pub(crate) struct UserInitiatedTransportFactory(pub(crate) Arc<UserInitiatedTransport>);
 
 impl TransportFactory for UserInitiatedTransportFactory {
-    fn create_transport_with_options(&self, options: TransportOptions) -> Arc<dyn Transport> {
-        self.0.inner.get_or_init(|| {
-            Arc::new(
-                ReqwestHttpTransportOptions::from(options)
-                    .with_client(webpki_roots_client())
-                    .build(),
-            )
-        });
+    fn create_transport_with_options(&self, _options: TransportOptions) -> Arc<dyn Transport> {
         self.0.clone()
     }
-}
-
-/// Reqwest's default rustls verifier is `rustls-platform-verifier`, which on Android
-/// aborts the process unless its JNI side is initialized; embedded webpki roots need no
-/// platform setup.
-fn webpki_roots_client() -> reqwest::Client {
-    let roots = rustls::RootCertStore {
-        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-    };
-    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
-        rustls::crypto::ring::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .expect("ring provider supports the default protocol versions")
-    .with_root_certificates(roots)
-    .with_no_client_auth();
-    reqwest::Client::builder()
-        .tls_backend_preconfigured(tls)
-        .build()
-        .expect("failed to build the sentry HTTP client")
 }
 
 #[cfg(test)]
@@ -82,35 +56,6 @@ mod tests {
         transport.send_envelope(Event::default().into());
 
         assert!(recorder.sent().is_empty());
-    }
-
-    #[test]
-    fn sending_is_what_transmits() {
-        let (transport, recorder) = recording_transport();
-
-        transport.send(Event::default().into());
-
-        assert_eq!(recorder.sent().len(), 1);
-    }
-
-    #[test]
-    fn closing_drains_a_report_sent_just_before_it() {
-        let (transport, recorder) = recording_transport();
-
-        transport.send(Event::default().into());
-
-        assert!(transport.shutdown(Duration::from_secs(2)));
-        assert!(recorder.drained());
-    }
-
-    #[test]
-    fn flushing_drains_a_report_sent_just_before_it() {
-        let (transport, recorder) = recording_transport();
-
-        transport.send(Event::default().into());
-
-        assert!(transport.flush(Duration::from_secs(2)));
-        assert!(recorder.drained());
     }
 
     #[test]
