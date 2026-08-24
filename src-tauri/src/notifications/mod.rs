@@ -142,17 +142,19 @@ pub async fn build_notification_data(
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
             Some(chat_message_notification(node, topic, sender_device_id, content, id).await)
         }
-        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest {
-            agent_id, profile, ..
-        }) => Some(NotificationData {
-            id,
-            title: Some(sonix_i18n::t!("newContactRequest")),
-            body: Some(profile.name.clone()),
-            icon: Some("ic_stat_icon".to_string()),
-            group: Some(topic.to_hex()),
-            route: Some(format!("/direct-chats/{}", agent_id.to_hex())),
-            ..Default::default()
-        }),
+        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { profile, .. }) => {
+            let chat_topic =
+                Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]);
+            Some(NotificationData {
+                id,
+                title: Some(sonix_i18n::t!("newContactRequest")),
+                body: Some(profile.name.clone()),
+                icon: Some("ic_stat_icon".to_string()),
+                group: Some(topic.to_hex()),
+                route: Some(format!("/direct-chats/{}", chat_topic.to_hex())),
+                ..Default::default()
+            })
+        }
         _ => None,
     }
 }
@@ -183,12 +185,12 @@ async fn chat_message_notification(
         .and_then(|p| p.avatar)
         .filter(|s| s.starts_with("data:image/"));
 
-    let direct_chat_agent_id = sender_agent_id.filter(|_| {
-        *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic
-    });
-    let chat_route = match direct_chat_agent_id {
-        Some(agent_id) => format!("/direct-chats/{}", agent_id),
-        None => format!("/group-chat/{}", topic),
+    let is_direct_chat =
+        *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic;
+    let chat_route = if is_direct_chat {
+        format!("/direct-chats/{}", topic)
+    } else {
+        format!("/group-chat/{}", topic)
     };
 
     let message_text: &str = content.message();
@@ -217,9 +219,10 @@ async fn chat_message_notification(
     // and iOS via `INSendMessageIntent.speakableGroupName`.
     #[cfg(mobile)]
     {
-        let conversation_title = match direct_chat_agent_id {
-            Some(_) => None,
-            None => Some(group_title(node, topic).await),
+        let conversation_title = if is_direct_chat {
+            None
+        } else {
+            Some(group_title(node, topic).await)
         };
         data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
             sender_id: sender_agent_id.map(|agent_id| agent_id.to_hex()),
@@ -315,16 +318,15 @@ async fn auth_control_op_notification(
         // the topic matches the deterministic direct-chat topic with the
         // sender.
         GroupAction::Create { initial_members } => {
-            let is_direct_chat = sender_agent_id
-                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic)
-                .unwrap_or(false);
+            let is_direct_chat =
+                *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)])
+                    == topic;
             if is_direct_chat {
                 let title = match &sender_name {
                     Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
                     None => sonix_i18n::t!("contactRequestAcceptedNoName"),
                 };
-                let route =
-                    sender_agent_id.map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()));
+                let route = Some(format!("/direct-chats/{}", topic.to_hex()));
                 (title, None, route)
             } else {
                 if !initial_members.iter().any(|(m, _)| target_is_me(m)) {

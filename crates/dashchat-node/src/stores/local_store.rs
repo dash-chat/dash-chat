@@ -19,7 +19,7 @@ enum InboxRole {
     /// An inbox we advertise in our QR code and receive contact requests on.
     Advertised = 0,
     /// A private inbox we minted while scanning someone's QR, used only to
-    /// receive their `ContactRequestAck`.
+    /// receive their `ContactRequestAccept`.
     Reply = 1,
 }
 
@@ -178,7 +178,7 @@ impl LocalStore {
     }
 
     /// Reply inbox topics this node created for a specific contact exchange and
-    /// is awaiting a `ContactRequestAck` on. Kept separate from advertised
+    /// is awaiting a `ContactRequestAccept` on. Kept separate from advertised
     /// inboxes so the frontend's contact-request scan only looks at inboxes
     /// meant to receive requests, not our own private reply channels.
     pub async fn get_reply_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {

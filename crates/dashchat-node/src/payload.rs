@@ -43,7 +43,7 @@ pub enum AnnouncementsPayload {
 pub enum InboxPayload {
     /// Invites the recipient to add the sender as a contact. `reply_topic` is a
     /// private inbox the sender created for this exchange; the recipient sends
-    /// its `ContactRequestAck` there rather than on the (possibly shared)
+    /// its `ContactRequestAccept` there rather than on the (possibly shared)
     /// advertised inbox, so other scanners of the same QR code never see it.
     /// `agent_id` is the sender's agent id; the recipient records it against the
     /// op author (device_pubkey)
@@ -175,6 +175,7 @@ pub struct DeleteForMePayload {
 pub enum DeviceGroupPayload {
     AddContact {
         agent_id: AgentId,
+        direct_chat_topic_id: ChatId,
     },
     /// Recorded by the scanner the moment it sends a contact request, before it
     /// knows the owner's agent id (the QR code no longer carries it). Keyed on
@@ -186,6 +187,7 @@ pub enum DeviceGroupPayload {
         device_pubkey: DeviceId,
         #[serde(default)]
         profile_name: String,
+        direct_chat_topic_id: ChatId,
     },
     RejectContactRequest(AgentId),
     BlockAgent(AgentId),

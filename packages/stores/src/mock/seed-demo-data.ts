@@ -1,5 +1,5 @@
 import { personalTopicFor } from '../topics';
-import { LocalStorageLogsClient, hash } from './client';
+import { LocalStorageLogsClient, chatIdForDevices } from './client';
 
 export const DEMO_IDS = {
 	MY_AGENT_ID: 'aa'.repeat(32),
@@ -46,9 +46,10 @@ const EVE = {
 	surname: 'Taylor',
 };
 
-function chatIdFor(agentA: string, agentB: string): string {
-	return hash([agentA, agentB].sort().join(':'));
-}
+/** The device pubkey of each demo identity, for agent → device lookups. */
+export const DEMO_CONTACT_DEVICES: Record<string, string> = Object.fromEntries(
+	[...CONTACTS, EVE].map(contact => [contact.agentId, contact.deviceId]),
+);
 
 /** Seconds-since-epoch timestamps (matching real backend) */
 function minutesAgo(minutes: number): number {
@@ -107,6 +108,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 					type: 'AddContact',
 					payload: {
 						agent_id: contact.agentId,
+						direct_chat_topic_id: chatIdForDevices(
+							DEMO_IDS.MY_DEVICE_ID,
+							contact.deviceId,
+						),
 					},
 				},
 			},
@@ -117,7 +122,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	// 4. Chat messages
 
 	// Alice: conversation with several messages
-	const aliceChatId = chatIdFor(DEMO_IDS.MY_AGENT_ID, CONTACTS[0].agentId);
+	const aliceChatId = chatIdForDevices(
+		DEMO_IDS.MY_DEVICE_ID,
+		CONTACTS[0].deviceId,
+	);
 	const aliceClient = new LocalStorageLogsClient(CONTACTS[0].deviceId);
 
 	aliceClient.createSync(
@@ -172,7 +180,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	);
 
 	// Bob: short conversation
-	const bobChatId = chatIdFor(DEMO_IDS.MY_AGENT_ID, CONTACTS[1].agentId);
+	const bobChatId = chatIdForDevices(
+		DEMO_IDS.MY_DEVICE_ID,
+		CONTACTS[1].deviceId,
+	);
 	const bobClient = new LocalStorageLogsClient(CONTACTS[1].deviceId);
 
 	bobClient.createSync(
@@ -194,7 +205,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	);
 
 	// Carol: single message
-	const carolChatId = chatIdFor(DEMO_IDS.MY_AGENT_ID, CONTACTS[2].agentId);
+	const carolChatId = chatIdForDevices(
+		DEMO_IDS.MY_DEVICE_ID,
+		CONTACTS[2].deviceId,
+	);
 	const carolClient = new LocalStorageLogsClient(CONTACTS[2].deviceId);
 
 	carolClient.createSync(
