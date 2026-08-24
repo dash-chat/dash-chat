@@ -2039,6 +2039,7 @@ dependencies = [
  "async-trait",
  "ciborium",
  "futures",
+ "if-watch",
  "iroh",
  "iroh-blobs",
  "log",
