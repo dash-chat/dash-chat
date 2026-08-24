@@ -249,6 +249,10 @@ export class ContactsStore {
 		return rejected;
 	});
 
+	private directChatId = reactive(async (devicePubkey: DeviceId) =>
+		this.client.directChatId(devicePubkey),
+	);
+
 	contactRequests = reactive(async () => {
 		const activeInboxTopics = await this.activeInboxTopics();
 
@@ -288,9 +292,7 @@ export class ContactsStore {
 						profile,
 						agentId,
 						devicePubkey: operation.header.verifying_key,
-						chatId: await this.client.directChatId(
-							operation.header.verifying_key,
-						),
+						chatId: await this.directChatId(operation.header.verifying_key),
 						topicId,
 						timestamp: operation.header.timestamp,
 					});

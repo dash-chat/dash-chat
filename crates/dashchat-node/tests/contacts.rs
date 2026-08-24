@@ -150,7 +150,7 @@ async fn test_reject_multiple_contact_requests() {
 }
 
 /// Two-way inbox flow: when the scanner sends a contact request, the inbox
-/// owner replies over the same inbox with a `ContactRequestAck` carrying its
+/// owner replies over the same inbox with a `ContactRequestAccept` carrying its
 /// profile, and the scanner receives it on the inbox it scanned.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_inbox_two_way_flow() {
@@ -208,7 +208,7 @@ async fn test_inbox_two_way_flow() {
             Some(profile.clone())
         })
         .await
-        .expect("Bobbi should receive Alice's contact request ack");
+        .expect("Bobbi should receive Alice's contact request acceptance");
 
     assert_eq!(acked_profile.name, "alice");
 }

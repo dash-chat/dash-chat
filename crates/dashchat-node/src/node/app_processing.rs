@@ -593,7 +593,7 @@ impl Node {
                                 tracing::warn!(
                                     ?author,
                                     ?expected,
-                                    "ContactRequestAck author does not match expected; ignoring"
+                                    "ContactRequestAccept author does not match expected; ignoring"
                                 );
                                 return Ok(());
                             }

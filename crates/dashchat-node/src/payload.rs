@@ -43,7 +43,7 @@ pub enum AnnouncementsPayload {
 pub enum InboxPayload {
     /// Invites the recipient to add the sender as a contact. `reply_topic` is a
     /// private inbox the sender created for this exchange; the recipient sends
-    /// its `ContactRequestAck` there rather than on the (possibly shared)
+    /// its `ContactRequestAccept` there rather than on the (possibly shared)
     /// advertised inbox, so other scanners of the same QR code never see it.
     /// `agent_id` is the sender's agent id; the recipient records it against the
     /// op author (device_pubkey)
