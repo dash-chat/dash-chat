@@ -57,6 +57,26 @@ export class ContactsStore {
 
 	myDeviceId = reactive(async () => await this.client.myDeviceId());
 
+	agentForDevice = reactive(
+		async (deviceId: DeviceId): Promise<AgentId | undefined> => {
+			const myDeviceId = await this.myDeviceId();
+			if (deviceId === myDeviceId) return await this.myAgentId();
+			return await this.client.agentForDevice(deviceId);
+		},
+	);
+
+	agentsForDevices = reactive(async (deviceIds: Set<DeviceId>) => {
+		const entries = await Promise.all(
+			Array.from(deviceIds).map(async deviceId => {
+				const agent = await this.agentForDevice(deviceId);
+				return [deviceId, agent] as const;
+			}),
+		);
+		return Object.fromEntries(
+			entries.filter(([, agent]) => agent !== undefined),
+		) as Record<DeviceId, AgentId>;
+	});
+
 	myProfile = reactive(async () => {
 		const myAgentId = await this.myAgentId();
 
@@ -364,6 +384,18 @@ export class ContactsStore {
 
 		const profile: Profile = lastOperation[1];
 		return profile;
+	});
+
+	profilesForAgents = reactive(async (agentIds: Set<AgentId>) => {
+		const entries = await Promise.all(
+			Array.from(agentIds).map(async agentId => {
+				const profile = await this.profiles(agentId);
+				return [agentId, profile] as const;
+			}),
+		);
+		return Object.fromEntries(
+			entries.filter(([, profile]) => profile !== undefined),
+		) as Record<AgentId, Profile>;
 	});
 
 	profilesForUnblockedContacts = reactive(

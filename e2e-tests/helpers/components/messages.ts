@@ -472,6 +472,54 @@ export class Message extends TestHelper {
 		);
 	}
 
+	reactionsSheetOpen(): Promise<boolean> {
+		return this.agent.execute((sheetSel: string) => {
+			const sheet = document
+				.querySelector(sheetSel)
+				?.closest('.k-sheet, .k-dialog');
+			if (!sheet) return false;
+			if (sheet.classList.contains('k-sheet')) {
+				return sheet.classList.contains('-translate-y-full');
+			}
+			return !sheet.classList.contains('opacity-0');
+		}, tid('reactions-sheet'));
+	}
+
+	async openReactionsSheet(emoji: string) {
+		await this.wrapper.$(tid(`reaction-chip-${emoji}`)).click();
+		await this.agent.waitUntil(() => this.reactionsSheetOpen(), {
+			timeoutMsg: `Reactions sheet for message ${this.hash} did not open`,
+		});
+	}
+
+	reactionsSheetShowsReactor(name: string): Promise<boolean> {
+		return this.agent.execute((n: string) => {
+			const rows = document.querySelectorAll('[data-testid^="reaction-row"]');
+			return Array.from(rows).some(row => row.textContent?.includes(n));
+		}, name);
+	}
+
+	async clickReactionsTab(tab: string) {
+		await this.agent.$(tid(`reactions-tab-${tab}`)).click();
+	}
+
+	async removeOwnReaction() {
+		await this.agent.$(tid('reaction-row-own')).click();
+	}
+
+	async closeReactionsSheet() {
+		await this.agent.execute((sheetSel: string) => {
+			const root = document
+				.querySelector(sheetSel)
+				?.closest('.k-sheet, .k-dialog');
+			const backdrop = root?.previousElementSibling;
+			if (backdrop instanceof HTMLElement) backdrop.click();
+		}, tid('reactions-sheet'));
+		await this.agent.waitUntil(async () => !(await this.reactionsSheetOpen()), {
+			timeoutMsg: `Reactions sheet did not close`,
+		});
+	}
+
 	async waitForReaction(emoji: string, timeout = SYNC_TIMEOUT) {
 		await this.agent.waitUntil(() => this.hasReaction(emoji), {
 			timeout,
