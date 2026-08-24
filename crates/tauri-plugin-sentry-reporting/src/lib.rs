@@ -11,6 +11,7 @@ mod envelope;
 mod error;
 mod feedback;
 mod logs;
+mod outbox;
 mod redaction;
 mod state;
 #[cfg(test)]
