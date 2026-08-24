@@ -1,5 +1,7 @@
+import { m } from '$lib/paraglide/messages.js';
 import { isMobile } from '$lib/utils/environment';
 import type { DraftVoiceNote } from '$lib/utils/media';
+import { showToast } from '$lib/utils/toasts';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, remove } from '@tauri-apps/plugin-fs';
 import {
@@ -9,8 +11,6 @@ import {
 	startRecording,
 	stopRecording,
 } from 'tauri-plugin-audio-recorder-api';
-
-import { RecordingLevels } from './recording-levels.svelte';
 
 let warmUpPromise: Promise<unknown> | undefined;
 
@@ -23,12 +23,7 @@ export function warmUpRecorder(): void {
 	warmUpPromise = getDevices().catch(() => {});
 }
 
-type RecorderPhase =
-	| 'idle'
-	| 'requesting'
-	| 'recording'
-	| 'locked'
-	| 'encoding';
+type RecorderPhase = 'idle' | 'requesting' | 'recording' | 'encoding';
 
 const MAX_DURATION_SECONDS = 300;
 
@@ -44,25 +39,161 @@ function mimeTypeFromPath(path: string): string {
 	return MIME_BY_EXTENSION[extension] ?? 'application/octet-stream';
 }
 
-/** Owns the voice-note recording lifecycle and is the only place that touches
- * the audio plugins. */
+interface DragState {
+	cancelProgress: number;
+	lockProgress: number;
+}
+
+/** Pixels the pointer must travel toward the inline-start to cancel. */
+const CANCEL_THRESHOLD = 120;
+/** Pixels the pointer must travel upward to lock hands-free recording. */
+const LOCK_THRESHOLD = 80;
+/** A press shorter than this is treated as a tap, not a recording. */
+const MIN_DURATION_MS = 600;
+
+const idle: DragState = { cancelProgress: 0, lockProgress: 0 };
+
+function clamp01(value: number): number {
+	return Math.max(0, Math.min(1, value));
+}
+
+/** Owns the voice-note recording lifecycle — the press-and-hold gesture, the
+ * recorder plugin calls, and which composer surface the recording UI shows. */
 export class VoiceRecorder {
 	phase = $state<RecorderPhase>('idle');
 	elapsedMs = $state(0);
-	readonly levels = new RecordingLevels();
-	onMaxDuration: (() => void) | undefined;
+	drag: DragState = $state(idle);
+	// A hold-and-release also passes through `encoding`, but must not surface the
+	// locked bar while the WAV encodes — only a genuinely locked take should.
+	locked = $state(false);
+	/** Path of the file the recorder is writing, for live level metering. */
+	recordingPath = $state<string | undefined>();
 
 	#timer: ReturnType<typeof setInterval> | undefined;
 	#startedAt = 0;
+	#startX = 0;
+	#startY = 0;
+	#isRtl = false;
+	#willCancel = false;
+	// The pointer can be released while the native start is still in flight, so
+	// the up/cancel handlers await this before acting on the recorder.
+	#starting: Promise<void> | undefined;
 
-	get isActive(): boolean {
-		return this.phase === 'recording' || this.phase === 'locked';
+	constructor(private onRecorded: (draft: DraftVoiceNote) => void) {}
+
+	/** Which composer surface the recording UI occupies right now. Mobile holds
+	 * show from `requesting` so they appear on press, not after startup; a
+	 * locked take keeps its surface while the recording encodes. */
+	get view(): 'idle' | 'hold' | 'locked' | 'desktop' {
+		const active =
+			this.phase === 'recording' ||
+			(this.phase === 'encoding' && this.locked);
+		if (!isMobile) return active ? 'desktop' : 'idle';
+		if (
+			this.phase === 'requesting' ||
+			(this.phase === 'recording' && !this.locked)
+		)
+			return 'hold';
+		return active ? 'locked' : 'idle';
+	}
+
+	async stopAndSend(): Promise<boolean> {
+		let draft: DraftVoiceNote | undefined;
+		try {
+			draft = await this.#stop();
+		} catch (e) {
+			console.error('Failed to finish voice recording', e);
+			showToast(m.voiceRecordFailed(), 'error');
+			return false;
+		}
+		if (draft) this.onRecorded(draft);
+		return !!draft;
+	}
+
+	async cancel(): Promise<void> {
+		this.#stopTimer();
+		this.recordingPath = undefined;
+		if (this.phase === 'recording') {
+			try {
+				const result = await stopRecording();
+				await cleanup([result.filePath]);
+			} catch {
+				// Not actually recording (e.g. permission was pending).
+			}
+		}
+		this.phase = 'idle';
+		this.elapsedMs = 0;
+	}
+
+	onPointerDown = (event: PointerEvent) => {
+		event.preventDefault();
+		const el = event.currentTarget as HTMLElement;
+		el.setPointerCapture(event.pointerId);
+		this.#startX = event.clientX;
+		this.#startY = event.clientY;
+		this.#willCancel = false;
+		this.locked = false;
+		this.#isRtl = getComputedStyle(el).direction === 'rtl';
+		this.#starting = this.#startRecording(event.pointerType === 'mouse');
+	};
+
+	onPointerMove = (event: PointerEvent) => {
+		if (this.phase !== 'recording' || this.locked) return;
+		const inlineTowardStart = this.#isRtl
+			? event.clientX - this.#startX
+			: this.#startX - event.clientX;
+		const up = this.#startY - event.clientY;
+		this.#willCancel = inlineTowardStart >= CANCEL_THRESHOLD;
+		this.drag = {
+			cancelProgress: clamp01(inlineTowardStart / CANCEL_THRESHOLD),
+			lockProgress: clamp01(up / LOCK_THRESHOLD),
+		};
+		if (up >= LOCK_THRESHOLD) {
+			this.locked = true;
+			this.drag = idle;
+		}
+	};
+
+	onPointerUp = async () => {
+		this.drag = idle;
+		await this.#starting;
+		if (this.phase !== 'recording' || this.locked) return;
+		if (this.#willCancel || this.elapsedMs < MIN_DURATION_MS) {
+			await this.cancel();
+			if (!this.#willCancel) showToast(m.voiceRecordHint(), 'default');
+			return;
+		}
+		await this.stopAndSend();
+	};
+
+	onPointerCancel = async () => {
+		this.drag = idle;
+		await this.#starting;
+		// A locked take is hands-free, so a stray pointercancel must not end it.
+		if (this.phase === 'recording' && !this.locked) await this.cancel();
+	};
+
+	async #startRecording(handsFree: boolean): Promise<void> {
+		let granted: boolean;
+		try {
+			granted = await this.#start();
+		} catch (e) {
+			console.error('Failed to start voice recording', e);
+			showToast(m.voiceRecordFailed(), 'error');
+			return;
+		}
+		if (!granted) {
+			showToast(m.voiceMicDenied(), 'error');
+			return;
+		}
+		// A mouse can't comfortably press-and-hold, so a click records hands-free.
+		if (handsFree && this.phase === 'recording') this.locked = true;
 	}
 
 	/** Starts a recording. Resolves `false` when the mic permission was denied,
 	 * `true` otherwise (including when a recording is already active). */
-	async start(): Promise<boolean> {
-		if (this.isActive || this.phase === 'requesting') return true;
+	async #start(): Promise<boolean> {
+		if (this.phase === 'recording' || this.phase === 'requesting') return true;
 		this.phase = 'requesting';
 		// The overlay is already up during `requesting`, so clear the prior take's
 		// time before it can render.
@@ -96,7 +227,7 @@ export class VoiceRecorder {
 			// The plugin appends its own extension, so the file being written is not
 			// the `outputPath` we asked for.
 			const status = await getStatus();
-			if (status.outputPath) await this.levels.start(status.outputPath);
+			this.recordingPath = status.outputPath ?? undefined;
 			return true;
 		} catch (e) {
 			this.phase = 'idle';
@@ -104,14 +235,10 @@ export class VoiceRecorder {
 		}
 	}
 
-	lock(): void {
-		if (this.phase === 'recording') this.phase = 'locked';
-	}
-
-	async stop(): Promise<DraftVoiceNote | undefined> {
-		if (!this.isActive) return undefined;
+	async #stop(): Promise<DraftVoiceNote | undefined> {
+		if (this.phase !== 'recording') return undefined;
 		this.#stopTimer();
-		await this.levels.stop();
+		this.recordingPath = undefined;
 		this.phase = 'encoding';
 		// Held outside the try so a rejection from `stopRecording()` still runs the
 		// `finally`; otherwise `phase` wedges on 'encoding' and the bar never leaves.
@@ -135,21 +262,6 @@ export class VoiceRecorder {
 		}
 	}
 
-	async cancel(): Promise<void> {
-		this.#stopTimer();
-		await this.levels.stop();
-		if (this.isActive) {
-			try {
-				const result = await stopRecording();
-				await cleanup([result.filePath]);
-			} catch {
-				// Not actually recording (e.g. permission was pending).
-			}
-		}
-		this.phase = 'idle';
-		this.elapsedMs = 0;
-	}
-
 	// A webview reload tears down our JS state without firing onDestroy, leaving
 	// the native recorder running and the next start hitting "Already recording".
 	async #discardOrphanedRecording(): Promise<void> {
@@ -166,7 +278,7 @@ export class VoiceRecorder {
 			this.elapsedMs = Date.now() - this.#startedAt;
 			if (this.elapsedMs >= MAX_DURATION_SECONDS * 1000) {
 				this.#stopTimer();
-				this.onMaxDuration?.();
+				void this.stopAndSend();
 			}
 		}, 100);
 	}

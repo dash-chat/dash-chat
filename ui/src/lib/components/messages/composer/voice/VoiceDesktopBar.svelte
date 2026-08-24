@@ -1,16 +1,74 @@
 <script lang="ts">
 	import { Button, Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { type FileHandle, SeekMode, open } from '@tauri-apps/plugin-fs';
 	import RecordingIndicator from './RecordingIndicator.svelte';
 
 	interface Props {
 		elapsedMs: number;
-		levels: number[];
+		/** Path of the WAV the recorder is still writing, tailed for live levels. */
+		recordingPath: string | undefined;
 		onCancel: () => void;
 		onSend: () => Promise<boolean>;
 	}
 
-	let { elapsedMs, levels, onCancel, onSend }: Props = $props();
+	let { elapsedMs, recordingPath, onCancel, onSend }: Props = $props();
+
+	// Skip the canonical WAV header to reach the PCM frames.
+	const WAV_HEADER_BYTES = 44;
+	const SAMPLE_INTERVAL_MS = 80;
+	// 16 kHz mono PCM16 is 32 kB/s, so one interval plus writer lag fits easily.
+	const READ_CHUNK_BYTES = 16384;
+	// Speech rarely nears full scale, so normalizing against 1.0 would flatten every bar.
+	const FULL_SCALE_RMS = 0.25;
+
+	/** One RMS level per `SAMPLE_INTERVAL_MS`, oldest first. */
+	let levels = $state<number[]>([]);
+
+	// Live input levels read from the partial WAV the recorder is still writing —
+	// the plugin has no metering API and the webview is denied `getUserMedia`, so
+	// the file on disk is the only source. Each tick reads only new frames.
+	$effect(() => {
+		if (!recordingPath) return;
+		levels = [];
+		let handle: FileHandle | undefined;
+		let offset = WAV_HEADER_BYTES;
+		const buffer = new Uint8Array(READ_CHUNK_BYTES);
+		const sample = async () => {
+			if (!handle) return;
+			try {
+				await handle.seek(offset, SeekMode.Start);
+				const read = await handle.read(buffer);
+				if (read === null || read < 2) return;
+				offset += read - (read % 2);
+				levels.push(rms(buffer, read));
+			} catch {
+				// The file is mid-write or already gone; skip this tick.
+			}
+		};
+		// Levels are decoration; a recording that can't be tailed still records.
+		const opening = open(recordingPath, { read: true })
+			.then(h => (handle = h))
+			.catch(() => undefined);
+		const timer = setInterval(() => void sample(), SAMPLE_INTERVAL_MS);
+		return () => {
+			clearInterval(timer);
+			void opening.then(() => handle?.close().catch(() => {}));
+		};
+	});
+
+	/** RMS of little-endian PCM16, normalized to a 0..1 bar height. */
+	function rms(bytes: Uint8Array, length: number): number {
+		const frames = Math.floor(length / 2);
+		if (frames === 0) return 0;
+		const view = new DataView(bytes.buffer, bytes.byteOffset);
+		let sum = 0;
+		for (let i = 0; i < frames; i++) {
+			const normalized = view.getInt16(i * 2, true) / 32768;
+			sum += normalized * normalized;
+		}
+		return Math.min(1, Math.sqrt(sum / frames) / FULL_SCALE_RMS);
+	}
 
 	let sending = $state(false);
 

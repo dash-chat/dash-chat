@@ -7,11 +7,10 @@
 	import { isMobile } from '$lib/utils/environment';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
-	import type { VoiceControl } from './voice-control.svelte';
-	import { warmUpRecorder } from './voice-recorder.svelte';
+	import { type VoiceRecorder, warmUpRecorder } from './voice-recorder.svelte';
 
 	interface Props {
-		voice: VoiceControl;
+		voice: VoiceRecorder;
 	}
 
 	let { voice }: Props = $props();
@@ -46,15 +45,15 @@
 			icon={mdiMicrophone}
 			label={m.voiceRecordHint()}
 			testid="message-input-voice-record"
-			loading={voice.recorder.phase === 'requesting' && !isMobile}
+			loading={voice.phase === 'requesting' && !isMobile}
 			iconClass={voice.view === 'hold' ? 'text-2xl text-white' : 'text-2xl'}
 			class="!h-[42px] !w-[42px] shrink-0 touch-none {voice.view === 'hold'
 				? '!bg-red-500 !opacity-100'
 				: ''}"
-			onpointerdown={voice.onPointerDown}
-			onpointermove={voice.onPointerMove}
-			onpointerup={voice.onPointerUp}
-			onpointercancel={voice.onPointerCancel}
+			onPointerDown={voice.onPointerDown}
+			onPointerMove={voice.onPointerMove}
+			onPointerUp={voice.onPointerUp}
+			onPointerCancel={voice.onPointerCancel}
 		/>
 	</div>
 {/if}

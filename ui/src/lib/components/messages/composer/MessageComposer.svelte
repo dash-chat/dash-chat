@@ -18,7 +18,7 @@
 	} from '$lib/utils/media';
 	import VoiceRecordButton from '$lib/components/messages/composer/voice/VoiceRecordButton.svelte';
 	import VoiceRecordingBar from '$lib/components/messages/composer/voice/VoiceRecordingBar.svelte';
-	import { VoiceControl } from '$lib/components/messages/composer/voice/voice-control.svelte';
+	import { VoiceRecorder } from '$lib/components/messages/composer/voice/voice-recorder.svelte';
 	import {
 		type Hash,
 		type Message,
@@ -249,7 +249,7 @@
 		if (editing) messageInput?.focus();
 	});
 
-	const voice = new VoiceControl(draft => {
+	const voice = new VoiceRecorder(draft => {
 		media = { kind: 'voice_note', voice: draft };
 		void send();
 	});

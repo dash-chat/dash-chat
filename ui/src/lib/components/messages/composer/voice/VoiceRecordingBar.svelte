@@ -4,12 +4,12 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiChevronLeft } from '@mdi/js';
-	import type { VoiceControl } from './voice-control.svelte';
+	import type { VoiceRecorder } from './voice-recorder.svelte';
 	import RecordingIndicator from './RecordingIndicator.svelte';
 	import VoiceDesktopBar from './VoiceDesktopBar.svelte';
 
 	interface Props {
-		voice: VoiceControl;
+		voice: VoiceRecorder;
 	}
 
 	let { voice }: Props = $props();
@@ -27,7 +27,7 @@
 		class="voice-bar has-end-button pointer-events-none gap-2 px-2 text-[var(--k-text-color)] {surfaceClass}"
 		data-testid="voice-recording-overlay"
 	>
-		<RecordingIndicator elapsedMs={voice.recorder.elapsedMs} />
+		<RecordingIndicator elapsedMs={voice.elapsedMs} />
 
 		<div
 			class="flex flex-1 items-center justify-center gap-1 text-sm"
@@ -42,7 +42,7 @@
 		class="voice-bar has-end-button gap-2 ps-3 pe-2 {surfaceClass}"
 		data-testid="voice-locked-bar"
 	>
-		<RecordingIndicator elapsedMs={voice.recorder.elapsedMs} micSize={18} />
+		<RecordingIndicator elapsedMs={voice.elapsedMs} micSize={18} />
 
 		<div class="flex-1"></div>
 
@@ -62,8 +62,8 @@
 {:else if voice.view === 'desktop'}
 	<div class="voice-bar voice-bar-flush bg-page-surface">
 		<VoiceDesktopBar
-			elapsedMs={voice.recorder.elapsedMs}
-			levels={voice.recorder.levels.levels}
+			elapsedMs={voice.elapsedMs}
+			recordingPath={voice.recordingPath}
 			onCancel={() => void voice.cancel()}
 			onSend={() => voice.stopAndSend()}
 		/>

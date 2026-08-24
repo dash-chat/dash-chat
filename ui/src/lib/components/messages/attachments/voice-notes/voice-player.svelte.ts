@@ -16,7 +16,6 @@ export class VoicePlayer {
 	#objectUrl: string | undefined;
 	#loaded = false;
 	#loadPromise: Promise<boolean> | undefined;
-	#rafId: number | undefined;
 	readonly #voice: VoiceNote;
 	readonly #onError: (() => void) | undefined;
 
@@ -39,18 +38,15 @@ export class VoicePlayer {
 			if (playing && playing !== this) playing.#audio?.pause();
 			playing = this;
 			this.paused = false;
-			this.#startTicking();
 		};
 		const onPause = () => {
 			if (playing === this) playing = undefined;
 			this.paused = true;
-			this.#stopTicking();
 			this.#sync();
 		};
 		const onEnded = () => {
 			if (playing === this) playing = undefined;
 			this.paused = true;
-			this.#stopTicking();
 			audio.currentTime = 0;
 			this.#sync();
 		};
@@ -63,7 +59,6 @@ export class VoicePlayer {
 			audio.removeEventListener('pause', onPause);
 			audio.removeEventListener('timeupdate', this.#sync);
 			audio.removeEventListener('ended', onEnded);
-			this.#stopTicking();
 			if (playing === this) playing = undefined;
 			if (this.#objectUrl) URL.revokeObjectURL(this.#objectUrl);
 		};
@@ -151,24 +146,4 @@ export class VoicePlayer {
 	#sync = (): void => {
 		if (this.#audio) this.currentTime = this.#audio.currentTime;
 	};
-
-	// `timeupdate` fires only ~4/sec, so the played region would visibly lag.
-	#tick = (): void => {
-		this.#sync();
-		if (this.#audio && !this.#audio.paused)
-			this.#rafId = requestAnimationFrame(this.#tick);
-		else this.#rafId = undefined;
-	};
-
-	#startTicking(): void {
-		if (this.#rafId === undefined)
-			this.#rafId = requestAnimationFrame(this.#tick);
-	}
-
-	#stopTicking(): void {
-		if (this.#rafId !== undefined) {
-			cancelAnimationFrame(this.#rafId);
-			this.#rafId = undefined;
-		}
-	}
 }

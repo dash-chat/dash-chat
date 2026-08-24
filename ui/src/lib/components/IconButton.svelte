@@ -3,17 +3,9 @@
 	import type { Snippet } from 'svelte';
 	import { Button, Preloader } from 'konsta/svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import type { HTMLButtonAttributes } from 'svelte/elements';
 
-	/** Forwarded so an icon button can drive a press-and-hold gesture. */
-	type PointerProps = Pick<
-		HTMLButtonAttributes,
-		'onpointerdown' | 'onpointermove' | 'onpointerup' | 'onpointercancel'
-	>;
-
-	interface Props extends PointerProps {
+	interface Props {
 		icon?: string;
-		onClick?: (event: MouseEvent & { currentTarget: HTMLElement }) => void;
 		label: string;
 		testid?: string;
 		/** For toggle buttons: announced as aria-expanded. Omit for plain buttons. */
@@ -24,11 +16,21 @@
 		iconClass?: string;
 		class?: string;
 		children?: Snippet;
+
+		onClick?: (event: MouseEvent & { currentTarget: HTMLElement }) => void;
+		onPointerDown?: (event: PointerEvent) => void;
+		onPointerMove?: (event: PointerEvent) => void;
+		onPointerUp?: (event: PointerEvent) => void;
+		onPointerCancel?: (event: PointerEvent) => void;
 	}
 
 	let {
 		icon,
 		onClick,
+		onPointerDown,
+		onPointerMove,
+		onPointerUp,
+		onPointerCancel,
 		label,
 		testid,
 		expanded,
@@ -37,7 +39,6 @@
 		iconClass = 'text-2xl',
 		class: className = '',
 		children,
-		...rest
 	}: Props = $props();
 
 	const filledClass = $derived(
@@ -54,11 +55,9 @@
 
 	// Keeps a press off an ancestor’s own gesture (e.g. a bubble’s long-press).
 	// Svelte delegates pointerdown to the root, so stopping propagation would also
-	// swallow a forwarded `onpointerdown` — hence never for a button that has one.
+	// swallow a forwarded `onPointerDown` — hence never for a button that has one.
 	const stopAncestorPress = $derived(
-		rest.onpointerdown
-			? undefined
-			: (event: PointerEvent) => event.stopPropagation(),
+		onPointerDown ? undefined : (event: PointerEvent) => event.stopPropagation(),
 	);
 </script>
 
@@ -67,7 +66,10 @@
 	inline
 	onClick={click}
 	onpointerdowncapture={stopAncestorPress}
-	{...rest}
+	onpointerdown={onPointerDown}
+	onpointermove={onPointerMove}
+	onpointerup={onPointerUp}
+	onpointercancel={onPointerCancel}
 	aria-label={label}
 	aria-expanded={expanded}
 	data-testid={testid}
