@@ -33,12 +33,9 @@ impl Outbox {
         for state in [State::Held, State::Queued] {
             let _ = std::fs::create_dir_all(entry::state_dir(&outbox.root, state));
         }
-        outbox.migrate_legacy_crash(data_dir);
-        // Enforce retention before restoring in-flight entries: a `.sending`
-        // file's age isn't yet visible to `entry::list`, so a slow send can't
-        // be evicted out from under a process that's still working on it.
-        retention::enforce(&outbox.root);
         entry::sweep(&outbox.root);
+        outbox.migrate_legacy_crash(data_dir);
+        retention::enforce(&outbox.root);
         outbox
     }
 
@@ -103,6 +100,7 @@ mod tests {
     use super::*;
 
     use sentry::protocol::Event;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn envelope(message: &str) -> Envelope {
         Event {
@@ -181,7 +179,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let queued = entry::state_dir(&dir.path().join(DIR_NAME), entry::State::Queued);
         std::fs::create_dir_all(&queued).unwrap();
-        let in_flight = queued.join("0000000000001-abc.envelope.sending");
+        let millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let in_flight = queued.join(format!("{millis:013}-abc.envelope.sending"));
         let file = std::fs::File::create(&in_flight).unwrap();
         envelope("interrupted").to_writer(&file).unwrap();
         drop(file);
