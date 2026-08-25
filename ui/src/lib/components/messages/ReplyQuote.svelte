@@ -50,7 +50,6 @@
 <button
 	type="button"
 	class="reply-quote"
-	class:mine
 	class:cursor-default={scrollTarget === undefined}
 	onclick={navigate}
 	data-testid="reply-quote"
