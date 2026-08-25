@@ -174,7 +174,7 @@
 {#if deleted}
 	<div class="group flex justify-end">{@render bubble()}</div>
 {:else if isMobile}
-	<SwipeToReply {onReply}>{@render row()}</SwipeToReply>
+	<SwipeToReply {onReply} target={messageEl}>{@render row()}</SwipeToReply>
 {:else}
 	{@render row()}
 {/if}

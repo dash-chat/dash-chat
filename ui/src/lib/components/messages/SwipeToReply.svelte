@@ -6,9 +6,14 @@
 
 	let {
 		onReply,
+		target,
 		children,
 	}: {
 		onReply?: () => void;
+		/** The element that slides during the gesture — the bubble plus its
+		 * reactions, excluding static row chrome like the sender avatar. The
+		 * gesture is inert until it is set. */
+		target?: HTMLElement;
 		children: Snippet;
 	} = $props();
 
@@ -44,24 +49,24 @@
 		return dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.5;
 	}
 
-	/** Rests the hint at the bubble's leading edge, vertically centered on the
-	 * bubble, like Signal: the bubble slides away and reveals the icon in the
-	 * space it vacated. */
+	/** Rests the hint at the target's leading edge, vertically centered on it,
+	 * like Signal: the target slides away and reveals the icon in the space it
+	 * vacated. */
 	function placeHint() {
-		if (node === undefined) return;
-		const bubble = node.querySelector('.message') ?? node;
+		if (node === undefined || target === undefined) return;
 		const rowRect = node.getBoundingClientRect();
-		const bubbleRect = bubble.getBoundingClientRect();
+		const targetRect = target.getBoundingClientRect();
 		hintStart =
 			sign === -1
-				? rowRect.right - bubbleRect.right
-				: bubbleRect.left - rowRect.left;
+				? rowRect.right - targetRect.right
+				: targetRect.left - rowRect.left;
 		hintTop =
-			bubbleRect.top - rowRect.top + (bubbleRect.height - HINT_SIZE) / 2;
+			targetRect.top - rowRect.top + (targetRect.height - HINT_SIZE) / 2;
 	}
 
 	function onTouchStart(e: TouchEvent) {
-		if (onReply === undefined || e.touches.length !== 1) return;
+		if (onReply === undefined || target === undefined || e.touches.length !== 1)
+			return;
 		startX = e.touches[0].clientX;
 		startY = e.touches[0].clientY;
 		sign = node && getComputedStyle(node).direction === 'rtl' ? -1 : 1;
@@ -95,7 +100,7 @@
 		if (!tracking) return;
 		const triggered = swiping && dragX >= TRIGGER;
 		tracking = false;
-		// A row released at the origin has nothing to animate, so no
+		// A target released at the origin has nothing to animate, so no
 		// transitionend would ever clear the settling state.
 		settling = swiping && dragX > 0;
 		swiping = false;
@@ -104,8 +109,34 @@
 	}
 
 	function onSettled(e: TransitionEvent) {
-		if (e.target === e.currentTarget) settling = false;
+		if (e.target === target) settling = false;
 	}
+
+	// The slide is styled imperatively: the target lives inside the children
+	// snippet, out of reach of scoped CSS. A resting target carries no
+	// `translate` at all — any transform would make it the containing block for
+	// the `position: fixed` popovers the message mounts, moving the actions
+	// menu off screen.
+	$effect(() => {
+		const el = target;
+		if (el === undefined) return;
+		el.addEventListener('transitionend', onSettled);
+		return () => el.removeEventListener('transitionend', onSettled);
+	});
+
+	$effect(() => {
+		const el = target;
+		if (el === undefined) return;
+		if (moving) {
+			el.style.transition = settling
+				? 'translate 0.25s cubic-bezier(0, 0, 0.2, 1)'
+				: '';
+			el.style.translate = `${offset * sign}px`;
+		} else {
+			el.style.transition = '';
+			el.style.translate = '';
+		}
+	});
 
 	// Svelte's delegated touch handlers are passive, so the drag has to claim the
 	// gesture from the scroller through a listener registered as non-passive.
@@ -144,19 +175,7 @@
 			></wa-icon>
 		</span>
 	{/if}
-	<!-- A resting row carries no `translate` at all: any transform would make it
-	     the containing block for the `position: fixed` popovers the message
-	     mounts, moving the actions menu off screen. -->
-	<div
-		class="swipe-content"
-		class:settling
-		style={moving
-			? `translate: ${offset * sign}px; --swipe-avatar-dx: ${-offset * sign}px`
-			: ''}
-		ontransitionend={onSettled}
-	>
-		{@render children()}
-	</div>
+	{@render children()}
 </div>
 
 <style>
@@ -170,7 +189,7 @@
 	}
 
 	/* Signal's reply affordance: a 38px circular area, glyph centered,
-	   vertically centered on the bubble (top set inline by placeHint). */
+	   vertically centered on the target (top set inline by placeHint). */
 	.swipe-hint {
 		position: absolute;
 		width: 38px;
@@ -201,19 +220,5 @@
 		100% {
 			scale: 1.2;
 		}
-	}
-
-	.swipe-content.settling {
-		transition: translate 0.25s cubic-bezier(0, 0, 0.2, 1);
-	}
-
-	/* The sender avatar stays put during swipe-to-reply: it counter-translates
-	   against the sliding row, so only the bubble moves. */
-	.swipe-content :global(wa-avatar) {
-		translate: var(--swipe-avatar-dx, 0px) 0;
-	}
-
-	.swipe-content.settling :global(wa-avatar) {
-		transition: translate 0.25s cubic-bezier(0, 0, 0.2, 1);
 	}
 </style>
