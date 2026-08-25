@@ -95,7 +95,9 @@
 		if (!tracking) return;
 		const triggered = swiping && dragX >= TRIGGER;
 		tracking = false;
-		settling = swiping;
+		// A row released at the origin has nothing to animate, so no
+		// transitionend would ever clear the settling state.
+		settling = swiping && dragX > 0;
 		swiping = false;
 		dragX = 0;
 		if (triggered) onReply?.();

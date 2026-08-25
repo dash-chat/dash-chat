@@ -71,7 +71,7 @@
 	class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
 	'ios'
 		? 'input-container-border bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-		: 'bg-[#e7ebf3] dark:bg-[#303133]'}"
+		: 'bg-incoming-surface'}"
 	{onpaste}
 >
 	{@render banner?.()}
