@@ -31,6 +31,23 @@ describe('Replying to messages', () => {
 		await reply1.waitForReplyQuote('Shall we meet tomorrow?');
 	});
 
+	// SwipeToReply only renders on mobile, so this case needs a mobile agent.
+	it('replies to a peer message by swiping the row', async function () {
+		if (agent2.platform === 'desktop') this.skip();
+		await agent1.directChatPage.composer.sendMessage('Did you lock up?');
+		const target =
+			await agent2.directChatPage.messages.waitForMessage('Did you lock up?');
+
+		await target.replyBySwipe('Yes, all set');
+
+		const reply2 =
+			await agent2.directChatPage.messages.waitForMessage('Yes, all set');
+		await reply2.waitForReplyQuote('Did you lock up?');
+		const reply1 =
+			await agent1.directChatPage.messages.waitForMessage('Yes, all set');
+		await reply1.waitForReplyQuote('Did you lock up?');
+	});
+
 	// Desktop's hover toolbar offers Reply as a shortcut next to React, on top
 	// of the Reply entry in the ⋯ actions menu (covered above).
 	it('replies from the hover toolbar shortcut', async function () {

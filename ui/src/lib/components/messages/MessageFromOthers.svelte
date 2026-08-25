@@ -22,6 +22,7 @@
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import ReplyQuote from './ReplyQuote.svelte';
+	import SwipeToReply from './SwipeToReply.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -74,6 +75,7 @@
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
+	let slideEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
@@ -134,57 +136,67 @@
 					<div class="shrink-0" style="width: 2rem"></div>
 				{/if}
 			{/if}
-			{#if deleted}
-				<DeletedMessage
-					{message}
-					{position}
-					{myDeviceId}
-					senderName={senderDisplayName}
-				/>
-			{:else}
-				<Card
-					raised
-					contentWrapPadding="p-2"
-					class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-				>
-					<div class="flex flex-col gap-1">
-						{#if message.replyQuote}
-							<ReplyQuote
-								reply={message.replyQuote}
-								authorName={replyAuthorName}
-								{myDeviceId}
-								onNavigate={onNavigateToMessage}
+			<div bind:this={slideEl} class="column min-w-0">
+				{#if deleted}
+					<DeletedMessage
+						{message}
+						{position}
+						{myDeviceId}
+						senderName={senderDisplayName}
+					/>
+				{:else}
+					<Card
+						raised
+						contentWrapPadding="p-2"
+						class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+					>
+						<div class="flex flex-col gap-1">
+							{#if message.replyQuote}
+								<ReplyQuote
+									reply={message.replyQuote}
+									authorName={replyAuthorName}
+									{myDeviceId}
+									onNavigate={onNavigateToMessage}
+								/>
+							{/if}
+							<MessageContent
+								{message}
+								{searchQuery}
+								senderName={senderDisplayName}
+								{showSenderName}
+								metadata={isLast || editHistory.length > 0
+									? metadata
+									: undefined}
 							/>
-						{/if}
-						<MessageContent
-							{message}
-							{searchQuery}
-							senderName={senderDisplayName}
-							{showSenderName}
-							metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+						</div>
+					</Card>
+				{/if}
+				{#if Object.keys(reactions).length > 0}
+					<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
+						<Reactions
+							{reactions}
+							onToggleReaction={emoji => toggleReaction(store, message, emoji)}
+							onSheetOpen={() => (reactionsOpened = false)}
 						/>
 					</div>
-				</Card>
-			{/if}
-		</div>
-		{#if Object.keys(reactions).length > 0}
-			<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
-				<Reactions
-					{reactions}
-					onToggleReaction={emoji => toggleReaction(store, message, emoji)}
-					onSheetOpen={() => (reactionsOpened = false)}
-				/>
+				{/if}
 			</div>
-		{/if}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet row()}
+	<div class="group flex justify-start" use:longpress={{ onLongPress }}>
+		{@render bubble()}
 	</div>
 {/snippet}
 
 {#if deleted}
 	<div class="group flex justify-start">{@render bubble()}</div>
+{:else if isMobile}
+	<SwipeToReply {onReply} target={slideEl}>{@render row()}</SwipeToReply>
 {:else}
-	<div class="group flex justify-start" use:longpress={{ onLongPress }}>
-		{@render bubble()}
-	</div>
+	{@render row()}
 {/if}
 {#if isMobile}
 	<MessageActionsOverlay

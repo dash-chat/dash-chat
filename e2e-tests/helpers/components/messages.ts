@@ -621,6 +621,17 @@ export class Message extends TestHelper {
 		await this.composeReply(replyText);
 	}
 
+	/** Reply by swiping the message row toward the end edge, the gesture mobile
+	 * offers alongside the actions menu. Driven through `window.__test` because
+	 * a drag is not expressible as a click. */
+	async replyBySwipe(replyText: string): Promise<void> {
+		await this.agent.execute(
+			(hash: string) => window.__test.swipeToReply(hash),
+			this.hash,
+		);
+		await this.composeReply(replyText);
+	}
+
 	/** Reply via the hover toolbar's Reply shortcut rather than the actions
 	 * menu. Desktop only — mobile has no hover toolbar. */
 	async replyFromHoverToolbar(replyText: string): Promise<void> {

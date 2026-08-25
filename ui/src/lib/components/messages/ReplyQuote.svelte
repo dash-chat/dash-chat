@@ -2,6 +2,7 @@
 	import type { DeviceId, Hash, MessageReply } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import BlobImage from '$lib/components/BlobImage.svelte';
+	import QuoteFrame from './QuoteFrame.svelte';
 
 	let {
 		reply,
@@ -48,66 +49,57 @@
 
 <button
 	type="button"
-	class="reply-quote {mine ? 'reply-quote-mine' : 'reply-quote-others'}"
+	class="reply-quote"
 	class:cursor-default={scrollTarget === undefined}
 	onclick={navigate}
 	data-testid="reply-quote"
 >
-	<span class="reply-quote-bar"></span>
-	<span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-1.5">
-		{#if reply.kind === 'content'}
-			{#if authorName}
-				<span class="reply-quote-author">{authorName}</span>
-			{/if}
-			<span class="reply-quote-text" data-testid="reply-quote-text">
-				{#if reply.text}
-					{reply.text}
-				{:else if reply.media?.kind === 'photos'}
-					{m.photo()}
-				{:else if reply.media?.kind === 'file'}
-					{reply.media.file.name}
-				{:else if reply.media?.kind === 'voice_note'}
-					{m.voiceMessage()}
+	<QuoteFrame {mine}>
+		<span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-1.5">
+			{#if reply.kind === 'content'}
+				{#if authorName}
+					<span class="reply-quote-author">{authorName}</span>
 				{/if}
-			</span>
-		{:else}
-			<span
-				class="reply-quote-text flex items-center gap-1 italic"
-				data-testid="reply-quote-deleted"
-			>
-				{deletedText}
+				<span class="reply-quote-text" data-testid="reply-quote-text">
+					{#if reply.text}
+						{reply.text}
+					{:else if reply.media?.kind === 'photos'}
+						{m.photo()}
+					{:else if reply.media?.kind === 'file'}
+						{reply.media.file.name}
+					{:else if reply.media?.kind === 'voice_note'}
+						{m.voiceMessage()}
+					{/if}
+				</span>
+			{:else}
+				<span
+					class="reply-quote-text flex items-center gap-1 italic"
+					data-testid="reply-quote-deleted"
+				>
+					{deletedText}
+				</span>
+			{/if}
+		</span>
+		{#if thumbnail}
+			<span class="reply-quote-thumb relative shrink-0">
+				<BlobImage
+					item={thumbnail}
+					alt={m.photo()}
+					imgClass="h-full w-full object-cover"
+				/>
 			</span>
 		{/if}
-	</span>
-	{#if thumbnail}
-		<span class="reply-quote-thumb relative shrink-0">
-			<BlobImage
-				item={thumbnail}
-				alt={m.photo()}
-				imgClass="h-full w-full object-cover"
-			/>
-		</span>
-	{/if}
+	</QuoteFrame>
 </button>
 
 <style>
 	.reply-quote {
 		display: flex;
-		align-items: stretch;
 		width: 100%;
 		min-width: 0;
-		/* A <button>'s intrinsic block size does not follow its flex content, so
-		   the author and text lines get shrunk and clipped without this. */
 		height: fit-content;
-		border-radius: 0.5rem;
-		overflow: hidden;
 		text-align: start;
 		font-size: 0.875rem;
-	}
-
-	.reply-quote-bar {
-		flex-shrink: 0;
-		width: 4px;
 	}
 
 	.reply-quote-author {
@@ -132,28 +124,5 @@
 	.reply-quote-thumb {
 		width: 3rem;
 		min-height: 3rem;
-	}
-
-	/* Inside my (brand-colored) bubble: translucent white over the brand color. */
-	.reply-quote-mine {
-		background-color: rgba(255, 255, 255, 0.18);
-		color: white;
-	}
-	.reply-quote-mine .reply-quote-bar {
-		background-color: rgba(255, 255, 255, 0.85);
-	}
-
-	/* Inside a peer's (surface-colored) bubble: subtle tint + brand accent bar. */
-	.reply-quote-others {
-		background-color: rgba(0, 0, 0, 0.06);
-	}
-	:global(.dark) .reply-quote-others {
-		background-color: rgba(255, 255, 255, 0.08);
-	}
-	.reply-quote-others .reply-quote-bar {
-		background-color: var(--color-brand-primary);
-	}
-	.reply-quote-others .reply-quote-author {
-		color: var(--color-brand-primary);
 	}
 </style>

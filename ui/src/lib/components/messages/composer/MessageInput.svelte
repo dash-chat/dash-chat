@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useTheme } from 'konsta/svelte';
+	import { showKeyboard } from 'tauri-plugin-virtual-keyboard';
 
 	interface Props {
 		value?: string;
@@ -40,6 +41,9 @@
 	/** Focus the input with the cursor at the end, sized to the current text. */
 	export function focus() {
 		textarea.focus();
+		// Android suppresses the IME on programmatic focus outside a tap
+		// gesture (e.g. swipe-to-reply), showing it only after a long delay.
+		showKeyboard();
 		textarea.setSelectionRange(textarea.value.length, textarea.value.length);
 		autoResize();
 	}
@@ -66,8 +70,8 @@
 <div
 	class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
 	'ios'
-		? 'bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-		: 'bg-white dark:bg-gray-800'}"
+		? 'input-container-border bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+		: 'bg-incoming-surface'}"
 	{onpaste}
 >
 	{@render banner?.()}
@@ -94,8 +98,11 @@
 
 <style>
 	.input-container {
-		border: 1px solid var(--k-hairline-color);
 		border-radius: 22px;
+	}
+
+	.input-container-border {
+		border: 1px solid var(--k-hairline-color);
 	}
 
 	.message-textarea {

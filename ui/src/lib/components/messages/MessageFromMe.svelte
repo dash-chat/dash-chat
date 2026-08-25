@@ -20,6 +20,7 @@
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import ReplyQuote from './ReplyQuote.svelte';
+	import SwipeToReply from './SwipeToReply.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { m } from '$lib/paraglide/messages.js';
@@ -164,12 +165,18 @@
 	</div>
 {/snippet}
 
-{#if deleted}
-	<div class="group flex justify-end">{@render bubble()}</div>
-{:else}
+{#snippet row()}
 	<div class="group flex justify-end" use:longpress={{ onLongPress }}>
 		{@render bubble()}
 	</div>
+{/snippet}
+
+{#if deleted}
+	<div class="group flex justify-end">{@render bubble()}</div>
+{:else if isMobile}
+	<SwipeToReply {onReply} target={messageEl}>{@render row()}</SwipeToReply>
+{:else}
+	{@render row()}
 {/if}
 {#if isMobile}
 	<MessageActionsOverlay

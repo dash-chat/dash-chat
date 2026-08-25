@@ -15,7 +15,7 @@ allowBuilds:
   # Builds dist-js via its `prepare` script when installed from the git fork.
   "@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9": true
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d: true
-  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/99be13fce0c81f23b877fee5593a29afe582f569: true
+  tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/01be8b719029c42a2cbb3a9bca8fc50675427d77: true
   appium: true
   sharp: true
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/ce6e762f816bdffeaa0bd56078995bda21cdb68b: true
