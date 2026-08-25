@@ -16,7 +16,6 @@
 	// (TRIGGER_DX = 64dp, icon slide = 10dp).
 	const TRIGGER = 64;
 	const ICON_SLIDE = 10;
-	const AVATAR_SLIDE = 8;
 	const ENGAGE_DISTANCE = 10;
 	// Keep in sync with the .swipe-hint width/height below.
 	const HINT_SIZE = 38;
@@ -150,7 +149,7 @@
 		class="swipe-content"
 		class:settling
 		style={moving
-			? `translate: ${offset * sign}px; --swipe-avatar-dx: ${(progress * AVATAR_SLIDE - offset) * sign}px`
+			? `translate: ${offset * sign}px; --swipe-avatar-dx: ${-offset * sign}px`
 			: ''}
 		ontransitionend={onSettled}
 	>
@@ -206,9 +205,8 @@
 		transition: translate 0.25s cubic-bezier(0, 0, 0.2, 1);
 	}
 
-	/* Signal keeps the sender avatar nearly still during swipe-to-reply: it
-	   counter-translates against the sliding row so its net travel is only
-	   8px at full progress. */
+	/* The sender avatar stays put during swipe-to-reply: it counter-translates
+	   against the sliding row, so only the bubble moves. */
 	.swipe-content :global(wa-avatar) {
 		translate: var(--swipe-avatar-dx, 0px) 0;
 	}
