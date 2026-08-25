@@ -31,7 +31,9 @@ describe('Replying to messages', () => {
 		await reply1.waitForReplyQuote('Shall we meet tomorrow?');
 	});
 
-	it('replies to a peer message by swiping the row', async () => {
+	// SwipeToReply only renders on mobile, so this case needs a mobile agent.
+	it('replies to a peer message by swiping the row', async function () {
+		if (agent2.platform === 'desktop') this.skip();
 		await agent1.directChatPage.composer.sendMessage('Did you lock up?');
 		const target =
 			await agent2.directChatPage.messages.waitForMessage('Did you lock up?');
