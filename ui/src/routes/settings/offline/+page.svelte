@@ -17,22 +17,38 @@
 		Toggle,
 		useTheme,
 	} from 'konsta/svelte';
+	import { isAndroid, isMobile } from '$lib/utils/environment';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
 	const localMailboxEnabled = useReactivePromise(
 		settingsStore.localMailboxEnabled,
 	);
-	let toggling = $state(false);
+	const backgroundModeEnabled = useReactivePromise(
+		settingsStore.backgroundModeEnabled,
+	);
+	let togglingLocalMailbox = $state(false);
+	let togglingBackgroundMode = $state(false);
 
-	async function toggle(currentEnabled: boolean) {
-		toggling = true;
+	async function toggleLocalMailbox(currentEnabled: boolean) {
+		togglingLocalMailbox = true;
 		try {
 			await settingsStore.setLocalMailboxEnabled(!currentEnabled);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		} finally {
-			toggling = false;
+			togglingLocalMailbox = false;
+		}
+	}
+
+	async function toggleBackgroundMode(currentEnabled: boolean) {
+		togglingBackgroundMode = true;
+		try {
+			await settingsStore.setBackgroundModeEnabled(!currentEnabled);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		} finally {
+			togglingBackgroundMode = false;
 		}
 	}
 </script>
@@ -54,26 +70,52 @@
 	</Navbar>
 
 	<div class="column" style="flex: 1">
-		<div class="column center-in-desktop">
-			<BlockTitle>{m.localMessageServer()}</BlockTitle>
-			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-				<ListItem
-					title={m.enableLocalMessageServer()}
-					data-testid="offline-local-mailbox-toggle"
+		{#if !isMobile}
+			<div class="column center-in-desktop">
+				<BlockTitle>{m.localMessageServer()}</BlockTitle>
+				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
+					<ListItem
+						title={m.enableLocalMessageServer()}
+						data-testid="offline-local-mailbox-toggle"
+					>
+						{#snippet after()}
+							{#await $localMailboxEnabled then enabled}
+								<Toggle
+									checked={enabled}
+									disabled={togglingLocalMailbox}
+									onChange={() => toggleLocalMailbox(enabled)}
+								/>
+							{/await}
+						{/snippet}
+					</ListItem>
+				</List>
+				<BlockFooter class="px-4"
+					>{m.localMessageServerDescription()}</BlockFooter
 				>
-					{#snippet after()}
-						{#await $localMailboxEnabled then enabled}
-							<Toggle
-								checked={enabled}
-								disabled={toggling}
-								onChange={() => toggle(enabled)}
-							/>
-						{/await}
-					{/snippet}
-				</ListItem>
-			</List>
-			<BlockFooter class="px-4">{m.localMessageServerDescription()}</BlockFooter
-			>
-		</div>
+			</div>
+		{/if}
+
+		{#if isAndroid}
+			<div class="column center-in-desktop">
+				<BlockTitle>{m.backgroundMode()}</BlockTitle>
+				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
+					<ListItem
+						title={m.startBackgroundMode()}
+						data-testid="offline-background-mode-toggle"
+					>
+						{#snippet after()}
+							{#await $backgroundModeEnabled then enabled}
+								<Toggle
+									checked={enabled}
+									disabled={togglingBackgroundMode}
+									onChange={() => toggleBackgroundMode(enabled)}
+								/>
+							{/await}
+						{/snippet}
+					</ListItem>
+				</List>
+				<BlockFooter class="px-4">{m.backgroundModeDescription()}</BlockFooter>
+			</div>
+		{/if}
 	</div>
 </Page>

@@ -25,7 +25,7 @@
 	} from 'konsta/svelte';
 	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { isMobile } from '$lib/utils/environment';
+	import { isIos } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
 	import Avatar from '../profiles/Avatar.svelte';
 
@@ -151,7 +151,7 @@
 			</ListItem>
 		</List>
 
-		{#if !isMobile}
+		{#if !isIos}
 			<List
 				strongIos
 				nested={theme !== 'ios'}
