@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useTheme } from 'konsta/svelte';
+	import { showKeyboard } from 'tauri-plugin-virtual-keyboard';
 
 	interface Props {
 		value?: string;
@@ -40,6 +41,9 @@
 	/** Focus the input with the cursor at the end, sized to the current text. */
 	export function focus() {
 		textarea.focus();
+		// Android suppresses the IME on programmatic focus outside a tap
+		// gesture (e.g. swipe-to-reply), showing it only after a long delay.
+		showKeyboard();
 		textarea.setSelectionRange(textarea.value.length, textarea.value.length);
 		autoResize();
 	}

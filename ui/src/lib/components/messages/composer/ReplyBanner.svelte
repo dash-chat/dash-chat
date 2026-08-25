@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import { slide } from 'svelte/transition';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiClose } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -39,6 +40,7 @@
 <div
 	class="row items-center px-2 pt-2 text-sm"
 	data-testid="composer-reply-banner"
+	transition:slide={{ duration: 200 }}
 >
 	<QuoteFrame>
 		<span class="row min-w-0 flex-1 items-center gap-2 ps-2 py-1.5">

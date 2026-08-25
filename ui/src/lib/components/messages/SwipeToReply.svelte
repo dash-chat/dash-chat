@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { Snippet } from 'svelte';
-	import { mdiReply } from '@mdi/js';
+	import { mdiReplyOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 
 	let {
@@ -12,31 +12,58 @@
 		children: Snippet;
 	} = $props();
 
-	const THRESHOLD = 64;
+	// Distances mirror Signal Android's ConversationSwipeAnimationHelper
+	// (TRIGGER_DX = 64dp, MAX_DX = 96dp, icon slide = 10dp).
+	const TRIGGER = 64;
+	const MAX_TRAVEL = 64;
+	const ICON_SLIDE = 10;
+	const AVATAR_SLIDE = 8;
 	const ENGAGE_DISTANCE = 10;
 
 	let node = $state<HTMLElement>();
-	let offset = $state(0);
+	let dragX = $state(0);
 	let sign = $state(1);
 	let swiping = $state(false);
 	let settling = $state(false);
+	let bounced = $state(false);
+	let hintStart = $state(0);
 	let startX = 0;
 	let startY = 0;
 	let tracking = false;
 
-	const progress = $derived(Math.min(offset / THRESHOLD, 1));
+	const progress = $derived(Math.min(dragX / TRIGGER, 1));
 	const moving = $derived(swiping || settling);
+	const offset = $derived(travel(dragX));
+	const hintOpacity = $derived(settling || progress <= 0.05 ? 0 : progress);
+	const hintSlide = $derived(settling ? 0 : progress * ICON_SLIDE);
 
-	/** Damps travel past the trigger threshold so the row resists further pull. */
-	function damp(distance: number) {
-		if (distance <= THRESHOLD) return distance;
-		return THRESHOLD + (distance - THRESHOLD) * 0.3;
+	/** Signal's bubble curve: follows the finger up to TRIGGER, decelerates past
+	 * it, and never travels beyond MAX_TRAVEL. */
+	function travel(dx: number) {
+		if (dx <= TRIGGER) return dx;
+		return Math.min(
+			TRIGGER + (dx - TRIGGER) * (TRIGGER / (dx * 2)),
+			MAX_TRAVEL,
+		);
 	}
 
 	/** Whether the gesture so far is a deliberate start-to-end drag rather than
 	 * the beginning of a vertical scroll. */
 	function isReplyDrag(dx: number, dy: number) {
 		return dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.5;
+	}
+
+	/** Rests the hint at the bubble's leading edge, like Signal: the bubble
+	 * slides away and reveals the icon in the space it vacated. */
+	function placeHint() {
+		if (node === undefined) return;
+		const bubble = node.querySelector('.message') ?? node;
+		const rowRect = node.getBoundingClientRect();
+		const bubbleRect = bubble.getBoundingClientRect();
+		hintStart =
+			sign === -1
+				? rowRect.right - bubbleRect.right
+				: bubbleRect.left - rowRect.left;
 	}
 
 	function onTouchStart(e: TouchEvent) {
@@ -46,6 +73,7 @@
 		sign = node && getComputedStyle(node).direction === 'rtl' ? -1 : 1;
 		tracking = true;
 		settling = false;
+		bounced = false;
 	}
 
 	function onTouchMove(e: TouchEvent) {
@@ -58,20 +86,29 @@
 				tracking = false;
 				return;
 			}
+			placeHint();
 			swiping = true;
 		}
 		e.preventDefault();
-		offset = damp(dx);
+		dragX = Math.max(dx, 0);
+		if (!bounced && dragX >= TRIGGER) {
+			bounced = true;
+			navigator.vibrate?.(10);
+		}
 	}
 
 	function onTouchEnd() {
 		if (!tracking) return;
-		const triggered = swiping && offset >= THRESHOLD;
+		const triggered = swiping && dragX >= TRIGGER;
 		tracking = false;
 		settling = swiping;
 		swiping = false;
-		offset = 0;
+		dragX = 0;
 		if (triggered) onReply?.();
+	}
+
+	function onSettled(e: TransitionEvent) {
+		if (e.target === e.currentTarget) settling = false;
 	}
 
 	// Svelte's delegated touch handlers are passive, so the drag has to claim the
@@ -95,16 +132,19 @@
 <div
 	bind:this={node}
 	class="swipe-to-reply"
-	class:swiping
+	class:moving
 	data-testid="swipe-to-reply"
 >
-	{#if swiping}
+	{#if moving}
 		<span
-			class="swipe-hint"
-			style="opacity: {progress}; scale: {0.6 + progress * 0.4}"
+			class="swipe-hint quiet"
+			class:settling
+			class:bounce={bounced}
+			style="inset-inline-start: {hintStart}px; opacity: {hintOpacity}; translate: {hintSlide *
+				sign}px; scale: {1 + 0.2 * progress}"
 			aria-hidden="true"
 		>
-			<wa-icon src={wrapPathInSvg(mdiReply)} style="font-size: 1.1rem"
+			<wa-icon src={wrapPathInSvg(mdiReplyOutline)} style="font-size: 1.25rem"
 			></wa-icon>
 		</span>
 	{/if}
@@ -114,8 +154,10 @@
 	<div
 		class="swipe-content"
 		class:settling
-		style={moving ? `translate: ${offset * sign}px` : ''}
-		ontransitionend={() => (settling = false)}
+		style={moving
+			? `translate: ${offset * sign}px; --swipe-avatar-dx: ${(progress * AVATAR_SLIDE - offset) * sign}px`
+			: ''}
+		ontransitionend={onSettled}
 	>
 		{@render children()}
 	</div>
@@ -125,23 +167,59 @@
 	/* Clipped only while dragging, so the hover toolbar and reaction overlay are
 	   not cut off at rest. `clip` keeps the vertical axis visible; `hidden`
 	   would force it to scroll. */
-	.swipe-to-reply.swiping {
+	.swipe-to-reply.moving {
 		position: relative;
 		overflow-x: clip;
 		overflow-y: visible;
 	}
 
+	/* Signal's reply affordance: a 38px circular area, glyph centered,
+	   bottom-aligned with the bubble. */
 	.swipe-hint {
 		position: absolute;
-		inset-inline-start: 0.75rem;
-		top: 50%;
-		translate: 0 -50%;
+		bottom: 0;
+		width: 38px;
+		height: 38px;
 		display: flex;
+		align-items: center;
+		justify-content: center;
 		pointer-events: none;
-		color: var(--color-brand-primary);
+	}
+
+	.swipe-hint.settling {
+		transition:
+			opacity 0.25s ease-out,
+			translate 0.25s ease-out;
+	}
+
+	.swipe-hint.bounce {
+		animation: reply-bounce 0.2s ease-in-out;
+	}
+
+	@keyframes reply-bounce {
+		0% {
+			scale: 1.2;
+		}
+		50% {
+			scale: 1.8;
+		}
+		100% {
+			scale: 1.2;
+		}
 	}
 
 	.swipe-content.settling {
-		transition: translate 0.18s ease-out;
+		transition: translate 0.25s cubic-bezier(0, 0, 0.2, 1);
+	}
+
+	/* Signal keeps the sender avatar nearly still during swipe-to-reply: it
+	   counter-translates against the sliding row so its net travel is only
+	   8px at full progress. */
+	.swipe-content :global(wa-avatar) {
+		translate: var(--swipe-avatar-dx, 0px) 0;
+	}
+
+	.swipe-content.settling :global(wa-avatar) {
+		transition: translate 0.25s cubic-bezier(0, 0, 0.2, 1);
 	}
 </style>
