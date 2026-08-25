@@ -13,9 +13,8 @@
 	} = $props();
 
 	// Distances mirror Signal Android's ConversationSwipeAnimationHelper
-	// (TRIGGER_DX = 64dp, MAX_DX = 96dp, icon slide = 10dp).
+	// (TRIGGER_DX = 64dp, icon slide = 10dp).
 	const TRIGGER = 64;
-	const MAX_TRAVEL = 64;
 	const ICON_SLIDE = 10;
 	const AVATAR_SLIDE = 8;
 	const ENGAGE_DISTANCE = 10;
@@ -33,19 +32,9 @@
 
 	const progress = $derived(Math.min(dragX / TRIGGER, 1));
 	const moving = $derived(swiping || settling);
-	const offset = $derived(travel(dragX));
+	const offset = $derived(Math.min(dragX, TRIGGER));
 	const hintOpacity = $derived(settling || progress <= 0.05 ? 0 : progress);
 	const hintSlide = $derived(settling ? 0 : progress * ICON_SLIDE);
-
-	/** Signal's bubble curve: follows the finger up to TRIGGER, decelerates past
-	 * it, and never travels beyond MAX_TRAVEL. */
-	function travel(dx: number) {
-		if (dx <= TRIGGER) return dx;
-		return Math.min(
-			TRIGGER + (dx - TRIGGER) * (TRIGGER / (dx * 2)),
-			MAX_TRAVEL,
-		);
-	}
 
 	/** Whether the gesture so far is a deliberate start-to-end drag rather than
 	 * the beginning of a vertical scroll. */
