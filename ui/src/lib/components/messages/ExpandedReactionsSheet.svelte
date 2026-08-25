@@ -1,23 +1,25 @@
 <script lang="ts">
 	import { condenseReactions } from '$lib/utils/emojis';
 	import { Sheet, Block, Button, Chip } from 'konsta/svelte';
-	import { type Message, type DeviceId, hasBody } from 'dash-chat-stores';
+	import { type Message, hasBody } from 'dash-chat-stores';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import EmojiPickerWrapper from './EmojiPickerWrapper.svelte';
+	import { useMyAgentId } from '$lib/stores/my-agent-id';
 
 	interface Props {
 		message: Message;
-		myDeviceId: DeviceId;
 		opened: boolean;
 		onReact: (emoji: string) => void;
 	}
 
-	let { message, myDeviceId, opened, onReact }: Props = $props();
+	let { message, opened, onReact }: Props = $props();
+
+	const myAgentId = useMyAgentId();
 
 	const condensed = $derived(
 		condenseReactions(
 			hasBody(message.content) ? message.content.reactions : {},
-			myDeviceId,
+			myAgentId,
 		),
 	);
 </script>

@@ -90,6 +90,33 @@ function applyAppiumServerEnv() {
 	}
 }
 
+// The nix host-build/runtime vars the flake's hostBuildEnvHook exports (see
+// flake.nix): the linux RUSTFLAGS bake the tauri libraries' rpath into the
+// desktop binary, and the mesa LD_LIBRARY_PATH / LIBGL / EGL vars point its
+// WebKitGTK web process at software rendering off NixOS. In a mixed
+// android+desktop run the user drives the harness from a plain shell (the
+// android capture provides tauri-driver and the rest via PATH), so without
+// these the desktop build links against the nix libraries but bakes no rpath —
+// the binary then fails at launch with "libpango-1.0.so.0: cannot open shared
+// object file". Only fill in vars the outer shell didn't already set, so a run
+// started inside the nix dev shell keeps its own values.
+function applyHostBuildEnv() {
+	const keys = [
+		'CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS',
+		'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS',
+		'LD_LIBRARY_PATH',
+		'LIBGL_ALWAYS_SOFTWARE',
+		'LIBGL_DRIVERS_PATH',
+		'__EGL_VENDOR_LIBRARY_DIRS',
+	];
+	for (const key of keys) {
+		const value = androidEnv[key];
+		if (value !== undefined && process.env[key] === undefined) {
+			process.env[key] = value;
+		}
+	}
+}
+
 /** Make the androidDev shell's tools reachable without wrapping the whole
  *  harness in `nix develop`: capture the shell env once in the launcher and
  *  pass it explicitly to every android command. The capture is pinned to a
@@ -98,6 +125,7 @@ function ensureAndroidEnv() {
 	const pinned = process.env._WDIO_ANDROID_ENV_FILE;
 	if (pinned !== undefined) {
 		androidEnv = JSON.parse(readFileSync(pinned, 'utf8')) as NodeJS.ProcessEnv;
+		applyHostBuildEnv();
 		return;
 	}
 	androidEnv = captureAndroidDevShellEnv();
@@ -105,6 +133,7 @@ function ensureAndroidEnv() {
 	writeFileSync(ANDROID_ENV_FILE, JSON.stringify(androidEnv));
 	process.env._WDIO_ANDROID_ENV_FILE = ANDROID_ENV_FILE;
 	applyAppiumServerEnv();
+	applyHostBuildEnv();
 	if (!androidToolsAvailable(androidEnv)) {
 		throw new Error(
 			'adb or the chromedrivers dir still missing after capturing the androidDev shell env',

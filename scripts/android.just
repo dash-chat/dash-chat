@@ -16,6 +16,11 @@ check TARGET='aarch64-linux-android':
 build TARGETS='aarch64 armv7 i686 x86_64':
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --debug --apk -t {{TARGETS}}"
 
+# build and install a debug build for a connected arm64 device
+build-install:
+    nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --debug --apk -t aarch64"
+    nix develop git+file:.#androidDev --command bash -c "adb install src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
+
 # install a debug build via adb
 install:
     nix develop git+file:.#androidDev --command bash -c "adb install src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk"

@@ -157,9 +157,8 @@
 			<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
 				<Reactions
 					{reactions}
-					{myDeviceId}
-					onToggleReaction={emoji =>
-						toggleReaction(store, message, myDeviceId, emoji)}
+					onToggleReaction={emoji => toggleReaction(store, message, emoji)}
+					onSheetOpen={() => (reactionsOpened = false)}
 				/>
 			</div>
 		{/if}

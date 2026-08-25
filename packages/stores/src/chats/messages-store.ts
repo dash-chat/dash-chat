@@ -3,7 +3,7 @@ import { reactive } from 'signalium';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { DeviceId, Hash } from '../p2panda/types';
+import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
@@ -72,8 +72,24 @@ export class MessagesStore {
 					a.hash.localeCompare(b.hash),
 			);
 		const tombstones = await this.tombstoneStore.tombstones(this.chatId);
-		const messages = logsToMessages(opsOrdered, tombstones);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		const messages = logsToMessages(opsOrdered, tombstones, deviceAgents);
 		return messages;
+	});
+
+	members = reactive(async (): Promise<Array<AgentId>> => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		return Array.from(new Set(Object.values(deviceAgents)));
+	});
+
+	membersProfiles = reactive(async () => {
+		const members = await this.members();
+		return await this.contactsStore.profilesForAgents(new Set(members));
 	});
 
 	lastMessage = reactive(async () => {
@@ -154,6 +170,14 @@ export class MessagesStore {
 		await this.client.sendReaction(this.chatId, reaction);
 	}
 
+	async toggleReaction(message: Message, emoji: string) {
+		if (!hasBody(message.content)) return;
+		const myAgentId = await this.contactsStore.myAgentId();
+		const newEmoji =
+			message.content.reactions[myAgentId] === emoji ? null : emoji;
+		await this.sendReaction({ target: message.hash, emoji: newEmoji });
+	}
+
 	async editMessage(message: Message, newText: string): Promise<Hash> {
 		// Callers hold a snapshot captured when editing began; re-resolve so an
 		// edit that arrived mid-compose is chained from, not forked off.
@@ -187,6 +211,7 @@ export class MessagesStore {
 function logsToMessages(
 	opsOrdered: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,
+	deviceAgents: Record<DeviceId, AgentId>,
 ): Record<Hash, Message> {
 	const messages: Record<Hash, Message | Bodyless> = {};
 	// Map of EditMessage -> the target they reference
@@ -264,15 +289,17 @@ function logsToMessages(
 			};
 		} else if (body.payload.type === 'Reaction') {
 			const { target, emoji } = body.payload.payload;
+			const agent = deviceAgents[author];
 			if (
+				agent !== undefined &&
 				messages[target] &&
 				isMessage(messages[target]) &&
 				hasBody(messages[target].content)
 			) {
 				if (emoji) {
-					messages[target].content.reactions[author] = emoji;
+					messages[target].content.reactions[agent] = emoji;
 				} else {
-					delete messages[target].content.reactions[author];
+					delete messages[target].content.reactions[agent];
 				}
 			}
 		} else if (body.payload.type === 'EditMessage') {

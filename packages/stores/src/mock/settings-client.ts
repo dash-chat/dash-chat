@@ -35,6 +35,7 @@ export class MockSettingsClient implements ISettingsClient {
 		qr_color: null,
 		local_mailbox_enabled: false,
 		notifications_enabled: false,
+		background_mode_enabled: false,
 	};
 
 	private emitter = new Emittery<{ updated: Settings }>();
@@ -55,6 +56,11 @@ export class MockSettingsClient implements ISettingsClient {
 
 	async setNotificationsEnabled(enabled: boolean): Promise<void> {
 		this.settings.notifications_enabled = enabled;
+		this.emitter.emit('updated', { ...this.settings });
+	}
+
+	async setBackgroundModeEnabled(enabled: boolean): Promise<void> {
+		this.settings.background_mode_enabled = enabled;
 		this.emitter.emit('updated', { ...this.settings });
 	}
 
