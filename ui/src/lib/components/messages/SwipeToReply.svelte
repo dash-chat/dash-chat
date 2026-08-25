@@ -18,6 +18,8 @@
 	const ICON_SLIDE = 10;
 	const AVATAR_SLIDE = 8;
 	const ENGAGE_DISTANCE = 10;
+	// Keep in sync with the .swipe-hint width/height below.
+	const HINT_SIZE = 38;
 
 	let node = $state<HTMLElement>();
 	let dragX = $state(0);
@@ -26,6 +28,7 @@
 	let settling = $state(false);
 	let bounced = $state(false);
 	let hintStart = $state(0);
+	let hintTop = $state(0);
 	let startX = 0;
 	let startY = 0;
 	let tracking = false;
@@ -42,8 +45,9 @@
 		return dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.5;
 	}
 
-	/** Rests the hint at the bubble's leading edge, like Signal: the bubble
-	 * slides away and reveals the icon in the space it vacated. */
+	/** Rests the hint at the bubble's leading edge, vertically centered on the
+	 * bubble, like Signal: the bubble slides away and reveals the icon in the
+	 * space it vacated. */
 	function placeHint() {
 		if (node === undefined) return;
 		const bubble = node.querySelector('.message') ?? node;
@@ -53,6 +57,8 @@
 			sign === -1
 				? rowRect.right - bubbleRect.right
 				: bubbleRect.left - rowRect.left;
+		hintTop =
+			bubbleRect.top - rowRect.top + (bubbleRect.height - HINT_SIZE) / 2;
 	}
 
 	function onTouchStart(e: TouchEvent) {
@@ -129,7 +135,7 @@
 			class="swipe-hint quiet"
 			class:settling
 			class:bounce={bounced}
-			style="inset-inline-start: {hintStart}px; opacity: {hintOpacity}; translate: {hintSlide *
+			style="inset-inline-start: {hintStart}px; top: {hintTop}px; opacity: {hintOpacity}; translate: {hintSlide *
 				sign}px; scale: {1 + 0.2 * progress}"
 			aria-hidden="true"
 		>
@@ -163,10 +169,9 @@
 	}
 
 	/* Signal's reply affordance: a 38px circular area, glyph centered,
-	   bottom-aligned with the bubble. */
+	   vertically centered on the bubble (top set inline by placeHint). */
 	.swipe-hint {
 		position: absolute;
-		bottom: 0;
 		width: 38px;
 		height: 38px;
 		display: flex;
