@@ -120,7 +120,9 @@
 				{/if}
 			</span>
 			{#if summary.unreadMessages !== 0}
-				<Badge>{summary.unreadMessages}</Badge>
+				<Badge data-testid="chat-row-unread-badge"
+					>{summary.unreadMessages}</Badge
+				>
 			{/if}
 		</div>
 	{/snippet}

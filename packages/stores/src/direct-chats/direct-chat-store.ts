@@ -162,6 +162,7 @@ export class DirectChatStore {
 		const request = await this.contactRequest();
 		const outgoing = await this.outgoingRequest();
 		const message = await this.messages.lastMessage();
+		const blocked = await this.isBlocked();
 
 		const pendingRequest =
 			contact === undefined ? (request ?? outgoing) : undefined;
@@ -184,13 +185,13 @@ export class DirectChatStore {
 		return {
 			type: 'DirectChat',
 			chatId: this.chatId,
-			blocked: await this.isBlocked(),
+			blocked,
 			name: await this.peerName(),
 			avatar: profile?.avatar,
 			lastEvent,
 			unreadMessages: Math.max(
 				await this.messages.unreadCount(),
-				request !== undefined ? 1 : 0,
+				request !== undefined && !blocked ? 1 : 0,
 			),
 			waitingForProfile: profile === undefined ? true : undefined,
 		};
