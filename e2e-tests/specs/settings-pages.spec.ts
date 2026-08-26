@@ -92,8 +92,8 @@ describe('Settings pages', () => {
 	});
 
 	it('opens the offline page', async () => {
-		// The offline settings page is desktop-only ({#if !isMobile}).
-		if (agent.platform !== 'desktop') {
+		// The offline settings page exists everywhere but iOS ({#if !isIos}).
+		if (agent.platform === 'ios') {
 			await expect(agent.settingsPage.offlineLink).not.toBeDisplayed();
 			return;
 		}

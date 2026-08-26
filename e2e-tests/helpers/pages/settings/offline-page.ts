@@ -12,7 +12,13 @@ export class OfflinePage extends TestHelper {
 	backgroundModeToggleInput = this.el(BACKGROUND_MODE_TOGGLE_INPUT_SELECTOR);
 
 	async ready() {
-		await this.localMailboxToggle.waitForExist();
+		// Desktop shows the local-mailbox toggle, Android only the
+		// background-mode one; wait for whichever this platform renders.
+		await this.agent.waitUntil(
+			async () =>
+				(await this.localMailboxToggle.isExisting()) ||
+				(await this.backgroundModeToggle.isExisting()),
+		);
 	}
 
 	private async toggleChecked(): Promise<boolean> {
