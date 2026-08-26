@@ -6,7 +6,9 @@ pub mod push_notifications;
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
-use dashchat_node::{DeviceId, FakeAgentId, Node, Payload, Topic, TopicId};
+use dashchat_node::{
+    DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic, TopicId,
+};
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
@@ -194,9 +196,16 @@ async fn chat_message_notification(
     };
 
     let message_text: &str = content.message();
-    let body_text = match message_text.char_indices().nth(200) {
-        Some((idx, _)) => format!("{}...", &message_text[..idx]),
-        None => message_text.to_string(),
+    let body_text = if message_text.is_empty() {
+        match content.media() {
+            Some(media) => media_placeholder(media),
+            None => String::new(),
+        }
+    } else {
+        match message_text.char_indices().nth(200) {
+            Some((idx, _)) => format!("{}...", &message_text[..idx]),
+            None => message_text.to_string(),
+        }
     };
 
     #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
@@ -251,6 +260,32 @@ async fn chat_message_notification(
     }
 
     data
+}
+
+/// Signal-style placeholder body for a media message with no caption,
+/// e.g. "📷 Photo", "📎 report.pdf", "🎤 Voice message".
+fn media_placeholder(media: &MediaBundle) -> String {
+    if let Some(MediaMetadata::File { name, .. }) = media
+        .iter()
+        .find(|item| matches!(item, MediaMetadata::File { .. }))
+    {
+        return format!("📎 {name}");
+    }
+    if media
+        .iter()
+        .any(|item| matches!(item, MediaMetadata::VoiceNote { .. }))
+    {
+        return format!("🎤 {}", sonix_i18n::t!("voiceMessage"));
+    }
+    let photos = media
+        .iter()
+        .filter(|item| matches!(item, MediaMetadata::Photo { .. }))
+        .count();
+    match photos {
+        0 => String::new(),
+        1 => format!("📷 {}", sonix_i18n::t!("photo")),
+        n => format!("📷 {}", sonix_i18n::t!("photosCount", { "count": n })),
+    }
 }
 
 /// Resolves the latest group name for `topic_id`, falling back to a localized
