@@ -39,6 +39,7 @@
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import EditingBanner from '$lib/components/messages/composer/EditingBanner.svelte';
+	import ReplyBanner from '$lib/components/messages/composer/ReplyBanner.svelte';
 	import DiscardEditButton from '$lib/components/messages/composer/DiscardEditButton.svelte';
 	import DiscardDraftDialog from '$lib/components/messages/composer/DiscardDraftDialog.svelte';
 
@@ -72,6 +73,10 @@
 	let showMediaPanel = $state(false);
 
 	let editing = $state<Message | null>(null);
+	/** When set, the next send is a reply to this message. */
+	let replying = $state<Message | null>(null);
+	/** Display name of the author being replied to, for the banner. */
+	let replyingToName = $state('');
 	let discardDialog: ReturnType<typeof DiscardDraftDialog> | undefined =
 		$state();
 
@@ -88,6 +93,8 @@
 
 	function startEdit(message: Message) {
 		if (!hasBody(message.content)) return;
+		// Replying and editing are mutually exclusive composer states.
+		replying = null;
 		editing = message;
 		value = message.content.message;
 	}
@@ -122,6 +129,19 @@
 		}
 	}
 
+	/** Stage `message` as the target of the next send. `authorName` is the
+	 * display name shown in the banner. */
+	export function replyToMessage(message: Message, authorName: string) {
+		if (editing) cancelEdit();
+		replying = message;
+		replyingToName = authorName;
+		messageInput?.focus();
+	}
+
+	function cancelReply() {
+		replying = null;
+	}
+
 	function toggleMediaPanel() {
 		if (!showMediaPanel) {
 			showMediaPanel = true;
@@ -148,15 +168,21 @@
 		sending = true;
 		const message = value;
 		const draft = media;
+		const replyTo = replying;
 		try {
 			const wireMedia = draft ? await draftToMedia(draft) : null;
-			const hash = await store.sendMessage({ message, media: wireMedia });
+			const hash = await store.sendMessage({
+				message,
+				media: wireMedia,
+				replyTo,
+			});
 			// Only clear what this send actually consumed: the user may have
 			// typed or staged new attachments while the send was confirming.
 			if (value === message) value = '';
 			if (media === draft) {
 				media = undefined;
 			}
+			if (replying === replyTo) replying = null;
 			messageInput?.reset();
 			onSent?.(hash);
 			return true;
@@ -242,6 +268,16 @@
 	<EditingBanner />
 {/snippet}
 
+{#snippet replyBanner()}
+	{#if replying}
+		<ReplyBanner
+			message={replying}
+			authorName={replyingToName}
+			onCancel={cancelReply}
+		/>
+	{/if}
+{/snippet}
+
 <div style="display: flow-root" use:keepKeyboardOpen>
 	<div
 		class="message-input-bar relative flow-root {theme === 'ios'
@@ -276,7 +312,7 @@
 				onpaste={onPaste}
 				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
-				banner={editing !== null ? editingBanner : undefined}
+				banner={editing !== null ? editingBanner : replyBanner}
 			>
 				{#snippet after()}
 					{#if !editing && isMobile && theme === 'material' && hasContent}

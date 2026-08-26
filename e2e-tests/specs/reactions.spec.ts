@@ -30,7 +30,27 @@ describe('Message reactions', () => {
 		await message2.waitForReaction('👍');
 		await message1.waitForReaction('👍');
 
+		// Tapping the chip opens the who-reacted sheet; it does not remove the
+		// reaction.
+		await message1.openReactionsSheet('👍');
+		await agent1.waitUntil(() => message1.reactionsSheetShowsReactor('Bob'));
+		expect(await message1.hasReaction('👍')).toBe(true);
+
+		// Filtering by the emoji tab keeps the matching reactor visible.
+		await message1.clickReactionsTab('👍');
+		await agent1.waitUntil(() => message1.reactionsSheetShowsReactor('Bob'));
+		await message1.closeReactionsSheet();
+
+		// The reactor sees their own row and removes the reaction from there.
+		await message2.openReactionsSheet('👍');
+		await message2.removeOwnReaction();
+		await message2.waitForNoReaction('👍');
+		await message1.waitForNoReaction('👍');
+
 		// Reacting with the same emoji again removes the reaction.
+		await message2.reactWith('👍');
+		await message2.waitForReaction('👍');
+		await message1.waitForReaction('👍');
 		await message2.reactWith('👍');
 		await message2.waitForNoReaction('👍');
 		await message1.waitForNoReaction('👍');
@@ -60,6 +80,11 @@ describe('Message reactions', () => {
 		await message1.reactWith('❤️');
 		await message1.waitForReaction('❤️');
 		await message2.waitForReaction('❤️');
+
+		// The who-reacted sheet resolves group members' profiles.
+		await message2.openReactionsSheet('❤️');
+		await agent2.waitUntil(() => message2.reactionsSheetShowsReactor('Alice'));
+		await message2.closeReactionsSheet();
 
 		// Reacting with the same emoji again removes it.
 		await message1.reactWith('❤️');

@@ -310,6 +310,15 @@ export class Message extends TestHelper {
 		return this.wrapper.$(tid('message-action-delete'));
 	}
 
+	get replyAction() {
+		return this.wrapper.$(tid('message-action-reply'));
+	}
+
+	/** The reply quote rendered inside this message's bubble. */
+	get replyQuote() {
+		return this.wrapper.$(tid('reply-quote'));
+	}
+
 	/** The deleted-for-everyone placeholder that replaces this message's body. */
 	get deletedPlaceholder() {
 		return this.wrapper.$(tid('message-deleted-placeholder'));
@@ -463,6 +472,54 @@ export class Message extends TestHelper {
 		);
 	}
 
+	reactionsSheetOpen(): Promise<boolean> {
+		return this.agent.execute((sheetSel: string) => {
+			const sheet = document
+				.querySelector(sheetSel)
+				?.closest('.k-sheet, .k-dialog');
+			if (!sheet) return false;
+			if (sheet.classList.contains('k-sheet')) {
+				return sheet.classList.contains('-translate-y-full');
+			}
+			return !sheet.classList.contains('opacity-0');
+		}, tid('reactions-sheet'));
+	}
+
+	async openReactionsSheet(emoji: string) {
+		await this.wrapper.$(tid(`reaction-chip-${emoji}`)).click();
+		await this.agent.waitUntil(() => this.reactionsSheetOpen(), {
+			timeoutMsg: `Reactions sheet for message ${this.hash} did not open`,
+		});
+	}
+
+	reactionsSheetShowsReactor(name: string): Promise<boolean> {
+		return this.agent.execute((n: string) => {
+			const rows = document.querySelectorAll('[data-testid^="reaction-row"]');
+			return Array.from(rows).some(row => row.textContent?.includes(n));
+		}, name);
+	}
+
+	async clickReactionsTab(tab: string) {
+		await this.agent.$(tid(`reactions-tab-${tab}`)).click();
+	}
+
+	async removeOwnReaction() {
+		await this.agent.$(tid('reaction-row-own')).click();
+	}
+
+	async closeReactionsSheet() {
+		await this.agent.execute((sheetSel: string) => {
+			const root = document
+				.querySelector(sheetSel)
+				?.closest('.k-sheet, .k-dialog');
+			const backdrop = root?.previousElementSibling;
+			if (backdrop instanceof HTMLElement) backdrop.click();
+		}, tid('reactions-sheet'));
+		await this.agent.waitUntil(async () => !(await this.reactionsSheetOpen()), {
+			timeoutMsg: `Reactions sheet did not close`,
+		});
+	}
+
 	async waitForReaction(emoji: string, timeout = SYNC_TIMEOUT) {
 		await this.agent.waitUntil(() => this.hasReaction(emoji), {
 			timeout,
@@ -549,6 +606,92 @@ export class Message extends TestHelper {
 		);
 		await this.composer.type(newText);
 		await this.composer.send();
+	}
+
+	/** The hover toolbar's Reply shortcut, which sits alongside React on desktop. */
+	get hoverReplyButton() {
+		return this.wrapper.$(tid('message-hover-reply'));
+	}
+
+	/** Open the actions menu, tap Reply, type `replyText`, and send it. */
+	async reply(replyText: string): Promise<void> {
+		await this.openActions();
+		await this.replyAction.waitForClickable();
+		await this.replyAction.click();
+		await this.composeReply(replyText);
+	}
+
+	/** Reply by swiping the message row toward the end edge, the gesture mobile
+	 * offers alongside the actions menu. Driven through `window.__test` because
+	 * a drag is not expressible as a click. */
+	async replyBySwipe(replyText: string): Promise<void> {
+		await this.agent.execute(
+			(hash: string) => window.__test.swipeToReply(hash),
+			this.hash,
+		);
+		await this.composeReply(replyText);
+	}
+
+	/** Reply via the hover toolbar's Reply shortcut rather than the actions
+	 * menu. Desktop only — mobile has no hover toolbar. */
+	async replyFromHoverToolbar(replyText: string): Promise<void> {
+		await this.clickHoverButton('message-hover-reply');
+		await this.composeReply(replyText);
+	}
+
+	/** Type `replyText` into the composer waiting in its replying state and send. */
+	private async composeReply(replyText: string): Promise<void> {
+		await this.composer.replyBanner.waitForExist();
+		await this.composer.type(replyText);
+		await this.composer.send();
+	}
+
+	/** Trimmed text of this message's reply quote, or null when it has none.
+	 * Read from the DOM rather than with `getText()`: the quote is a clipped
+	 * `<button>`, whose text WebKit's rendered-text algorithm leaves out. */
+	async replyQuoteText(): Promise<string | null> {
+		const text = await this.agent.execute(
+			(wrapperSel: string, quoteSel: string) =>
+				document.querySelector(wrapperSel)?.querySelector(quoteSel)
+					?.textContent ?? null,
+			this.wrapperSelector,
+			tid('reply-quote'),
+		);
+		return text === null ? null : text.trim();
+	}
+
+	/** Wait until this message renders a reply quote containing `quotedText`. */
+	async waitForReplyQuote(
+		quotedText: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				const text = await this.replyQuoteText();
+				return text !== null && text.includes(quotedText);
+			},
+			{ timeout, timeoutMsg: `Reply quote "${quotedText}" not found` },
+		);
+	}
+
+	async clickReplyQuote(): Promise<void> {
+		await this.replyQuote.waitForClickable();
+		await this.replyQuote.click();
+	}
+
+	/** Whether this message's quote shows the deleted-message tombstone. */
+	replyQuoteIsDeleted(): Promise<boolean> {
+		return this.wrapper.$(tid('reply-quote-deleted')).isExisting();
+	}
+
+	/** Whether this message is currently flash-highlighted (the effect applied
+	 * after scrolling to it). */
+	isFlashed(): Promise<boolean> {
+		return this.agent.execute(
+			(wrapperSel: string) =>
+				!!document.querySelector(wrapperSel)?.querySelector('.search-flash'),
+			this.wrapperSelector,
+		);
 	}
 
 	/** Open the actions menu, tap Delete, and confirm "Delete for everyone". */

@@ -9,6 +9,7 @@
 
 	--color-desktop-sidebar-bg: #f5f4f7;
 	--color-desktop-main-bg: #ffffff;
+	--color-incoming-surface: #e7ebf3;
 	--color-page-surface: var(--color-md-light-surface);
 	--background-color: var(--color-md-light-surface);
 
@@ -21,6 +22,10 @@
 	--color-desktop-sidebar-bg: var(--color-md-dark-surface-2);
 	--color-desktop-main-bg: var(--color-md-dark-surface);
 	--color-page-surface: var(--color-md-dark-surface);
+}
+
+.dark {
+	--color-incoming-surface: #303133;
 }
 
 .k-ios {
@@ -232,6 +237,9 @@ li.plain span {
 .outgoing-message.last-message {
 	border-start-end-radius: 4px;
 }
+.incoming-message {
+	background-color: var(--color-incoming-surface);
+}
 .incoming-message.first-message {
 	border-end-start-radius: 4px;
 }
@@ -297,7 +305,7 @@ li.plain span {
 }
 
 .search-flash {
-	animation: search-flash-anim 0.8s ease-out;
+	animation: search-flash-anim 1.5s ease-out;
 }
 
 @keyframes search-flash-anim {

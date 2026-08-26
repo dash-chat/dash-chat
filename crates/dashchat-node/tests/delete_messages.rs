@@ -133,11 +133,11 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 
     // Two media messages, both subsequently text-edited.
     let msg1 = alice
-        .send_message(chat, "first", Some(photo(1)))
+        .send_message(chat, "first", Some(photo(1)), None)
         .await
         .unwrap();
     let msg2 = alice
-        .send_message(chat, "second", Some(photo(2)))
+        .send_message(chat, "second", Some(photo(2)), None)
         .await
         .unwrap();
     let media1 = media_hash_of(&alice, chat, "first").await;
@@ -382,7 +382,7 @@ async fn invalid_deletes_are_rejected() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let msg = alice
         .send_message_raw(chat, "alice's".into())
@@ -469,7 +469,7 @@ async fn mixed_hash_delete_cannot_censor_another_author() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let msg = alice
         .send_message_raw(chat, "alice's".into())
@@ -668,7 +668,7 @@ async fn junk_hash_in_payload_cannot_disable_delete_chain_validation() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let msg = alice
         .send_message_raw(chat, "my password is hunter2".into())

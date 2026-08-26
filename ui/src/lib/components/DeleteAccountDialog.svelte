@@ -2,16 +2,19 @@
 	import { invokeAfterSetup } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
+	import { setAppShuttingDown } from '$lib/utils/shutdown';
 
 	let { opened = $bindable() }: { opened: boolean } = $props();
 
 	async function confirm() {
+		setAppShuttingDown(true);
 		try {
 			// On success the app exits immediately,
 			// so no code after this line executes on the happy path.
 			await invokeAfterSetup('delete_account');
 			return { success: true as const };
 		} catch (e) {
+			setAppShuttingDown(false);
 			console.error(e);
 			return { success: false as const, error: m.errorDeleteAccount() };
 		}

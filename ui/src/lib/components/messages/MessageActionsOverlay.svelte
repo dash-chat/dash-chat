@@ -22,6 +22,7 @@
 		target: HTMLElement | undefined;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		onReply?: () => void;
 	}
 
 	let {
@@ -30,6 +31,7 @@
 		target,
 		myDeviceId,
 		onEdit,
+		onReply,
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
@@ -46,13 +48,18 @@
 	}
 
 	function react(emoji: string) {
-		toggleReaction(store, message, myDeviceId, emoji);
+		toggleReaction(store, message, emoji);
 		close();
 	}
 
 	function edit() {
 		close();
 		onEdit?.();
+	}
+
+	function reply() {
+		close();
+		onReply?.();
 	}
 
 	async function copy() {
@@ -67,7 +74,6 @@
 	{#snippet above()}
 		<QuickReactionBar
 			{message}
-			{myDeviceId}
 			onReact={react}
 			onExpand={() => (expanded = true)}
 		/>
@@ -77,6 +83,7 @@
 			{message}
 			{myDeviceId}
 			onEdit={edit}
+			onReply={onReply ? reply : undefined}
 			onCopy={copy}
 			onDelete={close}
 		/>
@@ -84,10 +91,5 @@
 </SpotlightOverlay>
 
 {#if opened}
-	<ExpandedReactionsSheet
-		{message}
-		{myDeviceId}
-		opened={expanded}
-		onReact={react}
-	/>
+	<ExpandedReactionsSheet {message} opened={expanded} onReact={react} />
 {/if}

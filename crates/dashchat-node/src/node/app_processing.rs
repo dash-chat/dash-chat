@@ -541,9 +541,11 @@ impl Node {
                 }
                 match invitation {
                     InboxPayload::ContactRequest { agent_id, .. } => {
-                        // A request arrived on our advertised inbox. Perform no network
-                        // side-effects (bootstrap registration, topic
-                        // subscriptions) and disclose nothing about us until the
+                        // A request arrived on our advertised inbox. Except for
+                        // subscribing to the shared direct-chat topic (so the
+                        // requester's messages are readable before accepting),
+                        // perform no network side-effects (bootstrap
+                        // registration) and disclose nothing about us until the
                         // user explicitly accepts (see `accept_contact`). This
                         // keeps an unsolicited request — e.g. anyone scanning a
                         // shared QR — from amplifying our resources or handing our
@@ -552,6 +554,10 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
+                            self.register_topic(
+                                self.direct_chat_topic(crate::FakeAgentId::from(author)),
+                            )
+                            .await?;
                             // Mutual add: if we also sent this peer a contact
                             // request, their incoming request is an implicit
                             // acceptance — complete the exchange automatically
@@ -572,7 +578,7 @@ impl Node {
                             }
                         }
                     }
-                    InboxPayload::ContactRequestAck { agent_id, .. } => {
+                    InboxPayload::ContactRequestAccept { agent_id, .. } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
@@ -587,7 +593,7 @@ impl Node {
                                 tracing::warn!(
                                     ?author,
                                     ?expected,
-                                    "ContactRequestAck author does not match expected; ignoring"
+                                    "ContactRequestAccept author does not match expected; ignoring"
                                 );
                                 return Ok(());
                             }
@@ -596,7 +602,10 @@ impl Node {
                             let node = self.clone();
                             let agent_id = *agent_id;
                             tokio::spawn(async move {
-                                if let Err(err) = node.publish_add_contact(agent_id).await {
+                                let topic_id =
+                                    node.direct_chat_topic(crate::FakeAgentId::from(author));
+                                if let Err(err) = node.publish_add_contact(agent_id, topic_id).await
+                                {
                                     tracing::warn!(?err, "failed to record accepted contact");
                                 }
                             });
@@ -606,6 +615,23 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::Message(m)) => {
+                // Mirror the author-side reply validation, but only for
+                // observability: an invalid reply annotation is ignored at
+                // render time (the frontend applies the same rules), while the
+                // message carrying it is still processed and shown.
+                if let Some(target) = m.reply() {
+                    let chat_id = ChatId::from_topic_id(topic)?;
+                    let valid_ops = self.valid_chat_ops(chat_id).await?;
+                    let candidate = crate::chat::ReplyCandidate {
+                        target,
+                        timestamp: operation.processed().header().timestamp.into(),
+                        self_hash: Some(hash),
+                    };
+                    if let Err(err) = candidate.validate(&valid_ops) {
+                        warn!(?err, op = ?hash.aliased(), "message carries an invalid reply annotation");
+                    }
+                }
+
                 if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                     for item in media.iter() {
                         blob_sync

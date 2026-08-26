@@ -3,6 +3,7 @@ import { showToast } from '$lib/utils/toasts';
 import { debug, error, info, warn } from '@tauri-apps/plugin-log';
 
 import { isTauriEnv } from './environment';
+import { isAppShuttingDown } from './shutdown';
 
 let installed = false;
 
@@ -98,7 +99,7 @@ export function reportUncaughtErrors(): void {
 	errorHandlersInstalled = true;
 
 	window.addEventListener('error', event => {
-		if (isIgnoredError(event.message)) return;
+		if (isAppShuttingDown() || isIgnoredError(event.message)) return;
 		const where = event.filename
 			? ` @ ${event.filename}:${event.lineno}:${event.colno}`
 			: '';
@@ -108,6 +109,7 @@ export function reportUncaughtErrors(): void {
 		showToast(m.errorUnexpected(), 'unexpected', event.error);
 	});
 	window.addEventListener('unhandledrejection', event => {
+		if (isAppShuttingDown()) return;
 		console.error(`[unhandledrejection] ${describe(event.reason)}`);
 		showToast(m.errorUnexpected(), 'unexpected', event.reason);
 	});

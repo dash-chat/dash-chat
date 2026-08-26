@@ -27,7 +27,7 @@ async fn media_blob_syncs_between_nodes() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
@@ -39,7 +39,7 @@ async fn media_blob_syncs_between_nodes() {
     };
 
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -114,7 +114,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let chat_topic: TopicId = chat.into();
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
@@ -126,7 +126,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 

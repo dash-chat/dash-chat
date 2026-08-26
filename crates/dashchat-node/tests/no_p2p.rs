@@ -30,7 +30,7 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     // A message sent while the mailbox is present syncs as usual.
     alice.send_message_raw(chat, "before".into()).await.unwrap();
@@ -136,7 +136,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let bobbi_agent_id = bobbi.agent_id();
 
     // Bobbi goes offline before any media exists.
@@ -152,7 +152,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -289,7 +289,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let bobbi_agent_id = bobbi.agent_id();
 
     let bobbi_dir = bobbi.shutdown().await;
@@ -303,7 +303,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 

@@ -146,6 +146,7 @@ mod tests {
                 size: 1024,
                 hash: media_hash,
             }]),
+            None,
         );
         let payload = Payload::Chat(ChatPayload::Message(content));
         let body = payload.try_into_body().unwrap();
@@ -197,7 +198,7 @@ mod tests {
         let alice = TestNode::new(config.clone(), "alice").await;
         let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-        let chat = alice.direct_chat_topic(bobbi.agent_id());
+        let chat = alice.direct_chat_with(&bobbi);
         alice.register_topic(chat).await.unwrap();
 
         alice.send_message_raw(chat, "Hello".into()).await.unwrap();
@@ -240,7 +241,7 @@ mod tests {
         let alice = TestNode::new(config.clone(), "alice").await;
         let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-        let chat_id = alice.direct_chat_topic(bobbi.agent_id());
+        let chat_id = alice.direct_chat_with(&bobbi);
         alice.register_topic(chat_id).await.unwrap();
 
         alice.add_mailbox(&mb).await;

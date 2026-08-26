@@ -52,11 +52,13 @@
 		{
 			text: m.reportAndBlock(),
 			testid: 'report-contact-and-block-confirm',
+			destructive: true,
 			onClick: () => confirm(true),
 		},
 		{
 			text: m.report(),
 			testid: 'report-contact-confirm',
+			destructive: true,
 			onClick: () => confirm(false),
 		},
 	]}

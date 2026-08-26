@@ -1,7 +1,11 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiDotsHorizontal, mdiHeartPlusOutline } from '@mdi/js';
+	import {
+		mdiDotsHorizontal,
+		mdiHeartPlusOutline,
+		mdiReplyOutline,
+	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { Popover } from 'konsta/svelte';
 	import { getContext } from 'svelte';
@@ -23,11 +27,18 @@
 		message: Message;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		onReply?: () => void;
 		/** Flip the visual order so the ⋯ button sits away from the bubble. */
 		reverse?: boolean;
 	}
 
-	let { message, myDeviceId, onEdit, reverse = false }: Props = $props();
+	let {
+		message,
+		myDeviceId,
+		onEdit,
+		onReply,
+		reverse = false,
+	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
 
@@ -64,13 +75,18 @@
 	}
 
 	function react(emoji: string) {
-		toggleReaction(store, message, myDeviceId, emoji);
+		toggleReaction(store, message, emoji);
 		close();
 	}
 
 	function edit() {
 		close();
 		onEdit?.();
+	}
+
+	function reply() {
+		close();
+		onReply?.();
 	}
 
 	async function copy() {
@@ -110,6 +126,16 @@
 				></wa-icon>
 			</IconButton>
 		</span>
+		{#if onReply}
+			<IconButton
+				onClick={reply}
+				label={m.reply()}
+				testid="message-hover-reply"
+				class="!h-9 !w-9"
+			>
+				<wa-icon class="text-xl" src={wrapPathInSvg(mdiReplyOutline)}></wa-icon>
+			</IconButton>
+		{/if}
 		<span bind:this={menuEl}>
 			<IconButton
 				onClick={() => (open = 'menu')}
@@ -138,7 +164,6 @@
 	>
 		<QuickReactionBar
 			{message}
-			{myDeviceId}
 			onReact={react}
 			onExpand={() => (expanded = true)}
 		/>
@@ -154,6 +179,7 @@
 			{message}
 			{myDeviceId}
 			onEdit={edit}
+			onReply={onReply ? reply : undefined}
 			onCopy={copy}
 			onDelete={close}
 		/>
@@ -161,10 +187,5 @@
 </div>
 
 {#if open !== null}
-	<ExpandedReactionsSheet
-		{message}
-		{myDeviceId}
-		opened={expanded}
-		onReact={react}
-	/>
+	<ExpandedReactionsSheet {message} opened={expanded} onReact={react} />
 {/if}

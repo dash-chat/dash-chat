@@ -3,6 +3,7 @@
 	import {
 		type ChatId,
 		type DeviceId,
+		type Hash,
 		type MailboxTrackerStore,
 		type Message,
 		type MessagesStore,
@@ -18,6 +19,8 @@
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
+	import ReplyQuote from './ReplyQuote.svelte';
+	import SwipeToReply from './SwipeToReply.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { m } from '$lib/paraglide/messages.js';
@@ -33,6 +36,9 @@
 		searchQuery,
 		chatId,
 		onEdit,
+		onReply,
+		replyAuthorName,
+		onNavigateToMessage,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -40,6 +46,10 @@
 		chatId: ChatId;
 		searchQuery: string;
 		onEdit?: () => void;
+		onReply?: () => void;
+		/** Display name of the author quoted by this message's reply. */
+		replyAuthorName?: string;
+		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
@@ -108,7 +118,7 @@
 {#snippet bubble()}
 	<div bind:this={messageEl} class="relative max-w-[85%]">
 		{#if !isMobile && hasBody(message.content)}
-			<MessageHoverToolbar {message} {myDeviceId} {onEdit} reverse />
+			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onReply} reverse />
 		{/if}
 		{#if deleted}
 			<DeletedMessage {message} {position} {myDeviceId} />
@@ -124,39 +134,56 @@
 				}}
 				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 			>
-				<MessageContent
-					{message}
-					{searchQuery}
-					senderName={m.you()}
-					metadata={isLast || editHistory.length > 0 ? metadata : undefined}
-				/>
+				<div class="flex flex-col gap-1">
+					{#if message.replyQuote}
+						<ReplyQuote
+							reply={message.replyQuote}
+							authorName={replyAuthorName}
+							{myDeviceId}
+							mine
+							onNavigate={onNavigateToMessage}
+						/>
+					{/if}
+					<MessageContent
+						{message}
+						{searchQuery}
+						senderName={m.you()}
+						metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+					/>
+				</div>
 			</Card>
 		{/if}
 		{#if Object.keys(reactions).length > 0}
 			<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
 				<Reactions
 					{reactions}
-					{myDeviceId}
-					onToggleReaction={emoji =>
-						toggleReaction(store, message, myDeviceId, emoji)}
+					onToggleReaction={emoji => toggleReaction(store, message, emoji)}
+					onSheetOpen={() => (reactionsOpened = false)}
 				/>
 			</div>
 		{/if}
 	</div>
 {/snippet}
 
-{#if deleted}
-	<div class="group flex justify-end">{@render bubble()}</div>
-{:else}
+{#snippet row()}
 	<div class="group flex justify-end" use:longpress={{ onLongPress }}>
 		{@render bubble()}
 	</div>
+{/snippet}
+
+{#if deleted}
+	<div class="group flex justify-end">{@render bubble()}</div>
+{:else if isMobile}
+	<SwipeToReply {onReply} target={messageEl}>{@render row()}</SwipeToReply>
+{:else}
+	{@render row()}
 {/if}
 {#if isMobile}
 	<MessageActionsOverlay
 		{message}
 		{myDeviceId}
 		{onEdit}
+		{onReply}
 		bind:opened={reactionsOpened}
 		target={messageEl}
 	/>
@@ -165,6 +192,7 @@
 		{message}
 		{myDeviceId}
 		{onEdit}
+		{onReply}
 		bind:point={contextMenuPoint}
 	/>
 {/if}

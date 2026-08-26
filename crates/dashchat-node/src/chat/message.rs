@@ -1,29 +1,17 @@
-use dashchat_compat::{Compat, VersionConvert, VersionConvertError};
-use derive_more::derive::{Deref, From};
 use p2panda::Hash;
 use serde::{Deserialize, Serialize};
-
-use crate::compat::Capabilities;
-
-#[derive(
-    Clone, Debug, PartialEq, Eq, Serialize, Deserialize, derive_more::From, derive_more::Deref,
-)]
-pub struct ChatMessageContentV0(String);
-
-/// Placeholder for future message versions.
-//
-// TODO: macro to ensure proper tagging
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "v")]
-pub enum ChatMessageContentV {
-    #[serde(rename = "1")]
-    V1(ChatMessageContentV1),
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChatMessageContentV1 {
     pub message: String,
     pub media: Option<MediaBundle>,
+    /// Hash of the operation this message replies to: a `Message` or
+    /// `EditMessage` in the same topic (any author's log). When the target has
+    /// been edited, an honest node replies to the latest edit it knows of.
+    /// Absent on the wire for non-replies, so old clients keep decoding V1
+    /// messages unchanged (and silently drop the reply on newer ones).
+    #[serde(default)]
+    pub reply: Option<Hash>,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
@@ -176,90 +164,45 @@ mod hash_bytes {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Deref, From)]
-pub struct ChatMessageContent(dashchat_compat::Compat<ChatMessageContentV0, ChatMessageContentV>);
+pub type ChatMessageContent = ChatMessageContentV1;
 
 impl ChatMessageContent {
-    pub fn new(message: impl Into<String>, media: Option<MediaBundle>) -> Self {
-        Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
-            ChatMessageContentV1 {
-                message: message.into(),
-                media,
-            },
-        )))
+    pub fn new(
+        message: impl Into<String>,
+        media: Option<MediaBundle>,
+        reply: Option<Hash>,
+    ) -> Self {
+        ChatMessageContentV1 {
+            message: message.into(),
+            media,
+            reply,
+        }
     }
 
     pub fn text_only(message: impl Into<String>) -> Self {
-        Self(dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(
-            ChatMessageContentV1 {
-                message: message.into(),
-                media: None,
-            },
-        )))
+        ChatMessageContentV1 {
+            message: message.into(),
+            media: None,
+            reply: None,
+        }
     }
 
     pub fn message(&self) -> &str {
-        match &self.0 {
-            dashchat_compat::Compat::Unversioned(v0) => &v0.0,
-            dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => &v1.message,
-        }
+        &self.message
     }
 
     pub fn media(&self) -> Option<&MediaBundle> {
-        match &self.0 {
-            dashchat_compat::Compat::Unversioned(_) => None,
-            dashchat_compat::Compat::Versioned(ChatMessageContentV::V1(v1)) => v1.media.as_ref(),
-        }
+        self.media.as_ref()
     }
 
-    #[cfg(any(test, feature = "testing"))]
-    pub fn unversioned(message: impl Into<String>) -> Self {
-        Self(dashchat_compat::Compat::Unversioned(ChatMessageContentV0(
-            message.into(),
-        )))
+    pub fn reply(&self) -> Option<Hash> {
+        self.reply
     }
 }
 
 impl From<&str> for ChatMessageContent {
     fn from(value: &str) -> Self {
         ChatMessageContent::text_only(value)
-    }
-}
-
-impl PartialOrd for ChatMessageContent {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (self.message(), self.media()).partial_cmp(&(other.message(), other.media()))
-    }
-}
-
-impl VersionConvert for ChatMessageContent {
-    type Capabilities = Capabilities;
-
-    // TODO: just take Capabilities?
-    fn to_version(&self, target: &Capabilities) -> Result<Self, VersionConvertError> {
-        match (&**self, target.messaging) {
-            (Compat::Unversioned(_), 0) => Ok(self.clone()),
-
-            (Compat::Versioned(ChatMessageContentV::V1(v1)), 0) => {
-                if v1.media.is_some() {
-                    Err(VersionConvertError::Lossy)
-                } else {
-                    Ok(Compat::Unversioned(ChatMessageContentV0(v1.message.clone())).into())
-                }
-            }
-
-            (Compat::Unversioned(v0), 1) => Ok(Compat::Versioned(ChatMessageContentV::V1(
-                ChatMessageContentV1 {
-                    message: v0.0.clone(),
-                    media: None,
-                },
-            ))
-            .into()),
-
-            (Compat::Versioned(ChatMessageContentV::V1(_)), 1) => Ok(self.clone()),
-
-            _ => Err(VersionConvertError::UnknownVersion),
-        }
     }
 }
 
@@ -315,5 +258,27 @@ pub mod testing {
                     .then(self.content.partial_cmp(&other.content)?),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use p2panda_core::cbor::{decode_cbor, encode_cbor};
+
+    use super::*;
+
+    #[test]
+    fn chat_message_v1_reply_roundtrip() {
+        let target = Hash::from_bytes([7; 32]);
+        let v1 = ChatMessageContent::new("hello", None, Some(target));
+        let bytes = encode_cbor(&v1).unwrap();
+        let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded, v1);
+        assert_eq!(decoded.reply(), Some(target));
+
+        // The frontend reads the reply hash from JSON, where it must be a hex
+        // string (matching the `Hash` TS type), not a byte array.
+        let json = serde_json::to_value(&v1).unwrap();
+        assert_eq!(json["reply"], serde_json::json!(target.to_hex()));
     }
 }

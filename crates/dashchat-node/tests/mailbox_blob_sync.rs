@@ -95,7 +95,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let bobbi_agent_id = bobbi.agent_id();
 
     // Bobbi goes offline before any media exists.
@@ -113,7 +113,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -299,7 +299,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     bobbi.shutdown().await;
 
@@ -314,7 +314,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 

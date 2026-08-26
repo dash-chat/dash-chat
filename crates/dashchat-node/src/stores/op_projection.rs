@@ -255,7 +255,10 @@ impl OpProjection {
     /// Every tombstone in `topic`, paired with its reason. The frontend uses
     /// this to drop delete-for-me messages (and their edits) from view while
     /// keeping the delete-for-everyone placeholders.
-    pub async fn tombstones(&self, topic: TopicId) -> anyhow::Result<Vec<(Hash, TombstoneReason)>> {
+    pub async fn tombstones(
+        &self,
+        topic: TopicId,
+    ) -> anyhow::Result<HashMap<Hash, TombstoneReason>> {
         let rows: Vec<(Vec<u8>, String)> =
             sqlx::query_as("SELECT op_hash, reason FROM tombstones WHERE topic_id = ?")
                 .bind(topic.as_bytes().to_vec())
@@ -341,7 +344,7 @@ impl OpProjection {
             }
 
             Payload::DeviceGroup(p) => match p {
-                DeviceGroupPayload::AddContact { agent_id } => {
+                DeviceGroupPayload::AddContact { agent_id, .. } => {
                     self.save_agent_mapping(author, *agent_id).await?;
                     None
                 }
@@ -354,11 +357,12 @@ impl OpProjection {
                     None
                 }
                 DeviceGroupPayload::DeleteForMe(delete) => {
-                    self.tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
+                    let hashes = self
+                        .tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
                         .await?;
                     Some(SystemNotification::Tombstones {
                         topic: delete.chat_id.into(),
-                        hashes: BTreeSet::from_iter([delete.message_hash]),
+                        hashes,
                         reason: TombstoneReason::DeletedForMe,
                     })
                 }
@@ -370,7 +374,7 @@ impl OpProjection {
             Payload::Inbox(InboxPayload::ContactRequest {
                 agent_id, profile, ..
             })
-            | Payload::Inbox(InboxPayload::ContactRequestAck { agent_id, profile }) => {
+            | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
                 None
@@ -568,21 +572,23 @@ impl OpProjection {
     }
 
     /// Tombstone `root` and its entire current edit chain in `chat_id` with
-    /// [`TombstoneReason::DeletedForMe`].
+    /// [`TombstoneReason::DeletedForMe`], returning the hashes tombstoned so
+    /// callers can notify the frontend of all of them (not just `root`).
     async fn tombstone_message_for_me(
         &self,
         chat_id: ChatId,
         root: Hash,
         node: BadUseOfNode,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<BTreeSet<Hash>> {
         let chat_topic: TopicId = chat_id.into();
         let valid_ops = node.valid_chat_ops(chat_id).await?;
 
-        for hash in forward_edit_closure(&valid_ops, root) {
-            self.add_tombstone(chat_topic, hash, TombstoneReason::DeletedForMe)
+        let hashes = forward_edit_closure(&valid_ops, root);
+        for hash in &hashes {
+            self.add_tombstone(chat_topic, *hash, TombstoneReason::DeletedForMe)
                 .await?;
         }
-        Ok(())
+        Ok(hashes)
     }
 
     /// Record an operation hash in the per-topic tombstone set with the reason

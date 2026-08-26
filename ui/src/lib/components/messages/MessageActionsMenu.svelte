@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiContentCopy, mdiDeleteOutline, mdiPencilOutline } from '@mdi/js';
+	import {
+		mdiContentCopy,
+		mdiDeleteOutline,
+		mdiPencilOutline,
+		mdiReply,
+	} from '@mdi/js';
 	import { List } from 'konsta/svelte';
 	import type { DeviceId, Message } from 'dash-chat-stores';
 	import { canEditMessage } from './message-helpers';
@@ -11,6 +16,8 @@
 		message: Message;
 		myDeviceId: DeviceId;
 		onEdit?: () => void;
+		/** Start composing a reply to this message. */
+		onReply?: () => void;
 		onCopy: () => void;
 		/** Called when the delete action is pressed, before the confirm dialog
 		 * opens — the hosting popover/overlay closes itself here. */
@@ -25,6 +32,7 @@
 		message,
 		myDeviceId,
 		onEdit,
+		onReply,
 		onCopy,
 		onDelete,
 		testid = 'message-actions-menu',
@@ -42,6 +50,14 @@
 			icon={mdiPencilOutline}
 			onClick={() => onEdit?.()}
 			data-testid="message-action-edit"
+		/>
+	{/if}
+	{#if onReply}
+		<ListAction
+			title={m.reply()}
+			icon={mdiReply}
+			onClick={onReply}
+			data-testid="message-action-reply"
 		/>
 	{/if}
 	<ListAction
