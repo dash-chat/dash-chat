@@ -92,6 +92,8 @@ fn classify(status: StatusCode, retry_after: Option<Duration>) -> Delivery {
     }
 }
 
+/// Only the delta-seconds form; Sentry does not send the HTTP-date form
+/// RFC 7231 also allows, and a missed delay only costs us our own backoff.
 fn retry_after(response: &reqwest::Response) -> Option<Duration> {
     response
         .headers()

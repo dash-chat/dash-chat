@@ -1,6 +1,7 @@
 //! Emptying the outbox: one pass at a time, woken by anything that suggests a
 //! connection might exist.
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,6 +21,9 @@ const INITIAL_BACKOFF: Duration = Duration::from_secs(60);
 const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
 /// How long to wait before rescanning an outbox that had nothing in it.
 const IDLE_INTERVAL: Duration = Duration::from_secs(30 * 60);
+/// How many delivered entries to remember, so a report delivered by one pass is
+/// not reported as vanished by the next.
+const RECENTLY_DELIVERED: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DrainResult {
@@ -56,6 +60,8 @@ pub(crate) enum DropReason {
 /// The outcome of one pass: its verdict, plus what it delivered.
 pub(crate) struct DrainReport {
     pub(crate) result: DrainResult,
+    /// The delay Sentry named when it turned this pass away, if it named one.
+    retry_after: Option<Duration>,
     delivered: Vec<PathBuf>,
     dropped: Vec<(PathBuf, DropReason)>,
 }
@@ -80,6 +86,7 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
     retention::enforce(outbox.root());
 
     let mut result = DrainResult::Emptied;
+    let mut retry_after = None;
     let mut delivered = Vec::new();
     let mut dropped = Vec::new();
     for queued in outbox.queued() {
@@ -106,9 +113,10 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
                 let _ = std::fs::remove_file(&in_flight);
                 dropped.push((queued.path.clone(), DropReason::Refused { status }));
             }
-            Delivery::Retry { .. } => {
+            Delivery::Retry { after } => {
                 let _ = std::fs::rename(&in_flight, &queued.path);
                 result = DrainResult::Pending;
+                retry_after = after;
                 // A failure now means the rest will fail too; stop wasting the
                 // attempt and let the backoff decide when to try again.
                 break;
@@ -117,6 +125,7 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
     }
     DrainReport {
         result,
+        retry_after,
         delivered,
         dropped,
     }
@@ -126,7 +135,9 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
 pub(crate) struct Drainer<S: EnvelopeSender> {
     outbox: Arc<Outbox>,
     sender: Arc<S>,
-    draining: Arc<Mutex<()>>,
+    /// Held for the length of a pass, and carrying what the last few passes
+    /// delivered.
+    draining: Arc<Mutex<VecDeque<PathBuf>>>,
 }
 
 impl<S: EnvelopeSender + 'static> Drainer<S> {
@@ -136,7 +147,7 @@ impl<S: EnvelopeSender + 'static> Drainer<S> {
         let drainer = Arc::new(Self {
             outbox,
             sender,
-            draining: Arc::new(Mutex::new(())),
+            draining: Arc::new(Mutex::new(VecDeque::new())),
         });
 
         let background = drainer.clone();
@@ -144,13 +155,14 @@ impl<S: EnvelopeSender + 'static> Drainer<S> {
             let mut settled = dashchat_utils::network_settled();
             let mut backoff = INITIAL_BACKOFF;
             loop {
-                let delay = match background.drain_now().await {
+                let report = background.drain_pass().await;
+                let delay = match report.result {
                     DrainResult::Emptied => {
                         backoff = INITIAL_BACKOFF;
                         IDLE_INTERVAL
                     }
                     DrainResult::Pending => {
-                        let delay = backoff;
+                        let delay = backoff.max(report.retry_after.unwrap_or_default());
                         backoff = (backoff * 2).min(MAX_BACKOFF);
                         delay
                     }
@@ -175,17 +187,33 @@ impl<S: EnvelopeSender + 'static> Drainer<S> {
     }
 
     /// Waits for any drain already running, so a report is never posted twice.
-    pub(crate) async fn drain_now(&self) -> DrainResult {
-        let _guard = self.draining.lock().await;
-        drain_once(&self.outbox, self.sender.as_ref()).await.result
+    async fn drain_pass(&self) -> DrainReport {
+        let mut recent = self.draining.lock().await;
+        let report = drain_once(&self.outbox, self.sender.as_ref()).await;
+        remember(&mut recent, &report.delivered);
+        report
     }
 
     /// Drains, and reports what became of `watched` rather than of the pass.
     pub(crate) async fn drain_watching(&self, watched: &Path) -> EntryFate {
-        let _guard = self.draining.lock().await;
-        drain_once(&self.outbox, self.sender.as_ref())
-            .await
-            .fate(watched)
+        let mut recent = self.draining.lock().await;
+        let delivered_earlier = recent.iter().any(|done| done == watched);
+        let report = drain_once(&self.outbox, self.sender.as_ref()).await;
+        remember(&mut recent, &report.delivered);
+        match report.fate(watched) {
+            // A pass that ran between the enqueue and this one already sent it.
+            EntryFate::Dropped(DropReason::Vanished) if delivered_earlier => EntryFate::Delivered,
+            fate => fate,
+        }
+    }
+}
+
+fn remember(recent: &mut VecDeque<PathBuf>, delivered: &[PathBuf]) {
+    for done in delivered {
+        if recent.len() == RECENTLY_DELIVERED {
+            recent.pop_front();
+        }
+        recent.push_back(done.clone());
     }
 }
 
@@ -359,6 +387,37 @@ mod tests {
             EntryFate::Dropped(DropReason::Unreadable)
         );
         assert!(outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_delay_sentry_named_is_carried_out_of_the_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.enqueue(&envelope("feedback")).unwrap();
+        let sender = FakeSender::always(Delivery::Retry {
+            after: Some(Duration::from_secs(300)),
+        });
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(report.retry_after, Some(Duration::from_secs(300)));
+    }
+
+    #[tokio::test]
+    async fn a_report_an_earlier_pass_delivered_is_not_reported_as_vanished() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Arc::new(Outbox::new(dir.path()));
+        let drainer = Drainer {
+            outbox: outbox.clone(),
+            sender: Arc::new(FakeSender::always(Delivery::Delivered)),
+            draining: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+        };
+        let queued = outbox.enqueue(&envelope("feedback")).unwrap();
+
+        // The background loop gets to the freshly enqueued entry first.
+        assert_eq!(drainer.drain_pass().await.result, DrainResult::Emptied);
+
+        assert_eq!(drainer.drain_watching(&queued).await, EntryFate::Delivered);
     }
 
     #[tokio::test]
