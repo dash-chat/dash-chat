@@ -59,7 +59,7 @@ iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dc
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "a0547306130d83a8c0afad96d5fce79d1a056f14" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "29867d696371de6cc315fbb0db9820e288b4124c" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
