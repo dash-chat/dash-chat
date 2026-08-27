@@ -34,15 +34,23 @@ pub(crate) async fn show_sync_notification(
     app_handle: &AppHandle,
     notification: &dashchat_node::OpNotification,
 ) {
-    if !are_notifications_enabled(app_handle) {
+    let op_hash = notification.header.hash();
+    log::debug!("[notification] show_sync_notification for op {op_hash}");
+
+    let settings_enabled = crate::settings::load_settings(app_handle).notifications_enabled;
+    let os_permission = app_handle.notification().permission_state();
+    if !settings_enabled || !matches!(os_permission, Ok(PermissionState::Granted)) {
+        log::debug!("[notification] skipping op {op_hash}: notifications disabled (settings_enabled={settings_enabled}, os_permission={os_permission:?})");
         return;
     }
 
     let Some(app_node_manager) = app_handle.try_state::<AppNodeManager>() else {
+        log::debug!("[notification] skipping op {op_hash}: AppNodeManager state unavailable");
         return;
     };
 
     let Ok(node) = app_node_manager.get().await else {
+        log::debug!("[notification] skipping op {op_hash}: node not ready");
         return;
     };
     let data = build_notification_data(
@@ -53,25 +61,34 @@ pub(crate) async fn show_sync_notification(
     )
     .await;
 
-    let Some(data) = data else { return };
+    let Some(data) = data else {
+        log::debug!(
+            "[notification] skipping op {op_hash}: no user-facing notification for this op"
+        );
+        return;
+    };
 
     match app_node_manager
         .notified_operations_store()
-        .record_notified_operation(notification.header.hash())
+        .record_notified_operation(op_hash)
         .await
     {
         Ok(false) => {
-            log::debug!("Skipping sync notification: op already notified");
+            log::debug!("[notification] skipping op {op_hash}: already notified");
             return;
         }
         Ok(true) => {}
         Err(err) => {
-            log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
+            log::error!("[notification] failed to record notified op {op_hash}: {err:?} — proceeding anyway");
         }
     }
 
-    if let Err(err) = show_notification_from_data(app_handle, data) {
-        log::error!("Failed to show sync-path notification: {err:?}");
+    log::debug!("[notification] sending op {op_hash} to system");
+    match show_notification_from_data(app_handle, data) {
+        Ok(()) => log::debug!("[notification] sent op {op_hash} to system"),
+        Err(err) => log::error!(
+            "[notification] failed to show sync-path notification for op {op_hash}: {err:?}"
+        ),
     }
 }
 
@@ -123,7 +140,7 @@ pub async fn build_notification_data(
     let id = match stable_notification_id(header.hash().as_bytes()) {
         Ok(id) => id,
         Err(err) => {
-            log::error!("Failed to derive stable notification id: {err:?}");
+            log::error!("[notification] failed to derive stable notification id: {err:?}");
             return None;
         }
     };
@@ -171,7 +188,9 @@ async fn chat_message_notification(
     let sender_agent_id = match node.lookup_contact(sender_device_id).await {
         Ok(agent_id) => agent_id,
         Err(err) => {
-            log::error!("Failed to lookup contact for sender {sender_device_id:?}: {err:?}");
+            log::error!(
+                "[notification] failed to lookup contact for sender {sender_device_id:?}: {err:?}"
+            );
             None
         }
     };
