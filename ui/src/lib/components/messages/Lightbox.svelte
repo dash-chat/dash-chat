@@ -91,6 +91,18 @@
 			?.focus();
 	});
 
+	// The lightbox is DOM-nested inside the message row, so touches on it would
+	// bubble into SwipeToReply and drag the message underneath. Must be a native
+	// listener: Svelte delegates ontouchstart to the app root, which runs after
+	// SwipeToReply's own listeners on the row.
+	$effect(() => {
+		const el = rootEl;
+		if (el === undefined) return;
+		const stop = (e: TouchEvent) => e.stopPropagation();
+		el.addEventListener('touchstart', stop);
+		return () => el.removeEventListener('touchstart', stop);
+	});
+
 	function updateOrigin(event: MouseEvent) {
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		originX = ((event.clientX - rect.left) / rect.width) * 100;
