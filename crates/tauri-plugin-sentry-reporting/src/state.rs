@@ -7,7 +7,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::logs::PendingLogs;
-use crate::outbox::drain::{Drainer, EntryFate};
+use crate::outbox::drain::{Drainer, DropReason, EntryFate};
 use crate::outbox::sender::HttpSender;
 use crate::outbox::Outbox;
 use crate::{client, Config};
@@ -30,7 +30,25 @@ pub(crate) fn outcome(fate: EntryFate) -> anyhow::Result<SendOutcome> {
     match fate {
         EntryFate::Delivered => Ok(SendOutcome::Sent),
         EntryFate::Waiting => Ok(SendOutcome::Queued),
-        EntryFate::Dropped => Err(anyhow::anyhow!("the report could not be filed")),
+        EntryFate::Dropped(why) => Err(anyhow::anyhow!("{}", explain(why))),
+    }
+}
+
+/// What to tell the user, and Sentry, about a report that went nowhere.
+fn explain(why: DropReason) -> String {
+    match why {
+        DropReason::Refused {
+            status: Some(status),
+        } => {
+            format!("Sentry refused the report: {status}")
+        }
+        DropReason::Refused { status: None } => {
+            "the report could not be turned into a request".to_owned()
+        }
+        DropReason::Unreadable => "the queued report could not be read back".to_owned(),
+        DropReason::Vanished => {
+            "the queued report was discarded before it could be sent".to_owned()
+        }
     }
 }
 

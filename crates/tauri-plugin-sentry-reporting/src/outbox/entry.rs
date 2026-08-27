@@ -89,9 +89,9 @@ pub(crate) fn list(root: &Path, state: State) -> Vec<Entry> {
     entries
 }
 
-/// An entry that cannot be parsed can never be sent, so it goes.
+/// An entry that cannot be read can never be sent, so it goes.
 pub(crate) fn read(path: &Path) -> Option<Envelope> {
-    match Envelope::from_path(path) {
+    match read_verbatim(path) {
         Ok(envelope) => Some(envelope),
         Err(err) => {
             log::warn!("sentry-reporting: dropping an unreadable outbox entry: {err}");
@@ -99,6 +99,22 @@ pub(crate) fn read(path: &Path) -> Option<Envelope> {
             None
         }
     }
+}
+
+/// Verbatim rather than reparsed: a feedback entry's `feedback` item type is one
+/// the SDK's parser rejects, and the outbox only needs the bytes back to post
+/// them. Only the envelope header is checked, which is what tells a file that is
+/// not an envelope from one carrying items we do not know; a truncated payload
+/// is ruled out by the atomic write and the startup sweep instead.
+fn read_verbatim(path: &Path) -> anyhow::Result<Envelope> {
+    let bytes = std::fs::read(path).context("the entry could not be read")?;
+    let header = bytes
+        .split(|byte| *byte == b'\n')
+        .next()
+        .unwrap_or_default();
+    serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(header)
+        .context("the entry does not begin with an envelope header")?;
+    Ok(Envelope::from_bytes_raw(bytes)?)
 }
 
 pub(crate) fn move_to(path: &Path, root: &Path, state: State) -> anyhow::Result<PathBuf> {
@@ -185,13 +201,34 @@ mod tests {
     }
 
     fn message(path: &Path) -> String {
-        read(path)
-            .expect("unreadable envelope")
+        crate::testing::parsed(&read(path).expect("unreadable envelope"))
             .event()
             .expect("no event")
             .message
             .clone()
             .expect("no message")
+    }
+
+    /// A feedback report is a hand-built envelope whose `feedback` item type the
+    /// SDK's parser does not know, so reading must not reparse it.
+    #[test]
+    fn a_feedback_entry_survives_the_outbox() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let path = write(
+            dir.path(),
+            State::Queued,
+            &crate::testing::feedback_envelope(),
+        )
+        .unwrap();
+
+        let read_back = read(&path).expect("the feedback entry was dropped as unreadable");
+        let mut out = Vec::new();
+        read_back.to_writer(&mut out).unwrap();
+        assert!(
+            String::from_utf8_lossy(&out).contains(r#""type":"feedback""#),
+            "the feedback item did not survive"
+        );
     }
 
     #[test]

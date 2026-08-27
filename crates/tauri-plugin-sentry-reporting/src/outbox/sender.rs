@@ -24,7 +24,8 @@ pub(crate) enum Delivery {
     /// Sentry has it; drop the entry.
     Delivered,
     /// Sentry will never take it; drop the entry rather than retry forever.
-    Rejected,
+    /// `status` is absent when it never became a request at all.
+    Rejected { status: Option<StatusCode> },
     /// Try again later, no earlier than `after` when Sentry named a delay.
     Retry { after: Option<Duration> },
 }
@@ -52,7 +53,7 @@ impl EnvelopeSender for HttpSender {
         let mut body = Vec::new();
         if let Err(err) = envelope.to_writer(&mut body) {
             log::warn!("sentry-reporting: an entry could not be serialized: {err}");
-            return Delivery::Rejected;
+            return Delivery::Rejected { status: None };
         }
 
         let response = self
@@ -85,7 +86,9 @@ fn classify(status: StatusCode, retry_after: Option<Duration>) -> Delivery {
         Delivery::Retry { after: retry_after }
     } else {
         log::warn!("sentry-reporting: a report was rejected with {status}");
-        Delivery::Rejected
+        Delivery::Rejected {
+            status: Some(status),
+        }
     }
 }
 
@@ -308,7 +311,7 @@ mod tests {
             StatusCode::PAYLOAD_TOO_LARGE,
         ] {
             assert!(
-                matches!(classify(status, None), Delivery::Rejected),
+                matches!(classify(status, None), Delivery::Rejected { .. }),
                 "{status} should be rejected"
             );
         }

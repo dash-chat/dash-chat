@@ -55,7 +55,7 @@ mod tests {
     use sentry::Envelope;
 
     use crate::outbox::entry;
-    use crate::testing::{log_saying, plugin};
+    use crate::testing::{log_saying, parsed, plugin};
 
     fn logs(envelope: &Envelope) -> Vec<Log> {
         envelope
@@ -80,7 +80,7 @@ mod tests {
 
         assert!(state.outbox.has_held());
         let held = entry::list(state.outbox.root(), entry::State::Held);
-        let stored = entry::read(&held[0].path).expect("no crash stored");
+        let stored = parsed(&entry::read(&held[0].path).expect("no crash stored"));
         let event = stored.event().expect("no event in the envelope");
         assert_eq!(event.level, Level::Fatal);
         // Prepared when stored, so the report is ready to send as-is.

@@ -11,6 +11,8 @@ use tokio::sync::Mutex;
 
 use crate::outbox::entry;
 use crate::outbox::retention;
+use reqwest::StatusCode;
+
 use crate::outbox::sender::{Delivery, EnvelopeSender};
 use crate::outbox::Outbox;
 
@@ -34,14 +36,28 @@ pub(crate) enum EntryFate {
     Delivered,
     /// Still on disk, waiting for a connection.
     Waiting,
-    /// Gone without being delivered: refused by Sentry, or evicted by retention.
-    Dropped,
+    /// Gone without being delivered.
+    Dropped(DropReason),
+}
+
+/// Why an entry went away without reaching Sentry. Named rather than inferred,
+/// so a report that fails says which of these happened to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DropReason {
+    /// Sentry answered, and its answer was no.
+    Refused { status: Option<StatusCode> },
+    /// It could not be read back from disk, so it could never have been sent.
+    Unreadable,
+    /// Gone before this pass reached it: evicted by retention, or claimed by
+    /// another process sharing the data directory.
+    Vanished,
 }
 
 /// The outcome of one pass: its verdict, plus what it delivered.
 pub(crate) struct DrainReport {
     pub(crate) result: DrainResult,
     delivered: Vec<PathBuf>,
+    dropped: Vec<(PathBuf, DropReason)>,
 }
 
 impl DrainReport {
@@ -49,10 +65,12 @@ impl DrainReport {
     pub(crate) fn fate(&self, path: &Path) -> EntryFate {
         if self.delivered.iter().any(|done| done == path) {
             EntryFate::Delivered
+        } else if let Some((_, why)) = self.dropped.iter().find(|(gone, _)| gone == path) {
+            EntryFate::Dropped(*why)
         } else if path.exists() {
             EntryFate::Waiting
         } else {
-            EntryFate::Dropped
+            EntryFate::Dropped(DropReason::Vanished)
         }
     }
 }
@@ -63,6 +81,7 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
 
     let mut result = DrainResult::Emptied;
     let mut delivered = Vec::new();
+    let mut dropped = Vec::new();
     for queued in outbox.queued() {
         // Renamed out of the way first, so no other drainer — in this process
         // or another sharing the data directory — picks up the same entry.
@@ -73,6 +92,7 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
             continue;
         };
         let Some(envelope) = entry::read(&in_flight) else {
+            dropped.push((queued.path.clone(), DropReason::Unreadable));
             result = DrainResult::Pending;
             continue;
         };
@@ -82,8 +102,9 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
                 let _ = std::fs::remove_file(&in_flight);
                 delivered.push(queued.path.clone());
             }
-            Delivery::Rejected => {
+            Delivery::Rejected { status } => {
                 let _ = std::fs::remove_file(&in_flight);
+                dropped.push((queued.path.clone(), DropReason::Refused { status }));
             }
             Delivery::Retry { .. } => {
                 let _ = std::fs::rename(&in_flight, &queued.path);
@@ -94,7 +115,11 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
             }
         }
     }
-    DrainReport { result, delivered }
+    DrainReport {
+        result,
+        delivered,
+        dropped,
+    }
 }
 
 /// Owns the background drain loop and serializes every trigger through it.
@@ -244,18 +269,43 @@ mod tests {
         assert_eq!(outbox.queued().len(), 1);
     }
 
+    /// The bug this guards: a feedback entry was deleted as unreadable on the
+    /// next drain, so every feedback report failed with the outbox empty.
+    #[tokio::test]
+    async fn a_feedback_report_reaches_sentry_like_any_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        let queued = outbox
+            .enqueue(&crate::testing::feedback_envelope())
+            .unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(sender.posted(), 1);
+        assert_eq!(report.fate(&queued), EntryFate::Delivered);
+        assert!(outbox.queued().is_empty());
+    }
+
     #[tokio::test]
     async fn a_rejected_report_is_dropped_rather_than_retried_forever() {
         let dir = tempfile::tempdir().unwrap();
         let outbox = Outbox::new(dir.path());
         let queued = outbox.enqueue(&envelope("feedback")).unwrap();
-        let sender = FakeSender::always(Delivery::Rejected);
+        let sender = FakeSender::always(Delivery::Rejected {
+            status: Some(StatusCode::FORBIDDEN),
+        });
 
         let report = drain_once(&outbox, &sender).await;
 
         // The pass has nothing left to do, but this report was never filed.
         assert_eq!(report.result, DrainResult::Emptied);
-        assert_eq!(report.fate(&queued), EntryFate::Dropped);
+        assert_eq!(
+            report.fate(&queued),
+            EntryFate::Dropped(DropReason::Refused {
+                status: Some(StatusCode::FORBIDDEN)
+            })
+        );
         assert!(outbox.queued().is_empty());
     }
 
@@ -270,7 +320,10 @@ mod tests {
         let report = drain_once(&outbox, &sender).await;
 
         assert_eq!(sender.posted(), 0);
-        assert_eq!(report.fate(&queued), EntryFate::Dropped);
+        assert_eq!(
+            report.fate(&queued),
+            EntryFate::Dropped(DropReason::Vanished)
+        );
     }
 
     #[tokio::test]
@@ -293,13 +346,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let outbox = Outbox::new(dir.path());
         outbox.enqueue(&envelope("feedback")).unwrap();
-        std::fs::write(&outbox.queued()[0].path, "half an envelope").unwrap();
+        let queued = outbox.queued()[0].path.clone();
+        std::fs::write(&queued, "half an envelope").unwrap();
         let sender = FakeSender::always(Delivery::Delivered);
 
         let report = drain_once(&outbox, &sender).await;
 
         assert_eq!(report.result, DrainResult::Pending);
         assert_eq!(sender.posted(), 0);
+        assert_eq!(
+            report.fate(&queued),
+            EntryFate::Dropped(DropReason::Unreadable)
+        );
         assert!(outbox.queued().is_empty());
     }
 
