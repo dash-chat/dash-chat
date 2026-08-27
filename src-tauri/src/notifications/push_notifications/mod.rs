@@ -172,37 +172,6 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Subscribe the current device to push notifications for the given topics.
-async fn subscribe_to_topics(
-    app_handle: &AppHandle,
-    topic_ids: HashSet<PushTopicId>,
-) -> anyhow::Result<()> {
-    if topic_ids.is_empty() {
-        return Ok(());
-    }
-
-    let node = app_handle
-        .try_state::<AppNodeManager>()
-        .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
-        .get()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let verifying_key = VerifyingKey::from(node.device_id().to_string());
-
-    let client = app_handle.state::<PushNotificationsClient>();
-
-    log::info!(
-        "Subscribing to {} topics on push notifications server.",
-        topic_ids.len()
-    );
-
-    client
-        .add_topic_subscriptions(verifying_key, topic_ids)
-        .await?;
-
-    Ok(())
-}
-
 /// Listens for new topic subscriptions and registers them with the push notifications server.
 /// On failure, notifies the sync topic subscriptions task trigger a full sync when connectivity is restored.
 fn spawn_topic_subscription_loop(
@@ -211,12 +180,12 @@ fn spawn_topic_subscription_loop(
     sync_topic_subscriptions_task: SingletonTaskWithRetries,
 ) {
     tauri::async_runtime::spawn(async move {
-        while let Some(topic_id) = topic_subscribed_rx.recv().await {
-            let hex_topic = PushTopicId::from(topic_id.to_hex());
-            if let Err(err) = subscribe_to_topics(&app_handle, [hex_topic].into()).await {
-                log::error!("Failed to subscribe to topic: {err:?}");
-                sync_topic_subscriptions_task.trigger();
-            }
+        // We don't care whether it was a subscribe or unsubscribe.
+        // We just fully sync all topics with the push server.
+        // TODO: make more effort to sync individual changes, without race conditions.
+        //       (store some state, let concurrent adds and removes reduce to a single outcome per topic.)
+        while let Some(_topic_subscription_change) = topic_subscribed_rx.recv().await {
+            sync_topic_subscriptions_task.trigger();
         }
     });
 }

@@ -170,6 +170,11 @@ impl Default for NodeConfig {
 
 pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
 
+pub enum TopicSubscriptionChange {
+    Subscribed(TopicId),
+    Unsubscribed(TopicId),
+}
+
 #[derive(Clone)]
 pub struct Node {
     pub op_store: OpStore,
@@ -179,7 +184,7 @@ pub struct Node {
     pub config: NodeConfig,
 
     notification_tx: Option<mpsc::Sender<Notification>>,
-    topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
+    topic_subscribed_tx: Option<mpsc::Sender<TopicSubscriptionChange>>,
 
     actor_tx: mpsc::Sender<Command>,
     processor_cancel_tx: mpsc::Sender<()>,
@@ -223,7 +228,7 @@ impl Node {
         data_path: PathBuf,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
-        topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
+        topic_subscribed_tx: Option<mpsc::Sender<TopicSubscriptionChange>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
         let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path()).await?;
@@ -251,7 +256,7 @@ impl Node {
         node_keys: NodeKeys,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
-        topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
+        topic_subscribed_tx: Option<mpsc::Sender<TopicSubscriptionChange>>,
     ) -> Result<Self> {
         // A no-p2p config must fully disable p2p: `enable_p2p == false` is only
         // coherent when mDNS is disabled and no relay is used. Reject a config

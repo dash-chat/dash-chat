@@ -108,7 +108,7 @@ impl Node {
         let subscribed = reply_rx.await??;
 
         if let Some(tx) = &self.topic_subscribed_tx {
-            let _ = tx.send(topic).await;
+            let _ = tx.send(TopicSubscriptionChange::Subscribed(topic)).await;
         }
 
         Ok(subscribed)
@@ -139,6 +139,10 @@ impl Node {
         };
 
         let _ = reply_rx.await?;
+
+        if let Some(tx) = &self.topic_subscribed_tx {
+            let _ = tx.send(TopicSubscriptionChange::Unsubscribed(topic)).await;
+        }
 
         Ok(())
     }

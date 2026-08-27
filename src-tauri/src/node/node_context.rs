@@ -63,7 +63,7 @@ pub struct NodeContext {
     pub notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
     /// Channel for tracking topic subscriptions for push notifications. None when
     /// push setup is not available in this context.
-    pub topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
+    pub topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::node::TopicSubscriptionChange>>,
     /// The Tauri app handle, available only when the Node is built for the main
     /// app process (used to spawn app-lifetime tasks like local-mailbox mDNS
     /// discovery).
@@ -101,7 +101,7 @@ impl NodeContext {
     pub fn for_app(
         app: &AppHandle,
         notification_tx: mpsc::Sender<dashchat_node::Notification>,
-        topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
+        topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::node::TopicSubscriptionChange>>,
     ) -> Self {
         Self {
             role: NodeRole::App,
