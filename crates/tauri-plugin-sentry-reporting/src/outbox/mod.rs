@@ -18,8 +18,6 @@ use sentry::Envelope;
 use crate::outbox::entry::State;
 
 const DIR_NAME: &str = "sentry-outbox";
-/// Where a crash was kept before the outbox existed.
-const LEGACY_CRASH_FILE: &str = "pending-crash.envelope";
 
 pub(crate) struct Outbox {
     root: PathBuf,
@@ -34,7 +32,6 @@ impl Outbox {
             let _ = std::fs::create_dir_all(entry::state_dir(&outbox.root, state));
         }
         entry::sweep(&outbox.root);
-        outbox.migrate_legacy_crash(data_dir);
         retention::enforce(&outbox.root);
         outbox
     }
@@ -82,21 +79,6 @@ impl Outbox {
 
     pub(crate) fn queued(&self) -> Vec<entry::Entry> {
         entry::list(&self.root, State::Queued)
-    }
-
-    /// So upgrading with a crash pending does not lose it.
-    fn migrate_legacy_crash(&self, data_dir: &Path) {
-        let legacy = data_dir.join(LEGACY_CRASH_FILE);
-        if !legacy.exists() {
-            return;
-        }
-        match Envelope::from_path(&legacy) {
-            Ok(envelope) => {
-                let _ = self.hold(&envelope);
-            }
-            Err(err) => log::warn!("sentry-reporting: an old crash could not be read: {err}"),
-        }
-        let _ = std::fs::remove_file(legacy);
     }
 }
 
@@ -175,20 +157,6 @@ mod tests {
 
         assert!(!outbox.has_held());
         assert!(!held[0].path.exists());
-    }
-
-    #[test]
-    fn a_legacy_pending_crash_file_migrates_into_the_outbox() {
-        let dir = tempfile::tempdir().unwrap();
-        let legacy = dir.path().join("pending-crash.envelope");
-        let file = std::fs::File::create(&legacy).unwrap();
-        envelope("old crash").to_writer(&file).unwrap();
-        drop(file);
-
-        let outbox = Outbox::new(dir.path());
-
-        assert!(outbox.has_held());
-        assert!(!legacy.exists());
     }
 
     #[test]
