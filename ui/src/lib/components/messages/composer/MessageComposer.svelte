@@ -36,6 +36,7 @@
 	import InlineAttachButton from '$lib/components/messages/composer/InlineAttachButton.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import VoiceRecordButton from '$lib/components/messages/composer/VoiceRecordButton.svelte';
+	import VoiceMessageComposer from '$lib/components/messages/composer/VoiceMessageComposer.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
@@ -72,6 +73,10 @@
 	let sending = false;
 
 	let showMediaPanel = $state(false);
+
+	/** Which composer the input bar shows. Never assign directly — use
+	 * `startRecording` / `cancelRecording` so the mode transitions stay guarded. */
+	let inputMode = $state<'text' | 'voice'>('text');
 
 	let editing = $state<Message | null>(null);
 	/** When set, the next send is a reply to this message. */
@@ -141,6 +146,17 @@
 
 	function cancelReply() {
 		replying = null;
+	}
+
+	/** Enter voice-message mode. No-op while editing, replying, or when the
+	 * composer already holds a text/media draft. */
+	function startRecording() {
+		if (editing || replying || hasContent) return;
+		inputMode = 'voice';
+	}
+
+	function cancelRecording() {
+		inputMode = 'text';
 	}
 
 	function toggleMediaPanel() {
@@ -292,70 +308,77 @@
 		{/if}
 
 		<div class="m-2 row gap-2" style="align-items: flex-end;">
-			{#if editing}
-				{#if !isWideScreen.value}
-					<DiscardEditButton onClick={cancelEdit} />
-				{/if}
-			{:else if isMobile && theme === 'ios'}
-				<StandaloneAttachButton
-					expanded={showMediaPanel}
-					onClick={toggleMediaPanel}
+			{#if inputMode === 'voice'}
+				<VoiceMessageComposer
+					onCancel={cancelRecording}
+					onSend={cancelRecording}
 				/>
-			{/if}
-			{#if !isMobile}
-				<EmojiButton onClick={openEmojiPicker} />
-			{/if}
-			<MessageInput
-				bind:this={messageInput}
-				bind:value
-				{placeholder}
-				onSend={send}
-				onpaste={onPaste}
-				onfocus={() => (showMediaPanel = false)}
-				before={isMobile && !isIos ? emojiButton : undefined}
-				banner={editing !== null ? editingBanner : replyBanner}
-			>
-				{#snippet after()}
-					{#if !editing && isMobile && theme === 'material' && hasContent}
-						<InlineAttachButton
-							expanded={showMediaPanel}
-							onClick={toggleMediaPanel}
-						/>
-					{:else if !editing && isMobile && !hasContent}
-						<VoiceRecordButton />
+			{:else}
+				{#if editing}
+					{#if !isWideScreen.value}
+						<DiscardEditButton onClick={cancelEdit} />
 					{/if}
-				{/snippet}
-			</MessageInput>
-
-			{#if editing}
-				{#if isWideScreen.value}
-					<DiscardEditButton onClick={cancelEdit} />
-				{/if}
-				<SendButton onSend={send} editing />
-			{:else if isMobile}
-				{#if isIos}
-					<div
-						class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
-							? 'ms-0 w-[42px] opacity-100'
-							: '-ms-2 w-0 opacity-0'}"
-						style="transform: scale({hasContent ? 1 : 0})"
-						aria-hidden={!hasContent}
-					>
-						<SendButton onSend={send} />
-					</div>
-				{:else if hasContent}
-					<SendButton onSend={send} />
-				{:else if theme !== 'ios'}
+				{:else if isMobile && theme === 'ios'}
 					<StandaloneAttachButton
 						expanded={showMediaPanel}
 						onClick={toggleMediaPanel}
 					/>
 				{/if}
-			{:else}
-				{#if !hasContent}
-					<VoiceRecordButton />
+				{#if !isMobile}
+					<EmojiButton onClick={openEmojiPicker} />
 				{/if}
-				<AttachMenuButton onFiles={stage} />
+				<MessageInput
+					bind:this={messageInput}
+					bind:value
+					{placeholder}
+					onSend={send}
+					onpaste={onPaste}
+					onfocus={() => (showMediaPanel = false)}
+					before={isMobile && !isIos ? emojiButton : undefined}
+					banner={editing !== null ? editingBanner : replyBanner}
+				>
+					{#snippet after()}
+						{#if !editing && isMobile && theme === 'material' && hasContent}
+							<InlineAttachButton
+								expanded={showMediaPanel}
+								onClick={toggleMediaPanel}
+							/>
+						{:else if !editing && isMobile && !hasContent}
+							<VoiceRecordButton />
+						{/if}
+					{/snippet}
+				</MessageInput>
+
+				{#if editing}
+					{#if isWideScreen.value}
+						<DiscardEditButton onClick={cancelEdit} />
+					{/if}
+					<SendButton onSend={send} editing />
+				{:else if isMobile}
+					{#if isIos}
+						<div
+							class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
+								? 'ms-0 w-[42px] opacity-100'
+								: '-ms-2 w-0 opacity-0'}"
+							style="transform: scale({hasContent ? 1 : 0})"
+							aria-hidden={!hasContent}
+						>
+							<SendButton onSend={send} />
+						</div>
+					{:else if hasContent}
+						<SendButton onSend={send} />
+					{:else if theme !== 'ios'}
+						<StandaloneAttachButton
+							expanded={showMediaPanel}
+							onClick={toggleMediaPanel}
+						/>
+					{/if}
+				{:else}
+					{#if !hasContent}
+					<VoiceRecordButton onClick={startRecording} />
+					{/if}
+					<AttachMenuButton onFiles={stage} />
+				{/if}
 			{/if}
 		</div>
 	</div>
