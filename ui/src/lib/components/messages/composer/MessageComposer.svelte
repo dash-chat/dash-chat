@@ -35,6 +35,7 @@
 	import StandaloneAttachButton from '$lib/components/messages/composer/StandaloneAttachButton.svelte';
 	import InlineAttachButton from '$lib/components/messages/composer/InlineAttachButton.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
+	import VoiceRecordButton from '$lib/components/messages/composer/VoiceRecordButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
@@ -320,6 +321,8 @@
 							expanded={showMediaPanel}
 							onClick={toggleMediaPanel}
 						/>
+					{:else if !editing && isMobile && !hasContent}
+						<VoiceRecordButton />
 					{/if}
 				{/snippet}
 			</MessageInput>
