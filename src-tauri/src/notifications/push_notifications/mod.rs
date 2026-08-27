@@ -44,7 +44,7 @@ fn push_notifications_url() -> String {
 
 pub fn setup_push_notifications(
     handle: AppHandle,
-    topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
+    topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::node::TopicSubscriptionChange>,
 ) -> anyhow::Result<()> {
     handle.manage(PushNotificationsClient::new(push_notifications_url())?);
 
@@ -172,11 +172,12 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Listens for new topic subscriptions and registers them with the push notifications server.
-/// On failure, notifies the sync topic subscriptions task trigger a full sync when connectivity is restored.
+/// Listens for new topic subscriptions/unsubscriptions and registers them with the push notifications server.
 fn spawn_topic_subscription_loop(
     app_handle: AppHandle,
-    mut topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
+    mut topic_subscribed_rx: tokio::sync::mpsc::Receiver<
+        dashchat_node::node::TopicSubscriptionChange,
+    >,
     sync_topic_subscriptions_task: SingletonTaskWithRetries,
 ) {
     tauri::async_runtime::spawn(async move {
