@@ -7,7 +7,7 @@
 		mdiReply,
 	} from '@mdi/js';
 	import { List } from 'konsta/svelte';
-	import type { DeviceId, Message } from 'dash-chat-stores';
+	import { type DeviceId, type Message, hasBody } from 'dash-chat-stores';
 	import { canEditMessage } from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
@@ -39,6 +39,9 @@
 	}: Props = $props();
 
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
+	const canCopy = $derived(
+		hasBody(message.content) && message.content.message !== '',
+	);
 
 	let confirmingDelete = $state(false);
 </script>
@@ -60,12 +63,14 @@
 			data-testid="message-action-reply"
 		/>
 	{/if}
-	<ListAction
-		title={m.menuCopy()}
-		icon={mdiContentCopy}
-		onClick={onCopy}
-		data-testid="message-action-copy"
-	/>
+	{#if canCopy}
+		<ListAction
+			title={m.menuCopy()}
+			icon={mdiContentCopy}
+			onClick={onCopy}
+			data-testid="message-action-copy"
+		/>
+	{/if}
 	<ListAction
 		title={m.delete()}
 		icon={mdiDeleteOutline}

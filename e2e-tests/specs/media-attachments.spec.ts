@@ -206,4 +206,13 @@ describe('Media attachments', () => {
 		await retry.click();
 		await agent2.directChatPage.messages.waitForPhotoMessage('retry-blob');
 	});
+
+	it('does not offer Copy on a photo-only message', async () => {
+		const message =
+			await agent1.directChatPage.messages.messageWithPhoto('single');
+		if (!message) throw new Error('Photo message "single" not found');
+		await message.openActions();
+		expect(await message.copyAction.isExisting()).toBe(false);
+		expect(await message.deleteAction.isExisting()).toBe(true);
+	});
 });
