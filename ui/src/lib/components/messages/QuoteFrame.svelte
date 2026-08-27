@@ -3,15 +3,23 @@
 
 	let {
 		mine = false,
+		composer = false,
 		children,
 	}: {
 		/** Whether the frame sits inside my own (brand-colored) bubble. */
 		mine?: boolean;
+		/** Whether the frame sits in the composer's reply banner rather than a bubble. */
+		composer?: boolean;
 		children: Snippet;
 	} = $props();
 </script>
 
-<span class="quote-frame {mine ? 'quote-frame-mine' : 'quote-frame-others'}">
+<span
+	class="quote-frame"
+	class:quote-frame-mine={mine}
+	class:quote-frame-others={!mine}
+	class:quote-frame-composer={composer}
+>
 	<span class="quote-frame-bar"></span>
 	{@render children()}
 </span>
@@ -49,5 +57,19 @@
 	}
 	:global(.dark) .quote-frame-others {
 		background-color: rgba(255, 255, 255, 0.16);
+	}
+
+	/* The iOS theme copies Signal's composer reply-banner greys. */
+	:global(.k-ios) .quote-frame-composer {
+		background-color: #dfdfe1;
+	}
+	:global(.k-ios) .quote-frame-composer .quote-frame-bar {
+		background-color: #c1c1c3;
+	}
+	:global(.dark .k-ios) .quote-frame-composer {
+		background-color: #454547;
+	}
+	:global(.dark .k-ios) .quote-frame-composer .quote-frame-bar {
+		background-color: #5f5e63;
 	}
 </style>

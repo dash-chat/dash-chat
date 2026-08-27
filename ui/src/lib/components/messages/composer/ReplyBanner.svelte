@@ -42,7 +42,7 @@
 	data-testid="composer-reply-banner"
 	transition:slide={{ duration: 200 }}
 >
-	<QuoteFrame>
+	<QuoteFrame composer>
 		<span class="row min-w-0 flex-1 items-center gap-2 ps-2 py-1.5">
 			<span class="column min-w-0 flex-1">
 				<span class="truncate font-semibold">
