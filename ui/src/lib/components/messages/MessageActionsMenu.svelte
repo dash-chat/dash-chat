@@ -7,7 +7,14 @@
 		mdiReply,
 	} from '@mdi/js';
 	import { List } from 'konsta/svelte';
-	import { type DeviceId, type Message, hasBody } from 'dash-chat-stores';
+	import { getContext } from 'svelte';
+	import {
+		type DeviceId,
+		type Message,
+		type MessagesStore,
+		hasBody,
+	} from 'dash-chat-stores';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { canEditMessage } from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
@@ -38,6 +45,9 @@
 		testid = 'message-actions-menu',
 	}: Props = $props();
 
+	const store: MessagesStore = getContext('messages-store');
+	const readOnly = useReactivePromise(store.readOnly);
+
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
 	const canCopy = $derived(
 		hasBody(message.content) && message.content.message !== '',
@@ -47,22 +57,26 @@
 </script>
 
 <List nested data-testid={testid}>
-	{#if canEdit}
-		<ListAction
-			title={m.edit()}
-			icon={mdiPencilOutline}
-			onClick={() => onEdit?.()}
-			data-testid="message-action-edit"
-		/>
-	{/if}
-	{#if onReply}
-		<ListAction
-			title={m.reply()}
-			icon={mdiReply}
-			onClick={onReply}
-			data-testid="message-action-reply"
-		/>
-	{/if}
+	{#await $readOnly then readOnly}
+		{#if !readOnly}
+			{#if canEdit}
+				<ListAction
+					title={m.edit()}
+					icon={mdiPencilOutline}
+					onClick={() => onEdit?.()}
+					data-testid="message-action-edit"
+				/>
+			{/if}
+			{#if onReply}
+				<ListAction
+					title={m.reply()}
+					icon={mdiReply}
+					onClick={onReply}
+					data-testid="message-action-reply"
+				/>
+			{/if}
+		{/if}
+	{/await}
 	{#if canCopy}
 		<ListAction
 			title={m.menuCopy()}

@@ -1,4 +1,4 @@
-import { reactive } from 'signalium';
+import { ReactivePromise, reactive } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
@@ -60,6 +60,7 @@ export class MessagesStore {
 		protected tombstoneStore: TombstoneStore,
 		public chatId: ChatId,
 		public client: IMessagesClient,
+		public readOnly: () => ReactivePromise<boolean>,
 	) {}
 
 	messages = reactive(async () => {
