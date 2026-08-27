@@ -275,6 +275,32 @@ function collectFilePickers(): FilePickerRequest[] {
 	return filePickerRequests;
 }
 
+/** Drag a message row start-to-end far enough to trigger swipe-to-reply.
+ * Synthesized as bare events with a `touches` list: WebKit and Chromium
+ * disagree about constructing real `Touch` objects, and the handler only
+ * reads coordinates. */
+function swipeToReply(messageHash: string): void {
+	const row = document.querySelector(
+		`[data-message-hash="${messageHash}"] [data-testid="swipe-to-reply"]`,
+	);
+	if (!row) {
+		throw new Error(`No swipeable row for message hash ${messageHash}`);
+	}
+	const sign = getComputedStyle(row).direction === 'rtl' ? -1 : 1;
+	const startX = sign === 1 ? 40 : window.innerWidth - 40;
+	const send = (type: string, x: number) => {
+		const event = new Event(type, { bubbles: true, cancelable: true });
+		Object.defineProperty(event, 'touches', {
+			value: [{ clientX: x, clientY: 100 }],
+		});
+		row.dispatchEvent(event);
+	};
+	send('touchstart', startX);
+	send('touchmove', startX + sign * 20);
+	send('touchmove', startX + sign * 100);
+	send('touchend', startX + sign * 100);
+}
+
 export const testUtils = {
 	simulateUpdate,
 	hasText,
@@ -292,6 +318,7 @@ export const testUtils = {
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,
 	forceBlobError,
+	swipeToReply,
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

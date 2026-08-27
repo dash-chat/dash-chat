@@ -36,10 +36,12 @@ export async function switchToWebview(
 export async function waitForTestUtils(
 	agent: WebdriverIO.Browser,
 ): Promise<void> {
+	// A cold start on a slow physical phone can take over 30s from webview
+	// attach to the page's JS running, so give it well beyond the default.
 	await agent.waitUntil(
 		async () => agent.execute(() => typeof window.__test !== 'undefined'),
 		{
-			timeout: 30_000,
+			timeout: 120_000,
 			interval: 500,
 			timeoutMsg: 'window.__test not registered',
 		},

@@ -175,7 +175,10 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	framework: 'mocha',
 	mochaOpts: {
 		ui: 'bdd',
-		timeout: 120_000,
+		// Phones and emulators can spend minutes on app cold starts and p2p
+		// syncs that desktop finishes in seconds, so give their hooks and
+		// tests more headroom.
+		timeout: android !== null || ios !== null ? 300_000 : 120_000,
 		// Fails any test during which an agent hit an uncaught error.
 		require: [path.join(__dirname, 'setup', 'fail-on-uncaught-errors.ts')],
 	},

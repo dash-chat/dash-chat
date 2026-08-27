@@ -44,7 +44,7 @@ async fn mailbox_late_join() {
     //     .await
     //     .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
     // Introduce delay to let the first message be stored and force missing synchronization with the second one
@@ -120,7 +120,7 @@ async fn test_mailbox_restart_relay() {
 
     alice.behavior().accept_next_contact().await.unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     alice
         .send_message_raw(chat, "Hello 1".into())
@@ -171,7 +171,7 @@ async fn test_mailbox_restart_relay() {
 
     // === Phase 3: Post-restart — send more messages and verify all are received ===
 
-    let chat = alice.direct_chat_topic(bobbi_agent_id);
+    let chat = alice.direct_chat_with(&bobbi);
 
     alice
         .send_message_raw(chat, "Hello 3".into())

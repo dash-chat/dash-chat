@@ -20,4 +20,4 @@ run NAME *ARGS:
 
 # run the whole suite including the stress and push specs that otherwise skip themselves
 all *ARGS:
-    cd e2e-tests && E2E_STRESS=1 E2E_PUSH=1 pnpm wdio run wdio.conf.ts {{ARGS}}
+    cd e2e-tests && E2E_STRESS=1 E2E_PUSH=1 E2E_SPEC_FILE_RETRIES="${E2E_SPEC_FILE_RETRIES:-1}" pnpm wdio run wdio.conf.ts {{ARGS}}

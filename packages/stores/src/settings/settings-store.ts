@@ -51,12 +51,21 @@ export class SettingsStore {
 		return settings.notifications_enabled;
 	});
 
+	backgroundModeEnabled = reactive(async () => {
+		const settings = await this.settings();
+		return settings.background_mode_enabled;
+	});
+
 	async setColorSchemePreference(scheme: ColorSchemePreference): Promise<void> {
 		await this.client.setColorSchemePreference(scheme);
 	}
 
 	async setQrColor(color: string): Promise<void> {
 		await this.client.setSetting('qr_color', color);
+	}
+
+	async setBackgroundModeEnabled(enabled: boolean): Promise<void> {
+		await this.client.setBackgroundModeEnabled(enabled);
 	}
 
 	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {

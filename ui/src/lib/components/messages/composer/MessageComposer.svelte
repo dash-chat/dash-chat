@@ -312,11 +312,7 @@
 				onpaste={onPaste}
 				onfocus={() => (showMediaPanel = false)}
 				before={isMobile && !isIos ? emojiButton : undefined}
-				banner={editing !== null
-					? editingBanner
-					: replying !== null
-						? replyBanner
-						: undefined}
+				banner={editing !== null ? editingBanner : replyBanner}
 			>
 				{#snippet after()}
 					{#if !editing && isMobile && theme === 'material' && hasContent}

@@ -16,6 +16,9 @@ use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tokio::sync::mpsc::UnboundedSender;
 
+/// The mDNS service type production Dash Chat instances announce and browse.
+pub const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
+
 /// A running in-process mailbox server. Call [`LocalMailboxServer::stop`] to
 /// shut it down gracefully.
 pub struct LocalMailboxServer {

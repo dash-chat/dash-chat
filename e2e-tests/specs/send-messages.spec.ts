@@ -1,4 +1,4 @@
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Full messaging flow', () => {
@@ -17,8 +17,46 @@ describe('Full messaging flow', () => {
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
 	});
 
-	it('exchanges contact codes between agents', async () => {
-		await exchangeContacts(agent1, agent2);
+	it('sends a contact request from Alice to Bob', async () => {
+		// One-directional on purpose: Bob does not add Alice back, so the
+		// pre-accept checks below run while the request is still pending.
+		await navigateToAddContact(agent1);
+		await navigateToAddContact(agent2);
+		const bobLink = await agent2.addContactPage.getAddContactLink();
+		await agent1.addContactPage.enterAddContactLink(bobLink);
+		await agent1.directChatPage.ready();
+	});
+
+	it('lets Alice send messages before Bob accepts the request', async () => {
+		await agent1.directChatPage.composer.sendMessage('Hello before accept!');
+		await agent1.directChatPage.messages.waitForMessage('Hello before accept!');
+	});
+
+	it('shows Alice’s messages to Bob before he accepts the request', async () => {
+		await agent2.addContactPage.back.click();
+		await agent2.newMessagePage.back.click();
+		await agent2.homePage.openChat('Alice Test');
+		// The request is still unanswered: the accept bar is showing while the
+		// pre-accept message is already readable.
+		await agent2.directChatPage.acceptButton.waitForExist();
+		await agent2.directChatPage.messages.waitForMessage('Hello before accept!');
+	});
+
+	it('summarizes the chat as a message request while it is pending', async () => {
+		await agent2.directChatPage.back.click();
+		await agent2.homePage.ready();
+		const rowText = await agent2.homePage.chatRowText('Alice Test');
+		expect(rowText).toContain(await agent2.tr('messageRequest'));
+		expect(rowText).not.toContain('Hello before accept!');
+		await agent2.homePage.openChat('Alice Test');
+		await agent2.directChatPage.acceptButton.waitForExist();
+	});
+
+	it('establishes the contact when Bob accepts the request', async () => {
+		await agent2.directChatPage.acceptButton.click();
+		await agent2.directChatPage.acceptConfirm.click();
+		await agent2.directChatPage.composer.messageInput.waitForExist();
+		await agent2.directChatPage.acceptButton.waitForExist({ reverse: true });
 	});
 
 	it('sends a message from Alice to Bob', async () => {

@@ -6,6 +6,9 @@ mailbox: (build "mailbox-server")
 # build the push notifications server docker image and push it to the github container registry
 push-notifications: (build "push-notifications-server")
 
+# build the local message server docker image (run it with `docker run --network host` so mDNS works)
+local-message-server: (build "local-message-server")
+
 # build the docker image for a server and load it into docker without pushing (e.g. just docker build mailbox-server)
 build server:
     #!/usr/bin/env bash

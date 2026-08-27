@@ -1,14 +1,18 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { type VerifyingKey, type Profile, fullName } from 'dash-chat-stores';
+	import {
+		type ContactWithProfile,
+		type VerifyingKey,
+		fullName,
+	} from 'dash-chat-stores';
 	import { Searchbar } from 'konsta/svelte';
 	import ContactsChipList from './ContactsChipList.svelte';
 
 	interface Props {
 		searchQuery?: string;
-		filteredContacts?: [VerifyingKey, Profile][];
+		filteredContacts?: ContactWithProfile[];
 		selectedContacts: VerifyingKey[];
-		contacts: [VerifyingKey, Profile][];
+		contacts: ContactWithProfile[];
 		onRemove: (key: VerifyingKey) => void;
 	}
 
@@ -21,7 +25,7 @@
 	}: Props = $props();
 
 	$effect(() => {
-		filteredContacts = contacts.filter(([, profile]) =>
+		filteredContacts = contacts.filter(({ profile }) =>
 			fullName(profile).toLowerCase().includes(searchQuery.toLowerCase()),
 		);
 	});
@@ -42,7 +46,9 @@
 	/>
 
 	<ContactsChipList
-		contacts={contacts.filter(([key]) => selectedContacts.includes(key))}
+		contacts={contacts.filter(({ contact }) =>
+			selectedContacts.includes(contact.agentId),
+		)}
 		{onRemove}
 	/>
 </div>
