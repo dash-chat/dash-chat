@@ -7,7 +7,6 @@
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
-		replyAuthor,
 		type ChatsStore,
 		type ContactRequest,
 		type ContactsStore,
@@ -217,18 +216,6 @@
 	): string {
 		if (deviceId === myDeviceId) return m.you();
 		return profile ? fullName(profile) : m.unknownSender();
-	}
-
-	/** Display name of the author quoted by `message`'s reply, if that author is
-	 * known — a quote of a message this peer never received has none. */
-	function quotedAuthorName(
-		message: Message,
-		myDeviceId: DeviceId,
-		profile: Profile | undefined,
-	): string | undefined {
-		const author = replyAuthor(message.replyQuote);
-		if (author === undefined) return undefined;
-		return deviceDisplayName(author, myDeviceId, profile);
 	}
 
 	function goToPreviousMatch() {
@@ -580,11 +567,6 @@
 																				profile,
 																			),
 																		)}
-																	replyAuthorName={quotedAuthorName(
-																		message,
-																		myDeviceId,
-																		profile,
-																	)}
 																	onNavigateToMessage={navigateToMessage}
 																/>
 															</div>
@@ -612,11 +594,6 @@
 																				profile,
 																			),
 																		)}
-																	replyAuthorName={quotedAuthorName(
-																		message,
-																		myDeviceId,
-																		profile,
-																	)}
 																	onNavigateToMessage={navigateToMessage}
 																/>
 															</div>

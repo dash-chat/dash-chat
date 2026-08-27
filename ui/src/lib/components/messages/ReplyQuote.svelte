@@ -1,25 +1,30 @@
 <script lang="ts">
-	import type { DeviceId, Hash, MessageReply } from 'dash-chat-stores';
+	import type { Hash, MessageReply } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
+	import { useDeviceId } from '$lib/stores/my-device-id';
 	import BlobImage from '$lib/components/BlobImage.svelte';
 	import QuoteFrame from './QuoteFrame.svelte';
 
 	let {
 		reply,
-		authorName = '',
-		myDeviceId,
 		mine = false,
 		onNavigate,
 	}: {
 		reply: MessageReply;
-		/** Display name of the quoted author. */
-		authorName?: string;
-		myDeviceId: DeviceId;
 		/** Whether the enclosing bubble is my own message (picks the color scheme). */
 		mine?: boolean;
 		/** Scroll the chat to the quoted message. */
 		onNavigate?: (target: Hash) => void;
 	} = $props();
+
+	const myDeviceId = useDeviceId();
+
+	/** Display name of the quoted author. */
+	const authorName = $derived.by(() => {
+		if (reply.kind === 'deleted-for-me') return '';
+		if (reply.author === myDeviceId) return m.you();
+		return reply.authorName ?? m.unknownSender();
+	});
 
 	const scrollTarget = $derived(
 		reply.kind === 'deleted-for-me' ? undefined : reply.scrollTarget,
@@ -37,9 +42,7 @@
 		if (reply.kind === 'deleted-for-me' || reply.author === myDeviceId) {
 			return m.youDeletedThisMessage();
 		}
-		return m.someoneDeletedThisMessage({
-			name: authorName || m.unknownSender(),
-		});
+		return m.someoneDeletedThisMessage({ name: authorName });
 	});
 
 	function navigate() {
