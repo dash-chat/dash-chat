@@ -15,15 +15,23 @@ use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionSta
 
 use crate::node::AppNodeManager;
 
-/// Returns `true` iff the user has both enabled notifications in app settings
-/// and granted OS-level permission. On desktop the permission state is always
-/// `Granted` so this collapses to the settings check.
+/// Returns `true` iff notifications should be shown. The OS-level permission is
+/// always required; on desktop the app-level toggle must additionally be on. On
+/// mobile the app-level toggle doesn't exist, so the OS permission is the single
+/// source of truth.
 pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
-    crate::settings::load_settings(handle).notifications_enabled
-        && matches!(
-            handle.notification().permission_state(),
-            Ok(PermissionState::Granted)
-        )
+    let os_granted = matches!(
+        handle.notification().permission_state(),
+        Ok(PermissionState::Granted)
+    );
+    #[cfg(desktop)]
+    {
+        os_granted && crate::settings::load_settings(handle).notifications_enabled
+    }
+    #[cfg(mobile)]
+    {
+        os_granted
+    }
 }
 
 /// Show a system notification for an operation that arrived through the
@@ -37,10 +45,8 @@ pub(crate) async fn show_sync_notification(
     let op_hash = notification.header.hash();
     log::debug!("[notification] show_sync_notification for op {op_hash}");
 
-    let settings_enabled = crate::settings::load_settings(app_handle).notifications_enabled;
-    let os_permission = app_handle.notification().permission_state();
-    if !settings_enabled || !matches!(os_permission, Ok(PermissionState::Granted)) {
-        log::debug!("[notification] skipping op {op_hash}: notifications disabled (settings_enabled={settings_enabled}, os_permission={os_permission:?})");
+    if !are_notifications_enabled(app_handle) {
+        log::debug!("[notification] skipping op {op_hash}: notifications disabled (app toggle off or OS permission not granted)");
         return;
     }
 
