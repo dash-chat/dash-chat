@@ -7,8 +7,8 @@ thin layer of host wiring in `src-tauri` and three call sites in the UI.
 
 ## The two rules
 
-Every design decision in this system follows from one of these. If you are
-changing something here and it conflicts with one of them, the rule wins.
+Every design decision in this system follows from one of these.
+Make sure you are respecting these rules if you change anything.
 
 **1. Nothing leaves the device unless the user pressed Send.**
 
@@ -224,28 +224,6 @@ connected.
 The only callers of `enqueue` are the two user-initiated commands. The only
 caller of `approve_held` is the user's crash-approval command. `hold` is reached
 only from the panic hook and legacy migration, and `held/` is never drained.
-
-## Truthfulness is fragile
-
-Rule 2 has been broken four times in this system's short life, each time by a
-plausible-looking shortcut:
-
-- returning `Sent` when the envelope could not be built (redaction failed);
-- returning `Sent` when nothing was pending to send;
-- returning `Sent` when an entry was skipped as unreadable;
-- returning `Sent` when **Sentry refused the report** — rotate the DSN key or
-  exhaust the project quota and every POST returns 403, the entry is deleted,
-  and the user is thanked for a report that exists nowhere.
-
-The root cause of the last one is worth internalising: the drain's `DrainResult`
-is a **whole-pass verdict**, and it was being used to answer a **per-report
-question**. `DrainReport::fate(path)` exists precisely to keep those separate.
-`SendOutcome::Sent` is now constructed in exactly one place, `state::outcome`,
-reachable only via `EntryFate::Delivered`, which requires a 2xx for that
-specific path.
-
-If you touch this area, enumerate every path that can produce `Sent` and check
-each one requires an actual delivery. Do not trust the pattern.
 
 ## Configuration
 
