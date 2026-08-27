@@ -352,6 +352,9 @@
 					/>
 				{/if}
 			{:else}
+				{#if !hasContent}
+					<VoiceRecordButton />
+				{/if}
 				<AttachMenuButton onFiles={stage} />
 			{/if}
 		</div>
