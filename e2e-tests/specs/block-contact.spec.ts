@@ -18,6 +18,8 @@ describe('block contact', () => {
 	});
 
 	it('blocks from chat settings and shows the indicators', async () => {
+		await agent1.directChatPage.composer.sendMessage('Hello Bob');
+
 		await blockAgent(agent1);
 		await agent1.directChatPage.blockedBanner.waitForDisplayed();
 		await agent1.directChatPage.blockedNameIcon.waitForDisplayed();
@@ -28,6 +30,29 @@ describe('block contact', () => {
 		await expect(
 			agent2.directChatPage.messages.systemMessage('contact_blocked'),
 		).not.toBeExisting();
+
+		// The chat turns read-only: no swipe, react, reply, or edit — only the
+		// local actions remain. Copy doubles as the way to close the menu again.
+		const target =
+			await agent1.directChatPage.messages.waitForMessage('Hello Bob');
+		if (agent1.platform !== 'desktop') {
+			const engaged = await agent1.execute(
+				(hash: string) => window.__test.swipeToReply(hash),
+				target.hash,
+			);
+			expect(engaged).toBe(false);
+		} else {
+			await expect(target.hoverReplyButton).not.toBeExisting();
+			await expect(target.hoverReactButton).not.toBeExisting();
+		}
+		await target.openActions();
+		if (agent1.platform !== 'desktop') {
+			await expect(target.quickReactionBar).not.toBeExisting();
+		}
+		await expect(target.replyAction).not.toBeExisting();
+		await expect(target.editAction).not.toBeExisting();
+		await expect(target.copyAction).toBeExisting();
+		await target.copyAction.click();
 
 		await agent1.directChatPage.back.click();
 		await agent1.homePage.ready();
@@ -51,6 +76,14 @@ describe('block contact', () => {
 		await expect(
 			agent1.directChatPage.messages.systemMessage('contact_blocked'),
 		).toBeExisting();
+
+		// Unblocking makes the chat writable again, so the actions return.
+		const target =
+			await agent1.directChatPage.messages.waitForMessage('Hello Bob');
+		await target.openActions();
+		await expect(target.replyAction).toBeExisting();
+		await expect(target.editAction).toBeExisting();
+		await target.copyAction.click();
 	});
 
 	it('blocks from the new-message contact menu', async () => {
