@@ -164,23 +164,29 @@ export class DirectChatStore {
 		const message = await this.messages.lastMessage();
 		const blocked = await this.isBlocked();
 
-		const pendingRequest =
-			contact === undefined ? (request ?? outgoing) : undefined;
-		const lastEvent: ChatSummary['lastEvent'] = message
-			? {
-					kind: 'message',
-					content: message.content,
-					timestamp: message.timestamp,
-				}
-			: pendingRequest !== undefined
+		const incomingRequest = contact === undefined ? request : undefined;
+		const outgoingRequest = contact === undefined ? outgoing : undefined;
+		const lastEvent: ChatSummary['lastEvent'] =
+			incomingRequest !== undefined
 				? {
 						kind: 'contact_request',
-						timestamp: pendingRequest.timestamp,
+						timestamp: message?.timestamp ?? incomingRequest.timestamp,
 					}
-				: {
-						kind: 'contact_added',
-						timestamp: contact?.addedTimestamp ?? 0,
-					};
+				: message
+					? {
+							kind: 'message',
+							content: message.content,
+							timestamp: message.timestamp,
+						}
+					: outgoingRequest !== undefined
+						? {
+								kind: 'contact_request',
+								timestamp: outgoingRequest.timestamp,
+							}
+						: {
+								kind: 'contact_added',
+								timestamp: contact?.addedTimestamp ?? 0,
+							};
 
 		return {
 			type: 'DirectChat',

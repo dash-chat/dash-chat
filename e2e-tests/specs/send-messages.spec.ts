@@ -42,6 +42,16 @@ describe('Full messaging flow', () => {
 		await agent2.directChatPage.messages.waitForMessage('Hello before accept!');
 	});
 
+	it('summarizes the chat as a message request while it is pending', async () => {
+		await agent2.directChatPage.back.click();
+		await agent2.homePage.ready();
+		const rowText = await agent2.homePage.chatRowText('Alice Test');
+		expect(rowText).toContain(await agent2.tr('messageRequest'));
+		expect(rowText).not.toContain('Hello before accept!');
+		await agent2.homePage.openChat('Alice Test');
+		await agent2.directChatPage.acceptButton.waitForExist();
+	});
+
 	it('establishes the contact when Bob accepts the request', async () => {
 		await agent2.directChatPage.acceptButton.click();
 		await agent2.directChatPage.acceptConfirm.click();
