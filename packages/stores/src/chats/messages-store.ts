@@ -1,4 +1,4 @@
-import { reactive } from 'signalium';
+import { ReactivePromise, reactive } from 'signalium';
 
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
@@ -59,6 +59,7 @@ export class MessagesStore {
 		protected tombstoneStore: TombstoneStore,
 		public chatId: ChatId,
 		public client: IMessagesClient,
+		public readOnly: () => ReactivePromise<boolean>,
 	) {}
 
 	messages = reactive(async () => {
