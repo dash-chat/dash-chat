@@ -15,9 +15,10 @@
 </script>
 
 <span
-	class="quote-frame {mine
-		? 'quote-frame-mine'
-		: 'quote-frame-others'} {composer ? 'quote-frame-composer' : ''}"
+	class="quote-frame"
+	class:quote-frame-mine={mine}
+	class:quote-frame-others={!mine}
+	class:quote-frame-composer={composer}
 >
 	<span class="quote-frame-bar"></span>
 	{@render children()}
