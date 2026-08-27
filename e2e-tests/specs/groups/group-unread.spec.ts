@@ -1,4 +1,5 @@
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { tid } from '../../helpers/selectors';
 import { SYNC_TIMEOUT, UI_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -100,5 +101,36 @@ describe('Group unread messages', () => {
 			async () =>
 				(await agent2.groupChatPage.messages.unreadBadgeText()) === null,
 		);
+	});
+
+	it('marks a taller-than-viewport message read when its bottom is visible', async () => {
+		await agent2.groupChatPage.back.click();
+		await agent2.homePage.ready();
+
+		const groupBadge = agent2.homePage
+			.chatListItem('mygroup')
+			.$(tid('chat-row-unread-badge'));
+
+		await agent1.groupChatPage.composer.sendMessage(
+			'tall start\n' + 'x\n'.repeat(350) + 'tall end',
+		);
+		await groupBadge.waitForExist({ timeout: SYNC_TIMEOUT });
+
+		await agent2.homePage.chatListItem('mygroup').click();
+		await agent2.groupChatPage.ready();
+		const tall = await agent2.groupChatPage.messages.waitForMessage('tall end');
+
+		// The regression only bites when the bubble is taller than twice the
+		// scroll viewport, where a whole-bubble observer can never reach 50%.
+		const bubbleHeight = (await tall.wrapper.getSize()).height;
+		const viewportHeight = (await agent2.groupChatPage.scroll.scroll.getSize())
+			.height;
+		expect(bubbleHeight).toBeGreaterThan(viewportHeight * 2);
+
+		await agent2.groupChatPage.back.click();
+		await agent2.homePage.ready();
+		await agent2.waitUntil(async () => !(await groupBadge.isExisting()), {
+			timeoutMsg: 'Unread badge did not clear after viewing the tall message',
+		});
 	});
 });
