@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { onDestroy, onMount } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Button } from 'konsta/svelte';
 	import { mdiMicrophone } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { showToast } from '$lib/utils/toasts';
 
 	interface Props {
 		onCancel: () => void;
@@ -10,6 +12,26 @@
 	}
 
 	let { onCancel, onSend }: Props = $props();
+
+	let stream: MediaStream | undefined;
+	let recorder: MediaRecorder | undefined;
+
+	onMount(async () => {
+		try {
+			stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			recorder = new MediaRecorder(stream);
+			recorder.start();
+		} catch (e) {
+			console.error('Failed to start voice recording', e);
+			showToast(m.errorMicrophoneAccess(), 'error', e);
+			onCancel();
+		}
+	});
+
+	onDestroy(() => {
+		if (recorder && recorder.state !== 'inactive') recorder.stop();
+		stream?.getTracks().forEach(track => track.stop());
+	});
 </script>
 
 <div class="row w-full items-center gap-2 px-2">

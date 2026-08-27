@@ -270,6 +270,7 @@
 	"errorTooManyAttachments": "You cannot add any more attachments to this message.",
 	"errorFilesWithPhotos": "You can't select photos and videos along with files.",
 	"errorOneFileAtATime": "You can only select one file at a time.",
+	"errorMicrophoneAccess": "Can't access the microphone. Please allow microphone access to record a voice message.",
 	"errorLoadingRecentPhotos": "Failed to load recent photos. Please try again.",
 	"errorAddingPhoto": "Failed to add photo. Please try again.",
 	"errorSendErrorReport": "Failed to send error report. Please try again.",
