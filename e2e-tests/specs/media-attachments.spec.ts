@@ -206,4 +206,16 @@ describe('Media attachments', () => {
 		await retry.click();
 		await agent2.directChatPage.messages.waitForPhotoMessage('retry-blob');
 	});
+
+	it('does not offer Copy on a photo-only message', async () => {
+		await agent1.directChatPage.composer.attachPhotos('copyless');
+		await agent1.directChatPage.composer.send();
+		await agent1.directChatPage.messages.waitForPhotoMessage('copyless');
+		const message =
+			await agent1.directChatPage.messages.messageWithPhoto('copyless');
+		if (!message) throw new Error('Photo message "copyless" not found');
+		await message.openActions();
+		expect(await message.copyAction.isExisting()).toBe(false);
+		expect(await message.deleteAction.isExisting()).toBe(true);
+	});
 });
