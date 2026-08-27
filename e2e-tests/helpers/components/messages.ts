@@ -71,6 +71,31 @@ export class Messages extends TestHelper {
 			: new Message(this.agent, this, hash, this.composer);
 	}
 
+	/** The rendered message holding a photo whose alt contains `label`, as a
+	 * `Message` helper scoped to it (by its message hash), or null if none is
+	 * rendered. */
+	async messageWithPhoto(label: string): Promise<Message | null> {
+		const hash = await this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				const wrapper = Array.from(wrappers).find(w =>
+					Array.from(w.querySelectorAll(`${photosSel} img`)).some(img =>
+						(img as HTMLImageElement).alt.includes(name),
+					),
+				);
+				return wrapper?.getAttribute('data-message-hash') ?? null;
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
+		);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
+	}
+
 	/** Wait until a message whose text contains `text` renders, and return its
 	 * `Message` helper. */
 	async waitForMessage(text: string, timeout = SYNC_TIMEOUT): Promise<Message> {

@@ -8,7 +8,12 @@
 	} from '@mdi/js';
 	import { List } from 'konsta/svelte';
 	import { getContext } from 'svelte';
-	import type { DeviceId, Message, MessagesStore } from 'dash-chat-stores';
+	import {
+		type DeviceId,
+		type Message,
+		type MessagesStore,
+		hasBody,
+	} from 'dash-chat-stores';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { canEditMessage } from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
@@ -44,6 +49,9 @@
 	const readOnly = useReactivePromise(store.readOnly);
 
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
+	const canCopy = $derived(
+		hasBody(message.content) && message.content.message !== '',
+	);
 
 	let confirmingDelete = $state(false);
 </script>
@@ -69,12 +77,14 @@
 			{/if}
 		{/if}
 	{/await}
-	<ListAction
-		title={m.menuCopy()}
-		icon={mdiContentCopy}
-		onClick={onCopy}
-		data-testid="message-action-copy"
-	/>
+	{#if canCopy}
+		<ListAction
+			title={m.menuCopy()}
+			icon={mdiContentCopy}
+			onClick={onCopy}
+			data-testid="message-action-copy"
+		/>
+	{/if}
 	<ListAction
 		title={m.delete()}
 		icon={mdiDeleteOutline}
