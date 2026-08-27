@@ -7,6 +7,7 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import SpotlightOverlay from '$lib/components/SpotlightOverlay.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
@@ -35,6 +36,7 @@
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
+	const readOnly = useReactivePromise(store.readOnly);
 
 	let expanded = $state(false);
 
@@ -70,25 +72,34 @@
 	}
 </script>
 
-<SpotlightOverlay {opened} {target} onClose={close} contentHidden={expanded}>
-	{#snippet above()}
-		<QuickReactionBar
-			{message}
-			onReact={react}
-			onExpand={() => (expanded = true)}
-		/>
-	{/snippet}
-	{#snippet below()}
-		<MessageActionsMenu
-			{message}
-			{myDeviceId}
-			onEdit={edit}
-			onReply={onReply ? reply : undefined}
-			onCopy={copy}
-			onDelete={close}
-		/>
-	{/snippet}
-</SpotlightOverlay>
+{#snippet reactionBar()}
+	<QuickReactionBar
+		{message}
+		onReact={react}
+		onExpand={() => (expanded = true)}
+	/>
+{/snippet}
+
+{#await $readOnly then readOnly}
+	<SpotlightOverlay
+		{opened}
+		{target}
+		onClose={close}
+		contentHidden={expanded}
+		above={readOnly ? undefined : reactionBar}
+	>
+		{#snippet below()}
+			<MessageActionsMenu
+				{message}
+				{myDeviceId}
+				onEdit={edit}
+				onReply={onReply ? reply : undefined}
+				onCopy={copy}
+				onDelete={close}
+			/>
+		{/snippet}
+	</SpotlightOverlay>
+{/await}
 
 {#if opened}
 	<ExpandedReactionsSheet {message} opened={expanded} onReact={react} />

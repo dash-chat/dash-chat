@@ -15,8 +15,9 @@
 		/** Hide the anchored popovers while keeping the backdrop as the single,
 		 * steady dim (e.g. while a sheet covers the overlay). */
 		contentHidden?: boolean;
-		/** Rendered in a pill-shaped popover above the target. */
-		above: Snippet;
+		/** Rendered in a pill-shaped popover above the target; omit to show no
+		 * popover there. */
+		above?: Snippet;
 		/** Rendered in a popover below the target. */
 		below: Snippet;
 	}
@@ -144,8 +145,8 @@
 		const base = target.getBoundingClientRect();
 		baseRect = base;
 		bump = untrack(() =>
-			aboveEl && belowEl
-				? ensembleBump(base, aboveEl.offsetHeight, belowEl.offsetHeight)
+			belowEl
+				? ensembleBump(base, aboveEl?.offsetHeight ?? 0, belowEl.offsetHeight)
 				: 0,
 		);
 		// Konsta popovers only re-read their anchors on window resize; nudge
@@ -216,16 +217,18 @@
 	></div>
 {/if}
 
-<Popover
-	opened={panelsShown && aboveAnchor !== undefined}
-	target={aboveAnchor}
-	backdrop={false}
-	class="!z-[36] !w-auto !rounded-full !origin-bottom [&>div]:!translate-y-0 {panelDelay}"
->
-	<div bind:this={aboveEl}>
-		{@render above()}
-	</div>
-</Popover>
+{#if above}
+	<Popover
+		opened={panelsShown && aboveAnchor !== undefined}
+		target={aboveAnchor}
+		backdrop={false}
+		class="!z-[36] !w-auto !rounded-full !origin-bottom [&>div]:!translate-y-0 {panelDelay}"
+	>
+		<div bind:this={aboveEl}>
+			{@render above()}
+		</div>
+	</Popover>
+{/if}
 
 <Popover
 	opened={panelsShown && belowAnchor !== undefined}

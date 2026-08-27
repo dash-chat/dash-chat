@@ -1,7 +1,9 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import type { Snippet } from 'svelte';
+	import { getContext, type Snippet } from 'svelte';
 	import { mdiReplyOutline } from '@mdi/js';
+	import type { MessagesStore } from 'dash-chat-stores';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 
 	let {
@@ -16,6 +18,14 @@
 		target?: HTMLElement;
 		children: Snippet;
 	} = $props();
+
+	const store: MessagesStore = getContext('messages-store');
+	// Read synchronously rather than via {#await}: the gate sits in a touch
+	// handler, out of reach of markup awaits. Default to read-only while the
+	// value is pending so the gesture fails closed, like the {#await}-gated
+	// surfaces.
+	const readOnlyChat = useReactiveValue(store.readOnly);
+	const readOnly = $derived($readOnlyChat ?? true);
 
 	// Distances mirror Signal Android's ConversationSwipeAnimationHelper
 	// (TRIGGER_DX = 64dp, icon slide = 10dp).
@@ -65,7 +75,12 @@
 	}
 
 	function onTouchStart(e: TouchEvent) {
-		if (onReply === undefined || target === undefined || e.touches.length !== 1)
+		if (
+			readOnly ||
+			onReply === undefined ||
+			target === undefined ||
+			e.touches.length !== 1
+		)
 			return;
 		startX = e.touches[0].clientX;
 		startY = e.touches[0].clientY;

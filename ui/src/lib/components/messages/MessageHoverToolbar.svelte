@@ -15,6 +15,7 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
@@ -41,6 +42,7 @@
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
+	const readOnly = useReactivePromise(store.readOnly);
 
 	let open = $state<'reactions' | 'menu' | null>(null);
 
@@ -115,27 +117,32 @@
 		class="flex items-center gap-0.5 {reverse ? 'flex-row-reverse' : ''}"
 		data-testid="message-hover-toolbar"
 	>
-		<span bind:this={reactEl}>
-			<IconButton
-				onClick={() => (open = 'reactions')}
-				label={m.addReaction()}
-				testid="message-hover-react"
-				class="!h-9 !w-9"
-			>
-				<wa-icon class="text-xl" src={wrapPathInSvg(mdiHeartPlusOutline)}
-				></wa-icon>
-			</IconButton>
-		</span>
-		{#if onReply}
-			<IconButton
-				onClick={reply}
-				label={m.reply()}
-				testid="message-hover-reply"
-				class="!h-9 !w-9"
-			>
-				<wa-icon class="text-xl" src={wrapPathInSvg(mdiReplyOutline)}></wa-icon>
-			</IconButton>
-		{/if}
+		{#await $readOnly then readOnly}
+			{#if !readOnly}
+				<span bind:this={reactEl}>
+					<IconButton
+						onClick={() => (open = 'reactions')}
+						label={m.addReaction()}
+						testid="message-hover-react"
+						class="!h-9 !w-9"
+					>
+						<wa-icon class="text-xl" src={wrapPathInSvg(mdiHeartPlusOutline)}
+						></wa-icon>
+					</IconButton>
+				</span>
+			{/if}
+			{#if onReply && !readOnly}
+				<IconButton
+					onClick={reply}
+					label={m.reply()}
+					testid="message-hover-reply"
+					class="!h-9 !w-9"
+				>
+					<wa-icon class="text-xl" src={wrapPathInSvg(mdiReplyOutline)}
+					></wa-icon>
+				</IconButton>
+			{/if}
+		{/await}
 		<span bind:this={menuEl}>
 			<IconButton
 				onClick={() => (open = 'menu')}
