@@ -203,6 +203,33 @@ export class Messages extends TestHelper {
 		);
 	}
 
+	/** Inline width/height styles of the cell of the photo whose filename
+	 * contains `label` — the box `PhotoAttachmentGallery` derives from the
+	 * sender-measured pixel dimensions, applied before the blob loads. */
+	async photoBoxStyle(
+		label: string,
+	): Promise<{ width: string; height: string }> {
+		return this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const imgs =
+					document
+						.querySelector(messagesSel)
+						?.querySelectorAll(`${photosSel} img`) ?? [];
+				const img = Array.from(imgs).find(el =>
+					(el as HTMLImageElement).alt.includes(name),
+				) as HTMLImageElement | undefined;
+				const cell = img?.closest('button');
+				return {
+					width: cell?.style.width ?? '',
+					height: cell?.style.height ?? '',
+				};
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
+		);
+	}
+
 	/** Wait until a file attachment with the given filename appears. */
 	async waitForFileMessage(
 		name: string,

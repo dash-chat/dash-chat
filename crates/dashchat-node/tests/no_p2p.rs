@@ -149,6 +149,8 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
@@ -300,6 +302,8 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice

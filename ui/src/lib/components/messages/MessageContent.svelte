@@ -3,6 +3,7 @@
 	import { type Hash, type Message, hasBody } from 'dash-chat-stores';
 	import { senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
+	import { timelineImageBox } from '$lib/utils/media';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
 	import FileAttachment from './attachments/FileAttachment.svelte';
 	import MessageText from './MessageText.svelte';
@@ -39,24 +40,37 @@
 	const isPhotoOnly = $derived(photos.length > 0 && !hasText);
 	const isFileOnly = $derived(!!file && !hasText);
 
+	// Photo messages fix the bubble width to the media box (Signal model:
+	// captions, quotes and sender names wrap at the image width, so the image
+	// is never narrower than the bubble). Collages are 300px wide.
+	const mediaCapStyle = $derived(
+		photos.length === 1
+			? `max-width: ${timelineImageBox(photos[0]).width}px;`
+			: photos.length > 1
+				? 'max-width: 300px;'
+				: '',
+	);
+
 	let metadataWidth = $state(0);
 </script>
 
 {#if showSenderName}
 	<div
 		class="sender-name"
-		style="color: {senderColor(message.author)}"
+		style="color: {senderColor(message.author)}; {mediaCapStyle}"
 		data-testid="group-message-sender-name"
 	>
 		{senderName}
 	</div>
 {/if}
 {#if message.replyQuote}
-	<ReplyQuote
-		reply={message.replyQuote}
-		{mine}
-		onNavigate={onNavigateToMessage}
-	/>
+	<div style={mediaCapStyle}>
+		<ReplyQuote
+			reply={message.replyQuote}
+			{mine}
+			onNavigate={onNavigateToMessage}
+		/>
+	</div>
 {/if}
 {#if photos.length > 0}
 	<div class="media photos">
@@ -75,7 +89,7 @@
 	</div>
 {/if}
 {#if hasText || (metadata && !isPhotoOnly && !isFileOnly)}
-	<div class="caption relative px-1">
+	<div class="caption relative px-1" style={mediaCapStyle}>
 		{#if metadata}
 			<div
 				class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"

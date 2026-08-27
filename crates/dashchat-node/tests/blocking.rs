@@ -12,6 +12,8 @@ fn photo(bytes: Vec<u8>, name: &str) -> OutgoingMedia {
             data: bytes,
             name: name.into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     }
 }

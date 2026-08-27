@@ -56,6 +56,19 @@ describe('Media attachments', () => {
 		await agent2.directChatPage.messages.waitForPhotoMessage('single');
 	});
 
+	it('sizes a lone photo from its sender-measured dimensions', async () => {
+		await agent1.directChatPage.composer.attachNoisePhoto(
+			'measured',
+			1600,
+			1200,
+		);
+		await agent1.directChatPage.composer.send();
+		await agent2.directChatPage.messages.waitForPhotoMessage('measured');
+		expect(
+			await agent2.directChatPage.messages.photoBoxStyle('measured'),
+		).toEqual({ width: '300px', height: '225px' });
+	});
+
 	it('sends multiple photos with a caption', async () => {
 		for (let i = 0; i < 3; i++) {
 			await agent1.directChatPage.composer.attachPhotos('captioned');

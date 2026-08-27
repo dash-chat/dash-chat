@@ -1930,6 +1930,8 @@ impl Node {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
+                        width: photo.width,
+                        height: photo.height,
                         hash,
                     });
                 }
@@ -2063,11 +2065,17 @@ impl Node {
             .into_iter()
             .map(|(item, data)| match item {
                 MediaMetadata::Photo {
-                    name, mime_type, ..
+                    name,
+                    mime_type,
+                    width,
+                    height,
+                    ..
                 } => Ok(crate::chat::OutgoingPhoto {
                     data: data.to_vec(),
                     name,
                     mime_type,
+                    width,
+                    height,
                 }),
                 other => Err(anyhow::anyhow!(
                     "unsupported media combination in a single message: {other:?}"
