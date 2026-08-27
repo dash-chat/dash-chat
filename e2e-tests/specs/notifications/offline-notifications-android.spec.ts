@@ -19,7 +19,7 @@ import { type Agent, setupAgents } from '../../setup/setup-agents';
  * in src-tauri/src/notifications/mod.rs that fires when an operation arrives
  * through the regular sync pipeline while the app is backgrounded.
  */
-// Skipped: the offline-mode toggle in the help page is disabled for now.
+// Skipped: requires a real Android device/emulator background service run.
 describe.skip('Offline notifications on Android (background sync)', () => {
 	let receiver: Agent;
 	let sender: Agent;
@@ -44,15 +44,15 @@ describe.skip('Offline notifications on Android (background sync)', () => {
 		const marker = `OFFLINE_${Date.now()}`;
 		const message = `offline hi ${marker}`;
 
-		// Enable offline mode on the Android receiver from the help screen.
+		// Enable background mode on the Android receiver from the offline settings screen.
 		await receiver.directChatPage.back.click();
 		await receiver.homePage.ready();
 		await receiver.homePage.settingsLink.waitForExist();
 		await receiver.homePage.settingsLink.click();
 		await receiver.settingsPage.ready();
-		await receiver.settingsPage.helpLink.click();
-		await receiver.helpPage.ready();
-		await receiver.helpPage.enableOfflineMode();
+		await receiver.settingsPage.offlineLink.click();
+		await receiver.offlinePage.ready();
+		await receiver.offlinePage.setBackgroundModeEnabled(true);
 
 		// Background the app. The background service keeps the node alive.
 		await receiver.backgroundApp();

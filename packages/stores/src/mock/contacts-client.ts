@@ -1,7 +1,7 @@
 import type { IContactsClient, Profile } from '../contacts/contacts-client';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import type { LocalStorageLogsClient } from './client';
+import { type LocalStorageLogsClient, chatIdForDevices } from './client';
 
 export class MockContactsClient implements IContactsClient {
 	constructor(
@@ -10,6 +10,7 @@ export class MockContactsClient implements IContactsClient {
 		private deviceId: DeviceId,
 		private deviceGroupTopicId: TopicId,
 		private inboxTopics: TopicId[],
+		private knownDevices: Record<AgentId, DeviceId>,
 	) {}
 
 	async myAgentId(): Promise<AgentId> {
@@ -22,6 +23,10 @@ export class MockContactsClient implements IContactsClient {
 
 	async agentForDevice(_devicePubkey: DeviceId): Promise<AgentId | undefined> {
 		return undefined;
+	}
+
+	async directChatId(devicePubkey: DeviceId): Promise<string> {
+		return chatIdForDevices(this.deviceId, devicePubkey);
 	}
 
 	async setProfile(profile: Profile): Promise<void> {
@@ -41,14 +46,23 @@ export class MockContactsClient implements IContactsClient {
 		return this.inboxTopics;
 	}
 
-	async addContact(_contactCode: string): Promise<DeviceId> {
-		return this.deviceId;
+	async addContact(_contactCode: string): Promise<string> {
+		return chatIdForDevices(this.deviceId, this.deviceId);
 	}
 
 	async acceptContact(agentId: AgentId): Promise<void> {
+		const peerDevice = this.knownDevices[agentId];
+		if (peerDevice === undefined)
+			throw new Error(`Unknown demo device for agent ${agentId}`);
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',
-			payload: { type: 'AddContact', payload: { agent_id: agentId } },
+			payload: {
+				type: 'AddContact',
+				payload: {
+					agent_id: agentId,
+					direct_chat_topic_id: chatIdForDevices(this.deviceId, peerDevice),
+				},
+			},
 		});
 	}
 

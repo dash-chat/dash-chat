@@ -5,12 +5,9 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import {
 		type ChatSummary,
-		type ContactsStore,
 		type MessageBody,
 		hasBody,
 	} from 'dash-chat-stores';
-	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
@@ -26,11 +23,6 @@
 	import { mdiCancel } from '@mdi/js';
 
 	let { summary, active }: { summary: ChatSummary; active: boolean } = $props();
-
-	const contactsStore: ContactsStore = getContext('contacts-store');
-	const blocked = $derived(
-		useReactivePromise(contactsStore.isBlocked, summary.chatId),
-	);
 
 	const chatHref = (s: ChatSummary) =>
 		s.type === 'GroupChat'
@@ -98,40 +90,40 @@
 	{#snippet subtitle()}
 		<div class="row items-center">
 			<span class="flex-1 min-w-0 truncate text-black/70 dark:text-white/70">
-				{#await $blocked then isBlocked}
-					{#if isBlocked && summary.type === 'DirectChat'}
-						<span class="inline-flex items-center gap-1 italic">
-							<wa-icon
-								class="small-icon shrink-0"
-								src={wrapPathInSvg(mdiCancel)}
-								data-testid="blocked-row-icon"
-							></wa-icon>
-							{m.blocked()}
-						</span>
-					{:else if summary.lastEvent.kind === 'contact_request'}
-						{m.messageRequest()}
-					{:else if summary.lastEvent.kind === 'contact_added'}
-						{m.contactAccepted()}
-					{:else if summary.lastEvent.kind === 'message'}
-						{#if summary.type === 'GroupChat'}
-							<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
-							{#if hasBody(summary.lastEvent.content)}
-								{summarizeMessage(summary.lastEvent.content)}
-							{:else}
-								<span class="italic">{m.messageDeleted()}</span>
-							{/if}
-						{:else if hasBody(summary.lastEvent.content)}
+				{#if summary.blocked === true && summary.type === 'DirectChat'}
+					<span class="inline-flex items-center gap-1 italic">
+						<wa-icon
+							class="small-icon shrink-0"
+							src={wrapPathInSvg(mdiCancel)}
+							data-testid="blocked-row-icon"
+						></wa-icon>
+						{m.blocked()}
+					</span>
+				{:else if summary.lastEvent.kind === 'contact_request'}
+					{m.messageRequest()}
+				{:else if summary.lastEvent.kind === 'contact_added'}
+					{m.contactAccepted()}
+				{:else if summary.lastEvent.kind === 'message'}
+					{#if summary.type === 'GroupChat'}
+						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
+						{#if hasBody(summary.lastEvent.content)}
 							{summarizeMessage(summary.lastEvent.content)}
 						{:else}
 							<span class="italic">{m.messageDeleted()}</span>
 						{/if}
+					{:else if hasBody(summary.lastEvent.content)}
+						{summarizeMessage(summary.lastEvent.content)}
 					{:else}
-						{groupEventText(summary.lastEvent)}
+						<span class="italic">{m.messageDeleted()}</span>
 					{/if}
-				{/await}
+				{:else}
+					{groupEventText(summary.lastEvent)}
+				{/if}
 			</span>
 			{#if summary.unreadMessages !== 0}
-				<Badge>{summary.unreadMessages}</Badge>
+				<Badge data-testid="chat-row-unread-badge"
+					>{summary.unreadMessages}</Badge
+				>
 			{/if}
 		</div>
 	{/snippet}

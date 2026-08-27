@@ -15,6 +15,7 @@ export interface Settings {
 	qr_color: string | null;
 	local_mailbox_enabled: boolean;
 	notifications_enabled: boolean;
+	background_mode_enabled: boolean;
 }
 
 export type { ColorScheme, ColorSchemePreference };
@@ -28,6 +29,7 @@ export interface ISettingsClient {
 	setSetting(key: string, value: unknown): Promise<void>;
 	setLocalMailboxEnabled(enabled: boolean): Promise<void>;
 	setNotificationsEnabled(enabled: boolean): Promise<void>;
+	setBackgroundModeEnabled(enabled: boolean): Promise<void>;
 	onSettingsUpdated(handler: (settings: Settings) => void): UnsubscribeFunction;
 }
 
@@ -58,6 +60,10 @@ export class SettingsClient implements ISettingsClient {
 
 	setNotificationsEnabled(enabled: boolean): Promise<void> {
 		return this.setSetting('notifications_enabled', enabled);
+	}
+
+	setBackgroundModeEnabled(enabled: boolean): Promise<void> {
+		return this.setSetting('background_mode_enabled', enabled);
 	}
 
 	onSettingsUpdated(

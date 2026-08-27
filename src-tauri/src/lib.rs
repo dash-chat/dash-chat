@@ -57,6 +57,18 @@ pub fn run() {
         // affects sockets opened after the bind).
         builder = builder.plugin(tauri_plugin_android_fs::init());
         builder = builder.plugin(tauri_plugin_medialibrary::init());
+        builder = builder.plugin(
+            tauri_plugin_lifecycle::Builder::new()
+                .on_pause(|app| async move {
+                    log::info!("[android-lifecycle] on_pause fired (onStop)");
+                    background::lifecycle::on_pause(app).await;
+                })
+                .on_resume(|app| async move {
+                    log::info!("[android-lifecycle] on_resume fired (onStart)");
+                    background::lifecycle::on_resume(app).await;
+                })
+                .build(),
+        );
     }
     #[cfg(target_os = "ios")]
     {
@@ -64,7 +76,7 @@ pub fn run() {
         // Quiesce the node (release SQLite locks) on background and rebuild it on
         // foreground so iOS can suspend the app without a 0xdead10cc kill.
         builder = builder.plugin(
-            tauri_plugin_ios_lifecycle::Builder::new()
+            tauri_plugin_lifecycle::Builder::new()
                 .on_pause(|app| async move {
                     use tauri::Manager;
                     if let Some(app_node_manager) = app

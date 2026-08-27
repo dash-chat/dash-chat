@@ -20,6 +20,7 @@
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import ReplyQuote from './ReplyQuote.svelte';
+	import SwipeToReply from './SwipeToReply.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { m } from '$lib/paraglide/messages.js';
@@ -156,21 +157,26 @@
 			<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
 				<Reactions
 					{reactions}
-					{myDeviceId}
-					onToggleReaction={emoji =>
-						toggleReaction(store, message, myDeviceId, emoji)}
+					onToggleReaction={emoji => toggleReaction(store, message, emoji)}
+					onSheetOpen={() => (reactionsOpened = false)}
 				/>
 			</div>
 		{/if}
 	</div>
 {/snippet}
 
-{#if deleted}
-	<div class="group flex justify-end">{@render bubble()}</div>
-{:else}
+{#snippet row()}
 	<div class="group flex justify-end" use:longpress={{ onLongPress }}>
 		{@render bubble()}
 	</div>
+{/snippet}
+
+{#if deleted}
+	<div class="group flex justify-end">{@render bubble()}</div>
+{:else if isMobile}
+	<SwipeToReply {onReply} target={messageEl}>{@render row()}</SwipeToReply>
+{:else}
+	{@render row()}
 {/if}
 {#if isMobile}
 	<MessageActionsOverlay

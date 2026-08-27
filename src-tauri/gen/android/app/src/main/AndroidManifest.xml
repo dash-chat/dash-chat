@@ -7,9 +7,7 @@
 
     <!-- tauri-plugin-background-service declares these in its own manifest and the
          merger pulls them into ours; `tools:node="remove"` strips them back out. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" tools:node="remove" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" tools:node="remove" />
@@ -61,10 +59,10 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
                 <data android:host="dashchat.org" />
-                
-                
+
+
                 <data android:pathPrefix="/add-contact" />
-                
+
             </intent-filter>
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
         </activity>
@@ -80,6 +78,6 @@
         </provider>
     </application>
     <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
-    
+
     <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
 </manifest>

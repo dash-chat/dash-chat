@@ -15,14 +15,12 @@ export * from './devices/devices-store.js';
 export * from './devices/devices-client.js';
 
 export * from './direct-chats/direct-chat-store.js';
-export * from './direct-chats/direct-chat-client.js';
 
 export * from './group-chats/group-chat-store.js';
 export * from './group-chats/group-chat-client.js';
 
 export * from './chats/chats-store.js';
 export * from './chats/chats-client.js';
-export * from './chats/chat-key.js';
 export * from './chats/messages-store.js';
 export * from './chats/messages-client.js';
 export * from './chats/replies.js';

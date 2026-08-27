@@ -511,6 +511,26 @@ async function setupAgent(
 			return;
 		}
 		await b.switchContext('NATIVE_APP');
+		if (platform === 'android') {
+			// Appium's queryAppState pgrep-matches any process whose name contains
+			// the package, and webview renderer processes can linger for minutes
+			// after the main process exits, so ask for the main process directly.
+			const udid = androidUdid(b);
+			await b.waitUntil(
+				async () => {
+					try {
+						execSync(`adb -s ${udid} shell pidof ${APP_PACKAGE}`, {
+							stdio: 'ignore',
+						});
+						return false;
+					} catch {
+						return true;
+					}
+				},
+				{ timeoutMsg: 'the app never shut itself down' },
+			);
+			return;
+		}
 		await b.waitUntil(
 			async () =>
 				Number(await b.queryAppState(APP_PACKAGE)) <= APP_STATE_NOT_RUNNING,

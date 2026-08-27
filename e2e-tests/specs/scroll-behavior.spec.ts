@@ -20,7 +20,6 @@ describe('Chat scroll behavior', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		this.timeout(120_000);
 		[agent1, agent2] = await setupAgents(this, [
 			{ platform: 'any' },
 			{ platform: 'any' },

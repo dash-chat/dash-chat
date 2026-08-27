@@ -31,7 +31,7 @@
 
 use std::marker::PhantomData;
 
-use crate::AgentId;
+use crate::{AgentId, FakeAgentId};
 
 use aliased::Aliasing;
 use p2panda::operation::LogId;
@@ -214,7 +214,7 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
-    pub fn direct_chat(mut pks: [AgentId; 2]) -> Self {
+    pub fn direct_chat(mut pks: [FakeAgentId; 2]) -> Self {
         pks.sort();
         let mut hasher = blake3::Hasher::new();
         hasher.update(pks[0].as_bytes());

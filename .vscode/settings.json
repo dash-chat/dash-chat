@@ -23,5 +23,6 @@
 	"tailwindCSS.lint.suggestCanonicalClasses": "ignore",
 	"chat.tools.terminal.autoApprove": {
 		"cargo test": true
-	}
+	},
+	"rust-analyzer.cargo.buildScripts.enable": true
 }

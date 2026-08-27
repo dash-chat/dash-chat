@@ -4,10 +4,10 @@
 
 	let {
 		reaction,
-		onToggleReaction,
+		onClick,
 	}: {
 		reaction: CondensedReaction;
-		onToggleReaction: (emoji: string) => void;
+		onClick: () => void;
 	} = $props();
 </script>
 
@@ -25,7 +25,7 @@
 			}}
 	onclick={e => {
 		e.stopPropagation();
-		onToggleReaction(reaction.emoji);
+		onClick();
 	}}
 >
 	{reaction.emoji}{#if reaction.count > 1}&nbsp;{reaction.count}{/if}
