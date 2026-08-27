@@ -50,21 +50,23 @@
 
 <List nested data-testid={testid}>
 	{#await $readOnly then readOnly}
-		{#if canEdit && !readOnly}
-			<ListAction
-				title={m.edit()}
-				icon={mdiPencilOutline}
-				onClick={() => onEdit?.()}
-				data-testid="message-action-edit"
-			/>
-		{/if}
-		{#if onReply && !readOnly}
-			<ListAction
-				title={m.reply()}
-				icon={mdiReply}
-				onClick={onReply}
-				data-testid="message-action-reply"
-			/>
+		{#if !readOnly}
+			{#if canEdit}
+				<ListAction
+					title={m.edit()}
+					icon={mdiPencilOutline}
+					onClick={() => onEdit?.()}
+					data-testid="message-action-edit"
+				/>
+			{/if}
+			{#if onReply}
+				<ListAction
+					title={m.reply()}
+					icon={mdiReply}
+					onClick={onReply}
+					data-testid="message-action-reply"
+				/>
+			{/if}
 		{/if}
 	{/await}
 	<ListAction

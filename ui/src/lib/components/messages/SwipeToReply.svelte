@@ -21,9 +21,11 @@
 
 	const store: MessagesStore = getContext('messages-store');
 	// Read synchronously rather than via {#await}: the gate sits in a touch
-	// handler, out of reach of markup awaits.
+	// handler, out of reach of markup awaits. Default to read-only while the
+	// value is pending so the gesture fails closed, like the {#await}-gated
+	// surfaces.
 	const readOnlyChat = useReactiveValue(store.readOnly);
-	const readOnly = $derived($readOnlyChat ?? false);
+	const readOnly = $derived($readOnlyChat ?? true);
 
 	// Distances mirror Signal Android's ConversationSwipeAnimationHelper
 	// (TRIGGER_DX = 64dp, icon slide = 10dp).
