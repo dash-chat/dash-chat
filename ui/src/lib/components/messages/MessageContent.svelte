@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { type Message, hasBody } from 'dash-chat-stores';
+	import { type Hash, type Message, hasBody } from 'dash-chat-stores';
 	import { senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
 	import FileAttachment from './attachments/FileAttachment.svelte';
 	import MessageText from './MessageText.svelte';
+	import ReplyQuote from './ReplyQuote.svelte';
 
 	let {
 		message,
@@ -13,6 +14,8 @@
 		metadata,
 		senderName = '',
 		showSenderName = false,
+		mine = false,
+		onNavigateToMessage,
 	}: {
 		message: Message;
 		searchQuery: string;
@@ -21,6 +24,9 @@
 		 * as the lightbox title. */
 		senderName?: string;
 		showSenderName?: boolean;
+		/** Whether the enclosing bubble is my own message. */
+		mine?: boolean;
+		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
 
 	const body = $derived(hasBody(message.content) ? message.content : null);
@@ -44,6 +50,13 @@
 	>
 		{senderName}
 	</div>
+{/if}
+{#if message.replyQuote}
+	<ReplyQuote
+		reply={message.replyQuote}
+		{mine}
+		onNavigate={onNavigateToMessage}
+	/>
 {/if}
 {#if photos.length > 0}
 	<div class="media photos">
@@ -109,8 +122,8 @@
 		box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 		pointer-events: none;
 	}
-	/* Don't bleed up into the sender-name header above the media. */
-	.sender-name + .media.photos {
+	/* Don't bleed up into the sender-name header or reply quote above the media. */
+	.media.photos:not(:first-child) {
 		margin-top: 0;
 	}
 	/* Leave a gap before a caption below the media instead of bleeding down. */

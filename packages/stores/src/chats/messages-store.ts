@@ -1,5 +1,6 @@
 import { ReactivePromise, reactive } from 'signalium';
 
+import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
@@ -76,8 +77,32 @@ export class MessagesStore {
 		const deviceAgents = await this.contactsStore.agentsForDevices(
 			new Set(Object.keys(logs)),
 		);
-		const messages = logsToMessages(opsOrdered, tombstones, deviceAgents);
+		const deviceNames = await this.deviceNames();
+		const messages = logsToMessages(
+			opsOrdered,
+			tombstones,
+			deviceAgents,
+			deviceNames,
+		);
 		return messages;
+	});
+
+	/** Profile name of each device that has authored in this chat, for the
+	 * devices whose author's profile is known. */
+	deviceNames = reactive(async (): Promise<Record<DeviceId, string>> => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		const profiles = await this.contactsStore.profilesForAgents(
+			new Set(Object.values(deviceAgents)),
+		);
+		const deviceNames: Record<DeviceId, string> = {};
+		for (const [deviceId, agentId] of Object.entries(deviceAgents)) {
+			const profile = profiles[agentId];
+			if (profile) deviceNames[deviceId] = fullName(profile);
+		}
+		return deviceNames;
 	});
 
 	members = reactive(async (): Promise<Array<AgentId>> => {
@@ -213,6 +238,7 @@ function logsToMessages(
 	opsOrdered: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,
 	deviceAgents: Record<DeviceId, AgentId>,
+	deviceNames: Record<DeviceId, string>,
 ): Record<Hash, Message> {
 	const messages: Record<Hash, Message | Bodyless> = {};
 	// Map of EditMessage -> the target they reference
@@ -256,6 +282,7 @@ function logsToMessages(
 					replyQuote = {
 						kind: 'content',
 						author: replyTarget.author,
+						authorName: deviceNames[replyTarget.author],
 						text: replyTarget.content.message,
 						media: mediaBundleToAttachment(replyTarget.content.media),
 						scrollTarget: quoteHash,
@@ -268,6 +295,9 @@ function logsToMessages(
 					replyQuote = {
 						kind: 'deleted',
 						author: replyTarget?.author,
+						authorName: replyTarget
+							? deviceNames[replyTarget.author]
+							: undefined,
 						scrollTarget: replyTarget ? quoteHash : undefined,
 					};
 				} else {
