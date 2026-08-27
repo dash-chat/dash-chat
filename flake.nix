@@ -141,6 +141,7 @@
         rec {
           devShells.default = pkgs.mkShell {
             packages = [ rust ] ++ packages;
+            buildInputs = lib.optionals pkgs.stdenv.isLinux [ pkgsPnpm.alsa-lib ];
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
             shellHook = hostBuildEnvHook + voiceHostEnvHook;
           };
@@ -148,6 +149,7 @@
           # Opt-in faster dev builds: nightly rustc with the Cranelift codegen backend
           devShells.cranelift = pkgs.mkShell {
             packages = [ rustCranelift ] ++ packages;
+            buildInputs = lib.optionals pkgs.stdenv.isLinux [ pkgsPnpm.alsa-lib ];
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
             shellHook =
               hostBuildEnvHook
