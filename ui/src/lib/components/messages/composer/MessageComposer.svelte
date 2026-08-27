@@ -8,6 +8,7 @@
 	import {
 		type DraftMedia,
 		type IngestError,
+		capturePhoto,
 		draftToMedia,
 		ingestFiles,
 		pickMedia,
@@ -34,6 +35,7 @@
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import StandaloneAttachButton from '$lib/components/messages/composer/StandaloneAttachButton.svelte';
 	import InlineAttachButton from '$lib/components/messages/composer/InlineAttachButton.svelte';
+	import CameraButton from '$lib/components/messages/composer/CameraButton.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
 	import AttachMenuButton from '$lib/components/messages/composer/AttachMenuButton.svelte';
@@ -225,6 +227,16 @@
 		stage(files);
 	}
 
+	async function captureFromCamera() {
+		try {
+			const file = await capturePhoto();
+			if (file) stage([file]);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to capture photo', e);
+		}
+	}
+
 	async function addMore() {
 		try {
 			const files = await pickMedia('image', true);
@@ -315,11 +327,21 @@
 				banner={editing !== null ? editingBanner : replyBanner}
 			>
 				{#snippet after()}
-					{#if !editing && isMobile && theme === 'material' && hasContent}
-						<InlineAttachButton
-							expanded={showMediaPanel}
-							onClick={toggleMediaPanel}
-						/>
+					{#if !editing && isMobile}
+						{#if hasContent && theme === 'material'}
+							<InlineAttachButton
+								expanded={showMediaPanel}
+								onClick={toggleMediaPanel}
+							/>
+						{/if}
+						<div
+							class="flex shrink-0 items-center overflow-hidden transition-all duration-200 ease-out {hasContent
+								? 'me-0 w-0 opacity-0'
+								: 'me-1 w-10 opacity-100'}"
+							aria-hidden={hasContent}
+						>
+							<CameraButton onClick={captureFromCamera} />
+						</div>
 					{/if}
 				{/snippet}
 			</MessageInput>

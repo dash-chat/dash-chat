@@ -36,6 +36,7 @@ export class DirectChatStore {
 			tombstoneStore,
 			chatId,
 			messagesClient,
+			reactive(async () => await this.isBlocked()),
 		);
 	}
 

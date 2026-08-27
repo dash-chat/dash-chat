@@ -5,6 +5,7 @@
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { tid } from '../helpers/selectors';
+import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Media attachments', () => {
@@ -32,6 +33,20 @@ describe('Media attachments', () => {
 			await agent1.tr('attachFile'),
 		);
 		await composer.closeAttachMenu();
+	});
+
+	it('shows the camera button only on mobile with an empty composer', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
+		if (agent1.platform === 'desktop') {
+			expect(await composer.cameraButton.isExisting()).toBe(false);
+			return;
+		}
+		await composer.cameraButton.waitForDisplayed();
+		await composer.type('hiding the camera');
+		await composer.cameraButton.waitForExist({ reverse: true });
+		await composer.type('');
+		await composer.cameraButton.waitForDisplayed();
 	});
 
 	it('sends a single photo from Alice and renders on both ends', async () => {

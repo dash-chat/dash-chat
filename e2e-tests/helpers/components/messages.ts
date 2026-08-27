@@ -638,6 +638,17 @@ export class Message extends TestHelper {
 		return this.wrapper.$(tid('message-hover-reply'));
 	}
 
+	/** The hover toolbar's add-reaction button. */
+	get hoverReactButton() {
+		return this.wrapper.$(tid('message-hover-react'));
+	}
+
+	/** This message's quick-reaction bar (in the mobile spotlight overlay or
+	 * the desktop hover popover). */
+	get quickReactionBar() {
+		return this.wrapper.$(tid('quick-reaction-bar'));
+	}
+
 	/** Open the actions menu, tap Reply, type `replyText`, and send it. */
 	async reply(replyText: string): Promise<void> {
 		await this.openActions();

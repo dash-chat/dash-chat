@@ -19,7 +19,6 @@
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
-	import ReplyQuote from './ReplyQuote.svelte';
 	import SwipeToReply from './SwipeToReply.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
@@ -37,7 +36,6 @@
 		chatId,
 		onEdit,
 		onReply,
-		replyAuthorName,
 		onNavigateToMessage,
 	}: {
 		message: Message;
@@ -47,8 +45,6 @@
 		searchQuery: string;
 		onEdit?: () => void;
 		onReply?: () => void;
-		/** Display name of the author quoted by this message's reply. */
-		replyAuthorName?: string;
 		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
 
@@ -135,19 +131,12 @@
 				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 			>
 				<div class="flex flex-col gap-1">
-					{#if message.replyQuote}
-						<ReplyQuote
-							reply={message.replyQuote}
-							authorName={replyAuthorName}
-							{myDeviceId}
-							mine
-							onNavigate={onNavigateToMessage}
-						/>
-					{/if}
 					<MessageContent
 						{message}
 						{searchQuery}
 						senderName={m.you()}
+						mine
+						{onNavigateToMessage}
 						metadata={isLast || editHistory.length > 0 ? metadata : undefined}
 					/>
 				</div>
