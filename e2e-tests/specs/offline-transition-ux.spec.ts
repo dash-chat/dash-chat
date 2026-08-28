@@ -6,7 +6,7 @@
  * toggling the per-agent local mailbox server underneath the running agents.
  *
  * Visible states under test:
- *   - Message status: "delivered" → "sending" → "mailbox" → "delivered"
+ *   - Message status: "sending" → "mailbox" → "delivered"
  *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';

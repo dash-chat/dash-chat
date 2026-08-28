@@ -7,7 +7,7 @@
 		type MessageAckStore,
 	} from 'dash-chat-stores';
 
-	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { useReactivePromises } from '$lib/stores/use-signal';
 
 	import StatusDeliveredIcon from './StatusDeliveredIcon.svelte';
 	import StatusMailboxIcon from './StatusMailboxIcon.svelte';
@@ -26,26 +26,21 @@
 	);
 	const messageAckStore: MessageAckStore = getContext('message-acks-store');
 
-	const syncStatus = useReactiveValue(
-		mailboxTrackerStore.syncStatusForOp,
-		props.chatId,
-		props.author,
-		props.seq,
-	);
-	const acks = useReactiveValue(messageAckStore.acks, props.chatId);
-
-	const status = $derived.by(() => {
-		const acked = $acks?.[props.author];
-		if (acked !== undefined && acked.seq >= props.seq) return 'delivered';
-		if ($syncStatus === undefined) return undefined;
-		return $syncStatus.syncedWithCloudMailbox ||
-			$syncStatus.syncedWithAnyLocalMailbox
-			? 'mailbox'
-			: 'sending';
-	});
+	const state = useReactivePromises(() => [
+		mailboxTrackerStore.syncStatusForOp(props.chatId, props.author, props.seq),
+		messageAckStore.acks(props.chatId),
+	]);
 </script>
 
-{#if status !== undefined}
+{#await $state then [syncStatus, acks]}
+	{@const acked = acks[props.author]}
+	{@const status =
+		acked !== undefined && acked.seq >= props.seq
+			? 'delivered'
+			: syncStatus.syncedWithCloudMailbox ||
+				  syncStatus.syncedWithAnyLocalMailbox
+				? 'mailbox'
+				: 'sending'}
 	<div
 		data-testid="message-status"
 		data-status={status}
@@ -60,7 +55,7 @@
 			<StatusSendingIcon />
 		{/if}
 	</div>
-{/if}
+{/await}
 
 <style>
 	.message-status {
