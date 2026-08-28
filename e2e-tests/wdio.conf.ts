@@ -8,12 +8,13 @@
  * by host OS, though: `desktop` needs Linux (tauri-driver/WebKitGTK), `ios` needs
  * macOS + a device, so they can't share one host.
  */
+import { setOptions } from 'expect-webdriverio';
 import type { ChildProcess } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UI_TIMEOUT } from './helpers/timeouts';
+import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
 import { killLeftoverMailboxServers } from './setup/cleanup';
 import {
 	buildMailboxServer,
@@ -259,6 +260,14 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		for (const platform of platforms) {
 			await platform.beforeSession();
 		}
+	},
+
+	/** Negated expect matchers (`.not.toBeExisting()`, …) poll their full wait
+	 * before passing, so the 30s waitforTimeout default turns every absence
+	 * assertion into a 30s stall. Cap all matchers at the settle window; an
+	 * assertion that genuinely needs longer opts in with `{ wait: UI_TIMEOUT }`. */
+	before() {
+		setOptions({ wait: RENDER_SETTLE_WINDOW });
 	},
 
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes

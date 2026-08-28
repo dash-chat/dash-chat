@@ -19,6 +19,7 @@
 		"@wdio/types": "^9.12.1",
 		"appium": "^2.19.0",
 		"expect-webdriverio": "^5.7.0",
+		"fast-check": "^4.9.0",
 		"qrcode": "^1.5.4",
 		"ts-node": "^10.9.2",
 		"typescript": "^5.9.3",

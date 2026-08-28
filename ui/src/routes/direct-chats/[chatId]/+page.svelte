@@ -60,6 +60,8 @@
 		messagePosition,
 		scrollToMessage,
 	} from '$lib/components/messages/message-helpers';
+	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
+	import { useDeviceId } from '$lib/stores/my-device-id';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
@@ -77,7 +79,7 @@
 
 	const peerAgentId = useReactiveValue(store.peerAgentId);
 
-	const readTracker = createReadMessagesTracker(store.messages);
+	const readTracker = createReadMessagesTracker(store.messages, useDeviceId());
 	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
@@ -127,11 +129,7 @@
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 
-	// Sticky once set so the divider doesn't shift as messages are read. We allow
-	// a re-capture later only when the user is scrolled up — at-bottom new
-	// arrivals get auto-read by the IntersectionObserver, so no divider is needed.
-	let capturedUnreadHash: Hash | null = null;
-	let unreadDividerCaptured = false;
+	const unreadDividerTracker = createUnreadDividerTracker();
 
 	// Search state
 	let searchMode = $state(page.url.searchParams.has('search'));
@@ -165,8 +163,7 @@
 		} else {
 			justSentMessageHash = messageHash;
 		}
-		capturedUnreadHash = null;
-		unreadDividerCaptured = false;
+		unreadDividerTracker.reset();
 	}
 
 	onMount(() => {
@@ -257,59 +254,6 @@
 	}
 
 	const theme = $derived(useTheme());
-
-	function getUnreadDividerInfo(
-		messageGroupsInDays: Awaited<typeof $messageGroups>,
-		readHashes: Set<Hash> | undefined,
-		deviceId: DeviceId | undefined,
-	): { hash: Hash | null; count: number } {
-		if (!messageGroupsInDays || !readHashes || !deviceId) {
-			return { hash: null, count: 0 };
-		}
-
-		if (
-			capturedUnreadHash === null &&
-			(!unreadDividerCaptured || !isAtBottom)
-		) {
-			for (const day of messageGroupsInDays) {
-				for (const messageGroup of day.eventsGroups) {
-					for (const [hash, item] of messageGroup) {
-						if (item.kind !== 'message') continue;
-						if (item.message.author !== deviceId && !readHashes.has(hash)) {
-							capturedUnreadHash = hash;
-							break;
-						}
-					}
-					if (capturedUnreadHash) break;
-				}
-				if (capturedUnreadHash) break;
-			}
-		}
-		unreadDividerCaptured = true;
-
-		if (!capturedUnreadHash) return { hash: null, count: 0 };
-
-		// Count all peer messages from the divider position onwards.
-		// This is stable when messages are marked as read (count doesn't drop)
-		// and increases when new messages arrive.
-		let count = 0;
-		let found = false;
-		for (const day of messageGroupsInDays) {
-			for (const messageGroup of day.eventsGroups) {
-				for (const [hash, item] of messageGroup) {
-					if (hash === capturedUnreadHash) found = true;
-					if (
-						found &&
-						item.kind === 'message' &&
-						item.message.author !== deviceId
-					)
-						count++;
-				}
-			}
-		}
-
-		return { hash: capturedUnreadHash, count };
-	}
 </script>
 
 <div
@@ -411,10 +355,11 @@
 
 					{#await $readMessageHashes then readHashes}
 						{#await $messageGroups then messageGroupsInDays}
-							{@const unreadDivider = getUnreadDividerInfo(
+							{@const unreadDivider = unreadDividerTracker.compute(
 								messageGroupsInDays,
 								readHashes,
 								myDeviceId,
+								isAtBottom,
 							)}
 							<div
 								class="column"

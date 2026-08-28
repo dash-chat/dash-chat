@@ -38,4 +38,14 @@ describe('Group details spec', () => {
 
 		await expect(agent2.groupInfoPage.editLink).not.toBeDisplayed();
 	});
+
+	it('Shows "You" instead of your own profile name in the members list', async () => {
+		await agent2.groupInfoPage.memberItem('Bob').waitForExist();
+		expect(await agent2.groupInfoPage.memberItem('Bob').getText()).toContain(
+			'You',
+		);
+		expect(await agent2.groupInfoPage.memberItem('Alice').getText()).toContain(
+			'Alice',
+		);
+	});
 });

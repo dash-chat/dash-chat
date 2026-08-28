@@ -41,55 +41,84 @@ export class IosNotifications extends AppiumNotificationHelper {
 		);
 	}
 
-	async waitForNotification(
-		textIncludes: string,
-		timeout = 60_000,
-	): Promise<string> {
-		await this.switchToNative();
-		await this.openNotificationCenter();
-		const cell = this.cellFor(textIncludes);
-		await cell.waitForExist({
-			timeout,
-			timeoutMsg: `No notification containing "${textIncludes}" arrived within ${timeout}ms`,
+	/** Swipe up from the bottom edge — the home gesture, which also closes
+	 * Notification Center (and is harmless when it is closed). */
+	protected async dismissNotificationUi(): Promise<void> {
+		const { width, height } = await this.agent.getWindowSize();
+		const x = Math.round(width / 2);
+		await this.agent.performActions([
+			{
+				type: 'pointer',
+				id: 'finger1',
+				parameters: { pointerType: 'touch' },
+				actions: [
+					{ type: 'pointerMove', duration: 0, x, y: height - 2 },
+					{ type: 'pointerDown', button: 0 },
+					{
+						type: 'pointerMove',
+						duration: 600,
+						x,
+						y: Math.round(height * 0.3),
+					},
+					{ type: 'pointerUp', button: 0 },
+				],
+			},
+		]);
+		await this.agent.releaseActions();
+	}
+
+	waitForNotification(textIncludes: string, timeout = 60_000): Promise<string> {
+		return this.restoringWebviewOnFailure(async () => {
+			await this.switchToNative();
+			await this.openNotificationCenter();
+			const cell = this.cellFor(textIncludes);
+			await cell.waitForExist({
+				timeout,
+				timeoutMsg: `No notification containing "${textIncludes}" arrived within ${timeout}ms`,
+			});
+			return (await cell.getAttribute('label')) ?? '';
 		});
-		return (await cell.getAttribute('label')) ?? '';
 	}
 
-	async waitForAppNotification(timeout = 60_000): Promise<string> {
-		await this.switchToNative();
-		await this.openNotificationCenter();
-		// SpringBoard labels a cell "<app>, <when>, <title>, <body>", so the app
-		// name is the one thing every notification of ours carries.
-		const cell = this.cellFor(APP_NAME);
-		try {
-			await cell.waitForExist({ timeout });
-		} catch {
-			// Nothing of ours matched by label. Before concluding no push arrived,
-			// show what Notification Center actually holds: the label format
-			// differs across iOS versions, and a notification can be present under
-			// a shape this predicate does not match.
-			const source = await this.agent.getPageSource();
-			const cells = source
-				.split('\n')
-				.filter(line => /XCUIElementTypeCell|label="/.test(line))
-				.slice(0, 40)
-				.join('\n');
-			throw new Error(
-				`No ${APP_NAME} notification matched within ${timeout}ms. ` +
-					`Notification Center contents:\n${cells || '(no cells)'}`,
-			);
-		}
-		// Notification Center lists newest first, and the first match is what
-		// `$` returns; older ones from earlier steps (a contact request, say) sit
-		// below it. Return every label so the caller sees them all if the
-		// content assertion fails.
-		const labels = await this.agent
-			.$$(`-ios predicate string:label CONTAINS[c] "${APP_NAME}"`)
-			.map(async c => (await c.getAttribute('label')) ?? '');
-		return labels.join('\n');
+	waitForAppNotification(timeout = 60_000): Promise<string> {
+		return this.restoringWebviewOnFailure(async () => {
+			await this.switchToNative();
+			await this.openNotificationCenter();
+			// SpringBoard labels a cell "<app>, <when>, <title>, <body>", so the app
+			// name is the one thing every notification of ours carries.
+			const cell = this.cellFor(APP_NAME);
+			try {
+				await cell.waitForExist({ timeout });
+			} catch {
+				// Nothing of ours matched by label. Before concluding no push arrived,
+				// show what Notification Center actually holds: the label format
+				// differs across iOS versions, and a notification can be present under
+				// a shape this predicate does not match.
+				const source = await this.agent.getPageSource();
+				const cells = source
+					.split('\n')
+					.filter(line => /XCUIElementTypeCell|label="/.test(line))
+					.slice(0, 40)
+					.join('\n');
+				throw new Error(
+					`No ${APP_NAME} notification matched within ${timeout}ms. ` +
+						`Notification Center contents:\n${cells || '(no cells)'}`,
+				);
+			}
+			// Notification Center lists newest first, and the first match is what
+			// `$` returns; older ones from earlier steps (a contact request, say) sit
+			// below it. Return every label so the caller sees them all if the
+			// content assertion fails.
+			const labels = await this.agent
+				.$$(`-ios predicate string:label CONTAINS[c] "${APP_NAME}"`)
+				.map(async c => (await c.getAttribute('label')) ?? '');
+			return labels.join('\n');
+		});
 	}
 
-	async tapNotification(textIncludes: string): Promise<void> {
-		await this.cellFor(textIncludes).click();
+	tapNotification(textIncludes: string): Promise<void> {
+		return this.restoringWebviewOnFailure(async () => {
+			await this.cellFor(textIncludes).click();
+		});
 	}
 }

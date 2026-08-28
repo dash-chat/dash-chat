@@ -59,6 +59,15 @@ const ANDROID_ENV_FILE = path.join(E2E_DIR, '.appium', 'android-env.json');
  *  otherwise the shell env captured by ensureAndroidEnv. */
 let androidEnv: NodeJS.ProcessEnv = process.env;
 
+/** Run an adb shell command on `udid` with the captured android env and
+ * return its stdout. */
+export function adbShell(udid: string, command: string): string {
+	return execSync(`adb -s ${udid} shell ${command}`, {
+		encoding: 'utf8',
+		env: androidEnv,
+	});
+}
+
 function androidToolsAvailable(env: NodeJS.ProcessEnv): boolean {
 	try {
 		execSync('command -v adb', { stdio: 'ignore', env });
