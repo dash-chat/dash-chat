@@ -14,7 +14,7 @@ pub(crate) fn compute_waveform(pcm: &[i16]) -> Vec<u8> {
     let mut peaks = vec![0u16; WAVEFORM_BARS];
     let mut max = 0u16;
     for (i, peak) in peaks.iter_mut().enumerate() {
-        let start = i * bucket;
+        let start = (i * bucket).min(pcm.len());
         let end = (start + bucket).min(pcm.len());
         let p = pcm[start..end]
             .iter()
@@ -31,4 +31,18 @@ pub(crate) fn compute_waveform(pcm: &[i16]) -> Vec<u8> {
         .iter()
         .map(|&p| ((p as u32 * 255) / max as u32) as u8)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_pcm_does_not_panic() {
+        for len in 1..=WAVEFORM_BARS {
+            let pcm: Vec<i16> = (0..len as i16).collect();
+            let waveform = compute_waveform(&pcm);
+            assert_eq!(waveform.len(), WAVEFORM_BARS);
+        }
+    }
 }
