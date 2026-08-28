@@ -2,7 +2,9 @@ import { withinWindow } from '$lib/utils/time';
 import {
 	DELETE_FOR_EVERYONE_WINDOW_MS,
 	type DeviceId,
+	type DirectChatEvent,
 	EDIT_WINDOW_MS,
+	type Hash,
 	type Message,
 	hasBody,
 } from 'dash-chat-stores';
@@ -28,6 +30,21 @@ export function canDeleteMessageForEveryone(
 	if (message.author !== myDeviceId) return false;
 	// `timestamp` is the original message op's; edits never change it.
 	return withinWindow(message.timestamp, DELETE_FOR_EVERYONE_WINDOW_MS);
+}
+
+/** The request-messages disclosure only hides actual messages; system bubbles
+ * (report, block) must stay visible while the request is pending. */
+export function withoutMessages<
+	T extends { eventsGroups: Array<Array<[Hash, DirectChatEvent]>> },
+>(days: T[]): T[] {
+	return days
+		.map(day => ({
+			...day,
+			eventsGroups: day.eventsGroups
+				.map(group => group.filter(([, item]) => item.kind !== 'message'))
+				.filter(group => group.length > 0),
+		}))
+		.filter(day => day.eventsGroups.length > 0);
 }
 
 export function messagePosition(

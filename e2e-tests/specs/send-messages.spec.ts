@@ -32,13 +32,20 @@ describe('Full messaging flow', () => {
 		await agent1.directChatPage.messages.waitForMessage('Hello before accept!');
 	});
 
-	it('shows Alice’s messages to Bob before he accepts the request', async () => {
+	it('hides Alice’s messages from Bob behind a disclosure until he reveals them', async () => {
 		await agent2.addContactPage.back.click();
 		await agent2.newMessagePage.back.click();
 		await agent2.homePage.openChat('Alice Test');
 		// The request is still unanswered: the accept bar is showing while the
-		// pre-accept message is already readable.
+		// pre-accept message stays hidden behind the request-messages disclosure.
 		await agent2.directChatPage.acceptButton.waitForExist();
+		await agent2.directChatPage.requestMessagesToggle.waitForExist();
+		expect(
+			await agent2.directChatPage.messages.messageAreaContains(
+				'Hello before accept!',
+			),
+		).toBe(false);
+		await agent2.directChatPage.toggleRequestMessages();
 		await agent2.directChatPage.messages.waitForMessage('Hello before accept!');
 	});
 
