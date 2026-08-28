@@ -65,6 +65,8 @@ fn photo(seed: u8) -> OutgoingMedia {
             data: vec![seed; 4096],
             name: format!("pic-{seed}.png"),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     }
 }

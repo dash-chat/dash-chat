@@ -37,6 +37,10 @@ export interface PhotoAttachment {
 	size: number;
 	name: string;
 	mime_type: string;
+	/** Pixel dimensions measured by the sender, for sizing the placeholder
+	 * before the blob loads. */
+	width: number;
+	height: number;
 }
 
 /** A renderable non-image file attachment. See `Photo` — hash + metadata only. */
@@ -80,6 +84,8 @@ export interface OutgoingPhoto {
 	data: Uint8Array;
 	name: string;
 	mime_type: string;
+	width: number;
+	height: number;
 }
 
 export interface OutgoingFile {
@@ -102,7 +108,15 @@ export interface OutgoingVoiceNote {
  * `dashchat_node::MediaMetadata`: each variant carries only what its kind needs.
  */
 export type MediaMetadata =
-	| { kind: 'Photo'; name: string; mime_type: string; size: number; hash: Hash }
+	| {
+			kind: 'Photo';
+			name: string;
+			mime_type: string;
+			size: number;
+			width: number;
+			height: number;
+			hash: Hash;
+	  }
 	| { kind: 'File'; name: string; mime_type: string; size: number; hash: Hash }
 	| {
 			kind: 'VoiceNote';
@@ -156,6 +170,8 @@ export function mediaBundleToAttachment(
 			name: item.name,
 			mime_type: item.mime_type,
 			size: item.size,
+			width: item.width,
+			height: item.height,
 			hash: item.hash,
 		}));
 	return photos.length > 0 ? { kind: 'photos', photos } : null;

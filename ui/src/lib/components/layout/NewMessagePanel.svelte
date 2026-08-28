@@ -47,7 +47,7 @@
 		agentId: AgentId;
 		name: string;
 		anchor: HTMLElement;
-	} | null>(null);
+	}>();
 
 	function openMenu(agentId: AgentId, profile: Profile, anchor: HTMLElement) {
 		menuFor = { agentId, name: fullName(profile), anchor };
@@ -198,12 +198,17 @@
 </div>
 
 {#if menuFor}
-	<ContactActionsMenu
-		anchor={menuFor.anchor}
-		agentId={menuFor.agentId}
-		name={menuFor.name}
-		onClose={() => (menuFor = null)}
-	/>
+	<!-- Keyed so a menu opened while the previous one is still animating out
+	     starts fresh instead of inheriting its closing state. -->
+	{#key menuFor}
+		<ContactActionsMenu
+			anchor={menuFor.anchor}
+			align={isMobile ? 'start' : 'end'}
+			agentId={menuFor.agentId}
+			name={menuFor.name}
+			onClose={() => (menuFor = undefined)}
+		/>
+	{/key}
 {/if}
 
 <style>

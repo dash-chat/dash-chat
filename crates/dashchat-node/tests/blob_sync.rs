@@ -35,6 +35,8 @@ async fn media_blob_syncs_between_nodes() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
 
@@ -123,6 +125,8 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
             data: photo_bytes,
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice

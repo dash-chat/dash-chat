@@ -5,11 +5,13 @@ interface LongPressParams {
 	duration?: number;
 }
 
-/** Stops iOS from answering the press with its own selection and link UI. */
+/** Stops iOS from answering the press with its own selection and link UI,
+ * and Android from starting a link drag with its title/URL preview box. */
 function suppressNativeLongPress(target: HTMLElement) {
 	target.style.setProperty('-webkit-user-select', 'none');
 	target.style.setProperty('user-select', 'none');
 	target.style.setProperty('-webkit-touch-callout', 'none');
+	target.draggable = false;
 }
 
 export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
