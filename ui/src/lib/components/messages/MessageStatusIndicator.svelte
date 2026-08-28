@@ -8,6 +8,7 @@
 	} from 'dash-chat-stores';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { m } from '$lib/paraglide/messages.js';
 
 	import deliveredSvg from '$lib/assets/message-status/delivered.svg?raw';
 	import mailboxSvg from '$lib/assets/message-status/mailbox.svg?raw';
@@ -17,6 +18,12 @@
 		delivered: deliveredSvg,
 		mailbox: mailboxSvg,
 		sending: sendingSvg,
+	};
+
+	const statusLabels: Record<MessageDeliveryStatus, () => string> = {
+		delivered: m.messageStatusDelivered,
+		mailbox: m.messageStatusMailbox,
+		sending: m.messageStatusSending,
 	};
 
 	interface Props {
@@ -42,7 +49,7 @@
 		data-testid="message-status"
 		data-status={status}
 		class="message-status"
-		aria-label={status}
+		aria-label={statusLabels[status]()}
 	>
 		{@html icons[status]}
 	</div>
