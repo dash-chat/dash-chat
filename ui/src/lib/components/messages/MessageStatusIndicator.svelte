@@ -57,7 +57,7 @@
 
 <style>
 	.message-status {
-		opacity: 1;
+		opacity: 0.7;
 	}
 
 	.message-status :global(svg) {
