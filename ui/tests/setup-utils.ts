@@ -8,6 +8,8 @@
  * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
 import { invokeAfterSetup } from 'dash-chat-stores';
+import { appCacheDir, join } from '@tauri-apps/api/path';
+import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 
 import type { m } from '../src/lib/paraglide/messages.js';
 
@@ -256,15 +258,68 @@ function buildSilentWav(durationMs: number): Uint8Array {
 }
 
 /** Bypasses the native recorder (no microphone in the WebKitGTK harness); the
- * composer listens for `test-inject-voice-note`. */
-function injectVoiceNote(durationMs = 3000, audioDurationMs = durationMs) {
+ * composer listens for `test-inject-voice-message`. */
+function injectVoiceMessage(durationMs = 3000, audioDurationMs = durationMs) {
 	const wav = buildSilentWav(audioDurationMs);
 	const waveform = Array.from({ length: 48 }, (_, i) => 40 + (i % 5) * 40);
 	window.dispatchEvent(
-		new CustomEvent('test-inject-voice-note', {
+		new CustomEvent('test-inject-voice-message', {
 			detail: { bytes: Array.from(wav), durationMs, waveform },
 		}),
 	);
+}
+
+/** Result of injecting a voice message through the real transcode command. */
+interface RecordedVoiceMessage {
+	isOgg: boolean;
+	opusBytes: number;
+	wavBytes: number;
+	durationMs: number;
+}
+
+/** Unlike `injectVoiceMessage`, this runs a synthesized WAV through the real
+ * `transcode_voice_message` command, so the injected draft is genuine Ogg/Opus
+ * with a Rust-derived duration and waveform — exercising the transcode pipeline
+ * end to end. Returns facts the spec asserts on. */
+async function injectRecordedVoiceMessage(
+	durationMs = 1000,
+): Promise<RecordedVoiceMessage> {
+	const wav = buildSilentWav(durationMs);
+	const cache = await appCacheDir();
+	await mkdir(cache, { recursive: true });
+	const path = await join(cache, `dc-voice-test-${crypto.randomUUID()}.wav`);
+	await writeFile(path, wav);
+
+	const res = await invokeAfterSetup<{
+		opus: number[];
+		durationMs: number;
+		waveform: number[];
+	}>('transcode_voice_message', { path });
+
+	// "OggS" magic marks a valid Ogg stream.
+	const isOgg =
+		res.opus.length >= 4 &&
+		res.opus[0] === 0x4f &&
+		res.opus[1] === 0x67 &&
+		res.opus[2] === 0x67 &&
+		res.opus[3] === 0x53;
+
+	window.dispatchEvent(
+		new CustomEvent('test-inject-voice-message', {
+			detail: {
+				bytes: res.opus,
+				durationMs: res.durationMs,
+				waveform: res.waveform,
+				mimeType: 'audio/ogg',
+			},
+		}),
+	);
+	return {
+		isOgg,
+		opusBytes: res.opus.length,
+		wavBytes: wav.length,
+		durationMs: res.durationMs,
+	};
 }
 
 /** Seeks to `fraction` of the real audio length, so specs can assert the
@@ -392,7 +447,8 @@ export const testUtils = {
 	pasteFiles,
 	pasteNoisePhoto,
 	dropFiles,
-	injectVoiceNote,
+	injectVoiceMessage,
+	injectRecordedVoiceMessage,
 	voiceSeekFraction,
 	voiceProgress,
 	failNextVoiceLoad,

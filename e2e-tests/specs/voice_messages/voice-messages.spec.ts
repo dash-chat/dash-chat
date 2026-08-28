@@ -1,9 +1,9 @@
 // A synthetic WAV is injected throughout: the headless WebKitGTK harness has no
 // microphone.
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgents } from '../setup/setup-agents';
+import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
-describe('Voice notes', () => {
+describe('Voice messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
@@ -17,16 +17,16 @@ describe('Voice notes', () => {
 		await exchangeContacts(agent1, agent2);
 	});
 
-	it('sends a voice note from Alice and renders on both ends', async () => {
+	it('sends a voice message from Alice and renders on both ends', async () => {
 		// Metadata duration (4s) deliberately overshoots the real audio (2s) so the
 		// later test can prove the scrubber tracks the audio's own duration.
-		await agent1.directChatPage.composer.recordVoiceNote(4000, 2000);
+		await agent1.directChatPage.composer.recordVoiceMessage(4000, 2000);
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForVoiceMessage();
 		await agent2.directChatPage.messages.waitForVoiceMessage();
 	});
 
-	it('plays the received voice note and advances the waveform progress', async () => {
+	it('plays the received voice message and advances the waveform progress', async () => {
 		const messages = agent2.directChatPage.messages;
 		await messages.voicePlayButton.waitForClickable();
 		await messages.voicePlayButton.click();

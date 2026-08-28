@@ -288,14 +288,15 @@
 				kind: 'voice_note',
 				voice: {
 					bytes: new Uint8Array(detail.bytes),
-					mimeType: 'audio/wav',
+					mimeType: detail.mimeType ?? 'audio/wav',
 					durationMs: detail.durationMs,
 					waveform: new Uint8Array(detail.waveform),
 				},
 			};
 		};
-		window.addEventListener('test-inject-voice-note', handler);
-		return () => window.removeEventListener('test-inject-voice-note', handler);
+		window.addEventListener('test-inject-voice-message', handler);
+		return () =>
+			window.removeEventListener('test-inject-voice-message', handler);
 	});
 </script>
 
