@@ -47,6 +47,20 @@ export function withoutMessages<
 		.filter(day => day.eventsGroups.length > 0);
 }
 
+/** Whether the message at `index` in its group should render its delivery
+ * status indicator: it carries a status, and the next event in the group does
+ * not continue the same status run. Rendering one indicator per run keeps
+ * every distinct status visible without splitting the group. */
+export function endsDeliveryStatusRun<
+	T extends { kind: string; message?: Message },
+>(group: Array<[Hash, T]>, index: number): boolean {
+	const message = group[index][1].message;
+	if (message?.deliveryStatus === undefined) return false;
+	return (
+		message.deliveryStatus !== group[index + 1]?.[1].message?.deliveryStatus
+	);
+}
+
 export function messagePosition(
 	setLength: number,
 	index: number,

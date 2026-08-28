@@ -34,6 +34,7 @@
 		myDeviceId,
 		searchQuery,
 		chatId,
+		showDeliveryStatus = false,
 		onEdit,
 		onReply,
 		onNavigateToMessage,
@@ -43,6 +44,9 @@
 		myDeviceId: DeviceId;
 		chatId: ChatId;
 		searchQuery: string;
+		/** Whether to render the message's delivery status indicator — see
+		 * `endsDeliveryStatusRun`. */
+		showDeliveryStatus?: boolean;
 		onEdit?: () => void;
 		onReply?: () => void;
 		onNavigateToMessage?: (hash: Hash) => void;
@@ -102,12 +106,9 @@
 	{/if}
 	{#if isLast}
 		<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
-
-		<MessageStatusIndicator
-			{chatId}
-			author={message.author}
-			seq={message.seqNum}
-		/>
+	{/if}
+	{#if showDeliveryStatus && message.deliveryStatus}
+		<MessageStatusIndicator status={message.deliveryStatus} />
 	{/if}
 {/snippet}
 
@@ -137,7 +138,9 @@
 						senderName={m.you()}
 						mine
 						{onNavigateToMessage}
-						metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+						metadata={isLast || editHistory.length > 0 || showDeliveryStatus
+							? metadata
+							: undefined}
 					/>
 				</div>
 			</Card>

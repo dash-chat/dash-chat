@@ -1,4 +1,4 @@
-import { DeviceId, Hash } from '../p2panda/types';
+import type { DeviceId, Hash } from '../p2panda/types';
 
 export const MESSAGE_SET_TIMEFRAME_INTERVAL_MS = 60 * 1000; // 1 minute
 

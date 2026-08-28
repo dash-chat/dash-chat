@@ -49,6 +49,19 @@ describe('Full messaging flow', () => {
 		await agent2.directChatPage.messages.waitForMessage('Hello before accept!');
 	});
 
+	it('does not show the message as delivered while the request is pending', async () => {
+		// Bob received the message, but must not reveal that before accepting:
+		// the indicator settles on the mailbox state and stays there.
+		await agent1.directChatPage.messages.waitForMessageStatus(
+			'Hello before accept!',
+			['mailbox'],
+		);
+		await agent1.pause(3_000);
+		expect(
+			await agent1.directChatPage.messageStatusFor('Hello before accept!'),
+		).toBe('mailbox');
+	});
+
 	it('summarizes the chat as a message request while it is pending', async () => {
 		await agent2.directChatPage.back.click();
 		await agent2.homePage.ready();
@@ -66,10 +79,21 @@ describe('Full messaging flow', () => {
 		await agent2.directChatPage.acceptButton.waitForExist({ reverse: true });
 	});
 
+	it('marks the pre-accept message delivered once Bob has accepted', async () => {
+		await agent1.directChatPage.messages.waitForMessageStatus(
+			'Hello before accept!',
+			['delivered'],
+		);
+	});
+
 	it('sends a message from Alice to Bob', async () => {
 		await agent1.directChatPage.composer.sendMessage('Hello from Alice!');
 		await agent1.directChatPage.messages.waitForMessage('Hello from Alice!');
 		await agent2.directChatPage.messages.waitForMessage('Hello from Alice!');
+		await agent1.directChatPage.messages.waitForMessageStatus(
+			'Hello from Alice!',
+			['delivered'],
+		);
 	});
 
 	it('sends a reply from Bob to Alice', async () => {
