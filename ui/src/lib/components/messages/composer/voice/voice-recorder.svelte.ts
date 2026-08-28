@@ -2,8 +2,9 @@ import { m } from '$lib/paraglide/messages.js';
 import { isMobile } from '$lib/utils/environment';
 import type { DraftVoiceNote } from '$lib/utils/media';
 import { showToast } from '$lib/utils/toasts';
+import { invokeAfterSetup } from 'dash-chat-stores';
 import { appCacheDir, join } from '@tauri-apps/api/path';
-import { mkdir, readFile, remove } from '@tauri-apps/plugin-fs';
+import { mkdir, remove } from '@tauri-apps/plugin-fs';
 import {
 	getDevices,
 	getStatus,
@@ -27,17 +28,6 @@ type RecorderPhase = 'idle' | 'requesting' | 'recording' | 'encoding';
 
 const MAX_DURATION_SECONDS = 300;
 
-// What each platform's recorder writes: desktop WAV, Android M4A, iOS ADTS AAC.
-const MIME_BY_EXTENSION: Record<string, string> = {
-	wav: 'audio/wav',
-	m4a: 'audio/mp4',
-	aac: 'audio/aac',
-};
-
-function mimeTypeFromPath(path: string): string {
-	const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-	return MIME_BY_EXTENSION[extension] ?? 'application/octet-stream';
-}
 
 interface DragState {
 	cancelProgress: number;
@@ -229,15 +219,18 @@ export class VoiceRecorder {
 		try {
 			const result = await stopRecording();
 			filePath = result.filePath;
-			const recorded = await readFile(result.filePath);
-			const decoded = await decodeToBuffer(recorded);
+			// The native recorder writes a per-platform format; the backend
+			// transcodes it to Ogg/Opus and derives the duration and waveform.
+			const encoded = await invokeAfterSetup<{
+				opus: number[];
+				durationMs: number;
+				waveform: number[];
+			}>('transcode_voice_message', { path: result.filePath });
 			return {
-				bytes: recorded,
-				mimeType: mimeTypeFromPath(result.filePath),
-				// The recorder's wall-clock duration overshoots the decoded audio and
-				// leaves the scrubber short of the end.
-				durationMs: Math.round(decoded.duration * 1000),
-				waveform: computeWaveform(decoded),
+				bytes: new Uint8Array(encoded.opus),
+				mimeType: 'audio/ogg',
+				durationMs: encoded.durationMs,
+				waveform: new Uint8Array(encoded.waveform),
 			};
 		} finally {
 			this.phase = 'idle';
@@ -280,51 +273,4 @@ async function cleanup(path: string): Promise<void> {
 	} catch {
 		// Best-effort temp cleanup.
 	}
-}
-
-const WAVEFORM_BARS = 48;
-
-let audioContext: AudioContext | undefined;
-
-function sharedAudioContext(): AudioContext {
-	if (!audioContext) audioContext = new AudioContext();
-	return audioContext;
-}
-
-async function decodeToBuffer(bytes: Uint8Array): Promise<AudioBuffer> {
-	// `decodeAudioData` detaches the passed ArrayBuffer, so hand it a copy.
-	const copy = bytes.slice().buffer;
-	return sharedAudioContext().decodeAudioData(copy);
-}
-
-/**
- * Reduces a decoded buffer into `WAVEFORM_BARS` amplitudes (0..=255) for the
- * scrubber, with the loudest mapped to 255 so quiet recordings still fill the
- * waveform.
- */
-function computeWaveform(buffer: AudioBuffer): Uint8Array {
-	const data = buffer.getChannelData(0);
-	const bucketSize = Math.max(1, Math.floor(data.length / WAVEFORM_BARS));
-	const peaks = new Float32Array(WAVEFORM_BARS);
-	let max = 0;
-	for (let i = 0; i < WAVEFORM_BARS; i++) {
-		peaks[i] = bucketPeak(data, i * bucketSize, bucketSize);
-		if (peaks[i] > max) max = peaks[i];
-	}
-	const out = new Uint8Array(WAVEFORM_BARS);
-	if (max === 0) return out;
-	for (let i = 0; i < WAVEFORM_BARS; i++) {
-		out[i] = Math.round((peaks[i] / max) * 255);
-	}
-	return out;
-}
-
-function bucketPeak(data: Float32Array, start: number, size: number): number {
-	const end = Math.min(start + size, data.length);
-	let peak = 0;
-	for (let i = start; i < end; i++) {
-		const amp = Math.abs(data[i]);
-		if (amp > peak) peak = amp;
-	}
-	return peak;
 }
