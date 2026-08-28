@@ -1,0 +1,6 @@
+# audiopus_sys bundles an opus whose CMakeLists declares cmake_minimum_required 3.1,
+# which CMake >= 4 refuses outright. Set here rather than in the CI environment:
+# the iOS build runs cargo inside Xcode's script phase, which does not inherit
+# the caller's environment, while cargo's [env] reaches every build script.
+[env]
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"

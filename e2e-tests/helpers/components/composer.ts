@@ -178,6 +178,40 @@ export class Composer extends TestHelper {
 		await this.waitForStagedMedia();
 	}
 
+	/** Injects a ready-made WAV draft, since the WebKitGTK harness has no
+	 * microphone. Pass a smaller `audioDurationMs` to simulate metadata that
+	 * overshoots the real audio length. */
+	async recordVoiceMessage(
+		durationMs = 3000,
+		audioDurationMs = durationMs,
+	): Promise<void> {
+		// The composer listens for the injected event from `onMount`, and a
+		// CustomEvent dispatched before then is dropped with no trace.
+		await this.messageInput.waitForExist();
+		await this.agent.execute(
+			(ms: number, ams: number) => {
+				window.__test.injectVoiceMessage(ms, ams);
+			},
+			durationMs,
+			audioDurationMs,
+		);
+	}
+
+	/** Injects a WAV through the real `transcode_voice_message` command, so the
+	 * draft is genuine Ogg/Opus. Returns facts about the transcode to assert on. */
+	async recordRealVoiceMessage(durationMs = 1000): Promise<{
+		isOgg: boolean;
+		opusBytes: number;
+		wavBytes: number;
+		durationMs: number;
+	}> {
+		await this.messageInput.waitForExist();
+		return this.agent.execute(
+			(ms: number) => window.__test.injectRecordedVoiceMessage(ms),
+			durationMs,
+		);
+	}
+
 	/** Paste a single synthesized PNG named `${label}.png` into the composer. */
 	async pastePhotos(label: string): Promise<void> {
 		await this.messageInput.waitForExist();

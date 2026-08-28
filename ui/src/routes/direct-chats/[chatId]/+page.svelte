@@ -491,12 +491,12 @@
 									class="column m-2 gap-1"
 									data-testid="direct-chat-messages"
 								>
-									{#each visibleGroupsInDays as messageGroupsInDay}
+									{#each visibleGroupsInDays as messageGroupsInDay (messageGroupsInDay.day.valueOf())}
 										<div use:navbarSticky class="self-center z-10">
 											<DayTag class="quiet" day={messageGroupsInDay.day} />
 										</div>
 
-										{#each messageGroupsInDay.eventsGroups as messageGroup}
+										{#each messageGroupsInDay.eventsGroups as messageGroup (messageGroup[0][0])}
 											<div
 												class="column"
 												style="gap: 1px"

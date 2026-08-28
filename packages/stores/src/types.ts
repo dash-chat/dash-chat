@@ -184,7 +184,7 @@ export function mediaBundleToAttachment(
 export type MessageContentV1 = {
 	message: string;
 	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob store,
-	 * fetched lazily via `irohblob://`). Consumers derive the photos/file
+	 * fetched lazily via `irohblob://`). Consumers derive the photos/file/voice
 	 * grouping from this list at render time. */
 	media: MediaBundle | null;
 	/** Hash of the operation this message replies to (a `Message` or

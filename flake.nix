@@ -84,6 +84,16 @@
             pango
             # libatk-1.0
             at-spi2-core
+            pkgsPnpm.alsa-lib
+            libopus
+          ];
+          # GStreamer so WebKitGTK can play voice-note audio: WAV from desktop
+          # recorders (base/good) and AAC/M4A from mobile ones (bad).
+          gstPluginPath = pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" [
+            pkgs.gst_all_1.gstreamer
+            pkgs.gst_all_1.gst-plugins-base
+            pkgs.gst_all_1.gst-plugins-good
+            pkgs.gst_all_1.gst-plugins-bad
           ];
           nodeVersion = lib.versions.major (lib.strings.trim (builtins.readFile ./.node-version));
           # One toolchain (host + android targets) shared by the default and
@@ -96,6 +106,9 @@
           hostBuildEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
             export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries} -C link-arg=-fuse-ld=mold"
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+            # audiopus_sys vendors an old libopus whose CMakeLists predates the
+            # 3.5 floor modern CMake enforces; let it configure anyway.
+            export CMAKE_POLICY_VERSION_MINIMUM=3.5
             export SOURCE_DATE_EPOCH=315532800
 
             # Off NixOS there is no /run/opengl-driver, so glvnd finds no GL
@@ -111,6 +124,10 @@
               export LD_LIBRARY_PATH="${pkgs.mesa}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             fi
           '';
+          # Voice notes: let WebKitGTK find GStreamer plugins for <audio> playback.
+          voiceHostEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
+            export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPluginPath}"
+          '';
           packages = [
             pkgs.mprocs
             pkgs.just
@@ -120,21 +137,34 @@
             pkgs.doctl
             inputs'.tauri-driver.packages.tauri-driver
           ]
-          ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
+          ++ lib.optionals pkgs.stdenv.isLinux [
+            pkgs.mold
+            pkgs.cmake
+            pkgsPnpm.alsa-lib
+          ];
         in
         rec {
           devShells.default = pkgs.mkShell {
             packages = [ rust ] ++ packages;
+            buildInputs = lib.optionals pkgs.stdenv.isLinux [
+              pkgsPnpm.alsa-lib
+              pkgs.libopus
+            ];
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            shellHook = hostBuildEnvHook;
+            shellHook = hostBuildEnvHook + voiceHostEnvHook;
           };
 
           # Opt-in faster dev builds: nightly rustc with the Cranelift codegen backend
           devShells.cranelift = pkgs.mkShell {
             packages = [ rustCranelift ] ++ packages;
+            buildInputs = lib.optionals pkgs.stdenv.isLinux [
+              pkgsPnpm.alsa-lib
+              pkgs.libopus
+            ];
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
             shellHook =
               hostBuildEnvHook
+              + voiceHostEnvHook
               + lib.optionalString pkgs.stdenv.isLinux ''
                 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS -Zcodegen-backend=cranelift"
               '';
@@ -145,6 +175,8 @@
               rust
               pkgs."nodejs_${nodeVersion}"
               pkgs.jdk
+              # audiopus_sys builds libopus from source for each ABI via CMake.
+              pkgs.cmake
             ]
             ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ]
             ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
@@ -159,11 +191,16 @@
 
           devShells.iosDev = pkgs.mkShell {
             inputsFrom = [ devShells.default ];
-            packages = [ rust ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
+            # cmake lets audiopus_sys build libopus from source for the iOS target.
+            packages = [ rust pkgs.cmake ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
             shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
               # Make libiconv findable by the linker even when xcodebuild
               # strips NIX_LDFLAGS from the environment.
               export LIBRARY_PATH="${lib.makeLibraryPath [ pkgs.libiconv ]}''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+
+              # audiopus_sys vendors an old libopus whose CMakeLists predates the
+              # 3.5 floor modern CMake enforces; let it configure anyway.
+              export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
               # Unset SDKROOT so xcrun can locate the iOS SDK from Xcode.
               unset SDKROOT
