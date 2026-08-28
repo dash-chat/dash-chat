@@ -3,11 +3,10 @@
 	import {
 		type ChatId,
 		type DeviceId,
-		type MailboxTrackerStore,
 		type MessageAckStore,
 	} from 'dash-chat-stores';
 
-	import { useReactivePromises } from '$lib/stores/use-signal';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 
 	import StatusDeliveredIcon from './StatusDeliveredIcon.svelte';
 	import StatusMailboxIcon from './StatusMailboxIcon.svelte';
@@ -21,26 +20,17 @@
 
 	const props: Props = $props();
 
-	const mailboxTrackerStore: MailboxTrackerStore = getContext(
-		'mailbox-tracker-store',
-	);
 	const messageAckStore: MessageAckStore = getContext('message-acks-store');
 
-	const state = useReactivePromises(() => [
-		mailboxTrackerStore.syncStatusForOp(props.chatId, props.author, props.seq),
-		messageAckStore.acks(props.chatId),
-	]);
+	const status = useReactivePromise(
+		messageAckStore.deliveryStatus,
+		props.chatId,
+		props.author,
+		props.seq,
+	);
 </script>
 
-{#await $state then [syncStatus, acks]}
-	{@const acked = acks[props.author]}
-	{@const status =
-		acked !== undefined && acked.seq >= props.seq
-			? 'delivered'
-			: syncStatus.syncedWithCloudMailbox ||
-				  syncStatus.syncedWithAnyLocalMailbox
-				? 'mailbox'
-				: 'sending'}
+{#await $status then status}
 	<div
 		data-testid="message-status"
 		data-status={status}

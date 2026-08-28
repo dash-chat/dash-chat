@@ -4,6 +4,7 @@ import { type IMessagesClient } from '../chats/messages-client';
 import { Message, MessagesStore } from '../chats/messages-store';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
+import { MessageAckStore } from '../message-acks/message-ack-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
@@ -43,6 +44,7 @@ export class GroupChatStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		protected tombstoneStore: TombstoneStore,
+		protected messageAckStore: MessageAckStore,
 		public client: IGroupChatClient,
 		public chatId: ChatId,
 		messagesClient: IMessagesClient,
@@ -120,6 +122,7 @@ export class GroupChatStore {
 	groupedEvents = reactive(async () => {
 		const messages = await this.messages.messages();
 		const controlEvents = await this.controlEvents();
+		const myDeviceId = await this.contactsStore.myDeviceId();
 
 		const eventsWithProvenance: Record<
 			Hash,
@@ -134,6 +137,14 @@ export class GroupChatStore {
 				author: message.author,
 				timestamp: message.timestamp,
 				type: 'Message',
+				deliveryStatus:
+					message.author === myDeviceId
+						? await this.messageAckStore.deliveryStatus(
+								this.chatId,
+								message.author,
+								message.seqNum,
+							)
+						: undefined,
 			};
 		}
 

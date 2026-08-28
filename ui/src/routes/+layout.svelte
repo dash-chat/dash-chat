@@ -141,19 +141,22 @@
 		tombstoneStore = new TombstoneStore(
 			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
 		);
-		messageAckStore = new MessageAckStore(new MockMessageAckClient());
+		mailboxTrackerStore = new MockMailboxTrackerStore();
+		messageAckStore = new MessageAckStore(
+			new MockMessageAckClient(),
+			mailboxTrackerStore,
+		);
 
 		const mockChatsClient = new MockChatsClient();
 		chatsStore = new MockChatsStore(
 			logsStore,
 			contactsStore,
 			tombstoneStore,
+			messageAckStore,
 			mockChatsClient,
 			mockLogsClient,
 			DEMO_IDS.DEVICE_GROUP_TOPIC,
 		);
-
-		mailboxTrackerStore = new MockMailboxTrackerStore();
 	} else {
 		const logsClient = new TauriLogsClient<Payload>();
 		logsStore = new LogsStore<Payload>(logsClient);
@@ -166,17 +169,20 @@
 		contactsStore = new ContactsStore(logsStore, devicesStore, contactsClient);
 
 		tombstoneStore = new TombstoneStore(new TombstoneClient());
-		messageAckStore = new MessageAckStore(new MessageAckClient());
+		mailboxTrackerStore = new MailboxTrackerStore();
+		messageAckStore = new MessageAckStore(
+			new MessageAckClient(),
+			mailboxTrackerStore,
+		);
 
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(
 			logsStore,
 			contactsStore,
 			tombstoneStore,
+			messageAckStore,
 			chatsClient,
 		);
-
-		mailboxTrackerStore = new MailboxTrackerStore();
 
 		invokeAfterSetup('log_webview_info', {
 			userAgent: navigator.userAgent,

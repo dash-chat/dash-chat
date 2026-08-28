@@ -9,8 +9,9 @@
 	"scripts": {
 		"build": "rimraf dist && tsc && babel ./src --extensions \".ts\" --out-dir ./dist",
 		"dev": "concurrently -k \"tsc -w --preserveWatchOutput\" \"babel --watch ./src --extensions \".ts\" --out-dir ./dist\"",
-		"format": "prettier --write 'src/**/*.ts'",
-		"check": "tsc --noEmit && prettier --check 'src/**/*.ts'"
+		"format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
+		"check": "tsc --noEmit && prettier --check 'src/**/*.ts' 'tests/**/*.ts' && pnpm test",
+		"test": "node --import tsx --test tests/*.test.ts"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2",
@@ -27,6 +28,7 @@
 		"@babel/preset-typescript": "^7.28.5",
 		"@types/node": "^24.10.0",
 		"concurrently": "^9.2.1",
+		"tsx": "^4.21.0",
 		"typescript": "^5.9.3"
 	}
 }

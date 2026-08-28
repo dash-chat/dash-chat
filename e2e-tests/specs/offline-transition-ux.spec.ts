@@ -198,6 +198,96 @@ describe('Offline UX', () => {
 		});
 	});
 
+	// A burst of messages whose delivery statuses differ must not collapse into
+	// one visual group with a single indicator on the last message: the group
+	// splits at every status boundary so each status stays visible, and merges
+	// back once the statuses converge again.
+	describe('messages with different delivery statuses', () => {
+		before(async function () {
+			this.timeout(120_000);
+			await openOfflineSettings(agent1);
+			await agent1.offlinePage.setLocalMailboxEnabled(true);
+			await returnToChat(agent1, 'Bob');
+		});
+
+		after(async function () {
+			this.timeout(120_000);
+			if (mailboxSuspended) {
+				resumeMailbox();
+				mailboxSuspended = false;
+			}
+			await openOfflineSettings(agent1);
+			await agent1.offlinePage.setLocalMailboxEnabled(false);
+			await returnToChat(agent1, 'Bob');
+		});
+
+		it('split their group so every status stays visible', async function () {
+			this.timeout(180_000);
+			await agent1.directChatPage.composer.sendMessage('split delivered');
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'split delivered',
+				['delivered'],
+			);
+
+			suspendMailbox();
+			mailboxSuspended = true;
+
+			await agent1.directChatPage.composer.sendMessage('split mailbox');
+			// Generous timeout: the just-enabled local mailbox may still be
+			// waiting on mDNS discovery before it can hold the message.
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'split mailbox',
+				['mailbox'],
+				60_000,
+			);
+
+			await openOfflineSettings(agent1);
+			await agent1.offlinePage.setLocalMailboxEnabled(false);
+			await returnToChat(agent1, 'Bob');
+			await agent1.directChatPage.composer.sendMessage('split sending');
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'split sending',
+				['sending'],
+			);
+
+			// The sends above land within the one-minute grouping window, so
+			// without status-based splitting only the last message would carry
+			// an indicator. Every message must show its own status at once.
+			expect(
+				await agent1.directChatPage.messages.messageStatusFor('split mailbox'),
+			).toBe('mailbox');
+			expect(
+				await agent1.directChatPage.messages.messageStatusFor(
+					'split delivered',
+				),
+			).toBe('delivered');
+		});
+
+		it('merge back into one group once the statuses converge', async function () {
+			this.timeout(120_000);
+			resumeMailbox();
+			mailboxSuspended = false;
+
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'split sending',
+				['delivered'],
+			);
+			// "split mailbox" and "split sending" were sent seconds apart, so
+			// they share the grouping window: once both are delivered the group
+			// merges again and only its last message keeps an indicator.
+			await agent1.waitUntil(
+				async () =>
+					(await agent1.directChatPage.messages.messageStatusFor(
+						'split mailbox',
+					)) === null,
+				{
+					timeoutMsg:
+						'converged message kept its indicator instead of merging back into the group',
+				},
+			);
+		});
+	});
+
 	// Regression: a message delivered to the cloud must still read as delivered
 	// after the app restarts while the cloud mailbox is unreachable. The cloud
 	// mailbox id is resolved from the live server, so on a cold start against an

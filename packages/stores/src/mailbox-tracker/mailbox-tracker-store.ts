@@ -29,6 +29,14 @@ export interface IMailboxTrackerStore {
 		author: DeviceId,
 		seq: number,
 	): ReactivePromise<MailboxId[]>;
+	syncStatusForOp(
+		topicId: TopicId,
+		author: DeviceId,
+		seq: number,
+	): ReactivePromise<{
+		syncedWithCloudMailbox: boolean;
+		syncedWithAnyLocalMailbox: boolean;
+	}>;
 }
 
 export class MailboxTrackerStore implements IMailboxTrackerStore {

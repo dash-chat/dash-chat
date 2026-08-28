@@ -244,6 +244,10 @@ export interface MessageAckPayload {
  * different agent. Drives the "delivered" message status. */
 export type MessageAcks = Record<DeviceId, AckedOp>;
 
+/** The delivery progression of an outgoing message: not yet sent anywhere,
+ * arrived at a mailbox, or received by a device of another group member. */
+export type MessageDeliveryStatus = 'sending' | 'mailbox' | 'delivered';
+
 export interface ReadMessagesPayload {
 	chat_id: ChatId;
 	message_hashes: Hash[];
