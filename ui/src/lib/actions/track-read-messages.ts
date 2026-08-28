@@ -1,4 +1,4 @@
-import type { Hash, MessagesStore } from 'dash-chat-stores';
+import type { DeviceId, Hash, Message, MessagesStore } from 'dash-chat-stores';
 import type { Action } from 'svelte/action';
 
 interface TrackReadMessagesOptions {
@@ -10,8 +10,45 @@ export interface ReadMessagesTracker {
 	destroy(): void;
 }
 
+/** Chronological display order of two messages: timestamp, hash as
+ * tiebreak — the same ordering the message list renders in. */
+function messageOrder(a: Message, b: Message): number {
+	return a.timestamp - b.timestamp || a.hash.localeCompare(b.hash);
+}
+
+/** Marks the seen messages as read, together with every earlier unread
+ * message from other devices — seeing a message implies having seen
+ * everything before it in the conversation. */
+async function markSeenAndEarlierAsRead(
+	store: MessagesStore,
+	me: DeviceId,
+	seen: Hash[],
+): Promise<void> {
+	const messages = await store.messages();
+	const readHashes = await store.readMessageHashes();
+
+	let latest: Message | undefined;
+	for (const hash of seen) {
+		const message = messages[hash];
+		if (message && (!latest || messageOrder(latest, message) < 0)) {
+			latest = message;
+		}
+	}
+
+	const toMark = new Set(seen);
+	if (latest) {
+		for (const message of Object.values(messages)) {
+			if (message.author === me) continue;
+			if (readHashes.has(message.hash)) continue;
+			if (messageOrder(message, latest) <= 0) toMark.add(message.hash);
+		}
+	}
+	await store.markAsRead(Array.from(toMark));
+}
+
 export function createReadMessagesTracker(
 	store: MessagesStore,
+	myDeviceId: DeviceId,
 	options: TrackReadMessagesOptions = {},
 ): ReadMessagesTracker {
 	const { debounceMs = 500 } = options;
@@ -26,14 +63,13 @@ export function createReadMessagesTracker(
 		if (destroyed || visible.size === 0) return;
 		const batch = Array.from(visible);
 		visible.clear();
-		store
-			.markAsRead(batch)
+		markSeenAndEarlierAsRead(store, myDeviceId, batch)
 			.then(() => {
 				retryDelay = debounceMs;
 			})
 			.catch(err => {
 				if (destroyed) return;
-				console.error('markAsRead failed, re-queuing hashes', err);
+				console.error('marking messages read failed, re-queuing hashes', err);
 				for (const hash of batch) visible.add(hash);
 				retryDelay = Math.min(retryDelay * 2, maxRetryDelayMs);
 				clearTimeout(timer);
