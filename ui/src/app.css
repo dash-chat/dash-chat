@@ -237,7 +237,7 @@ li.plain span {
 .outgoing-message.last-message {
 	border-start-end-radius: 4px;
 }
-.incoming-message {
+.incoming-message:not(.quiet) {
 	background-color: var(--color-incoming-surface);
 }
 .incoming-message.first-message {
