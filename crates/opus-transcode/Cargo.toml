@@ -1,0 +1,15 @@
+[package]
+name = "opus-transcode"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+# Decode-only; features enabled per source format. `isomp4`/`aac`/`adts` get
+# added at step 5 for mobile recordings (m4a / raw AAC).
+symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm"] }
+opus = "0.3"
+ogg = "0.9"
+
+[dev-dependencies]
+hound = "3.5"
