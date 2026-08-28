@@ -158,8 +158,9 @@ async fn handle_browse_events(
                     // NOTE: on network changes, mDNS re-browse fires a new
                     // ServiceResolved for each known mailbox, which re-runs this
                     // path and re-registers the updated EndpointAddr. Cloud
-                    // mailboxes don't have this hook; re-registration there would
-                    // require a network-change callback from the node layer.
+                    // mailboxes have no mDNS hook; they are covered by the node's
+                    // mailbox_reregister task, which watches our iroh EndpointAddr
+                    // and re-registers with all tracked mailboxes on any change.
                     if let Err(err) = node.register_with_mailbox(&url).await {
                         log::warn!(
                             "Failed to register our addr with local mailbox {mailbox_id}: {err}"
