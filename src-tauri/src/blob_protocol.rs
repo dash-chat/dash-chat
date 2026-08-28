@@ -33,7 +33,7 @@ pub fn handle<R: Runtime>(
     tauri::async_runtime::spawn(async move {
         let response = match load(&app, &hash).await {
             Ok(bytes) => {
-                let (bytes, content_type) = maybe_decode_to_wav(bytes, wants_wav);
+                let (bytes, content_type) = maybe_decode_to_wav(bytes, wants_wav).await;
                 tauri::http::Response::builder()
                     .status(tauri::http::StatusCode::OK)
                     // The webview's `fetch()` (save path) reads these cross-origin.
@@ -60,12 +60,20 @@ pub fn handle<R: Runtime>(
 /// Decode an Ogg/Opus blob to WAV when the caller asked for it, so `<audio>`
 /// can play it. Falls back to the original bytes if decoding fails or the blob
 /// isn't Opus.
-fn maybe_decode_to_wav(bytes: Vec<u8>, wants_wav: bool) -> (Vec<u8>, &'static str) {
+async fn maybe_decode_to_wav(bytes: Vec<u8>, wants_wav: bool) -> (Vec<u8>, &'static str) {
     if wants_wav && bytes.starts_with(b"OggS") {
-        match opus_transcode::decode_opus_to_wav(&bytes) {
+        // Decoding a long note is CPU-bound; keep it off the async runtime workers.
+        let (result, bytes) = tokio::task::spawn_blocking(move || {
+            (opus_transcode::decode_opus_to_wav(&bytes), bytes)
+        })
+        .await
+        .expect("decode task not to panic");
+        match result {
             Ok(wav) => return (wav, "audio/wav"),
             Err(err) => log::error!("failed to decode voice note to WAV: {err:?}"),
         }
+        let content_type = sniff_content_type(&bytes);
+        return (bytes, content_type);
     }
     let content_type = sniff_content_type(&bytes);
     (bytes, content_type)
