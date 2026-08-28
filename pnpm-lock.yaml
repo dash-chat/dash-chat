@@ -272,7 +272,7 @@ importers:
         specifier: 28.4.0
         version: 28.4.0
       tauri-plugin-audio-recorder-api:
-        specifier: ^0.1.0
+        specifier: 0.1.2
         version: 0.1.2
       tauri-plugin-background-service:
         specifier: ^1.0.0

@@ -34,7 +34,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
-tauri-plugin-audio-recorder = "0.1"
+tauri-plugin-audio-recorder = "=0.1.2"
 tauri-plugin-sentry-reporting = { workspace = true }
 
 tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "a86d8cf2ea998eba7f93dc6b53674fdb77d3def5" }
