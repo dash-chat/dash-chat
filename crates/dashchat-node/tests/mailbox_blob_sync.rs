@@ -110,6 +110,8 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
@@ -311,6 +313,8 @@ async fn recovers_unfetched_blob_after_source_restart() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice

@@ -29,6 +29,7 @@ describe('Leaving group', () => {
 		await createGroup(agent1, 'Solo Group', null);
 
 		await agent1.groupChatPage.ready();
+		await agent1.groupChatPage.composer.sendMessage('Hello group');
 		await agent1.groupChatPage.infoLink.click();
 		await agent1.groupInfoPage.ready();
 
@@ -66,6 +67,41 @@ describe('Leaving group', () => {
 
 		await agent1.groupInfoPage.back.click();
 		await agent1.groupChatPage.ready();
+		await agent1.groupChatPage.back.click();
+		await agent1.homePage.ready();
+	});
+
+	it('no longer offers reply, edit, or reactions after leaving', async function () {
+		await agent1.homePage.chatListItem('Solo Group').click();
+		await agent1.groupChatPage.ready();
+
+		const target =
+			await agent1.groupChatPage.messages.waitForMessage('Hello group');
+
+		// SwipeToReply only renders on mobile; the hover toolbar only on desktop.
+		if (agent1.platform !== 'desktop') {
+			const engaged = await agent1.execute(
+				(hash: string) => window.__test.swipeToReply(hash),
+				target.hash,
+			);
+			expect(engaged).toBe(false);
+		} else {
+			await expect(target.hoverReplyButton).not.toBeExisting();
+			await expect(target.hoverReactButton).not.toBeExisting();
+		}
+
+		// The actions menu keeps only the local actions — no reply or edit, and
+		// the mobile spotlight carries no reaction bar. Copy doubles as the way
+		// to close the menu again.
+		await target.openActions();
+		if (agent1.platform !== 'desktop') {
+			await expect(target.quickReactionBar).not.toBeExisting();
+		}
+		await expect(target.replyAction).not.toBeExisting();
+		await expect(target.editAction).not.toBeExisting();
+		await expect(target.copyAction).toBeExisting();
+		await target.copyAction.click();
+
 		await agent1.groupChatPage.back.click();
 		await agent1.homePage.ready();
 	});

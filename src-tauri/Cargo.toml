@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.19.19"
+version = "0.19.20"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -38,7 +38,7 @@ tauri-plugin-audio-recorder = "0.1"
 tauri-plugin-sentry-reporting = { workspace = true }
 
 tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "a86d8cf2ea998eba7f93dc6b53674fdb77d3def5" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "a0547306130d83a8c0afad96d5fce79d1a056f14", features = [
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "29867d696371de6cc315fbb0db9820e288b4124c", features = [
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
@@ -104,7 +104,7 @@ jni = "0.21"
 ndk-sys = "0.6"
 ndk-context = "0.1"
 # Saves photos to the shared gallery (MediaStore).
-tauri-plugin-android-fs = { version = "28.2" }
+tauri-plugin-android-fs = { version = "=28.4.0" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos
 # strip. JS bindings ship as `@universalappfactory/tauri-plugin-medialibrary`.
 tauri-plugin-medialibrary = "=0.13"

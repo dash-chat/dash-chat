@@ -144,6 +144,8 @@ mod tests {
                 name: "photo.jpg".into(),
                 mime_type: "image/jpeg".into(),
                 size: 1024,
+                width: 640,
+                height: 480,
                 hash: media_hash,
             }]),
             None,

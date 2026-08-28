@@ -21,6 +21,8 @@ pub struct OutgoingPhoto {
     pub data: Vec<u8>,
     pub name: String,
     pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// A non-image file attachment.
@@ -69,6 +71,8 @@ pub enum MediaMetadata {
         name: String,
         mime_type: String,
         size: u64,
+        width: u32,
+        height: u32,
         // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
         // impl encodes a 32-element array, which serde's untagged-enum buffering (used
         // by `dashchat_compat::Compat`) cannot reconstruct from CBOR.

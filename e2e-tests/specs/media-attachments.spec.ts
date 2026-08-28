@@ -5,6 +5,7 @@
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { tid } from '../helpers/selectors';
+import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Media attachments', () => {
@@ -34,11 +35,38 @@ describe('Media attachments', () => {
 		await composer.closeAttachMenu();
 	});
 
+	it('shows the camera button only on mobile with an empty composer', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
+		if (agent1.platform === 'desktop') {
+			expect(await composer.cameraButton.isExisting()).toBe(false);
+			return;
+		}
+		await composer.cameraButton.waitForDisplayed();
+		await composer.type('hiding the camera');
+		await composer.cameraButton.waitForExist({ reverse: true });
+		await composer.type('');
+		await composer.cameraButton.waitForDisplayed();
+	});
+
 	it('sends a single photo from Alice and renders on both ends', async () => {
 		await agent1.directChatPage.composer.attachPhotos('single');
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForPhotoMessage('single');
 		await agent2.directChatPage.messages.waitForPhotoMessage('single');
+	});
+
+	it('sizes a lone photo from its sender-measured dimensions', async () => {
+		await agent1.directChatPage.composer.attachNoisePhoto(
+			'measured',
+			1600,
+			1200,
+		);
+		await agent1.directChatPage.composer.send();
+		await agent2.directChatPage.messages.waitForPhotoMessage('measured');
+		expect(
+			await agent2.directChatPage.messages.photoBoxStyle('measured'),
+		).toEqual({ width: '300px', height: '225px' });
 	});
 
 	it('sends multiple photos with a caption', async () => {
@@ -205,5 +233,17 @@ describe('Media attachments', () => {
 
 		await retry.click();
 		await agent2.directChatPage.messages.waitForPhotoMessage('retry-blob');
+	});
+
+	it('does not offer Copy on a photo-only message', async () => {
+		await agent1.directChatPage.composer.attachPhotos('copyless');
+		await agent1.directChatPage.composer.send();
+		await agent1.directChatPage.messages.waitForPhotoMessage('copyless');
+		const message =
+			await agent1.directChatPage.messages.messageWithPhoto('copyless');
+		if (!message) throw new Error('Photo message "copyless" not found');
+		await message.openActions();
+		expect(await message.copyAction.isExisting()).toBe(false);
+		expect(await message.deleteAction.isExisting()).toBe(true);
 	});
 });

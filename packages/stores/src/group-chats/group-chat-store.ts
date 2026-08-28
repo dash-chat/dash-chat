@@ -53,6 +53,7 @@ export class GroupChatStore {
 			tombstoneStore,
 			chatId,
 			messagesClient,
+			reactive(async () => !(await this.me()).member),
 		);
 		this.logsStore.logsClient.onNewOperation((topicId, op) => {
 			if (topicId === this.chatId && op.header.auth) {

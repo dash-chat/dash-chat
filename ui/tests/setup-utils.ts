@@ -355,11 +355,12 @@ function collectFilePickers(): FilePickerRequest[] {
 	return filePickerRequests;
 }
 
-/** Drag a message row start-to-end far enough to trigger swipe-to-reply.
- * Synthesized as bare events with a `touches` list: WebKit and Chromium
- * disagree about constructing real `Touch` objects, and the handler only
- * reads coordinates. */
-function swipeToReply(messageHash: string): void {
+/** Drag a message row start-to-end far enough to trigger swipe-to-reply, and
+ * report whether the gesture claimed the drag — observed synchronously through
+ * touchmove's preventDefault. Synthesized as bare events with a `touches`
+ * list: WebKit and Chromium disagree about constructing real `Touch` objects,
+ * and the handler only reads coordinates. */
+function swipeToReply(messageHash: string): boolean {
 	const row = document.querySelector(
 		`[data-message-hash="${messageHash}"] [data-testid="swipe-to-reply"]`,
 	);
@@ -373,12 +374,13 @@ function swipeToReply(messageHash: string): void {
 		Object.defineProperty(event, 'touches', {
 			value: [{ clientX: x, clientY: 100 }],
 		});
-		row.dispatchEvent(event);
+		return row.dispatchEvent(event);
 	};
 	send('touchstart', startX);
 	send('touchmove', startX + sign * 20);
-	send('touchmove', startX + sign * 100);
+	const claimed = !send('touchmove', startX + sign * 100);
 	send('touchend', startX + sign * 100);
+	return claimed;
 }
 
 export const testUtils = {

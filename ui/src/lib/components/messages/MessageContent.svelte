@@ -1,12 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { type Message, hasBody } from 'dash-chat-stores';
+	import { type Hash, type Message, hasBody } from 'dash-chat-stores';
 	import { senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
+	import { timelineImageBox } from '$lib/utils/media';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
 	import FileAttachment from './attachments/FileAttachment.svelte';
 	import VoiceNoteAttachment from './attachments/voice-notes/VoiceNoteAttachment.svelte';
 	import MessageText from './MessageText.svelte';
+	import ReplyQuote from './ReplyQuote.svelte';
 
 	let {
 		message,
@@ -14,6 +16,8 @@
 		metadata,
 		senderName = '',
 		showSenderName = false,
+		mine = false,
+		onNavigateToMessage,
 	}: {
 		message: Message;
 		searchQuery: string;
@@ -22,6 +26,9 @@
 		 * as the lightbox title. */
 		senderName?: string;
 		showSenderName?: boolean;
+		/** Whether the enclosing bubble is my own message. */
+		mine?: boolean;
+		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
 
 	const body = $derived(hasBody(message.content) ? message.content : null);
@@ -36,16 +43,36 @@
 		!hasText && (photos.length > 0 || !!file || !!voiceNote),
 	);
 
+	// Photo messages fix the bubble width to the media box (Signal model:
+	// captions, quotes and sender names wrap at the image width, so the image
+	// is never narrower than the bubble). Collages are 300px wide.
+	const mediaCapStyle = $derived(
+		photos.length === 1
+			? `max-width: ${timelineImageBox(photos[0]).width}px;`
+			: photos.length > 1
+				? 'max-width: 300px;'
+				: '',
+	);
+
 	let metadataWidth = $state(0);
 </script>
 
 {#if showSenderName}
 	<div
 		class="sender-name"
-		style="color: {senderColor(message.author)}"
+		style="color: {senderColor(message.author)}; {mediaCapStyle}"
 		data-testid="group-message-sender-name"
 	>
 		{senderName}
+	</div>
+{/if}
+{#if message.replyQuote}
+	<div style={mediaCapStyle}>
+		<ReplyQuote
+			reply={message.replyQuote}
+			{mine}
+			onNavigate={onNavigateToMessage}
+		/>
 	</div>
 {/if}
 {#if photos.length > 0}
@@ -72,7 +99,7 @@
 	</div>
 {/if}
 {#if hasText || (metadata && !isMediaOnly)}
-	<div class="caption relative px-1">
+	<div class="caption relative px-1" style={mediaCapStyle}>
 		{#if metadata}
 			<div
 				class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
@@ -119,8 +146,8 @@
 		box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 		pointer-events: none;
 	}
-	/* Don't bleed up into the sender-name header above the media. */
-	.sender-name + .media.photos {
+	/* Don't bleed up into the sender-name header or reply quote above the media. */
+	.media.photos:not(:first-child) {
 		margin-top: 0;
 	}
 	/* Leave a gap before a caption below the media instead of bleeding down. */

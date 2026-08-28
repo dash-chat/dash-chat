@@ -3,7 +3,6 @@ import type { Action } from 'svelte/action';
 
 interface TrackReadMessagesOptions {
 	debounceMs?: number;
-	threshold?: number;
 }
 
 export interface ReadMessagesTracker {
@@ -15,7 +14,7 @@ export function createReadMessagesTracker(
 	store: MessagesStore,
 	options: TrackReadMessagesOptions = {},
 ): ReadMessagesTracker {
-	const { debounceMs = 500, threshold = 0.5 } = options;
+	const { debounceMs = 500 } = options;
 	const maxRetryDelayMs = 30_000;
 	const visible = new Set<Hash>();
 	const ids = new WeakMap<Element, Hash>();
@@ -42,37 +41,41 @@ export function createReadMessagesTracker(
 			});
 	};
 
-	const observer = new IntersectionObserver(
-		entries => {
-			for (const entry of entries) {
-				if (!entry.isIntersecting) continue;
-				const id = ids.get(entry.target);
-				if (id !== undefined) visible.add(id);
-			}
-			clearTimeout(timer);
-			timer = setTimeout(flush, debounceMs);
-		},
-		{ threshold },
-	);
+	const observer = new IntersectionObserver(entries => {
+		for (const entry of entries) {
+			if (!entry.isIntersecting) continue;
+			const id = ids.get(entry.target);
+			if (id !== undefined) visible.add(id);
+		}
+		clearTimeout(timer);
+		timer = setTimeout(flush, debounceMs);
+	});
 
+	// A message counts as read once its bottom edge scrolls into view
 	const observe: Action<HTMLElement, Hash | null> = (node, id) => {
+		const sentinel = document.createElement('div');
+		sentinel.style.height = '1px';
+		sentinel.style.marginTop = '-1px';
+		sentinel.style.pointerEvents = 'none';
+		node.appendChild(sentinel);
 		if (id !== null) {
-			ids.set(node, id);
-			observer.observe(node);
+			ids.set(sentinel, id);
+			observer.observe(sentinel);
 		}
 		return {
 			update(newId: Hash | null) {
 				if (newId === null) {
-					observer.unobserve(node);
-					ids.delete(node);
-				} else if (ids.get(node) !== newId) {
-					ids.set(node, newId);
-					observer.observe(node);
+					observer.unobserve(sentinel);
+					ids.delete(sentinel);
+				} else if (ids.get(sentinel) !== newId) {
+					ids.set(sentinel, newId);
+					observer.observe(sentinel);
 				}
 			},
 			destroy() {
-				observer.unobserve(node);
-				ids.delete(node);
+				observer.unobserve(sentinel);
+				ids.delete(sentinel);
+				sentinel.remove();
 			},
 		};
 	};

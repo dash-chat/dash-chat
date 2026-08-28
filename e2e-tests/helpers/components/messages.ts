@@ -72,6 +72,31 @@ export class Messages extends TestHelper {
 			: new Message(this.agent, this, hash, this.composer);
 	}
 
+	/** The rendered message holding a photo whose alt contains `label`, as a
+	 * `Message` helper scoped to it (by its message hash), or null if none is
+	 * rendered. */
+	async messageWithPhoto(label: string): Promise<Message | null> {
+		const hash = await this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				const wrapper = Array.from(wrappers).find(w =>
+					Array.from(w.querySelectorAll(`${photosSel} img`)).some(img =>
+						(img as HTMLImageElement).alt.includes(name),
+					),
+				);
+				return wrapper?.getAttribute('data-message-hash') ?? null;
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
+		);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
+	}
+
 	/** Wait until a message whose text contains `text` renders, and return its
 	 * `Message` helper. */
 	async waitForMessage(text: string, timeout = SYNC_TIMEOUT): Promise<Message> {
@@ -176,6 +201,33 @@ export class Messages extends TestHelper {
 					label,
 				),
 			{ timeout, timeoutMsg: `Photo message "${label}" not found` },
+		);
+	}
+
+	/** Inline width/height styles of the cell of the photo whose filename
+	 * contains `label` — the box `PhotoAttachmentGallery` derives from the
+	 * sender-measured pixel dimensions, applied before the blob loads. */
+	async photoBoxStyle(
+		label: string,
+	): Promise<{ width: string; height: string }> {
+		return this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const imgs =
+					document
+						.querySelector(messagesSel)
+						?.querySelectorAll(`${photosSel} img`) ?? [];
+				const img = Array.from(imgs).find(el =>
+					(el as HTMLImageElement).alt.includes(name),
+				) as HTMLImageElement | undefined;
+				const cell = img?.closest('button');
+				return {
+					width: cell?.style.width ?? '',
+					height: cell?.style.height ?? '',
+				};
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
 		);
 	}
 
@@ -652,6 +704,17 @@ export class Message extends TestHelper {
 	/** The hover toolbar's Reply shortcut, which sits alongside React on desktop. */
 	get hoverReplyButton() {
 		return this.wrapper.$(tid('message-hover-reply'));
+	}
+
+	/** The hover toolbar's add-reaction button. */
+	get hoverReactButton() {
+		return this.wrapper.$(tid('message-hover-react'));
+	}
+
+	/** This message's quick-reaction bar (in the mobile spotlight overlay or
+	 * the desktop hover popover). */
+	get quickReactionBar() {
+		return this.wrapper.$(tid('quick-reaction-bar'));
 	}
 
 	/** Open the actions menu, tap Reply, type `replyText`, and send it. */

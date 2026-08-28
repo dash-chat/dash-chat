@@ -10,10 +10,13 @@
 
 	interface Props {
 		opened: boolean;
+		/** Called once the exit animation has finished and the overlay has left
+		 * the DOM. */
+		onClosed?: () => void;
 		children: Snippet<[ModalControls]>;
 	}
 
-	let { opened = $bindable(false), children }: Props = $props();
+	let { opened = $bindable(false), onClosed, children }: Props = $props();
 
 	type Phase = 'unmounted' | 'entering' | 'open' | 'leaving';
 
@@ -52,7 +55,10 @@
 
 		if (current === 'unmounted') return;
 		phase = 'leaving';
-		return afterDelay(EXIT_DURATION, () => (phase = 'unmounted'));
+		return afterDelay(EXIT_DURATION, () => {
+			phase = 'unmounted';
+			onClosed?.();
+		});
 	});
 
 	$effect(() => {

@@ -6,7 +6,7 @@
 	import { condenseReactions } from '$lib/utils/emojis';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useMyAgentId } from '$lib/stores/my-agent-id';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromises } from '$lib/stores/use-signal';
 	import Modal from '$lib/components/Modal.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
@@ -24,7 +24,10 @@
 	const store: MessagesStore = getContext('messages-store');
 	const myAgentId = useMyAgentId();
 
-	const profiles = useReactivePromise(store.membersProfiles);
+	const listData = useReactivePromises(() => [
+		store.membersProfiles(),
+		store.readOnly(),
+	]);
 
 	const entries = $derived(
 		Object.entries(reactions) as Array<[AgentId, string]>,
@@ -98,11 +101,11 @@
 			{@render emojiTab(reaction.emoji, reaction.count)}
 		{/each}
 	</div>
-	{#await $profiles then profiles}
+	{#await $listData then [profiles, readOnly]}
 		<List class="!my-2">
 			{#each filtered as [agentId, emoji] (agentId)}
 				{@const own = agentId === myAgentId}
-				{@const removable = own && !isWideScreen.value}
+				{@const removable = own && !isWideScreen.value && !readOnly}
 				{@const profile = profiles[agentId]}
 				<ListItem
 					link={removable}
