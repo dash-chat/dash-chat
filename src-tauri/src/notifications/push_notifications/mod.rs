@@ -148,10 +148,18 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
     let topic_ids = if are_notifications_enabled(&app_handle) {
+        // Inbox topics live in their own store (they expire) and are not in
+        // subscribed_topics; without them this full sync unsubscribes the
+        // inbox on the server and a contact request can't wake the app.
+        let inbox_topics = node
+            .get_active_inbox_topics()
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
         let topic_ids: HashSet<PushTopicId> = node
             .subscribed_topics()
             .await?
             .into_iter()
+            .chain(inbox_topics.into_iter().map(|inbox| *inbox.topic))
             .map(|t| PushTopicId::from(t.to_hex()))
             .collect();
         topic_ids

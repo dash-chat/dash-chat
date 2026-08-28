@@ -140,6 +140,8 @@
 	"acceptRequestTitle": "Accept request?",
 	"acceptRequestDescription": "Review requests carefully. Profile names are chosen by their account owner and aren't verified.",
 	"contactRequestBanner": "Let **{{name}}** message you and share your name and photo with them? They won't know you've seen their message until you accept.",
+	"requestMessagesReceived_one": "{{count}} message received",
+	"requestMessagesReceived_other": "{{count}} messages received",
 	"blockedContactBanner": "Let **{{name}}** message you and share your name and photo with them? You won't receive any messages until you unblock them.",
 	"profileNames": "Profile names",
 	"nameNotVerified": "Name not verified",
@@ -371,5 +373,6 @@
 	"updateTapToRetry": "Tap to retry.",
 	"testBanner": "Early access test",
 	"feedback": "Feedback",
-	"reportSent": "Report sent. Thank you!"
+	"reportSent": "Report sent. Thank you!",
+	"reportQueued": "Report saved. It will be sent when you're back online."
 }

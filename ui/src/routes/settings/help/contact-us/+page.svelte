@@ -40,13 +40,13 @@
 	async function handleSubmit() {
 		if (!reason) return;
 		try {
-			await sendFeedback({
+			const outcome = await sendFeedback({
 				reason,
 				message,
 				screenshot: screenshot ? await compressImage(screenshot) : undefined,
 				includeLogs: includeDebugLog,
 			});
-			showToast(m.reportSent());
+			showToast(outcome === 'queued' ? m.reportQueued() : m.reportSent());
 			goto('/settings/help');
 		} catch (e) {
 			console.error('Error sending feedback', e);

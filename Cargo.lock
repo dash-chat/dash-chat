@@ -2082,7 +2082,6 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "futures",
  "hex",
- "if-watch",
  "iroh",
  "iroh-blobs",
  "itertools 0.14.0",
@@ -2123,6 +2122,7 @@ dependencies = [
  "async-trait",
  "ciborium",
  "futures",
+ "if-watch",
  "iroh",
  "iroh-blobs",
  "log",
@@ -10829,6 +10829,7 @@ name = "tauri-plugin-sentry-reporting"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dashchat-utils",
  "log",
  "regex",
  "reqwest 0.13.4",
@@ -10840,6 +10841,8 @@ dependencies = [
  "tauri-plugin",
  "tauri-plugin-log",
  "tempfile",
+ "tokio",
+ "uuid",
  "webpki-roots",
 ]
 

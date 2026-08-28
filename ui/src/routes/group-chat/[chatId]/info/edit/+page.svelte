@@ -118,6 +118,7 @@
 					/>
 
 					<FormInput
+						data-testid="group-info-edit-description"
 						type="textarea"
 						inputStyle={{ 'min-height': '2em' }}
 						bind:value={description}

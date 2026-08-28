@@ -11,6 +11,7 @@
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
+		type DirectChatEvent,
 		type Hash,
 		type Message,
 		type Profile,
@@ -59,6 +60,7 @@
 	import {
 		messagePosition,
 		scrollToMessage,
+		withoutMessages,
 	} from '$lib/components/messages/message-helpers';
 	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
 	import { useDeviceId } from '$lib/stores/my-device-id';
@@ -66,6 +68,7 @@
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
+	import RequestMessagesDisclosure from '$lib/components/direct-chats/RequestMessagesDisclosure.svelte';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	let chatId = page.params.chatId!;
 
@@ -117,6 +120,7 @@
 	}
 
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
+	let requestMessagesRevealed = $state(false);
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -130,6 +134,15 @@
 	let isAtBottom = $state(true);
 
 	const unreadDividerTracker = createUnreadDividerTracker();
+
+	function countMessages(
+		days: Array<{ eventsGroups: Array<Array<[Hash, DirectChatEvent]>> }>,
+	): number {
+		return days
+			.flatMap(day => day.eventsGroups)
+			.flat()
+			.filter(([, item]) => item.kind === 'message').length;
+	}
 
 	// Search state
 	let searchMode = $state(page.url.searchParams.has('search'));
@@ -361,6 +374,14 @@
 								myDeviceId,
 								isAtBottom,
 							)}
+							{@const requestMessageCount =
+								contactRequest !== undefined
+									? countMessages(messageGroupsInDays)
+									: 0}
+							{@const visibleGroupsInDays =
+								contactRequest === undefined || requestMessagesRevealed
+									? messageGroupsInDays
+									: withoutMessages(messageGroupsInDays)}
 							<div
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
@@ -458,11 +479,18 @@
 									</div>
 								</div>
 
+								{#if requestMessageCount > 0}
+									<RequestMessagesDisclosure
+										count={requestMessageCount}
+										bind:revealed={requestMessagesRevealed}
+									/>
+								{/if}
+
 								<div
 									class="column m-2 gap-1"
 									data-testid="direct-chat-messages"
 								>
-									{#each messageGroupsInDays as messageGroupsInDay}
+									{#each visibleGroupsInDays as messageGroupsInDay}
 										<div use:navbarSticky class="self-center z-10">
 											<DayTag class="quiet" day={messageGroupsInDay.day} />
 										</div>
@@ -519,7 +547,8 @@
 															<div
 																class="w-full"
 																data-message-hash={hash}
-																use:readMessageOnObserve={readHashes?.has(hash)
+																use:readMessageOnObserve={contactRequest !==
+																	undefined || readHashes?.has(hash)
 																	? null
 																	: hash}
 															>
