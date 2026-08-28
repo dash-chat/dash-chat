@@ -109,3 +109,29 @@ fn decodes_opus_back_to_playable_wav() {
     );
 }
 
+// Fixtures mirror what the mobile recorders write: Android AAC-in-MP4 (.m4a)
+// and iOS raw ADTS AAC (.aac). Generated once with ffmpeg (~0.3s 440Hz tone).
+#[test]
+fn transcodes_aac_m4a_source() {
+    let bytes = include_bytes!("fixtures/tone.m4a");
+    let result = transcode_to_opus(bytes).unwrap();
+    assert!(result.opus.starts_with(b"OggS"), "not an Ogg stream");
+    assert!(
+        (150..450).contains(&result.duration_ms),
+        "m4a duration {}ms not ~300ms",
+        result.duration_ms,
+    );
+}
+
+#[test]
+fn transcodes_adts_aac_source() {
+    let bytes = include_bytes!("fixtures/tone.aac");
+    let result = transcode_to_opus(bytes).unwrap();
+    assert!(result.opus.starts_with(b"OggS"), "not an Ogg stream");
+    assert!(
+        (150..450).contains(&result.duration_ms),
+        "adts duration {}ms not ~300ms",
+        result.duration_ms,
+    );
+}
+

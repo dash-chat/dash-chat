@@ -106,6 +106,9 @@
           hostBuildEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
             export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries} -C link-arg=-fuse-ld=mold"
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+            # audiopus_sys vendors an old libopus whose CMakeLists predates the
+            # 3.5 floor modern CMake enforces; let it configure anyway.
+            export CMAKE_POLICY_VERSION_MINIMUM=3.5
             export SOURCE_DATE_EPOCH=315532800
 
             # Off NixOS there is no /run/opengl-driver, so glvnd finds no GL
@@ -172,6 +175,8 @@
               rust
               pkgs."nodejs_${nodeVersion}"
               pkgs.jdk
+              # audiopus_sys builds libopus from source for each ABI via CMake.
+              pkgs.cmake
             ]
             ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ]
             ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
@@ -186,11 +191,16 @@
 
           devShells.iosDev = pkgs.mkShell {
             inputsFrom = [ devShells.default ];
-            packages = [ rust ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
+            # cmake lets audiopus_sys build libopus from source for the iOS target.
+            packages = [ rust pkgs.cmake ] ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
             shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
               # Make libiconv findable by the linker even when xcodebuild
               # strips NIX_LDFLAGS from the environment.
               export LIBRARY_PATH="${lib.makeLibraryPath [ pkgs.libiconv ]}''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+
+              # audiopus_sys vendors an old libopus whose CMakeLists predates the
+              # 3.5 floor modern CMake enforces; let it configure anyway.
+              export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
               # Unset SDKROOT so xcrun can locate the iOS SDK from Xcode.
               unset SDKROOT

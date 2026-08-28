@@ -5,9 +5,14 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
-# Decode-only; features enabled per source format. `isomp4`/`aac`/`adts` get
-# added at step 5 for mobile recordings (m4a / raw AAC).
-symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm"] }
+# Decode-only. Container/codec support per source: WAV (desktop), MP4/AAC
+# (Android m4a), ADTS AAC (iOS). The `aac` codec crate provides the ADTS reader.
+symphonia = { version = "0.5", default-features = false, features = [
+  "wav",
+  "pcm",
+  "isomp4",
+  "aac",
+] }
 opus = "0.3"
 ogg = "0.9"
 
