@@ -5,17 +5,17 @@
 //! the same bytes regardless of the source format, plus the duration and a
 //! downsampled amplitude waveform derived from the decoded PCM.
 
-mod decode;
-mod encode;
-mod resample;
+mod input;
+mod opus;
 mod visualisation;
 
 use anyhow::Result;
 
-use decode::decode_to_mono_pcm;
-use encode::encode_ogg_opus;
-use resample::ensure_opus_rate;
+use input::{decode_to_mono_pcm, ensure_opus_rate};
+use opus::encode_ogg_opus;
 use visualisation::compute_waveform;
+
+pub use opus::decode_opus_to_wav;
 
 /// The Ogg/Opus rendering of an audio file plus derived metadata.
 #[derive(Debug, Clone)]

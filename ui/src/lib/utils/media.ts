@@ -304,6 +304,12 @@ export function blobUrl(hash: Hash): string {
 	return convertFileSrc(hash, 'irohblob');
 }
 
+/** Like `blobUrl`, but asks the handler to decode the Ogg/Opus voice note to
+ * WAV so a webview `<audio>` element can play it natively. */
+export function voiceAudioUrl(hash: Hash): string {
+	return `${blobUrl(hash)}?decode=wav`;
+}
+
 /**
  * Source URL for rendering a media item: the `irohblob://` URL its bytes are
  * served from. The handler reads the blob from the node's local store; the

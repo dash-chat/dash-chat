@@ -1,4 +1,4 @@
-import { blobUrl } from '$lib/utils/media';
+import { voiceAudioUrl } from '$lib/utils/media';
 import type { VoiceNote } from 'dash-chat-stores';
 
 // Only one voice note plays at a time: starting a player pauses whichever was
@@ -116,8 +116,9 @@ export class VoicePlayer {
 				return false;
 			}
 			if (!this.#audio) return false;
+			// The backend decodes the stored Ogg/Opus to WAV for `<audio>`.
 			this.#objectUrl = URL.createObjectURL(
-				new Blob([data as BlobPart], { type: this.#voice.mime_type }),
+				new Blob([data as BlobPart], { type: 'audio/wav' }),
 			);
 			this.#audio.src = this.#objectUrl;
 			return true;
@@ -128,7 +129,7 @@ export class VoicePlayer {
 
 	async #fetchAudio(): Promise<Uint8Array | undefined> {
 		try {
-			const res = await fetch(blobUrl(this.#voice.hash));
+			const res = await fetch(voiceAudioUrl(this.#voice.hash));
 			if (!res.ok) return undefined;
 			return new Uint8Array(await res.arrayBuffer());
 		} catch {

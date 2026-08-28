@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use opus_transcode::transcode_to_opus;
+use opus_transcode::{decode_opus_to_wav, transcode_to_opus};
 
 /// The waveform bar count is an internal display constant; assert against the
 /// known value rather than reaching into the crate's private module.
@@ -92,3 +92,20 @@ fn header_carries_encoder_pre_skip() {
     let pre_skip = u16::from_le_bytes([result.opus[head + 10], result.opus[head + 11]]);
     assert!(pre_skip > 0, "pre-skip should reflect encoder lookahead");
 }
+
+#[test]
+fn decodes_opus_back_to_playable_wav() {
+    let wav = sine_wav(1.0, 16_000, 1);
+    let opus = transcode_to_opus(&wav).unwrap().opus;
+    let decoded = decode_opus_to_wav(&opus).unwrap();
+    assert_eq!(&decoded[0..4], b"RIFF");
+    assert_eq!(&decoded[8..12], b"WAVE");
+    // Opus decodes at 48kHz mono; ~1s of 16-bit samples, allowing for trimming.
+    let data_bytes = decoded.len() - 44;
+    let seconds = data_bytes as f64 / 2.0 / 48_000.0;
+    assert!(
+        (seconds - 1.0).abs() < 0.1,
+        "decoded WAV is {seconds:.3}s, not ~1s",
+    );
+}
+

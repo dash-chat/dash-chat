@@ -23,17 +23,26 @@ pub fn handle<R: Runtime>(
     } else {
         path.to_string()
     };
+    // Voice notes are stored as Ogg/Opus, which some webviews can't play in
+    // `<audio>`; `?decode=wav` asks us to decode them to WAV on the way out.
+    let wants_wav = uri
+        .query()
+        .map(|q| q.contains("decode=wav"))
+        .unwrap_or(false);
 
     tauri::async_runtime::spawn(async move {
         let response = match load(&app, &hash).await {
-            Ok(bytes) => tauri::http::Response::builder()
-                .status(tauri::http::StatusCode::OK)
-                // The webview's `fetch()` (save path) reads these cross-origin.
-                .header("Access-Control-Allow-Origin", "*")
-                .header("Cache-Control", "public, max-age=31536000, immutable")
-                .header("Content-Type", sniff_content_type(&bytes))
-                .body(bytes)
-                .expect("valid response"),
+            Ok(bytes) => {
+                let (bytes, content_type) = maybe_decode_to_wav(bytes, wants_wav);
+                tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::OK)
+                    // The webview's `fetch()` (save path) reads these cross-origin.
+                    .header("Access-Control-Allow-Origin", "*")
+                    .header("Cache-Control", "public, max-age=31536000, immutable")
+                    .header("Content-Type", content_type)
+                    .body(bytes)
+                    .expect("valid response")
+            }
             Err(err) => {
                 log::error!("failed to load blob {hash:?}: {err:?}");
                 tauri::http::Response::builder()
@@ -46,6 +55,20 @@ pub fn handle<R: Runtime>(
         };
         responder.respond(response);
     });
+}
+
+/// Decode an Ogg/Opus blob to WAV when the caller asked for it, so `<audio>`
+/// can play it. Falls back to the original bytes if decoding fails or the blob
+/// isn't Opus.
+fn maybe_decode_to_wav(bytes: Vec<u8>, wants_wav: bool) -> (Vec<u8>, &'static str) {
+    if wants_wav && bytes.starts_with(b"OggS") {
+        match opus_transcode::decode_opus_to_wav(&bytes) {
+            Ok(wav) => return (wav, "audio/wav"),
+            Err(err) => log::error!("failed to decode voice note to WAV: {err:?}"),
+        }
+    }
+    let content_type = sniff_content_type(&bytes);
+    (bytes, content_type)
 }
 
 /// Best-effort MIME type from a blob’s magic bytes, falling back to a generic
