@@ -31,6 +31,9 @@
 		MockTombstoneClient,
 		TombstoneClient,
 		TombstoneStore,
+		MessageAckClient,
+		MessageAckStore,
+		MockMessageAckClient,
 		seedDemoData,
 		DEMO_IDS,
 		DEMO_CONTACT_DEVICES,
@@ -105,6 +108,7 @@
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
 	let tombstoneStore: TombstoneStore;
+	let messageAckStore: MessageAckStore;
 	let chatsStore: ChatsStore;
 	let mailboxTrackerStore: IMailboxTrackerStore;
 
@@ -137,6 +141,7 @@
 		tombstoneStore = new TombstoneStore(
 			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
 		);
+		messageAckStore = new MessageAckStore(new MockMessageAckClient());
 
 		const mockChatsClient = new MockChatsClient();
 		chatsStore = new MockChatsStore(
@@ -161,6 +166,7 @@
 		contactsStore = new ContactsStore(logsStore, devicesStore, contactsClient);
 
 		tombstoneStore = new TombstoneStore(new TombstoneClient());
+		messageAckStore = new MessageAckStore(new MessageAckClient());
 
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(
@@ -182,6 +188,7 @@
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
 	setContext('mailbox-tracker-store', mailboxTrackerStore);
+	setContext('message-acks-store', messageAckStore);
 
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page

@@ -1,17 +1,17 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { getContext } from 'svelte';
-	import { mdiCheckCircleOutline } from '@mdi/js';
 	import {
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
+		type MessageAckStore,
 	} from 'dash-chat-stores';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 
-	import SendingSpinner from './SendingSpinner.svelte';
+	import StatusDeliveredIcon from './StatusDeliveredIcon.svelte';
+	import StatusMailboxIcon from './StatusMailboxIcon.svelte';
+	import StatusSendingIcon from './StatusSendingIcon.svelte';
 
 	interface Props {
 		chatId: ChatId;
@@ -24,47 +24,47 @@
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
 	);
+	const messageAckStore: MessageAckStore = getContext('message-acks-store');
 
-	const syncStatus = useReactivePromise(
+	const syncStatus = useReactiveValue(
 		mailboxTrackerStore.syncStatusForOp,
 		props.chatId,
 		props.author,
 		props.seq,
 	);
+	const acks = useReactiveValue(messageAckStore.acks, props.chatId);
+
+	const status = $derived.by(() => {
+		const acked = $acks?.[props.author];
+		if (acked !== undefined && acked.seq >= props.seq) return 'delivered';
+		if ($syncStatus === undefined) return undefined;
+		return $syncStatus.syncedWithCloudMailbox ||
+			$syncStatus.syncedWithAnyLocalMailbox
+			? 'mailbox'
+			: 'sending';
+	});
 </script>
 
-{#await $syncStatus then syncStatus}
-	{#if syncStatus.syncedWithCloudMailbox}
-		<wa-icon
-			data-testid="message-status"
-			data-status="cloud"
-			class="message-status"
-			src={wrapPathInSvg(mdiCheckCircleOutline)}
-			aria-label="sent"
-		></wa-icon>
-	{:else if syncStatus.syncedWithAnyLocalMailbox}
-		<wa-icon
-			data-testid="message-status"
-			data-status="local"
-			class="message-status"
-			src="/localmailboxserver.svg"
-			aria-label="sent-to-local-mailboxes"
-		></wa-icon>
-	{:else}
-		<div
-			data-testid="message-status"
-			data-status="sending"
-			class="message-status"
-		>
-			<SendingSpinner />
-		</div>
-	{/if}
-{/await}
+{#if status !== undefined}
+	<div
+		data-testid="message-status"
+		data-status={status}
+		class="message-status"
+		aria-label={status}
+	>
+		{#if status === 'delivered'}
+			<StatusDeliveredIcon />
+		{:else if status === 'mailbox'}
+			<StatusMailboxIcon />
+		{:else}
+			<StatusSendingIcon />
+		{/if}
+	</div>
+{/if}
 
 <style>
 	.message-status {
 		opacity: 0.7;
-		font-size: 0.875rem;
 		width: 0.875rem;
 		height: 0.875rem;
 	}

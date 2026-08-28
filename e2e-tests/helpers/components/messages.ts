@@ -9,6 +9,8 @@ import {
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
+export type MessageStatus = 'sending' | 'mailbox' | 'delivered';
+
 export type SystemMessageKind =
 	| 'group_created'
 	| 'group_member_added'
@@ -46,6 +48,74 @@ export class Messages extends TestHelper {
 	/** The system message of `kind` rendered in this message list. */
 	systemMessage(kind: SystemMessageKind) {
 		return this.el(`${this.messagesSelector} ${tid(`system-message-${kind}`)}`);
+	}
+
+	/** Read the data-status of the most recent message-status indicator. */
+	async lastMessageStatus(): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(messagesSel: string, statusSel: string) => {
+				const el = document.querySelector(
+					`${messagesSel} ${statusSel}`,
+				) as HTMLElement | null;
+				const status = el?.dataset.status;
+				if (
+					status === 'sending' ||
+					status === 'mailbox' ||
+					status === 'delivered'
+				) {
+					return status;
+				}
+				return null;
+			},
+			this.messagesSelector,
+			tid('message-status'),
+		);
+	}
+
+	/** Read the data-status of the status indicator inside the bubble whose text contains `text`. */
+	async messageStatusFor(text: string): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(messagesSel: string, statusSel: string, t: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (!wrapper.textContent?.includes(t)) continue;
+					const el = wrapper.querySelector(statusSel) as HTMLElement | null;
+					const status = el?.dataset.status;
+					if (
+						status === 'sending' ||
+						status === 'mailbox' ||
+						status === 'delivered'
+					) {
+						return status;
+					}
+					return null;
+				}
+				return null;
+			},
+			this.messagesSelector,
+			tid('message-status'),
+			text,
+		);
+	}
+
+	/** Wait until the message containing `text` reports one of `statuses`. */
+	async waitForMessageStatus(
+		text: string,
+		statuses: MessageStatus[],
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				const status = await this.messageStatusFor(text);
+				return status !== null && statuses.includes(status);
+			},
+			{
+				timeout,
+				timeoutMsg: `Message "${text}" did not reach status ${statuses.join('/')}`,
+			},
+		);
 	}
 
 	/** The rendered message whose text contains `text`, as a `Message` helper

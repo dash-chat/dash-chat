@@ -1,5 +1,6 @@
 pub(crate) mod actor;
 mod app_processing;
+mod message_acks;
 pub(crate) mod publish;
 mod report;
 
@@ -95,6 +96,14 @@ pub struct NodeConfig {
     /// How often the followup task re-announces still-unfetched blob hashes to
     /// their mailboxes.
     pub unfetched_blob_followup_interval: std::time::Duration,
+    /// How long the delivery-ack writer waits after new operations arrive
+    /// before publishing a [`ChatPayload::MessageAck`], so a burst of incoming
+    /// operations is covered by a single ack.
+    pub message_ack_debounce: std::time::Duration,
+    /// Whether to publish delivery acks at all. Only the iOS push extension
+    /// disables this — its short-lived background node must not author
+    /// operations.
+    pub enable_message_acks: bool,
 }
 
 impl NodeConfig {
@@ -141,6 +150,8 @@ impl NodeConfig {
                 retry_cooldown: std::time::Duration::from_secs(1),
             },
             unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
+            message_ack_debounce: std::time::Duration::from_millis(300),
+            enable_message_acks: true,
         }
     }
 
@@ -164,6 +175,8 @@ impl Default for NodeConfig {
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
             unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
+            message_ack_debounce: std::time::Duration::from_secs(3),
+            enable_message_acks: true,
         }
     }
 }
@@ -207,6 +220,9 @@ pub struct Node {
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     unfetched_blob_trigger: Arc<tokio::sync::Notify>,
     unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    message_ack_trigger: Arc<tokio::sync::Notify>,
+    message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
@@ -392,6 +408,9 @@ impl Node {
             network_change_handle: Default::default(),
             unfetched_blob_trigger: Default::default(),
             unfetched_blob_followup_handle: Default::default(),
+            message_ack_trigger: Default::default(),
+            message_ack_handle: Default::default(),
+            dirty_ack_topics: Default::default(),
         };
 
         // === application processor task === //
@@ -430,6 +449,17 @@ impl Node {
             .lock()
             .await
             .replace(followup_handle);
+
+        // === message ack writer === //
+
+        if node.config.enable_message_acks {
+            let ack_handle = message_acks::spawn_message_ack_task(
+                node.clone(),
+                node.config.message_ack_debounce,
+                node.message_ack_trigger.clone(),
+            );
+            node.message_ack_handle.lock().await.replace(ack_handle);
+        }
 
         // === topics === //
 
@@ -1415,6 +1445,10 @@ impl Node {
             handle.abort();
         }
 
+        if let Some(handle) = self.message_ack_handle.lock().await.take() {
+            handle.abort();
+        }
+
         if let Some(handle) = self.network_change_handle.lock().await.take() {
             handle.abort();
         }
@@ -1710,6 +1744,10 @@ impl Node {
         self.create_direct_chat_space(fake_agent_id)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+
+        // Messages the requester sent before acceptance were processed but
+        // deliberately not acked; now that they are a contact, cover them.
+        self.mark_ack_topic_dirty(self.direct_chat_topic(fake_agent_id));
 
         Ok(())
     }

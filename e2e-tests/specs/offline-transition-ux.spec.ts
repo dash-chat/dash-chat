@@ -6,7 +6,7 @@
  * toggling the per-agent local mailbox server underneath the running agents.
  *
  * Visible states under test:
- *   - Message status: "cloud" → "sending" → "local" → "cloud"
+ *   - Message status: "delivered" → "sending" → "mailbox" → "delivered"
  *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
@@ -73,16 +73,15 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox online', () => {
-		it('sends a message, peer receives it, sender shows the cloud check, and the navbar chip stays hidden', async () => {
+		it('sends a message, peer receives it, sender shows delivered, and the navbar chip stays hidden', async () => {
 			await agent1.directChatPage.composer.sendMessage('online hello');
 			await agent2.directChatPage.messages.waitForMessage('online hello');
 
-			await agent1.waitUntil(
-				async () =>
-					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
-			);
-			expect(await agent1.directChatPage.messageStatusFor('online hello')).toBe(
-				'cloud',
+			// The peer received it, so the peer's ack must eventually flip the
+			// indicator to the double check.
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'online hello',
+				['delivered'],
 			);
 			expect(
 				await agent1.directChatPage.connectionStatusIndicator.status(),
@@ -171,31 +170,31 @@ describe('Offline UX', () => {
 				await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 			});
 
-			it('a new message advances to the "local" mailbox icon', async () => {
+			it('a new message advances to the "mailbox" icon once the local mailbox holds it', async () => {
 				await agent1.directChatPage.composer.sendMessage('local hello');
-				await agent1.waitUntil(
-					async () =>
-						(await agent1.directChatPage.lastMessageStatus()) === 'local',
-					{ timeout: 30_000 },
+				await agent1.directChatPage.messages.waitForMessageStatus(
+					'local hello',
+					// Only agent1 reaches the local mailbox, so the message can't
+					// become delivered — it settles on 'mailbox'.
+					['mailbox'],
 				);
 			});
 		});
 	});
 
 	describe('cloud mailbox back online', () => {
-		it('navbar chip hides again and pending message advances to "cloud"', async () => {
+		it('navbar chip hides again and the pending message advances to delivered once the peer receives it', async () => {
 			await agent1.waitUntil(
 				async () =>
 					(await agent1.directChatPage.connectionStatusIndicator.status()) ===
 					'connected',
 				{ timeout: 30_000 },
 			);
-			await agent1.waitUntil(
-				async () =>
-					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
-				{ timeout: 30_000 },
-			);
 			await agent2.directChatPage.messages.waitForMessage('offline hello');
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'offline hello',
+				['delivered'],
+			);
 		});
 	});
 
@@ -214,15 +213,14 @@ describe('Offline UX', () => {
 			mailboxKilled = false;
 		});
 
-		it('a delivered message still shows the cloud check after restarting with the mailbox down', async function () {
+		it('a message at the mailbox still shows its status after restarting with the mailbox down', async function () {
 			this.timeout(120_000);
 			// Deliver a fresh message to the cloud right now (mailbox is online).
+			// It may already advance to 'delivered' if the peer's ack races in.
 			await agent1.directChatPage.composer.sendMessage('restart hello');
-			await agent1.waitUntil(
-				async () =>
-					(await agent1.directChatPage.messageStatusFor('restart hello')) ===
-					'cloud',
-				{ timeout: 30_000 },
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'restart hello',
+				['mailbox', 'delivered'],
 			);
 
 			// Kill the cloud mailbox so it is unreachable, then cold-start the app.
@@ -251,7 +249,7 @@ describe('Offline UX', () => {
 					timeoutMsg: 'message status indicator never rendered after restart',
 				},
 			);
-			expect(status).toBe('cloud');
+			expect(['mailbox', 'delivered']).toContain(status);
 		});
 	});
 });

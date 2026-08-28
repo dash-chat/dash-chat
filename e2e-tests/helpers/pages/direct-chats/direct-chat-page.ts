@@ -1,12 +1,12 @@
 import { Composer } from '../../components/composer';
 import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
-import { Messages } from '../../components/messages';
+import { type MessageStatus, Messages } from '../../components/messages';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { SYNC_TIMEOUT } from '../../timeouts';
 import { TestHelper } from '../test-helper';
 
-export type MessageStatus = 'sending' | 'local' | 'cloud';
+export type { MessageStatus } from '../../components/messages';
 export type { ConnectionStatus } from '../../components/connection-status-indicator';
 
 export class DirectChatPage extends TestHelper {
@@ -53,43 +53,13 @@ export class DirectChatPage extends TestHelper {
 	}
 
 	/** Read the data-status of the most recent message-status indicator. */
-	async lastMessageStatus(): Promise<MessageStatus | null> {
-		return this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			const status = el?.dataset.status;
-			if (status === 'sending' || status === 'local' || status === 'cloud') {
-				return status;
-			}
-			return null;
-		}, tid('message-status'));
+	lastMessageStatus(): Promise<MessageStatus | null> {
+		return this.messages.lastMessageStatus();
 	}
 
 	/** Read the data-status of the status indicator inside the bubble whose text contains `text`. */
-	async messageStatusFor(text: string): Promise<MessageStatus | null> {
-		return this.agent.execute(
-			(messagesSel: string, statusSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (!wrapper.textContent?.includes(t)) continue;
-					const el = wrapper.querySelector(statusSel) as HTMLElement | null;
-					const status = el?.dataset.status;
-					if (
-						status === 'sending' ||
-						status === 'local' ||
-						status === 'cloud'
-					) {
-						return status;
-					}
-					return null;
-				}
-				return null;
-			},
-			tid('direct-chat-messages'),
-			tid('message-status'),
-			text,
-		);
+	messageStatusFor(text: string): Promise<MessageStatus | null> {
+		return this.messages.messageStatusFor(text);
 	}
 
 	/** How many report bubbles the chat currently shows. */
