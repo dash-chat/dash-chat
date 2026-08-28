@@ -78,14 +78,53 @@ export class MessagesStore {
 			new Set(Object.keys(logs)),
 		);
 		const deviceNames = await this.deviceNames();
-		const messages = logsToMessages(
+		const ops = await this.dropOpsAuthoredWhileBlocked(
 			opsOrdered,
-			tombstones,
 			deviceAgents,
-			deviceNames,
 		);
+		const messages = logsToMessages(ops, tombstones, deviceAgents, deviceNames);
 		return messages;
 	});
+
+	/** Drops chat ops authored while their author's agent was blocked. The
+	 * backend rejects these at processing time, but sync still writes them to
+	 * the raw op store, so a cold fetch would otherwise resurface them.
+	 * Group-info updates stay visible, mirroring the backend's blocklist
+	 * allowlist.
+	 *
+	 * TODO: remove once the backend implements proper blocking (dropping the
+	 * rejected op's body from the op store instead of only skipping its
+	 * notification). */
+	private async dropOpsAuthoredWhileBlocked(
+		ops: SimplifiedOperation<Payload>[],
+		deviceAgents: Record<DeviceId, AgentId>,
+	): Promise<SimplifiedOperation<Payload>[]> {
+		const agentIds = Array.from(new Set(Object.values(deviceAgents)));
+		const entries = await Promise.all(
+			agentIds.map(async agentId => {
+				const history = Object.values(
+					await this.contactsStore.blockHistory(agentId),
+				);
+				return [
+					agentId,
+					history.sort((a, b) => a.timestamp - b.timestamp),
+				] as const;
+			}),
+		);
+		const histories: Record<AgentId, BlockHistoryEvent[]> = Object.fromEntries(
+			entries.filter(([, history]) => history.length > 0),
+		);
+		if (Object.keys(histories).length === 0) return ops;
+
+		return ops.filter(op => {
+			if (op.body?.type !== 'Chat' || op.body.payload.type === 'GroupInfo')
+				return true;
+			const agentId = deviceAgents[op.header.verifying_key];
+			const history = agentId === undefined ? undefined : histories[agentId];
+			if (history === undefined) return true;
+			return !blockedAt(history, op.header.timestamp);
+		});
+	}
 
 	/** Profile name of each device that has authored in this chat, for the
 	 * devices whose author's profile is known. */
@@ -234,6 +273,19 @@ export class MessagesStore {
 // which reference prior items must appear after them.
 //
 // It is also assumed that all operations are valid.
+type BlockHistoryEvent = { blocked: boolean; timestamp: number };
+
+/** Whether the latest block/unblock event at or before `timestamp` left the
+ * agent blocked. `history` must be sorted by ascending timestamp. */
+function blockedAt(history: BlockHistoryEvent[], timestamp: number): boolean {
+	let blocked = false;
+	for (const event of history) {
+		if (event.timestamp > timestamp) break;
+		blocked = event.blocked;
+	}
+	return blocked;
+}
+
 function logsToMessages(
 	opsOrdered: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,

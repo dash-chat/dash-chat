@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { Sheet, Block } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -45,6 +46,17 @@
 	const ariaLabel = $derived(
 		media?.kind === 'file' ? media.file.name : (photos[index]?.name ?? ''),
 	);
+
+	// Blur explicitly on top of hideKeyboard(): after an activity round-trip
+	// (camera capture) the plugin's open-state is stale, so hideKeyboard() can
+	// no-op while the composer's input still holds focus — and the OS re-summons
+	// the keyboard for a focused input when the window regains focus.
+	onMount(() => {
+		hideKeyboard();
+		if (document.activeElement instanceof HTMLElement) {
+			document.activeElement.blur();
+		}
+	});
 
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
@@ -121,7 +133,6 @@
 
 	<div
 		class="staged-footer absolute inset-x-0 bottom-0 flex flex-col pb-keyboard-safe"
-		class:bg-black={!isIos}
 		use:renderAboveKeyboard
 		use:keepKeyboardOpen
 	>

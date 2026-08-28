@@ -183,7 +183,9 @@
 								<ListItem
 									link
 									chevron={false}
-									title={member.profile?.name}
+									title={actorId === me.agentId
+										? m.you()
+										: member.profile?.name}
 									data-testid={`group-info-member-${member.profile?.name}`}
 									onclick={me.admin
 										? () => (sheetOpenFor = actorId)

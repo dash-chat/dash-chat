@@ -31,6 +31,14 @@ describe('block contact', () => {
 			agent2.directChatPage.messages.systemMessage('contact_blocked'),
 		).not.toBeExisting();
 
+		await agent2.directChatPage.composer.sendMessage('Sent while blocked');
+		await agent2.directChatPage.messages.waitForMessage('Sent while blocked');
+		expect(
+			await agent1.directChatPage.messages.messageAreaContains(
+				'Sent while blocked',
+			),
+		).toBe(false);
+
 		// The chat turns read-only: no swipe, react, reply, or edit — only the
 		// local actions remain. Copy doubles as the way to close the menu again.
 		const target =
@@ -84,6 +92,30 @@ describe('block contact', () => {
 		await expect(target.replyAction).toBeExisting();
 		await expect(target.editAction).toBeExisting();
 		await target.copyAction.click();
+
+		// Bob's log is sequential, so once this later message arrives the one
+		// sent while blocked has also been synced — and rejected — by Alice.
+		await agent2.directChatPage.composer.sendMessage('After unblock');
+		await agent1.directChatPage.messages.waitForMessage('After unblock');
+		expect(
+			await agent1.directChatPage.messages.messageAreaContains(
+				'Sent while blocked',
+			),
+		).toBe(false);
+
+		// A cold start rebuilds the message list from the raw op store, which
+		// holds the blocked-time op the backend rejected — the message must
+		// stay hidden on this path too, even now that Bob is unblocked.
+		await agent1.restart();
+		await agent1.homePage.ready();
+		await agent1.homePage.chatRow.click();
+		await agent1.directChatPage.ready();
+		await agent1.directChatPage.messages.waitForMessage('After unblock');
+		expect(
+			await agent1.directChatPage.messages.messageAreaContains(
+				'Sent while blocked',
+			),
+		).toBe(false);
 	});
 
 	it('blocks from the new-message contact menu', async () => {

@@ -116,6 +116,18 @@ export class Messages extends TestHelper {
 		return text === '' ? null : text;
 	}
 
+	/** Trimmed text of the unread divider, or null when none is rendered. Read
+	 * from the DOM rather than with `getText()`: entering a chat with a long
+	 * backlog leaves the divider above the viewport, where the rendered-text
+	 * algorithm returns "". */
+	async unreadDividerText(): Promise<string | null> {
+		const text = await this.agent.execute(
+			(sel: string) => document.querySelector(sel)?.textContent ?? null,
+			this.dividerSelector,
+		);
+		return text === null ? null : text.trim();
+	}
+
 	/** Whether the rendered message list currently contains `text`. */
 	messageAreaContains(text: string): Promise<boolean> {
 		return this.agent.execute(

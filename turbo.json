@@ -9,7 +9,12 @@
 			"outputs": ["target/debug/dash-chat"]
 		},
 		"//#e2e:build:android": {
-			"inputs": ["$TURBO_DEFAULT$", "!e2e-tests/**", "!docs/**"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"!e2e-tests/**",
+				"!docs/**",
+				"src-tauri/gen/android/google-services.json"
+			],
 			"env": [
 				"MAILBOX_URL",
 				"PUSH_NOTIFICATIONS_SERVER_URL",
