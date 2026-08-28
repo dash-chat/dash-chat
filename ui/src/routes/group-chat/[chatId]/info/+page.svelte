@@ -149,6 +149,7 @@
 							image={info.image}
 							initials={info.name.slice(0, 2)}
 							size="5rem"
+							testId="group-info-avatar"
 						>
 							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
 						</Avatar>
@@ -158,8 +159,9 @@
 							>{info.name}</span
 						>
 
-						<span class="quiet break-words text-center max-w-full"
-							>{info.description}</span
+						<span
+							class="quiet break-words text-center max-w-full"
+							data-testid="group-info-description">{info.description}</span
 						>
 					</div>
 

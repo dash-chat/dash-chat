@@ -74,21 +74,54 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 		return this.restoringWebviewOnFailure(async () => {
 			await this.switchToNative();
 			await this.agent.openNotifications();
-			// The shade element proves the notification is rendered (and thus
-			// tappable); the content comes from dumpsys, which sees bodies the
-			// collapsed shade hides.
-			const appLabel = this.elementFor(APP_NAME);
-			await appLabel.waitForExist({
-				timeout,
-				timeoutMsg: `No ${APP_NAME} notification arrived within ${timeout}ms`,
-			});
-			return this.notificationTexts().join('\n');
+			// Wait on the notification service, not on shade elements: MIUI
+			// renders MessagingStyle notifications without any element matching
+			// the app name, so a shade-based wait never fires for chat messages.
+			let texts: string[] = [];
+			await this.agent.waitUntil(
+				() => {
+					texts = this.notificationTexts();
+					return texts.length > 0;
+				},
+				{
+					timeout,
+					timeoutMsg: `No ${APP_NAME} notification arrived within ${timeout}ms`,
+				},
+			);
+			return texts.join('\n');
 		});
+	}
+
+	/** Whether the app owns the resumed (foreground) activity, per adb. */
+	private async appIsForeground(timeoutMs: number): Promise<boolean> {
+		const deadline = Date.now() + timeoutMs;
+		for (;;) {
+			const resumed = adbShell(
+				this.udid(),
+				'dumpsys activity activities | grep -m1 -E "mResumedActivity|topResumedActivity" || true',
+			);
+			if (resumed.includes(APP_PACKAGE)) return true;
+			if (Date.now() >= deadline) return false;
+			await new Promise(resolve => setTimeout(resolve, 500));
+		}
 	}
 
 	tapNotification(textIncludes: string): Promise<void> {
 		return this.restoringWebviewOnFailure(async () => {
-			await this.elementFor(textIncludes).click();
+			// A shade tap that nothing handles (MIUI sometimes expands the entry
+			// instead of firing its content intent) leaves the app backgrounded,
+			// where the next webview context lookup can block chromedriver far
+			// past any wdio timeout. Confirm via adb that the app actually came
+			// to the foreground, retrying the tap, and fail fast otherwise.
+			for (let attempt = 1; attempt <= 3; attempt++) {
+				await this.elementFor(textIncludes).click();
+				if (await this.appIsForeground(10_000)) return;
+				await this.agent.openNotifications();
+			}
+			throw new Error(
+				`tapped the notification containing "${textIncludes}" 3 times and ` +
+					'the app never came to the foreground',
+			);
 		});
 	}
 }

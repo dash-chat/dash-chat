@@ -129,9 +129,22 @@ async function saveFailureScreenshots(test: {
 		.slice(0, 80);
 	for (const name of browser.instances) {
 		try {
-			await browser
-				.getInstance(name)
-				.saveScreenshot(path.join(dir, `${slug}-${name}.png`));
+			const agent = browser.getInstance(name);
+			// Mobile: screenshot from the native context. A webview-context
+			// screenshot goes through chromedriver, which blocks for minutes
+			// against the frozen renderer of a backgrounded app — precisely the
+			// state many failures leave the device in. The native screenshot
+			// always works and also captures system UI like the shade.
+			let restoreTo: string | undefined;
+			if (agent.isMobile) {
+				const context = await agent.getContext();
+				if (typeof context === 'string' && context !== 'NATIVE_APP') {
+					restoreTo = context;
+					await agent.switchContext('NATIVE_APP');
+				}
+			}
+			await agent.saveScreenshot(path.join(dir, `${slug}-${name}.png`));
+			if (restoreTo !== undefined) await agent.switchContext(restoreTo);
 		} catch {
 			/* session may already be dead */
 		}

@@ -11,6 +11,7 @@
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
+		type DirectChatEvent,
 		type Hash,
 		type Message,
 		type Profile,
@@ -66,6 +67,7 @@
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
+	import RequestMessagesDisclosure from '$lib/components/direct-chats/RequestMessagesDisclosure.svelte';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	let chatId = page.params.chatId!;
 
@@ -117,6 +119,7 @@
 	}
 
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
+	let requestMessagesRevealed = $state(false);
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -130,6 +133,15 @@
 	let isAtBottom = $state(true);
 
 	const unreadDividerTracker = createUnreadDividerTracker();
+
+	function countMessages(
+		days: Array<{ eventsGroups: Array<Array<[Hash, DirectChatEvent]>> }>,
+	): number {
+		return days
+			.flatMap(day => day.eventsGroups)
+			.flat()
+			.filter(([, item]) => item.kind === 'message').length;
+	}
 
 	// Search state
 	let searchMode = $state(page.url.searchParams.has('search'));
@@ -361,6 +373,10 @@
 								myDeviceId,
 								isAtBottom,
 							)}
+							{@const requestMessageCount =
+								contactRequest !== undefined
+									? countMessages(messageGroupsInDays)
+									: 0}
 							<div
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
@@ -458,96 +474,107 @@
 									</div>
 								</div>
 
+								{#if requestMessageCount > 0}
+									<RequestMessagesDisclosure
+										count={requestMessageCount}
+										bind:revealed={requestMessagesRevealed}
+									/>
+								{/if}
+
 								<div
 									class="column m-2 gap-1"
 									data-testid="direct-chat-messages"
 								>
-									{#each messageGroupsInDays as messageGroupsInDay}
-										<div use:navbarSticky class="self-center z-10">
-											<DayTag class="quiet" day={messageGroupsInDay.day} />
-										</div>
+									{#if contactRequest === undefined || requestMessagesRevealed}
+										{#each messageGroupsInDays as messageGroupsInDay}
+											<div use:navbarSticky class="self-center z-10">
+												<DayTag class="quiet" day={messageGroupsInDay.day} />
+											</div>
 
-										{#each messageGroupsInDay.eventsGroups as messageGroup}
-											<div class="column" style="gap: 1px">
-												{#each messageGroup as [hash, item], i (hash)}
-													{#if unreadDivider.hash === hash}
-														<div
-															class="unread-divider"
-															data-testid="direct-chat-unread-divider"
-														>
-															{m.unreadMessages({
-																count: unreadDivider.count,
-															})}
-														</div>
-													{/if}
-													{#if item.kind === 'report'}
-														<ReportMessage />
-													{:else if item.kind === 'block'}
-														<SystemMessage event={item.event} />
-													{:else}
-														{@const message = item.message}
-														{@const position = messagePosition(
-															messageGroup.length,
-															i,
-														)}
-														{#if myDeviceId == message.author}
+											{#each messageGroupsInDay.eventsGroups as messageGroup}
+												<div class="column" style="gap: 1px">
+													{#each messageGroup as [hash, item], i (hash)}
+														{#if unreadDivider.hash === hash}
 															<div
-																class="w-full"
-																data-message-hash={hash}
-																use:scrollToBottomOnMount={hash}
+																class="unread-divider"
+																data-testid="direct-chat-unread-divider"
 															>
-																<MessageFromMe
-																	{message}
-																	{position}
-																	{myDeviceId}
-																	{chatId}
-																	searchQuery={searchMode ? searchQuery : ''}
-																	onEdit={() => composer?.editMessage(message)}
-																	onReply={() =>
-																		composer?.replyToMessage(
-																			message,
-																			deviceDisplayName(
-																				message.author,
-																				myDeviceId,
-																				profile,
-																			),
-																		)}
-																	onNavigateToMessage={navigateToMessage}
-																/>
-															</div>
-														{:else}
-															<div
-																class="w-full"
-																data-message-hash={hash}
-																use:readMessageOnObserve={readHashes?.has(hash)
-																	? null
-																	: hash}
-															>
-																<MessageFromOthers
-																	{message}
-																	{position}
-																	{myDeviceId}
-																	{chatId}
-																	searchQuery={searchMode ? searchQuery : ''}
-																	sender={profile}
-																	onReply={() =>
-																		composer?.replyToMessage(
-																			message,
-																			deviceDisplayName(
-																				message.author,
-																				myDeviceId,
-																				profile,
-																			),
-																		)}
-																	onNavigateToMessage={navigateToMessage}
-																/>
+																{m.unreadMessages({
+																	count: unreadDivider.count,
+																})}
 															</div>
 														{/if}
-													{/if}
-												{/each}
-											</div>
+														{#if item.kind === 'report'}
+															<ReportMessage />
+														{:else if item.kind === 'block'}
+															<SystemMessage event={item.event} />
+														{:else}
+															{@const message = item.message}
+															{@const position = messagePosition(
+																messageGroup.length,
+																i,
+															)}
+															{#if myDeviceId == message.author}
+																<div
+																	class="w-full"
+																	data-message-hash={hash}
+																	use:scrollToBottomOnMount={hash}
+																>
+																	<MessageFromMe
+																		{message}
+																		{position}
+																		{myDeviceId}
+																		{chatId}
+																		searchQuery={searchMode ? searchQuery : ''}
+																		onEdit={() =>
+																			composer?.editMessage(message)}
+																		onReply={() =>
+																			composer?.replyToMessage(
+																				message,
+																				deviceDisplayName(
+																					message.author,
+																					myDeviceId,
+																					profile,
+																				),
+																			)}
+																		onNavigateToMessage={navigateToMessage}
+																	/>
+																</div>
+															{:else}
+																<div
+																	class="w-full"
+																	data-message-hash={hash}
+																	use:readMessageOnObserve={contactRequest !==
+																		undefined || readHashes?.has(hash)
+																		? null
+																		: hash}
+																>
+																	<MessageFromOthers
+																		{message}
+																		{position}
+																		{myDeviceId}
+																		{chatId}
+																		searchQuery={searchMode ? searchQuery : ''}
+																		sender={profile}
+																		onReply={() =>
+																			composer?.replyToMessage(
+																				message,
+																				deviceDisplayName(
+																					message.author,
+																					myDeviceId,
+																					profile,
+																				),
+																			)}
+																		onNavigateToMessage={navigateToMessage}
+																	/>
+																</div>
+															{/if}
+														{/if}
+													{/each}
+												</div>
+											{/each}
 										{/each}
-									{/each}
+									{/if}
 								</div>
 							</div>
 						{/await}

@@ -162,23 +162,26 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await receiver.directChatPage.messages.waitForMessage(message);
 	});
 
-	it('a notification already in the shade taps through after the app was launched by a different one', async () => {
-		const marker = `PUSH_SHADE_${Date.now()}`;
-		const message = `hi ${marker}`;
+	// Shared between the two tests below: the message parked in the shade of
+	// the killed app before Ben's contact request launches it.
+	const shadeMarker = `PUSH_SHADE_${Date.now()}`;
+	const shadeMessage = `hi ${shadeMarker}`;
 
-		// Park a message notification from Zoe in the shade of the killed app,
-		// then have a contact request from a fresh identity launch the app: its
-		// route sits in the launch intent when Zoe's older notification is
-		// tapped from the foreground — the state where the launch route can
-		// shadow the tapped notification's route.
+	it('delivers a contact-request push to a killed app whose tap cold-starts into the request', async () => {
+		// Park a message notification from Zoe in the shade of the killed app
+		// first — the next test taps it after Ben's request has launched the
+		// app.
 		await receiver.directChatPage.back.click();
 		await receiver.homePage.ready();
 		await receiver.pause(5_000);
 		await receiver.stopApp();
 
-		await sender.directChatPage.composer.sendMessage(message);
-		await notifications.waitForNotification(marker);
+		await sender.directChatPage.composer.sendMessage(shadeMessage);
+		await notifications.waitForNotification(shadeMarker);
 
+		// A contact request from a fresh identity must reach the killed app as
+		// a push: the inbox topic has to be FCM-subscribed like any chat topic,
+		// or requests silently wait until the app is next opened by hand.
 		await sender.directChatPage.back.click();
 		await sender.homePage.ready();
 		await deleteAccount(sender);
@@ -194,14 +197,20 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await expect(receiver.directChatPage.peerName).toHaveText(
 			expect.stringContaining('Ben'),
 		);
+	});
 
-		await notifications.waitForNotification(marker);
+	it('a notification already in the shade taps through after the app was launched by a different one', async () => {
+		// The app is now open *because* Ben's request cold-started it, with his
+		// route in the launch intent — the state where the launch route can
+		// shadow the tapped notification's route. Zoe's parked notification
+		// must still switch to her chat.
+		await notifications.waitForNotification(shadeMarker);
 		await notifications.tapNotification('Zoe');
 		await notifications.returnToApp();
 		await receiver.directChatPage.ready();
 		await expect(receiver.directChatPage.peerName).toHaveText(
 			expect.stringContaining('Zoe'),
 		);
-		await receiver.directChatPage.messages.waitForMessage(message);
+		await receiver.directChatPage.messages.waitForMessage(shadeMessage);
 	});
 });
