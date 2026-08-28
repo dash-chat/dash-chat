@@ -122,10 +122,10 @@ pub async fn set_local_mailbox_server_enabled<R: Runtime>(
 
     crate::settings::save_mailbox_enabled(handle, enabled);
 
-    // The autostart plugin is only registered in release builds.
+    // The autostart plugin is only registered in non-e2e release builds.
     // Log failures instead of propagating — autostart is a convenience
     // feature and shouldn't block the mailbox from working.
-    if !tauri::is_dev() {
+    if !tauri::is_dev() && !cfg!(feature = "e2e-tests") {
         let autostart = handle.autolaunch();
         let result = if enabled {
             autostart.enable()
