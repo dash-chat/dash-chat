@@ -2,7 +2,9 @@ import { withinWindow } from '$lib/utils/time';
 import {
 	DELETE_FOR_EVERYONE_WINDOW_MS,
 	type DeviceId,
+	type DirectChatEvent,
 	EDIT_WINDOW_MS,
+	type Hash,
 	type Message,
 	hasBody,
 } from 'dash-chat-stores';
@@ -28,6 +30,35 @@ export function canDeleteMessageForEveryone(
 	if (message.author !== myDeviceId) return false;
 	// `timestamp` is the original message op's; edits never change it.
 	return withinWindow(message.timestamp, DELETE_FOR_EVERYONE_WINDOW_MS);
+}
+
+/** The request-messages disclosure only hides actual messages; system bubbles
+ * (report, block) must stay visible while the request is pending. */
+export function withoutMessages<
+	T extends { eventsGroups: Array<Array<[Hash, DirectChatEvent]>> },
+>(days: T[]): T[] {
+	return days
+		.map(day => ({
+			...day,
+			eventsGroups: day.eventsGroups
+				.map(group => group.filter(([, item]) => item.kind !== 'message'))
+				.filter(group => group.length > 0),
+		}))
+		.filter(day => day.eventsGroups.length > 0);
+}
+
+/** Whether the message at `index` in its group should render its delivery
+ * status indicator: it carries a status, and the next event in the group does
+ * not continue the same status run. Rendering one indicator per run keeps
+ * every distinct status visible without splitting the group. */
+export function endsDeliveryStatusRun<
+	T extends { kind: string; message?: Message },
+>(group: Array<[Hash, T]>, index: number): boolean {
+	const message = group[index][1].message;
+	if (message?.deliveryStatus === undefined) return false;
+	return (
+		message.deliveryStatus !== group[index + 1]?.[1].message?.deliveryStatus
+	);
 }
 
 export function messagePosition(

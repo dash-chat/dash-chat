@@ -99,6 +99,9 @@ importers:
       expect-webdriverio:
         specifier: ^5.7.0
         version: 5.7.0(@wdio/globals@9.29.1)(@wdio/logger@9.18.0)(webdriverio@9.29.1(supports-color@8.1.1))
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -175,6 +178,9 @@ importers:
       concurrently:
         specifier: ^9.2.1
         version: 9.2.1
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -268,6 +274,9 @@ importers:
       tauri-plugin-android-fs-api:
         specifier: 28.4.0
         version: 28.4.0
+      tauri-plugin-audio-recorder-api:
+        specifier: 0.1.2
+        version: 0.1.2
       tauri-plugin-background-service:
         specifier: ^1.0.0
         version: 1.0.0
@@ -1890,6 +1899,9 @@ packages:
   '@tauri-apps/api@2.11.0':
     resolution: {integrity: sha512-7CinYODhky9lmO23xHnUFv0Xt43fbtWMyxZcLcRBlFkcgXKuEirBvHpmtJ89YMhyeGcq20Wuc47Fa4XjyniywA==}
 
+  '@tauri-apps/api@2.11.1':
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
+
   '@tauri-apps/api@2.8.0':
     resolution: {integrity: sha512-ga7zdhbS2GXOMTIZRT0mYjKJtR9fivsXzsyq5U3vjDL0s6DTMwYRm0UHNjzTY5dh4+LSC68Sm/7WEiimbQNYlw==}
 
@@ -3327,6 +3339,10 @@ packages:
     engines: {node: '>= 10.17.0'}
     hasBin: true
 
+  fast-check@4.9.0:
+    resolution: {integrity: sha512-7ms6T7SybUev/PQITciI0yLM2pOSFy5zpG8Ty7tQofcVaQUvrMXp6CBwqF6fThLCLOrfBtuHAtwq6Yu4XPCllg==}
+    engines: {node: '>=12.17.0'}
+
   fast-deep-equal@2.0.1:
     resolution: {integrity: sha512-bCK/2Z4zLidyB4ReuIsvALH6w31YfAQDmXMqMx6FyfHqvBxtjC0eRumeSu4Bs3XtXwpyIywtSTrVT99BxY1f9w==}
 
@@ -4701,6 +4717,9 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
+  pure-rand@8.4.2:
+    resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
+
   qr-creator@1.0.0:
     resolution: {integrity: sha512-C0cqfbS1P5hfqN4NhsYsUXePlk9BO+a45bAQ3xLYjBL3bOIFzoVEjs79Fado9u9BPBD3buHi3+vY+C8tHh4qMQ==}
 
@@ -5258,6 +5277,9 @@ packages:
 
   tauri-plugin-android-fs-api@28.4.0:
     resolution: {integrity: sha512-YOo1P+cRjuaoPbTNZprMhr56ruKO4hIDq7kJOum91NqkN+VWY9F+UPAdjZokhzJSsbkeY0nsb1VDLXb2/h3f3w==}
+
+  tauri-plugin-audio-recorder-api@0.1.2:
+    resolution: {integrity: sha512-uONGYZizGpdu50NMx0ucOva2TAWv5lUPINg5vZs7GEzWcNfsJi6DrUPr/QWQV4QBmwuhM9NeulZp5ssQ3QDBQw==}
 
   tauri-plugin-background-service@1.0.0:
     resolution: {integrity: sha512-i3ANk6SLyTGInXJNQez1VrgnDYqlCptVtgjMO2neZQbH3lYnwKH9cfXKMAsqotTEAE/dTseCove+ielnuUQ2hg==}
@@ -7393,6 +7415,8 @@ snapshots:
 
   '@tauri-apps/api@2.11.0': {}
 
+  '@tauri-apps/api@2.11.1': {}
+
   '@tauri-apps/api@2.8.0': {}
 
   '@tauri-apps/cli-darwin-arm64@2.8.4':
@@ -9154,6 +9178,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  fast-check@4.9.0:
+    dependencies:
+      pure-rand: 8.4.2
+
   fast-deep-equal@2.0.1: {}
 
   fast-deep-equal@3.1.3: {}
@@ -10537,6 +10565,8 @@ snapshots:
 
   punycode@2.3.1: {}
 
+  pure-rand@8.4.2: {}
+
   qr-creator@1.0.0: {}
 
   qrcode@1.5.4:
@@ -11220,6 +11250,10 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.11.0
       create-web-stream: 1.1.3
+
+  tauri-plugin-audio-recorder-api@0.1.2:
+    dependencies:
+      '@tauri-apps/api': 2.11.1
 
   tauri-plugin-background-service@1.0.0:
     dependencies:

@@ -11,6 +11,7 @@
 		type ContactRequest,
 		type ContactsStore,
 		type DeviceId,
+		type DirectChatEvent,
 		type Hash,
 		type Message,
 		type Profile,
@@ -57,13 +58,18 @@
 	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import {
+		endsDeliveryStatusRun,
 		messagePosition,
 		scrollToMessage,
+		withoutMessages,
 	} from '$lib/components/messages/message-helpers';
+	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
+	import { useDeviceId } from '$lib/stores/my-device-id';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
+	import RequestMessagesDisclosure from '$lib/components/direct-chats/RequestMessagesDisclosure.svelte';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	let chatId = page.params.chatId!;
 
@@ -77,7 +83,7 @@
 
 	const peerAgentId = useReactiveValue(store.peerAgentId);
 
-	const readTracker = createReadMessagesTracker(store.messages);
+	const readTracker = createReadMessagesTracker(store.messages, useDeviceId());
 	const readMessageOnObserve = readTracker.observe;
 
 	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
@@ -115,6 +121,7 @@
 	}
 
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
+	let requestMessagesRevealed = $state(false);
 	let showSecurityTips = $state(false);
 	let showPeerProfile = $state(false);
 	let showAcceptDialog = $state(false);
@@ -127,11 +134,16 @@
 	let bottomBarHeight: number = $state(60);
 	let isAtBottom = $state(true);
 
-	// Sticky once set so the divider doesn't shift as messages are read. We allow
-	// a re-capture later only when the user is scrolled up — at-bottom new
-	// arrivals get auto-read by the IntersectionObserver, so no divider is needed.
-	let capturedUnreadHash: Hash | null = null;
-	let unreadDividerCaptured = false;
+	const unreadDividerTracker = createUnreadDividerTracker();
+
+	function countMessages(
+		days: Array<{ eventsGroups: Array<Array<[Hash, DirectChatEvent]>> }>,
+	): number {
+		return days
+			.flatMap(day => day.eventsGroups)
+			.flat()
+			.filter(([, item]) => item.kind === 'message').length;
+	}
 
 	// Search state
 	let searchMode = $state(page.url.searchParams.has('search'));
@@ -165,8 +177,7 @@
 		} else {
 			justSentMessageHash = messageHash;
 		}
-		capturedUnreadHash = null;
-		unreadDividerCaptured = false;
+		unreadDividerTracker.reset();
 	}
 
 	onMount(() => {
@@ -257,59 +268,6 @@
 	}
 
 	const theme = $derived(useTheme());
-
-	function getUnreadDividerInfo(
-		messageGroupsInDays: Awaited<typeof $messageGroups>,
-		readHashes: Set<Hash> | undefined,
-		deviceId: DeviceId | undefined,
-	): { hash: Hash | null; count: number } {
-		if (!messageGroupsInDays || !readHashes || !deviceId) {
-			return { hash: null, count: 0 };
-		}
-
-		if (
-			capturedUnreadHash === null &&
-			(!unreadDividerCaptured || !isAtBottom)
-		) {
-			for (const day of messageGroupsInDays) {
-				for (const messageGroup of day.eventsGroups) {
-					for (const [hash, item] of messageGroup) {
-						if (item.kind !== 'message') continue;
-						if (item.message.author !== deviceId && !readHashes.has(hash)) {
-							capturedUnreadHash = hash;
-							break;
-						}
-					}
-					if (capturedUnreadHash) break;
-				}
-				if (capturedUnreadHash) break;
-			}
-		}
-		unreadDividerCaptured = true;
-
-		if (!capturedUnreadHash) return { hash: null, count: 0 };
-
-		// Count all peer messages from the divider position onwards.
-		// This is stable when messages are marked as read (count doesn't drop)
-		// and increases when new messages arrive.
-		let count = 0;
-		let found = false;
-		for (const day of messageGroupsInDays) {
-			for (const messageGroup of day.eventsGroups) {
-				for (const [hash, item] of messageGroup) {
-					if (hash === capturedUnreadHash) found = true;
-					if (
-						found &&
-						item.kind === 'message' &&
-						item.message.author !== deviceId
-					)
-						count++;
-				}
-			}
-		}
-
-		return { hash: capturedUnreadHash, count };
-	}
 </script>
 
 <div
@@ -411,11 +369,20 @@
 
 					{#await $readMessageHashes then readHashes}
 						{#await $messageGroups then messageGroupsInDays}
-							{@const unreadDivider = getUnreadDividerInfo(
+							{@const unreadDivider = unreadDividerTracker.compute(
 								messageGroupsInDays,
 								readHashes,
 								myDeviceId,
+								isAtBottom,
 							)}
+							{@const requestMessageCount =
+								contactRequest !== undefined
+									? countMessages(messageGroupsInDays)
+									: 0}
+							{@const visibleGroupsInDays =
+								contactRequest === undefined || requestMessagesRevealed
+									? messageGroupsInDays
+									: withoutMessages(messageGroupsInDays)}
 							<div
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
@@ -513,17 +480,28 @@
 									</div>
 								</div>
 
+								{#if requestMessageCount > 0}
+									<RequestMessagesDisclosure
+										count={requestMessageCount}
+										bind:revealed={requestMessagesRevealed}
+									/>
+								{/if}
+
 								<div
 									class="column m-2 gap-1"
 									data-testid="direct-chat-messages"
 								>
-									{#each messageGroupsInDays as messageGroupsInDay}
+									{#each visibleGroupsInDays as messageGroupsInDay (messageGroupsInDay.day.valueOf())}
 										<div use:navbarSticky class="self-center z-10">
 											<DayTag class="quiet" day={messageGroupsInDay.day} />
 										</div>
 
-										{#each messageGroupsInDay.eventsGroups as messageGroup}
-											<div class="column" style="gap: 1px">
+										{#each messageGroupsInDay.eventsGroups as messageGroup (messageGroup[0][0])}
+											<div
+												class="column"
+												style="gap: 1px"
+												data-testid="message-group"
+											>
 												{#each messageGroup as [hash, item], i (hash)}
 													{#if unreadDivider.hash === hash}
 														<div
@@ -556,6 +534,10 @@
 																	{position}
 																	{myDeviceId}
 																	{chatId}
+																	showDeliveryStatus={endsDeliveryStatusRun(
+																		messageGroup,
+																		i,
+																	)}
 																	searchQuery={searchMode ? searchQuery : ''}
 																	onEdit={() => composer?.editMessage(message)}
 																	onReply={() =>
@@ -574,7 +556,8 @@
 															<div
 																class="w-full"
 																data-message-hash={hash}
-																use:readMessageOnObserve={readHashes?.has(hash)
+																use:readMessageOnObserve={contactRequest !==
+																	undefined || readHashes?.has(hash)
 																	? null
 																	: hash}
 															>

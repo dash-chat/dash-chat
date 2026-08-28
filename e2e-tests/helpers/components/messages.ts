@@ -9,6 +9,8 @@ import {
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
+export type MessageStatus = 'sending' | 'mailbox' | 'delivered';
+
 export type SystemMessageKind =
 	| 'group_created'
 	| 'group_member_added'
@@ -38,6 +40,7 @@ export class Messages extends TestHelper {
 	readonly dividerSelector: string;
 	readonly root;
 	readonly unreadDivider;
+	voicePlayButton = this.el(tid('voice-play-button'));
 	scrollBottom = this.el(tid('chat-scroll-bottom'));
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
@@ -46,6 +49,107 @@ export class Messages extends TestHelper {
 	/** The system message of `kind` rendered in this message list. */
 	systemMessage(kind: SystemMessageKind) {
 		return this.el(`${this.messagesSelector} ${tid(`system-message-${kind}`)}`);
+	}
+
+	/** Read the data-status of the most recent message-status indicator. */
+	async lastMessageStatus(): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(messagesSel: string, statusSel: string) => {
+				const els = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} ${statusSel}`,
+				);
+				const status = els[els.length - 1]?.dataset.status;
+				if (
+					status === 'sending' ||
+					status === 'mailbox' ||
+					status === 'delivered'
+				) {
+					return status;
+				}
+				return null;
+			},
+			this.messagesSelector,
+			tid('message-status'),
+		);
+	}
+
+	/** Read the data-status of the status indicator for the message whose text
+	 * contains `text`. Only the last message of a run of equal statuses renders
+	 * an indicator inside its bubble; with `forGroup`, read the indicator
+	 * governing that message — the first one at or after it in its group —
+	 * rather than only the one inside the message's own bubble. */
+	async messageStatusFor(
+		text: string,
+		forGroup?: boolean,
+	): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(
+				messagesSel: string,
+				groupSel: string,
+				statusSel: string,
+				t: string,
+				group: boolean,
+			) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (!wrapper.textContent?.includes(t)) continue;
+					let el: HTMLElement | null = null;
+					if (group) {
+						const groupEl = wrapper.closest(groupSel);
+						const els = groupEl
+							? Array.from(groupEl.querySelectorAll<HTMLElement>(statusSel))
+							: [];
+						el =
+							els.find(
+								e =>
+									wrapper.contains(e) ||
+									(wrapper.compareDocumentPosition(e) &
+										Node.DOCUMENT_POSITION_FOLLOWING) !==
+										0,
+							) ?? null;
+					} else {
+						el = wrapper.querySelector(statusSel) as HTMLElement | null;
+					}
+					const status = el?.dataset.status;
+					if (
+						status === 'sending' ||
+						status === 'mailbox' ||
+						status === 'delivered'
+					) {
+						return status;
+					}
+					return null;
+				}
+				return null;
+			},
+			this.messagesSelector,
+			tid('message-group'),
+			tid('message-status'),
+			text,
+			forGroup ?? false,
+		);
+	}
+
+	/** Wait until the message containing `text` reports one of `statuses`.
+	 * `forGroup` selects which indicator is read, as in `messageStatusFor`. */
+	async waitForMessageStatus(
+		text: string,
+		statuses: MessageStatus[],
+		timeout = SYNC_TIMEOUT,
+		forGroup?: boolean,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				const status = await this.messageStatusFor(text, forGroup);
+				return status !== null && statuses.includes(status);
+			},
+			{
+				timeout,
+				timeoutMsg: `Message "${text}" did not reach status ${statuses.join('/')}`,
+			},
+		);
 	}
 
 	/** The rendered message whose text contains `text`, as a `Message` helper
@@ -114,6 +218,18 @@ export class Messages extends TestHelper {
 		if (!(await this.unreadBadge.isExisting())) return null;
 		const text = (await this.unreadBadge.getText()).trim();
 		return text === '' ? null : text;
+	}
+
+	/** Trimmed text of the unread divider, or null when none is rendered. Read
+	 * from the DOM rather than with `getText()`: entering a chat with a long
+	 * backlog leaves the divider above the viewport, where the rendered-text
+	 * algorithm returns "". */
+	async unreadDividerText(): Promise<string | null> {
+		const text = await this.agent.execute(
+			(sel: string) => document.querySelector(sel)?.textContent ?? null,
+			this.dividerSelector,
+		);
+		return text === null ? null : text.trim();
 	}
 
 	/** Whether the rendered message list currently contains `text`. */
@@ -301,6 +417,46 @@ export class Messages extends TestHelper {
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
+	}
+
+	async waitForVoiceMessage(timeout = SYNC_TIMEOUT): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				this.agent.execute(
+					(messagesSel: string, voiceSel: string) =>
+						(document.querySelector(messagesSel)?.querySelectorAll(voiceSel)
+							.length ?? 0) > 0,
+					this.messagesSelector,
+					tid('message-attachment-voice'),
+				),
+			{ timeout, timeoutMsg: 'Voice message not found' },
+		);
+	}
+
+	async voiceProgress(): Promise<number> {
+		return this.agent.execute(() => window.__test.voiceProgress());
+	}
+
+	/** Seeks to `fraction` of the real audio length, resolving to that fraction
+	 * (or -1 if the audio isn’t loaded). */
+	async voiceSeekFraction(fraction: number): Promise<number> {
+		return this.agent.execute(
+			(f: number) => window.__test.voiceSeekFraction(f),
+			fraction,
+		);
+	}
+
+	/** Fails the next byte-load after `delayMs`, so the spinner stays observable
+	 * before the error toast. */
+	async failNextVoiceLoad(delayMs = 0): Promise<void> {
+		await this.agent.execute(
+			(ms: number) => window.__test.failNextVoiceLoad(ms),
+			delayMs,
+		);
+	}
+
+	async voicePlayLoading(): Promise<boolean> {
+		return (await this.voicePlayButton.getAttribute('aria-busy')) === 'true';
 	}
 }
 

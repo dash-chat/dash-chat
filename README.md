@@ -29,7 +29,8 @@ Please contact the Dash Chat team at hello [at] dashchat [dot] org if you're int
 3. Install [pnpm](https://pnpm.io/).
 4. Install [just](https://just.systems/man/en/).
 5. Install the [Tauri pre-requisits](https://tauri.app/start/prerequisites/) for your platform.
-6. Run `pnpm install`.
+6. Install `libasound2-dev`
+7. Run `pnpm install`.
 
   OR
 

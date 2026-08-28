@@ -33,6 +33,17 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 regex = "1"
 log = "0.4"
+dashchat-utils = { path = "../dashchat-utils", default-features = false }
+tokio = { version = "1", features = ["time", "sync", "rt", "macros"] }
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = [
+  "macros",
+  "rt",
+  "test-util",
+  "time",
+  "net",
+  "io-util",
+] }

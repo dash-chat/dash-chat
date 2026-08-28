@@ -283,6 +283,9 @@ export class ContactsStore {
 		);
 		const contacts = await this.contactsAgentIds();
 		const rejectedMap = await this.rejectedContactRequests();
+		const outgoingDevices = new Set(
+			(await this.outgoingContactRequests()).map(o => o.devicePubkey),
+		);
 
 		const contactRequests: ContactRequest[] = [];
 
@@ -299,6 +302,11 @@ export class ContactsStore {
 
 					// We have already accepted this contact request
 					if (contacts.includes(agentId)) continue;
+
+					// Mutual add: our own outgoing request to this device makes
+					// their request an implicit acceptance the node completes
+					// automatically — never surface it for a manual tap.
+					if (outgoingDevices.has(operation.header.verifying_key)) continue;
 
 					// Time-based rejection: only filter if request was made BEFORE rejection
 					const rejectionTimestamp = rejectedMap[agentId];

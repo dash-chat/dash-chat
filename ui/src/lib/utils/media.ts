@@ -19,6 +19,16 @@ import type {
 	PhotoAttachment,
 } from 'dash-chat-stores';
 
+/**
+ * Draft voice note held in the composer before sending.
+ */
+export interface DraftVoiceNote {
+	bytes: Uint8Array;
+	mimeType: string;
+	durationMs: number;
+	waveform: Uint8Array;
+}
+
 export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 
 export class AttachmentTooLargeError extends Error {
@@ -39,7 +49,8 @@ export class AttachmentTooLargeError extends Error {
  */
 export type DraftMedia =
 	| { kind: 'photos'; items: File[] }
-	| { kind: 'file'; file: File };
+	| { kind: 'file'; file: File }
+	| { kind: 'voice_note'; voice: DraftVoiceNote };
 
 export const MAX_STAGED_PHOTOS = 32;
 
@@ -166,6 +177,17 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 		);
 		return { kind: 'photos', photos };
 	}
+	if (draft.kind === 'voice_note') {
+		return {
+			kind: 'voice_note',
+			voice_note: {
+				data: draft.voice.bytes,
+				mime_type: draft.voice.mimeType,
+				duration_ms: draft.voice.durationMs,
+				waveform: draft.voice.waveform,
+			},
+		};
+	}
 	const file: OutgoingFile = {
 		data: new Uint8Array(await draft.file.arrayBuffer()),
 		name: draft.file.name,
@@ -280,6 +302,12 @@ async function saveToDisk(
  * bytes from. The handler reads the blob from the node's local store. */
 export function blobUrl(hash: Hash): string {
 	return convertFileSrc(hash, 'irohblob');
+}
+
+/** Like `blobUrl`, but asks the handler to decode the Ogg/Opus voice note to
+ * WAV so a webview `<audio>` element can play it natively. */
+export function voiceAudioUrl(hash: Hash): string {
+	return `${blobUrl(hash)}?decode=wav`;
 }
 
 /**

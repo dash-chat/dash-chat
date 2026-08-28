@@ -6,6 +6,7 @@
 	import { timelineImageBox } from '$lib/utils/media';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
 	import FileAttachment from './attachments/FileAttachment.svelte';
+	import VoiceNoteAttachment from './attachments/voice-notes/VoiceNoteAttachment.svelte';
 	import MessageText from './MessageText.svelte';
 	import ReplyQuote from './ReplyQuote.svelte';
 
@@ -32,13 +33,15 @@
 
 	const body = $derived(hasBody(message.content) ? message.content : null);
 	const media = $derived(body?.media ?? null);
+	const voiceNote = $derived(media?.find(m => m.kind === 'VoiceNote'));
 	const file = $derived(media?.find(m => m.kind === 'File'));
 	const photos = $derived(
 		file ? [] : (media?.filter(m => m.kind === 'Photo') ?? []),
 	);
 	const hasText = $derived(!!body?.message);
-	const isPhotoOnly = $derived(photos.length > 0 && !hasText);
-	const isFileOnly = $derived(!!file && !hasText);
+	const isMediaOnly = $derived(
+		!hasText && (photos.length > 0 || !!file || !!voiceNote),
+	);
 
 	// Photo messages fix the bubble width to the media box (Signal model:
 	// captions, quotes and sender names wrap at the image width, so the image
@@ -75,7 +78,7 @@
 {#if photos.length > 0}
 	<div class="media photos">
 		<PhotosAttachment {photos} {senderName} timestamp={message.timestamp} />
-		{#if isPhotoOnly && metadata}
+		{#if isMediaOnly && metadata}
 			<div
 				class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
 			>
@@ -85,10 +88,17 @@
 	</div>
 {:else if file}
 	<div class="media file">
-		<FileAttachment {file} metadata={isFileOnly ? metadata : undefined} />
+		<FileAttachment {file} metadata={isMediaOnly ? metadata : undefined} />
+	</div>
+{:else if voiceNote}
+	<div class="media voice">
+		<VoiceNoteAttachment
+			voice={voiceNote}
+			metadata={isMediaOnly ? metadata : undefined}
+		/>
 	</div>
 {/if}
-{#if hasText || (metadata && !isPhotoOnly && !isFileOnly)}
+{#if hasText || (metadata && !isMediaOnly)}
 	<div class="caption relative px-1" style={mediaCapStyle}>
 		{#if metadata}
 			<div
@@ -144,12 +154,14 @@
 	.media.photos:has(+ .caption) {
 		margin-bottom: 4px;
 	}
-	/* Leave a gap before a caption below the file. */
-	.media.file:has(+ .caption) {
+	/* Leave a gap before a caption below the file/voice row. */
+	.media.file:has(+ .caption),
+	.media.voice:has(+ .caption) {
 		margin-bottom: 4px;
 	}
-	/* Space the file row away from the sender-name header above it in groups. */
-	.sender-name + .media.file {
+	/* Space the file/voice row away from the sender-name header in groups. */
+	.sender-name + .media.file,
+	.sender-name + .media.voice {
 		margin-top: 6px;
 	}
 

@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::attachment;
-use crate::state::{Sentry, SentryState};
+use crate::state::{SendOutcome, Sentry, SentryState};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,12 +27,14 @@ pub struct Screenshot {
 }
 
 #[tauri::command]
-pub(crate) async fn send_feedback(state: Sentry<'_>, feedback: Feedback) -> Result<(), String> {
+pub(crate) async fn send_feedback(
+    state: Sentry<'_>,
+    feedback: Feedback,
+) -> Result<SendOutcome, String> {
     let envelope = build_feedback(&state, feedback)
         .await
         .map_err(|err| err.to_string())?;
-    state.transport.send(envelope);
-    Ok(())
+    state.send(envelope).await.map_err(|err| err.to_string())
 }
 
 async fn build_feedback(state: &SentryState, feedback: Feedback) -> anyhow::Result<Envelope> {
@@ -117,7 +119,7 @@ mod tests {
     fn a_feedback_carries_only_what_was_asked_for() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("app.log"), "a line\n").unwrap();
-        let (state, _) = plugin(dir.path());
+        let state = plugin(dir.path());
 
         let both = sent(&state, true, true);
         assert!(
@@ -150,7 +152,7 @@ mod tests {
 
     #[test]
     fn a_missing_log_is_no_attachment() {
-        let (state, _) = plugin(Path::new("/nonexistent"));
+        let state = plugin(Path::new("/nonexistent"));
 
         let sent = sent(&state, true, false);
 

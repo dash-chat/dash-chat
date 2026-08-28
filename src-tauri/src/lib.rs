@@ -161,6 +161,7 @@ pub fn run() {
             commands::chats::delete_message,
             commands::chats::delete_message_for_me,
             commands::chats::get_tombstones,
+            commands::chats::get_message_acks,
             commands::chats::send_reaction,
             commands::chats::mark_messages_read,
             commands::chats::create_group,
@@ -180,6 +181,7 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::media::save_blob_to_cache,
+            commands::voice::transcode_voice_message,
             #[cfg(feature = "e2e-tests")]
             commands::testing::close_iroh_endpoint,
         ])
@@ -192,6 +194,7 @@ pub fn run() {
         .plugin(tauri_plugin_sharekit::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_audio_recorder::init())
         .plugin(tauri_plugin_opener::init());
 
     #[cfg(target_os = "android")]

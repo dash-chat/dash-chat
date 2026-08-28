@@ -54,4 +54,12 @@ describe('Group messages', () => {
 			{ timeoutMsg: 'Avatar initials "Bo" did not appear on Bob\'s message' },
 		);
 	});
+
+	it('marks a group message delivered once another member receives it', async () => {
+		await agent1.groupChatPage.composer.sendMessage('Hello group!');
+		await agent2.groupChatPage.messages.waitForMessage('Hello group!');
+		await agent1.groupChatPage.messages.waitForMessageStatus('Hello group!', [
+			'delivered',
+		]);
+	});
 });

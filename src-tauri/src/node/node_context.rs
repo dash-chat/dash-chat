@@ -135,10 +135,15 @@ impl NodeContext {
         let mut config = if cfg!(feature = "e2e-tests") {
             let mut config = dashchat_node::NodeConfig::default();
             config.mdns_mode = p2panda::network::MdnsDiscoveryMode::Disabled;
+            config.message_ack_debounce = std::time::Duration::from_millis(300);
             config
         } else {
             dashchat_node::NodeConfig::default()
         };
+
+        // The push extension's short-lived background node only reads
+        // operations to build notifications; it must not author any.
+        config.enable_message_acks = self.role == NodeRole::App;
 
         if !self.role.p2p_enabled() || std::env::var_os("DASHCHAT_NO_P2P").is_some() {
             config = config.no_p2p();

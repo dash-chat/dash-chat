@@ -155,9 +155,16 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
+            libasound2-dev \
             javascriptcoregtk-4.1 \
             libsoup-3.0 \
-            webkit2gtk-4.1
+            webkit2gtk-4.1 \
+            patchelf \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-alsa \
+            gstreamer1.0-pulseaudio
 
       - name: Load server URLs and ENV from .env
         shell: bash
@@ -204,7 +211,7 @@ jobs:
 
       # Backstop: fail the release if the wayland client stack leaked back into
       # the AppImage (e.g. if tauri-bundler changes its cached-tool handling).
-      - name: Assert no wayland libs bundled (ubuntu only)
+      - name: Assert no wayland libs and gstreamer bundled (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: ./scripts/assert-no-wayland-in-appimage.sh
 
@@ -212,6 +219,45 @@ jobs:
         if: env.SENTRY_AUTH_TOKEN != ''
         shell: bash
         run: pnpm dlx @sentry/cli@2 debug-files upload ${{ matrix.debug_files }}
+
+  release-mailbox-local-server-arm:
+    needs: create-release-draft
+    permissions:
+      contents: write
+    # ubuntu-22.04-arm builds against glibc 2.35, so the binary runs on
+    # Raspberry Pi OS Bookworm (glibc 2.36) and later.
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install Rust stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: build mailbox-local-server
+        run: cargo build --release -p mailbox-local-server
+
+      - name: Rename binary
+        run: cp target/release/mailbox-local-server local-message-server-aarch64-linux
+
+      - name: Upload mailbox-local-server binary to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: local-message-server-aarch64-linux
+          release_id: ${{ needs.create-release-draft.outputs.releaseId }}
+          draft: true
 
   release-docker-images:
     if: ${{ !contains(github.ref_name, '-staging') }}

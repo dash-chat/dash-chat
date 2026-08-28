@@ -28,7 +28,7 @@
 	/>
 
 	{#if !inModalState && !isIos}
-		<FixedActionButton tonal onClick={onConfirm}>
+		<FixedActionButton tonal onClick={onConfirm} testId="edit-photo-save-btn">
 			{m.save()}
 		</FixedActionButton>
 	{/if}

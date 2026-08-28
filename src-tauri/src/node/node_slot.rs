@@ -60,7 +60,8 @@ pub struct AcquiredNode {
     /// The acquired Node.
     pub node: Node,
     /// Whether the Node was newly built for this request (as opposed to reused
-    /// from the slot).
+    /// from the slot). Only read by the android background service.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
     pub is_new: bool,
 }
 
@@ -78,17 +79,19 @@ pub async fn get_node_for_push_notification(
 ) -> anyhow::Result<AcquiredNode> {
     let acquired = get_or_build_node(data_path, context).await?;
 
-    // Best-effort: when we just built a fresh node, resolve and track the cloud
-    // mailbox once so the sync below can fetch. Cached nodes already did this
-    // when they were first built. Track it as a fetch source only — do NOT
-    // register ourselves back as a blob source here: `register_cloud_mailbox`'s
-    // up-to-10s `wait_endpoint_online` would eat the extension's ~30s budget
-    // before the operation poll can start, making iOS kill the extension and
-    // deliver the raw APNS fallback.
-    if acquired.is_new {
-        if let Err(err) = crate::setup::track_cloud_mailbox(&acquired.node).await {
-            log::warn!("failed to track cloud mailbox in push extension: {err:?}");
-        }
+    // Best-effort: resolve and track the cloud mailbox so the sync below can
+    // fetch. On every push, not once per node: the node is cached across pushes
+    // for the extension process's whole lifetime (hours), and its networking is
+    // often not up yet on the cold-start push — a one-shot attempt that failed
+    // there would leave every later push unable to fetch (each showing the
+    // generic fallback notification). Registering is idempotent, and the
+    // `/health` round trip also refreshes the mailbox's dialing address. Track
+    // it as a fetch source only — do NOT register ourselves back as a blob
+    // source here: `register_cloud_mailbox`'s up-to-10s `wait_endpoint_online`
+    // would eat the extension's ~30s budget before the operation poll can
+    // start, making iOS kill the extension and deliver the raw APNS fallback.
+    if let Err(err) = crate::setup::track_cloud_mailbox(&acquired.node).await {
+        log::warn!("failed to track cloud mailbox in push extension: {err:?}");
     }
 
     Ok(acquired)

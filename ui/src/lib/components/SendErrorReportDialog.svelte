@@ -16,9 +16,12 @@
 
 	async function send() {
 		try {
-			await sendErrorReport({ message, error: describeError(error) });
+			const outcome = await sendErrorReport({
+				message,
+				error: describeError(error),
+			});
 			opened = false;
-			showToast(m.reportSent());
+			showToast(outcome === 'queued' ? m.reportQueued() : m.reportSent());
 			return { success: true as const };
 		} catch {
 			return { success: false as const, error: m.errorSendErrorReport() };

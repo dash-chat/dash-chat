@@ -31,6 +31,9 @@
 		MockTombstoneClient,
 		TombstoneClient,
 		TombstoneStore,
+		MessageAckClient,
+		MessageAckStore,
+		MockMessageAckClient,
 		seedDemoData,
 		DEMO_IDS,
 		DEMO_CONTACT_DEVICES,
@@ -46,7 +49,7 @@
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 	import { modalHost } from '$lib/stores/modal-host.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useSignal } from '$lib/stores/use-signal';
+	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import {
@@ -105,6 +108,7 @@
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
 	let tombstoneStore: TombstoneStore;
+	let messageAckStore: MessageAckStore;
 	let chatsStore: ChatsStore;
 	let mailboxTrackerStore: IMailboxTrackerStore;
 
@@ -137,18 +141,22 @@
 		tombstoneStore = new TombstoneStore(
 			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
 		);
+		mailboxTrackerStore = new MockMailboxTrackerStore();
+		messageAckStore = new MessageAckStore(
+			new MockMessageAckClient(),
+			mailboxTrackerStore,
+		);
 
 		const mockChatsClient = new MockChatsClient();
 		chatsStore = new MockChatsStore(
 			logsStore,
 			contactsStore,
 			tombstoneStore,
+			messageAckStore,
 			mockChatsClient,
 			mockLogsClient,
 			DEMO_IDS.DEVICE_GROUP_TOPIC,
 		);
-
-		mailboxTrackerStore = new MockMailboxTrackerStore();
 	} else {
 		const logsClient = new TauriLogsClient<Payload>();
 		logsStore = new LogsStore<Payload>(logsClient);
@@ -161,16 +169,20 @@
 		contactsStore = new ContactsStore(logsStore, devicesStore, contactsClient);
 
 		tombstoneStore = new TombstoneStore(new TombstoneClient());
+		mailboxTrackerStore = new MailboxTrackerStore();
+		messageAckStore = new MessageAckStore(
+			new MessageAckClient(),
+			mailboxTrackerStore,
+		);
 
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(
 			logsStore,
 			contactsStore,
 			tombstoneStore,
+			messageAckStore,
 			chatsClient,
 		);
-
-		mailboxTrackerStore = new MailboxTrackerStore();
 
 		invokeAfterSetup('log_webview_info', {
 			userAgent: navigator.userAgent,
@@ -186,6 +198,11 @@
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page
 	useKeepAlive(chatsStore.allChatsSummaries);
+
+	// Nothing routed renders until the device id has resolved: pages read it
+	// synchronously (useDeviceId), and a notification-tap navigation can mount
+	// them before the lazy myDeviceId reactive has ever been started.
+	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 
 	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
@@ -237,19 +254,28 @@
 
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
-		<OnboardingWrapper>
-			{#key currentLocale}
-				{#if isWideScreen.value}
-					<DesktopLayout>
-						{@render children()}
-					</DesktopLayout>
-				{:else}
-					<MobileLayout>
-						{@render children()}
-					</MobileLayout>
-				{/if}
-			{/key}
-		</OnboardingWrapper>
+		{#await $myDeviceId}
+			<div
+				class="column"
+				style="height: 100vh; width: 100vw; align-items: center; justify-content: center"
+			>
+				<Preloader></Preloader>
+			</div>
+		{:then}
+			<OnboardingWrapper>
+				{#key currentLocale}
+					{#if isWideScreen.value}
+						<DesktopLayout>
+							{@render children()}
+						</DesktopLayout>
+					{:else}
+						<MobileLayout>
+							{@render children()}
+						</MobileLayout>
+					{/if}
+				{/key}
+			</OnboardingWrapper>
+		{/await}
 		{#if addContactPending.value}
 			<div
 				class="fixed inset-0 z-40 flex items-center justify-center"

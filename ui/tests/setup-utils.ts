@@ -7,6 +7,8 @@
  *
  * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
+import { appCacheDir, join } from '@tauri-apps/api/path';
+import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import { invokeAfterSetup } from 'dash-chat-stores';
 
 import type { m } from '../src/lib/paraglide/messages.js';
@@ -229,6 +231,139 @@ function dropFiles(specs: TestFileSpec[]) {
 	}
 }
 
+function buildSilentWav(durationMs: number): Uint8Array {
+	const sampleRate = 16000;
+	const numSamples = Math.max(1, Math.floor((sampleRate * durationMs) / 1000));
+	const dataSize = numSamples * 2;
+	const buffer = new ArrayBuffer(44 + dataSize);
+	const view = new DataView(buffer);
+	const writeStr = (offset: number, s: string) => {
+		for (let i = 0; i < s.length; i++)
+			view.setUint8(offset + i, s.charCodeAt(i));
+	};
+	writeStr(0, 'RIFF');
+	view.setUint32(4, 36 + dataSize, true);
+	writeStr(8, 'WAVE');
+	writeStr(12, 'fmt ');
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true); // PCM
+	view.setUint16(22, 1, true); // mono
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true); // byte rate
+	view.setUint16(32, 2, true); // block align
+	view.setUint16(34, 16, true); // bits per sample
+	writeStr(36, 'data');
+	view.setUint32(40, dataSize, true);
+	return new Uint8Array(buffer);
+}
+
+/** Bypasses the native recorder (no microphone in the WebKitGTK harness); the
+ * composer listens for `test-inject-voice-message`. */
+function injectVoiceMessage(durationMs = 3000, audioDurationMs = durationMs) {
+	const wav = buildSilentWav(audioDurationMs);
+	const waveform = Array.from({ length: 48 }, (_, i) => 40 + (i % 5) * 40);
+	window.dispatchEvent(
+		new CustomEvent('test-inject-voice-message', {
+			detail: { bytes: Array.from(wav), durationMs, waveform },
+		}),
+	);
+}
+
+/** Result of injecting a voice message through the real transcode command. */
+interface RecordedVoiceMessage {
+	isOgg: boolean;
+	opusBytes: number;
+	wavBytes: number;
+	durationMs: number;
+}
+
+/** Unlike `injectVoiceMessage`, this runs a synthesized WAV through the real
+ * `transcode_voice_message` command, so the injected draft is genuine Ogg/Opus
+ * with a Rust-derived duration and waveform — exercising the transcode pipeline
+ * end to end. Returns facts the spec asserts on. */
+async function injectRecordedVoiceMessage(
+	durationMs = 1000,
+): Promise<RecordedVoiceMessage> {
+	const wav = buildSilentWav(durationMs);
+	const cache = await appCacheDir();
+	await mkdir(cache, { recursive: true });
+	const path = await join(cache, `dc-voice-test-${crypto.randomUUID()}.wav`);
+	await writeFile(path, wav);
+
+	const res = await invokeAfterSetup<{
+		opus: number[];
+		durationMs: number;
+		waveform: number[];
+	}>('transcode_voice_message', { path });
+
+	// "OggS" magic marks a valid Ogg stream.
+	const isOgg =
+		res.opus.length >= 4 &&
+		res.opus[0] === 0x4f &&
+		res.opus[1] === 0x67 &&
+		res.opus[2] === 0x67 &&
+		res.opus[3] === 0x53;
+
+	window.dispatchEvent(
+		new CustomEvent('test-inject-voice-message', {
+			detail: {
+				bytes: res.opus,
+				durationMs: res.durationMs,
+				waveform: res.waveform,
+				mimeType: 'audio/ogg',
+			},
+		}),
+	);
+	return {
+		isOgg,
+		opusBytes: res.opus.length,
+		wavBytes: wav.length,
+		durationMs: res.durationMs,
+	};
+}
+
+/** Seeks to `fraction` of the real audio length, so specs can assert the
+ * scrubber follows the audio rather than the recorded metadata. */
+function voiceSeekFraction(fraction: number): number {
+	const audio = document.querySelector<HTMLAudioElement>(
+		'[data-testid="message-attachment-voice"] audio',
+	);
+	if (!audio || !isFinite(audio.duration) || audio.duration <= 0) return -1;
+	audio.pause();
+	audio.currentTime = Math.max(0, Math.min(1, fraction)) * audio.duration;
+	return audio.currentTime / audio.duration;
+}
+
+function voiceProgress(): number {
+	const played = document.querySelector<HTMLElement>(
+		'[data-testid="voice-scrubber-played"]',
+	);
+	if (!played) return 0;
+	return parseFloat(played.style.width) / 100 || 0;
+}
+
+/** Fails the next voice-note byte fetch after `delayMs` so the spinner stays
+ * observable. Only `irohblob` is intercepted, and `fetch` is restored at once. */
+function failNextVoiceLoad(delayMs = 0) {
+	const original = window.fetch;
+	window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+		const url =
+			typeof input === 'string'
+				? input
+				: input instanceof URL
+					? input.href
+					: input.url;
+		if (!url.includes('irohblob')) return original(input, init);
+		window.fetch = original;
+		return new Promise<Response>((_, reject) =>
+			setTimeout(
+				() => reject(new Error('test: forced voice load failure')),
+				delayMs,
+			),
+		);
+	};
+}
+
 /** What a file input the app opened was configured to ask the OS for. */
 export interface FilePickerRequest {
 	accept: string;
@@ -312,6 +447,11 @@ export const testUtils = {
 	pasteFiles,
 	pasteNoisePhoto,
 	dropFiles,
+	injectVoiceMessage,
+	injectRecordedVoiceMessage,
+	voiceSeekFraction,
+	voiceProgress,
+	failNextVoiceLoad,
 	recordMediaDownloads,
 	photoDownloadMs,
 	interceptFilePickers,
