@@ -4,13 +4,20 @@
 		type ChatId,
 		type DeviceId,
 		type MessageAckStore,
+		type MessageDeliveryStatus,
 	} from 'dash-chat-stores';
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
 
-	import StatusDeliveredIcon from './StatusDeliveredIcon.svelte';
-	import StatusMailboxIcon from './StatusMailboxIcon.svelte';
-	import StatusSendingIcon from './StatusSendingIcon.svelte';
+	import deliveredSvg from '$lib/assets/message-status/delivered.svg?raw';
+	import mailboxSvg from '$lib/assets/message-status/mailbox.svg?raw';
+	import sendingSvg from '$lib/assets/message-status/sending.svg?raw';
+
+	const icons: Record<MessageDeliveryStatus, string> = {
+		delivered: deliveredSvg,
+		mailbox: mailboxSvg,
+		sending: sendingSvg,
+	};
 
 	interface Props {
 		chatId: ChatId;
@@ -37,20 +44,22 @@
 		class="message-status"
 		aria-label={status}
 	>
-		{#if status === 'delivered'}
-			<StatusDeliveredIcon />
-		{:else if status === 'mailbox'}
-			<StatusMailboxIcon />
-		{:else}
-			<StatusSendingIcon />
-		{/if}
+		{@html icons[status]}
 	</div>
 {/await}
 
 <style>
 	.message-status {
-		opacity: 0.7;
-		width: 0.875rem;
+		opacity: 1;
+	}
+
+	.message-status :global(svg) {
+		display: block;
+		width: auto;
 		height: 0.875rem;
+	}
+
+	.message-status :global(svg [stroke]) {
+		stroke: currentColor;
 	}
 </style>
