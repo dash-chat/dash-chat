@@ -362,5 +362,6 @@
 	"updateTapToRetry": "Tap to retry.",
 	"testBanner": "Early access test",
 	"feedback": "Feedback",
-	"reportSent": "Report sent. Thank you!"
+	"reportSent": "Report sent. Thank you!",
+	"reportQueued": "Report saved. It will be sent when you're back online."
 }

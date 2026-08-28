@@ -26,14 +26,19 @@ interface Feedback {
 	includeLogs: boolean;
 }
 
-export async function sendErrorReport(report: ErrorReport): Promise<void> {
+/** Whether a report reached Sentry or is waiting on disk for a connection. */
+export type SendOutcome = 'sent' | 'queued';
+
+export async function sendErrorReport(
+	report: ErrorReport,
+): Promise<SendOutcome> {
 	return invokeAfterSetup('plugin:sentry-reporting|send_error_report', {
 		message: report.message,
 		error: report.error,
 	});
 }
 
-export async function sendFeedback(feedback: Feedback): Promise<void> {
+export async function sendFeedback(feedback: Feedback): Promise<SendOutcome> {
 	return invokeAfterSetup('plugin:sentry-reporting|send_feedback', {
 		feedback: {
 			reason: feedback.reason,
@@ -59,7 +64,7 @@ export async function hasPendingCrashReport(): Promise<boolean> {
 	return invokeAfterSetup('plugin:sentry-reporting|pending_crash_report');
 }
 
-export async function sendPendingCrashReport(): Promise<void> {
+export async function sendPendingCrashReport(): Promise<SendOutcome> {
 	return invokeAfterSetup('plugin:sentry-reporting|send_pending_crash_report');
 }
 
