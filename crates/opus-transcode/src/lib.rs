@@ -16,6 +16,7 @@ use opus::encode_ogg_opus;
 use visualisation::compute_waveform;
 
 pub use opus::decode_opus_to_wav;
+pub use visualisation::WAVEFORM_BARS;
 
 /// The Ogg/Opus rendering of an audio file plus derived metadata.
 #[derive(Debug, Clone)]

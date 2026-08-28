@@ -1,10 +1,6 @@
 use std::io::Cursor;
 
-use opus_transcode::{decode_opus_to_wav, transcode_to_opus};
-
-/// The waveform bar count is an internal display constant; assert against the
-/// known value rather than reaching into the crate's private module.
-const WAVEFORM_BARS: usize = 48;
+use opus_transcode::{decode_opus_to_wav, transcode_to_opus, WAVEFORM_BARS};
 
 /// A `seconds`-long sine in a WAV container, matching a real input's shape
 /// (given `rate`/`channels`) so tests exercise decode + downmix.

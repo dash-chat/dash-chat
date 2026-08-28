@@ -2,7 +2,7 @@
 //! voice-message waveform in the UI (heights trace loudness over time).
 
 /// Number of amplitude bars in the returned waveform.
-pub(crate) const WAVEFORM_BARS: usize = 48;
+pub const WAVEFORM_BARS: usize = 48;
 
 /// Percentile of bar amplitudes used as the normalization reference. Scaling to
 /// a high percentile rather than the strict maximum lets a few loud transients
