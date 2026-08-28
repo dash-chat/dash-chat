@@ -203,6 +203,8 @@ describe('Offline UX', () => {
 			await agent1.directChatPage.messages.waitForMessageStatus(
 				'offline hello',
 				['delivered'],
+				30_000,
+				true,
 			);
 		});
 	});
@@ -225,12 +227,10 @@ describe('Offline UX', () => {
 				resumeMailbox();
 				mailboxSuspended = false;
 			}
-			await agent2.startApp();
+
 			await openOfflineSettings(agent1);
 			await agent1.offlinePage.setLocalMailboxEnabled(false);
 			await returnToChat(agent1, 'Bob');
-			await agent2.startApp();
-			await returnToChat(agent2, 'Alice');
 		});
 
 		it('split their group so every status stays visible', async function () {

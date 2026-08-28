@@ -59,9 +59,14 @@ export class DirectChatPage extends TestHelper {
 		return this.messages.lastMessageStatus();
 	}
 
-	/** Read the data-status of the status indicator inside the bubble whose text contains `text`. */
-	messageStatusFor(text: string): Promise<MessageStatus | null> {
-		return this.messages.messageStatusFor(text);
+	/** Read the data-status of the status indicator for the message whose text
+	 * contains `text`. `forGroup` selects which indicator is read, as in
+	 * `Messages.messageStatusFor`. */
+	messageStatusFor(
+		text: string,
+		forGroup?: boolean,
+	): Promise<MessageStatus | null> {
+		return this.messages.messageStatusFor(text, forGroup);
 	}
 
 	/** How many report bubbles the chat currently shows. */

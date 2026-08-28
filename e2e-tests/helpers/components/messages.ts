@@ -72,19 +72,29 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Read the data-status of the status indicator of the group containing the
-	 * message whose text contains `text`. Only the last message of a group renders
-	 * an indicator, so the status is a property of the group, not the message. */
-	async messageStatusFor(text: string): Promise<MessageStatus | null> {
+	/** Read the data-status of the status indicator for the message whose text
+	 * contains `text`. With `forGroup`, read the indicator of the group that
+	 * message belongs to — only the last message of a group renders one — rather
+	 * than the one inside the message's own bubble. */
+	async messageStatusFor(
+		text: string,
+		forGroup?: boolean,
+	): Promise<MessageStatus | null> {
 		return this.agent.execute(
-			(messagesSel: string, groupSel: string, statusSel: string, t: string) => {
+			(
+				messagesSel: string,
+				groupSel: string,
+				statusSel: string,
+				t: string,
+				group: boolean,
+			) => {
 				const wrappers = document.querySelectorAll<HTMLElement>(
 					`${messagesSel} [data-message-hash]`,
 				);
 				for (const wrapper of wrappers) {
 					if (!wrapper.textContent?.includes(t)) continue;
-					const group = wrapper.closest(groupSel);
-					const el = group?.querySelector(statusSel) as HTMLElement | null;
+					const scope = group ? wrapper.closest(groupSel) : wrapper;
+					const el = scope?.querySelector(statusSel) as HTMLElement | null;
 					const status = el?.dataset.status;
 					if (
 						status === 'sending' ||
@@ -101,18 +111,21 @@ export class Messages extends TestHelper {
 			tid('message-group'),
 			tid('message-status'),
 			text,
+			forGroup ?? false,
 		);
 	}
 
-	/** Wait until the message containing `text` reports one of `statuses`. */
+	/** Wait until the message containing `text` reports one of `statuses`.
+	 * `forGroup` selects which indicator is read, as in `messageStatusFor`. */
 	async waitForMessageStatus(
 		text: string,
 		statuses: MessageStatus[],
 		timeout = SYNC_TIMEOUT,
+		forGroup?: boolean,
 	): Promise<void> {
 		await this.agent.waitUntil(
 			async () => {
-				const status = await this.messageStatusFor(text);
+				const status = await this.messageStatusFor(text, forGroup);
 				return status !== null && statuses.includes(status);
 			},
 			{
