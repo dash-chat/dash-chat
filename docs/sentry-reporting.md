@@ -155,7 +155,9 @@ Response classification (`sender.rs`):
 | serialization failure | delete; **not** delivered |
 
 A `Retry` **breaks the loop**. One connection failure means the rest of the queue
-will fail identically, so the pass stops rather than hammering.
+will fail identically, so the pass stops rather than hammering. If the response
+carried a `Retry-After`, the next wait is the longer of it and the current
+backoff.
 
 Four triggers wake the drain:
 
@@ -181,8 +183,8 @@ depend on the crate without pulling in the p2p stack.
 
 Applied at the start of every drain pass, to `held/` and `queued/` alike:
 
-- entries older than **7 days** (matching the mailbox-server blob cleanup window),
-- a cap of **20 entries** or **10 MB**, whichever binds first, evicting oldest-first.
+- entries older than **X days** (matching the mailbox-server blob cleanup window),
+- a cap of **Y entries** or **Z MB**, whichever binds first, evicting oldest-first.
 
 Each entry can carry a screenshot plus a 1 MB log tail, so a chronically offline
 device must not grow without bound. Note the cap has no floor: a single entry
@@ -223,7 +225,7 @@ connected.
 
 The only callers of `enqueue` are the two user-initiated commands. The only
 caller of `approve_held` is the user's crash-approval command. `hold` is reached
-only from the panic hook and legacy migration, and `held/` is never drained.
+only from the panic hook, and `held/` is never drained.
 
 ## Configuration
 
@@ -260,9 +262,6 @@ outcome would require a test-only backend hook whose cost exceeds its value.
 
 Real, deliberately unfixed, and worth knowing before you touch nearby code:
 
-- **`Retry-After` is parsed and discarded.** `Delivery::Retry { after }` carries
-  the server's requested delay; the backoff ignores it and uses fixed doubling.
-  Either honour it or stop computing it.
 - **`Retry-After`'s HTTP-date form is not parsed** — only the delay-seconds form.
   The date form silently becomes `None`.
 - **A false-negative race on Send.** `SentryState::send` enqueues before taking
@@ -270,9 +269,6 @@ Real, deliberately unfixed, and worth knowing before you touch nearby code:
   entry; the caller's own pass then finds it gone and not in *its* delivered
   list, and reports `Err`. Narrow, and it errs toward under-claiming rather than
   lying about success.
-- **`send_pending_crash_report` watches `approve_held().first()`** — the oldest
-  approved crash. Harmless under the single-held invariant, but a legacy-migrated
-  crash alongside a new one could make `first()` the wrong entry.
 - **`send_pending_crash_report` errors when nothing is held.** On a double-submit
   the second call shows an error toast for a crash that was in fact just sent.
 - **Write atomicity is not enforced by a test.**
