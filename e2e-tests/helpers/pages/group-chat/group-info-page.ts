@@ -1,8 +1,11 @@
+import { Avatar } from '../../components/avatar';
 import { tid } from '../../selectors';
 import { TestHelper } from '../test-helper';
 
 export class GroupInfoPage extends TestHelper {
 	back = this.el(tid('group-info-back'));
+	avatar = new Avatar(this.agent, 'group-info-avatar');
+	description = this.el(tid('group-info-description'));
 	addMembersLink = this.el(tid('group-info-add-members'));
 	editLink = this.el(tid('group-info-edit-link'));
 	leaveButton = this.el(tid('group-info-leave'));

@@ -36,6 +36,8 @@
 		messagePosition,
 		scrollToMessage,
 	} from '$lib/components/messages/message-helpers';
+	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
+	import { useDeviceId } from '$lib/stores/my-device-id';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -46,7 +48,7 @@
 	const store = chatsStore.groupChats(chatId);
 	setContext('messages-store', store.messages);
 
-	const readTracker = createReadMessagesTracker(store.messages);
+	const readTracker = createReadMessagesTracker(store.messages, useDeviceId());
 	const readMessageOnObserve = readTracker.observe;
 
 	const info = useReactivePromise(store.info);
@@ -73,8 +75,7 @@
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
 		$state();
 
-	let capturedUnreadHash: Hash | null = null;
-	let unreadDividerCaptured = false;
+	const unreadDividerTracker = createUnreadDividerTracker();
 
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 
@@ -96,61 +97,10 @@
 		} else {
 			justSentMessageHash = messageHash;
 		}
-		capturedUnreadHash = null;
-		unreadDividerCaptured = false;
+		unreadDividerTracker.reset();
 	}
 
 	const theme = $derived(useTheme());
-
-	function getUnreadDividerInfo(
-		messageGroupsInDays: Awaited<ReturnType<typeof store.groupedEvents>>,
-		readHashes: Set<Hash> | undefined,
-		deviceId: DeviceId | undefined,
-	): { hash: Hash | null; count: number } {
-		if (!messageGroupsInDays || !readHashes || !deviceId) {
-			return { hash: null, count: 0 };
-		}
-
-		if (
-			capturedUnreadHash === null &&
-			(!unreadDividerCaptured || !isAtBottom)
-		) {
-			for (const day of messageGroupsInDays) {
-				for (const messageGroup of day.eventsGroups) {
-					for (const [hash, item] of messageGroup) {
-						if (item.kind !== 'message') continue;
-						if (item.message.author !== deviceId && !readHashes.has(hash)) {
-							capturedUnreadHash = hash;
-							break;
-						}
-					}
-					if (capturedUnreadHash) break;
-				}
-				if (capturedUnreadHash) break;
-			}
-		}
-		unreadDividerCaptured = true;
-
-		if (!capturedUnreadHash) return { hash: null, count: 0 };
-
-		let count = 0;
-		let found = false;
-		for (const day of messageGroupsInDays) {
-			for (const messageGroup of day.eventsGroups) {
-				for (const [hash, item] of messageGroup) {
-					if (hash === capturedUnreadHash) found = true;
-					if (
-						found &&
-						item.kind === 'message' &&
-						item.message.author !== deviceId
-					)
-						count++;
-				}
-			}
-		}
-
-		return { hash: capturedUnreadHash, count };
-	}
 
 	function navigateToMessage(hash: Hash) {
 		scrollToMessage(messagesEl, hash);
@@ -256,10 +206,11 @@
 			>
 				{#await $readMessageHashes then readHashes}
 					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
-						{@const unreadDivider = getUnreadDividerInfo(
+						{@const unreadDivider = unreadDividerTracker.compute(
 							messageGroupsInDays,
 							readHashes,
 							myDeviceId,
+							isAtBottom,
 						)}
 						{#each messageGroupsInDays as messageGroupsInDay}
 							<div class="self-center z-10">

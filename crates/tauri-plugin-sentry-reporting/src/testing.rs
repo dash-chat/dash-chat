@@ -1,15 +1,12 @@
 //! Scaffolding shared by the crate's tests.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Arc;
 
-use sentry::protocol::{Envelope, Log, LogLevel};
-use sentry::Transport;
+use sentry::protocol::{Log, LogLevel};
+use sentry::Envelope;
 
 use crate::state::SentryState;
-use crate::transport::UserInitiatedTransport;
 use crate::Config;
 
 pub(crate) fn config(dir: &Path) -> Config {
@@ -34,43 +31,25 @@ pub(crate) fn log_saying(body: &str) -> Log {
     }
 }
 
-pub(crate) fn recording_transport() -> (UserInitiatedTransport, Arc<TestRecorderTransport>) {
-    let recorder = Arc::new(TestRecorderTransport::default());
-    let transport = UserInitiatedTransport::default();
-    let _ = transport.inner.set(recorder.clone());
-    (transport, recorder)
+/// A plugin wired exactly as `init` wires one.
+pub(crate) fn plugin(dir: &Path) -> Arc<SentryState> {
+    SentryState::new(config(dir))
 }
 
-/// A plugin wired exactly as `init` wires one, but recording instead of sending.
-pub(crate) fn plugin(dir: &Path) -> (Arc<SentryState>, Arc<TestRecorderTransport>) {
-    let (transport, recorder) = recording_transport();
-    (SentryState::new(config(dir), Arc::new(transport)), recorder)
+/// Parses a stored entry, which the outbox deliberately reads back verbatim.
+pub(crate) fn parsed(envelope: &Envelope) -> Envelope {
+    let mut bytes = Vec::new();
+    envelope.to_writer(&mut bytes).unwrap();
+    Envelope::from_slice(&bytes).expect("the stored envelope does not parse")
 }
 
-#[derive(Default)]
-pub(crate) struct TestRecorderTransport {
-    envelopes: Mutex<Vec<Envelope>>,
-    drained: AtomicBool,
-}
-
-impl TestRecorderTransport {
-    pub(crate) fn sent(&self) -> Vec<Envelope> {
-        self.envelopes.lock().unwrap().clone()
-    }
-
-    pub(crate) fn drained(&self) -> bool {
-        self.drained.load(Ordering::Relaxed)
-    }
-}
-
-impl Transport for TestRecorderTransport {
-    fn send_envelope(&self, envelope: Envelope) {
-        self.envelopes.lock().unwrap().push(envelope);
-    }
-
-    /// `shutdown` defaults to this, so it records both ways of draining.
-    fn flush(&self, _timeout: Duration) -> bool {
-        self.drained.store(true, Ordering::Relaxed);
-        true
-    }
+/// A feedback report as `feedback::feedback_envelope` builds one: raw bytes
+/// whose `feedback` item type the SDK's parser does not know.
+pub(crate) fn feedback_envelope() -> Envelope {
+    let payload = r#"{"event_id":"20ded16f15f0407cb799852e85820b8b","platform":"native","contexts":{"feedback":{"message":"it broke"}}}"#;
+    let bytes = format!(
+        "{{\"event_id\":\"20ded16f15f0407cb799852e85820b8b\"}}\n{{\"type\":\"feedback\",\"length\":{}}}\n{payload}\n",
+        payload.len()
+    );
+    Envelope::from_bytes_raw(bytes.into_bytes()).unwrap()
 }

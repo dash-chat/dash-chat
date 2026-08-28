@@ -49,7 +49,7 @@
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 	import { modalHost } from '$lib/stores/modal-host.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useSignal } from '$lib/stores/use-signal';
+	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import {
@@ -194,6 +194,11 @@
 	// when navigating back home from any page
 	useKeepAlive(chatsStore.allChatsSummaries);
 
+	// Nothing routed renders until the device id has resolved: pages read it
+	// synchronously (useDeviceId), and a notification-tap navigation can mount
+	// them before the lazy myDeviceId reactive has ever been started.
+	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
+
 	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
 	const applied = useSignal(settingsStore.colorScheme);
@@ -244,19 +249,28 @@
 
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
-		<OnboardingWrapper>
-			{#key currentLocale}
-				{#if isWideScreen.value}
-					<DesktopLayout>
-						{@render children()}
-					</DesktopLayout>
-				{:else}
-					<MobileLayout>
-						{@render children()}
-					</MobileLayout>
-				{/if}
-			{/key}
-		</OnboardingWrapper>
+		{#await $myDeviceId}
+			<div
+				class="column"
+				style="height: 100vh; width: 100vw; align-items: center; justify-content: center"
+			>
+				<Preloader></Preloader>
+			</div>
+		{:then}
+			<OnboardingWrapper>
+				{#key currentLocale}
+					{#if isWideScreen.value}
+						<DesktopLayout>
+							{@render children()}
+						</DesktopLayout>
+					{:else}
+						<MobileLayout>
+							{@render children()}
+						</MobileLayout>
+					{/if}
+				{/key}
+			</OnboardingWrapper>
+		{/await}
 		{#if addContactPending.value}
 			<div
 				class="fixed inset-0 z-40 flex items-center justify-center"

@@ -16,6 +16,9 @@ export interface NotificationHelper {
 	tapNotification(textIncludes: string): Promise<void>;
 	/** Return to the app's webview context. */
 	returnToApp(): Promise<void>;
+	/** Best-effort: close the notification UI and return to the webview, for
+	 * cleanup after a failure between native-context steps. */
+	recover(): Promise<void>;
 }
 
 /** Shared Appium plumbing for switching between the app's WebView and the
@@ -61,6 +64,42 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 
 	async returnToApp(): Promise<void> {
 		await this.switchToWebview();
+	}
+
+	/** Best-effort recovery for spec-level cleanup: close the notification UI
+	 * and return to the webview. For when a test fails *between* native-context
+	 * helper calls (e.g. a content assertion after a successful wait), which
+	 * [`restoringWebviewOnFailure`] cannot see. */
+	async recover(): Promise<void> {
+		try {
+			await this.dismissNotificationUi();
+			await this.switchToWebview();
+		} catch {
+			// best-effort: the original test failure is what should surface
+		}
+	}
+
+	/** Close the platform's notification UI (shade / Notification Center). */
+	protected abstract dismissNotificationUi(): Promise<void>;
+
+	/** Run `fn` (which works in the native context); when it fails, close the
+	 * notification UI and restore the webview context before rethrowing, so a
+	 * timed-out wait doesn't strand the session in NATIVE_APP and cascade
+	 * "invalid selector" failures into every following test. */
+	protected async restoringWebviewOnFailure<T>(
+		fn: () => Promise<T>,
+	): Promise<T> {
+		try {
+			return await fn();
+		} catch (err) {
+			try {
+				await this.dismissNotificationUi();
+				await this.switchToWebview();
+			} catch {
+				// surface the original failure, not the recovery's
+			}
+			throw err;
+		}
 	}
 
 	abstract waitForNotification(
