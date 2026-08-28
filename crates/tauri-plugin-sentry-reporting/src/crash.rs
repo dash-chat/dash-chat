@@ -3,19 +3,25 @@ use std::sync::Weak;
 use sentry::integrations::panic::PanicIntegration;
 
 use crate::envelope;
+use crate::outbox::blocking;
 use crate::state::{outcome, SendOutcome, Sentry, SentryState};
 
 #[tauri::command]
 pub(crate) async fn pending_crash_report(state: Sentry<'_>) -> Result<bool, String> {
-    Ok(state.outbox.has_held())
+    let outbox = state.outbox.clone();
+    Ok(blocking(move || outbox.has_held()).await)
 }
 
 #[tauri::command]
 pub(crate) async fn send_pending_crash_report(state: Sentry<'_>) -> Result<SendOutcome, String> {
-    if !state.outbox.has_held() {
-        return Err("there is no crash report to send".into());
-    }
-    let approved = state.outbox.approve_held().map_err(|err| err.to_string())?;
+    let outbox = state.outbox.clone();
+    let approved = blocking(move || {
+        if !outbox.has_held() {
+            return Err("there is no crash report to send".to_string());
+        }
+        outbox.approve_held().map_err(|err| err.to_string())
+    })
+    .await?;
     let Some(queued) = approved.first() else {
         return Err("there is no crash report to send".into());
     };
@@ -24,7 +30,8 @@ pub(crate) async fn send_pending_crash_report(state: Sentry<'_>) -> Result<SendO
 
 #[tauri::command]
 pub(crate) async fn discard_pending_crash_report(state: Sentry<'_>) -> Result<(), String> {
-    state.outbox.discard_held();
+    let outbox = state.outbox.clone();
+    blocking(move || outbox.discard_held()).await;
     Ok(())
 }
 

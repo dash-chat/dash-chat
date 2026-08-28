@@ -19,6 +19,13 @@ use crate::outbox::entry::State;
 
 const DIR_NAME: &str = "sentry-outbox";
 
+/// Runs outbox disk work on the blocking pool rather than the async executor.
+pub(crate) async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    tokio::task::spawn_blocking(work)
+        .await
+        .expect("outbox disk work panicked")
+}
+
 pub(crate) struct Outbox {
     root: PathBuf,
 }
@@ -56,11 +63,12 @@ impl Outbox {
     }
 
     pub(crate) fn has_held(&self) -> bool {
-        // `entry::read` deletes what it cannot parse, so a corrupt crash file
-        // stops being offered rather than prompting for an unsendable report.
+        // `entry::validate` deletes what it cannot parse, so a corrupt crash
+        // file stops being offered rather than prompting for an unsendable
+        // report.
         entry::list(&self.root, State::Held)
             .iter()
-            .any(|held| entry::read(&held.path).is_some())
+            .any(|held| entry::validate(&held.path))
     }
 
     /// Returns where each approved crash now waits, oldest first.
@@ -77,6 +85,7 @@ impl Outbox {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn queued(&self) -> Vec<entry::Entry> {
         entry::list(&self.root, State::Queued)
     }

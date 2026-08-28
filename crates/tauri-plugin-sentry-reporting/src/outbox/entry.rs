@@ -108,13 +108,40 @@ pub(crate) fn read(path: &Path) -> Option<Envelope> {
 /// is ruled out by the atomic write and the startup sweep instead.
 fn read_verbatim(path: &Path) -> anyhow::Result<Envelope> {
     let bytes = std::fs::read(path).context("the entry could not be read")?;
-    let header = bytes
-        .split(|byte| *byte == b'\n')
-        .next()
-        .unwrap_or_default();
+    parse_header(
+        bytes
+            .split(|byte| *byte == b'\n')
+            .next()
+            .unwrap_or_default(),
+    )?;
+    Ok(Envelope::from_bytes_raw(bytes)?)
+}
+
+/// The same check `read` makes, without materializing the payload: a corrupt
+/// entry is deleted, so it stops being offered.
+pub(crate) fn validate(path: &Path) -> bool {
+    match read_header(path) {
+        Ok(()) => true,
+        Err(err) => {
+            log::warn!("sentry-reporting: dropping an unreadable outbox entry: {err}");
+            let _ = std::fs::remove_file(path);
+            false
+        }
+    }
+}
+
+fn read_header(path: &Path) -> anyhow::Result<()> {
+    let file = std::fs::File::open(path).context("the entry could not be read")?;
+    let mut header = String::new();
+    std::io::BufRead::read_line(&mut std::io::BufReader::new(file), &mut header)
+        .context("the entry could not be read")?;
+    parse_header(header.as_bytes())
+}
+
+fn parse_header(header: &[u8]) -> anyhow::Result<()> {
     serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(header)
         .context("the entry does not begin with an envelope header")?;
-    Ok(Envelope::from_bytes_raw(bytes)?)
+    Ok(())
 }
 
 pub(crate) fn move_to(path: &Path, root: &Path, state: State) -> anyhow::Result<PathBuf> {

@@ -9,7 +9,7 @@ use tauri::State;
 use crate::logs::PendingLogs;
 use crate::outbox::drain::{Drainer, DropReason, EntryFate};
 use crate::outbox::sender::HttpSender;
-use crate::outbox::Outbox;
+use crate::outbox::{blocking, Outbox};
 use crate::{client, Config};
 
 pub(crate) type Sentry<'a> = State<'a, Arc<SentryState>>;
@@ -84,7 +84,8 @@ impl SentryState {
     /// Queue a user-approved report and try to deliver it now. The answer is
     /// about this report, not about whatever else the drain found.
     pub(crate) async fn send(&self, envelope: Envelope) -> anyhow::Result<SendOutcome> {
-        let queued = self.outbox.enqueue(&envelope)?;
+        let outbox = self.outbox.clone();
+        let queued = blocking(move || outbox.enqueue(&envelope)).await?;
         outcome(self.drainer.drain_watching(&queued).await)
     }
 }

@@ -15,7 +15,7 @@ use crate::outbox::retention;
 use reqwest::StatusCode;
 
 use crate::outbox::sender::{Delivery, EnvelopeSender};
-use crate::outbox::Outbox;
+use crate::outbox::{blocking, Outbox};
 
 const INITIAL_BACKOFF: Duration = Duration::from_secs(60);
 const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
@@ -83,22 +83,29 @@ impl DrainReport {
 
 /// One pass over `queued/`, oldest first. Never touches `held/`.
 pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) -> DrainReport {
-    retention::enforce(outbox.root());
+    let root = outbox.root().to_owned();
+    let entries = blocking(move || {
+        retention::enforce(&root);
+        entry::list(&root, entry::State::Queued)
+    })
+    .await;
 
     let mut result = DrainResult::Emptied;
     let mut retry_after = None;
     let mut delivered = Vec::new();
     let mut dropped = Vec::new();
-    for queued in outbox.queued() {
+    for queued in entries {
         // Renamed out of the way first, so no other drainer — in this process
         // or another sharing the data directory — picks up the same entry.
         // A skipped entry was never delivered, so the pass cannot claim the
         // outbox is empty.
-        let Ok(in_flight) = entry::mark_sending(&queued.path) else {
+        let claim = queued.path.clone();
+        let Ok(in_flight) = blocking(move || entry::mark_sending(&claim)).await else {
             result = DrainResult::Pending;
             continue;
         };
-        let Some(envelope) = entry::read(&in_flight) else {
+        let read_back = in_flight.clone();
+        let Some(envelope) = blocking(move || entry::read(&read_back)).await else {
             dropped.push((queued.path.clone(), DropReason::Unreadable));
             result = DrainResult::Pending;
             continue;
@@ -106,15 +113,16 @@ pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) ->
 
         match sender.post(&envelope).await {
             Delivery::Delivered => {
-                let _ = std::fs::remove_file(&in_flight);
+                let _ = blocking(move || std::fs::remove_file(&in_flight)).await;
                 delivered.push(queued.path.clone());
             }
             Delivery::Rejected { status } => {
-                let _ = std::fs::remove_file(&in_flight);
+                let _ = blocking(move || std::fs::remove_file(&in_flight)).await;
                 dropped.push((queued.path.clone(), DropReason::Refused { status }));
             }
             Delivery::Retry { after } => {
-                let _ = std::fs::rename(&in_flight, &queued.path);
+                let requeue = queued.path.clone();
+                let _ = blocking(move || std::fs::rename(&in_flight, &requeue)).await;
                 result = DrainResult::Pending;
                 retry_after = after;
                 // A failure now means the rest will fail too; stop wasting the
