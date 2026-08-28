@@ -11,7 +11,7 @@ mod visualisation;
 
 use anyhow::Result;
 
-use input::{decode_to_mono_pcm, ensure_opus_rate};
+use input::{decode_to_mono_pcm, resample_to_target};
 use opus::encode_ogg_opus;
 use visualisation::compute_waveform;
 
@@ -30,7 +30,7 @@ pub struct EncodedAudio {
 /// as mono Ogg/Opus, returning the encoded bytes, duration, and waveform.
 pub fn transcode_to_opus(input: &[u8]) -> Result<EncodedAudio> {
     let (pcm, rate) = decode_to_mono_pcm(input)?;
-    let (pcm, rate) = ensure_opus_rate(pcm, rate);
+    let (pcm, rate) = resample_to_target(pcm, rate)?;
     let duration_ms = (pcm.len() as u64 * 1000 / rate as u64) as u32;
     let waveform = compute_waveform(&pcm);
     let opus = encode_ogg_opus(&pcm, rate)?;

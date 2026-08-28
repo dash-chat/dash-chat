@@ -68,7 +68,8 @@ fn waveform_has_fixed_bars_normalized_to_peak() {
 
 #[test]
 fn downmixes_stereo_and_resamples_odd_rate() {
-    // 44.1kHz isn't an Opus rate, and stereo must fold to mono.
+    // 44.1kHz stereo (a mobile-shaped input) must fold to mono and resample
+    // to the 16kHz voice rate without changing the perceived duration.
     let wav = sine_wav(1.0, 44_100, 2);
     let result = transcode_to_opus(&wav).unwrap();
     assert!(result.opus.starts_with(b"OggS"));

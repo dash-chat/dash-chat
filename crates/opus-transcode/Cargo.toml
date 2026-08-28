@@ -15,6 +15,9 @@ symphonia = { version = "0.5", default-features = false, features = [
 ] }
 opus = "0.3"
 ogg = "0.9"
+# FFT-based resampler with proper anti-aliasing; re-exports the audioadapter
+# buffer types we use, so no separate audioadapter dependency is needed.
+rubato = "5"
 
 [dev-dependencies]
 hound = "3.5"

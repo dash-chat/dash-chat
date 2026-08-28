@@ -5,4 +5,4 @@ mod decode;
 mod resample;
 
 pub(crate) use decode::decode_to_mono_pcm;
-pub(crate) use resample::ensure_opus_rate;
+pub(crate) use resample::resample_to_target;
