@@ -15,6 +15,7 @@ export interface Settings {
 	qr_color: string | null;
 	local_mailbox_enabled: boolean;
 	notifications_enabled: boolean;
+	developer_mode_enabled: boolean;
 }
 
 export type { ColorScheme, ColorSchemePreference };

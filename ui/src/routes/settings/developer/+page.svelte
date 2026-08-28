@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
-	import { developerMode } from '$lib/stores/developer-mode.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { showToast } from '$lib/utils/toasts';
 	import {
@@ -13,11 +12,14 @@
 		Page,
 		useTheme,
 	} from 'konsta/svelte';
+	import { getContext } from 'svelte';
+	import type { SettingsStore } from 'dash-chat-stores';
 
 	const theme = $derived(useTheme());
+	const settingsStore: SettingsStore = getContext('settings-store');
 
-	function disableDeveloperMode() {
-		developerMode.lock();
+	async function disableDeveloperMode() {
+		await settingsStore.setDeveloperModeEnabled(false);
 		showToast(m.developerModeDisabled());
 		goto('/settings');
 	}

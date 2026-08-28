@@ -1,9 +1,13 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { fullName, type ContactsStore } from 'dash-chat-stores';
+	import {
+		fullName,
+		type ContactsStore,
+		type SettingsStore,
+	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiAccountCircleOutline,
 		mdiBellOutline,
@@ -25,7 +29,6 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
-	import { developerMode } from '$lib/stores/developer-mode.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
@@ -47,6 +50,10 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
 	const myProfile = useReactivePromise(contactsStore.myProfile);
+	const settingsStore: SettingsStore = getContext('settings-store');
+	const developerModeEnabled = useReactiveValue(
+		settingsStore.developerModeEnabled,
+	);
 	const theme = $derived(useTheme());
 
 	const isActive = (path: string) => page.url.pathname.startsWith(path);
@@ -200,7 +207,7 @@
 			</ListItem>
 		</List>
 
-		{#if developerMode.unlocked}
+		{#if $developerModeEnabled === true}
 			<List
 				strongIos
 				nested={theme !== 'ios'}

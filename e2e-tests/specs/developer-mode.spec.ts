@@ -22,8 +22,6 @@ describe('Developer mode', () => {
 		await agent.pause(600);
 		await agent.helpPage.tapVersion(4);
 
-		expect(await agent.helpPage.developerModeUnlocked()).toBe(false);
-
 		await agent.helpPage.back.click();
 		await agent.settingsPage.ready();
 		await expect(agent.settingsPage.developerLink).not.toBeDisplayed();
@@ -35,7 +33,6 @@ describe('Developer mode', () => {
 
 		await agent.helpPage.tapVersion(7);
 		await agent.toast.expectMessage(await agent.tr('developerModeEnabled'));
-		expect(await agent.helpPage.developerModeUnlocked()).toBe(true);
 
 		await agent.helpPage.back.click();
 		await agent.settingsPage.ready();
@@ -50,6 +47,5 @@ describe('Developer mode', () => {
 		await agent.settingsPage.ready();
 
 		await expect(agent.settingsPage.developerLink).not.toBeDisplayed();
-		expect(await agent.helpPage.developerModeUnlocked()).toBe(false);
 	});
 });

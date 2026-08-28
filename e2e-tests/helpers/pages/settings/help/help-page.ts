@@ -27,12 +27,6 @@ export class HelpPage extends TestHelper {
 		);
 	}
 
-	developerModeUnlocked(): Promise<boolean> {
-		return this.agent.execute(
-			() => window.localStorage.getItem('developer-mode-unlocked') === 'true',
-		);
-	}
-
 	async enableOfflineMode(): Promise<void> {
 		await this.startOfflineModeToggle.click();
 		await this.agent.waitUntil(
