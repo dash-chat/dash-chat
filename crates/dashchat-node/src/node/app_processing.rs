@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
+use crate::AckedOp;
 use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
@@ -54,6 +55,14 @@ pub enum SystemNotification {
         topic: TopicId,
         hashes: BTreeSet<Hash>,
         reason: TombstoneReason,
+    },
+    /// New delivery acknowledgements were recorded for a chat topic. `acks`
+    /// carries only the entries that changed, already filtered to ackers of a
+    /// different agent than the author, so consumers can fold it into their
+    /// delivered state (max seq per author) without re-querying.
+    MessageAcks {
+        topic: TopicId,
+        acks: BTreeMap<DeviceId, AckedOp>,
     },
 }
 
@@ -689,8 +698,25 @@ impl Node {
                 }
             }
 
+            Payload::Chat(ChatPayload::MessageAck { .. }) => {
+                // Already folded into the projection by `reduce`; deliberately
+                // never marks the topic dirty below, or two online peers would
+                // ack each other's acks forever.
+            }
+
             _ => {
                 // Nothing to do.
+            }
+        }
+
+        if let Payload::Chat(chat_payload) = &payload {
+            if !matches!(chat_payload, ChatPayload::MessageAck { .. }) && author != self.device_id()
+            {
+                // Non-fatal: failing here must not fail (and so replay) the op.
+                match ChatId::from_topic_id(topic) {
+                    Ok(chat_id) => self.mark_ack_topic_dirty(chat_id),
+                    Err(err) => warn!(?err, "chat payload on non-chat topic; not marking for ack"),
+                }
             }
         }
 

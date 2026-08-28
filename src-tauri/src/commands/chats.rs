@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use dashchat_node::{
-    stores::TombstoneReason, AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia,
-    RemoveGroupMemberError,
+    stores::TombstoneReason, AckedOp, AgentId, ChatId, ChatReaction, DeviceId, GroupInfo,
+    OutgoingMedia, RemoveGroupMemberError,
 };
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
@@ -137,6 +137,18 @@ pub async fn get_tombstones(
 ) -> Result<HashMap<Hash, TombstoneReason>, String> {
     let node = app_node_manager.get().await?;
     node.chat_tombstones(chat_id)
+        .await
+        .map_err(|err| format!("{err:?}"))
+}
+
+#[tauri::command]
+pub async fn get_message_acks(
+    chat_id: ChatId,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<BTreeMap<DeviceId, AckedOp>, String> {
+    let node = app_node_manager.get().await?;
+    node.projection
+        .delivered_acks(chat_id.into())
         .await
         .map_err(|err| format!("{err:?}"))
 }

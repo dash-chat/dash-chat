@@ -118,7 +118,8 @@ export type Agent = WebdriverIO.Browser & {
 	 *  On Android this is a home-key press; on desktop it is currently a no-op. */
 	backgroundApp(): Promise<void>;
 	/** Relaunch after [`stopApp`] or [`waitForAppExit`] and wait until the app
-	 *  is interactive again. */
+	 *  is interactive again. Idempotent: a no-op when the app is already
+	 *  running (on mobile it foregrounds a backgrounded app). */
 	startApp(): Promise<void>;
 	/** Switch the Konsta theme. */
 	setTheme(theme: 'material' | 'ios'): Promise<void>;
@@ -309,8 +310,19 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
+			// reloadSession relaunches the binary even when the app is still up,
+			// so verify first: a live session means the app is running and
+			// driveable, and there is nothing to do.
+			try {
+				await b.getTitle();
+				return;
+			} catch {
+				// Session gone — the app was stopped; relaunch below.
+			}
 			await b.reloadSession();
 		} else {
+			// activateApp is itself idempotent: it launches a stopped app and
+			// merely foregrounds a running one.
 			await b.activateApp(APP_PACKAGE);
 			// A relaunch drops back to the native context; only the session's
 			// initial `autoWebview` does this for us.

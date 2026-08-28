@@ -6,7 +6,7 @@
  * toggling the per-agent local mailbox server underneath the running agents.
  *
  * Visible states under test:
- *   - Message status: "cloud" → "sending" → "local" → "cloud"
+ *   - Message status: "sending" → "mailbox" → "delivered"
  *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
@@ -33,7 +33,9 @@ async function returnToChat(agent: Agent, chatName: string): Promise<void> {
 		await agent.offlinePage.back.click();
 		await agent.settingsPage.ready();
 	}
-	await agent.settingsPage.back.click();
+	if (await agent.settingsPage.back.isExisting()) {
+		await agent.settingsPage.back.click();
+	}
 	await agent.homePage.ready();
 	await agent.homePage.openChat(chatName);
 }
@@ -73,16 +75,15 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox online', () => {
-		it('sends a message, peer receives it, sender shows the cloud check, and the navbar chip stays hidden', async () => {
+		it('sends a message, peer receives it, sender shows delivered, and the navbar chip stays hidden', async () => {
 			await agent1.directChatPage.composer.sendMessage('online hello');
 			await agent2.directChatPage.messages.waitForMessage('online hello');
 
-			await agent1.waitUntil(
-				async () =>
-					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
-			);
-			expect(await agent1.directChatPage.messageStatusFor('online hello')).toBe(
-				'cloud',
+			// The peer received it, so the peer's ack must eventually flip the
+			// indicator to the double check.
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'online hello',
+				['delivered'],
 			);
 			expect(
 				await agent1.directChatPage.connectionStatusIndicator.status(),
@@ -91,23 +92,30 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox stopped', () => {
-		before(() => {
+		before(async () => {
 			suspendMailbox();
 			mailboxSuspended = true;
+
+			// Start with agent2 offline because we mostly want agent1 to be isolated
+			await agent2.stopApp();
 		});
 
-		after(() => {
+		after(async () => {
 			if (mailboxSuspended) {
 				resumeMailbox();
 				mailboxSuspended = false;
 			}
+			await agent2.startApp();
+			await returnToChat(agent2, 'Alice');
 		});
 
 		it('new messages stay on the sending spinner', async () => {
 			await agent1.directChatPage.composer.sendMessage('offline hello');
 			await agent1.waitUntil(
-				async () =>
-					(await agent1.directChatPage.lastMessageStatus()) === 'sending',
+				async () => {
+					const status = await agent1.directChatPage.lastMessageStatus();
+					return status === 'sending';
+				},
 				{ timeout: 5_000 },
 			);
 			await agent1.pause(5_000);
@@ -171,31 +179,129 @@ describe('Offline UX', () => {
 				await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 			});
 
-			it('a new message advances to the "local" mailbox icon', async () => {
+			it('a new message advances to the "mailbox" icon once the local mailbox holds it', async () => {
 				await agent1.directChatPage.composer.sendMessage('local hello');
-				await agent1.waitUntil(
-					async () =>
-						(await agent1.directChatPage.lastMessageStatus()) === 'local',
-					{ timeout: 30_000 },
+				await agent1.directChatPage.messages.waitForMessageStatus(
+					'local hello',
+					// Only agent1 reaches the local mailbox, so the message can't
+					// become delivered — it settles on 'mailbox'.
+					['mailbox'],
 				);
 			});
 		});
 	});
 
 	describe('cloud mailbox back online', () => {
-		it('navbar chip hides again and pending message advances to "cloud"', async () => {
+		it('navbar chip hides again and the pending message advances to delivered once the peer receives it', async () => {
 			await agent1.waitUntil(
 				async () =>
 					(await agent1.directChatPage.connectionStatusIndicator.status()) ===
 					'connected',
 				{ timeout: 30_000 },
 			);
+			await agent2.directChatPage.messages.waitForMessage('offline hello');
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'offline hello',
+				['delivered'],
+				30_000,
+				true,
+			);
+		});
+	});
+
+	// A burst of messages whose delivery statuses differ must not collapse into
+	// one visual group with a single indicator on the last message: the last
+	// message of every run of equal statuses renders an indicator, and the
+	// extra indicators disappear once the statuses converge again.
+	describe('messages with different delivery statuses', () => {
+		before(async function () {
+			this.timeout(60_000);
+			await openOfflineSettings(agent1);
+			await agent1.offlinePage.setLocalMailboxEnabled(true);
+			await returnToChat(agent1, 'Bob');
+		});
+
+		after(async function () {
+			this.timeout(60_000);
+			if (mailboxSuspended) {
+				resumeMailbox();
+				mailboxSuspended = false;
+			}
+
+			await openOfflineSettings(agent1);
+			await agent1.offlinePage.setLocalMailboxEnabled(false);
+			await returnToChat(agent1, 'Bob');
+		});
+
+		it('show one indicator per status so every status stays visible', async function () {
+			this.timeout(120_000);
+			await agent1.directChatPage.composer.sendMessage('split delivered');
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'split delivered',
+				['delivered'],
+			);
+
+			suspendMailbox();
+			mailboxSuspended = true;
+
+			await agent2.stopApp();
+
+			await agent1.directChatPage.composer.sendMessage('split mailbox');
+			// Generous timeout: the just-enabled local mailbox may still be
+			// waiting on mDNS discovery before it can hold the message.
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'split mailbox',
+				['mailbox'],
+				30_000,
+			);
+
+			await openOfflineSettings(agent1);
+			await agent1.offlinePage.setLocalMailboxEnabled(false);
+			await returnToChat(agent1, 'Bob');
+			await agent1.directChatPage.composer.sendMessage('split sending');
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'split sending',
+				['sending'],
+			);
+
+			// The sends above land within the one-minute grouping window, so
+			// only the last message of the group would carry an indicator if
+			// statuses were ignored. Every message must show its own status.
+			expect(
+				await agent1.directChatPage.messages.messageStatusFor('split mailbox'),
+			).toBe('mailbox');
+			expect(
+				await agent1.directChatPage.messages.messageStatusFor(
+					'split delivered',
+				),
+			).toBe('delivered');
+		});
+
+		it('show only the last indicator once the statuses converge', async function () {
+			this.timeout(60_000);
+			resumeMailbox();
+			mailboxSuspended = false;
+
+			await agent2.startApp();
+			await returnToChat(agent2, 'Alice');
+
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'split sending',
+				['delivered'],
+			);
+			// "split mailbox" and "split sending" were sent seconds apart, so
+			// they share a group: once both are delivered their runs merge and
+			// only the group's last message keeps an indicator.
 			await agent1.waitUntil(
 				async () =>
-					(await agent1.directChatPage.lastMessageStatus()) === 'cloud',
-				{ timeout: 30_000 },
+					(await agent1.directChatPage.messages.messageStatusFor(
+						'split mailbox',
+					)) === null,
+				{
+					timeoutMsg:
+						'converged message kept its indicator instead of merging back into the group',
+				},
 			);
-			await agent2.directChatPage.messages.waitForMessage('offline hello');
 		});
 	});
 
@@ -214,15 +320,14 @@ describe('Offline UX', () => {
 			mailboxKilled = false;
 		});
 
-		it('a delivered message still shows the cloud check after restarting with the mailbox down', async function () {
+		it('a message at the mailbox still shows its status after restarting with the mailbox down', async function () {
 			this.timeout(120_000);
 			// Deliver a fresh message to the cloud right now (mailbox is online).
+			// It may already advance to 'delivered' if the peer's ack races in.
 			await agent1.directChatPage.composer.sendMessage('restart hello');
-			await agent1.waitUntil(
-				async () =>
-					(await agent1.directChatPage.messageStatusFor('restart hello')) ===
-					'cloud',
-				{ timeout: 30_000 },
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'restart hello',
+				['mailbox', 'delivered'],
 			);
 
 			// Kill the cloud mailbox so it is unreachable, then cold-start the app.
@@ -251,7 +356,7 @@ describe('Offline UX', () => {
 					timeoutMsg: 'message status indicator never rendered after restart',
 				},
 			);
-			expect(status).toBe('cloud');
+			expect(['mailbox', 'delivered']).toContain(status);
 		});
 	});
 });

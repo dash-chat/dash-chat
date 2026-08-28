@@ -139,6 +139,26 @@ pub enum ChatPayload {
     IntroduceAgents {
         agents: BTreeMap<DeviceId, AgentId>,
     },
+
+    /// Delivery acknowledgement: records, per author, the latest operation on
+    /// this chat topic that the acker has processed. Acks are delta-encoded:
+    /// each `MessageAck` only contains entries that changed since the acker's
+    /// previous one, so the acker's full map is the fold, in order, of all
+    /// their `MessageAck` operations. Acking an operation covers everything
+    /// at or below its `seq` in that author's log. `MessageAck` operations
+    /// themselves are never acked.
+    MessageAck {
+        acks: BTreeMap<DeviceId, AckedOp>,
+    },
+}
+
+/// An entry in a [`ChatPayload::MessageAck`] map. `seq` duplicates the
+/// referenced operation's seq_num so receivers can do coverage checks without
+/// resolving `hash` against a log they may not have fully synced yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AckedOp {
+    pub hash: Hash,
+    pub seq: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
