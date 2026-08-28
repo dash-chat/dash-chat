@@ -2,9 +2,9 @@ import { m } from '$lib/paraglide/messages.js';
 import { isMobile } from '$lib/utils/environment';
 import type { DraftVoiceNote } from '$lib/utils/media';
 import { showToast } from '$lib/utils/toasts';
-import { invokeAfterSetup } from 'dash-chat-stores';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, remove } from '@tauri-apps/plugin-fs';
+import { invokeAfterSetup } from 'dash-chat-stores';
 import {
 	getDevices,
 	getStatus,
@@ -27,7 +27,6 @@ export function warmUpRecorder(): void {
 type RecorderPhase = 'idle' | 'requesting' | 'recording' | 'encoding';
 
 const MAX_DURATION_SECONDS = 300;
-
 
 interface DragState {
 	cancelProgress: number;

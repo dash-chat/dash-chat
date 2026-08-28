@@ -7,9 +7,9 @@
  *
  * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
-import { invokeAfterSetup } from 'dash-chat-stores';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
+import { invokeAfterSetup } from 'dash-chat-stores';
 
 import type { m } from '../src/lib/paraglide/messages.js';
 

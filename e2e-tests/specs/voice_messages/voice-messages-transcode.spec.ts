@@ -21,7 +21,8 @@ describe('Voice messages (Opus transcode)', () => {
 	});
 
 	it('transcodes a recording to Ogg/Opus that is smaller than the source', async () => {
-		const result = await agent1.directChatPage.composer.recordRealVoiceMessage(1000);
+		const result =
+			await agent1.directChatPage.composer.recordRealVoiceMessage(1000);
 		expect(result.isOgg).toBe(true);
 		expect(result.opusBytes).toBeLessThan(result.wavBytes);
 		// Duration comes from the decoded audio, so it tracks the ~1s source.
