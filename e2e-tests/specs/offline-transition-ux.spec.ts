@@ -33,7 +33,9 @@ async function returnToChat(agent: Agent, chatName: string): Promise<void> {
 		await agent.offlinePage.back.click();
 		await agent.settingsPage.ready();
 	}
-	await agent.settingsPage.back.click();
+	if (await agent.settingsPage.back.isExisting()) {
+		await agent.settingsPage.back.click();
+	}
 	await agent.homePage.ready();
 	await agent.homePage.openChat(chatName);
 }
@@ -90,23 +92,30 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox stopped', () => {
-		before(() => {
+		before(async () => {
 			suspendMailbox();
 			mailboxSuspended = true;
+
+			// Start with agent2 offline because we mostly want agent1 to be isolated
+			await agent2.stopApp();
 		});
 
-		after(() => {
+		after(async () => {
 			if (mailboxSuspended) {
 				resumeMailbox();
 				mailboxSuspended = false;
 			}
+			await agent2.startApp();
+			await returnToChat(agent2, 'Alice');
 		});
 
 		it('new messages stay on the sending spinner', async () => {
 			await agent1.directChatPage.composer.sendMessage('offline hello');
 			await agent1.waitUntil(
-				async () =>
-					(await agent1.directChatPage.lastMessageStatus()) === 'sending',
+				async () => {
+					const status = await agent1.directChatPage.lastMessageStatus();
+					return status === 'sending';
+				},
 				{ timeout: 5_000 },
 			);
 			await agent1.pause(5_000);
@@ -204,14 +213,14 @@ describe('Offline UX', () => {
 	// back once the statuses converge again.
 	describe('messages with different delivery statuses', () => {
 		before(async function () {
-			this.timeout(120_000);
+			this.timeout(60_000);
 			await openOfflineSettings(agent1);
 			await agent1.offlinePage.setLocalMailboxEnabled(true);
 			await returnToChat(agent1, 'Bob');
 		});
 
 		after(async function () {
-			this.timeout(120_000);
+			this.timeout(60_000);
 			if (mailboxSuspended) {
 				resumeMailbox();
 				mailboxSuspended = false;
@@ -220,10 +229,12 @@ describe('Offline UX', () => {
 			await openOfflineSettings(agent1);
 			await agent1.offlinePage.setLocalMailboxEnabled(false);
 			await returnToChat(agent1, 'Bob');
+			await agent2.startApp();
+			await returnToChat(agent2, 'Alice');
 		});
 
 		it('split their group so every status stays visible', async function () {
-			this.timeout(180_000);
+			this.timeout(120_000);
 			await agent1.directChatPage.composer.sendMessage('split delivered');
 			await agent1.directChatPage.messages.waitForMessageStatus(
 				'split delivered',
@@ -241,7 +252,7 @@ describe('Offline UX', () => {
 			await agent1.directChatPage.messages.waitForMessageStatus(
 				'split mailbox',
 				['mailbox'],
-				60_000,
+				30_000,
 			);
 
 			await openOfflineSettings(agent1);
@@ -267,10 +278,12 @@ describe('Offline UX', () => {
 		});
 
 		it('merge back into one group once the statuses converge', async function () {
-			this.timeout(120_000);
-			await agent2.startApp();
+			this.timeout(60_000);
 			resumeMailbox();
 			mailboxSuspended = false;
+
+			await agent2.startApp();
+			await returnToChat(agent2, 'Alice');
 
 			await agent1.directChatPage.messages.waitForMessageStatus(
 				'split sending',

@@ -54,10 +54,10 @@ export class Messages extends TestHelper {
 	async lastMessageStatus(): Promise<MessageStatus | null> {
 		return this.agent.execute(
 			(messagesSel: string, statusSel: string) => {
-				const el = document.querySelector(
+				const els = document.querySelectorAll<HTMLElement>(
 					`${messagesSel} ${statusSel}`,
-				) as HTMLElement | null;
-				const status = el?.dataset.status;
+				);
+				const status = els[els.length - 1]?.dataset.status;
 				if (
 					status === 'sending' ||
 					status === 'mailbox' ||
@@ -72,16 +72,19 @@ export class Messages extends TestHelper {
 		);
 	}
 
-	/** Read the data-status of the status indicator inside the bubble whose text contains `text`. */
+	/** Read the data-status of the status indicator of the group containing the
+	 * message whose text contains `text`. Only the last message of a group renders
+	 * an indicator, so the status is a property of the group, not the message. */
 	async messageStatusFor(text: string): Promise<MessageStatus | null> {
 		return this.agent.execute(
-			(messagesSel: string, statusSel: string, t: string) => {
+			(messagesSel: string, groupSel: string, statusSel: string, t: string) => {
 				const wrappers = document.querySelectorAll<HTMLElement>(
 					`${messagesSel} [data-message-hash]`,
 				);
 				for (const wrapper of wrappers) {
 					if (!wrapper.textContent?.includes(t)) continue;
-					const el = wrapper.querySelector(statusSel) as HTMLElement | null;
+					const group = wrapper.closest(groupSel);
+					const el = group?.querySelector(statusSel) as HTMLElement | null;
 					const status = el?.dataset.status;
 					if (
 						status === 'sending' ||
@@ -95,6 +98,7 @@ export class Messages extends TestHelper {
 				return null;
 			},
 			this.messagesSelector,
+			tid('message-group'),
 			tid('message-status'),
 			text,
 		);

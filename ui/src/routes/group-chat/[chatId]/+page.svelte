@@ -218,7 +218,11 @@
 							</div>
 
 							{#each messageGroupsInDay.eventsGroups as messageGroup}
-								<div class="column" style="gap: 1px">
+								<div
+									class="column"
+									style="gap: 1px"
+									data-testid="message-group"
+								>
 									{#each messageGroup as [hash, item], i (hash)}
 										{#if unreadDivider.hash === hash}
 											<div
