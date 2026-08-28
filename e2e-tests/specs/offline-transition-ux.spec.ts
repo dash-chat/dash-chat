@@ -232,6 +232,8 @@ describe('Offline UX', () => {
 			suspendMailbox();
 			mailboxSuspended = true;
 
+			await agent2.stopApp();
+
 			await agent1.directChatPage.composer.sendMessage('split mailbox');
 			// Generous timeout: the just-enabled local mailbox may still be
 			// waiting on mDNS discovery before it can hold the message.
@@ -261,6 +263,8 @@ describe('Offline UX', () => {
 					'split delivered',
 				),
 			).toBe('delivered');
+
+			await agent2.startApp();
 		});
 
 		it('merge back into one group once the statuses converge', async function () {
