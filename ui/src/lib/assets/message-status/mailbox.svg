@@ -1,0 +1,10 @@
+<svg width="25" height="16" viewBox="0 0 25 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M12 3.10102C13.2705 1.80447 15.0413 1 17 1C20.866 1 24 4.13401 24 8C24 11.866 20.866 15 17 15C15.0413 15 13.2705 14.1955 12 12.899" stroke="black" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="0.4 3.2 0.4 3.2"/>
+<path d="M12 12.899C10.7628 11.6365 10 9.90736 10 8.00006C10 6.09275 10.7628 4.36361 12 3.10107" stroke="black" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="0.4 3.2 0.4 3.2"/>
+<line x1="13.6" y1="8.4" x2="19.4" y2="8.4" stroke="black" stroke-width="1.2" stroke-linecap="round"/>
+<line x1="17.1013" y1="11.586" x2="20.2528" y2="8.43457" stroke="black" stroke-width="1.2" stroke-linecap="round"/>
+<line x1="16.9498" y1="5.10107" x2="20.1013" y2="8.25255" stroke="black" stroke-width="1.2" stroke-linecap="round"/>
+<path d="M11.2145 1.78009C10.2519 1.28159 9.15884 1 8 1C4.13401 1 1 4.13401 1 8C1 11.866 4.13401 15 8 15C9.0736 15 10.0907 14.7583 11 14.3264" stroke="black" stroke-width="1.2" stroke-linecap="round"/>
+<line x1="5.06066" y1="9" x2="7" y2="10.9393" stroke="black" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="7" y1="10.9393" x2="9.93934" y2="8" stroke="black" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

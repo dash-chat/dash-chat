@@ -33,6 +33,7 @@
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
+		endsDeliveryStatusRun,
 		messagePosition,
 		scrollToMessage,
 	} from '$lib/components/messages/message-helpers';
@@ -218,7 +219,11 @@
 							</div>
 
 							{#each messageGroupsInDay.eventsGroups as messageGroup (messageGroup[0][0])}
-								<div class="column" style="gap: 1px">
+								<div
+									class="column"
+									style="gap: 1px"
+									data-testid="message-group"
+								>
 									{#each messageGroup as [hash, item], i (hash)}
 										{#if unreadDivider.hash === hash}
 											<div
@@ -247,6 +252,10 @@
 														{position}
 														{myDeviceId}
 														{chatId}
+														showDeliveryStatus={endsDeliveryStatusRun(
+															messageGroup,
+															i,
+														)}
 														searchQuery=""
 														onEdit={() => composer?.editMessage(message)}
 														onReply={() =>

@@ -222,7 +222,31 @@ export type ChatPayload =
 	| { type: 'EditMessage'; payload: EditMessagePayload }
 	| { type: 'DeleteMessage'; payload: DeleteMessagePayload }
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
-	| { type: 'GroupInfo'; payload: GroupInfo };
+	| { type: 'GroupInfo'; payload: GroupInfo }
+	| { type: 'MessageAck'; payload: MessageAckPayload };
+
+/** An entry in a `MessageAck` map: the latest operation of one author that the
+ * acker has processed. Covers everything at or below `seq` in that author's
+ * log. */
+export interface AckedOp {
+	hash: Hash;
+	seq: number;
+}
+
+/** Delta-encoded delivery acknowledgement, mirroring the backend
+ * `ChatPayload::MessageAck`: only entries that changed since the acker's
+ * previous ack are present. */
+export interface MessageAckPayload {
+	acks: Record<DeviceId, AckedOp>;
+}
+
+/** Per author of a chat topic, the highest operation acked by any device of a
+ * different agent. Drives the "delivered" message status. */
+export type MessageAcks = Record<DeviceId, AckedOp>;
+
+/** The delivery progression of an outgoing message: not yet sent anywhere,
+ * arrived at a mailbox, or received by a device of another group member. */
+export type MessageDeliveryStatus = 'sending' | 'mailbox' | 'delivered';
 
 export interface ReadMessagesPayload {
 	chat_id: ChatId;
@@ -242,14 +266,24 @@ export interface DeleteForMePayload {
  * message; a delete-for-me vanishes with no trace. */
 export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
 
-export type SystemEvent = {
-	type: 'Tombstones';
-	payload: {
-		topic: TopicId;
-		hashes: Hash[];
-		reason: TombstoneReason;
-	};
-};
+export type SystemEvent =
+	| {
+			type: 'Tombstones';
+			payload: {
+				topic: TopicId;
+				hashes: Hash[];
+				reason: TombstoneReason;
+			};
+	  }
+	| {
+			type: 'MessageAcks';
+			payload: {
+				topic: TopicId;
+				/** Only the entries that changed, pre-filtered to ackers of a
+				 * different agent than the author; fold with max seq per author. */
+				acks: Record<DeviceId, AckedOp>;
+			};
+	  };
 
 export interface Tombstone {
 	hash: Hash;

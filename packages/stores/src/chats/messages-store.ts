@@ -2,6 +2,7 @@ import { ReactivePromise, reactive } from 'signalium';
 
 import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
+import { MessageAckStore } from '../message-acks/message-ack-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash } from '../p2panda/types';
@@ -9,6 +10,7 @@ import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
 	ChatReaction,
+	MessageDeliveryStatus,
 	MessageDisplay,
 	MessageVersion,
 	OutgoingMedia,
@@ -42,6 +44,8 @@ export interface Message {
 	author: DeviceId;
 	seqNum: number;
 	replyQuote?: MessageReply;
+	/** Set only on the viewer's own messages */
+	deliveryStatus?: MessageDeliveryStatus;
 }
 
 export type Bodyless = {
@@ -58,6 +62,7 @@ export class MessagesStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		protected tombstoneStore: TombstoneStore,
+		protected messageAckStore: MessageAckStore,
 		public chatId: ChatId,
 		public client: IMessagesClient,
 		public readOnly: () => ReactivePromise<boolean>,
@@ -83,6 +88,15 @@ export class MessagesStore {
 			deviceAgents,
 		);
 		const messages = logsToMessages(ops, tombstones, deviceAgents, deviceNames);
+		const myDeviceId = await this.contactsStore.myDeviceId();
+		for (const message of Object.values(messages)) {
+			if (message.author !== myDeviceId) continue;
+			message.deliveryStatus = await this.messageAckStore.deliveryStatus(
+				this.chatId,
+				message.author,
+				message.seqNum,
+			);
+		}
 		return messages;
 	});
 

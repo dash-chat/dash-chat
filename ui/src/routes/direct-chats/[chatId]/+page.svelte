@@ -58,6 +58,7 @@
 	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import {
+		endsDeliveryStatusRun,
 		messagePosition,
 		scrollToMessage,
 		withoutMessages,
@@ -496,7 +497,11 @@
 										</div>
 
 										{#each messageGroupsInDay.eventsGroups as messageGroup (messageGroup[0][0])}
-											<div class="column" style="gap: 1px">
+											<div
+												class="column"
+												style="gap: 1px"
+												data-testid="message-group"
+											>
 												{#each messageGroup as [hash, item], i (hash)}
 													{#if unreadDivider.hash === hash}
 														<div
@@ -529,6 +534,10 @@
 																	{position}
 																	{myDeviceId}
 																	{chatId}
+																	showDeliveryStatus={endsDeliveryStatusRun(
+																		messageGroup,
+																		i,
+																	)}
 																	searchQuery={searchMode ? searchQuery : ''}
 																	onEdit={() => composer?.editMessage(message)}
 																	onReply={() =>

@@ -9,6 +9,8 @@ import {
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
+export type MessageStatus = 'sending' | 'mailbox' | 'delivered';
+
 export type SystemMessageKind =
 	| 'group_created'
 	| 'group_member_added'
@@ -47,6 +49,107 @@ export class Messages extends TestHelper {
 	/** The system message of `kind` rendered in this message list. */
 	systemMessage(kind: SystemMessageKind) {
 		return this.el(`${this.messagesSelector} ${tid(`system-message-${kind}`)}`);
+	}
+
+	/** Read the data-status of the most recent message-status indicator. */
+	async lastMessageStatus(): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(messagesSel: string, statusSel: string) => {
+				const els = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} ${statusSel}`,
+				);
+				const status = els[els.length - 1]?.dataset.status;
+				if (
+					status === 'sending' ||
+					status === 'mailbox' ||
+					status === 'delivered'
+				) {
+					return status;
+				}
+				return null;
+			},
+			this.messagesSelector,
+			tid('message-status'),
+		);
+	}
+
+	/** Read the data-status of the status indicator for the message whose text
+	 * contains `text`. Only the last message of a run of equal statuses renders
+	 * an indicator inside its bubble; with `forGroup`, read the indicator
+	 * governing that message — the first one at or after it in its group —
+	 * rather than only the one inside the message's own bubble. */
+	async messageStatusFor(
+		text: string,
+		forGroup?: boolean,
+	): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(
+				messagesSel: string,
+				groupSel: string,
+				statusSel: string,
+				t: string,
+				group: boolean,
+			) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (!wrapper.textContent?.includes(t)) continue;
+					let el: HTMLElement | null = null;
+					if (group) {
+						const groupEl = wrapper.closest(groupSel);
+						const els = groupEl
+							? Array.from(groupEl.querySelectorAll<HTMLElement>(statusSel))
+							: [];
+						el =
+							els.find(
+								e =>
+									wrapper.contains(e) ||
+									(wrapper.compareDocumentPosition(e) &
+										Node.DOCUMENT_POSITION_FOLLOWING) !==
+										0,
+							) ?? null;
+					} else {
+						el = wrapper.querySelector(statusSel) as HTMLElement | null;
+					}
+					const status = el?.dataset.status;
+					if (
+						status === 'sending' ||
+						status === 'mailbox' ||
+						status === 'delivered'
+					) {
+						return status;
+					}
+					return null;
+				}
+				return null;
+			},
+			this.messagesSelector,
+			tid('message-group'),
+			tid('message-status'),
+			text,
+			forGroup ?? false,
+		);
+	}
+
+	/** Wait until the message containing `text` reports one of `statuses`.
+	 * `forGroup` selects which indicator is read, as in `messageStatusFor`. */
+	async waitForMessageStatus(
+		text: string,
+		statuses: MessageStatus[],
+		timeout = SYNC_TIMEOUT,
+		forGroup?: boolean,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				const status = await this.messageStatusFor(text, forGroup);
+				return status !== null && statuses.includes(status);
+			},
+			{
+				timeout,
+				timeoutMsg: `Message "${text}" did not reach status ${statuses.join('/')}`,
+			},
+		);
 	}
 
 	/** The rendered message whose text contains `text`, as a `Message` helper
