@@ -216,6 +216,7 @@ describe('Offline UX', () => {
 				resumeMailbox();
 				mailboxSuspended = false;
 			}
+			await agent2.startApp();
 			await openOfflineSettings(agent1);
 			await agent1.offlinePage.setLocalMailboxEnabled(false);
 			await returnToChat(agent1, 'Bob');
@@ -263,12 +264,11 @@ describe('Offline UX', () => {
 					'split delivered',
 				),
 			).toBe('delivered');
-
-			await agent2.startApp();
 		});
 
 		it('merge back into one group once the statuses converge', async function () {
 			this.timeout(120_000);
+			await agent2.startApp();
 			resumeMailbox();
 			mailboxSuspended = false;
 
