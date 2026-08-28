@@ -1,5 +1,6 @@
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Removing group members', () => {
@@ -58,6 +59,7 @@ describe('Removing group members', () => {
 		const systemMessage = agent2.groupChatPage.messages.systemMessage(
 			'group_member_removed',
 		);
+		await systemMessage.waitForExist({ timeout: SYNC_TIMEOUT });
 		await expect(systemMessage).toBeExisting();
 		const expectedText = await agent2.tr('someoneRemovedYouFromTheGroup', {
 			name: 'Alice Test',

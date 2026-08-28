@@ -21,6 +21,8 @@ export class DirectChatPage extends TestHelper {
 	peerAvatar = this.el(tid('direct-chat-peer-avatar'));
 	nameNotVerifiedPill = this.el(tid('direct-chat-name-not-verified'));
 	acceptButton = this.el(tid('direct-chat-accept-btn'));
+	requestMessages = this.el(tid('direct-chat-request-messages'));
+	requestMessagesToggle = this.el(tid('direct-chat-request-messages-toggle'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
 	blockButton = this.el(tid('direct-chat-block-btn'));
 	reportButton = this.el(tid('direct-chat-report-btn'));
@@ -105,6 +107,12 @@ export class DirectChatPage extends TestHelper {
 
 	isContactRequestBannerVisible(): Promise<boolean> {
 		return this.acceptButton.isExisting();
+	}
+
+	/** Expand or collapse the hidden request messages (DOM click for the same
+	 * iOS Konsta-button reason as acceptContactRequest). */
+	async toggleRequestMessages(): Promise<void> {
+		await this.domClick(tid('direct-chat-request-messages-toggle'));
 	}
 
 	/** Accept an incoming contact request (open the confirm dialog, confirm).

@@ -6,8 +6,9 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-iroh = { workspace = true }
-iroh-blobs = { workspace = true }
+iroh = { workspace = true, optional = true }
+iroh-blobs = { workspace = true, optional = true }
+if-watch = { version = "3", features = ["tokio"] }
 futures = "0.3"
 log = "0.4"
 tokio = { version = "1", features = ["time", "sync", "rt", "macros"] }
@@ -21,5 +22,6 @@ serde_json = { workspace = true }
 tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread", "test-util"] }
 
 [features]
-default = []
-cbor = ["serde", "ciborium"]
+default = ["iroh"]
+iroh = ["dep:iroh", "dep:iroh-blobs"]
+cbor = ["dep:serde", "dep:ciborium"]

@@ -213,6 +213,45 @@ jobs:
         shell: bash
         run: pnpm dlx @sentry/cli@2 debug-files upload ${{ matrix.debug_files }}
 
+  release-mailbox-local-server-arm:
+    needs: create-release-draft
+    permissions:
+      contents: write
+    # ubuntu-22.04-arm builds against glibc 2.35, so the binary runs on
+    # Raspberry Pi OS Bookworm (glibc 2.36) and later.
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install Rust stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: build mailbox-local-server
+        run: cargo build --release -p mailbox-local-server
+
+      - name: Rename binary
+        run: cp target/release/mailbox-local-server local-message-server-aarch64-linux
+
+      - name: Upload mailbox-local-server binary to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: local-message-server-aarch64-linux
+          release_id: ${{ needs.create-release-draft.outputs.releaseId }}
+          draft: true
+
   release-docker-images:
     if: ${{ !contains(github.ref_name, '-staging') }}
     permissions:

@@ -1,7 +1,7 @@
 use sentry::protocol::{EnvelopeItem, Event, Exception, Level};
 use serde::Deserialize;
 
-use crate::state::Sentry;
+use crate::state::{SendOutcome, Sentry};
 use crate::{attachment, envelope};
 
 /// The thrown value, split into the parts Sentry needs.
@@ -17,7 +17,7 @@ pub(crate) async fn send_error_report(
     state: Sentry<'_>,
     message: String,
     error: Option<ReportedError>,
-) -> Result<(), String> {
+) -> Result<SendOutcome, String> {
     let mut event = Event {
         message: Some(message),
         level: Level::Error,
@@ -37,13 +37,14 @@ pub(crate) async fn send_error_report(
     }
 
     let logs = state.pending.snapshot();
+    // Dropped by `before_send`, which means redaction failed: never report that
+    // as sent.
     let Some(mut envelope) = envelope::build_envelope(&state, event, logs) else {
-        return Ok(());
+        return Err("the report could not be prepared".into());
     };
     if let Some(log_file) = attachment::build_logs_attachment(&state.redact, &state.logs_dir).await
     {
         envelope.add_item(EnvelopeItem::Attachment(log_file));
     }
-    state.transport.send(envelope);
-    Ok(())
+    state.send(envelope).await.map_err(|err| err.to_string())
 }

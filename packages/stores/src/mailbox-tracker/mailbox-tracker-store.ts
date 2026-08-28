@@ -11,7 +11,7 @@ import {
 // Flip the UI to "disconnected" after this many consecutive errors. Intentionally
 // lower than the backend's degraded_threshold (5) so the UI reacts faster than
 // the connection state alone would suggest.
-const UI_DISCONNECTED_ERROR_THRESHOLD = 2;
+const UI_DISCONNECTED_ERROR_THRESHOLD = 3;
 
 export interface IMailboxTrackerStore {
 	activeMailboxIds(): ReactivePromise<MailboxId[]>;
