@@ -2022,6 +2022,7 @@ dependencies = [
  "netdev 0.43.0",
  "objc2 0.6.4",
  "openssl-sys",
+ "opus-transcode",
  "oslog",
  "p2panda",
  "p2panda-auth",

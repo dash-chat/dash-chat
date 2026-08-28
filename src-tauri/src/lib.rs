@@ -180,6 +180,7 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::media::save_blob_to_cache,
+            commands::voice::transcode_voice_message,
             #[cfg(feature = "e2e-tests")]
             commands::testing::close_iroh_endpoint,
         ])

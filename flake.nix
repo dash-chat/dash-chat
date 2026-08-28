@@ -85,6 +85,7 @@
             # libatk-1.0
             at-spi2-core
             pkgsPnpm.alsa-lib
+            libopus
           ];
           # GStreamer so WebKitGTK can play voice-note audio: WAV from desktop
           # recorders (base/good) and AAC/M4A from mobile ones (bad).
@@ -135,13 +136,17 @@
           ]
           ++ lib.optionals pkgs.stdenv.isLinux [
             pkgs.mold
+            pkgs.cmake
             pkgsPnpm.alsa-lib
           ];
         in
         rec {
           devShells.default = pkgs.mkShell {
             packages = [ rust ] ++ packages;
-            buildInputs = lib.optionals pkgs.stdenv.isLinux [ pkgsPnpm.alsa-lib ];
+            buildInputs = lib.optionals pkgs.stdenv.isLinux [
+              pkgsPnpm.alsa-lib
+              pkgs.libopus
+            ];
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
             shellHook = hostBuildEnvHook + voiceHostEnvHook;
           };
@@ -149,7 +154,10 @@
           # Opt-in faster dev builds: nightly rustc with the Cranelift codegen backend
           devShells.cranelift = pkgs.mkShell {
             packages = [ rustCranelift ] ++ packages;
-            buildInputs = lib.optionals pkgs.stdenv.isLinux [ pkgsPnpm.alsa-lib ];
+            buildInputs = lib.optionals pkgs.stdenv.isLinux [
+              pkgsPnpm.alsa-lib
+              pkgs.libopus
+            ];
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
             shellHook =
               hostBuildEnvHook
