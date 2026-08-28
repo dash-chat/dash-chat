@@ -194,7 +194,6 @@
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
 	setContext('mailbox-tracker-store', mailboxTrackerStore);
-	setContext('message-acks-store', messageAckStore);
 
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page

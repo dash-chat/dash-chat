@@ -33,6 +33,7 @@
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
+		endsDeliveryStatusRun,
 		messagePosition,
 		scrollToMessage,
 	} from '$lib/components/messages/message-helpers';
@@ -251,6 +252,10 @@
 														{position}
 														{myDeviceId}
 														{chatId}
+														showDeliveryStatus={endsDeliveryStatusRun(
+															messageGroup,
+															i,
+														)}
 														searchQuery=""
 														onEdit={() => composer?.editMessage(message)}
 														onReply={() =>

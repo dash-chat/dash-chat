@@ -73,9 +73,10 @@ export class Messages extends TestHelper {
 	}
 
 	/** Read the data-status of the status indicator for the message whose text
-	 * contains `text`. With `forGroup`, read the indicator of the group that
-	 * message belongs to — only the last message of a group renders one — rather
-	 * than the one inside the message's own bubble. */
+	 * contains `text`. Only the last message of a run of equal statuses renders
+	 * an indicator inside its bubble; with `forGroup`, read the indicator
+	 * governing that message — the first one at or after it in its group —
+	 * rather than only the one inside the message's own bubble. */
 	async messageStatusFor(
 		text: string,
 		forGroup?: boolean,
@@ -93,8 +94,23 @@ export class Messages extends TestHelper {
 				);
 				for (const wrapper of wrappers) {
 					if (!wrapper.textContent?.includes(t)) continue;
-					const scope = group ? wrapper.closest(groupSel) : wrapper;
-					const el = scope?.querySelector(statusSel) as HTMLElement | null;
+					let el: HTMLElement | null = null;
+					if (group) {
+						const groupEl = wrapper.closest(groupSel);
+						const els = groupEl
+							? Array.from(groupEl.querySelectorAll<HTMLElement>(statusSel))
+							: [];
+						el =
+							els.find(
+								e =>
+									wrapper.contains(e) ||
+									(wrapper.compareDocumentPosition(e) &
+										Node.DOCUMENT_POSITION_FOLLOWING) !==
+										0,
+							) ?? null;
+					} else {
+						el = wrapper.querySelector(statusSel) as HTMLElement | null;
+					}
 					const status = el?.dataset.status;
 					if (
 						status === 'sending' ||

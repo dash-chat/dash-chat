@@ -58,6 +58,7 @@
 	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import {
+		endsDeliveryStatusRun,
 		messagePosition,
 		scrollToMessage,
 		withoutMessages,
@@ -533,6 +534,10 @@
 																	{position}
 																	{myDeviceId}
 																	{chatId}
+																	showDeliveryStatus={endsDeliveryStatusRun(
+																		messageGroup,
+																		i,
+																	)}
 																	searchQuery={searchMode ? searchQuery : ''}
 																	onEdit={() => composer?.editMessage(message)}
 																	onReply={() =>

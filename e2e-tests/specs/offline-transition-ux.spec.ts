@@ -210,9 +210,9 @@ describe('Offline UX', () => {
 	});
 
 	// A burst of messages whose delivery statuses differ must not collapse into
-	// one visual group with a single indicator on the last message: the group
-	// splits at every status boundary so each status stays visible, and merges
-	// back once the statuses converge again.
+	// one visual group with a single indicator on the last message: the last
+	// message of every run of equal statuses renders an indicator, and the
+	// extra indicators disappear once the statuses converge again.
 	describe('messages with different delivery statuses', () => {
 		before(async function () {
 			this.timeout(60_000);
@@ -233,7 +233,7 @@ describe('Offline UX', () => {
 			await returnToChat(agent1, 'Bob');
 		});
 
-		it('split their group so every status stays visible', async function () {
+		it('show one indicator per status so every status stays visible', async function () {
 			this.timeout(120_000);
 			await agent1.directChatPage.composer.sendMessage('split delivered');
 			await agent1.directChatPage.messages.waitForMessageStatus(
@@ -265,8 +265,8 @@ describe('Offline UX', () => {
 			);
 
 			// The sends above land within the one-minute grouping window, so
-			// without status-based splitting only the last message would carry
-			// an indicator. Every message must show its own status at once.
+			// only the last message of the group would carry an indicator if
+			// statuses were ignored. Every message must show its own status.
 			expect(
 				await agent1.directChatPage.messages.messageStatusFor('split mailbox'),
 			).toBe('mailbox');
@@ -277,7 +277,7 @@ describe('Offline UX', () => {
 			).toBe('delivered');
 		});
 
-		it('merge back into one group once the statuses converge', async function () {
+		it('show only the last indicator once the statuses converge', async function () {
 			this.timeout(60_000);
 			resumeMailbox();
 			mailboxSuspended = false;
@@ -290,8 +290,8 @@ describe('Offline UX', () => {
 				['delivered'],
 			);
 			// "split mailbox" and "split sending" were sent seconds apart, so
-			// they share the grouping window: once both are delivered the group
-			// merges again and only its last message keeps an indicator.
+			// they share a group: once both are delivered their runs merge and
+			// only the group's last message keeps an indicator.
 			await agent1.waitUntil(
 				async () =>
 					(await agent1.directChatPage.messages.messageStatusFor(

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { DeviceId, Hash } from '../src/p2panda/types';
-import type { MessageDeliveryStatus } from '../src/types';
 import {
 	EventWithProvenance,
 	MESSAGE_SET_TIMEFRAME_INTERVAL_MS,
@@ -24,7 +23,7 @@ function events(
 		hash: Hash;
 		author?: DeviceId;
 		offsetMs?: number;
-		deliveryStatus?: MessageDeliveryStatus;
+		type?: string;
 	}>,
 ): Record<Hash, EventWithProvenance<TestEvent>> {
 	const out: Record<Hash, EventWithProvenance<TestEvent>> = {};
@@ -34,8 +33,7 @@ function events(
 			event: { hash: spec.hash },
 			author: spec.author ?? ME,
 			timestamp: BASE_TS + (spec.offsetMs ?? i * 1000),
-			type: 'Message',
-			deliveryStatus: spec.deliveryStatus,
+			type: spec.type ?? 'Message',
 		};
 	}
 	return out;
@@ -50,68 +48,35 @@ function groupHashes(
 	);
 }
 
-describe('groupEventsInDays delivery-status splitting', () => {
-	it('keeps messages with the same delivery status in one group', () => {
-		const input = events([
-			{ hash: 'a', deliveryStatus: 'delivered' },
-			{ hash: 'b', deliveryStatus: 'delivered' },
-			{ hash: 'c', deliveryStatus: 'delivered' },
-		]);
+describe('groupEventsInDays', () => {
+	it('keeps consecutive events of one author in one group', () => {
+		const input = events([{ hash: 'a' }, { hash: 'b' }, { hash: 'c' }]);
 		assert.deepEqual(groupHashes(input), [['a', 'b', 'c']]);
 	});
 
-	it('splits a group wherever the delivery status changes', () => {
+	it('splits by author', () => {
 		const input = events([
-			{ hash: 'a', deliveryStatus: 'delivered' },
-			{ hash: 'b', deliveryStatus: 'delivered' },
-			{ hash: 'c', deliveryStatus: 'mailbox' },
-			{ hash: 'd', deliveryStatus: 'sending' },
-			{ hash: 'e', deliveryStatus: 'sending' },
-		]);
-		assert.deepEqual(groupHashes(input), [['a', 'b'], ['c'], ['d', 'e']]);
-	});
-
-	it('regroups once statuses converge again', () => {
-		const specs = [
-			{ hash: 'a', deliveryStatus: 'delivered' as const },
-			{ hash: 'b', deliveryStatus: 'mailbox' as const },
-			{ hash: 'c', deliveryStatus: 'sending' as const },
-		];
-		assert.deepEqual(groupHashes(events(specs)), [['a'], ['b'], ['c']]);
-
-		const converged = specs.map(spec => ({
-			...spec,
-			deliveryStatus: 'delivered' as const,
-		}));
-		assert.deepEqual(groupHashes(events(converged)), [['a', 'b', 'c']]);
-	});
-
-	it('keeps events without a delivery status in one group', () => {
-		const input = events([
-			{ hash: 'a', author: PEER },
+			{ hash: 'a' },
 			{ hash: 'b', author: PEER },
-		]);
-		assert.deepEqual(groupHashes(input), [['a', 'b']]);
-	});
-
-	it('still splits by author when statuses match', () => {
-		const input = events([
-			{ hash: 'a', deliveryStatus: 'delivered' },
-			{ hash: 'b', author: PEER },
-			{ hash: 'c', deliveryStatus: 'delivered' },
+			{ hash: 'c' },
 		]);
 		assert.deepEqual(groupHashes(input), [['a'], ['b'], ['c']]);
 	});
 
-	it('still splits by timeframe when statuses match', () => {
+	it('splits by timeframe', () => {
 		const input = events([
-			{ hash: 'a', offsetMs: 0, deliveryStatus: 'delivered' },
-			{
-				hash: 'b',
-				offsetMs: MESSAGE_SET_TIMEFRAME_INTERVAL_MS + 1,
-				deliveryStatus: 'delivered',
-			},
+			{ hash: 'a', offsetMs: 0 },
+			{ hash: 'b', offsetMs: MESSAGE_SET_TIMEFRAME_INTERVAL_MS + 1 },
 		]);
 		assert.deepEqual(groupHashes(input), [['a'], ['b']]);
+	});
+
+	it('splits by event type', () => {
+		const input = events([
+			{ hash: 'a' },
+			{ hash: 'b', type: 'GroupControl' },
+			{ hash: 'c' },
+		]);
+		assert.deepEqual(groupHashes(input), [['a'], ['b'], ['c']]);
 	});
 });

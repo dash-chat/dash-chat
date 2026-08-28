@@ -44,7 +44,7 @@ export class GroupChatStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		protected tombstoneStore: TombstoneStore,
-		protected messageAckStore: MessageAckStore,
+		messageAckStore: MessageAckStore,
 		public client: IGroupChatClient,
 		public chatId: ChatId,
 		messagesClient: IMessagesClient,
@@ -53,6 +53,7 @@ export class GroupChatStore {
 			logsStore,
 			contactsStore,
 			tombstoneStore,
+			messageAckStore,
 			chatId,
 			messagesClient,
 			reactive(async () => !(await this.me()).member),
@@ -122,7 +123,6 @@ export class GroupChatStore {
 	groupedEvents = reactive(async () => {
 		const messages = await this.messages.messages();
 		const controlEvents = await this.controlEvents();
-		const myDeviceId = await this.contactsStore.myDeviceId();
 
 		const eventsWithProvenance: Record<
 			Hash,
@@ -137,14 +137,6 @@ export class GroupChatStore {
 				author: message.author,
 				timestamp: message.timestamp,
 				type: 'Message',
-				deliveryStatus:
-					message.author === myDeviceId
-						? await this.messageAckStore.deliveryStatus(
-								this.chatId,
-								message.author,
-								message.seqNum,
-							)
-						: undefined,
 			};
 		}
 

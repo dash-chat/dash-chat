@@ -28,7 +28,7 @@ export class DirectChatStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		protected tombstoneStore: TombstoneStore,
-		protected messageAckStore: MessageAckStore,
+		messageAckStore: MessageAckStore,
 		public chatId: ChatId,
 		messagesClient: IMessagesClient,
 	) {
@@ -36,6 +36,7 @@ export class DirectChatStore {
 			logsStore,
 			contactsStore,
 			tombstoneStore,
+			messageAckStore,
 			chatId,
 			messagesClient,
 			reactive(async () => await this.isBlocked()),
@@ -99,7 +100,6 @@ export class DirectChatStore {
 				? {}
 				: await this.contactsStore.blockHistory(agentId);
 		const peerName = await this.peerName();
-		const myDeviceId = await this.contactsStore.myDeviceId();
 
 		const eventsWithProvenance: Record<
 			Hash,
@@ -114,14 +114,6 @@ export class DirectChatStore {
 				author: message.author,
 				timestamp: message.timestamp,
 				type: 'Message',
-				deliveryStatus:
-					message.author === myDeviceId
-						? await this.messageAckStore.deliveryStatus(
-								this.chatId,
-								message.author,
-								message.seqNum,
-							)
-						: undefined,
 			};
 		}
 

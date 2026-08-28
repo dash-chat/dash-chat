@@ -1,5 +1,4 @@
 import type { DeviceId, Hash } from '../p2panda/types';
-import type { MessageDeliveryStatus } from '../types';
 
 export const MESSAGE_SET_TIMEFRAME_INTERVAL_MS = 60 * 1000; // 1 minute
 
@@ -13,10 +12,6 @@ export interface EventWithProvenance<T> {
 	timestamp: number;
 	author: DeviceId;
 	type: string;
-	/** Set on the viewer's own messages. Events whose statuses differ are kept
-	 * in separate groups so every status transition shows its indicator, and
-	 * regroup once their statuses converge again. */
-	deliveryStatus?: MessageDeliveryStatus;
 }
 
 export type EventGroup<T> = Array<[Hash, T]>;
@@ -66,8 +61,6 @@ export function groupEventsInDays<T>(
 				event.timestamp - lastEvent.timestamp <
 				MESSAGE_SET_TIMEFRAME_INTERVAL_MS;
 			const sameType = lastEvent.type === event.type;
-			const sameDeliveryStatus =
-				lastEvent.deliveryStatus === event.deliveryStatus;
 
 			const date = new Date(event.timestamp);
 			date.setHours(0);
@@ -76,7 +69,7 @@ export function groupEventsInDays<T>(
 			date.setMilliseconds(0);
 
 			if (date.valueOf() === lastEventGroupsInDay.day.valueOf()) {
-				if (sameProvenance && sameTimeframe && sameType && sameDeliveryStatus) {
+				if (sameProvenance && sameTimeframe && sameType) {
 					lastEventGroup.push([eventHash, event]);
 				} else {
 					lastEventGroupsInDay.eventsGroups.push([[eventHash, event]]);

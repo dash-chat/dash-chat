@@ -1,13 +1,6 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
-	import {
-		type ChatId,
-		type DeviceId,
-		type MessageAckStore,
-		type MessageDeliveryStatus,
-	} from 'dash-chat-stores';
+	import { type MessageDeliveryStatus } from 'dash-chat-stores';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import deliveredSvg from '$lib/assets/message-status/delivered.svg?raw';
@@ -27,33 +20,20 @@
 	};
 
 	interface Props {
-		chatId: ChatId;
-		author: DeviceId;
-		seq: number;
+		status: MessageDeliveryStatus;
 	}
 
 	const props: Props = $props();
-
-	const messageAckStore: MessageAckStore = getContext('message-acks-store');
-
-	const status = useReactivePromise(
-		messageAckStore.deliveryStatus,
-		props.chatId,
-		props.author,
-		props.seq,
-	);
 </script>
 
-{#await $status then status}
-	<div
-		data-testid="message-status"
-		data-status={status}
-		class="message-status"
-		aria-label={statusLabels[status]()}
-	>
-		{@html icons[status]}
-	</div>
-{/await}
+<div
+	data-testid="message-status"
+	data-status={props.status}
+	class="message-status"
+	aria-label={statusLabels[props.status]()}
+>
+	{@html icons[props.status]}
+</div>
 
 <style>
 	.message-status {
