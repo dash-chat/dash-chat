@@ -131,3 +131,18 @@ fn transcodes_adts_aac_source() {
         result.duration_ms,
     );
 }
+
+// What AVAudioRecorder actually writes on iOS: MPEG-2-flavored ADTS (0xFFF9
+// sync). Generated with CoreAudio itself: `afconvert -f adts -d aac` from a
+// 1s 440Hz mono 44.1kHz tone.
+#[test]
+fn transcodes_coreaudio_adts_aac_source() {
+    let bytes = include_bytes!("fixtures/tone-coreaudio.aac");
+    let result = transcode_to_opus(bytes).unwrap();
+    assert!(result.opus.starts_with(b"OggS"), "not an Ogg stream");
+    assert!(
+        (800..1250).contains(&result.duration_ms),
+        "coreaudio adts duration {}ms not ~1000ms",
+        result.duration_ms,
+    );
+}
