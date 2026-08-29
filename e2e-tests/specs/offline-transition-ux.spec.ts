@@ -6,7 +6,7 @@
  * toggling the per-agent local mailbox server underneath the running agents.
  *
  * Visible states under test:
- *   - Message status: "sending" → "mailbox" → "delivered"
+ *   - Message status: "unsent" → "sending" → "mailbox" → "delivered"
  *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
@@ -109,15 +109,21 @@ describe('Offline UX', () => {
 			await returnToChat(agent2, 'Alice');
 		});
 
-		it('new messages stay on the sending spinner', async () => {
+		it('new messages start as unsent, then downgrade to sending', async () => {
 			await agent1.directChatPage.composer.sendMessage('offline hello');
+			// The unsent spinner shows for UNSENT_WINDOW_MS (8s) before the
+			// downgrade, so it must be visible right after the send.
 			await agent1.waitUntil(
 				async () => {
 					const status = await agent1.directChatPage.lastMessageStatus();
-					return status === 'sending';
+					return status === 'unsent';
 				},
 				{ timeout: 5_000 },
 			);
+			await agent1.waitUntil(async () => {
+				const status = await agent1.directChatPage.lastMessageStatus();
+				return status === 'sending';
+			});
 			await agent1.pause(5_000);
 			expect(await agent1.directChatPage.lastMessageStatus()).toBe('sending');
 		});

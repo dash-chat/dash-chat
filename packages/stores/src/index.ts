@@ -31,6 +31,7 @@ export * from './settings/settings-store.js';
 export * from './tombstones/tombstone-store.js';
 export * from './tombstones/tombstone-client.js';
 
+export * from './message-acks/display-delivery-status.js';
 export * from './message-acks/message-ack-store.js';
 export * from './message-acks/message-ack-client.js';
 

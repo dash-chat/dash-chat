@@ -109,7 +109,10 @@
 			<MessageTimestamp timestamp={message.timestamp} />
 		{/if}
 		{#if showDeliveryStatus && message.deliveryStatus}
-			<MessageStatusIndicator status={message.deliveryStatus} />
+			<MessageStatusIndicator
+				status={message.deliveryStatus}
+				timestamp={message.timestamp}
+			/>
 		{/if}
 	</span>
 {/snippet}
