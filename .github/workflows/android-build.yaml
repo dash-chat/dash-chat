@@ -46,5 +46,15 @@ jobs:
           cache-on-failure: true
           shared-key: android
 
+      # audiopus_sys configures its vendored libopus in a build dir the cache
+      # restores. When the NDK's nix store path differs from the cached
+      # CMAKE_C_COMPILER, CMake deletes its cache and re-runs configure
+      # internally — and that re-run drops CMAKE_POLICY_VERSION_MINIMUM, so
+      # opus' `cmake_minimum_required(VERSION 3.1)` becomes a hard error under
+      # CMake 4. Neither the env var nor a -D flag survives it; only a fresh
+      # build dir does.
+      - name: Drop cached audiopus_sys CMake build dirs
+        run: rm -rf target/*/*/build/audiopus_sys-*
+
       - name: Install and build (debug, no bundle)
         run: pnpm install --reporter=append-only && pnpm tauri android build --debug --apk --target aarch64
