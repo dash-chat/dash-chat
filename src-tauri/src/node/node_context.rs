@@ -134,7 +134,11 @@ impl NodeContext {
     pub fn node_config(&self) -> dashchat_node::NodeConfig {
         let mut config = if cfg!(feature = "e2e-tests") {
             let mut config = dashchat_node::NodeConfig::default();
-            config.mdns_mode = p2panda::network::MdnsDiscoveryMode::Disabled;
+            // Distinct network id so e2e agents with mDNS discovery active can't
+            // cross-talk with production/dev instances on the same LAN: every
+            // ALPN is hashed with the network id, so foreign connections are
+            // rejected at protocol negotiation.
+            config.network_id = *b"dashchat end-to-end test network";
             config.message_ack_debounce = std::time::Duration::from_millis(300);
             config
         } else {
