@@ -1,7 +1,7 @@
 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M3 3.10102C4.27052 1.80447 6.04131 1 8 1C11.866 1 15 4.13401 15 8C15 11.866 11.866 15 8 15C6.04131 15 4.27052 14.1955 3 12.899" stroke="black" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="0.4 3.2 0.4 3.2"/>
-<path d="M3 12.899C1.76281 11.6365 1 9.90736 1 8.00006C1 6.09275 1.76281 4.36361 3 3.10107" stroke="black" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="0.4 3.2 0.4 3.2"/>
-<line x1="4.6" y1="8.4" x2="10.4" y2="8.4" stroke="black" stroke-width="1.2" stroke-linecap="round"/>
-<line x1="8.10132" y1="11.586" x2="11.2528" y2="8.43457" stroke="black" stroke-width="1.2" stroke-linecap="round"/>
-<line x1="7.94985" y1="5.10107" x2="11.1013" y2="8.25255" stroke="black" stroke-width="1.2" stroke-linecap="round"/>
+<path d="M3 3.10102C4.27052 1.80447 6.04131 1 8 1C11.866 1 15 4.13401 15 8C15 11.866 11.866 15 8 15C6.04131 15 4.27052 14.1955 3 12.899" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="0.4 3.2 0.4 3.2"/>
+<path d="M3 12.899C1.76281 11.6365 1 9.90736 1 8.00006C1 6.09275 1.76281 4.36361 3 3.10107" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="0.4 3.2 0.4 3.2"/>
+<line x1="4.6" y1="8.4" x2="10.4" y2="8.4" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+<line x1="8.10132" y1="11.586" x2="11.2528" y2="8.43457" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+<line x1="7.94985" y1="5.10107" x2="11.1013" y2="8.25255" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
 </svg>
