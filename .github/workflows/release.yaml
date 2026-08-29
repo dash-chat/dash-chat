@@ -142,6 +142,13 @@ jobs:
         with:
           cache-on-failure: true
 
+      # See android-build.yaml: a restored audiopus_sys CMake build dir whose
+      # CMAKE_C_COMPILER no longer matches the toolchain makes CMake re-run
+      # configure without CMAKE_POLICY_VERSION_MINIMUM, which vendored libopus
+      # cannot survive under CMake 4.
+      - name: Drop cached audiopus_sys CMake build dirs
+        run: rm -rf target/*/*/build/audiopus_sys-*
+
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
