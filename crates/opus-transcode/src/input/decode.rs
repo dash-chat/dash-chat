@@ -14,7 +14,9 @@ pub(crate) fn decode_to_mono_pcm(input: &[u8]) -> Result<(Vec<i16>, u32)> {
     use symphonia::core::meta::MetadataOptions;
     use symphonia::core::probe::Hint;
 
-    let mss = MediaSourceStream::new(Box::new(Cursor::new(input.to_vec())), Default::default());
+    let mut input = input.to_vec();
+    normalize_adts_id_bits(&mut input);
+    let mss = MediaSourceStream::new(Box::new(Cursor::new(input)), Default::default());
     let probed = symphonia::default::get_probe()
         .format(
             &Hint::new(),
@@ -44,6 +46,26 @@ pub(crate) fn decode_to_mono_pcm(input: &[u8]) -> Result<(Vec<i16>, u32)> {
     }
     anyhow::ensure!(!pcm.is_empty() && rate > 0, "input contained no audio");
     Ok((pcm, rate))
+}
+
+/// iOS CoreAudio writes MPEG-2-flavored ADTS (sync `0xFFF9`), but Symphonia's
+/// ADTS reader only syncs on the MPEG-4 header (`0xFFF1`), so clear the ID bit
+/// on every frame header. AAC-LC frames are identical in both flavors.
+fn normalize_adts_id_bits(input: &mut [u8]) {
+    let mut i = 0;
+    while i + 7 <= input.len() {
+        if input[i] != 0xFF || input[i + 1] & 0xF6 != 0xF0 {
+            return;
+        }
+        input[i + 1] &= 0xF7;
+        let frame_len = ((input[i + 3] as usize & 0x03) << 11)
+            | ((input[i + 4] as usize) << 3)
+            | (input[i + 5] as usize >> 5);
+        if frame_len < 7 {
+            return;
+        }
+        i += frame_len;
+    }
 }
 
 /// Average `channels` interleaved samples into one mono sample per frame.
