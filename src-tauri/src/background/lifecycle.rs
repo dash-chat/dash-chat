@@ -23,4 +23,27 @@ pub(crate) async fn on_resume(app: AppHandle<Wry>) {
             log::error!("[android-lifecycle] stopService failed: {e:?}");
         }
     }
+    wakeup_cloud_mailbox(&app).await;
+}
+
+/// Force-poll the cloud mailbox on foreground.
+///
+/// Android denies network access to backgrounded apps, so the polls that ran
+/// while we were away failed and left the cloud mailbox backed off with a high
+/// consecutive-error count — which the UI renders as disconnected until the next
+/// scheduled poll, up to `stopped_interval` later. Waking it clears the backoff
+/// and re-measures immediately, so what the user sees on resume reflects the
+/// connection they have now rather than the one they didn't have in the
+/// background.
+async fn wakeup_cloud_mailbox(app: &AppHandle<Wry>) {
+    let Some(app_node_manager) = app.try_state::<crate::node::AppNodeManager>() else {
+        return;
+    };
+    let Ok(node) = app_node_manager.get().await else {
+        return;
+    };
+    match crate::mailbox::cloud_mailbox_id(&node).await {
+        Some(cloud_id) => node.mailboxes.wakeup(cloud_id),
+        None => node.mailboxes.trigger_sync(),
+    }
 }

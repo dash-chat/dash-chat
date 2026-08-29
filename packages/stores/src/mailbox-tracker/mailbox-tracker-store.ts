@@ -59,6 +59,13 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		subscribeChannel<MailboxId | null>('mailbox_subscribe_cloud_id'),
 	);
 
+	// Registration itself proves reachability: the cloud mailbox is only registered
+	// after a successful `/health` fetch, mDNS-discovered local ones after a port
+	// probe, and local ones are unregistered once their announcement goes away. So
+	// presence in `activeMailboxIds` plus a low error count is enough. Requiring a
+	// recorded success on top would report a freshly rebuilt node as disconnected
+	// until its first poll — iOS tears the node down on background and rebuilds it
+	// on foreground, so that is every single foreground.
 	connectionStatus = reactive(async () => {
 		const activeMailboxIds = await this.activeMailboxIds();
 
@@ -74,7 +81,6 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		const connectedToCloudMailboxServer =
 			cloudMailboxIndex >= 0 &&
 			mailboxesConnectionStates[cloudMailboxIndex].status === 'Active' &&
-			!!mailboxesConnectionStates[cloudMailboxIndex].last_success_at &&
 			mailboxesConnectionStates[cloudMailboxIndex].consecutive_errors <
 				UI_DISCONNECTED_ERROR_THRESHOLD;
 
@@ -86,7 +92,6 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			const connectionState = mailboxesConnectionStates[i];
 			if (
 				connectionState.status === 'Active' &&
-				!!connectionState.last_success_at &&
 				connectionState.consecutive_errors < UI_DISCONNECTED_ERROR_THRESHOLD
 			)
 				connectedLocalMailboxCount++;
