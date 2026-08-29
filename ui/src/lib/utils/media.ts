@@ -199,10 +199,34 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 async function imageDimensions(
 	file: File,
 ): Promise<{ width: number; height: number }> {
-	const bitmap = await createImageBitmap(file);
-	const dimensions = { width: bitmap.width, height: bitmap.height };
-	bitmap.close();
-	return dimensions;
+	try {
+		const bitmap = await createImageBitmap(file);
+		const dimensions = { width: bitmap.width, height: bitmap.height };
+		bitmap.close();
+		return dimensions;
+	} catch {
+		// The Android webview's createImageBitmap rejects encodings the <img>
+		// decoder reads fine — greyscale+alpha PNGs, for one. An image neither
+		// can decode is one the recipient could not render either, so let that
+		// throw rather than send a photo with no measurable size.
+		return await imgDimensions(file);
+	}
+}
+
+function imgDimensions(file: File): Promise<{ width: number; height: number }> {
+	const url = URL.createObjectURL(file);
+	return new Promise((resolve, reject) => {
+		const img = new Image();
+		img.onload = () => {
+			URL.revokeObjectURL(url);
+			resolve({ width: img.naturalWidth, height: img.naturalHeight });
+		};
+		img.onerror = () => {
+			URL.revokeObjectURL(url);
+			reject(new Error(`could not decode ${file.name}`));
+		};
+		img.src = url;
+	});
 }
 
 function totalMediaBytes(media: OutgoingMedia): number {

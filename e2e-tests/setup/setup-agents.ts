@@ -267,6 +267,15 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		);
 	};
 	agent.restart = async () => {
+		// On mobile a new session fast-resets the app (`pm clear` on Android),
+		// so the app would come back with no profile instead of re-hydrating
+		// from the data dir; stop and start it inside this session instead.
+		if (agent.platform !== 'desktop') {
+			await agent.stopApp();
+			await agent.startApp();
+			await agent.setWideScreen(false);
+			return;
+		}
 		await b.reloadSession();
 		await waitForTestUtils(b);
 		attachPages(agent, b);

@@ -44,7 +44,8 @@ describe('Media attachments', () => {
 		}
 		await composer.cameraButton.waitForDisplayed();
 		await composer.type('hiding the camera');
-		await composer.cameraButton.waitForExist({ reverse: true });
+		// The composer collapses the button's width instead of unmounting it.
+		await composer.cameraButton.waitForDisplayed({ reverse: true });
 		await composer.type('');
 		await composer.cameraButton.waitForDisplayed();
 	});
