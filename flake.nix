@@ -184,6 +184,12 @@
             # The e2e harness consumes tools and artifacts from PATH and
             # conventional paths; this hook provides the chromedrivers dir.
             shellHook = hostBuildEnvHook + ''
+              # The nix shell exports PKG_CONFIG, which the pkg-config crate
+              # takes as "prepared for cross-compilation" — build scripts like
+              # audiopus_sys would then link host x86_64 libs into the Android
+              # targets. "0" is an explicit veto for cross probes.
+              export PKG_CONFIG_ALLOW_CROSS=0
+
               mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.appium"
               ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.appium/chromedrivers"
             '';
