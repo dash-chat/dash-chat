@@ -45,8 +45,10 @@
 		<Waveform {peaks} {player} />
 	</div>
 
-	<div class="flex items-center justify-between text-xs opacity-70">
-		<span class="w-9 shrink-0 text-center">{formatDuration(labelMs)}</span>
+	<div class="flex items-center justify-between text-xs">
+		<span class="w-9 shrink-0 text-center opacity-70"
+			>{formatDuration(labelMs)}</span
+		>
 		{#if metadata}
 			<span class="flex items-center gap-1 whitespace-nowrap select-none">
 				{@render metadata()}

@@ -6,7 +6,6 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { isMobile } from '$lib/utils/environment';
 	import IconButton from '$lib/components/IconButton.svelte';
-	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
 	import { type VoiceRecorder, warmUpRecorder } from './voice-recorder.svelte';
 
 	interface Props {
@@ -23,12 +22,15 @@
 	onDestroy(() => void voice.cancel());
 </script>
 
+<!-- `visible` re-shows the button when the composer hides the input row
+     underneath the recording bar. While locked, the send button renders in the
+     composer's trailing slot instead (where the attach button sits). -->
 {#if voice.view === 'locked'}
-	<div class="relative z-30 shrink-0">
-		<SendButton onSend={() => voice.stopAndSend()} testid="voice-send" />
-	</div>
+	<!-- Holds the mic's place inside the pill: without a 42px child the hidden
+	     input pill collapses by 2px, and the locked bar sizes to it. -->
+	<div class="h-[42px] w-[42px] shrink-0"></div>
 {:else if voice.view !== 'desktop'}
-	<div class="relative shrink-0 {hold ? 'z-30' : ''}">
+	<div class="visible relative shrink-0 {hold ? 'z-30' : ''}">
 		{#if hold}
 			<!-- left-1/2 + translate(-50%) is symmetric centering, so RTL doesn't apply. -->
 			<div

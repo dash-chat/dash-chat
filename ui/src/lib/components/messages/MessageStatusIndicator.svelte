@@ -36,10 +36,6 @@
 </div>
 
 <style>
-	.message-status {
-		opacity: 0.7;
-	}
-
 	.message-status :global(svg) {
 		display: block;
 		width: auto;

@@ -18,7 +18,9 @@
 		MAX_MESSAGE_BYTES,
 	} from '$lib/utils/media';
 	import VoiceRecordButton from '$lib/components/messages/composer/voice/VoiceRecordButton.svelte';
-	import VoiceRecordingBar from '$lib/components/messages/composer/voice/VoiceRecordingBar.svelte';
+	import VoiceRecordingBar, {
+		morphMs,
+	} from '$lib/components/messages/composer/voice/VoiceRecordingBar.svelte';
 	import { VoiceRecorder } from '$lib/components/messages/composer/voice/voice-recorder.svelte';
 	import {
 		type Hash,
@@ -267,6 +269,11 @@
 	});
 
 	const showVoiceButton = $derived(!editing && !hasContent);
+	// The hold/locked bars are translucent on iOS and leave the trailing slot
+	// open, so the input row must not show through while they're up.
+	const recordingCoversInput = $derived(
+		voice.view === 'hold' || voice.view === 'locked',
+	);
 
 	function openEmojiPicker() {
 		hideKeyboard();
@@ -332,85 +339,98 @@
 			<StagedAttachments bind:media onFiles={stage} />
 		{/if}
 
-		<div class="m-2 row relative gap-2" style="align-items: flex-end;">
+		<div class="m-2 relative">
 			<VoiceRecordingBar {voice} />
 
-			{#if editing}
-				{#if !isWideScreen.value}
-					<DiscardEditButton onClick={cancelEdit} />
-				{/if}
-			{:else if isMobile && theme === 'ios'}
-				<StandaloneAttachButton
-					expanded={showMediaPanel}
-					onClick={toggleMediaPanel}
-				/>
-			{/if}
-			{#if !isMobile}
-				<EmojiButton onClick={openEmojiPicker} />
-			{/if}
-			<MessageInput
-				bind:this={messageInput}
-				bind:value
-				{placeholder}
-				onSend={send}
-				onpaste={onPaste}
-				onfocus={() => (showMediaPanel = false)}
-				before={isMobile && !isIos ? emojiButton : undefined}
-				banner={editing !== null ? editingBanner : replyBanner}
+			<div
+				class="input-row row gap-2"
+				class:covered={recordingCoversInput}
+				style="align-items: flex-end; --uncover-delay: {morphMs(theme)}ms"
 			>
-				{#snippet after()}
-					{#if !editing && isMobile}
-						{#if hasContent && theme === 'material'}
-							<InlineAttachButton
-								expanded={showMediaPanel}
-								onClick={toggleMediaPanel}
-							/>
-						{/if}
-						<div
-							class="flex shrink-0 items-center overflow-hidden transition-all duration-200 ease-out {hasContent
-								? 'me-0 w-0 opacity-0'
-								: 'me-1 w-10 opacity-100'}"
-							aria-hidden={hasContent}
-						>
-							<CameraButton onClick={captureFromCamera} />
-						</div>
+				{#if editing}
+					{#if !isWideScreen.value}
+						<DiscardEditButton onClick={cancelEdit} />
 					{/if}
-					{#if isMobile && showVoiceButton}
-						<VoiceRecordButton {voice} />
-					{/if}
-				{/snippet}
-			</MessageInput>
-
-			{#if editing}
-				{#if isWideScreen.value}
-					<DiscardEditButton onClick={cancelEdit} />
-				{/if}
-				<SendButton onSend={send} editing />
-			{:else if isMobile}
-				{#if isIos}
-					<div
-						class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
-							? 'ms-0 w-[42px] opacity-100'
-							: '-ms-2 w-0 opacity-0'}"
-						style="transform: scale({hasContent ? 1 : 0})"
-						aria-hidden={!hasContent}
-					>
-						<SendButton onSend={send} />
-					</div>
-				{:else if hasContent}
-					<SendButton onSend={send} />
-				{:else if theme !== 'ios'}
+				{:else if isMobile && theme === 'ios'}
 					<StandaloneAttachButton
 						expanded={showMediaPanel}
 						onClick={toggleMediaPanel}
 					/>
 				{/if}
-			{:else}
-				{#if showVoiceButton}
-					<VoiceRecordButton {voice} />
+				{#if !isMobile}
+					<EmojiButton onClick={openEmojiPicker} />
 				{/if}
-				<AttachMenuButton onFiles={stage} />
-			{/if}
+				<MessageInput
+					bind:this={messageInput}
+					bind:value
+					{placeholder}
+					onSend={send}
+					onpaste={onPaste}
+					onfocus={() => (showMediaPanel = false)}
+					before={isMobile && !isIos ? emojiButton : undefined}
+					banner={editing !== null ? editingBanner : replyBanner}
+				>
+					{#snippet after()}
+						{#if !editing && isMobile}
+							{#if hasContent && theme === 'material'}
+								<InlineAttachButton
+									expanded={showMediaPanel}
+									onClick={toggleMediaPanel}
+								/>
+							{/if}
+							<div
+								class="flex shrink-0 items-center overflow-hidden transition-all duration-200 ease-out {hasContent
+									? 'me-0 w-0 opacity-0'
+									: 'me-1 w-10 opacity-100'}"
+								aria-hidden={hasContent}
+							>
+								<CameraButton onClick={captureFromCamera} />
+							</div>
+						{/if}
+						{#if isMobile && showVoiceButton}
+							<VoiceRecordButton {voice} />
+						{/if}
+					{/snippet}
+				</MessageInput>
+
+				{#if editing}
+					{#if isWideScreen.value}
+						<DiscardEditButton onClick={cancelEdit} />
+					{/if}
+					<SendButton onSend={send} editing />
+				{:else if isMobile}
+					{#if voice.view === 'locked'}
+						<div class="visible shrink-0">
+							<SendButton
+								onSend={() => voice.stopAndSend()}
+								testid="voice-send"
+							/>
+						</div>
+					{:else if isIos}
+						<div
+							class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
+								? 'ms-0 w-[42px] opacity-100'
+								: '-ms-2 w-0 opacity-0'}"
+							style="transform: scale({hasContent ? 1 : 0})"
+							aria-hidden={!hasContent}
+						>
+							<SendButton onSend={send} />
+						</div>
+					{:else if hasContent}
+						<SendButton onSend={send} />
+					{:else if theme !== 'ios'}
+						<StandaloneAttachButton
+							expanded={showMediaPanel}
+							onClick={toggleMediaPanel}
+						/>
+					{/if}
+				{:else}
+					{#if showVoiceButton}
+						<VoiceRecordButton {voice} />
+					{/if}
+					<AttachMenuButton onFiles={stage} />
+				{/if}
+			</div>
 		</div>
 	</div>
 
@@ -468,6 +488,17 @@
 </Sheet>
 
 <style>
+	/* The recording bar morphs back into this row as it leaves, so the row waits
+	   for it to finish: two glass pills overlapping would double the border and
+	   shadow. Hiding stays immediate — only the reveal is delayed. */
+	.input-row {
+		transition: visibility 0s linear var(--uncover-delay, 0ms);
+	}
+	.input-row.covered {
+		visibility: hidden;
+		transition-delay: 0ms;
+	}
+
 	/* During keyboard glides the bar can lead the keyboard's edge by a few px;
 	   this skirt extends the bar's surface downward so the sliver between the
 	   bar and the keyboard paints page-surface instead of exposing the messages

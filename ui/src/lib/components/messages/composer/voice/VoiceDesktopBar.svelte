@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, Preloader } from 'konsta/svelte';
+	import { Button, Preloader, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { type FileHandle, SeekMode, open } from '@tauri-apps/plugin-fs';
 	import RecordingIndicator from './RecordingIndicator.svelte';
@@ -10,6 +10,8 @@
 	}
 
 	let { voice }: Props = $props();
+
+	const theme = $derived(useTheme());
 
 	const sending = $derived(voice.phase === 'encoding');
 
@@ -83,7 +85,10 @@
 
 <div class="flex w-full items-center gap-2" data-testid="voice-desktop-bar">
 	<div
-		class="flex min-h-[42px] min-w-0 flex-1 items-center gap-3 rounded-[22px] border border-[var(--k-hairline-color)] bg-white ps-3 pe-3 dark:bg-gray-800"
+		class="flex min-h-[42px] min-w-0 flex-1 items-center gap-3 rounded-[22px] ps-3 pe-3 {theme ===
+		'ios'
+			? 'border border-[var(--k-hairline-color)] bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+			: 'bg-incoming-surface'}"
 	>
 		<RecordingIndicator elapsedMs={voice.elapsedMs} micSize={18} />
 

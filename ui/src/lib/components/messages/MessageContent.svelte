@@ -172,8 +172,7 @@
 		background: linear-gradient(to top, rgba(0, 0, 0, 0.45), transparent);
 	}
 
-	.photo-meta :global(.quiet),
-	.photo-meta :global(.dark-quiet) {
+	.photo-meta :global(.quiet) {
 		color: rgba(255, 255, 255, 0.95);
 	}
 </style>

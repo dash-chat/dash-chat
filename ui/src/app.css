@@ -146,10 +146,6 @@ wa-icon[slot='end'] {
 	--sender-color-11: #98a8b8;
 }
 
-.dark-quiet {
-	color: var(--wa-color-neutral-80);
-}
-
 li > label {
 	width: 100%;
 }

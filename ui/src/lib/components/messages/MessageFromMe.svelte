@@ -101,15 +101,17 @@
 </script>
 
 {#snippet metadata()}
-	{#if editHistory.length > 0}
-		<EditedIndicator class="dark-quiet" />
-	{/if}
-	{#if isLast}
-		<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
-	{/if}
-	{#if showDeliveryStatus && message.deliveryStatus}
-		<MessageStatusIndicator status={message.deliveryStatus} />
-	{/if}
+	<span class="flex items-center gap-1 opacity-80">
+		{#if editHistory.length > 0}
+			<EditedIndicator />
+		{/if}
+		{#if isLast}
+			<MessageTimestamp timestamp={message.timestamp} />
+		{/if}
+		{#if showDeliveryStatus && message.deliveryStatus}
+			<MessageStatusIndicator status={message.deliveryStatus} />
+		{/if}
+	</span>
 {/snippet}
 
 {#snippet bubble()}
