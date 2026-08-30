@@ -1,17 +1,23 @@
 <script lang="ts">
-	import {
-		UNSENT_WINDOW_MS,
-		displayDeliveryStatus,
-		type MessageDeliveryStatus,
-		type MessageDisplayStatus,
-	} from 'dash-chat-stores';
+	import type { MessageDeliveryStatus } from 'dash-chat-stores';
 
 	import { m } from '$lib/paraglide/messages.js';
+	import { withinWindow } from '$lib/utils/time';
 
 	import deliveredSvg from '$lib/assets/message-status/delivered.svg?raw';
 	import mailboxSvg from '$lib/assets/message-status/mailbox.svg?raw';
 	import sendingSvg from '$lib/assets/message-status/sending.svg?raw';
 	import unsentSvg from '$lib/assets/message-status/unsent.svg?raw';
+
+	/** How long a not-yet-synced message shows as "unsent" (still trying) before
+	 * downgrading to "sending" (no connectivity). Covers the healthy worst case:
+	 * the peer-ack roundtrip is floored by the backend's 3s `message_ack_debounce`
+	 * (crates/dashchat-node/src/node.rs) plus sync latency both ways; the mailbox
+	 * path resolves well within 1s. If delivery is ever marked on direct peer
+	 * sync without the ack roundtrip, this can shrink to ~5s. */
+	const UNSENT_WINDOW_MS = 60_000;
+
+	type MessageDisplayStatus = MessageDeliveryStatus | 'unsent';
 
 	const icons: Record<MessageDisplayStatus, string> = {
 		delivered: deliveredSvg,
@@ -39,21 +45,11 @@
 	const unsentWindowMs =
 		import.meta.env.VITE_E2E === 'true' ? 3_000 : UNSENT_WINDOW_MS;
 
-	let now = $state(Date.now());
-	const displayStatus = $derived(
-		displayDeliveryStatus(props.status, props.timestamp, now, unsentWindowMs),
+	const displayStatus: MessageDisplayStatus = $derived(
+		props.status === 'sending' && withinWindow(props.timestamp, unsentWindowMs)
+			? 'unsent'
+			: props.status,
 	);
-
-	$effect(() => {
-		if (displayStatus !== 'unsent') return;
-		const timer = setTimeout(
-			() => {
-				now = Date.now();
-			},
-			props.timestamp + unsentWindowMs - now,
-		);
-		return () => clearTimeout(timer);
-	});
 </script>
 
 <div
