@@ -366,9 +366,6 @@ function installedApkMd5(udid: string): string | null {
 	}
 }
 
-/** Install the e2e APK on `udid` unless it already has this exact build.
- *  Sessions carry no `appium:app`, so this per-run install is the only one —
- *  each session then just fast-resets (`pm clear`) instead of reinstalling. */
 /** Comfortably longer than the slowest spec, so no wait can outlive the screen. */
 const SCREEN_OFF_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -398,6 +395,9 @@ function keepScreenAwake(udid: string): void {
 	}
 }
 
+/** Install the e2e APK on `udid` unless it already has this exact build.
+ *  Sessions carry no `appium:app`, so this per-run install is the only one —
+ *  each session then just fast-resets (`pm clear`) instead of reinstalling. */
 function ensureApkInstalled(udid: string): void {
 	const apk = apkForDevice(udid);
 	if (!existsSync(apk)) {
