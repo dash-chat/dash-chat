@@ -11,14 +11,15 @@ export const UNSENT_WINDOW_MS = 60_000;
 export type MessageDisplayStatus = MessageDeliveryStatus | 'unsent';
 
 /** The status the UI should render for a message sent at `timestamp`:
- * `'unsent'` while a `'sending'` message is younger than
- * [`UNSENT_WINDOW_MS`], the store status otherwise. */
+ * `'unsent'` while a `'sending'` message is younger than `unsentWindowMs`,
+ * the store status otherwise. */
 export function displayDeliveryStatus(
 	status: MessageDeliveryStatus,
 	timestamp: number,
 	now: number,
+	unsentWindowMs: number = UNSENT_WINDOW_MS,
 ): MessageDisplayStatus {
-	if (status === 'sending' && now - timestamp < UNSENT_WINDOW_MS) {
+	if (status === 'sending' && now - timestamp < unsentWindowMs) {
 		return 'unsent';
 	}
 	return status;

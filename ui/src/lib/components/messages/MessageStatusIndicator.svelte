@@ -34,9 +34,14 @@
 
 	const props: Props = $props();
 
+	// A 60s window can't be waited out in an e2e spec, so the binary under
+	// test downgrades sooner.
+	const unsentWindowMs =
+		import.meta.env.VITE_E2E === 'true' ? 3_000 : UNSENT_WINDOW_MS;
+
 	let now = $state(Date.now());
 	const displayStatus = $derived(
-		displayDeliveryStatus(props.status, props.timestamp, now),
+		displayDeliveryStatus(props.status, props.timestamp, now, unsentWindowMs),
 	);
 
 	$effect(() => {
@@ -45,7 +50,7 @@
 			() => {
 				now = Date.now();
 			},
-			props.timestamp + UNSENT_WINDOW_MS - now,
+			props.timestamp + unsentWindowMs - now,
 		);
 		return () => clearTimeout(timer);
 	});
