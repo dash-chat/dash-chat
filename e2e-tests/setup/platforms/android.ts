@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { envInt } from '../../helpers/utils';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import { hashFile } from '../device-installs';
@@ -393,9 +394,12 @@ function ensureApkInstalled(udid: string): void {
 		/* not installed */
 	}
 	console.log(`[android] installing the e2e APK on ${udid}...`);
+	// Generous because the debug APK is ~370MB and install time is dominated by
+	// on-device dexopt, not transfer: a Pixel 7a lands well inside a minute
+	// while a budget device measured 509s for the same file.
 	execSync(`adb -s ${udid} install "${apk}"`, {
 		stdio: 'inherit',
-		timeout: 300_000,
+		timeout: envInt('E2E_ANDROID_INSTALL_TIMEOUT_MS', 900_000),
 		env: androidEnv,
 	});
 }
