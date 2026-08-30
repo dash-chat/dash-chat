@@ -10,6 +10,9 @@
 		onSend?: () => Promise<boolean>;
 		onpaste?: (event: ClipboardEvent) => void;
 		onfocus?: (event: FocusEvent) => void;
+		/** The composer is hiding this row behind another surface (e.g. the voice
+		 * recording bar). */
+		hidden?: boolean;
 		/** Leading content rendered inside the pill, before the textarea. */
 		before?: Snippet;
 		/** Trailing content rendered inside the pill, after the textarea. */
@@ -25,6 +28,7 @@
 		onSend,
 		onpaste,
 		onfocus,
+		hidden = false,
 		before,
 		after,
 		banner,
@@ -81,6 +85,7 @@
 
 		<textarea
 			class:ms-4={!before}
+			class:blanked={hidden}
 			class="message-textarea me-2"
 			data-testid="message-input-textarea"
 			{placeholder}
@@ -119,6 +124,15 @@
 		padding-bottom: 8px;
 		max-height: 100px;
 		overflow-y: auto;
+	}
+
+	/* The composer hides the whole input row while another surface covers it, but
+	   hiding the focused textarea blurs it and takes the keyboard down with it.
+	   Stay rendered and keep focus; just paint nothing. */
+	.message-textarea.blanked {
+		visibility: visible;
+		opacity: 0;
+		pointer-events: none;
 	}
 
 	.message-textarea::placeholder {
