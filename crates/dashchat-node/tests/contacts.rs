@@ -225,3 +225,38 @@ async fn test_cannot_add_self_as_contact() {
 
     assert!(matches!(result, Err(AddContactError::CannotAddSelf)));
 }
+
+/// Adding the same contact a second time returns AlreadyRequested.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_duplicate_contact_request_is_idempotent() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+
+    let first = bobbi.add_contact(qr.clone()).await.unwrap();
+    let second = bobbi.add_contact(qr).await.unwrap();
+
+    assert!(
+        matches!(first, AddContactResult::NewRequest(_)),
+        "first request should be NewRequest, got {:?}",
+        first
+    );
+    assert!(
+        matches!(second, AddContactResult::AlreadyRequested(_)),
+        "second request should be AlreadyRequested, got {:?}",
+        second
+    );
+
+    let first_chat_id = match first {
+        AddContactResult::NewRequest(chat_id) => chat_id,
+        _ => unreachable!(),
+    };
+    let second_chat_id = match second {
+        AddContactResult::AlreadyRequested(chat_id) => chat_id,
+        _ => unreachable!(),
+    };
+    assert_eq!(first_chat_id, second_chat_id);
+}

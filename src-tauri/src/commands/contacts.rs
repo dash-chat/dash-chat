@@ -1,5 +1,5 @@
 use dashchat_node::{
-    topic::kind::Inbox, AddContactQrCode, AgentId, DeviceId, DirectChatId, FakeAgentId, Topic,
+    topic::kind::Inbox, AddContactQrCode, AddContactResult, AgentId, DeviceId, Topic,
 };
 use std::{collections::BTreeSet, str::FromStr};
 use tauri::State;
@@ -43,13 +43,11 @@ pub async fn agent_for_device(
 pub async fn add_contact(
     contact_code: String,
     app_node_manager: State<'_, AppNodeManager>,
-) -> Result<DirectChatId, Error> {
+) -> Result<AddContactResult, Error> {
     let qr = AddContactQrCode::from_str(&contact_code)
         .map_err(|e| dashchat_node::AddContactError::InvalidContactCode(e.to_string()))?;
-    let device_pubkey = qr.device_pubkey;
     let node = app_node_manager.get().await?;
-    node.add_contact(qr).await?;
-    Ok(node.direct_chat_topic(FakeAgentId::from(device_pubkey)))
+    Ok(node.add_contact(qr).await?)
 }
 
 #[tauri::command]

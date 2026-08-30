@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
-use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
+use crate::error::{
+    AddContactError, AddContactResult, Error, RemoveGroupMemberError, ShutdownError,
+};
 use crate::filesystem::Filesystem;
 use crate::node::actor::{Actor, Command};
 #[cfg(feature = "testing")]
@@ -958,6 +960,10 @@ impl Node {
         self.projection.get_profile(self.agent_id()).await
     }
 
+    pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
+        self.projection.get_profile(agent_id).await
+    }
+
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
         self.projection.lookup_contact_by_device_id(device_id).await
     }
@@ -1556,7 +1562,10 @@ impl Node {
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn add_contact(&self, contact: AddContactQrCode) -> Result<(), AddContactError> {
+    pub async fn add_contact(
+        &self,
+        contact: AddContactQrCode,
+    ) -> Result<AddContactResult, AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
             "adding contact",
@@ -1564,6 +1573,19 @@ impl Node {
 
         if contact.device_pubkey == self.device_id() {
             return Err(AddContactError::CannotAddSelf);
+        }
+
+        let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
+
+        // If we already sent this device a contact request, don't publish a
+        // duplicate request or pending marker. Return the existing direct-chat
+        // topic id so the caller can navigate there.
+        if self
+            .has_outgoing_pending_request(contact.device_pubkey)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        {
+            return Ok(AddContactResult::AlreadyRequested(direct_chat_topic_id));
         }
 
         // Register the scanned contact as a bootstrap so p2panda discovery can
@@ -1575,7 +1597,6 @@ impl Node {
 
         // Subscribe to the shared direct-chat topic right away so messages sent
         // before the owner accepts already sync in both directions.
-        let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
         self.register_topic(direct_chat_topic_id)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
@@ -1695,7 +1716,7 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        Ok(())
+        Ok(AddContactResult::NewRequest(direct_chat_topic_id))
     }
 
     /// Record a mutual contact by publishing the contact marker into our own

@@ -1,12 +1,12 @@
-import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
-import { tid } from '../helpers/selectors';
-import { SYNC_TIMEOUT } from '../helpers/timeouts';
+import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
+import { tid } from '../../helpers/selectors';
+import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import {
 	isRemoteMailbox,
 	resumeMailbox,
 	suspendMailbox,
-} from '../setup/mailbox-control';
-import { type Agent, setupAgents } from '../setup/setup-agents';
+} from '../../setup/mailbox-control';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 async function waitForTextContent(
 	agent: Agent,

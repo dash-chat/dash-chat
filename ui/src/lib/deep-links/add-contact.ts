@@ -43,10 +43,12 @@ export async function addContactFromCode(
 	inFlightCode = code;
 	addContactPending.value = true;
 	try {
-		const chatId = await contactsStore.client.addContact(code);
-		await goto(`/direct-chats/${chatId}`);
+		const result = await contactsStore.client.addContact(code);
+		await goto(`/direct-chats/${result.chatId}`);
 
-		showToast(m.contactRequestSent());
+		if (result.kind === 'NewRequest') {
+			showToast(m.contactRequestSent());
+		}
 	} catch (e) {
 		console.error(e);
 		const error = e as AddContactError;

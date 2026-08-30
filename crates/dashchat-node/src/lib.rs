@@ -23,8 +23,8 @@ pub use aliased::Aliasing;
 pub use chat::*;
 pub use contact::AddContactQrCode;
 pub use error::{
-    AddContactError, DeleteMessageError, EditMessageError, Error, RemoveGroupMemberError,
-    SendMessageError,
+    AddContactError, AddContactResult, DeleteMessageError, EditMessageError, Error,
+    RemoveGroupMemberError, SendMessageError,
 };
 pub use id::*;
 pub use node::{Node, NodeConfig, Notification, OpNotification, SystemNotification};
