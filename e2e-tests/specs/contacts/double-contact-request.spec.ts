@@ -25,7 +25,7 @@ describe('Double contact request', () => {
 		await alice.directChatPage.ready();
 
 		// Sending the request is silent — the chat it opens is the confirmation.
-		expect(await alice.toast.lastToastMessage()).toBe(undefined);
+		expect(await alice.toast.lastToastMessage()).toBe(null);
 
 		// Go back and enter the same contact code a second time.
 		await alice.directChatPage.back.click();
@@ -35,7 +35,7 @@ describe('Double contact request', () => {
 		await alice.directChatPage.ready();
 
 		// A repeat request is not an error, so it stays silent too.
-		expect(await alice.toast.lastToastMessage()).toBe(undefined);
+		expect(await alice.toast.lastToastMessage()).toBe(null);
 
 		// It reopened the chat the first scan created rather than starting a
 		// second request alongside it.
