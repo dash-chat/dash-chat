@@ -48,6 +48,59 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
+const connectionStatuses: string[] = [];
+let connectionStatusObserver: MutationObserver | undefined;
+let connectionStatusToken: string | undefined;
+
+function currentConnectionStatus(): string {
+	const chip = document.querySelector<HTMLElement>(
+		'[data-testid="connection-status"]',
+	);
+	return chip?.dataset.status ?? 'connected';
+}
+
+/** Start recording every connection status the indicator renders, returning a
+ * token identifying this recording. A MutationObserver rather than polling: its
+ * callback runs as a microtask on the mutation itself, so a status held for a
+ * single frame is still recorded. That is the case worth catching — a stale
+ * "disconnected" painted on resume and replaced milliseconds later by the
+ * backend's re-measurement is invisible to any sampler, but the user sees it. */
+function recordConnectionStatus(): string {
+	connectionStatuses.length = 0;
+	connectionStatusToken = `${Date.now()}-${Math.random()}`;
+	connectionStatuses.push(currentConnectionStatus());
+	if (connectionStatusObserver === undefined) {
+		connectionStatusObserver = new MutationObserver(() => {
+			const status = currentConnectionStatus();
+			if (connectionStatuses[connectionStatuses.length - 1] !== status) {
+				connectionStatuses.push(status);
+			}
+		});
+		connectionStatusObserver.observe(document.body, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ['data-status'],
+		});
+	}
+	return connectionStatusToken;
+}
+
+/** The distinct connection statuses rendered since [`recordConnectionStatus`],
+ * in order, with the token of the recording they came from. A caller that gets
+ * back a different token than it started is looking at a fresh page — the
+ * webview reloaded and the history it wanted was lost, which must not read as
+ * "nothing was ever shown". */
+function connectionStatusHistory(): {
+	token: string | null;
+	statuses: string[];
+} {
+	return {
+		token: connectionStatusToken ?? null,
+		statuses: [...connectionStatuses],
+	};
+}
+
 const mediaDownloads = new Map<string, number>();
 let mediaObserver: PerformanceObserver | undefined;
 
@@ -454,6 +507,8 @@ export const testUtils = {
 	failNextVoiceLoad,
 	recordMediaDownloads,
 	photoDownloadMs,
+	recordConnectionStatus,
+	connectionStatusHistory,
 	interceptFilePickers,
 	collectFilePickers,
 	/** E2E override for the composer's recent-photos strip; left undefined unless

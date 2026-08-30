@@ -4,14 +4,14 @@
  * away.
  *
  * Android denies network access to backgrounded apps, so the mailbox polls that
- * run while we are gone fail and leave the cloud mailbox backed off with a high
- * consecutive-error count. Foregrounding has to clear that stale verdict and
- * re-measure, rather than reporting a connection the user no longer lacks.
+ * run while we are gone fail through no fault of the connection the user comes
+ * back to. Those failures must not be recorded, and foregrounding has to
+ * re-measure rather than repaint a verdict formed while the app had no way of
+ * reaching anything.
  *
- * The suspended cloud mailbox stands in for the background network denial: it
- * is what makes the polls fail. It stays suspended across the whole
- * background/foreground cycle, so nothing except the resume itself can clear
- * the chip — and so the chip has to come back once the fresh polls fail too.
+ * Suspending the cloud mailbox stands in for that network denial: it is what
+ * makes the polls fail, and it is confined to the background window so the app
+ * is demonstrably connected on both sides of it.
  */
 import {
 	isRemoteMailbox,
@@ -19,6 +19,12 @@ import {
 	suspendMailbox,
 } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
+
+/** Long enough for several polls to time out and clear the UI's 3-error
+ *  threshold: a hanging poll gives up after ~10s, and the next follows ~2.5s
+ *  later. Without the fix this window is what puts the chip on screen, so it
+ *  needs margin over the bare 3 failures the threshold asks for. */
+const BACKGROUND_FAILURE_MS = 60_000;
 
 // wdio arms its per-test abort timer from the mocha timeout at invocation
 // time, so `this.timeout()` inside a test body comes too late — the timeout
@@ -29,15 +35,40 @@ describe('Connection status after resuming from the background', function () {
 	let agent: Agent;
 	let mailboxSuspended = false;
 
+	const suspend = () => {
+		suspendMailbox();
+		mailboxSuspended = true;
+	};
+	const resume = () => {
+		if (!mailboxSuspended) return;
+		resumeMailbox();
+		mailboxSuspended = false;
+	};
+
 	before(async function () {
 		// The suite suspends the cloud mailbox server's process, which is
 		// impossible against a remote environment mailbox.
 		if (isRemoteMailbox()) this.skip();
-		// The resume hook that wakes the cloud mailbox is Android-only, and
-		// `backgroundApp` is a no-op on desktop.
+		// The resume hook that clears the background failures is Android-only,
+		// and `backgroundApp` is a no-op on desktop.
 		[agent] = await setupAgents(this, [{ platform: 'android' }]);
 		await agent.createProfilePage.createProfile('Alice', 'Test');
 		await agent.enablePreviewFeatures();
+
+		// Without background mode Android freezes the process on background, so
+		// no poll runs to fail and there is nothing for the fix to suppress —
+		// the test would pass on any build. The foreground service keeps the
+		// node polling, which is both what makes this a regression test and the
+		// configuration the bug was reported under.
+		await agent.homePage.settingsLink.click();
+		await agent.settingsPage.ready();
+		await agent.settingsPage.offlineLink.click();
+		await agent.offlinePage.ready();
+		await agent.offlinePage.setBackgroundModeEnabled(true);
+		await agent.offlinePage.back.click();
+		await agent.settingsPage.ready();
+		await agent.settingsPage.back.click();
+		await agent.homePage.ready();
 
 		// A members-less group chat is the cheapest way to a page where
 		// ConnectionStatusIndicator is mounted.
@@ -53,50 +84,65 @@ describe('Connection status after resuming from the background', function () {
 	});
 
 	after(() => {
-		if (mailboxSuspended) {
-			try {
-				resumeMailbox();
-			} catch {
-				/* ignore */
-			}
-			mailboxSuspended = false;
+		try {
+			resume();
+		} catch {
+			/* the run is already over; a stuck-suspended server is cleaned up
+			   with the rest of the fixture */
 		}
 	});
 
-	// connect_timeout=5s + timeout=10s per hanging cloud request, and the UI
-	// flips after 3 consecutive errors; pad so a slow runner doesn't false-fail.
-	it('shows the disconnected chip once the cloud mailbox stops answering', async () => {
-		suspendMailbox();
-		mailboxSuspended = true;
-
+	// Guards the fix below on two fronts: suppressing background failures must
+	// not cost us the ability to report a foreground one, and the recorder the
+	// next test relies on must be able to see a disconnection that definitely
+	// happened — otherwise its silence there would prove nothing.
+	it('shows the disconnected chip while the cloud mailbox is unreachable in the foreground', async () => {
 		const indicator = agent.groupChatPage.connectionStatusIndicator;
+		const token = await indicator.startRecordingStatus();
+		suspend();
 		await agent.waitUntil(
 			async () => (await indicator.status()) === 'disconnected',
 			{ timeout: 90_000, interval: 1_000 },
 		);
+
+		const statuses = await indicator.recordedStatuses(token);
+		if (!statuses.includes('disconnected')) {
+			throw new Error(
+				`the status recorder missed a disconnection that was on screen (statuses rendered: ${statuses.join(' -> ')})`,
+			);
+		}
+
+		resume();
+		await agent.waitUntil(
+			async () => (await indicator.status()) !== 'disconnected',
+			{ timeout: 90_000, interval: 1_000 },
+		);
 	});
 
-	it('hides the chip on resume rather than replaying the failure from the background', async () => {
+	it('does not report the polls that failed while backgrounded as a disconnection', async () => {
+		// Recorded rather than read after the fact: the backend re-measures within
+		// ~40ms of foregrounding, so a chip painted from the background failures is
+		// gone long before a post-resume read happens — but the user still saw it.
+		const token =
+			await agent.groupChatPage.connectionStatusIndicator.startRecordingStatus();
+
 		await agent.backgroundApp();
+		suspend();
+		await agent.pause(BACKGROUND_FAILURE_MS);
+		// The connection is back before the user is, exactly as it is when
+		// Android restores network access to a foregrounded app.
+		resume();
+
 		await agent.startApp();
 		await agent.groupChatPage.ready();
 
 		// `startApp` re-attaches the page objects, so this must be read after it.
 		const indicator = agent.groupChatPage.connectionStatusIndicator;
-		await agent.waitUntil(
-			async () => (await indicator.status()) !== 'disconnected',
-			{
-				timeoutMsg:
-					'the chip still showed the pre-background failure after resuming',
-			},
-		);
-	});
-
-	it('brings the chip back once the polls made after the resume fail too', async () => {
-		const indicator = agent.groupChatPage.connectionStatusIndicator;
-		await agent.waitUntil(
-			async () => (await indicator.status()) === 'disconnected',
-			{ timeout: 90_000, interval: 1_000 },
-		);
+		const statuses = await indicator.recordedStatuses(token);
+		if (statuses.includes('disconnected')) {
+			throw new Error(
+				`the chip showed the failures that happened while the app was backgrounded (statuses rendered: ${statuses.join(' -> ')})`,
+			);
+		}
 	});
 });

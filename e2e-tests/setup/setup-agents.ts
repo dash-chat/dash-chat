@@ -316,6 +316,13 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		execSync(`adb -s ${androidUdid(b)} shell input keyevent KEYCODE_HOME`, {
 			stdio: 'ignore',
 		});
+		// ProcessLifecycleOwner — which the lifecycle plugin observes — posts its
+		// ON_PAUSE/ON_STOP dispatch on a 700ms delay and cancels it outright if an
+		// activity resumes first, so it can tell a real backgrounding apart from a
+		// configuration change. Returning before that fires would let a following
+		// `startApp` cancel the dispatch, leaving the app's Rust `on_pause` hook
+		// unrun and the "background" purely notional.
+		await b.pause(PROCESS_LIFECYCLE_DISPATCH_MS);
 	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
@@ -344,6 +351,10 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 
 	return agent;
 }
+
+/** Comfortably past ProcessLifecycleOwner's 700ms background-dispatch delay, so
+ *  the app is observably backgrounded by the time `backgroundApp` returns. */
+const PROCESS_LIFECYCLE_DISPATCH_MS = 1_500;
 
 /** Held long enough that WebKit reads the touch as a tap instead of the start of
  *  a scroll, and well under the app's 500ms long-press threshold. */

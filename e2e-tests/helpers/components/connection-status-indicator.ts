@@ -21,6 +21,27 @@ export class ConnectionStatusIndicator extends TestHelper {
 		}, tid('connection-status'));
 	}
 
+	/** Start recording every status the chip renders. Returns the recording's
+	 *  token, to be handed back to [`recordedStatuses`]. */
+	startRecordingStatus(): Promise<string> {
+		return this.agent.execute(() => window.__test.recordConnectionStatus());
+	}
+
+	/** The statuses rendered since [`startRecordingStatus`], in order. Throws if
+	 *  the webview reloaded in between, which would otherwise look like a clean
+	 *  recording that simply never saw anything. */
+	async recordedStatuses(token: string): Promise<string[]> {
+		const history = await this.agent.execute(() =>
+			window.__test.connectionStatusHistory(),
+		);
+		if (history.token !== token) {
+			throw new Error(
+				`connection-status recording was lost (expected token ${token}, got ${history.token}) — the webview reloaded, so the statuses rendered in between were not observed`,
+			);
+		}
+		return history.statuses;
+	}
+
 	/** True if the dialog is mounted and visible (not the closed/fade-out state). */
 	isDialogOpen(): Promise<boolean> {
 		return this.agent.execute((sel: string) => {
