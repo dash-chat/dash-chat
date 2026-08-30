@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
 use tokio_util::task::AbortOnDropHandle;
@@ -66,25 +68,62 @@ pub(crate) async fn cloud_mailbox_id(
         .unwrap_or(None)
 }
 
+/// Bounds discovery latency: a hub only announces when it registers, and
+/// mdns-sd's own re-query interval doubles up to an hour.
+const REBROWSE_INTERVAL: Duration = Duration::from_secs(300);
+
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
     handle: &AppHandle<R>,
     node: dashchat_node::Node,
 ) -> anyhow::Result<AbortOnDropHandle<()>> {
     let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
-    let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
+    let receiver = rebrowse(&mdns)?;
     log::info!("Started mdns browse for local mailboxes: {MDNS_SERVICE_TYPE}");
 
     // Interface changes are handled by the mdns-sd daemon itself: it re-checks
     // interfaces periodically and re-sends browse queries on new ones, so the
     // browse doesn't need to be re-issued on network switches.
-    let handler_task = tokio::spawn(handle_browse_events(node, receiver));
+    let handler_task = tokio::spawn(browse_loop(mdns, node, receiver));
 
     Ok(AbortOnDropHandle::new(handler_task))
 }
 
-async fn handle_browse_events(
+/// Handle browse events, re-issuing the browse every [`REBROWSE_INTERVAL`].
+async fn browse_loop(
+    mdns: ServiceDaemon,
     node: dashchat_node::Node,
-    receiver: mdns_sd::Receiver<mdns_sd::ServiceEvent>,
+    first_receiver: mdns_sd::Receiver<mdns_sd::ServiceEvent>,
+) {
+    let mut receiver = first_receiver;
+    loop {
+        let refreshed =
+            tokio::time::timeout(REBROWSE_INTERVAL, handle_browse_events(&node, &receiver)).await;
+        if refreshed.is_ok() {
+            // The handler only returns when the daemon closed the channel, which
+            // a re-browse cannot recover from.
+            return;
+        }
+        match rebrowse(&mdns) {
+            Ok(next) => {
+                log::debug!("Re-issued mdns browse for local mailboxes");
+                receiver = next;
+            }
+            Err(err) => log::warn!("Failed to re-issue mdns browse: {err}"),
+        }
+    }
+}
+
+/// Restart the browse, resetting mdns-sd's re-query backoff. `stop_browse` is
+/// what prunes the pending retransmissions, so skipping it stacks a new query
+/// chain on every call.
+fn rebrowse(mdns: &ServiceDaemon) -> anyhow::Result<mdns_sd::Receiver<mdns_sd::ServiceEvent>> {
+    mdns.stop_browse(MDNS_SERVICE_TYPE)?;
+    Ok(mdns.browse(MDNS_SERVICE_TYPE)?)
+}
+
+async fn handle_browse_events(
+    node: &dashchat_node::Node,
+    receiver: &mdns_sd::Receiver<mdns_sd::ServiceEvent>,
 ) {
     while let Ok(event) = receiver.recv_async().await {
         match event {

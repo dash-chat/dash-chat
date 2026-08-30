@@ -39,7 +39,7 @@ fn bump_generation() {
     GENERATION.send_modify(|g| *g = g.wrapping_add(1));
 }
 
-async fn current_node() -> Option<AppNode> {
+pub(crate) async fn current_node() -> Option<AppNode> {
     SLOT.lock().await.clone()
 }
 

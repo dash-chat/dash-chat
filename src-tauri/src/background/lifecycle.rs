@@ -24,6 +24,16 @@ pub(crate) async fn on_resume(app: AppHandle<Wry>) {
         }
     }
     wakeup_cloud_mailbox(&app).await;
+    rearm_mdns_discovery(&app).await;
+}
+
+/// A hub that announced while we were backgrounded was missed, and the browse
+/// re-query that would find it can be up to an hour away.
+async fn rearm_mdns_discovery(app: &AppHandle<Wry>) {
+    let Some(app_node_manager) = app.try_state::<crate::node::AppNodeManager>() else {
+        return;
+    };
+    app_node_manager.rearm_mdns_discovery().await;
 }
 
 /// Force-poll the cloud mailbox on foreground.
