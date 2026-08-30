@@ -9,7 +9,7 @@ import {
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
-export type MessageStatus = 'sending' | 'mailbox' | 'delivered';
+export type MessageStatus = 'unsent' | 'sending' | 'mailbox' | 'delivered';
 
 export type SystemMessageKind =
 	| 'group_created'
@@ -61,6 +61,7 @@ export class Messages extends TestHelper {
 				);
 				const status = els[els.length - 1]?.dataset.status;
 				if (
+					status === 'unsent' ||
 					status === 'sending' ||
 					status === 'mailbox' ||
 					status === 'delivered'
@@ -115,6 +116,7 @@ export class Messages extends TestHelper {
 					}
 					const status = el?.dataset.status;
 					if (
+						status === 'unsent' ||
 						status === 'sending' ||
 						status === 'mailbox' ||
 						status === 'delivered'

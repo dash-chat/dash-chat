@@ -616,7 +616,13 @@ impl Node {
                                 if let Err(err) = node.publish_add_contact(agent_id, topic_id).await
                                 {
                                     tracing::warn!(?err, "failed to record accepted contact");
+                                    return;
                                 }
+                                // Messages they sent before we recorded the
+                                // acceptance were processed but dropped by the
+                                // ack filter; now that they are a contact,
+                                // cover them.
+                                node.mark_ack_topic_dirty(topic_id);
                             });
                         }
                     }
