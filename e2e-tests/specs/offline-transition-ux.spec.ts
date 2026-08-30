@@ -111,7 +111,7 @@ describe('Offline UX', () => {
 
 		it('new messages start as unsent, then downgrade to sending', async () => {
 			await agent1.directChatPage.composer.sendMessage('offline hello');
-			// The binary under test shows the unsent spinner for 10s before the
+			// The binary under test shows the unsent spinner for a short time before the
 			// downgrade, so it must be visible right after the send.
 			await agent1.waitUntil(
 				async () => {
