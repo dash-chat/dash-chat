@@ -1,5 +1,5 @@
-import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgents } from '../setup/setup-agents';
+import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('report contact', () => {
 	let agent1: Agent;

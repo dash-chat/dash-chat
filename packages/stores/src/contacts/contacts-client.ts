@@ -3,6 +3,10 @@ import { AgentId, DeviceId, type TopicId } from '../p2panda/types';
 import { ChatId, Payload } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 
+export type AddContactResult =
+	| { kind: 'NewRequest'; chatId: ChatId }
+	| { kind: 'AlreadyRequested'; chatId: ChatId };
+
 export interface Profile {
 	name: string;
 	surname: string | undefined;
@@ -31,6 +35,10 @@ export interface IContactsClient {
 	// Sets the profile for this user
 	setProfile(profile: Profile): Promise<void>;
 
+	// Returns the cached profile for the given agent, if one has been stored
+	// locally (for example from a ContactRequestAccept).
+	getProfile(agentId: AgentId): Promise<Profile | undefined>;
+
 	/// contacts
 
 	// Creates a new contact code string to be shared
@@ -40,9 +48,9 @@ export interface IContactsClient {
 
 	// getContacts(): Promise<Array<VerifyingKey>>;
 
-	// Add a contact from the given encoded contact code string; returns the
-	// id of the direct chat created for it
-	addContact(code: string): Promise<ChatId>;
+	// Add a contact from the given encoded contact code string; returns whether
+	// this was a new request and the id of the direct chat for it
+	addContact(code: string): Promise<AddContactResult>;
 
 	// Accept an incoming contact request
 	acceptContact(agentId: AgentId): Promise<void>;
@@ -103,6 +111,14 @@ export class ContactsClient implements IContactsClient {
 		});
 	}
 
+	async getProfile(agentId: AgentId): Promise<Profile | undefined> {
+		return (
+			(await invokeAfterSetup<Profile | null>('get_profile', {
+				agentId,
+			})) ?? undefined
+		);
+	}
+
 	createContactCode(): Promise<string> {
 		return invokeAfterSetup('create_contact_code');
 	}
@@ -111,7 +127,7 @@ export class ContactsClient implements IContactsClient {
 		return invokeAfterSetup('active_inbox_topics');
 	}
 
-	async addContact(contactCode: string): Promise<ChatId> {
+	async addContact(contactCode: string): Promise<AddContactResult> {
 		return invokeAfterSetup('add_contact', { contactCode });
 	}
 
