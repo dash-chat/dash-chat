@@ -48,7 +48,22 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
-const connectionStatuses: string[] = [];
+export interface ConnectionStatusSample {
+	status: string;
+	/** Epoch ms on the device, so samples can be ordered against each other
+	 * without comparing against the test runner's clock on another machine. */
+	at: number;
+	/** Whether the page was on screen when this was rendered. A status the app
+	 * painted while hidden was never shown to anyone; only what survives to the
+	 * next `visible` moment is a bug the user can see. */
+	visibility: DocumentVisibilityState;
+	/** True for the sample taken at a visibility transition rather than at a
+	 * DOM mutation — what was on screen at the instant the page became visible,
+	 * which no mutation reports because nothing changed. */
+	onVisibilityChange: boolean;
+}
+
+const connectionStatuses: ConnectionStatusSample[] = [];
 let connectionStatusObserver: MutationObserver | undefined;
 let connectionStatusToken: string | undefined;
 
@@ -65,23 +80,38 @@ function currentConnectionStatus(): string {
  * single frame is still recorded. That is the case worth catching — a stale
  * "disconnected" painted on resume and replaced milliseconds later by the
  * backend's re-measurement is invisible to any sampler, but the user sees it. */
+function sampleConnectionStatus(onVisibilityChange: boolean) {
+	const status = currentConnectionStatus();
+	const previous = connectionStatuses[connectionStatuses.length - 1];
+	// A visibility transition is always recorded: what was on screen the moment
+	// the page came back is the whole question, and it produces no mutation
+	// because the DOM did not change.
+	if (!onVisibilityChange && previous?.status === status) return;
+	connectionStatuses.push({
+		status,
+		at: Date.now(),
+		visibility: document.visibilityState,
+		onVisibilityChange,
+	});
+}
+
 function recordConnectionStatus(): string {
 	connectionStatuses.length = 0;
 	connectionStatusToken = `${Date.now()}-${Math.random()}`;
-	connectionStatuses.push(currentConnectionStatus());
+	sampleConnectionStatus(false);
 	if (connectionStatusObserver === undefined) {
-		connectionStatusObserver = new MutationObserver(() => {
-			const status = currentConnectionStatus();
-			if (connectionStatuses[connectionStatuses.length - 1] !== status) {
-				connectionStatuses.push(status);
-			}
-		});
+		connectionStatusObserver = new MutationObserver(() =>
+			sampleConnectionStatus(false),
+		);
 		connectionStatusObserver.observe(document.body, {
 			subtree: true,
 			childList: true,
 			attributes: true,
 			attributeFilter: ['data-status'],
 		});
+		document.addEventListener('visibilitychange', () =>
+			sampleConnectionStatus(true),
+		);
 	}
 	return connectionStatusToken;
 }
@@ -93,7 +123,7 @@ function recordConnectionStatus(): string {
  * "nothing was ever shown". */
 function connectionStatusHistory(): {
 	token: string | null;
-	statuses: string[];
+	statuses: ConnectionStatusSample[];
 } {
 	return {
 		token: connectionStatusToken ?? null,

@@ -369,6 +369,35 @@ function installedApkMd5(udid: string): string | null {
 /** Install the e2e APK on `udid` unless it already has this exact build.
  *  Sessions carry no `appium:app`, so this per-run install is the only one —
  *  each session then just fast-resets (`pm clear`) instead of reinstalling. */
+/** Comfortably longer than the slowest spec, so no wait can outlive the screen. */
+const SCREEN_OFF_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** Stop the display sleeping for the length of the run.
+ *
+ * WebDriver drives the app through `execute` and injected events, none of which
+ * count as user activity, so a spec that waits longer than the device's
+ * `screen_off_timeout` puts the screen out — which stops the activity and
+ * freezes the webview mid-test. The failure looks like the app misbehaving
+ * rather than the screen going off, so it reads as a real bug in whatever was
+ * being asserted. `stayon true` covers every plug type rather than just `usb`:
+ * a device on the cable can report itself AC-powered, and then a USB-only hold
+ * silently never engages. */
+function keepScreenAwake(udid: string): void {
+	try {
+		execSync(`adb -s ${udid} shell svc power stayon true`, { env: androidEnv });
+		// `stayon` alone has been observed not to engage even once set, so raise
+		// the timeout too rather than trust one of them. Both are persistent
+		// device settings, which is the norm for a dedicated test device.
+		execSync(
+			`adb -s ${udid} shell settings put system screen_off_timeout ${SCREEN_OFF_TIMEOUT_MS}`,
+			{ env: androidEnv },
+		);
+	} catch (err) {
+		// Not fatal: it only costs us the flake it prevents.
+		console.warn(`[android] could not keep ${udid} awake: ${String(err)}`);
+	}
+}
+
 function ensureApkInstalled(udid: string): void {
 	const apk = apkForDevice(udid);
 	if (!existsSync(apk)) {
@@ -517,6 +546,7 @@ export class AndroidPlatform implements AgentPlatform {
 
 		for (const udid of this.udids.values()) {
 			ensureApkInstalled(udid);
+			keepScreenAwake(udid);
 
 			// A remote mailbox is reached directly; only a local one is bridged.
 			if (ctx.mailboxPort === null) continue;

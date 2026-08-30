@@ -66,6 +66,15 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 	// recorded success on top would report a freshly rebuilt node as disconnected
 	// until its first poll — iOS tears the node down on background and rebuilds it
 	// on foreground, so that is every single foreground.
+	//
+	// `cloudLastFailureAtMs` lets a consumer tell a failure it just watched happen
+	// from one inherited from a period it wasn't rendering. That distinction is
+	// the whole game: Android denies network to backgrounded apps, so those polls
+	// fail whatever is waiting on the other side, and reporting them on resume is
+	// how a verdict about a connection the user never had reaches the screen.
+	// Deciding what counts as recent needs to know when the UI resumed painting,
+	// which only the UI knows — so this reports the fact and leaves the judgement
+	// to the caller.
 	connectionStatus = reactive(async () => {
 		const activeMailboxIds = await this.activeMailboxIds();
 
@@ -78,11 +87,21 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			mailboxId => mailboxId === cloudId,
 		);
 
+		const cloudState =
+			cloudMailboxIndex >= 0
+				? mailboxesConnectionStates[cloudMailboxIndex]
+				: undefined;
+
 		const connectedToCloudMailboxServer =
-			cloudMailboxIndex >= 0 &&
-			mailboxesConnectionStates[cloudMailboxIndex].status === 'Active' &&
-			mailboxesConnectionStates[cloudMailboxIndex].consecutive_errors <
-				UI_DISCONNECTED_ERROR_THRESHOLD;
+			cloudState !== undefined &&
+			cloudState.status === 'Active' &&
+			cloudState.consecutive_errors < UI_DISCONNECTED_ERROR_THRESHOLD;
+
+		const cloudLastFailure = cloudState?.last_error?.at;
+		const cloudLastFailureAtMs =
+			cloudLastFailure === undefined || cloudLastFailure === null
+				? null
+				: Date.parse(cloudLastFailure);
 
 		let connectedLocalMailboxCount = 0;
 
@@ -99,6 +118,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 
 		return {
 			connectedToCloudMailboxServer,
+			cloudLastFailureAtMs,
 			connectedLocalMailboxCount,
 		};
 	});
