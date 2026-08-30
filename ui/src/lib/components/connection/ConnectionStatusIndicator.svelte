@@ -2,7 +2,9 @@
 	import type { MailboxTrackerStore } from 'dash-chat-stores';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext, type Snippet } from 'svelte';
+	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { shouldShowDisconnectedChip } from './connection-chip';
 	import { mdiEmoticonPoop } from '@mdi/js';
 	import { Chip, Dialog, DialogButton } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -25,7 +27,11 @@
 {#await $connectionStatus then connectionStatus}
 	{@const localCount = connectionStatus.connectedLocalMailboxCount}
 	{@const isLocal = localCount > 0}
-	{#if !connectionStatus.connectedToCloudMailboxServer}
+	{@const showChip = shouldShowDisconnectedChip(
+		connectionStatus,
+		renderingResumedAt.value,
+	)}
+	{#if showChip}
 		<Chip
 			data-testid="connection-status"
 			data-status={isLocal ? 'local' : 'disconnected'}
