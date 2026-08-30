@@ -15,6 +15,7 @@ export type SystemMessageKind =
 	| 'group_created'
 	| 'group_member_added'
 	| 'group_member_removed'
+	| 'group_member_left'
 	| 'group_member_promoted'
 	| 'group_member_demoted'
 	| 'contact_blocked'
@@ -194,6 +195,27 @@ export class Messages extends TestHelper {
 			this.messagesSelector,
 			tid('message-attachment-photos'),
 			label,
+		);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
+	}
+
+	/** The last rendered message holding a voice note, as a `Message` helper
+	 * scoped to it (by its message hash), or null if none is rendered. */
+	async lastVoiceMessage(): Promise<Message | null> {
+		const hash = await this.agent.execute(
+			(messagesSel: string, voiceSel: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				const wrapper = Array.from(wrappers)
+					.reverse()
+					.find(w => w.querySelector(voiceSel) !== null);
+				return wrapper?.getAttribute('data-message-hash') ?? null;
+			},
+			this.messagesSelector,
+			tid('message-attachment-voice'),
 		);
 		return hash === null
 			? null

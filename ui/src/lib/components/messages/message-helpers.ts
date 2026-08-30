@@ -18,6 +18,8 @@ export function canEditMessage(
 ): boolean {
 	if (!hasBody(message.content)) return false;
 	if (message.author !== myDeviceId) return false;
+	if (message.content.media?.some(item => item.kind === 'VoiceNote'))
+		return false;
 	// `timestamp` is the original message op's; edits never change it.
 	return withinWindow(message.timestamp, EDIT_WINDOW_MS);
 }

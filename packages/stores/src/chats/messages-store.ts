@@ -21,6 +21,7 @@ import {
 	mediaBundleToAttachment,
 } from '../types';
 import { type IMessagesClient } from './messages-client';
+import { dropOpsAuthoredWhileNotAMember } from './op-visibility';
 import { type MessageReply } from './replies';
 
 /** The window during which a message may be edited, measured from the original
@@ -83,12 +84,12 @@ export class MessagesStore {
 			new Set(Object.keys(logs)),
 		);
 		const deviceNames = await this.deviceNames();
-		const ops = await this.dropOpsAuthoredWhileBlocked(
-			opsOrdered,
-			deviceAgents,
+		const myDeviceId = await this.contactsStore.myDeviceId();
+		const ops = dropOpsAuthoredWhileNotAMember(
+			await this.dropOpsAuthoredWhileBlocked(opsOrdered, deviceAgents),
+			myDeviceId,
 		);
 		const messages = logsToMessages(ops, tombstones, deviceAgents, deviceNames);
-		const myDeviceId = await this.contactsStore.myDeviceId();
 		for (const message of Object.values(messages)) {
 			if (message.author !== myDeviceId) continue;
 			message.deliveryStatus = await this.messageAckStore.deliveryStatus(

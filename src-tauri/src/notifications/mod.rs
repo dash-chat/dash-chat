@@ -142,7 +142,7 @@ pub async fn build_notification_data(
 
     match payload {
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
-            Some(chat_message_notification(node, topic, sender_device_id, content, id).await)
+            chat_message_notification(node, topic, sender_device_id, content, id).await
         }
         Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { profile, .. }) => {
             let chat_topic =
@@ -167,7 +167,7 @@ async fn chat_message_notification(
     sender_device_id: DeviceId,
     content: &dashchat_node::ChatMessageContent,
     id: i32,
-) -> NotificationData {
+) -> Option<NotificationData> {
     let sender_agent_id = match node.lookup_contact(sender_device_id).await {
         Ok(agent_id) => agent_id,
         Err(err) => {
@@ -175,6 +175,21 @@ async fn chat_message_notification(
             None
         }
     };
+
+    let is_direct_chat =
+        *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic;
+    if is_direct_chat {
+        let accepted = match node.accepted_contact_agent_ids().await {
+            Ok(accepted) => accepted,
+            Err(err) => {
+                log::error!("Failed to load accepted contacts: {err:?}");
+                return None;
+            }
+        };
+        if !sender_agent_id.is_some_and(|agent_id| accepted.contains(&agent_id)) {
+            return None;
+        }
+    }
 
     let sender_profile = if let Some(agent_id) = sender_agent_id {
         node.projection.get_profile(agent_id).await.ok().flatten()
@@ -187,8 +202,6 @@ async fn chat_message_notification(
         .and_then(|p| p.avatar)
         .filter(|s| s.starts_with("data:image/"));
 
-    let is_direct_chat =
-        *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic;
     let chat_route = if is_direct_chat {
         format!("/direct-chats/{}", topic)
     } else {
@@ -259,7 +272,7 @@ async fn chat_message_notification(
         data.group = Some("dashchat.chats".to_string());
     }
 
-    data
+    Some(data)
 }
 
 /// Signal-style placeholder body for a media message with no caption,
