@@ -52,9 +52,7 @@ describe('Editing messages', () => {
 		await message.openActions();
 		await message.copyAction.waitForClickable();
 		await message.copyAction.click();
-		await agent1.toast.expectMessage(
-			await agent1.tr('copiedMessageToClipboard'),
-		);
+		await message.actionsMenu.waitForDisplayed({ reverse: true });
 	});
 
 	it('asks before discarding a draft when starting an edit', async () => {
@@ -102,8 +100,6 @@ describe('Editing messages', () => {
 		// popover still counts as displayed while its opacity is rounding to 0.
 		await message.contextMenuCopyAction.waitForClickable();
 		await message.contextMenuCopyAction.click();
-		await agent1.toast.expectMessage(
-			await agent1.tr('copiedMessageToClipboard'),
-		);
+		await message.contextMenu.waitForDisplayed({ reverse: true });
 	});
 });

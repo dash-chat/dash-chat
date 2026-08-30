@@ -1,10 +1,8 @@
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages.js';
 	import { Popover } from 'konsta/svelte';
 	import { type Message, type DeviceId, hasBody } from 'dash-chat-stores';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
 	import { writeText } from '$lib/utils/clipboard';
-	import { showToast } from '$lib/utils/toasts';
 
 	interface Props {
 		message: Message;
@@ -66,7 +64,6 @@
 		close();
 		if (!hasBody(message.content)) return;
 		await writeText(message.content.message);
-		showToast(m.copiedMessageToClipboard());
 	}
 </script>
 

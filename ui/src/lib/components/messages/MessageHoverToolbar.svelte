@@ -22,7 +22,6 @@
 	import ExpandedReactionsSheet from './ExpandedReactionsSheet.svelte';
 	import { toggleReaction } from '$lib/utils/reactions';
 	import { writeText } from '$lib/utils/clipboard';
-	import { showToast } from '$lib/utils/toasts';
 
 	interface Props {
 		message: Message;
@@ -95,7 +94,6 @@
 		close();
 		if (!hasBody(message.content)) return;
 		await writeText(message.content.message);
-		showToast(m.copiedMessageToClipboard());
 	}
 </script>
 
