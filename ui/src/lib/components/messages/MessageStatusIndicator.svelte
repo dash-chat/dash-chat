@@ -41,9 +41,10 @@
 	const props: Props = $props();
 
 	// A 60s window can't be waited out in an e2e spec, so the binary under
-	// test downgrades sooner.
+	// test downgrades sooner — but stays well clear of the seconds a spec can
+	// take to send a message and read the indicator back.
 	const unsentWindowMs =
-		import.meta.env.VITE_E2E === 'true' ? 3_000 : UNSENT_WINDOW_MS;
+		import.meta.env.VITE_E2E === 'true' ? 15_000 : UNSENT_WINDOW_MS;
 
 	const displayStatus: MessageDisplayStatus = $derived(
 		props.status === 'sending' && withinWindow(props.timestamp, unsentWindowMs)

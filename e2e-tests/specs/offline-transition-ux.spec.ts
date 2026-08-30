@@ -111,14 +111,19 @@ describe('Offline UX', () => {
 
 		it('new messages start as unsent, then downgrade to sending', async () => {
 			await agent1.directChatPage.composer.sendMessage('offline hello');
-			// The binary under test shows the unsent spinner for a short time before the
-			// downgrade, so it must be visible right after the send.
+			// The binary under test shows the unsent spinner for 15s before the
+			// downgrade (MessageStatusIndicator's e2e window), so it must be
+			// visible right after the send. Keep this timeout well under that
+			// window or the poll races the downgrade.
 			await agent1.waitUntil(
 				async () => {
 					const status = await agent1.directChatPage.lastMessageStatus();
 					return status === 'unsent';
 				},
-				{ timeout: 5_000 },
+				{
+					timeout: 8_000,
+					timeoutMsg: 'message never showed the unsent status after sending',
+				},
 			);
 			await agent1.waitUntil(async () => {
 				const status = await agent1.directChatPage.lastMessageStatus();
