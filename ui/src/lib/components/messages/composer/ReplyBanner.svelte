@@ -38,13 +38,13 @@
 </script>
 
 <div
-	class="row items-center px-2 pt-2 text-sm"
+	class="row items-center px-2 pt-1.5 text-sm"
 	data-testid="composer-reply-banner"
 	transition:slide={{ duration: 200 }}
 >
 	<QuoteFrame composer>
-		<span class="row min-w-0 flex-1 items-center gap-2 ps-2 py-1.5">
-			<span class="column min-w-0 flex-1">
+		<span class="row min-w-0 flex-1 items-center gap-2 ps-2 py-1">
+			<span class="column min-w-0 flex-1 leading-tight">
 				<span class="truncate font-semibold">
 					{m.replyingTo({ name: authorName })}
 				</span>

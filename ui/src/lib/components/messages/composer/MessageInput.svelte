@@ -3,6 +3,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { useTheme } from 'konsta/svelte';
 	import { showKeyboard } from 'tauri-plugin-virtual-keyboard';
+	import { isMobile } from '$lib/utils/environment';
 
 	interface Props {
 		value?: string;
@@ -38,37 +39,33 @@
 
 	let textarea: HTMLTextAreaElement;
 
-	export function reset() {
-		textarea.style.height = 'auto';
-	}
-
-	/** Focus the input with the cursor at the end, sized to the current text. */
+	/** Focus the input with the cursor at the end. */
 	export function focus() {
 		textarea.focus();
 		// Android suppresses the IME on programmatic focus outside a tap
 		// gesture (e.g. swipe-to-reply), showing it only after a long delay.
 		showKeyboard();
 		textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-		autoResize();
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
+		// On a soft keyboard the return key is the only way to type a line break,
+		// and the send button is always at hand.
+		if (isMobile) return;
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			onSend?.();
 		}
 	}
 
-	function handleInput() {
-		value = textarea.value;
-		autoResize();
-	}
-
-	function autoResize() {
-		if (textarea.scrollHeight > 100) return;
+	// Follow every value change, not just typing: the composer also writes it
+	// programmatically (starting/cancelling an edit, sending, picking an emoji),
+	// and a stale inline height leaves the pill stuck at its previous size.
+	$effect(() => {
+		value;
 		textarea.style.height = 'auto';
 		textarea.style.height = textarea.scrollHeight + 'px';
-	}
+	});
 </script>
 
 <div
@@ -93,7 +90,6 @@
 			bind:this={textarea}
 			rows="1"
 			onkeydown={handleKeydown}
-			oninput={handleInput}
 			{onfocus}
 		></textarea>
 

@@ -191,7 +191,6 @@
 				media = undefined;
 			}
 			if (replying === replyTo) replying = null;
-			messageInput?.reset();
 			onSent?.(hash);
 			return true;
 		} catch (e) {
