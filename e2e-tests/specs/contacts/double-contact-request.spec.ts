@@ -1,5 +1,4 @@
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
-import { tid } from '../../helpers/selectors';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Double contact request', () => {
@@ -20,22 +19,13 @@ describe('Double contact request', () => {
 		bobCode = await bob.addContactPage.getAddContactLink();
 	});
 
-	it('does not re-show the contact-request-sent toast on a repeat scan', async () => {
+	it('reuses the same chat on a repeat scan, silently', async () => {
 		await navigateToAddContact(alice);
 		await alice.addContactPage.enterAddContactLink(bobCode);
 		await alice.directChatPage.ready();
 
-		// The first scan shows the confirmation toast.
-		await alice.toast.expectMessage('Contact request sent.');
-
-		// Record the last toast event before the second scan so we can tell
-		// whether a new toast fires.
-		const lastToastBefore = await alice.execute(
-			() =>
-				(window as Window & { __lastToastEvent?: { message: string } })
-					.__lastToastEvent?.message,
-		);
-		expect(lastToastBefore).toBe('Contact request sent.');
+		// Sending the request is silent — the chat it opens is the confirmation.
+		expect(await alice.toast.lastToastMessage()).toBe(undefined);
 
 		// Go back and enter the same contact code a second time.
 		await alice.directChatPage.back.click();
@@ -44,12 +34,13 @@ describe('Double contact request', () => {
 		await alice.addContactPage.enterAddContactLink(bobCode);
 		await alice.directChatPage.ready();
 
-		// A repeat request should not fire another contact-request-sent toast.
-		const lastToastAfter = await alice.execute(
-			() =>
-				(window as Window & { __lastToastEvent?: { message: string } })
-					.__lastToastEvent?.message,
-		);
-		expect(lastToastAfter).toBe('Contact request sent.');
+		// A repeat request is not an error, so it stays silent too.
+		expect(await alice.toast.lastToastMessage()).toBe(undefined);
+
+		// It reopened the chat the first scan created rather than starting a
+		// second request alongside it.
+		await alice.directChatPage.back.click();
+		await alice.homePage.ready();
+		expect(await alice.homePage.chatRowCount()).toBe(1);
 	});
 });

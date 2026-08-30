@@ -42,6 +42,11 @@ export class HomePage extends TestHelper {
 		return this.chatListItem(contactName).isExisting();
 	}
 
+	/** How many chats the list is showing. */
+	async chatRowCount(): Promise<number> {
+		return (await this.agent.$$(tid('all-chats-row'))).length;
+	}
+
 	/** Full visible text of the first chat-list row containing `name`. */
 	async chatRowText(name: string): Promise<string> {
 		await this.chatListItem(name).waitForExist();
