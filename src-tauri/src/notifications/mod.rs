@@ -1,14 +1,19 @@
 mod notified_operations_store;
+
 #[cfg(mobile)]
 pub mod push_notifications;
 
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
-use dashchat_node::{DeviceId, Node, Payload, Topic, TopicId};
+use dashchat_node::{
+    DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic, TopicId,
+};
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
+
+use crate::node::AppNodeManager;
 
 /// Returns `true` iff the user has both enabled notifications in app settings
 /// and granted OS-level permission. On desktop the permission state is always
@@ -27,61 +32,43 @@ pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
 /// foreground-suppression handled by the plugin.
 pub(crate) async fn show_sync_notification(
     app_handle: &AppHandle,
-    notification: &dashchat_node::Notification,
+    notification: &dashchat_node::OpNotification,
 ) {
     if !are_notifications_enabled(app_handle) {
         return;
     }
 
-    let Some(app_node) = app_handle.try_state::<crate::app_node::AppNode>() else {
+    let Some(app_node_manager) = app_handle.try_state::<AppNodeManager>() else {
         return;
     };
 
-    // On iOS the foreground sync path is the only one that can show a banner:
-    // `willPresent` unconditionally drops the NSE's push while the app is
-    // foregrounded, and a backgrounded app is suspended so this loop isn't
-    // running. Sharing the dedup token with the NSE here would let the NSE win
-    // the race and silence this banner (push suppressed + sync skipped = nothing
-    // shown), so on iOS we always show and leave push/sync dedup to `willPresent`.
-    // Other platforms can display both paths, so they keep the cross-path dedup.
-    //
-    // TODO(usernotifications.filtering entitlement): once Apple grants
-    // `com.apple.developer.usernotifications.filtering`, the NSE can suppress its
-    // own push when the main app is alive, so the foreground push/sync collision
-    // goes away. At that point delete this iOS bypass *and* the unconditional
-    // push-suppression in the plugin's `willPresent` (NotificationHandler.swift),
-    // and let every platform share the single cross-path dedup again.
-    #[cfg(not(target_os = "ios"))]
-    {
-        match app_node
-            .notified_operations_store()
-            .record_notified_operation(notification.header.hash())
-            .await
-        {
-            Ok(false) => {
-                log::debug!("Skipping sync notification: op already notified");
-                return;
-            }
-            Ok(true) => {}
-            Err(err) => {
-                log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
-            }
-        }
-    }
-
-    let Ok(node) = app_node.get().await else {
+    let Ok(node) = app_node_manager.get().await else {
         return;
     };
-    let topic = *notification.topic;
     let data = build_notification_data(
         &node,
-        topic.into(),
+        notification.topic,
         &notification.header,
         notification.payload.as_ref(),
     )
     .await;
 
     let Some(data) = data else { return };
+
+    match app_node_manager
+        .notified_operations_store()
+        .record_notified_operation(notification.header.hash())
+        .await
+    {
+        Ok(false) => {
+            log::debug!("Skipping sync notification: op already notified");
+            return;
+        }
+        Ok(true) => {}
+        Err(err) => {
+            log::error!("Failed to record notified operation: {err:?} — proceeding anyway");
+        }
+    }
 
     if let Err(err) = show_notification_from_data(app_handle, data) {
         log::error!("Failed to show sync-path notification: {err:?}");
@@ -119,7 +106,7 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
 /// Build the system notification for a freshly-processed p2panda operation.
 ///
 /// Shared between the FCM/APNs entry point (`receive_push_notification`) and the
-/// foreground sync loop (`notification_loop` in `app_node.rs`). Returns `None`
+/// foreground sync loop (`notification_loop` in `app_node_manager.rs`). Returns `None`
 /// when the op should not produce a user-facing notification (own message, payload
 /// variant we don't surface, etc.).
 pub async fn build_notification_data(
@@ -155,19 +142,21 @@ pub async fn build_notification_data(
 
     match payload {
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
-            Some(chat_message_notification(node, topic, sender_device_id, content, id).await)
+            chat_message_notification(node, topic, sender_device_id, content, id).await
         }
-        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest {
-            agent_id, profile, ..
-        }) => Some(NotificationData {
-            id,
-            title: Some(sonix_i18n::t!("newContactRequest")),
-            body: Some(profile.name.clone()),
-            icon: Some("ic_stat_icon".to_string()),
-            group: Some(topic.to_hex()),
-            route: Some(format!("/direct-chats/{}", agent_id.to_hex())),
-            ..Default::default()
-        }),
+        Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { profile, .. }) => {
+            let chat_topic =
+                Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]);
+            Some(NotificationData {
+                id,
+                title: Some(sonix_i18n::t!("newContactRequest")),
+                body: Some(profile.name.clone()),
+                icon: Some("ic_stat_icon".to_string()),
+                group: Some(topic.to_hex()),
+                route: Some(format!("/direct-chats/{}", chat_topic.to_hex())),
+                ..Default::default()
+            })
+        }
         _ => None,
     }
 }
@@ -178,7 +167,7 @@ async fn chat_message_notification(
     sender_device_id: DeviceId,
     content: &dashchat_node::ChatMessageContent,
     id: i32,
-) -> NotificationData {
+) -> Option<NotificationData> {
     let sender_agent_id = match node.lookup_contact(sender_device_id).await {
         Ok(agent_id) => agent_id,
         Err(err) => {
@@ -186,6 +175,21 @@ async fn chat_message_notification(
             None
         }
     };
+
+    let is_direct_chat =
+        *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic;
+    if is_direct_chat {
+        let accepted = match node.accepted_contact_agent_ids().await {
+            Ok(accepted) => accepted,
+            Err(err) => {
+                log::error!("Failed to load accepted contacts: {err:?}");
+                return None;
+            }
+        };
+        if !sender_agent_id.is_some_and(|agent_id| accepted.contains(&agent_id)) {
+            return None;
+        }
+    }
 
     let sender_profile = if let Some(agent_id) = sender_agent_id {
         node.projection.get_profile(agent_id).await.ok().flatten()
@@ -198,17 +202,23 @@ async fn chat_message_notification(
         .and_then(|p| p.avatar)
         .filter(|s| s.starts_with("data:image/"));
 
-    let direct_chat_agent_id = sender_agent_id
-        .filter(|&agent_id| *Topic::direct_chat([node.agent_id(), agent_id]) == topic);
-    let chat_route = match direct_chat_agent_id {
-        Some(agent_id) => format!("/direct-chats/{}", agent_id),
-        None => format!("/group-chat/{}", topic),
+    let chat_route = if is_direct_chat {
+        format!("/direct-chats/{}", topic)
+    } else {
+        format!("/group-chat/{}", topic)
     };
 
     let message_text: &str = content.message();
-    let body_text = match message_text.char_indices().nth(200) {
-        Some((idx, _)) => format!("{}...", &message_text[..idx]),
-        None => message_text.to_string(),
+    let body_text = if message_text.is_empty() {
+        match content.media() {
+            Some(media) => media_placeholder(media),
+            None => String::new(),
+        }
+    } else {
+        match message_text.char_indices().nth(200) {
+            Some((idx, _)) => format!("{}...", &message_text[..idx]),
+            None => message_text.to_string(),
+        }
     };
 
     #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
@@ -231,9 +241,10 @@ async fn chat_message_notification(
     // and iOS via `INSendMessageIntent.speakableGroupName`.
     #[cfg(mobile)]
     {
-        let conversation_title = match direct_chat_agent_id {
-            Some(_) => None,
-            None => Some(group_title(node, topic).await),
+        let conversation_title = if is_direct_chat {
+            None
+        } else {
+            Some(group_title(node, topic).await)
         };
         data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
             sender_id: sender_agent_id.map(|agent_id| agent_id.to_hex()),
@@ -261,7 +272,33 @@ async fn chat_message_notification(
         data.group = Some("dashchat.chats".to_string());
     }
 
-    data
+    Some(data)
+}
+
+/// Signal-style placeholder body for a media message with no caption,
+/// e.g. "📷 Photo", "📎 report.pdf", "🎤 Voice message".
+fn media_placeholder(media: &MediaBundle) -> String {
+    if let Some(MediaMetadata::File { name, .. }) = media
+        .iter()
+        .find(|item| matches!(item, MediaMetadata::File { .. }))
+    {
+        return format!("📎 {name}");
+    }
+    if media
+        .iter()
+        .any(|item| matches!(item, MediaMetadata::VoiceNote { .. }))
+    {
+        return format!("🎤 {}", sonix_i18n::t!("voiceMessage"));
+    }
+    let photos = media
+        .iter()
+        .filter(|item| matches!(item, MediaMetadata::Photo { .. }))
+        .count();
+    match photos {
+        0 => String::new(),
+        1 => format!("📷 {}", sonix_i18n::t!("photo")),
+        n => format!("📷 {}", sonix_i18n::t!("photosCount", { "count": n })),
+    }
 }
 
 /// Resolves the latest group name for `topic_id`, falling back to a localized
@@ -329,16 +366,15 @@ async fn auth_control_op_notification(
         // the topic matches the deterministic direct-chat topic with the
         // sender.
         GroupAction::Create { initial_members } => {
-            let is_direct_chat = sender_agent_id
-                .map(|aid| *Topic::direct_chat([node.agent_id(), aid]) == topic)
-                .unwrap_or(false);
+            let is_direct_chat =
+                *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)])
+                    == topic;
             if is_direct_chat {
                 let title = match &sender_name {
                     Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
                     None => sonix_i18n::t!("contactRequestAcceptedNoName"),
                 };
-                let route =
-                    sender_agent_id.map(|agent_id| format!("/direct-chats/{}", agent_id.to_hex()));
+                let route = Some(format!("/direct-chats/{}", topic.to_hex()));
                 (title, None, route)
             } else {
                 if !initial_members.iter().any(|(m, _)| target_is_me(m)) {
@@ -407,26 +443,6 @@ async fn auth_control_op_notification(
 pub fn new_message_generic_notification() -> NotificationData {
     NotificationData {
         title: Some(sonix_i18n::t!("youHaveANewMessage")),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        ..Default::default()
-    }
-}
-
-#[cfg(target_os = "ios")]
-pub fn synced_generic_notification() -> NotificationData {
-    NotificationData {
-        title: Some(sonix_i18n::t!("syncedWithServer")),
-        body: None,
-        icon: Some("ic_stat_icon".to_string()),
-        ..Default::default()
-    }
-}
-
-#[cfg(target_os = "ios")]
-pub fn may_have_new_messages_generic_notification() -> NotificationData {
-    NotificationData {
-        title: Some(sonix_i18n::t!("mayHaveNewMessages")),
         body: None,
         icon: Some("ic_stat_icon".to_string()),
         ..Default::default()

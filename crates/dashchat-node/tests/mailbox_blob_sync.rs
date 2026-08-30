@@ -91,11 +91,11 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     // Establish contact while both are online (no media exchanged yet).
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let bobbi_agent_id = bobbi.agent_id();
 
     // Bobbi goes offline before any media exists.
@@ -110,10 +110,12 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -124,7 +126,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("alice's message carries media metadata");
-    let hash = meta.first().expect("at least one media item").hash;
+    let hash = meta.first().expect("at least one media item").hash();
 
     poll.wait_for(|| async {
         relay
@@ -296,10 +298,10 @@ async fn recovers_unfetched_blob_after_source_restart() {
     // Establish contact while both are online (no media yet), then bobbi leaves.
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     bobbi.shutdown().await;
 
@@ -311,10 +313,12 @@ async fn recovers_unfetched_blob_after_source_restart() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -325,7 +329,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("alice's message carries media metadata");
-    let hash = meta.first().expect("at least one media item").hash;
+    let hash = meta.first().expect("at least one media item").hash();
 
     // Alice's mailbox sync runs `publish` on a background task; `publish`
     // announces the blob via `/blobs/store` and, because the mailbox does not

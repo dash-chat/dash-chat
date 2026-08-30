@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
-use p2panda::Hash;
 use sqlx::SqlitePool;
 
 use crate::{
@@ -20,7 +19,7 @@ enum InboxRole {
     /// An inbox we advertise in our QR code and receive contact requests on.
     Advertised = 0,
     /// A private inbox we minted while scanning someone's QR, used only to
-    /// receive their `ContactRequestAck`.
+    /// receive their `ContactRequestAccept`.
     Reply = 1,
 }
 
@@ -37,11 +36,6 @@ const MIGRATIONS: &[&str] = &[
         expires_at_nanos INTEGER NOT NULL,
         role INTEGER NOT NULL DEFAULT 0,
         expected_ack_author BLOB NULL
-    )",
-    "CREATE TABLE IF NOT EXISTS tombstones (
-        topic_id BLOB NOT NULL,
-        op_hash BLOB NOT NULL,
-        PRIMARY KEY (topic_id, op_hash)
     )",
     "CREATE TABLE IF NOT EXISTS unfetched_blob_hashes (
         blob_hash BLOB NOT NULL,
@@ -121,9 +115,10 @@ impl LocalStore {
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
-        let rows: Vec<(Topic,)> = sqlx::query_as("SELECT topic_id FROM subscribed_topics")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows: Vec<(Topic<kind::Untyped>,)> =
+            sqlx::query_as("SELECT topic_id FROM subscribed_topics")
+                .fetch_all(&self.pool)
+                .await?;
         Ok(rows.into_iter().map(|(id,)| *id).collect())
     }
 
@@ -183,7 +178,7 @@ impl LocalStore {
     }
 
     /// Reply inbox topics this node created for a specific contact exchange and
-    /// is awaiting a `ContactRequestAck` on. Kept separate from advertised
+    /// is awaiting a `ContactRequestAccept` on. Kept separate from advertised
     /// inboxes so the frontend's contact-request scan only looks at inboxes
     /// meant to receive requests, not our own private reply channels.
     pub async fn get_reply_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
@@ -193,7 +188,7 @@ impl LocalStore {
     pub async fn get_reply_inbox_topics_with_author(
         &self,
     ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
-        let rows: Vec<(Topic, i64, DeviceId)> = sqlx::query_as(
+        let rows: Vec<(Topic<kind::Untyped>, i64, DeviceId)> = sqlx::query_as(
             "SELECT topic_id, expires_at_nanos, expected_ack_author FROM active_inboxes WHERE role = ?",
         )
         .bind(InboxRole::Reply)
@@ -214,7 +209,7 @@ impl LocalStore {
     }
 
     async fn get_inbox_topics(&self, role: InboxRole) -> anyhow::Result<BTreeSet<InboxTopic>> {
-        let rows: Vec<(Topic, i64)> =
+        let rows: Vec<(Topic<kind::Untyped>, i64)> =
             sqlx::query_as("SELECT topic_id, expires_at_nanos FROM active_inboxes WHERE role = ?")
                 .bind(role)
                 .fetch_all(&self.pool)
@@ -311,43 +306,6 @@ impl LocalStore {
             .execute(&self.pool)
             .await?;
         Ok(())
-    }
-
-    /// Record an operation hash in the per-topic tombstone set. Payloads for
-    /// tombstoned operations must never be stored or synced.
-    pub async fn add_tombstone(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR IGNORE INTO tombstones (topic_id, op_hash) VALUES (?, ?)")
-            .bind(topic.as_bytes().to_vec())
-            .bind(op_hash.as_bytes().to_vec())
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn is_tombstoned(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<bool> {
-        let row: Option<(i64,)> =
-            sqlx::query_as("SELECT 1 FROM tombstones WHERE topic_id = ? AND op_hash = ?")
-                .bind(topic.as_bytes().to_vec())
-                .bind(op_hash.as_bytes().to_vec())
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.is_some())
-    }
-
-    pub async fn tombstoned_hashes(&self, topic: TopicId) -> anyhow::Result<BTreeSet<Hash>> {
-        let rows: Vec<(Vec<u8>,)> =
-            sqlx::query_as("SELECT op_hash FROM tombstones WHERE topic_id = ?")
-                .bind(topic.as_bytes().to_vec())
-                .fetch_all(&self.pool)
-                .await?;
-        rows.into_iter()
-            .map(|(bytes,)| {
-                let arr: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("tombstone op_hash is not 32 bytes"))?;
-                Ok(Hash::from_bytes(arr))
-            })
-            .collect()
     }
 
     pub async fn add_unfetched_blobs(
@@ -464,57 +422,6 @@ mod tests {
             private_key.as_bytes()
         );
         assert_eq!(store.agent_id().await.unwrap(), agent_id);
-    }
-
-    #[tokio::test]
-    async fn test_tombstones_per_topic() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
-            .await
-            .unwrap();
-        let store = LocalStore::new(pool.clone()).await.unwrap();
-
-        let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
-        let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
-        let hash1 = Hash::digest(b"op1");
-        let hash2 = Hash::digest(b"op2");
-
-        assert!(!store.is_tombstoned(topic_a, hash1).await.unwrap());
-
-        store.add_tombstone(topic_a, hash1).await.unwrap();
-        store.add_tombstone(topic_a, hash2).await.unwrap();
-        store.add_tombstone(topic_b, hash1).await.unwrap();
-        // Adding the same hash again is idempotent.
-        store.add_tombstone(topic_a, hash1).await.unwrap();
-
-        assert!(store.is_tombstoned(topic_a, hash1).await.unwrap());
-        assert!(store.is_tombstoned(topic_a, hash2).await.unwrap());
-        // Tombstones are scoped per-topic: hash2 in topic_a does not leak into topic_b.
-        assert!(store.is_tombstoned(topic_b, hash1).await.unwrap());
-        assert!(!store.is_tombstoned(topic_b, hash2).await.unwrap());
-
-        assert_eq!(
-            store.tombstoned_hashes(topic_a).await.unwrap(),
-            maplit::btreeset![hash1, hash2]
-        );
-        assert_eq!(
-            store.tombstoned_hashes(topic_b).await.unwrap(),
-            maplit::btreeset![hash1]
-        );
-
-        // Tombstones persist across reopening the database.
-        drop(store);
-        pool.close().await;
-
-        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
-            .await
-            .unwrap();
-        let store = LocalStore::new(pool).await.unwrap();
-        assert!(store.is_tombstoned(topic_a, hash1).await.unwrap());
-        assert_eq!(
-            store.tombstoned_hashes(topic_a).await.unwrap(),
-            maplit::btreeset![hash1, hash2]
-        );
     }
 
     #[tokio::test]

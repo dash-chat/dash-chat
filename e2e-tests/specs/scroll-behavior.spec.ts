@@ -7,7 +7,7 @@
  */
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { UI_TIMEOUT } from '../helpers/timeouts';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Chat scroll behavior', () => {
 	// Need enough overflow that scrollUp can move past the bottom
@@ -20,10 +20,9 @@ describe('Chat scroll behavior', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		this.timeout(120_000);
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
@@ -34,7 +33,7 @@ describe('Chat scroll behavior', () => {
 		let i = 0;
 		let overflow = await agent1.directChatPage.scroll.overflow();
 		while (overflow < REQUIRED_OVERFLOW && i < MAX_FILLER) {
-			await agent1.directChatPage.sendMessage(`filler ${i}`);
+			await agent1.directChatPage.composer.sendMessage(`filler ${i}`);
 			await agent1.directChatPage.messages.waitForMessage(
 				`filler ${i}`,
 				UI_TIMEOUT,
@@ -52,7 +51,9 @@ describe('Chat scroll behavior', () => {
 		await agent1.directChatPage.scroll.scrollUp();
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(false);
 
-		await agent1.directChatPage.sendMessage('self-send after scroll up');
+		await agent1.directChatPage.composer.sendMessage(
+			'self-send after scroll up',
+		);
 		await agent1.directChatPage.messages.waitForMessage(
 			'self-send after scroll up',
 		);
@@ -65,7 +66,7 @@ describe('Chat scroll behavior', () => {
 	it('stays pinned to bottom when a peer message arrives at bottom', async () => {
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(true);
 
-		await agent2.directChatPage.sendMessage('peer at bottom');
+		await agent2.directChatPage.composer.sendMessage('peer at bottom');
 		await agent1.directChatPage.messages.waitForMessage('peer at bottom');
 
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(true);
@@ -75,7 +76,7 @@ describe('Chat scroll behavior', () => {
 		await agent1.directChatPage.scroll.scrollUp();
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(false);
 
-		await agent2.directChatPage.sendMessage('peer while scrolled up');
+		await agent2.directChatPage.composer.sendMessage('peer while scrolled up');
 		await agent1.directChatPage.messages.waitForMessage(
 			'peer while scrolled up',
 		);
@@ -89,7 +90,9 @@ describe('Chat scroll behavior', () => {
 
 	it('clicking scroll-to-bottom returns to bottom and clears unread badge', async () => {
 		await agent1.directChatPage.scroll.scrollUp();
-		await agent2.directChatPage.sendMessage('unread badge precondition');
+		await agent2.directChatPage.composer.sendMessage(
+			'unread badge precondition',
+		);
 		await agent1.directChatPage.messages.waitForMessage(
 			'unread badge precondition',
 		);

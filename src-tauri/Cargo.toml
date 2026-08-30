@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.19.10"
+version = "0.19.22"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -17,10 +17,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2.4.0", default-features = false, features = [] }
 vergen-gitcl = "9"
+sentry-types = "0.42"
 
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
 
+tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "1145bd4c3ccf4c09c667f3c54afa4e72d53988cb" }
+tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -29,18 +32,20 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-sharekit = "0.3"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
+tauri-plugin-opener = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
+tauri-plugin-audio-recorder = "=0.1.2"
+tauri-plugin-sentry-reporting = { workspace = true }
 
-tauri-plugin-virtual-keyboard-padding = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard-padding", branch = "main" }
-tauri-plugin-mailto = { git = "https://github.com/dash-chat/tauri-plugin-mailto", branch = "main" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "push-notifications", features = [
+tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "a86d8cf2ea998eba7f93dc6b53674fdb77d3def5" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "29867d696371de6cc315fbb0db9820e288b4124c", features = [
   "push-notifications-fcm",
 ] }
-
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }
 dashchat-utils = { workspace = true }
+opus-transcode = { workspace = true }
 
 p2panda = { workspace = true }
 iroh = { workspace = true }
@@ -59,7 +64,6 @@ mdns-sd = "0.20"
 nanoid = "0"
 image = "0.25"
 
-opener = { version = "0.7", features = ["reveal"] }
 log = "0.4"
 netdev = "0.43"
 if-watch = { version = "3", features = ["tokio"] }
@@ -93,18 +97,19 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
-tauri-plugin-system-bars-styles = { git = "https://github.com/dash-chat/tauri-plugin-system-bars-styles", branch = "main" }
 tauri-plugin-view = "0.0.5"
+tauri-plugin-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-lifecycle", rev = "27e2776" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 ndk-sys = "0.6"
 ndk-context = "0.1"
-# Saves photos to the shared gallery (MediaStore). 
-tauri-plugin-android-fs = { version = "28.2" }
+# Saves photos to the shared gallery (MediaStore).
+tauri-plugin-android-fs = { version = "=28.4.0" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos
 # strip. JS bindings ship as `@universalappfactory/tauri-plugin-medialibrary`.
 tauri-plugin-medialibrary = "=0.13"
+tauri-plugin-background-service = "1.0"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"
@@ -112,9 +117,6 @@ oslog = "0.2"
 # `requestMediasByIds` fetch-by-id command, so the recent-photos strip and
 # tap-to-send no longer render the entire album.
 tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "ec723636ddf248dd6542e02fb2e83d91d1da36c9" }
-# Releases SQLite locks on background so iOS can suspend the app without a
-# 0xdead10cc kill; rebuilds the node on foreground.
-tauri-plugin-ios-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-ios-lifecycle", branch = "main" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
@@ -123,7 +125,6 @@ objc2 = "0.6"
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"
-tauri-plugin-mcp-bridge = "0.8"
 mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
 

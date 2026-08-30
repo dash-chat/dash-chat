@@ -10,6 +10,8 @@ use p2panda::operation::LogId;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
+use crate::node::node_slot;
+use crate::node::NodeContext;
 use crate::notifications;
 
 #[cfg(target_os = "android")]
@@ -101,24 +103,11 @@ async fn handle_push_notifications_with_fallback_messages(
                 log::info!(
                     "Successfully processed push notification, no actual notification needs to be shown.",
                 );
-                // On iOS, alert notifications must be shown. If we return None here,
-                // iOS will display a notification with title = topic_id, and body = author:seq_num
-                // Show a generic notification instead
-                // TODO: apply for the exception to Apple that allows apps to not need to show a notification
-                // https://developer.apple.com/contact/request/notification-service
-                #[cfg(target_os = "ios")]
-                return Some(notifications::synced_generic_notification());
             }
             result
         }
         Err(err) => {
             log::error!("Failed to handle push notification: {err:?}");
-            // On iOS, returning None here would let iOS fall back to the
-            // raw APNS payload (topic_id as title, author:seq as body).
-            // Show a generic fallback so the user sees something readable.
-            #[cfg(target_os = "ios")]
-            return Some(notifications::may_have_new_messages_generic_notification());
-            #[cfg(not(target_os = "ios"))]
             None
         }
     }
@@ -164,9 +153,13 @@ async fn handle_push_notification(
         app_data_dir
     );
 
-    let node = super::node_cache::get_node(app_data_dir)
-        .await
-        .context("failed to get node")?;
+    let acquired = node_slot::get_node_for_push_notification(
+        app_data_dir,
+        NodeContext::for_push_notifications(),
+    )
+    .await
+    .context("failed to get node")?;
+    let node = acquired.node;
 
     log::info!("dashchat node built successfully.");
 
@@ -207,6 +200,25 @@ async fn handle_push_notification(
         return Ok(Some(notifications::new_message_generic_notification()));
     };
 
+    let payload = match operation.body.as_ref() {
+        Some(body) => Some(
+            Payload::try_from_body(body)
+                .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?,
+        ),
+        None => None,
+    };
+
+    let Some(data) = notifications::build_notification_data(
+        &node,
+        topic_id,
+        &operation.header,
+        payload.as_ref(),
+    )
+    .await
+    else {
+        return Ok(None);
+    };
+
     let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
         &filesystem.notified_operations_db_path(),
     )
@@ -217,18 +229,8 @@ async fn handle_push_notification(
         .await
     {
         Ok(false) => {
-            // On iOS the NSE must return some content; the main app's
-            // local notification has the same stable id, so iOS will
-            // collapse them into a single banner and the plugin's
-            // `willPresent` callback suppresses it when the user is on
-            // the notification's route.
-            #[cfg(not(target_os = "ios"))]
-            {
-                log::info!("Skipping push notification for op {op_id}: already notified");
-                return Ok(None);
-            }
-            #[cfg(target_os = "ios")]
-            log::info!("op {op_id} was already notified by the main app; building the same notification so iOS dedups by id");
+            log::info!("Skipping push notification for op {op_id}: already notified");
+            return Ok(None);
         }
         Ok(true) => {}
         Err(err) => {
@@ -236,21 +238,5 @@ async fn handle_push_notification(
         }
     }
 
-    let payload = match operation.body.as_ref() {
-        Some(body) => Some(
-            Payload::try_from_body(body)
-                .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?,
-        ),
-        None => None,
-    };
-
-    Ok(
-        notifications::build_notification_data(
-            &node,
-            topic_id,
-            &operation.header,
-            payload.as_ref(),
-        )
-        .await,
-    )
+    Ok(Some(data))
 }

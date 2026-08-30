@@ -2,13 +2,13 @@ import { type IChatsClient } from '../chats/chats-client';
 import { ChatsStore } from '../chats/chats-store';
 import { type IMessagesClient } from '../chats/messages-client';
 import { ContactsStore } from '../contacts/contacts-store';
-import { type IDirectChatClient } from '../direct-chats/direct-chat-client';
 import { type IGroupChatClient } from '../group-chats/group-chat-client';
+import { MessageAckStore } from '../message-acks/message-ack-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { AgentId } from '../p2panda/types';
+import { TopicId } from '../p2panda/types';
+import { TombstoneStore } from '../tombstones/tombstone-store';
 import { Payload } from '../types';
 import { type LocalStorageLogsClient } from './client';
-import { MockDirectChatClient } from './direct-chat-client';
 import { MockGroupChatClient } from './group-chat-client';
 import { MockMessagesClient } from './messages-client';
 
@@ -16,15 +16,13 @@ export class MockChatsStore extends ChatsStore {
 	constructor(
 		logsStore: LogsStore<Payload>,
 		contactsStore: ContactsStore,
+		tombstoneStore: TombstoneStore,
+		messageAckStore: MessageAckStore,
 		client: IChatsClient,
 		private mockLogsClient: LocalStorageLogsClient,
-		private agentId: AgentId,
+		private deviceGroupTopicId: TopicId,
 	) {
-		super(logsStore, contactsStore, client);
-	}
-
-	protected directChatClient(): IDirectChatClient {
-		return new MockDirectChatClient(this.agentId);
+		super(logsStore, contactsStore, tombstoneStore, messageAckStore, client);
 	}
 
 	protected groupChatClient(): IGroupChatClient {
@@ -32,6 +30,6 @@ export class MockChatsStore extends ChatsStore {
 	}
 
 	protected messagesClient(): IMessagesClient {
-		return new MockMessagesClient(this.mockLogsClient);
+		return new MockMessagesClient(this.mockLogsClient, this.deviceGroupTopicId);
 	}
 }

@@ -16,8 +16,8 @@
 	async function onImageSelected() {
 		if (!imageFilePicker.files || !imageFilePicker.files[0]) return;
 		try {
-			const code = await scanQrFromImage(imageFilePicker.files[0]);
-			await onSelectImage(code);
+			const qrCodeValue = await scanQrFromImage(imageFilePicker.files[0]);
+			await onSelectImage(qrCodeValue);
 		} catch (e) {
 			if (isScanQrFromImageError(e) && e.kind === 'NoQrCodeFound') {
 				showToast(m.errorNoQrCodeInImage(), 'error');
@@ -26,7 +26,7 @@
 				showToast(m.errorUnexpected(), 'unexpected', e);
 			}
 		} finally {
-			imageFilePicker.value = '';
+			if (imageFilePicker) imageFilePicker.value = '';
 		}
 	}
 

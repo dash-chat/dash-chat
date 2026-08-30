@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Button, Page } from 'konsta/svelte';
+	import { Page } from 'konsta/svelte';
 	import { isIos } from '$lib/utils/environment';
 	import AvatarPicker from '$lib/components/profiles/AvatarPicker.svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 
 	let {
 		avatar = $bindable(),
@@ -27,8 +28,8 @@
 	/>
 
 	{#if !inModalState && !isIos}
-		<Button rounded tonal onClick={onConfirm} class="fixed-action-btn">
+		<FixedActionButton tonal onClick={onConfirm} testId="edit-photo-save-btn">
 			{m.save()}
-		</Button>
+		</FixedActionButton>
 	{/if}
 </Page>

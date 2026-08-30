@@ -1,7 +1,11 @@
 import { LogsClient, waitForOperation } from '../p2panda/logs-client';
 import { AgentId, DeviceId, type TopicId } from '../p2panda/types';
-import { Payload } from '../types';
+import { ChatId, Payload } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
+
+export type AddContactResult =
+	| { kind: 'NewRequest'; chatId: ChatId }
+	| { kind: 'AlreadyRequested'; chatId: ChatId };
 
 export interface Profile {
 	name: string;
@@ -25,8 +29,15 @@ export interface IContactsClient {
 	// established. Undefined while an outgoing request is still pending.
 	agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined>;
 
+	// The direct-chat topic id shared with the peer device.
+	directChatId(devicePubkey: DeviceId): Promise<ChatId>;
+
 	// Sets the profile for this user
 	setProfile(profile: Profile): Promise<void>;
+
+	// Returns the cached profile for the given agent, if one has been stored
+	// locally (for example from a ContactRequestAccept).
+	getProfile(agentId: AgentId): Promise<Profile | undefined>;
 
 	/// contacts
 
@@ -37,14 +48,21 @@ export interface IContactsClient {
 
 	// getContacts(): Promise<Array<VerifyingKey>>;
 
-	// Add a contact from the given encoded contact code string; returns the device pubkey
-	addContact(code: string): Promise<DeviceId>;
+	// Add a contact from the given encoded contact code string; returns whether
+	// this was a new request and the id of the direct chat for it
+	addContact(code: string): Promise<AddContactResult>;
 
 	// Accept an incoming contact request
 	acceptContact(agentId: AgentId): Promise<void>;
 
-	// Reject contact request
-	rejectContactRequest(agentId: AgentId): Promise<void>;
+	// Block a contact
+	blockContact(agentId: AgentId): Promise<void>;
+
+	// Unblock a contact
+	unblockContact(agentId: AgentId): Promise<void>;
+
+	// Report a contact to the mailboxes we're connected to
+	reportContact(agentId: AgentId): Promise<void>;
 
 	// Remove contact
 	// removeContact(contact: ContactId): Promise<void>;
@@ -83,10 +101,22 @@ export class ContactsClient implements IContactsClient {
 		);
 	}
 
+	directChatId(devicePubkey: DeviceId): Promise<ChatId> {
+		return invokeAfterSetup('direct_chat_id', { peer: devicePubkey });
+	}
+
 	async setProfile(profile: Profile): Promise<void> {
 		return invokeAfterSetup('set_profile', {
 			profile,
 		});
+	}
+
+	async getProfile(agentId: AgentId): Promise<Profile | undefined> {
+		return (
+			(await invokeAfterSetup<Profile | null>('get_profile', {
+				agentId,
+			})) ?? undefined
+		);
 	}
 
 	createContactCode(): Promise<string> {
@@ -97,34 +127,24 @@ export class ContactsClient implements IContactsClient {
 		return invokeAfterSetup('active_inbox_topics');
 	}
 
-	async addContact(contactCode: string): Promise<DeviceId> {
+	async addContact(contactCode: string): Promise<AddContactResult> {
 		return invokeAfterSetup('add_contact', { contactCode });
 	}
 
 	async acceptContact(agentId: AgentId): Promise<void> {
-		await Promise.all([
-			invokeAfterSetup('accept_contact', { agentId }),
-			waitForOperation(
-				this.logsClient,
-				op =>
-					op.body?.type === 'DeviceGroupPayload' &&
-					op.body.payload.type === 'AddContact' &&
-					op.body.payload.payload.agent_id === agentId,
-			),
-		]);
+		await invokeAfterSetup('accept_contact', { agentId });
 	}
 
-	async rejectContactRequest(agentId: AgentId): Promise<void> {
-		await Promise.all([
-			invokeAfterSetup('reject_contact_request', { agentId }),
-			waitForOperation(
-				this.logsClient,
-				op =>
-					op.body?.type === 'DeviceGroupPayload' &&
-					op.body.payload.type === 'RejectContactRequest' &&
-					op.body.payload.payload === agentId,
-			),
-		]);
+	async blockContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('block_contact', { agentId });
+	}
+
+	async unblockContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('unblock_contact', { agentId });
+	}
+
+	async reportContact(agentId: AgentId): Promise<void> {
+		await invokeAfterSetup('report_contact', { agentId });
 	}
 
 	// getContacts(): Promise<Array<VerifyingKey>> {

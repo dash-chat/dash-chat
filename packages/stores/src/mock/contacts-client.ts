@@ -1,7 +1,11 @@
-import type { IContactsClient, Profile } from '../contacts/contacts-client';
+import type {
+	AddContactResult,
+	IContactsClient,
+	Profile,
+} from '../contacts/contacts-client';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
-import type { LocalStorageLogsClient } from './client';
+import { type LocalStorageLogsClient, chatIdForDevices } from './client';
 
 export class MockContactsClient implements IContactsClient {
 	constructor(
@@ -10,6 +14,7 @@ export class MockContactsClient implements IContactsClient {
 		private deviceId: DeviceId,
 		private deviceGroupTopicId: TopicId,
 		private inboxTopics: TopicId[],
+		private knownDevices: Record<AgentId, DeviceId>,
 	) {}
 
 	async myAgentId(): Promise<AgentId> {
@@ -24,11 +29,19 @@ export class MockContactsClient implements IContactsClient {
 		return undefined;
 	}
 
+	async directChatId(devicePubkey: DeviceId): Promise<string> {
+		return chatIdForDevices(this.deviceId, devicePubkey);
+	}
+
 	async setProfile(profile: Profile): Promise<void> {
 		await this.logsClient.create(personalTopicFor(this.agentId), {
 			type: 'Announcements',
 			payload: { type: 'SetProfile', payload: profile },
 		});
+	}
+
+	async getProfile(_agentId: AgentId): Promise<Profile | undefined> {
+		return undefined;
 	}
 
 	async createContactCode(): Promise<string> {
@@ -41,21 +54,50 @@ export class MockContactsClient implements IContactsClient {
 		return this.inboxTopics;
 	}
 
-	async addContact(_contactCode: string): Promise<DeviceId> {
-		return this.deviceId;
+	async addContact(_contactCode: string): Promise<AddContactResult> {
+		return {
+			kind: 'NewRequest',
+			chatId: chatIdForDevices(this.deviceId, this.deviceId),
+		};
 	}
 
 	async acceptContact(agentId: AgentId): Promise<void> {
+		const peerDevice = this.knownDevices[agentId];
+		if (peerDevice === undefined)
+			throw new Error(`Unknown demo device for agent ${agentId}`);
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',
-			payload: { type: 'AddContact', payload: { agent_id: agentId } },
+			payload: {
+				type: 'AddContact',
+				payload: {
+					agent_id: agentId,
+					direct_chat_topic_id: chatIdForDevices(this.deviceId, peerDevice),
+				},
+			},
 		});
 	}
 
-	async rejectContactRequest(agentId: AgentId): Promise<void> {
+	async blockContact(agentId: AgentId): Promise<void> {
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',
-			payload: { type: 'RejectContactRequest', payload: agentId },
+			payload: { type: 'BlockAgent', payload: agentId },
+		});
+	}
+
+	async unblockContact(agentId: AgentId): Promise<void> {
+		await this.logsClient.create(this.deviceGroupTopicId, {
+			type: 'DeviceGroupPayload',
+			payload: { type: 'UnblockAgent', payload: agentId },
+		});
+	}
+
+	async reportContact(agentId: AgentId): Promise<void> {
+		await this.logsClient.create(this.deviceGroupTopicId, {
+			type: 'DeviceGroupPayload',
+			payload: {
+				type: 'ReportContact',
+				payload: { agent_id: agentId, device_ids: [], mailbox_ids: [] },
+			},
 		});
 	}
 }

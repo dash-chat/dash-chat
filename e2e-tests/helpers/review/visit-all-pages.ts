@@ -1,5 +1,5 @@
 import type { Agent } from '../../setup/setup-agents';
-import { checkPage, type CheckOptions, type PageResult } from './checks';
+import { type CheckOptions, type PageResult, checkPage } from './checks';
 
 export interface VisitOptions {
 	checkDarkMode?: boolean;
@@ -130,15 +130,21 @@ export async function visitOtherPages(
 	await agent.homePage.settingsLink.click();
 	await agent.settingsPage.ready();
 
-	await agent.settingsPage.offlineLink.click();
-	await agent.offlinePage.ready();
-	pages.push(await runCheck(agent, 'offline', co));
-	await breathe();
-	// In narrow mode the per-page back goes to /settings; in wide-screen it is
-	// hidden and the SettingsPanel sidebar links to siblings are mounted.
-	if (await agent.offlinePage.back.isDisplayed()) {
-		await agent.offlinePage.back.click();
-		await agent.settingsPage.ready();
+	// The offline settings page exists everywhere but iOS ({#if !isIos}).
+	if (agent.platform !== 'ios') {
+		await expect(agent.settingsPage.offlineLink).toBeDisplayed();
+		await agent.settingsPage.offlineLink.click();
+		await agent.offlinePage.ready();
+		pages.push(await runCheck(agent, 'offline', co));
+		await breathe();
+		// In narrow mode the per-page back goes to /settings; in wide-screen it is
+		// hidden and the SettingsPanel sidebar links to siblings are mounted.
+		if (await agent.offlinePage.back.isDisplayed()) {
+			await agent.offlinePage.back.click();
+			await agent.settingsPage.ready();
+		}
+	} else {
+		await expect(agent.settingsPage.offlineLink).not.toBeDisplayed();
 	}
 
 	await agent.settingsPage.appearanceLink.click();

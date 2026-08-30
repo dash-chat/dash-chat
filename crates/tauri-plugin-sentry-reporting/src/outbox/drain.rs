@@ -1,0 +1,569 @@
+//! Emptying the outbox: one pass at a time, woken by anything that suggests a
+//! connection might exist.
+
+use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+#[cfg(test)]
+use sentry::Envelope;
+use tokio::sync::Mutex;
+
+use crate::outbox::entry;
+use crate::outbox::retention;
+use reqwest::StatusCode;
+
+use crate::outbox::sender::{Delivery, EnvelopeSender};
+use crate::outbox::{blocking, Outbox};
+
+const INITIAL_BACKOFF: Duration = Duration::from_secs(60);
+const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
+/// How long to wait before rescanning an outbox that had nothing in it.
+const IDLE_INTERVAL: Duration = Duration::from_secs(30 * 60);
+/// How many delivered entries to remember, so a report delivered by one pass is
+/// not reported as vanished by the next.
+const RECENTLY_DELIVERED: usize = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DrainResult {
+    /// Nothing is waiting any more.
+    Emptied,
+    /// Something is still waiting for a connection.
+    Pending,
+}
+
+/// What became of one particular entry, as opposed to the pass as a whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntryFate {
+    /// Sentry has it.
+    Delivered,
+    /// Still on disk, waiting for a connection.
+    Waiting,
+    /// Gone without being delivered.
+    Dropped(DropReason),
+}
+
+/// Why an entry went away without reaching Sentry. Named rather than inferred,
+/// so a report that fails says which of these happened to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DropReason {
+    /// Sentry answered, and its answer was no.
+    Refused { status: Option<StatusCode> },
+    /// It could not be read back from disk, so it could never have been sent.
+    Unreadable,
+    /// Gone before this pass reached it: evicted by retention, or claimed by
+    /// another process sharing the data directory.
+    Vanished,
+}
+
+/// The outcome of one pass: its verdict, plus what it delivered.
+pub(crate) struct DrainReport {
+    pub(crate) result: DrainResult,
+    /// The delay Sentry named when it turned this pass away, if it named one.
+    retry_after: Option<Duration>,
+    delivered: Vec<PathBuf>,
+    dropped: Vec<(PathBuf, DropReason)>,
+}
+
+impl DrainReport {
+    /// What became of the entry originally written at `path`.
+    pub(crate) fn fate(&self, path: &Path) -> EntryFate {
+        if self.delivered.iter().any(|done| done == path) {
+            EntryFate::Delivered
+        } else if let Some((_, why)) = self.dropped.iter().find(|(gone, _)| gone == path) {
+            EntryFate::Dropped(*why)
+        } else if path.exists() {
+            EntryFate::Waiting
+        } else {
+            EntryFate::Dropped(DropReason::Vanished)
+        }
+    }
+}
+
+/// One pass over `queued/`, oldest first. Never touches `held/`.
+pub(crate) async fn drain_once(outbox: &Outbox, sender: &impl EnvelopeSender) -> DrainReport {
+    let root = outbox.root().to_owned();
+    let entries = blocking(move || {
+        retention::enforce(&root);
+        entry::list(&root, entry::State::Queued)
+    })
+    .await;
+
+    let mut result = DrainResult::Emptied;
+    let mut retry_after = None;
+    let mut delivered = Vec::new();
+    let mut dropped = Vec::new();
+    for queued in entries {
+        let (in_flight, envelope) = match claim(&queued.path).await {
+            Claimed::Missed => {
+                result = DrainResult::Pending;
+                continue;
+            }
+            Claimed::Unreadable => {
+                dropped.push((queued.path.clone(), DropReason::Unreadable));
+                result = DrainResult::Pending;
+                continue;
+            }
+            Claimed::Ready(in_flight, envelope) => (in_flight, envelope),
+        };
+
+        match post_claimed(sender, &queued.path, in_flight, &envelope).await {
+            Delivery::Delivered => delivered.push(queued.path.clone()),
+            Delivery::Rejected { status } => {
+                dropped.push((queued.path.clone(), DropReason::Refused { status }));
+            }
+            Delivery::Retry { after } => {
+                result = DrainResult::Pending;
+                retry_after = after;
+                // A failure now means the rest will fail too; stop wasting the
+                // attempt and let the backoff decide when to try again.
+                break;
+            }
+        }
+    }
+    DrainReport {
+        result,
+        retry_after,
+        delivered,
+        dropped,
+    }
+}
+
+enum Claimed {
+    /// Gone, or taken by another drainer.
+    Missed,
+    /// Claimed, then deleted as unreadable.
+    Unreadable,
+    Ready(PathBuf, sentry::Envelope),
+}
+
+/// Renames the entry out of the way first, so no other drainer — in this
+/// process or another sharing the data directory — picks up the same entry.
+async fn claim(path: &Path) -> Claimed {
+    let taken = path.to_owned();
+    let Ok(in_flight) = blocking(move || entry::mark_sending(&taken)).await else {
+        return Claimed::Missed;
+    };
+    let read_back = in_flight.clone();
+    match blocking(move || entry::read(&read_back)).await {
+        Some(envelope) => Claimed::Ready(in_flight, envelope),
+        None => Claimed::Unreadable,
+    }
+}
+
+/// Posts one claimed entry and settles its file: gone once Sentry answered,
+/// restored to `queued` when it is worth retrying.
+async fn post_claimed(
+    sender: &impl EnvelopeSender,
+    queued: &Path,
+    in_flight: PathBuf,
+    envelope: &sentry::Envelope,
+) -> Delivery {
+    let delivery = sender.post(envelope).await;
+    match delivery {
+        Delivery::Delivered | Delivery::Rejected { .. } => {
+            let _ = blocking(move || std::fs::remove_file(&in_flight)).await;
+        }
+        Delivery::Retry { .. } => {
+            let requeue = queued.to_owned();
+            let _ = blocking(move || std::fs::rename(&in_flight, &requeue)).await;
+        }
+    }
+    delivery
+}
+
+/// Owns the background drain loop. Passes are serialized through the drain
+/// lock; a watched entry may be claimed and sent ahead of them.
+pub(crate) struct Drainer<S: EnvelopeSender> {
+    outbox: Arc<Outbox>,
+    sender: Arc<S>,
+    /// Held for the length of a pass, and carrying what the last few passes
+    /// delivered.
+    draining: Arc<Mutex<VecDeque<PathBuf>>>,
+}
+
+impl<S: EnvelopeSender + 'static> Drainer<S> {
+    /// Starts draining on startup, on every network-settled tick, and on a
+    /// backoff timer while anything is still waiting.
+    pub(crate) fn spawn(outbox: Arc<Outbox>, sender: Arc<S>) -> Arc<Self> {
+        let drainer = Arc::new(Self {
+            outbox,
+            sender,
+            draining: Arc::new(Mutex::new(VecDeque::new())),
+        });
+
+        let background = drainer.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut settled = dashchat_utils::network_settled();
+            let mut backoff = INITIAL_BACKOFF;
+            loop {
+                let report = background.drain_pass().await;
+                let delay = match report.result {
+                    DrainResult::Emptied => {
+                        backoff = INITIAL_BACKOFF;
+                        IDLE_INTERVAL
+                    }
+                    DrainResult::Pending => {
+                        let delay = backoff.max(report.retry_after.unwrap_or_default());
+                        backoff = (backoff * 2).min(MAX_BACKOFF);
+                        delay
+                    }
+                };
+                tokio::select! {
+                    _ = tokio::time::sleep(delay) => {}
+                    changed = settled.recv() => {
+                        if matches!(changed, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
+                            log::warn!(
+                                "sentry-reporting: the network-settled channel closed; \
+                                 reports will only go out on the next launch"
+                            );
+                            return;
+                        }
+                        backoff = INITIAL_BACKOFF;
+                    }
+                }
+            }
+        });
+
+        drainer
+    }
+
+    /// Waits for any drain already running, so a report is never posted twice.
+    async fn drain_pass(&self) -> DrainReport {
+        let mut recent = self.draining.lock().await;
+        let report = drain_once(&self.outbox, self.sender.as_ref()).await;
+        remember(&mut recent, &report.delivered);
+        report
+    }
+
+    /// Reports what became of `watched`: sent on its own when it can be
+    /// claimed, so the answer never waits behind a pass over the whole outbox;
+    /// otherwise by draining behind whichever pass got to it first.
+    pub(crate) async fn drain_watching(&self, watched: &Path) -> EntryFate {
+        if let Some(fate) = self.send_alone(watched).await {
+            return fate;
+        }
+        let mut recent = self.draining.lock().await;
+        let delivered_earlier = recent.iter().any(|done| done == watched);
+        let report = drain_once(&self.outbox, self.sender.as_ref()).await;
+        remember(&mut recent, &report.delivered);
+        match report.fate(watched) {
+            // A pass that ran between the enqueue and this one already sent it.
+            EntryFate::Dropped(DropReason::Vanished) if delivered_earlier => EntryFate::Delivered,
+            fate => fate,
+        }
+    }
+
+    /// Delivers just `watched`, without the drain lock: the claim alone rules
+    /// out a double post. `None` when another drainer got to it first.
+    async fn send_alone(&self, watched: &Path) -> Option<EntryFate> {
+        let root = self.outbox.root().to_owned();
+        blocking(move || retention::enforce(&root)).await;
+        match claim(watched).await {
+            Claimed::Missed => None,
+            Claimed::Unreadable => Some(EntryFate::Dropped(DropReason::Unreadable)),
+            Claimed::Ready(in_flight, envelope) => Some(
+                match post_claimed(self.sender.as_ref(), watched, in_flight, &envelope).await {
+                    Delivery::Delivered => EntryFate::Delivered,
+                    Delivery::Rejected { status } => {
+                        EntryFate::Dropped(DropReason::Refused { status })
+                    }
+                    Delivery::Retry { .. } => EntryFate::Waiting,
+                },
+            ),
+        }
+    }
+}
+
+fn remember(recent: &mut VecDeque<PathBuf>, delivered: &[PathBuf]) {
+    for done in delivered {
+        if recent.len() == RECENTLY_DELIVERED {
+            recent.pop_front();
+        }
+        recent.push_back(done.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    use sentry::protocol::Event;
+
+    #[derive(Default)]
+    struct FakeSender {
+        deliveries: Mutex<Vec<Delivery>>,
+        posted: AtomicUsize,
+    }
+
+    impl FakeSender {
+        fn always(delivery: Delivery) -> Self {
+            Self {
+                deliveries: Mutex::new(vec![delivery]),
+                posted: AtomicUsize::new(0),
+            }
+        }
+
+        fn posted(&self) -> usize {
+            self.posted.load(Ordering::Relaxed)
+        }
+    }
+
+    impl EnvelopeSender for FakeSender {
+        async fn post(&self, _envelope: &Envelope) -> Delivery {
+            self.posted.fetch_add(1, Ordering::Relaxed);
+            let mut deliveries = self.deliveries.lock().unwrap();
+            if deliveries.len() > 1 {
+                deliveries.remove(0)
+            } else {
+                deliveries[0].clone()
+            }
+        }
+    }
+
+    fn envelope(message: &str) -> Envelope {
+        Event {
+            message: Some(message.into()),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    #[tokio::test]
+    async fn a_delivered_report_leaves_the_outbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.enqueue(&envelope("feedback")).unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        let queued = outbox.queued()[0].path.clone();
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(report.result, DrainResult::Emptied);
+        assert_eq!(report.fate(&queued), EntryFate::Delivered);
+        assert_eq!(sender.posted(), 1);
+        assert!(outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_undeliverable_report_stays_for_the_next_try() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.enqueue(&envelope("feedback")).unwrap();
+        let sender = FakeSender::always(Delivery::Retry { after: None });
+        let queued = outbox.queued()[0].path.clone();
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(report.result, DrainResult::Pending);
+        assert_eq!(report.fate(&queued), EntryFate::Waiting);
+        assert_eq!(outbox.queued().len(), 1);
+    }
+
+    /// The bug this guards: a feedback entry was deleted as unreadable on the
+    /// next drain, so every feedback report failed with the outbox empty.
+    #[tokio::test]
+    async fn a_feedback_report_reaches_sentry_like_any_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        let queued = outbox
+            .enqueue(&crate::testing::feedback_envelope())
+            .unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(sender.posted(), 1);
+        assert_eq!(report.fate(&queued), EntryFate::Delivered);
+        assert!(outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_rejected_report_is_dropped_rather_than_retried_forever() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        let queued = outbox.enqueue(&envelope("feedback")).unwrap();
+        let sender = FakeSender::always(Delivery::Rejected {
+            status: Some(StatusCode::FORBIDDEN),
+        });
+
+        let report = drain_once(&outbox, &sender).await;
+
+        // The pass has nothing left to do, but this report was never filed.
+        assert_eq!(report.result, DrainResult::Emptied);
+        assert_eq!(
+            report.fate(&queued),
+            EntryFate::Dropped(DropReason::Refused {
+                status: Some(StatusCode::FORBIDDEN)
+            })
+        );
+        assert!(outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_report_evicted_by_retention_is_never_reported_as_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        let oversized = "x".repeat(retention::MAX_BYTES as usize + 1);
+        let queued = outbox.enqueue(&envelope(&oversized)).unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(sender.posted(), 0);
+        assert_eq!(
+            report.fate(&queued),
+            EntryFate::Dropped(DropReason::Vanished)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_delivered_report_is_not_dragged_down_by_a_corrupt_sibling() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        let corrupt = outbox.enqueue(&envelope("first")).unwrap();
+        std::fs::write(&corrupt, "half an envelope").unwrap();
+        let mine = outbox.enqueue(&envelope("second")).unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(report.result, DrainResult::Pending);
+        assert_eq!(report.fate(&mine), EntryFate::Delivered);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_entry_is_never_reported_as_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.enqueue(&envelope("feedback")).unwrap();
+        let queued = outbox.queued()[0].path.clone();
+        std::fs::write(&queued, "half an envelope").unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(report.result, DrainResult::Pending);
+        assert_eq!(sender.posted(), 0);
+        assert_eq!(
+            report.fate(&queued),
+            EntryFate::Dropped(DropReason::Unreadable)
+        );
+        assert!(outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_delay_sentry_named_is_carried_out_of_the_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.enqueue(&envelope("feedback")).unwrap();
+        let sender = FakeSender::always(Delivery::Retry {
+            after: Some(Duration::from_secs(300)),
+        });
+
+        let report = drain_once(&outbox, &sender).await;
+
+        assert_eq!(report.retry_after, Some(Duration::from_secs(300)));
+    }
+
+    #[tokio::test]
+    async fn a_report_an_earlier_pass_delivered_is_not_reported_as_vanished() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Arc::new(Outbox::new(dir.path()));
+        let drainer = Drainer {
+            outbox: outbox.clone(),
+            sender: Arc::new(FakeSender::always(Delivery::Delivered)),
+            draining: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+        };
+        let queued = outbox.enqueue(&envelope("feedback")).unwrap();
+
+        // The background loop gets to the freshly enqueued entry first.
+        assert_eq!(drainer.drain_pass().await.result, DrainResult::Emptied);
+
+        assert_eq!(drainer.drain_watching(&queued).await, EntryFate::Delivered);
+    }
+
+    /// The user's answer must not wait for a pass over the whole outbox: with
+    /// the drain lock held by a (slow) pass, the watched entry still goes out.
+    #[tokio::test]
+    async fn a_watched_entry_is_sent_without_waiting_for_a_running_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Arc::new(Outbox::new(dir.path()));
+        let drainer = Drainer {
+            outbox: outbox.clone(),
+            sender: Arc::new(FakeSender::always(Delivery::Delivered)),
+            draining: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+        };
+        let queued = outbox.enqueue(&envelope("feedback")).unwrap();
+
+        let _mid_pass = drainer.draining.lock().await;
+
+        assert_eq!(drainer.drain_watching(&queued).await, EntryFate::Delivered);
+        assert!(outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_held_crash_is_never_drained() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.hold(&envelope("crash")).unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        drain_once(&outbox, &sender).await;
+
+        assert_eq!(sender.posted(), 0);
+        assert!(outbox.has_held());
+    }
+
+    #[tokio::test]
+    async fn every_queued_report_is_attempted_in_one_drain() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.enqueue(&envelope("one")).unwrap();
+        outbox.enqueue(&envelope("two")).unwrap();
+        let sender = FakeSender::always(Delivery::Delivered);
+
+        drain_once(&outbox, &sender).await;
+
+        assert_eq!(sender.posted(), 2);
+        assert!(outbox.queued().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_report_left_in_flight_is_not_lost() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.enqueue(&envelope("feedback")).unwrap();
+        let sender = FakeSender::always(Delivery::Retry { after: None });
+
+        drain_once(&outbox, &sender).await;
+
+        // Restored to queued/ rather than left as .sending.
+        let sending: Vec<_> = walkdir_sending_files(outbox.root());
+        assert!(sending.is_empty(), "a .sending file survived: {sending:?}");
+    }
+
+    fn walkdir_sending_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+        fn visit(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.is_dir() {
+                    visit(&path, out);
+                } else if path.extension().is_some_and(|ext| ext == "sending") {
+                    out.push(path);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        visit(root, &mut out);
+        out
+    }
+}

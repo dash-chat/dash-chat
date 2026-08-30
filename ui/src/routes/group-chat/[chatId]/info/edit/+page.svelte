@@ -6,7 +6,8 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ChatsStore } from 'dash-chat-stores';
-	import { Page, Navbar, NavbarBackLink, Button, Link } from 'konsta/svelte';
+	import { Page, Navbar, NavbarBackLink, Link } from 'konsta/svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import { isIos } from '$lib/utils/environment';
 	import { page } from '$app/state';
 	import { showToast } from '$lib/utils/toasts';
@@ -117,6 +118,7 @@
 					/>
 
 					<FormInput
+						data-testid="group-info-edit-description"
 						type="textarea"
 						inputStyle={{ 'min-height': '2em' }}
 						bind:value={description}
@@ -126,15 +128,13 @@
 			</Container>
 
 			{#if !isIos}
-				<Button
-					data-testid="group-info-edit-save-btn"
+				<FixedActionButton
+					testId="group-info-edit-save-btn"
 					onClick={save}
-					class="fixed-action-btn"
-					rounded
 					disabled={saveDisabled}
 				>
 					{m.save()}
-				</Button>
+				</FixedActionButton>
 			{/if}
 		{/await}
 	</Page>

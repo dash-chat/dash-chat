@@ -1,24 +1,19 @@
-import { reactive, relay, signal } from 'signalium';
+import {
+	type ReactiveFn,
+	type ReactivePromise,
+	reactive,
+	relay,
+} from 'signalium';
 
-import type { ISettingsClient, Settings } from './settings-client.js';
-
-export type ColorScheme = 'light' | 'dark' | 'system';
+import type {
+	ColorScheme,
+	ColorSchemePreference,
+	ISettingsClient,
+	Settings,
+} from './settings-client.js';
 
 export class SettingsStore {
-	private systemDarkSignal = signal<boolean>(false);
-
-	constructor(public client: ISettingsClient) {
-		this.listenSystemTheme();
-	}
-
-	private listenSystemTheme() {
-		if (typeof window === 'undefined') return;
-		const mq = window.matchMedia('(prefers-color-scheme: dark)');
-		this.systemDarkSignal.value = mq.matches;
-		mq.addEventListener('change', e => {
-			this.systemDarkSignal.value = e.matches;
-		});
-	}
+	constructor(public client: ISettingsClient) {}
 
 	private settings = reactive(() =>
 		relay<Settings>(state => {
@@ -34,12 +29,12 @@ export class SettingsStore {
 		}),
 	);
 
-	colorScheme = reactive(async (): Promise<ColorScheme> => {
-		const settings = await this.settings();
-		if (settings.color_scheme === 'light' || settings.color_scheme === 'dark')
-			return settings.color_scheme;
-		return 'system';
-	});
+	colorSchemePreference: ReactiveFn<
+		ReactivePromise<ColorSchemePreference>,
+		[]
+	> = reactive(() => this.client.colorSchemePreference());
+
+	colorScheme = reactive((): ColorScheme => this.client.colorScheme());
 
 	qrColor = reactive(async (): Promise<string | null> => {
 		const settings = await this.settings();
@@ -56,23 +51,21 @@ export class SettingsStore {
 		return settings.notifications_enabled;
 	});
 
-	isDark = reactive(async () => {
-		const systemDark = this.systemDarkSignal.value;
-		const scheme = await this.colorScheme();
-		if (scheme === 'light') return false;
-		if (scheme === 'dark') return true;
-		return systemDark;
+	backgroundModeEnabled = reactive(async () => {
+		const settings = await this.settings();
+		return settings.background_mode_enabled;
 	});
 
-	async setColorScheme(scheme: ColorScheme): Promise<void> {
-		await this.client.setSetting(
-			'color_scheme',
-			scheme === 'system' ? null : scheme,
-		);
+	async setColorSchemePreference(scheme: ColorSchemePreference): Promise<void> {
+		await this.client.setColorSchemePreference(scheme);
 	}
 
 	async setQrColor(color: string): Promise<void> {
 		await this.client.setSetting('qr_color', color);
+	}
+
+	async setBackgroundModeEnabled(enabled: boolean): Promise<void> {
+		await this.client.setBackgroundModeEnabled(enabled);
 	}
 
 	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {

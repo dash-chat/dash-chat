@@ -1,16 +1,22 @@
 pub(crate) mod actor;
 mod app_processing;
+mod message_acks;
 pub(crate) mod publish;
+mod report;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
-use crate::error::{AddContactError, Error, RemoveGroupMemberError, ShutdownError};
+use crate::error::{
+    AddContactError, AddContactResult, Error, RemoveGroupMemberError, ShutdownError,
+};
 use crate::filesystem::Filesystem;
 use crate::node::actor::{Actor, Command};
+#[cfg(feature = "testing")]
+use crate::testing::TestNode;
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
@@ -28,20 +34,23 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
-use crate::chat::{ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ValidChatOps};
-use crate::contact::{InboxTopic, QrCode, ShareIntent};
+use crate::chat::{
+    ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
+    collect_deletable_edit_chain, resolve_message_root,
+};
+use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeviceGroupId, DeviceGroupPayload, DeviceId,
-    DirectChatId, EditMessageError, MediaBundle, MediaMetaKind, MediaMetadata, OutgoingFile,
-    OutgoingMedia,
+    AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
+    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
+    MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 
-pub use app_processing::Notification;
+pub use app_processing::{Notification, OpNotification, SystemNotification};
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
@@ -89,6 +98,14 @@ pub struct NodeConfig {
     /// How often the followup task re-announces still-unfetched blob hashes to
     /// their mailboxes.
     pub unfetched_blob_followup_interval: std::time::Duration,
+    /// How long the delivery-ack writer waits after new operations arrive
+    /// before publishing a [`ChatPayload::MessageAck`], so a burst of incoming
+    /// operations is covered by a single ack.
+    pub message_ack_debounce: std::time::Duration,
+    /// Whether to publish delivery acks at all. Only the iOS push extension
+    /// disables this — its short-lived background node must not author
+    /// operations.
+    pub enable_message_acks: bool,
 }
 
 impl NodeConfig {
@@ -135,6 +152,8 @@ impl NodeConfig {
                 retry_cooldown: std::time::Duration::from_secs(1),
             },
             unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
+            message_ack_debounce: std::time::Duration::from_millis(300),
+            enable_message_acks: true,
         }
     }
 
@@ -158,6 +177,8 @@ impl Default for NodeConfig {
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
             unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
+            message_ack_debounce: std::time::Duration::from_secs(3),
+            enable_message_acks: true,
         }
     }
 }
@@ -201,6 +222,9 @@ pub struct Node {
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     unfetched_blob_trigger: Arc<tokio::sync::Notify>,
     unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    message_ack_trigger: Arc<tokio::sync::Notify>,
+    message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
@@ -386,6 +410,9 @@ impl Node {
             network_change_handle: Default::default(),
             unfetched_blob_trigger: Default::default(),
             unfetched_blob_followup_handle: Default::default(),
+            message_ack_trigger: Default::default(),
+            message_ack_handle: Default::default(),
+            dirty_ack_topics: Default::default(),
         };
 
         // === application processor task === //
@@ -425,6 +452,17 @@ impl Node {
             .await
             .replace(followup_handle);
 
+        // === message ack writer === //
+
+        if node.config.enable_message_acks {
+            let ack_handle = message_acks::spawn_message_ack_task(
+                node.clone(),
+                node.config.message_ack_debounce,
+                node.message_ack_trigger.clone(),
+            );
+            node.message_ack_handle.lock().await.replace(ack_handle);
+        }
+
         // === topics === //
 
         node.initialize_stored_topics().await?;
@@ -445,7 +483,7 @@ impl Node {
 
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
-    pub async fn new_qr_code(&self, share_intent: ShareIntent) -> Result<QrCode, crate::Error> {
+    pub async fn create_add_contact_qr_code(&self) -> Result<AddContactQrCode, crate::Error> {
         let (inbox_topic, nonce) = InboxTopic::new_random(
             &self.device_id(),
             Utc::now() + self.config.contact_code_expiry,
@@ -458,11 +496,15 @@ impl Node {
             .await
             .map_err(|err| crate::Error::AddActiveInbox(format!("{err}")))?;
 
-        Ok(QrCode {
-            device_pubkey: self.device_id(),
-            share_intent,
-            inbox_nonce: nonce,
-        })
+        let profile_name = self
+            .my_profile()
+            .await
+            .ok()
+            .flatten()
+            .map(|profile| profile.full_name())
+            .unwrap_or_default();
+
+        Ok(AddContactQrCode::new(self.device_id(), nonce, profile_name))
     }
 
     pub fn agent_id(&self) -> AgentId {
@@ -471,6 +513,10 @@ impl Node {
 
     pub fn device_id(&self) -> DeviceId {
         self.node_keys.device_id()
+    }
+
+    pub fn fake_agent_id(&self) -> FakeAgentId {
+        self.device_id().into()
     }
 
     pub fn blob_sync_optional(&self) -> Option<&crate::blob_sync::BlobSync> {
@@ -603,8 +649,8 @@ impl Node {
     /// The topic is the hashed sorted public keys.
     /// Anyone who knows the two public keys can derive the same topic.
     // TODO: is this a problem? Should we use a random topic instead?
-    pub fn direct_chat_topic(&self, other: AgentId) -> DirectChatId {
-        let me = self.agent_id();
+    pub fn direct_chat_topic(&self, other: FakeAgentId) -> DirectChatId {
+        let me = self.fake_agent_id();
         // TODO: use two secrets from each party to construct the topic
         let topic = Topic::direct_chat([me, other]);
         if me > other {
@@ -614,20 +660,22 @@ impl Node {
         }
     }
 
+    #[cfg(feature = "testing")]
+    pub fn direct_chat_with(&self, other: &TestNode) -> DirectChatId {
+        let other = other.fake_agent_id();
+        self.direct_chat_topic(other)
+    }
+
     /// Create a new direct chat Space.
     /// Note that only one node should create the space!
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn create_direct_chat_space(&self, other: AgentId) -> anyhow::Result<()> {
+    pub async fn create_direct_chat_space(&self, other: FakeAgentId) -> anyhow::Result<()> {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
         self.register_topic(topic).await?;
 
-        let other_device_id = self
-            .projection
-            .lookup_contact_by_agent_id(other)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
+        let other_device_id = DeviceId::from(other);
 
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*topic).await?;
@@ -744,6 +792,12 @@ impl Node {
             person.aliased(),
             chat_id.aliased(),
         );
+        let device_id = self
+            .projection
+            .lookup_contact_by_agent_id(person)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
+        let person = FakeAgentId::from(device_id);
         self.publish(
             self.direct_chat_topic(person),
             payload,
@@ -906,12 +960,38 @@ impl Node {
         self.projection.get_profile(self.agent_id()).await
     }
 
+    pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
+        self.projection.get_profile(agent_id).await
+    }
+
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
         self.projection.lookup_contact_by_device_id(device_id).await
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
         self.projection.all_contact_agent_ids().await
+    }
+
+    /// Agents added as contacts via the device group log (i.e. accepted
+    /// contacts, unlike the projection's `devices` table which also records
+    /// pre-accept contact requests).
+    pub async fn accepted_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
+        // FIXME: use all local device IDs
+        let log_id = self.device_group_topic().into();
+        let mut agents = BTreeSet::new();
+        for op in self
+            .op_store
+            .get_log(&self.device_id(), &log_id, None)
+            .await?
+        {
+            let Some(body) = op.body else { continue };
+            if let Ok(Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id, .. })) =
+                Payload::try_from_body(&body)
+            {
+                agents.insert(agent_id);
+            }
+        }
+        Ok(agents)
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
@@ -945,14 +1025,28 @@ impl Node {
         Ok(messages)
     }
 
+    /// Send a message to a chat, optionally with media and/or a previous message to reply to.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn send_message(
         &self,
         topic: impl Into<ChatId>,
         message: impl Into<String>,
         media: Option<OutgoingMedia>,
-    ) -> anyhow::Result<Header> {
+        reply: Option<Hash>,
+    ) -> Result<Header, SendMessageError> {
         let chat_id: ChatId = topic.into();
+
+        if let Some(target) = reply {
+            let valid_ops = self.valid_chat_ops(chat_id).await?;
+            let now = u64::from(p2panda_core::Timestamp::now());
+            ReplyCandidate {
+                target,
+                timestamp: now,
+                self_hash: None,
+            }
+            .validate(&valid_ops)?;
+        }
+
         let meta = if let Some(media) = media {
             Some(
                 self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
@@ -961,14 +1055,14 @@ impl Node {
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta.clone());
+        let message = ChatMessageContent::new(message, meta.clone(), reply);
         let header = self.send_message_raw(chat_id, message).await?;
         if let Some(bundle) = meta {
             let topic_id: TopicId = chat_id.into();
             for item in bundle.iter() {
                 if let Err(err) = self
                     .require_blob_sync()?
-                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash)
+                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash())
                     .await
                 {
                     tracing::warn!(?err, "failed to retag blob after operation creation");
@@ -1022,12 +1116,13 @@ impl Node {
         let topic = topic.into();
         let valid_ops = self.valid_chat_ops(topic).await?;
         let now = u64::from(p2panda_core::Timestamp::now());
-        valid_ops.validate_edit(&EditCandidate {
+        EditCandidate {
             target: edit_hash,
             editor: self.device_id(),
             timestamp: now,
             self_hash: None,
-        })?;
+        }
+        .validate(&valid_ops)?;
 
         let header = self
             .publish(
@@ -1067,6 +1162,112 @@ impl Node {
         Ok(header)
     }
 
+    /// Delete a previously-sent message for everyone in the chat.
+    ///
+    /// `target` must be the most recent edit of the message (or the message
+    /// itself when unedited), authored by us, within the delete window, and not
+    /// already deleted. The full edit chain is collected and published in a
+    /// `DeleteMessage` payload; processing it tombstones every operation in the
+    /// chain. See [`DeleteError`](crate::chat::DeleteError).
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message_for_everyone(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let topic = topic.into();
+        let ops = self.valid_chat_ops(topic).await?;
+        let hashes = collect_deletable_edit_chain(&ops, &target)?;
+        let now = u64::from(p2panda_core::Timestamp::now());
+        DeleteCandidate {
+            hashes: hashes.clone(),
+            deleter: self.device_id(),
+            delete_timestamp: now,
+            self_hash: None,
+        }
+        .validate(&ops)?;
+
+        let header = self
+            .publish(
+                topic,
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Delete a previously-sent message only for my own device group.
+    ///
+    /// Unlike [`Self::delete_message_for_everyone`], which requires the tip of
+    /// the edit chain, `target` here may be any operation in the chain — it is
+    /// resolved back to the original message before publishing, so the whole
+    /// chain is captured whichever version the caller names.
+    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
+    pub async fn delete_message_for_me(
+        &self,
+        topic: impl Into<ChatId>,
+        target: Hash,
+    ) -> Result<Header, DeleteMessageError> {
+        let chat_id = topic.into();
+        let ops = self.valid_chat_ops(chat_id).await?;
+        // Resolve to the original message when we can, but fall back to the raw
+        // target when its body is gone (already deleted for everyone) or never
+        // fetched — such an op isn't in `valid_chat_ops`, and delete-for-me should
+        // still just remove it locally instead of erroring. Pruning guarantees
+        // every edit in `ops` has its target, so resolution fails only when
+        // `target` itself is absent, leaving nothing to walk back through.
+        //
+        // TODO: ACID: this is something to tighten up when revisiting tombstone logic.
+        let message_hash = resolve_message_root(&ops, &target).unwrap_or(target);
+
+        let header = self
+            .publish(
+                self.device_group_topic(),
+                Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(
+                    crate::payload::DeleteForMePayload {
+                        chat_id,
+                        message_hash,
+                    },
+                )),
+                Some(&format!("delete_message_for_me({:?})", chat_id.aliased())),
+            )
+            .await?;
+
+        Ok(header)
+    }
+
+    /// Every tombstone in a chat, paired with why it was tombstoned. The
+    /// frontend uses this to drop delete-for-me messages (and their edits) from
+    /// view while keeping the delete-for-everyone placeholders.
+    pub async fn chat_tombstones(
+        &self,
+        chat_id: impl Into<ChatId>,
+    ) -> anyhow::Result<HashMap<Hash, crate::stores::TombstoneReason>> {
+        self.projection.tombstones(chat_id.into().into()).await
+    }
+
+    /// Publish a delete without validating it. For testing the receiving-side
+    /// handling of invalid deletes, which the author-side validation would
+    /// otherwise prevent from ever being created.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn delete_message_raw(
+        &self,
+        topic: impl Into<ChatId>,
+        hashes: BTreeSet<Hash>,
+    ) -> anyhow::Result<Header> {
+        let header = self
+            .publish(
+                topic.into(),
+                Payload::Chat(ChatPayload::DeleteMessage { hashes }),
+                None,
+            )
+            .await?;
+
+        Ok(header)
+    }
+
     /// Collect all chat operations in a topic, reduced to the fields edit
     /// validation needs, keyed by operation hash.
     //
@@ -1087,8 +1288,9 @@ impl Node {
                     continue;
                 };
                 let kind = match chat {
-                    ChatPayload::Message(_) => ChatOpKind::Message,
+                    ChatPayload::Message(m) => ChatOpKind::Message { reply: m.reply() },
                     ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+                    ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
                     _ => ChatOpKind::Other,
                 };
                 ops.insert(
@@ -1146,6 +1348,52 @@ impl Node {
         Ok(edits)
     }
 
+    /// Return every message in the topic carrying a reply annotation that
+    /// passes receiving-side validation — i.e. the replies an honest node
+    /// would render as quotes rather than ignore. Mirrors the rule applied in
+    /// `process_app`, exposed for tests.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn valid_replies(
+        &self,
+        topic: impl Into<ChatId>,
+    ) -> anyhow::Result<Vec<crate::chat::ValidReply>> {
+        let topic = topic.into();
+        let valid_ops = self.valid_chat_ops(topic).await?;
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+
+        let mut replies = Vec::new();
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
+                else {
+                    continue;
+                };
+                let op_hash = op.header.hash();
+                let Some(ChatOp {
+                    kind:
+                        ChatOpKind::Message {
+                            reply: Some(target),
+                        },
+                    ..
+                }) = valid_ops.get(&op_hash)
+                else {
+                    continue;
+                };
+                replies.push(crate::chat::ValidReply {
+                    op_hash,
+                    target: *target,
+                    text: message.message().to_string(),
+                });
+            }
+        }
+
+        Ok(replies)
+    }
+
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn set_group_info(
         &self,
@@ -1192,33 +1440,6 @@ impl Node {
         Ok(latest.map(|(_, d)| d))
     }
 
-    /// Tombstone an operation: record its hash in the topic's persisted
-    /// tombstone set so its payload is never stored or synced again, and
-    /// immediately drop any payload already stored for it.
-    ///
-    /// This has the effect that when the operation is played back, it will
-    /// not have a payload. Therefore, payloads for which [`Self::is_tombstoneable`]
-    /// is `true` MUST also revert their changes in [`Self::unprocess_app`]
-    /// so that they leave behind no traces in local state.
-    pub async fn tombstone_operation(
-        &self,
-        topic: TopicId,
-        operation: &Operation,
-    ) -> anyhow::Result<()> {
-        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
-            return Ok(());
-        };
-        if self.is_tombstoneable(&payload) {
-            let hash = operation.hash;
-            self.local_store.add_tombstone(topic, hash.clone()).await?;
-            self.unprocess_app(operation).await?;
-            self.op_store.delete_body(&hash).await?;
-        } else {
-            tracing::warn!(operation = ?operation.hash.aliased(), "operation is not tombstoneable");
-        }
-        Ok(())
-    }
-
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
@@ -1249,6 +1470,10 @@ impl Node {
         }
 
         if let Some(handle) = self.unfetched_blob_followup_handle.lock().await.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.message_ack_handle.lock().await.take() {
             handle.abort();
         }
 
@@ -1310,13 +1535,13 @@ impl Node {
     /// inbox request/ack handlers can call it.
     pub(crate) async fn establish_contact(
         &self,
-        device_pubkey: DeviceId,
+        device_id: DeviceId,
         agent_id: AgentId,
     ) -> Result<(), Error> {
         // Register the contact as a bootstrap so p2panda discovery can reach it
         // directly over the internet (relay + pkarr), rather than depending on a
         // mutually-reachable mailbox to introduce the two nodes.
-        self.register_bootstrap_node(*device_pubkey)
+        self.register_bootstrap_node(*device_id)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
         // Subscribe to the contact's announcements to receive their group
@@ -1324,7 +1549,8 @@ impl Node {
         self.register_topic(Topic::announcements(agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-        self.register_topic(self.direct_chat_topic(agent_id))
+        let fake_agent_id = FakeAgentId::from(device_id);
+        self.register_topic(self.direct_chat_topic(fake_agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         Ok(())
@@ -1336,11 +1562,31 @@ impl Node {
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn add_contact(&self, contact: QrCode) -> Result<(), AddContactError> {
+    pub async fn add_contact(
+        &self,
+        contact: AddContactQrCode,
+    ) -> Result<AddContactResult, AddContactError> {
         tracing::debug!(
             device_pub_key = ?contact.device_pubkey.aliased(),
             "adding contact",
         );
+
+        if contact.device_pubkey == self.device_id() {
+            return Err(AddContactError::CannotAddSelf);
+        }
+
+        let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
+
+        // If we already sent this device a contact request, don't publish a
+        // duplicate request or pending marker. Return the existing direct-chat
+        // topic id so the caller can navigate there.
+        if self
+            .has_outgoing_pending_request(contact.device_pubkey)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        {
+            return Ok(AddContactResult::AlreadyRequested(direct_chat_topic_id));
+        }
 
         // Register the scanned contact as a bootstrap so p2panda discovery can
         // reach it directly over the internet (relay + pkarr), rather than
@@ -1348,6 +1594,12 @@ impl Node {
         self.register_bootstrap_node(*contact.device_pubkey)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
+
+        // Subscribe to the shared direct-chat topic right away so messages sent
+        // before the owner accepts already sync in both directions.
+        self.register_topic(direct_chat_topic_id)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
 
@@ -1453,6 +1705,8 @@ impl Node {
             self.device_group_topic(),
             Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
                 device_pubkey: contact.device_pubkey,
+                profile_name: contact.profile_name,
+                direct_chat_topic_id,
             }),
             Some(&format!(
                 "add_contact/pending({:?})",
@@ -1462,16 +1716,23 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        Ok(())
+        Ok(AddContactResult::NewRequest(direct_chat_topic_id))
     }
 
     /// Record a mutual contact by publishing the contact marker into our own
     /// device group. Contact establishment (mapping, topics, bootstrap) is done
     /// separately via [`Self::establish_contact`].
-    pub(crate) async fn publish_add_contact(&self, agent_id: AgentId) -> Result<(), Error> {
+    pub(crate) async fn publish_add_contact(
+        &self,
+        agent_id: AgentId,
+        direct_chat_topic_id: ChatId,
+    ) -> Result<(), Error> {
         self.publish(
             self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id }),
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact {
+                agent_id,
+                direct_chat_topic_id,
+            }),
             Some(&format!("add_contact({:?})", agent_id.aliased())),
         )
         .await
@@ -1519,11 +1780,17 @@ impl Node {
             );
         }
 
-        self.publish_add_contact(agent_id).await?;
+        let fake_agent_id = FakeAgentId::from(device_pubkey);
+        self.publish_add_contact(agent_id, self.direct_chat_topic(fake_agent_id))
+            .await?;
 
-        self.create_direct_chat_space(agent_id)
+        self.create_direct_chat_space(fake_agent_id)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+
+        // Messages the requester sent before acceptance were processed but
+        // deliberately not acked; now that they are a contact, cover them.
+        self.mark_ack_topic_dirty(self.direct_chat_topic(fake_agent_id));
 
         Ok(())
     }
@@ -1588,7 +1855,7 @@ impl Node {
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.publish(
             reply_topic,
-            Payload::Inbox(InboxPayload::ContactRequestAck {
+            Payload::Inbox(InboxPayload::ContactRequestAccept {
                 profile,
                 agent_id: self.agent_id(),
             }),
@@ -1740,12 +2007,13 @@ impl Node {
                         .require_blob_sync()?
                         .store_blob(topic, self.device_id(), operation_hash, photo.data)
                         .await?;
-                    items.push(MediaMetadata {
+                    items.push(MediaMetadata::Photo {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
+                        width: photo.width,
+                        height: photo.height,
                         hash,
-                        kind: MediaMetaKind::Photo,
                     });
                 }
             }
@@ -1756,12 +2024,27 @@ impl Node {
                     .require_blob_sync()?
                     .store_blob(topic, self.device_id(), operation_hash, file.data)
                     .await?;
-                items.push(MediaMetadata {
+                items.push(MediaMetadata::File {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
                     hash,
-                    kind: MediaMetaKind::File,
+                });
+            }
+            OutgoingMedia::VoiceNote { voice_note } => {
+                let size = voice_note.data.len() as u64;
+                ensure_blob_size(size, "voice note")?;
+
+                let hash = self
+                    .require_blob_sync()?
+                    .store_blob(topic, self.device_id(), operation_hash, voice_note.data)
+                    .await?;
+                items.push(MediaMetadata::VoiceNote {
+                    mime_type: voice_note.mime_type,
+                    size,
+                    duration_ms: voice_note.duration_ms,
+                    waveform: voice_note.waveform,
+                    hash,
                 });
             }
         }
@@ -1817,44 +2100,70 @@ impl Node {
             let data = self
                 .require_blob_sync()?
                 .blobs
-                .get_bytes(item.hash)
+                .get_bytes(item.hash())
                 .await
                 .context(format!("failed to load blob: {item:?}"))?;
             items.push((item, data));
         }
 
-        let (photos, mut other): (Vec<_>, Vec<_>) = items
-            .into_iter()
-            .partition(|(item, _)| item.kind == MediaMetaKind::Photo);
-
-        if other.len() > 1 {
-            return Err(anyhow::anyhow!(
-                "multiple files are not supported. photos: {photos:?}, other: {other:?}",
-            ));
-        } else if photos.len() >= 1 && other.len() == 1 {
-            return Err(anyhow::anyhow!(
-                "photos and other media in the same message are not supported. photos: {photos:?}, other: {other:?}",
-            ));
-        } else if other.len() == 1 {
-            let (item, data) = other.pop().unwrap();
-            return Ok(OutgoingMedia::File {
-                file: OutgoingFile {
-                    data: data.to_vec(),
-                    name: item.name,
-                    mime_type: item.mime_type,
-                },
-            });
-        } else {
-            let photos = photos
-                .into_iter()
-                .map(|(item, data)| crate::chat::OutgoingPhoto {
-                    data: data.to_vec(),
-                    name: item.name,
-                    mime_type: item.mime_type,
-                })
-                .collect();
-            return Ok(OutgoingMedia::Photos { photos });
+        // A voice note or a file is always a single-item bundle; photos may be many.
+        if items.len() == 1
+            && matches!(
+                items[0].0,
+                MediaMetadata::VoiceNote { .. } | MediaMetadata::File { .. }
+            )
+        {
+            let (item, data) = items.pop().unwrap();
+            let outgoing_media = match item {
+                MediaMetadata::VoiceNote {
+                    mime_type,
+                    duration_ms,
+                    waveform,
+                    ..
+                } => Ok(OutgoingMedia::VoiceNote {
+                    voice_note: crate::chat::OutgoingVoiceNote {
+                        data: data.to_vec(),
+                        mime_type,
+                        duration_ms,
+                        waveform,
+                    },
+                }),
+                MediaMetadata::File {
+                    name, mime_type, ..
+                } => Ok(OutgoingMedia::File {
+                    file: OutgoingFile {
+                        data: data.to_vec(),
+                        name,
+                        mime_type,
+                    },
+                }),
+                MediaMetadata::Photo { .. } => unreachable!(),
+            };
+            return outgoing_media;
         }
+
+        let photos = items
+            .into_iter()
+            .map(|(item, data)| match item {
+                MediaMetadata::Photo {
+                    name,
+                    mime_type,
+                    width,
+                    height,
+                    ..
+                } => Ok(crate::chat::OutgoingPhoto {
+                    data: data.to_vec(),
+                    name,
+                    mime_type,
+                    width,
+                    height,
+                }),
+                other => Err(anyhow::anyhow!(
+                    "unsupported media combination in a single message: {other:?}"
+                )),
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(OutgoingMedia::Photos { photos })
     }
 }
 

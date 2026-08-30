@@ -26,11 +26,11 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     // A message sent while the mailbox is present syncs as usual.
     alice.send_message_raw(chat, "before".into()).await.unwrap();
@@ -132,11 +132,11 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
     // Establish contact while both are online (no media exchanged yet).
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let bobbi_agent_id = bobbi.agent_id();
 
     // Bobbi goes offline before any media exists.
@@ -149,10 +149,12 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -163,7 +165,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("alice's message carries media metadata");
-    let hash = meta.first().expect("at least one media item").hash;
+    let hash = meta.first().expect("at least one media item").hash();
 
     // The mailbox must fetch the blob from Alice. With mDNS off this only works
     // if the mailbox has learned Alice's iroh address — the behavior under test.
@@ -285,11 +287,11 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let bobbi_agent_id = bobbi.agent_id();
 
     let bobbi_dir = bobbi.shutdown().await;
@@ -300,10 +302,12 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -314,7 +318,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("alice's message carries media metadata");
-    let hash = meta.first().expect("at least one media item").hash;
+    let hash = meta.first().expect("at least one media item").hash();
 
     poll.wait_for(|| async {
         relay

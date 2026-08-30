@@ -1,11 +1,11 @@
 <script lang="ts">
-	import type { Profile, VerifyingKey } from 'dash-chat-stores';
+	import type { ContactWithProfile, VerifyingKey } from 'dash-chat-stores';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { List, ListItem, Checkbox, Preloader, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	interface Props {
-		contacts: [VerifyingKey, Profile][];
+		contacts: ContactWithProfile[];
 		selectedContacts: VerifyingKey[];
 		loading?: boolean;
 		noDataMessage?: string;
@@ -30,7 +30,8 @@
 		</div>
 	{:else}
 		<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-			{#each contacts as [verifyingKey, profile]}
+			{#each contacts as { contact, profile }}
+				{@const verifyingKey = contact.agentId}
 				<ListItem
 					label
 					title={profile.name}
@@ -64,7 +65,10 @@
 				</ListItem>
 			{/each}
 			{#if contacts.length === 0 && noDataMessage}
-				<ListItem title={noDataMessage} />
+				<ListItem
+					title={noDataMessage}
+					data-testid="selectable-contacts-empty"
+				/>
 			{/if}
 		</List>
 	{/if}

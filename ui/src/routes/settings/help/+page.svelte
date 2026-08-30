@@ -43,6 +43,7 @@
 					title={m.contactUs()}
 					data-testid="help-contact-us"
 				/>
+
 				{#await versionPromise then version}
 					<ListItem
 						title={m.version()}

@@ -1,7 +1,12 @@
 import { m } from '$lib/paraglide/messages.js';
 import { compressImage } from '$lib/utils/compress';
 import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
-import { pickFiles, pickNativeFiles, saveFile } from '$lib/utils/files';
+import {
+	openFileInput,
+	pickFiles,
+	pickNativeFiles,
+	saveFile,
+} from '$lib/utils/files';
 import { saveAndOpenFile, savePhotoToGallery } from '$lib/utils/gallery';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { downloadDir } from '@tauri-apps/api/path';
@@ -13,6 +18,16 @@ import type {
 	OutgoingPhoto,
 	PhotoAttachment,
 } from 'dash-chat-stores';
+
+/**
+ * Draft voice note held in the composer before sending.
+ */
+export interface DraftVoiceNote {
+	bytes: Uint8Array;
+	mimeType: string;
+	durationMs: number;
+	waveform: Uint8Array;
+}
 
 export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 
@@ -34,7 +49,8 @@ export class AttachmentTooLargeError extends Error {
  */
 export type DraftMedia =
 	| { kind: 'photos'; items: File[] }
-	| { kind: 'file'; file: File };
+	| { kind: 'file'; file: File }
+	| { kind: 'voice_note'; voice: DraftVoiceNote };
 
 export const MAX_STAGED_PHOTOS = 32;
 
@@ -78,6 +94,15 @@ export async function pickMedia(
 	const accept = mode === 'image' ? PHOTO_ACCEPT : undefined;
 	const list = await pickFiles({ accept, multiple });
 	return list ? Array.from(list) : null;
+}
+
+/**
+ * Take a photo with the device camera, resolving with it or `null` if the user
+ * backed out.
+ */
+export async function capturePhoto(): Promise<File | null> {
+	const list = await openFileInput({ accept: 'image/*', capture: true });
+	return list?.[0] ?? null;
 }
 
 function isVisualFile(file: File): boolean {
@@ -140,14 +165,28 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 		const photos: OutgoingPhoto[] = await Promise.all(
 			draft.items.map(async file => {
 				const compressed = await compressImage(file);
+				const { width, height } = await imageDimensions(compressed);
 				return {
 					data: new Uint8Array(await compressed.arrayBuffer()),
 					name: compressed.name,
 					mime_type: compressed.type || 'application/octet-stream',
+					width,
+					height,
 				};
 			}),
 		);
 		return { kind: 'photos', photos };
+	}
+	if (draft.kind === 'voice_note') {
+		return {
+			kind: 'voice_note',
+			voice_note: {
+				data: draft.voice.bytes,
+				mime_type: draft.voice.mimeType,
+				duration_ms: draft.voice.durationMs,
+				waveform: draft.voice.waveform,
+			},
+		};
 	}
 	const file: OutgoingFile = {
 		data: new Uint8Array(await draft.file.arrayBuffer()),
@@ -157,11 +196,67 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	return { kind: 'file', file };
 }
 
+async function imageDimensions(
+	file: File,
+): Promise<{ width: number; height: number }> {
+	try {
+		const bitmap = await createImageBitmap(file);
+		const dimensions = { width: bitmap.width, height: bitmap.height };
+		bitmap.close();
+		return dimensions;
+	} catch {
+		// The Android webview's createImageBitmap rejects encodings the <img>
+		// decoder reads fine — greyscale+alpha PNGs, for one. An image neither
+		// can decode is one the recipient could not render either, so let that
+		// throw rather than send a photo with no measurable size.
+		return await imgDimensions(file);
+	}
+}
+
+function imgDimensions(file: File): Promise<{ width: number; height: number }> {
+	const url = URL.createObjectURL(file);
+	return new Promise((resolve, reject) => {
+		const img = new Image();
+		img.onload = () => {
+			URL.revokeObjectURL(url);
+			resolve({ width: img.naturalWidth, height: img.naturalHeight });
+		};
+		img.onerror = () => {
+			URL.revokeObjectURL(url);
+			reject(new Error(`could not decode ${file.name}`));
+		};
+		img.src = url;
+	});
+}
+
 function totalMediaBytes(media: OutgoingMedia): number {
 	if (media.kind === 'photos') {
 		return media.photos.reduce((sum, p) => sum + p.data.byteLength, 0);
 	}
+	if (media.kind === 'voice_note') {
+		return media.voice_note.data.byteLength;
+	}
 	return media.file.data.byteLength;
+}
+
+/**
+ * Display box for a lone photo in the message timeline, from its
+ * sender-measured pixel dimensions: natural width clamped to 200–300px,
+ * height derived from the aspect ratio and clamped to 50–450px (the image
+ * covers the box, cropping when the height clamp bites). Mirrors
+ * Signal-Desktop's `getImageDimensionsForTimeline`.
+ */
+export function timelineImageBox(photo: PhotoAttachment): {
+	width: number;
+	height: number;
+} {
+	if (photo.width <= 0 || photo.height <= 0) return { width: 200, height: 50 };
+	const width = Math.max(Math.min(300, photo.width), 200);
+	const height = Math.max(
+		Math.min(450, Math.round((width * photo.height) / photo.width)),
+		50,
+	);
+	return { width, height };
 }
 
 /** Uppercase extension for a filename, max 4 chars; '' when there is none. */
@@ -231,6 +326,12 @@ async function saveToDisk(
  * bytes from. The handler reads the blob from the node's local store. */
 export function blobUrl(hash: Hash): string {
 	return convertFileSrc(hash, 'irohblob');
+}
+
+/** Like `blobUrl`, but asks the handler to decode the Ogg/Opus voice note to
+ * WAV so a webview `<audio>` element can play it natively. */
+export function voiceAudioUrl(hash: Hash): string {
+	return `${blobUrl(hash)}?decode=wav`;
 }
 
 /**

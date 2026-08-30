@@ -2,7 +2,12 @@
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
 	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
-	import { type ChatSummary, type MediaAttachment } from 'dash-chat-stores';
+	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import {
+		type ChatSummary,
+		type MessageBody,
+		hasBody,
+	} from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Badge } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
@@ -14,6 +19,8 @@
 	} from '$lib/utils/time';
 	import { groupEventText } from '$lib/utils/group-event-text';
 	import Avatar from '../profiles/Avatar.svelte';
+	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { mdiCancel } from '@mdi/js';
 
 	let { summary, active }: { summary: ChatSummary; active: boolean } = $props();
 
@@ -22,21 +29,22 @@
 			? `/group-chat/${s.chatId}`
 			: `/direct-chats/${s.chatId}`;
 
-	function summarizeMessage(content: {
-		message: string;
-		media: MediaAttachment | null;
-	}): string {
+	const title = $derived(summary.name || m.waitingForProfile());
+
+	function summarizeMessage(content: MessageBody): string {
 		if (content.message) return content.message;
-		if (!content.media) return '';
-		if (content.media.kind === 'file') return content.media.file.name;
-		const n = content.media.photos.length;
+		const media = content.media;
+		if (!media || media.length === 0) return '';
+		if (media.some(item => item.kind === 'VoiceNote')) return m.voiceMessage();
+		const file = media.find(item => item.kind === 'File');
+		if (file) return file.name;
+		const n = media.filter(item => item.kind === 'Photo').length;
 		return n > 1 ? m.photosCount({ count: n }) : m.photo();
 	}
 </script>
 
 <TitleTruncatedListItem
-	title={summary.waitingForProfile ? m.waitingForProfile() : summary.name}
-	titleWrapClass={summary.waitingForProfile ? 'quiet' : ''}
+	{title}
 	link
 	class={active ? 'active' : ''}
 	linkProps={{ href: chatHref(summary) }}
@@ -44,7 +52,11 @@
 	data-testid="all-chats-row"
 >
 	{#snippet media()}
-		<Avatar image={summary.avatar} initials={summary.name.slice(0, 2)} />
+		<Avatar
+			image={summary.avatar}
+			initials={summary.name.slice(0, 2)}
+			waitingForProfile={summary.waitingForProfile}
+		/>
 	{/snippet}
 	{#snippet after()}
 		<span class="text-xs">
@@ -78,23 +90,40 @@
 	{#snippet subtitle()}
 		<div class="row items-center">
 			<span class="flex-1 min-w-0 truncate text-black/70 dark:text-white/70">
-				{#if summary.lastEvent.kind === 'contact_request'}
+				{#if summary.blocked === true && summary.type === 'DirectChat'}
+					<span class="inline-flex items-center gap-1 italic">
+						<wa-icon
+							class="small-icon shrink-0"
+							src={wrapPathInSvg(mdiCancel)}
+							data-testid="blocked-row-icon"
+						></wa-icon>
+						{m.blocked()}
+					</span>
+				{:else if summary.lastEvent.kind === 'contact_request'}
 					{m.messageRequest()}
 				{:else if summary.lastEvent.kind === 'contact_added'}
 					{m.contactAccepted()}
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
 						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
+						{#if hasBody(summary.lastEvent.content)}
+							{summarizeMessage(summary.lastEvent.content)}
+						{:else}
+							<span class="italic">{m.messageDeleted()}</span>
+						{/if}
+					{:else if hasBody(summary.lastEvent.content)}
 						{summarizeMessage(summary.lastEvent.content)}
 					{:else}
-						{summarizeMessage(summary.lastEvent.content)}
+						<span class="italic">{m.messageDeleted()}</span>
 					{/if}
 				{:else}
 					{groupEventText(summary.lastEvent)}
 				{/if}
 			</span>
 			{#if summary.unreadMessages !== 0}
-				<Badge>{summary.unreadMessages}</Badge>
+				<Badge data-testid="chat-row-unread-badge"
+					>{summary.unreadMessages}</Badge
+				>
 			{/if}
 		</div>
 	{/snippet}

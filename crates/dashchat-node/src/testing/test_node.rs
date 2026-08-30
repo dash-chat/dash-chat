@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, mpsc::Receiver};
 use mailbox_client::MailboxClient;
 
 use crate::{
-    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile,
+    AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile, ReportContactPayload,
     filesystem::Filesystem,
     mailbox::MailboxOperation,
     node::Node,
@@ -144,13 +144,29 @@ impl TestNode {
             .await?
             .into_iter()
             .filter_map(|(_, payload)| match payload {
-                Some(Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id })) => {
+                Some(Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id, .. })) => {
                     Some(agent_id)
                 }
                 _ => None,
             })
             .collect();
         Ok(ids)
+    }
+
+    pub async fn get_contact_reports(&self) -> anyhow::Result<Vec<ReportContactPayload>> {
+        let reports = self
+            .op_store
+            .get_interleaved_logs(self.device_group_topic().into(), vec![self.device_id()])
+            .await?
+            .into_iter()
+            .filter_map(|(_, payload)| match payload {
+                Some(Payload::DeviceGroup(DeviceGroupPayload::ReportContact(report))) => {
+                    Some(report)
+                }
+                _ => None,
+            })
+            .collect();
+        Ok(reports)
     }
 
     pub async fn get_rejected_contact_requests(&self) -> anyhow::Result<Vec<AgentId>> {

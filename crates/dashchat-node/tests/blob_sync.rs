@@ -23,11 +23,11 @@ async fn media_blob_syncs_between_nodes() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
@@ -35,11 +35,13 @@ async fn media_blob_syncs_between_nodes() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
 
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -110,11 +112,11 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let chat_topic: TopicId = chat.into();
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
@@ -123,10 +125,12 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
             data: photo_bytes,
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
-        .send_message(chat, "look at this", Some(media))
+        .send_message(chat, "look at this", Some(media), None)
         .await
         .unwrap();
 
@@ -151,7 +155,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         .into_iter()
         .find_map(|m| m.content.media().cloned())
         .expect("media metadata present on bobbi's copy of the message");
-    let hash = meta.first().expect("at least one media item").hash;
+    let hash = meta.first().expect("at least one media item").hash();
 
     // Restart Bobbi from the same store. The media op is already persisted and
     // is not re-delivered, so only startup hydration can re-queue its blob.

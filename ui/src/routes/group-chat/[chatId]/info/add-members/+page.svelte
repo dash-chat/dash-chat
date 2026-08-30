@@ -19,13 +19,15 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	let selectedContacts = $state<VerifyingKey[]>([]);
 
-	const contacts = useReactiveValue(contactsStore.profilesForAllContacts);
+	const contacts = useReactiveValue(contactsStore.profilesForUnblockedContacts);
 	const groupChatStore = chatsStore.groupChats(chatId);
 	const members = useReactiveValue(groupChatStore.allMembers);
 	const loading = $derived($contacts === undefined || $members === undefined);
 
 	const nonMemberContacts = $derived(
-		($contacts ?? []).filter(([agentId]) => !($members && agentId in $members)),
+		($contacts ?? []).filter(
+			({ contact }) => !($members && contact.agentId in $members),
+		),
 	);
 	let filteredContacts = $state<typeof nonMemberContacts>([]);
 	let searchQuery = $state('');

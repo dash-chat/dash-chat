@@ -1,15 +1,16 @@
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
-import { type Agent, setupAgent } from '../../setup/setup-agents';
+import { SYNC_TIMEOUT } from '../../helpers/timeouts';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Removing group members', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 
 		await agent1.enablePreviewFeatures();
@@ -55,9 +56,10 @@ describe('Removing group members', () => {
 		await agent2.homePage.chatListItem('Test Group').click();
 		await agent2.groupChatPage.ready();
 
-		const systemMessage = agent2.$(
-			'[data-testid="group-chat-system-message-group_member_removed"]',
+		const systemMessage = agent2.groupChatPage.messages.systemMessage(
+			'group_member_removed',
 		);
+		await systemMessage.waitForExist({ timeout: SYNC_TIMEOUT });
 		await expect(systemMessage).toBeExisting();
 		const expectedText = await agent2.tr('someoneRemovedYouFromTheGroup', {
 			name: 'Alice Test',

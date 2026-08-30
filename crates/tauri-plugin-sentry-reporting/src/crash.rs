@@ -1,0 +1,117 @@
+use std::sync::Weak;
+
+use sentry::integrations::panic::PanicIntegration;
+
+use crate::envelope;
+use crate::outbox::blocking;
+use crate::state::{outcome, SendOutcome, Sentry, SentryState};
+
+#[tauri::command]
+pub(crate) async fn pending_crash_report(state: Sentry<'_>) -> Result<bool, String> {
+    let outbox = state.outbox.clone();
+    Ok(blocking(move || outbox.has_held()).await)
+}
+
+#[tauri::command]
+pub(crate) async fn send_pending_crash_report(state: Sentry<'_>) -> Result<SendOutcome, String> {
+    let outbox = state.outbox.clone();
+    let approved = blocking(move || {
+        if !outbox.has_held() {
+            return Err("there is no crash report to send".to_string());
+        }
+        outbox.approve_held().map_err(|err| err.to_string())
+    })
+    .await?;
+    let Some(queued) = approved.first() else {
+        return Err("there is no crash report to send".into());
+    };
+    outcome(state.drainer.drain_watching(queued).await).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn discard_pending_crash_report(state: Sentry<'_>) -> Result<(), String> {
+    let outbox = state.outbox.clone();
+    blocking(move || outbox.discard_held()).await;
+    Ok(())
+}
+
+/// Keeps a panic for the next launch to offer
+pub(crate) fn install_panic_hook(state: Weak<SentryState>) {
+    let next = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(state) = state.upgrade() {
+            let event = PanicIntegration::new().event_from_panic_info(info);
+            let logs = state.pending.snapshot();
+            if let Some(envelope) = envelope::build_envelope(&state, event, logs) {
+                if let Err(err) = state.outbox.hold(&envelope) {
+                    log::error!("sentry-reporting: could not keep the crash report: {err}");
+                }
+            }
+        }
+        next(info);
+    }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::Arc;
+
+    use sentry::protocol::{Context, EnvelopeItem, ItemContainer, Level, Log};
+    use sentry::Envelope;
+
+    use crate::outbox::entry;
+    use crate::testing::{log_saying, parsed, plugin};
+
+    fn logs(envelope: &Envelope) -> Vec<Log> {
+        envelope
+            .items()
+            .find_map(|item| match item {
+                EnvelopeItem::ItemContainer(ItemContainer::Logs(logs)) => Some(logs.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_panic_leaves_a_report_the_next_launch_is_offered_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = plugin(dir.path());
+        install_panic_hook(Arc::downgrade(&state));
+        state
+            .client
+            .capture_log(log_saying("before the fall"), &Default::default());
+
+        let _ = std::panic::catch_unwind(|| panic!("boom in secret-abc123"));
+
+        assert!(state.outbox.has_held());
+        let held = entry::list(state.outbox.root(), entry::State::Held);
+        let stored = parsed(&entry::read(&held[0].path).expect("no crash stored"));
+        let event = stored.event().expect("no event in the envelope");
+        assert_eq!(event.level, Level::Fatal);
+        // Prepared when stored, so the report is ready to send as-is.
+        assert_eq!(
+            event.exception[0].value.as_deref(),
+            Some("boom in [REDACTED]")
+        );
+        assert!(!event.debug_meta.images.is_empty());
+
+        // Without a shared trace Sentry files the logs on their own rather than
+        // against the issue.
+        let Some(Context::Trace(trace)) = event.contexts.get("trace") else {
+            panic!("no trace context on the event");
+        };
+        let stored_logs = logs(&stored);
+        assert!(
+            stored_logs.iter().any(|log| log.body == "before the fall"),
+            "got: {stored_logs:?}"
+        );
+        assert!(stored_logs
+            .iter()
+            .all(|log| log.trace_id == Some(trace.trace_id)));
+
+        state.outbox.discard_held();
+        assert!(!state.outbox.has_held());
+    }
+}

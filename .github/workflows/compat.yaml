@@ -33,6 +33,7 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
+            libasound2-dev \
             webkit2gtk-driver \
             xvfb
 
@@ -44,7 +45,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
           cache: true
 
       - name: Setup Rust

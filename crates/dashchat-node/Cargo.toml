@@ -13,6 +13,7 @@ serde_repr = "0.1"
 
 mailbox-client = { workspace = true }
 mailbox-server = { workspace = true }
+reporting = { workspace = true }
 
 p2panda = { workspace = true, features = ["test_utils"] }
 p2panda-auth = { workspace = true }
@@ -39,6 +40,7 @@ blake3 = "1.8.2"
 chrono = { version = "0.4.42", features = ["serde"] }
 hex = { version = "0.4.3", features = ["serde"] }
 rand = "0.9.2"
+unicode-segmentation = "1"
 tokio-stream = "0.1.17"
 tokio-util = "0.7"
 tracing = "0.1.41"
@@ -48,8 +50,6 @@ sqlx = "0.8.6"
 
 tempfile = { version = "3.24", optional = true }
 nanoid = { version = "0.4", optional = true }
-regex = { version = "1", optional = true }
-if-watch = { version = "3", features = ["tokio"] }
 
 [dev-dependencies]
 dashchat-node = { path = ".", features = ["testing"] }
@@ -64,5 +64,5 @@ p2panda-store = { workspace = true, features = ["test_utils"] }
 [features]
 default = ["instrument"]
 instrument = []
-testing = ["tempfile", "nanoid", "regex", "p2panda-store/test_utils"]
+testing = ["tempfile", "nanoid", "p2panda-store/test_utils"]
 p2p = []

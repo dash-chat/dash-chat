@@ -1,14 +1,15 @@
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
-import { type Agent, setupAgent } from '../../setup/setup-agents';
+import { SYNC_TIMEOUT } from '../../helpers/timeouts';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Group messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
-	before(async () => {
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+	before(async function () {
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 		await agent1.enablePreviewFeatures();
 		await agent2.enablePreviewFeatures();
@@ -36,19 +37,29 @@ describe('Group messages', () => {
 	});
 
 	it('renders messages from other group members with their avatar', async () => {
-		await agent2.homePage.chatListItem('mygroup').waitForExist();
+		// The group arrives over p2p sync, which can be slow on real devices.
+		await agent2.homePage.chatListItem('mygroup').waitForExist({
+			timeout: SYNC_TIMEOUT,
+		});
 		await agent2.homePage.chatListItem('mygroup').click();
 		await agent2.groupChatPage.ready();
 
-		await agent2.groupChatPage.sendMessage('Hello from Bob!');
+		await agent2.groupChatPage.composer.sendMessage('Hello from Bob!');
 		await agent2.groupChatPage.messages.waitForMessage('Hello from Bob!');
 
-		await agent1.groupChatPage.messages.waitForMessage('Hello from Bob!');
+		const message =
+			await agent1.groupChatPage.messages.waitForMessage('Hello from Bob!');
 		await agent1.waitUntil(
-			async () =>
-				(await agent1.groupChatPage.messages.getAuthorInitials('Hello from Bob!')) ===
-				'Bo',
+			async () => (await message.authorInitials()) === 'Bo',
 			{ timeoutMsg: 'Avatar initials "Bo" did not appear on Bob\'s message' },
 		);
+	});
+
+	it('marks a group message delivered once another member receives it', async () => {
+		await agent1.groupChatPage.composer.sendMessage('Hello group!');
+		await agent2.groupChatPage.messages.waitForMessage('Hello group!');
+		await agent1.groupChatPage.messages.waitForMessageStatus('Hello group!', [
+			'delivered',
+		]);
 	});
 });

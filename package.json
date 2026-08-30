@@ -4,7 +4,10 @@
 	"scripts": {
 		"start": "mprocs",
 		"dev": "concurrently --kill-others-on-fail \"pnpm -F dash-chat-stores dev\" \"pnpm -F ui dev\"",
-		"tauri": "tauri"
+		"tauri": "tauri",
+		"e2e:build:desktop": "tauri build --debug --no-bundle --features e2e-tests",
+		"e2e:build:android": "tauri android build --debug --apk --split-per-abi --features e2e-tests -t $E2E_ANDROID_TARGETS",
+		"e2e:build:ios": "tauri ios build --debug --features e2e-tests && node scripts/export-session-ipa.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.36.0",
@@ -22,11 +25,13 @@
 		"svelte-language-server": "^0.17.25",
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.45.0",
-		"vite": "^4.5.14"
+		"vite": "^4.5.14",
+		"turbo": "^2.10.10"
 	},
 	"type": "module",
+	"packageManager": "pnpm@11.18.0",
 	"engines": {
-		"node": ">=22 <23",
-		"pnpm": ">=9.0.0"
+		"node": ">=24 <25",
+		"pnpm": ">=11.0.0"
 	}
 }

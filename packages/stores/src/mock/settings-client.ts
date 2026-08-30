@@ -1,13 +1,41 @@
 import Emittery from 'emittery';
+import { type ReactivePromise, reactive, signal } from 'signalium';
+import { colorScheme as appliedColorScheme } from 'tauri-plugin-system-theme';
 
-import type { ISettingsClient, Settings } from '../settings/settings-client';
+import type {
+	ColorScheme,
+	ColorSchemePreference,
+	ISettingsClient,
+	Settings,
+} from '../settings/settings-client';
 
 export class MockSettingsClient implements ISettingsClient {
+	private colorSchemePreferenceSignal = signal<ColorSchemePreference>('system');
+
+	private colorSchemePreferenceReactive = reactive(
+		async (): Promise<ColorSchemePreference> =>
+			this.colorSchemePreferenceSignal.value,
+	);
+
+	colorSchemePreference(): ReactivePromise<ColorSchemePreference> {
+		return this.colorSchemePreferenceReactive();
+	}
+
+	colorScheme(): ColorScheme {
+		const scheme = this.colorSchemePreferenceSignal.value;
+		// Resolving `system` is the plugin's rule, and it needs no Tauri runtime.
+		return scheme === 'system' ? appliedColorScheme() : scheme;
+	}
+
+	async setColorSchemePreference(scheme: ColorSchemePreference): Promise<void> {
+		this.colorSchemePreferenceSignal.value = scheme;
+	}
+
 	private settings: Settings = {
 		qr_color: null,
-		color_scheme: null,
 		local_mailbox_enabled: false,
 		notifications_enabled: false,
+		background_mode_enabled: false,
 	};
 
 	private emitter = new Emittery<{ updated: Settings }>();
@@ -28,6 +56,11 @@ export class MockSettingsClient implements ISettingsClient {
 
 	async setNotificationsEnabled(enabled: boolean): Promise<void> {
 		this.settings.notifications_enabled = enabled;
+		this.emitter.emit('updated', { ...this.settings });
+	}
+
+	async setBackgroundModeEnabled(enabled: boolean): Promise<void> {
+		this.settings.background_mode_enabled = enabled;
 		this.emitter.emit('updated', { ...this.settings });
 	}
 

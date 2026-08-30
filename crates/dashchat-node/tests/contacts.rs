@@ -30,7 +30,7 @@ async fn test_reject_contact_request() {
     println!("bobbi: {}", bobbi.device_id());
 
     // Alice generates a QR code with inbox
-    let qr = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
 
     // Bobbi scans the QR code and sends a contact request to Alice's inbox
     bobbi.add_contact(qr).await.unwrap();
@@ -41,11 +41,12 @@ async fn test_reject_contact_request() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) = &n.payload
+            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
+                n.op()?.payload
             else {
                 return None;
             };
-            Some(*agent_id)
+            Some(agent_id)
         })
         .await
         .expect("Alice should receive Bobbi's contact request");
@@ -88,8 +89,8 @@ async fn test_reject_multiple_contact_requests() {
     println!("### {:3.1?} alice creating QR codes", start.elapsed());
 
     // Alice generates QR codes for both Bobbi and Carol
-    let qr_for_bobbi = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
-    let qr_for_carol = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
+    let qr_for_bobbi = alice.create_add_contact_qr_code().await.unwrap();
+    let qr_for_carol = alice.create_add_contact_qr_code().await.unwrap();
 
     println!(
         "### {:3.1?} bobbi and carol scanning QR codes",
@@ -114,11 +115,11 @@ async fn test_reject_multiple_contact_requests() {
             .await
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
                 let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
-                    &n.payload
+                    n.op()?.payload
                 else {
                     return None;
                 };
-                Some(*agent_id)
+                Some(agent_id)
             })
             .await
             .expect("Alice should receive contact request");
@@ -149,7 +150,7 @@ async fn test_reject_multiple_contact_requests() {
 }
 
 /// Two-way inbox flow: when the scanner sends a contact request, the inbox
-/// owner replies over the same inbox with a `ContactRequestAck` carrying its
+/// owner replies over the same inbox with a `ContactRequestAccept` carrying its
 /// profile, and the scanner receives it on the inbox it scanned.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_inbox_two_way_flow() {
@@ -165,9 +166,11 @@ async fn test_inbox_two_way_flow() {
         .add_mailbox(&mailbox)
         .await;
 
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
     // Alice generates a QR code with an inbox and Bobbi scans it, sending his
     // contact request to Alice's inbox.
-    let qr = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
     // Alice waits for Bobbi's contact request and explicitly accepts it. Since
@@ -178,11 +181,12 @@ async fn test_inbox_two_way_flow() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) = &n.payload
+            let Some(Payload::Inbox(InboxPayload::ContactRequest { agent_id, .. })) =
+                n.op()?.payload
             else {
                 return None;
             };
-            Some(*agent_id)
+            Some(agent_id)
         })
         .await
         .expect("Alice should receive Bobbi's contact request");
@@ -196,14 +200,63 @@ async fn test_inbox_two_way_flow() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Some(Payload::Inbox(InboxPayload::ContactRequestAck { profile, .. })) = &n.payload
+            let Some(Payload::Inbox(InboxPayload::ContactRequestAccept { profile, .. })) =
+                n.op()?.payload.as_ref()
             else {
                 return None;
             };
             Some(profile.clone())
         })
         .await
-        .expect("Bobbi should receive Alice's contact request ack");
+        .expect("Bobbi should receive Alice's contact request acceptance");
 
     assert_eq!(acked_profile.name, "alice");
+}
+
+/// Adding your own contact code must be rejected.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cannot_add_self_as_contact() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    let result = alice.add_contact(qr).await;
+
+    assert!(matches!(result, Err(AddContactError::CannotAddSelf)));
+}
+
+/// Adding the same contact a second time returns AlreadyRequested.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_duplicate_contact_request_is_idempotent() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+
+    let first = bobbi.add_contact(qr.clone()).await.unwrap();
+    let second = bobbi.add_contact(qr).await.unwrap();
+
+    assert!(
+        matches!(first, AddContactResult::NewRequest(_)),
+        "first request should be NewRequest, got {:?}",
+        first
+    );
+    assert!(
+        matches!(second, AddContactResult::AlreadyRequested(_)),
+        "second request should be AlreadyRequested, got {:?}",
+        second
+    );
+
+    let first_chat_id = match first {
+        AddContactResult::NewRequest(chat_id) => chat_id,
+        _ => unreachable!(),
+    };
+    let second_chat_id = match second {
+        AddContactResult::AlreadyRequested(chat_id) => chat_id,
+        _ => unreachable!(),
+    };
+    assert_eq!(first_chat_id, second_chat_id);
 }

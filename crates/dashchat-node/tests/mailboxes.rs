@@ -25,7 +25,7 @@ async fn mailbox_late_join() {
     let alice = TestNode::new(config.clone(), "alice").await;
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-    let qr = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
     alice.add_mailbox(&mailbox).await;
@@ -40,11 +40,11 @@ async fn mailbox_late_join() {
     //
     // alice
     //     .behavior()
-    //     .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+    //     .initiate_and_establish_contact(&bobbi)
     //     .await
     //     .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
     // Introduce delay to let the first message be stored and force missing synchronization with the second one
@@ -97,7 +97,7 @@ async fn test_mailbox_restart_relay() {
     let alice_agent_id = alice.agent_id();
     let bobbi_agent_id = bobbi.agent_id();
 
-    let qr = alice.new_qr_code(ShareIntent::AddContact).await.unwrap();
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
     let dummy_key = || iroh::SecretKey::generate().public();
@@ -120,7 +120,7 @@ async fn test_mailbox_restart_relay() {
 
     alice.behavior().accept_next_contact().await.unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     alice
         .send_message_raw(chat, "Hello 1".into())
@@ -171,7 +171,7 @@ async fn test_mailbox_restart_relay() {
 
     // === Phase 3: Post-restart — send more messages and verify all are received ===
 
-    let chat = alice.direct_chat_topic(bobbi_agent_id);
+    let chat = alice.direct_chat_with(&bobbi);
 
     alice
         .send_message_raw(chat, "Hello 3".into())
@@ -229,13 +229,13 @@ async fn test_multiple_mailboxes_group_pivot() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
     carol
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 

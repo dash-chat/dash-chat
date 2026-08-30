@@ -14,12 +14,16 @@
 		useTheme,
 		Link,
 		Navbar,
+		NavbarBackLink,
 		Card,
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
 	import Avatar from './Avatar.svelte';
+
+	let { onBack }: { onBack?: () => void } = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const settingsStore: SettingsStore = getContext('settings-store');
@@ -88,9 +92,16 @@
 	let textEditorOpen = $state(false);
 
 	const avatarSize = 100;
+
+	const NAME_INPUT_ID = 'create-profile-name-input';
+
+	// Focus name input when rendering the page
+	$effect(() => {
+		document.getElementById(NAME_INPUT_ID)?.focus();
+	});
 </script>
 
-<Page>
+<Page class="pb-keyboard-safe">
 	{#if showPicker}
 		<AvatarPicker
 			bind:avatar={pickerAvatar}
@@ -102,15 +113,13 @@
 		/>
 
 		{#if !textEditorOpen && !isIos}
-			<Button
-				rounded
+			<FixedActionButton
 				tonal
 				disabled={!pickerHasChanges}
 				onClick={selectAvatar}
-				class="fixed-action-btn"
 			>
 				{m.save()}
-			</Button>
+			</FixedActionButton>
 		{/if}
 	{:else}
 		<Navbar
@@ -119,6 +128,12 @@
 			transparent={true}
 			rightClass={name === undefined || name === '' ? 'ios-right-disabled' : ''}
 		>
+			{#snippet left()}
+				{#if onBack}
+					<NavbarBackLink onClick={onBack} data-testid="create-profile-back" />
+				{/if}
+			{/snippet}
+
 			{#snippet right()}
 				{#if isIos}
 					<Link onClick={setProfile} data-testid="create-profile-create-btn">
@@ -170,6 +185,7 @@
 						value={name ?? ''}
 						onInput={e => (name = e.target.value)}
 						placeholder={m.nameRequired()}
+						inputId={NAME_INPUT_ID}
 						data-testid="create-profile-name"
 					></ListInput>
 					<ListInput
@@ -184,15 +200,13 @@
 		</div>
 
 		{#if !isIos}
-			<Button
+			<FixedActionButton
 				onClick={setProfile}
-				class="fixed-action-btn"
-				rounded
 				disabled={name === undefined || name === ''}
-				data-testid="create-profile-create-btn"
+				testId="create-profile-create-btn"
 			>
 				{m.create()}
-			</Button>
+			</FixedActionButton>
 		{/if}
 	{/if}
 </Page>

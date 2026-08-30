@@ -31,7 +31,7 @@
 
 use std::marker::PhantomData;
 
-use crate::AgentId;
+use crate::{AgentId, FakeAgentId};
 
 use aliased::Aliasing;
 use p2panda::operation::LogId;
@@ -119,7 +119,7 @@ pub type TopicId = p2panda::Topic;
 
 // -- SQLite encoding for TopicId --
 
-impl sqlx::Type<Sqlite> for Topic {
+impl<K: TopicKind> sqlx::Type<Sqlite> for Topic<K> {
     fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
         <Vec<u8> as sqlx::Type<Sqlite>>::type_info()
     }
@@ -161,7 +161,7 @@ impl<K: TopicKind> From<Topic<K>> for LogId {
 )]
 #[display("{}", self.id.to_hex())]
 #[debug("{}", self)]
-pub struct Topic<K: TopicKind = kind::Untyped> {
+pub struct Topic<K: TopicKind> {
     #[deref]
     id: TopicId,
 
@@ -214,7 +214,7 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
-    pub fn direct_chat(mut pks: [AgentId; 2]) -> Self {
+    pub fn direct_chat(mut pks: [FakeAgentId; 2]) -> Self {
         pks.sort();
         let mut hasher = blake3::Hasher::new();
         hasher.update(pks[0].as_bytes());
@@ -282,7 +282,7 @@ impl<K: TopicKind> From<Topic<K>> for String {
     }
 }
 
-impl TryFrom<String> for Topic {
+impl TryFrom<String> for Topic<kind::Untyped> {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(std::str::FromStr::from_str(&value)?)

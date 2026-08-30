@@ -8,10 +8,9 @@ use push_notifications_client::types::{FcmToken, TopicId as PushTopicId, Verifyi
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
-use crate::app_node::AppNode;
+use crate::node::AppNodeManager;
 use crate::notifications::are_notifications_enabled;
 
-mod node_cache;
 mod receive_push_notification;
 
 #[cfg(target_os = "android")]
@@ -47,10 +46,6 @@ pub fn setup_push_notifications(
     handle: AppHandle,
     topic_subscribed_rx: tokio::sync::mpsc::Receiver<dashchat_node::topic::TopicId>,
 ) -> anyhow::Result<()> {
-    // Clear any temporary nodes that were created by push notifications before
-    // the app fully started. The authoritative Node is now managed by Tauri.
-    tauri::async_runtime::spawn(node_cache::clear());
-
     handle.manage(PushNotificationsClient::new(push_notifications_url())?);
 
     let h = handle.clone();
@@ -111,7 +106,7 @@ pub fn setup_push_notifications(
 /// If they're not, unregister the FCM token from the server
 async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Result<()> {
     let node = handle
-        .try_state::<AppNode>()
+        .try_state::<AppNodeManager>()
         .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
         .get()
         .await
@@ -145,7 +140,7 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
 /// If they're not, remove all topic subscriptions from it.
 async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let node = app_handle
-        .try_state::<AppNode>()
+        .try_state::<AppNodeManager>()
         .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
         .get()
         .await
@@ -153,10 +148,18 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
     let topic_ids = if are_notifications_enabled(&app_handle) {
+        // Inbox topics live in their own store (they expire) and are not in
+        // subscribed_topics; without them this full sync unsubscribes the
+        // inbox on the server and a contact request can't wake the app.
+        let inbox_topics = node
+            .get_active_inbox_topics()
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
         let topic_ids: HashSet<PushTopicId> = node
             .subscribed_topics()
             .await?
             .into_iter()
+            .chain(inbox_topics.into_iter().map(|inbox| *inbox.topic))
             .map(|t| PushTopicId::from(t.to_hex()))
             .collect();
         topic_ids
@@ -187,7 +190,7 @@ async fn subscribe_to_topics(
     }
 
     let node = app_handle
-        .try_state::<AppNode>()
+        .try_state::<AppNodeManager>()
         .ok_or_else(|| anyhow::anyhow!("app node not managed yet"))?
         .get()
         .await

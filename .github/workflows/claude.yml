@@ -35,7 +35,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
           cache: true
 
       - name: Setup node
@@ -61,11 +60,12 @@ jobs:
             libxdo-dev \
             libssl-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            libasound2-dev
 
       - name: Install and prepare
         run: |
-          pnpm install
+          pnpm install --reporter=append-only
           pnpm -F ./packages/stores build
           npx @inlang/paraglide-js compile --project ./ui/project.inlang
 

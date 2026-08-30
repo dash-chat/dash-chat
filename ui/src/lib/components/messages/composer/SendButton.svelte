@@ -3,13 +3,20 @@
 	import { Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiSend } from '@mdi/js';
+	import { mdiCheck, mdiSend } from '@mdi/js';
 
 	interface Props {
 		onSend: () => Promise<boolean>;
+		/** Show a checkmark (save edit) instead of the send arrow. */
+		editing?: boolean;
+		testid?: string;
 	}
 
-	let { onSend }: Props = $props();
+	let {
+		onSend,
+		editing = false,
+		testid = 'message-input-send',
+	}: Props = $props();
 
 	let loading = $state(false);
 
@@ -27,13 +34,19 @@
 <button
 	type="button"
 	class="send-button flex h-[42px] w-[42px] shrink-0 items-center justify-center p-0"
-	data-testid="message-input-send"
+	data-testid={testid}
 	onclick={handleClick}
 	disabled={loading}
-	aria-label={m.send()}
+	aria-label={editing ? m.save() : m.send()}
 >
 	{#if loading}
 		<Preloader class="h-[22px] w-[22px] !text-white" />
+	{:else if editing}
+		<wa-icon
+			class="no-offset"
+			style="font-size: 24px"
+			src={wrapPathInSvg(mdiCheck)}
+		></wa-icon>
 	{:else}
 		<wa-icon style="font-size: 24px" src={wrapPathInSvg(mdiSend)}></wa-icon>
 	{/if}
@@ -67,5 +80,9 @@
 		width: 22px;
 		height: 22px;
 		margin-inline-start: 2px; /* Optical centering for send arrow */
+	}
+
+	.send-button :global(wa-icon.no-offset) {
+		margin-inline-start: 0;
 	}
 </style>

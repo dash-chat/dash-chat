@@ -1,13 +1,7 @@
 <script lang="ts">
-	import {
-		Checkbox,
-		Dialog,
-		DialogButton,
-		List,
-		ListItem,
-	} from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { sendMailto } from '$lib/utils/mailto';
+	import ActionDialog from '$lib/components/navigation/ActionDialog.svelte';
+	import { describeError, sendErrorReport } from '$lib/utils/error-report';
 	import { showToast } from '$lib/utils/toasts';
 
 	let {
@@ -20,61 +14,25 @@
 		error?: unknown;
 	} = $props();
 
-	let includeDebugLog = $state(true);
-
-	function formatError(e: unknown): string {
-		if (e instanceof Error) return e.stack ?? e.message;
-		if (typeof e === 'string') return e;
-		try {
-			return JSON.stringify(e);
-		} catch {
-			return String(e);
-		}
-	}
-
 	async function send() {
-		opened = false;
-		const body =
-			error !== undefined
-				? `${message}\n\nError: ${formatError(error)}`
-				: message;
 		try {
-			await sendMailto({
-				subject: 'Dash Chat: Error Report',
-				body,
-				includeDebugLog,
+			const outcome = await sendErrorReport({
+				message,
+				error: describeError(error),
 			});
+			opened = false;
+			showToast(outcome === 'queued' ? m.reportQueued() : m.reportSent());
+			return { success: true as const };
 		} catch {
-			showToast(m.errorSendErrorReport(), 'error');
+			return { success: false as const, error: m.errorSendErrorReport() };
 		}
 	}
 </script>
 
-<Dialog
+<ActionDialog
 	{opened}
-	onBackdropClick={() => (opened = false)}
+	onCancel={() => (opened = false)}
 	title={m.sendErrorReport()}
->
-	<p class="px-4 text-sm opacity-60">{m.errorReportExplanation()}</p>
-	<List nested class="!my-0">
-		<ListItem
-			title={m.includeDebugLog()}
-			onClick={() => (includeDebugLog = !includeDebugLog)}
-		>
-			{#snippet media()}
-				<Checkbox
-					checked={includeDebugLog}
-					onChange={() => (includeDebugLog = !includeDebugLog)}
-				/>
-			{/snippet}
-		</ListItem>
-	</List>
-	{#snippet buttons()}
-		<DialogButton onClick={() => (opened = false)}>
-			{m.cancel()}
-		</DialogButton>
-		<DialogButton strong onClick={send}>
-			{m.send()}
-		</DialogButton>
-	{/snippet}
-</Dialog>
+	description={m.errorReportExplanation()}
+	actions={[{ text: m.send(), onClick: send }]}
+/>

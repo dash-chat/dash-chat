@@ -1,0 +1,38 @@
+{
+	"$schema": "https://turborepo.dev/schema.json",
+	"envMode": "loose",
+	"cacheMaxSize": "20GB",
+	"tasks": {
+		"//#e2e:build:desktop": {
+			"inputs": ["$TURBO_DEFAULT$", "!e2e-tests/**", "!docs/**"],
+			"env": ["VITE_E2E", "CARGO_PROFILE_DEV_*"],
+			"outputs": ["target/debug/dash-chat"]
+		},
+		"//#e2e:build:android": {
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"!e2e-tests/**",
+				"!docs/**",
+				"src-tauri/gen/android/google-services.json"
+			],
+			"env": [
+				"MAILBOX_URL",
+				"PUSH_NOTIFICATIONS_SERVER_URL",
+				"CARGO_PROFILE_DEV_*",
+				"E2E_ANDROID_TARGETS"
+			],
+			"outputs": ["src-tauri/gen/android/app/build/outputs/apk/**/*-debug.apk"]
+		},
+		"//#e2e:build:ios": {
+			"inputs": ["$TURBO_DEFAULT$", "!e2e-tests/**", "!docs/**"],
+			"env": [
+				"MAILBOX_URL",
+				"PUSH_NOTIFICATIONS_SERVER_URL",
+				"VITE_E2E",
+				"IPHONEOS_DEPLOYMENT_TARGET",
+				"CARGO_PROFILE_DEV_*"
+			],
+			"outputs": ["e2e-tests/.appium/dash-chat-e2e.ipa"]
+		}
+	}
+}

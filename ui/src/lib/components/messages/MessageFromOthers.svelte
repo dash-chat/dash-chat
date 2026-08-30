@@ -2,19 +2,28 @@
 	import { Card } from 'konsta/svelte';
 	import {
 		fullName,
+		hasBody,
+		isDeleted,
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
+		type Hash,
 		type Message,
 		type MessagesStore,
 		type Profile,
 	} from 'dash-chat-stores';
 	import type { MessagePosition } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
+	import DeletedMessage from './DeletedMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
+	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
-	import QuickReactionBar from './QuickReactionBar.svelte';
+	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
+	import MessageContextMenu from './MessageContextMenu.svelte';
+	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
+	import SwipeToReply from './SwipeToReply.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -30,6 +39,8 @@
 		sender,
 		showSenderName = false,
 		showAvatar = false,
+		onReply,
+		onNavigateToMessage,
 	}: {
 		message: Message;
 		position: MessagePosition;
@@ -39,17 +50,37 @@
 		sender: Profile | undefined;
 		showSenderName?: boolean;
 		showAvatar?: boolean;
+		onReply?: () => void;
+		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
 
 	const isLast = $derived(position === 'last' || position === 'single');
+	const deleted = $derived(isDeleted(message.content));
 	const senderDisplayName = $derived(
 		sender && sender.name ? fullName(sender) : m.unknownSender(),
+	);
+
+	const reactions = $derived(
+		hasBody(message.content) ? message.content.reactions : {},
+	);
+	const editHistory = $derived(
+		hasBody(message.content) ? message.content.editHistory : [],
 	);
 
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
 	let messageEl = $state<HTMLElement>();
+	let slideEl = $state<HTMLElement>();
+	let contextMenuPoint = $state<{ x: number; y: number }>();
+
+	function onLongPress(e: MouseEvent | TouchEvent) {
+		if (isMobile) {
+			reactionsOpened = true;
+		} else if (e instanceof MouseEvent) {
+			contextMenuPoint = { x: e.clientX, y: e.clientY };
+		}
+	}
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -76,79 +107,99 @@
 </script>
 
 {#snippet metadata()}
-	<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+	{#if editHistory.length > 0}
+		<EditedIndicator class="quiet" />
+	{/if}
+	{#if isLast}
+		<MessageTimestamp timestamp={message.timestamp} class="quiet" />
+	{/if}
 {/snippet}
 
-<div
-	bind:this={messageEl}
-	use:longpress={{ onLongPress: () => (reactionsOpened = true) }}
->
-	<div class="row items-end gap-2">
-		{#if showAvatar}
-			{#if isLast}
-				<Avatar
-					image={sender?.avatar}
-					initials={sender?.name.slice(0, 2)}
-					size="2rem"
-				/>
-			{:else}
-				<div class="shrink-0" style="width: 2rem"></div>
-			{/if}
+{#snippet bubble()}
+	<div bind:this={messageEl} class="relative max-w-[85%]">
+		{#if !isMobile && hasBody(message.content)}
+			<MessageHoverToolbar {message} {myDeviceId} {onReply} />
 		{/if}
-		<Card
-			raised
-			contentWrapPadding="p-2"
-			class={`message others-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
-		>
-			<MessageContent
-				{message}
-				{searchQuery}
-				senderName={senderDisplayName}
-				{showSenderName}
-				metadata={isLast ? metadata : undefined}
-			/>
-		</Card>
-	</div>
-	{#if Object.keys(message.reactions).length > 0}
-		<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
-			<Reactions
-				reactions={message.reactions}
-				{myDeviceId}
-				onToggleReaction={emoji =>
-					toggleReaction(store, message, myDeviceId, emoji)}
-			/>
+		<div class="row items-end gap-2">
+			{#if showAvatar}
+				{#if isLast}
+					<Avatar
+						image={sender?.avatar}
+						initials={sender?.name.slice(0, 2)}
+						size="2rem"
+					/>
+				{:else}
+					<div class="shrink-0" style="width: 2rem"></div>
+				{/if}
+			{/if}
+			<div bind:this={slideEl} class="column min-w-0">
+				{#if deleted}
+					<DeletedMessage
+						{message}
+						{position}
+						{myDeviceId}
+						senderName={senderDisplayName}
+					/>
+				{:else}
+					<Card
+						raised
+						contentWrapPadding="p-2"
+						class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+					>
+						<div class="flex flex-col gap-1">
+							<MessageContent
+								{message}
+								{searchQuery}
+								senderName={senderDisplayName}
+								{showSenderName}
+								{onNavigateToMessage}
+								metadata={isLast || editHistory.length > 0
+									? metadata
+									: undefined}
+							/>
+						</div>
+					</Card>
+				{/if}
+				{#if Object.keys(reactions).length > 0}
+					<div class="relative z-10 flex justify-end -mt-1.5 mb-0.5 px-1">
+						<Reactions
+							{reactions}
+							onToggleReaction={emoji => toggleReaction(store, message, emoji)}
+							onSheetOpen={() => (reactionsOpened = false)}
+						/>
+					</div>
+				{/if}
+			</div>
 		</div>
-	{/if}
-</div>
-<QuickReactionBar
-	{message}
-	{myDeviceId}
-	bind:opened={reactionsOpened}
-	target={messageEl}
-/>
+	</div>
+{/snippet}
 
-<style>
-	:global(.others-message) {
-		margin: 0;
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-	:global(.others-message.first-message) {
-		border-end-start-radius: 4px;
-	}
-	:global(.others-message.middle-message) {
-		border-start-start-radius: 4px;
-		border-end-start-radius: 4px;
-	}
-	:global(.others-message.last-message) {
-		border-start-start-radius: 4px;
-	}
+{#snippet row()}
+	<div class="group flex justify-start" use:longpress={{ onLongPress }}>
+		{@render bubble()}
+	</div>
+{/snippet}
 
-	:global(.others-message.offline-message) {
-		border: 3px dashed rgb(255, 182, 193);
-		background-clip: padding-box;
-	}
-	:global(.others-message.offline-message > div) {
-		padding: calc(0.5rem - 2px) !important;
-	}
-</style>
+{#if deleted}
+	<div class="group flex justify-start">{@render bubble()}</div>
+{:else if isMobile}
+	<SwipeToReply {onReply} target={slideEl}>{@render row()}</SwipeToReply>
+{:else}
+	{@render row()}
+{/if}
+{#if isMobile}
+	<MessageActionsOverlay
+		{message}
+		{myDeviceId}
+		{onReply}
+		bind:opened={reactionsOpened}
+		target={messageEl}
+	/>
+{:else}
+	<MessageContextMenu
+		{message}
+		{myDeviceId}
+		{onReply}
+		bind:point={contextMenuPoint}
+	/>
+{/if}

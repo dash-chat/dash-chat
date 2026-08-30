@@ -14,7 +14,7 @@ import {
 	resumeMailbox,
 	suspendMailbox,
 } from '../setup/mailbox-control';
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 // wdio arms its per-test abort timer from the mocha timeout at invocation
 // time, so `this.timeout()` inside a test body comes too late — the timeout
@@ -30,9 +30,11 @@ describe('Local mailbox connection survives the mDNS announcement TTL', function
 		// The suite suspends the cloud mailbox server's process, which is
 		// impossible against a remote environment mailbox.
 		if (isRemoteMailbox()) this.skip();
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+		// agent1 hosts the in-process local mailbox server, a desktop-only
+		// feature; discovery assumes both agents share the runner's LAN.
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'desktop' },
+			{ platform: 'desktop' },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Test');
 		await agent2.createProfilePage.createProfile('Bob', 'Test');
@@ -76,10 +78,10 @@ describe('Local mailbox connection survives the mDNS announcement TTL', function
 	// mailbox on top.
 	it('client shows the local mailbox icon once connected to the peer server', async () => {
 		const indicator = agent2.groupChatPage.connectionStatusIndicator;
-		await agent2.waitUntil(
-			async () => (await indicator.status()) === 'local',
-			{ timeout: 90_000, interval: 1_000 },
-		);
+		await agent2.waitUntil(async () => (await indicator.status()) === 'local', {
+			timeout: 90_000,
+			interval: 1_000,
+		});
 	});
 
 	it('keeps showing the local mailbox icon for 3 minutes, outliving the mDNS TTL', async () => {

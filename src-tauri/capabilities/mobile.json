@@ -9,7 +9,6 @@
 		"barcode-scanner:allow-request-permissions",
 		"barcode-scanner:allow-scan",
 		"barcode-scanner:allow-cancel",
-		"system-bars-styles:default",
 		"notification:default",
 		"notification:allow-is-permission-granted",
 		"notification:allow-request-permission",
@@ -17,6 +16,14 @@
 		"deep-link:allow-register",
 		"view:allow-view",
 		"dialog:allow-open",
-		"fs:allow-appcache-read-recursive"
+		"fs:allow-appcache-read-recursive",
+		{
+			"identifier": "fs:allow-read-file",
+			"allow": [{ "path": "$CACHE/dc-voice-*" }]
+		},
+		{
+			"identifier": "fs:allow-remove",
+			"allow": [{ "path": "$CACHE/dc-voice-*" }]
+		}
 	]
 }

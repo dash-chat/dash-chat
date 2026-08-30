@@ -2,10 +2,9 @@
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { settled, useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
-		Button,
 		Link,
 		List,
 		ListInput,
@@ -19,6 +18,7 @@
 	import { showToast } from '$lib/utils/toasts';
 	import { isIos } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import FormInput from '$lib/components/form/FormInput.svelte';
 	import Form from '$lib/components/form/Form.svelte';
 	import Container from '$lib/components/layout_helpers/Container.svelte';
@@ -33,16 +33,14 @@
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 	let initialized = false;
 	$effect(() => {
-		$myProfile.then(profile => {
-			if (!initialized) {
-				initialized = true;
-				name = profile?.name || '';
-				surname = profile?.surname;
-				avatar = profile?.avatar;
-				about = profile?.about || '';
-				originalAbout = profile?.about || '';
-			}
-		});
+		const profile = $myProfile;
+		if (!settled(profile) || initialized) return;
+		initialized = true;
+		name = profile?.name || '';
+		surname = profile?.surname;
+		avatar = profile?.avatar;
+		about = profile?.about || '';
+		originalAbout = profile?.about || '';
 	});
 
 	const presets = [
@@ -152,15 +150,13 @@
 		</Container>
 
 		{#if !isIos}
-			<Button
+			<FixedActionButton
 				onClick={save}
-				class="fixed-action-btn"
-				rounded
-				data-testid="edit-about-save-btn"
+				testId="edit-about-save-btn"
 				disabled={!hasChanges}
 			>
 				{m.save()}
-			</Button>
+			</FixedActionButton>
 		{/if}
 	{/await}
 </Page>

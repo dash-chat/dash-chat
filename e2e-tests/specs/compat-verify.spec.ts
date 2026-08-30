@@ -5,12 +5,11 @@
  * version in the setup phase. Verifies that profiles, contacts, and messages
  * all persisted correctly, and that new messages can be sent.
  */
-
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -33,7 +32,7 @@ const NEW_MSG_ALICE = 'Post-upgrade message from Alice!';
 const NEW_MSG_BOB = 'Post-upgrade message from Bob!';
 
 describe('Compat verify — check data with current version', () => {
-	before(async () => {
+	before(async function () {
 		if (!existsSync(STATE_FILE)) {
 			throw new Error(
 				`State file not found: ${STATE_FILE}. Did the setup phase run?`,
@@ -41,9 +40,9 @@ describe('Compat verify — check data with current version', () => {
 		}
 		state = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
 
-		[agent1, agent2] = await Promise.all([
-			setupAgent('agent1'),
-			setupAgent('agent2'),
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
 	});
 
@@ -72,10 +71,10 @@ describe('Compat verify — check data with current version', () => {
 	});
 
 	it('can send new messages after upgrade', async () => {
-		await agent1.directChatPage.sendMessage(NEW_MSG_ALICE);
+		await agent1.directChatPage.composer.sendMessage(NEW_MSG_ALICE);
 		await agent2.directChatPage.messages.waitForMessage(NEW_MSG_ALICE);
 
-		await agent2.directChatPage.sendMessage(NEW_MSG_BOB);
+		await agent2.directChatPage.composer.sendMessage(NEW_MSG_BOB);
 		await agent1.directChatPage.messages.waitForMessage(NEW_MSG_BOB);
 	});
 });

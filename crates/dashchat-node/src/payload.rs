@@ -5,7 +5,7 @@ use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chat::ChatId;
 use crate::topic::{Topic, kind};
@@ -21,6 +21,17 @@ pub struct Profile {
     pub about: Option<String>,
 }
 
+impl Profile {
+    /// Return the display name as "<name> <surname>" when a non-empty surname
+    /// exists, otherwise just "<name>".
+    pub fn full_name(&self) -> String {
+        match self.surname {
+            Some(ref surname) if !surname.is_empty() => format!("{} {}", self.name, surname),
+            _ => self.name.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum AnnouncementsPayload {
@@ -32,7 +43,7 @@ pub enum AnnouncementsPayload {
 pub enum InboxPayload {
     /// Invites the recipient to add the sender as a contact. `reply_topic` is a
     /// private inbox the sender created for this exchange; the recipient sends
-    /// its `ContactRequestAck` there rather than on the (possibly shared)
+    /// its `ContactRequestAccept` there rather than on the (possibly shared)
     /// advertised inbox, so other scanners of the same QR code never see it.
     /// `agent_id` is the sender's agent id; the recipient records it against the
     /// op author (device_pubkey)
@@ -46,7 +57,7 @@ pub enum InboxPayload {
     /// immediately rather than waiting for announcements sync. `agent_id` is the
     /// owner's agent id; the scanner records it against the op author
     /// (device_pubkey), a step toward dropping `agent_id` from the QR code.
-    ContactRequestAck { profile: Profile, agent_id: AgentId },
+    ContactRequestAccept { profile: Profile, agent_id: AgentId },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +101,18 @@ pub enum ChatPayload {
         edit_hash: Hash,
     },
 
+    /// Deletes a previously-sent message for everyone.
+    ///
+    /// `hashes` is the complete edit chain of the message being deleted: the
+    /// original `Message` operation plus every `EditMessage` in its chain (a
+    /// single hash when the message was never edited). Processing a delete
+    /// tombstones every referenced operation so its payload is dropped and
+    /// never stored or synced again. Deletes are validated on both sides; see
+    /// [`DeleteError`](crate::chat::DeleteError).
+    DeleteMessage {
+        hashes: BTreeSet<Hash>,
+    },
+
     Reaction(ChatReaction),
 
     GroupInfo(GroupInfo),
@@ -116,6 +139,26 @@ pub enum ChatPayload {
     IntroduceAgents {
         agents: BTreeMap<DeviceId, AgentId>,
     },
+
+    /// Delivery acknowledgement: records, per author, the latest operation on
+    /// this chat topic that the acker has processed. Acks are delta-encoded:
+    /// each `MessageAck` only contains entries that changed since the acker's
+    /// previous one, so the acker's full map is the fold, in order, of all
+    /// their `MessageAck` operations. Acking an operation covers everything
+    /// at or below its `seq` in that author's log. `MessageAck` operations
+    /// themselves are never acked.
+    MessageAck {
+        acks: BTreeMap<DeviceId, AckedOp>,
+    },
+}
+
+/// An entry in a [`ChatPayload::MessageAck`] map. `seq` duplicates the
+/// referenced operation's seq_num so receivers can do coverage checks without
+/// resolving `hash` against a log they may not have fully synced yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AckedOp {
+    pub hash: Hash,
+    pub seq: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -124,11 +167,35 @@ pub struct ReadMessagesPayload {
     pub message_hashes: Vec<Hash>,
 }
 
+/// Deletes a previously-sent message only for the author's own device group.
+///
+/// Unlike `DeleteMessage` (delete for everyone), this lives in the private
+/// device group topic, so it is only ever seen by the author's own devices and
+/// syncs the deletion between them. It names the *original* message
+/// (`message_hash`), not the whole edit chain as `DeleteMessage` does: a
+/// delete-for-me may target another author's message, who can keep editing it
+/// afterwards, so no hash set captured at delete time stays complete. Instead
+/// the receiver tombstones the named operation and walks its edits forward, and
+/// any edit arriving afterwards is tombstoned transitively.
+/// [`Node::delete_message_for_me`](crate::Node::delete_message_for_me) resolves
+/// whatever hash the caller names back to the root, falling back to that raw
+/// hash only when the op is unknown locally — in which case it has no chain to
+/// belong to yet. `chat_id` identifies the chat topic
+/// the message lives in, since the delete itself is stored in a different
+/// topic. Processing never scrubs the shared chat mailbox — the message remains
+/// visible to the other chat participants.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DeleteForMePayload {
+    pub chat_id: ChatId,
+    pub message_hash: Hash,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
     AddContact {
         agent_id: AgentId,
+        direct_chat_topic_id: ChatId,
     },
     /// Recorded by the scanner the moment it sends a contact request, before it
     /// knows the owner's agent id (the QR code no longer carries it). Keyed on
@@ -138,11 +205,33 @@ pub enum DeviceGroupPayload {
     /// the device -> agent mapping is known.
     PendingContactRequest {
         device_pubkey: DeviceId,
+        #[serde(default)]
+        profile_name: String,
+        direct_chat_topic_id: ChatId,
     },
     RejectContactRequest(AgentId),
     BlockAgent(AgentId),
     UnblockAgent(AgentId),
     ReadMessages(ReadMessagesPayload),
+    DeleteForMe(DeleteForMePayload),
+    ReportContact(ReportContactPayload),
+}
+
+/// Records that this device reported a contact to one or more mailboxes.
+///
+/// Written only after at least one mailbox accepted the report, so the presence
+/// of the operation is proof a report was delivered. It lives in the private
+/// device group topic: it syncs the record across the reporter's own devices
+/// and is never seen by the reported contact. Reporting is always available —
+/// each report produces another operation, and the UI renders one bubble per
+/// operation at its timestamp rather than collapsing them into a "reported"
+/// flag.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReportContactPayload {
+    pub agent_id: AgentId,
+    pub device_ids: Vec<DeviceId>,
+    /// Ids of the mailboxes that accepted this report.
+    pub mailbox_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

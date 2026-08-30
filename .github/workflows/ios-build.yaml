@@ -19,14 +19,10 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10.33.0
           cache: true
 
       - name: Install xcodegen and just
         run: brew install xcodegen just
-
-      - name: Use iOS rust toolchain
-        run: cp rust-toolchain.ios.toml rust-toolchain.toml
 
       # Workaround for actions/runner-images#14097: on macos-15-arm64/20260511.0048+
       # /opt/homebrew/bin/{cargo,rustc,rustup,rustup-init} are broken rustup-init shims
@@ -44,8 +40,15 @@ jobs:
           rustflags: ''
           cache-shared-key: ios
 
+      # See android-build.yaml: a restored audiopus_sys CMake build dir whose
+      # CMAKE_C_COMPILER no longer matches the toolchain makes CMake re-run
+      # configure without CMAKE_POLICY_VERSION_MINIMUM, which vendored libopus
+      # cannot survive under CMake 4.
+      - name: Drop cached audiopus_sys CMake build dirs
+        run: rm -rf target/*/*/build/audiopus_sys-*
+
       - name: Install pnpm dependencies
-        run: pnpm install
+        run: pnpm install --reporter=append-only
 
       - name: Stub GoogleService-Info.plist for compile check
         run: |

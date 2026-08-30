@@ -2,6 +2,9 @@ use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
 
+use crate::Topic;
+use crate::topic::kind::Chat;
+
 #[derive(Debug, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
 pub enum Error {
@@ -27,6 +30,9 @@ pub enum AddContactError {
     #[error("Profile must be created before adding contacts")]
     ProfileNotCreated,
 
+    #[error("Cannot add yourself as a contact")]
+    CannotAddSelf,
+
     #[error("Invalid contact code: {0}")]
     InvalidContactCode(String),
 
@@ -39,6 +45,30 @@ pub enum AddContactError {
     #[error(transparent)]
     #[serde(untagged)]
     Common(#[from] Error),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", content = "chatId")]
+pub enum AddContactResult {
+    NewRequest(Topic<Chat>),
+    AlreadyRequested(Topic<Chat>),
+}
+
+#[derive(Debug, Error, Serialize)]
+#[serde(tag = "kind", content = "message")]
+pub enum SendMessageError {
+    #[error("Failed to send message: {0}")]
+    Internal(String),
+
+    #[error(transparent)]
+    #[serde(untagged)]
+    Validation(#[from] crate::chat::ReplyError),
+}
+
+impl From<anyhow::Error> for SendMessageError {
+    fn from(e: anyhow::Error) -> Self {
+        SendMessageError::Internal(e.to_string())
+    }
 }
 
 #[derive(Debug, Error, Serialize)]
@@ -55,6 +85,23 @@ pub enum EditMessageError {
 impl From<anyhow::Error> for EditMessageError {
     fn from(e: anyhow::Error) -> Self {
         EditMessageError::Internal(e.to_string())
+    }
+}
+
+#[derive(Debug, Error, Serialize)]
+#[serde(tag = "kind", content = "message")]
+pub enum DeleteMessageError {
+    #[error("Failed to delete message: {0}")]
+    Internal(String),
+
+    #[error(transparent)]
+    #[serde(untagged)]
+    Validation(#[from] crate::chat::DeleteError),
+}
+
+impl From<anyhow::Error> for DeleteMessageError {
+    fn from(e: anyhow::Error) -> Self {
+        DeleteMessageError::Internal(e.to_string())
     }
 }
 

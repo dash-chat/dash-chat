@@ -1,10 +1,10 @@
-import { type Agent, setupAgent } from '../setup/setup-agents';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Settings pages', () => {
 	let agent: Agent;
 
-	before(async () => {
-		agent = await setupAgent('agent1');
+	before(async function () {
+		[agent] = await setupAgents(this, [{ platform: 'any' }]);
 		await agent.createProfilePage.createProfile('Settings', 'Test');
 		await agent.homePage.settingsLink.click();
 		await agent.settingsPage.ready();
@@ -58,6 +58,25 @@ describe('Settings pages', () => {
 		await agent.settingsPage.ready();
 	});
 
+	it('applies the colour scheme picked on the appearance page', async () => {
+		await agent.settingsPage.appearanceLink.click();
+		await agent.appearancePage.ready();
+
+		await agent.appearancePage.dark.click();
+		await agent.waitUntil(
+			async () => (await agent.getColorScheme()) === 'dark',
+		);
+
+		await agent.appearancePage.light.click();
+		await agent.waitUntil(
+			async () => (await agent.getColorScheme()) === 'light',
+		);
+
+		await agent.appearancePage.system.click();
+		await agent.appearancePage.back.click();
+		await agent.settingsPage.ready();
+	});
+
 	it('opens the account page', async () => {
 		await agent.settingsPage.accountLink.click();
 		await agent.accountPage.ready();
@@ -73,6 +92,11 @@ describe('Settings pages', () => {
 	});
 
 	it('opens the offline page', async () => {
+		// The offline settings page exists everywhere but iOS ({#if !isIos}).
+		if (agent.platform === 'ios') {
+			await expect(agent.settingsPage.offlineLink).not.toBeDisplayed();
+			return;
+		}
 		await agent.settingsPage.offlineLink.click();
 		await agent.offlinePage.ready();
 		await agent.offlinePage.back.click();

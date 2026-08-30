@@ -1,4 +1,10 @@
-import { type ReactiveFn, ReactivePromise, watcher } from 'signalium';
+import {
+	type Equals,
+	type ReactiveFn,
+	ReactivePromise,
+	reactive,
+	watcher,
+} from 'signalium';
 import { type Readable } from 'svelte/store';
 
 import { getKeepAliveScope } from './keep-alive-scope.svelte';
@@ -58,15 +64,47 @@ export function useReactiveValue<
 	};
 }
 
+const STALLED_MS = 5_000;
+
+/** The frame that called `useReactivePromise`, to name the wedged store in the log. */
+function callSite(): string {
+	const frames = new Error().stack?.split('\n').slice(1) ?? [];
+	return (
+		frames.find(frame => !frame.includes('use-signal'))?.trim() ?? 'unknown'
+	);
+}
+
+export class StalledStoreError extends Error {
+	constructor(origin: string) {
+		super(
+			`Store pending for ${STALLED_MS}ms without resolving, subscribed from ${origin}`,
+		);
+		this.name = 'StalledStoreError';
+	}
+}
+
+export type Awaitable<T> = T | Promise<T>;
+
+export function settled<T>(value: Awaitable<T>): value is T {
+	return !(value instanceof Promise);
+}
+
+type AwaitedValues<T extends readonly unknown[]> = {
+	-readonly [K in keyof T]: Awaited<T[K]>;
+};
+
+/** Expose a signalium async reactive to `{#await}`. */
 export function useReactivePromise<
 	RP extends ReactivePromise<unknown>,
 	Args extends unknown[],
->(v: (...args: Args) => RP, ...args: Args): Readable<Promise<Awaited<RP>>> {
+>(v: (...args: Args) => RP, ...args: Args): Readable<Awaitable<Awaited<RP>>> {
 	type T = Awaited<RP>;
 	// Register with the nearest KeepAliveScope (if any) so the signalium cache
 	// for this (fn, args) is kept alive for the lifetime of the surrounding
 	// route group — not just this consumer's subscription.
 	getKeepAliveScope()?.keepAlive(v, args);
+
+	const origin = callSite();
 
 	const w = watcher(
 		() => {
@@ -101,6 +139,11 @@ export function useReactivePromise<
 			const sentinel = Symbol('uninit');
 			let lastEmittedValue: unknown = sentinel;
 			let lastEmittedError: unknown = sentinel;
+			let stalledTimer: ReturnType<typeof setTimeout> | undefined;
+			const clearStalledTimer = () => {
+				clearTimeout(stalledTimer);
+				stalledTimer = undefined;
+			};
 			const emit = () => {
 				const { isReady, isRejected, value, error } = w.value;
 				if (isRejected) {
@@ -108,6 +151,7 @@ export function useReactivePromise<
 					// Rejection takes precedence over a sticky `isReady` flag
 					// from a prior successful resolution.
 					if (Object.is(lastEmittedError, error) && lastEmittedSettled) return;
+					clearStalledTimer();
 					lastEmittedError = error;
 					lastEmittedValue = sentinel;
 					set(Promise.reject(error));
@@ -116,18 +160,32 @@ export function useReactivePromise<
 					// signalium fires the watcher listener once on first attach
 					// after the synchronous `w.value` read has already bumped
 					// `updatedCount` past `listeners.updatedAt`, producing a
-					// redundant fire with the same value. Dedupe by reference
-					// so we don't hand Svelte a fresh Promise — that would
-					// reset `{#await}` to :pending and unmount the :then branch.
+					// redundant fire with the same value. Dedupe by reference so
+					// that redundant fire doesn't reach Svelte at all.
 					if (Object.is(lastEmittedValue, value) && lastEmittedSettled) return;
+					clearStalledTimer();
 					lastEmittedValue = value;
 					lastEmittedError = sentinel;
-					set(Promise.resolve(value as T));
+					set(value as T);
 					lastEmittedSettled = true;
 				} else if (!lastEmittedSettled) {
 					// First-load pending — emit a never-resolving placeholder so
 					// {#await} stays in :pending until the first resolution.
 					set(new Promise<T>(() => {}));
+					if (stalledTimer === undefined) {
+						stalledTimer = setTimeout(() => {
+							stalledTimer = undefined;
+							const error = new StalledStoreError(origin);
+							// Also log: a consumer without a `{:catch}` arm would
+							// otherwise swallow this into an unhandled rejection
+							// that never reaches the tauri log.
+							console.error(error.message);
+							lastEmittedError = error;
+							lastEmittedValue = sentinel;
+							set(Promise.reject(error));
+							lastEmittedSettled = true;
+						}, STALLED_MS);
+					}
 				}
 				// Else: a downstream recompute is in flight; keep showing the
 				// previous value rather than flashing back to :pending.
@@ -135,8 +193,34 @@ export function useReactivePromise<
 			const unsubs = w.addListener(emit);
 			emit();
 			return () => {
+				clearStalledTimer();
 				unsubs();
 			};
 		},
 	};
+}
+
+/**
+ * `useReactivePromise` for several async reactives at once: resolves to a tuple
+ * of their values, so one `{#await}` — keeping its `:then`/`:catch` arms — can
+ * gate a branch that needs all of them, instead of nesting an `{#await}` per
+ * store.
+ *
+ *     useReactivePromises(() => [contactsStore.profiles(agentId), store.info()])
+ */
+export function useReactivePromises<
+	const T extends readonly ReactivePromise<unknown>[],
+>(sources: () => T): Readable<Awaitable<AwaitedValues<T>>> {
+	type Values = AwaitedValues<T>;
+
+	const sameValues = (a: readonly unknown[], b: readonly unknown[]) =>
+		a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
+
+	// signalium runs an async reactive's `equals` against the resolved value but
+	// types it against the promise.
+	const equals = sameValues as unknown as Equals<Promise<Values>>;
+
+	return useReactivePromise(
+		reactive(async () => await ReactivePromise.all(sources()), { equals }),
+	);
 }

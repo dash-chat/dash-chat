@@ -89,7 +89,11 @@
 		flex: 1;
 		min-width: 0;
 		position: relative;
-		overflow: hidden;
+		/* `clip` rather than `hidden`: a hidden box is still programmatically
+		   scrollable, so `scrollIntoView` inside a chat hands it whatever scroll
+		   the message list clamps away and drags the whole pane (composer
+		   included) off the bottom. */
+		overflow: clip;
 		background-color: var(--color-desktop-main-bg);
 	}
 

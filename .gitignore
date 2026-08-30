@@ -45,6 +45,7 @@ service-account-key.json
 *.redb
 .dbs
 .e2e-binaries
+e2e-tests/.appium
 signal-reference
 
 # Development environment log files
@@ -54,3 +55,6 @@ signal-reference
 
 # Claude
 docs/superpowers
+
+# turborepo local cache
+.turbo

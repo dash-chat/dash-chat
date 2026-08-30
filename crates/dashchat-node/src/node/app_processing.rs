@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use derive_more::derive::From;
 use futures::StreamExt;
 use p2panda::NodeId;
 use p2panda::operation::Header;
@@ -7,17 +8,62 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
+use crate::AckedOp;
+use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
-use crate::stores::ProjectionError;
+use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
 
+#[derive(Clone, Debug, Serialize, Deserialize, From)]
+pub enum Notification {
+    Op(OpNotification),
+    System(SystemNotification),
+}
+
+impl Notification {
+    pub fn op(&self) -> Option<&OpNotification> {
+        if let Notification::Op(operation) = self {
+            Some(operation)
+        } else {
+            None
+        }
+    }
+
+    pub fn system(&self) -> Option<&SystemNotification> {
+        if let Notification::System(system) = self {
+            Some(system)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Notification {
-    pub topic: Topic,
+pub struct OpNotification {
+    pub topic: TopicId,
     pub header: Header,
     pub payload: Option<Payload>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload")]
+pub enum SystemNotification {
+    /// A new tombstone has been created.
+    Tombstones {
+        topic: TopicId,
+        hashes: BTreeSet<Hash>,
+        reason: TombstoneReason,
+    },
+    /// New delivery acknowledgements were recorded for a chat topic. `acks`
+    /// carries only the entries that changed, already filtered to ackers of a
+    /// different agent than the author, so consumers can fold it into their
+    /// delivered state (max seq per author) without re-querying.
+    MessageAcks {
+        topic: TopicId,
+        acks: BTreeMap<DeviceId, AckedOp>,
+    },
 }
 
 impl Node {
@@ -154,7 +200,6 @@ impl Node {
                                     continue;
                                 };
 
-
                                 let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
 
                                 // Signal that the operation has been fully processed. This will
@@ -184,7 +229,7 @@ impl Node {
 
 
                                 // Process the operation.
-                                let result = node.process_app(&operation, &source).await.map_err(|err| ProcessorError::App(err.to_string()));
+                                let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
 
                                 // Signal that the operation has been fully processed. This will
                                 // allow the ProcessFuture to complete. We return a result here so
@@ -206,7 +251,6 @@ impl Node {
                                 if let Err(err) = node.ack_operation(&operation).await {
                                     tracing::error!(?err, "failed to acknowledge operation");
                                 }
-
                             },
                         }
 
@@ -251,14 +295,16 @@ impl Node {
     /// synced onward. The operation arrives here already written to the op
     /// store (by peers or by mailbox sync), so this deletes the body after the
     /// fact.
+    //
+    // TODO: when device groups exist, test that tombstones are enforced across devices.
     async fn enforce_tombstone(
         &self,
-        operation: &ProcessedOperation<Payload>,
+        topic: TopicId,
+        tombstoned_op: &Operation,
     ) -> anyhow::Result<bool> {
-        let topic = operation.topic();
-        let hash = operation.id();
-        if self.local_store.is_tombstoned(topic, hash).await? {
-            self.unprocess_app(&operation.processed().operation).await?;
+        let hash = tombstoned_op.hash;
+        if self.projection.is_tombstoned(topic, hash).await? {
+            self.unprocess_app(tombstoned_op).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
         } else {
@@ -267,8 +313,11 @@ impl Node {
     }
 
     /// Filter out operations whose payloads are not able to be deleted.
-    pub(crate) fn is_tombstoneable(&self, payload: &Payload) -> bool {
-        matches!(payload, Payload::Chat(ChatPayload::Message(_)))
+    pub(crate) fn is_tombstoneable(payload: &Payload) -> bool {
+        matches!(
+            payload,
+            Payload::Chat(ChatPayload::Message(_) | ChatPayload::EditMessage { .. })
+        )
     }
 
     /// Note that this is a function that processes operations which could have deleted payloads.
@@ -284,7 +333,11 @@ impl Node {
 
         // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
-        match self.projection.reduce(self.agent_id(), operation).await {
+        match self
+            .projection
+            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
+            .await
+        {
             // Continue processing.
             Ok(_) => (),
 
@@ -348,10 +401,8 @@ impl Node {
         //
         // @TODO: once group control messages are properly ordered we could send a
         // membership diff here instead of relying on the frontend to refetch.
-        let dashchat_topic =
-            crate::Topic::<crate::topic::kind::Untyped>::new(*operation.topic().as_bytes());
         self.notify_payload(
-            dashchat_topic,
+            operation.topic(),
             operation.processed().header(),
             operation.message(),
         )
@@ -368,7 +419,7 @@ impl Node {
         let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
             return Ok(());
         };
-        if self.is_tombstoneable(&payload) {
+        if Self::is_tombstoneable(&payload) {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     use p2panda_store::topics::TopicStore;
@@ -384,7 +435,7 @@ impl Node {
                         })?;
 
                     if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
-                        let hashes: Vec<_> = media.iter().map(|item| item.hash).collect();
+                        let hashes: Vec<_> = media.iter().map(|item| item.hash()).collect();
                         let is_own = DeviceId::from(author) == self.device_id();
                         if let Err(err) = self
                             .local_store
@@ -413,27 +464,21 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.register_bootstrap(operation, source).await?;
         let topic = operation.topic();
-        let dashchat_topic = crate::Topic::new(*topic.as_bytes());
         let header = operation.processed().header();
-
-        // NOTE: realistically the tombstone will only be enforced here
-        // upon playback of operations. The first time through, it will
-        // have been processed and potentially have modified local state.
-        // Upon tombstoning (or enforcement), it will be "unprocessed"
-        // via [`Self::unprocess_app`] to undo those state changes,
-        // as if it were never processed at all. On playback, the operation
-        // simply doesn't get processed.
-        if self.enforce_tombstone(&operation).await? {
-            // The payload is tombstoned, so there's nothing to process.
-            self.notify_header(dashchat_topic, header).await?;
-            return Ok(());
-        }
 
         // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
-        match self.projection.reduce(self.agent_id(), operation).await {
+        match self
+            .projection
+            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
+            .await
+        {
             // Continue processing.
-            Ok(_) => (),
+            Ok(event) => {
+                if let Some(event) = event {
+                    self.notify_system_event(event).await?;
+                }
+            }
 
             // Don't process but allow the log to proceed.
             Err(ProjectionError::InvalidOp(msg)) => {
@@ -445,6 +490,17 @@ impl Node {
             Err(ProjectionError::Any(err)) => {
                 return Err(err);
             }
+        }
+
+        // If a receiver is processing this, the tombstone may have been processed prior,
+        // so we want to drop the payload now and not process it.
+        if self
+            .enforce_tombstone(topic, &operation.event.operation)
+            .await?
+        {
+            // The payload is tombstoned, so we must not process it. Return early.
+            self.notify_header(topic, header).await?;
+            return Ok(());
         }
 
         let hash = operation.id();
@@ -494,9 +550,11 @@ impl Node {
                 }
                 match invitation {
                     InboxPayload::ContactRequest { agent_id, .. } => {
-                        // A request arrived on our advertised inbox. Perform no network
-                        // side-effects (bootstrap registration, topic
-                        // subscriptions) and disclose nothing about us until the
+                        // A request arrived on our advertised inbox. Except for
+                        // subscribing to the shared direct-chat topic (so the
+                        // requester's messages are readable before accepting),
+                        // perform no network side-effects (bootstrap
+                        // registration) and disclose nothing about us until the
                         // user explicitly accepts (see `accept_contact`). This
                         // keeps an unsolicited request — e.g. anyone scanning a
                         // shared QR — from amplifying our resources or handing our
@@ -505,6 +563,10 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
+                            self.register_topic(
+                                self.direct_chat_topic(crate::FakeAgentId::from(author)),
+                            )
+                            .await?;
                             // Mutual add: if we also sent this peer a contact
                             // request, their incoming request is an implicit
                             // acceptance — complete the exchange automatically
@@ -525,7 +587,7 @@ impl Node {
                             }
                         }
                     }
-                    InboxPayload::ContactRequestAck { agent_id, .. } => {
+                    InboxPayload::ContactRequestAccept { agent_id, .. } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
@@ -540,7 +602,7 @@ impl Node {
                                 tracing::warn!(
                                     ?author,
                                     ?expected,
-                                    "ContactRequestAck author does not match expected; ignoring"
+                                    "ContactRequestAccept author does not match expected; ignoring"
                                 );
                                 return Ok(());
                             }
@@ -549,7 +611,10 @@ impl Node {
                             let node = self.clone();
                             let agent_id = *agent_id;
                             tokio::spawn(async move {
-                                if let Err(err) = node.publish_add_contact(agent_id).await {
+                                let topic_id =
+                                    node.direct_chat_topic(crate::FakeAgentId::from(author));
+                                if let Err(err) = node.publish_add_contact(agent_id, topic_id).await
+                                {
                                     tracing::warn!(?err, "failed to record accepted contact");
                                 }
                             });
@@ -559,10 +624,27 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::Message(m)) => {
+                // Mirror the author-side reply validation, but only for
+                // observability: an invalid reply annotation is ignored at
+                // render time (the frontend applies the same rules), while the
+                // message carrying it is still processed and shown.
+                if let Some(target) = m.reply() {
+                    let chat_id = ChatId::from_topic_id(topic)?;
+                    let valid_ops = self.valid_chat_ops(chat_id).await?;
+                    let candidate = crate::chat::ReplyCandidate {
+                        target,
+                        timestamp: operation.processed().header().timestamp.into(),
+                        self_hash: Some(hash),
+                    };
+                    if let Err(err) = candidate.validate(&valid_ops) {
+                        warn!(?err, op = ?hash.aliased(), "message carries an invalid reply annotation");
+                    }
+                }
+
                 if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                     for item in media.iter() {
                         blob_sync
-                            .add_to_fetch_pool(topic.into(), author, hash, item.hash)
+                            .add_to_fetch_pool(topic.into(), author, hash, item.hash())
                             .await?;
                     }
                 }
@@ -581,14 +663,60 @@ impl Node {
                     timestamp: edit_ts,
                     self_hash: Some(hash),
                 };
-                if let Err(err) = valid_ops.validate_edit(&candidate) {
+                if let Err(err) = candidate.validate(&valid_ops) {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
                 }
             }
 
+            Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
+                // Enforce the tombstones the projection just recorded, dropping
+                // the targets' payloads. The delete op's *own* payload is only a
+                // list of hashes (nothing sensitive), so we fall through to
+                // `notify_payload` below: the frontend needs it to learn which
+                // messages were deleted and render their placeholders.
+                for hash in hashes {
+                    if let Some(op) = self.op_store.get_operation(hash).await? {
+                        self.enforce_tombstone(topic, &op).await?;
+                    }
+                }
+            }
+
+            Payload::DeviceGroup(DeviceGroupPayload::DeleteForMe(delete)) => {
+                // Drop the payloads referenced by the delete.
+                //
+                // Unlike `DeleteForEveryone`, a `DeleteForMe` op is never shared with the
+                // other chat participants, so their copies are untouched. We fall
+                // through to `notify_payload` below so the frontend re-reads the
+                // tombstone set and drops the message from its chat view.
+                let chat_topic: TopicId = delete.chat_id.into();
+                let valid_ops = self.valid_chat_ops(delete.chat_id).await?;
+                for hash in forward_edit_closure(&valid_ops, delete.message_hash) {
+                    if let Some(op) = self.op_store.get_operation(&hash).await? {
+                        self.enforce_tombstone(chat_topic, &op).await?;
+                    }
+                }
+            }
+
+            Payload::Chat(ChatPayload::MessageAck { .. }) => {
+                // Already folded into the projection by `reduce`; deliberately
+                // never marks the topic dirty below, or two online peers would
+                // ack each other's acks forever.
+            }
+
             _ => {
                 // Nothing to do.
+            }
+        }
+
+        if let Payload::Chat(chat_payload) = &payload {
+            if !matches!(chat_payload, ChatPayload::MessageAck { .. }) && author != self.device_id()
+            {
+                // Non-fatal: failing here must not fail (and so replay) the op.
+                match ChatId::from_topic_id(topic) {
+                    Ok(chat_id) => self.mark_ack_topic_dirty(chat_id),
+                    Err(err) => warn!(?err, "chat payload on non-chat topic; not marking for ack"),
+                }
             }
         }
 
@@ -601,8 +729,7 @@ impl Node {
         // processing resulted in an error. It might be required that the frontend is also
         // informed of any errors or these events are not even forwarded.
 
-        // We convert the p2panda::Topic into a dashchat Topic here in its untyped form.
-        self.notify_payload(dashchat_topic, &operation.processed().header(), &payload)
+        self.notify_payload(topic, &operation.processed().header(), &payload)
             .await?;
 
         Ok(())
@@ -669,14 +796,21 @@ impl Node {
         Ok(())
     }
 
-    pub async fn notify_header(&self, topic: Topic, header: &Header) -> anyhow::Result<()> {
+    /// Notify the frontend of an operation without its payload. Used when the
+    /// op's body has been tombstoned: the frontend must learn the op exists (so
+    /// it refetches and renders the body-less op) but must never receive the
+    /// deleted content.
+    pub async fn notify_header(&self, topic: TopicId, header: &Header) -> anyhow::Result<()> {
         if let Some(notification_tx) = self.notification_tx.clone() {
             notification_tx
-                .send(Notification {
-                    topic: topic.clone(),
-                    header: header.clone(),
-                    payload: None,
-                })
+                .send(
+                    OpNotification {
+                        topic: topic.clone(),
+                        header: header.clone(),
+                        payload: None,
+                    }
+                    .into(),
+                )
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }
@@ -685,17 +819,30 @@ impl Node {
 
     pub async fn notify_payload(
         &self,
-        topic: Topic,
+        topic: TopicId,
         header: &Header,
         payload: &Payload,
     ) -> anyhow::Result<()> {
         if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
             notification_tx
-                .send(Notification {
-                    topic: topic.clone(),
-                    header: header.clone(),
-                    payload: Some(payload.clone()),
-                })
+                .send(
+                    OpNotification {
+                        topic: topic.clone(),
+                        header: header.clone(),
+                        payload: Some(payload.clone()),
+                    }
+                    .into(),
+                )
+                .await
+                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
+        }
+        Ok(())
+    }
+
+    async fn notify_system_event(&self, event: SystemNotification) -> anyhow::Result<()> {
+        if let Some(notification_tx) = self.notification_tx.clone() {
+            notification_tx
+                .send(event.into())
                 .await
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }

@@ -12,29 +12,31 @@ fn photo(bytes: Vec<u8>, name: &str) -> OutgoingMedia {
             data: bytes,
             name: name.into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     }
 }
 
-fn is_chat_text(notification: &Notification, text: &str) -> bool {
+fn is_chat_text(notification: &OpNotification, text: &str) -> bool {
     matches!(
         &notification.payload,
         Some(Payload::Chat(ChatPayload::Message(content))) if content.message() == text
     )
 }
 
-fn is_group_info(notification: &Notification) -> bool {
+fn is_group_info(notification: &OpNotification) -> bool {
     matches!(
         &notification.payload,
         Some(Payload::Chat(ChatPayload::GroupInfo(_)))
     )
 }
 
-fn is_group_control(notification: &Notification) -> bool {
+fn is_group_control(notification: &OpNotification) -> bool {
     matches!(&notification.payload, Some(Payload::GroupControl(_)))
 }
 
-fn notification_author(notification: &Notification) -> DeviceId {
+fn notification_author(notification: &OpNotification) -> DeviceId {
     DeviceId::from(notification.header.verifying_key)
 }
 
@@ -46,7 +48,7 @@ async fn media_hash(node: &TestNode, chat: ChatId, text: &str) -> iroh_blobs::Ha
         .unwrap()
         .into_iter()
         .find(|m| m.content.message() == text)
-        .and_then(|m| m.content.media().and_then(|b| b.first()).map(|i| i.hash))
+        .and_then(|m| m.content.media().and_then(|b| b.first()).map(|i| i.hash()))
         .expect("media hash for message")
 }
 
@@ -73,16 +75,16 @@ async fn test_block_and_unblock_contact() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let chat_topic: TopicId = chat.into();
 
     // Baseline: Bob's message reaches Alice and notifies her.
     bobbi
-        .send_message(chat, "hello before block", None)
+        .send_message(chat, "hello before block", None, None)
         .await
         .unwrap();
     alice
@@ -90,7 +92,7 @@ async fn test_block_and_unblock_contact() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            is_chat_text(n, "hello before block").then_some(())
+            is_chat_text(n.op()?, "hello before block").then_some(())
         })
         .await
         .expect("alice receives bob's pre-block message");
@@ -102,7 +104,7 @@ async fn test_block_and_unblock_contact() {
     // While blocked, Bob sends a text message and a media message.
     let blocked_photo = rand::random::<[u8; 8192]>().to_vec();
     bobbi
-        .send_message(chat, "blocked text", None)
+        .send_message(chat, "blocked text", None, None)
         .await
         .unwrap();
     bobbi
@@ -110,6 +112,7 @@ async fn test_block_and_unblock_contact() {
             chat,
             "blocked media",
             Some(photo(blocked_photo, "blocked.png")),
+            None,
         )
         .await
         .unwrap();
@@ -128,6 +131,7 @@ async fn test_block_and_unblock_contact() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(2), |n: &Notification| {
+            let n = n.op()?;
             (is_chat_text(n, "blocked text") || is_chat_text(n, "blocked media")).then_some(())
         })
         .await;
@@ -148,7 +152,7 @@ async fn test_block_and_unblock_contact() {
 
     let allowed_photo = rand::random::<[u8; 8192]>().to_vec();
     bobbi
-        .send_message(chat, "after unblock", None)
+        .send_message(chat, "after unblock", None, None)
         .await
         .unwrap();
     bobbi
@@ -156,6 +160,7 @@ async fn test_block_and_unblock_contact() {
             chat,
             "unblocked media",
             Some(photo(allowed_photo.clone(), "allowed.png")),
+            None,
         )
         .await
         .unwrap();
@@ -166,6 +171,7 @@ async fn test_block_and_unblock_contact() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
+            let n = n.op()?;
             is_chat_text(n, "after unblock").then_some(())
         })
         .await
@@ -235,12 +241,12 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
 
     alice
         .behavior()
-        .initiate_and_establish_contact(&bobbi, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
     alice
         .behavior()
-        .initiate_and_establish_contact(&cammy, ShareIntent::AddContact)
+        .initiate_and_establish_contact(&cammy)
         .await
         .unwrap();
 
@@ -272,7 +278,7 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
 
     // Baseline: while unblocked, cammy's message reaches and notifies alice.
     cammy
-        .send_message(chat, "hello before block", None)
+        .send_message(chat, "hello before block", None, None)
         .await
         .unwrap();
     alice
@@ -280,7 +286,7 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            is_chat_text(n, "hello before block").then_some(())
+            is_chat_text(n.op()?, "hello before block").then_some(())
         })
         .await
         .expect("alice receives cammy's pre-block message");
@@ -302,7 +308,7 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
     };
     cammy.set_group_info(chat, renamed.clone()).await.unwrap();
     cammy
-        .send_message(chat, "blocked group text", None)
+        .send_message(chat, "blocked group text", None, None)
         .await
         .unwrap();
     cammy
@@ -317,10 +323,13 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
         .unwrap();
 
     // Collect every notification alice emitted for cammy's post-block ops.
-    let from_cammy: Vec<Notification> = {
+    let from_cammy: Vec<OpNotification> = {
         let mut watcher = alice.watcher.lock().await;
         let mut collected = vec![];
         while let Ok(n) = watcher.try_recv() {
+            let Some(n) = n.op().cloned() else {
+                continue;
+            };
             if notification_author(&n) == cammy.device_id() {
                 collected.push(n);
             }
