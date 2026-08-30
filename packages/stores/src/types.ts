@@ -368,6 +368,12 @@ export type GroupControlEvent =
 			timestamp: number;
 	  }
 	| {
+			kind: 'group_member_left';
+			isMine: boolean;
+			memberName: string | undefined;
+			timestamp: number;
+	  }
+	| {
 			kind: 'group_member_promoted';
 			promotedByMe: boolean;
 			memberName: string | undefined;

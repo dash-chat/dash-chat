@@ -146,7 +146,6 @@ export class VoiceRecorder {
 		if (this.phase !== 'recording' || this.locked) return;
 		if (willCancel || this.elapsedMs < MIN_DURATION_MS) {
 			await this.cancel();
-			if (!willCancel) showToast(m.voiceRecordHint(), 'default');
 			return;
 		}
 		await this.stopAndSend();

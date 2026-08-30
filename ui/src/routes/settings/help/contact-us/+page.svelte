@@ -28,6 +28,7 @@
 	let reason = $state<FeedbackReason | undefined>();
 	let includeDebugLog = $state(true);
 	let screenshot = $state<File | null>(null);
+	let sending = $state(false);
 
 	const reasonLabels: Record<string, () => string> = {
 		bug: () => m.reasonBugReport(),
@@ -38,7 +39,8 @@
 	};
 
 	async function handleSubmit() {
-		if (!reason) return;
+		if (!reason || sending) return;
+		sending = true;
 		try {
 			const outcome = await sendFeedback({
 				reason,
@@ -51,6 +53,8 @@
 		} catch (e) {
 			console.error('Error sending feedback', e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
+		} finally {
+			sending = false;
 		}
 	}
 </script>
@@ -147,6 +151,7 @@
 	<FixedActionButton
 		onClick={handleSubmit}
 		disabled={!message || !reason || !canSend}
+		loading={sending}
 		testId="contact-us-send-btn"
 	>
 		{m.send()}

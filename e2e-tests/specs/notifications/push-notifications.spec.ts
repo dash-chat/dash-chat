@@ -73,6 +73,18 @@ describe('Push notifications (real device, end-to-end)', () => {
 		const text = await notifications.waitForAppNotification();
 		expect(text).toContain('Sam');
 
+		// A requester can write into the direct chat before the receiver accepts
+		// them, and until it does nothing of theirs may reach the shade. The
+		// request notification is already posted, so the re-read returns the
+		// current set right away; the pause is what gives a message push time to
+		// arrive and fail this.
+		const preAcceptMessage = `hi PUSH_PREACCEPT_${Date.now()}`;
+		await sender.directChatPage.composer.sendMessage(preAcceptMessage);
+		await receiver.pause(15_000);
+		expect(await notifications.waitForAppNotification()).not.toContain(
+			preAcceptMessage,
+		);
+
 		// Tap by the title: OEM shades (MIUI) render only the title while the
 		// notification is collapsed, so the body text is not a tappable anchor.
 		await notifications.tapNotification('New contact request');
@@ -82,6 +94,9 @@ describe('Push notifications (real device, end-to-end)', () => {
 			expect.stringContaining('Sam'),
 		);
 		await receiver.directChatPage.acceptContactRequest();
+		// The message was delivered all along — only its notification was held
+		// back — so it is in the chat once the request is accepted.
+		await receiver.directChatPage.messages.waitForMessage(preAcceptMessage);
 	});
 
 	it('a second contact-request push taps through to its own chat', async () => {
