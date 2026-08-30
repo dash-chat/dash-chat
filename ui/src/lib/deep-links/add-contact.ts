@@ -45,10 +45,6 @@ export async function addContactFromCode(
 	try {
 		const result = await contactsStore.client.addContact(code);
 		await goto(`/direct-chats/${result.chatId}`);
-
-		if (result.kind === 'NewRequest') {
-			showToast(m.contactRequestSent());
-		}
 	} catch (e) {
 		console.error(e);
 		const error = e as AddContactError;
