@@ -15,6 +15,7 @@ export type SystemMessageKind =
 	| 'group_created'
 	| 'group_member_added'
 	| 'group_member_removed'
+	| 'group_member_left'
 	| 'group_member_promoted'
 	| 'group_member_demoted'
 	| 'contact_blocked'

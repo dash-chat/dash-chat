@@ -27,10 +27,13 @@ export function groupEventText(event: GroupControlEvent): string {
 				admin: event.adminName || m.someone(),
 				name: event.memberName || m.someone(),
 			});
-		case 'group_member_removed':
-			if (event.isMine && event.removedByMe) {
-				return m.youLeftTheGroup();
+		case 'group_member_left':
+			if (event.isMine) return m.youLeftTheGroup();
+			if (event.memberName) {
+				return m.someoneLeftTheGroup({ name: event.memberName });
 			}
+			return m.memberLeftTheGroup();
+		case 'group_member_removed':
 			if (event.isMine) {
 				return m.someoneRemovedYouFromTheGroup({
 					name: event.adminName || m.someone(),

@@ -125,6 +125,8 @@
 	"someoneAddedYouToTheGroup": "{{name}} added you to the group.",
 	"someoneAddedYouToTheGroupNoName": "You were added to a group.",
 	"youLeftTheGroup": "You left the group.",
+	"someoneLeftTheGroup": "{{name}} left the group.",
+	"memberLeftTheGroup": "A member left the group.",
 	"youBlockedContact": "You blocked {{name}}.",
 	"youUnblockedContact": "You unblocked {{name}}.",
 	"someoneRemovedYouFromTheGroup": "{{name}} removed you from the group.",

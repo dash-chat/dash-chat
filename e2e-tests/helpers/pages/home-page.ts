@@ -56,11 +56,43 @@ export class HomePage extends TestHelper {
 		);
 	}
 
-	/** Open a chat by contact name and wait for the direct-chat page. */
+	/** Open a chat by contact name and wait for the direct-chat page. Matched on
+	 * the row's href, because a group row carries member names in its
+	 * last-event summary and would otherwise win the text match. An arriving
+	 * message re-renders the list, so a click can land on a row that is being
+	 * replaced — retry until the chat is actually open. */
 	async openChat(contactName: string): Promise<void> {
 		await this.chatListItem(contactName).waitForExist();
-		await this.chatListItem(contactName).click();
-		await this.agent.$(tid('direct-chat-messages')).waitForExist();
+		const messages = this.agent.$(tid('direct-chat-messages'));
+		await this.agent.waitUntil(
+			async () => {
+				if (await messages.isExisting()) return true;
+				const href = await this.directChatHref(contactName);
+				if (href === null) return false;
+				const row = this.agent.$(`${tid('all-chats-list')} a[href="${href}"]`);
+				if (await row.isExisting()) await row.click();
+				return messages.isExisting();
+			},
+			{ timeoutMsg: `Direct chat with "${contactName}" did not open` },
+		);
+	}
+
+	/** The href of the chat-list row linking to the direct chat with
+	 * `contactName`, or null while no such row is rendered. */
+	private directChatHref(contactName: string): Promise<string | null> {
+		return this.agent.execute(
+			(sel: string, name: string) => {
+				const rows = document.querySelectorAll<HTMLElement>(`${sel} a`);
+				const row = Array.from(rows).find(
+					r =>
+						r.getAttribute('href')?.includes('/direct-chats/') === true &&
+						(r.textContent ?? '').includes(name),
+				);
+				return row?.getAttribute('href') ?? null;
+			},
+			tid('all-chats-list'),
+			contactName,
+		);
 	}
 
 	getStartedCard(id: GetStartedCardId) {
