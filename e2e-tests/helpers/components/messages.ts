@@ -200,6 +200,27 @@ export class Messages extends TestHelper {
 			: new Message(this.agent, this, hash, this.composer);
 	}
 
+	/** The last rendered message holding a voice note, as a `Message` helper
+	 * scoped to it (by its message hash), or null if none is rendered. */
+	async lastVoiceMessage(): Promise<Message | null> {
+		const hash = await this.agent.execute(
+			(messagesSel: string, voiceSel: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				const wrapper = Array.from(wrappers)
+					.reverse()
+					.find(w => w.querySelector(voiceSel) !== null);
+				return wrapper?.getAttribute('data-message-hash') ?? null;
+			},
+			this.messagesSelector,
+			tid('message-attachment-voice'),
+		);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
+	}
+
 	/** Wait until a message whose text contains `text` renders, and return its
 	 * `Message` helper. */
 	async waitForMessage(text: string, timeout = SYNC_TIMEOUT): Promise<Message> {
