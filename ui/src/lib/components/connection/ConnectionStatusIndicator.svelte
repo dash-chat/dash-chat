@@ -55,7 +55,7 @@
 		>
 			{#if isLocal}
 				<wa-icon
-					class="connection-status"
+					class="connection-status connection-status-local"
 					src="/localmailboxserver.svg"
 					aria-hidden="true"
 				></wa-icon>
@@ -72,6 +72,7 @@
 			<div class="flex flex-row items-center gap-2">
 				<wa-icon
 					class="connection-status-dialog-icon"
+					class:connection-status-dialog-icon-local={isLocal}
 					src={isLocal
 						? '/localmailboxserver.svg'
 						: wrapPathInSvg(mdiEmoticonPoop)}
@@ -116,8 +117,14 @@
 		color: var(--color-brand-primary);
 		font-size: 28px;
 	}
+	.connection-status-local {
+		font-size: 22px;
+	}
 	.connection-status-dialog-icon {
 		font-size: 32px;
+	}
+	.connection-status-dialog-icon-local {
+		font-size: 26px;
 	}
 	:global(.dark) .connection-status {
 		color: white;
