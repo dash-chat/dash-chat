@@ -958,6 +958,10 @@ impl Node {
         self.projection.get_profile(self.agent_id()).await
     }
 
+    pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
+        self.projection.get_profile(agent_id).await
+    }
+
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
         self.projection.lookup_contact_by_device_id(device_id).await
     }

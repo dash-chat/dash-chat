@@ -36,6 +36,10 @@ export class MockContactsClient implements IContactsClient {
 		});
 	}
 
+	async getProfile(_agentId: AgentId): Promise<Profile | undefined> {
+		return undefined;
+	}
+
 	async createContactCode(): Promise<string> {
 		const bytes = new Uint8Array(45);
 		crypto.getRandomValues(bytes);

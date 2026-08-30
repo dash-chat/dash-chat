@@ -143,6 +143,7 @@ pub fn run() {
             commands::logs::get_log,
             commands::logs::get_authors,
             commands::profile::set_profile,
+            commands::profile::get_profile,
             commands::account::delete_account,
             commands::devices::my_device_group_topic,
             commands::contacts::my_device_id,

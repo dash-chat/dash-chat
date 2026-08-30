@@ -31,6 +31,10 @@ export interface IContactsClient {
 	// Sets the profile for this user
 	setProfile(profile: Profile): Promise<void>;
 
+	// Returns the cached profile for the given agent, if one has been stored
+	// locally (for example from a ContactRequestAccept).
+	getProfile(agentId: AgentId): Promise<Profile | undefined>;
+
 	/// contacts
 
 	// Creates a new contact code string to be shared
@@ -101,6 +105,14 @@ export class ContactsClient implements IContactsClient {
 		return invokeAfterSetup('set_profile', {
 			profile,
 		});
+	}
+
+	async getProfile(agentId: AgentId): Promise<Profile | undefined> {
+		return (
+			(await invokeAfterSetup<Profile | null>('get_profile', {
+				agentId,
+			})) ?? undefined
+		);
 	}
 
 	createContactCode(): Promise<string> {
