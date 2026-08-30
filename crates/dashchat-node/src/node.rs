@@ -966,6 +966,28 @@ impl Node {
         self.projection.all_contact_agent_ids().await
     }
 
+    /// Agents added as contacts via the device group log (i.e. accepted
+    /// contacts, unlike the projection's `devices` table which also records
+    /// pre-accept contact requests).
+    pub async fn accepted_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
+        // FIXME: use all local device IDs
+        let log_id = self.device_group_topic().into();
+        let mut agents = BTreeSet::new();
+        for op in self
+            .op_store
+            .get_log(&self.device_id(), &log_id, None)
+            .await?
+        {
+            let Some(body) = op.body else { continue };
+            if let Ok(Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id, .. })) =
+                Payload::try_from_body(&body)
+            {
+                agents.insert(agent_id);
+            }
+        }
+        Ok(agents)
+    }
+
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
         self.local_store.subscribed_topics().await
     }
