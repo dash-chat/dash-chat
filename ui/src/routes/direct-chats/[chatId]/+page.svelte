@@ -401,6 +401,10 @@
 											{#if profile}
 												<Link
 													class="column gap-2 items-center max-w-full"
+													colors={{
+														textIos: 'text-black dark:text-white',
+														textMaterial: 'text-black dark:text-white',
+													}}
 													onclick={() => (showPeerProfile = true)}
 												>
 													<Avatar

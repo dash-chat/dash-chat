@@ -16,6 +16,13 @@
 	let toastVariant = $state<'default' | 'error' | 'unexpected'>('default');
 	let toastTimeout: ReturnType<typeof setTimeout> | undefined;
 
+	// Expose the most recent toast event for e2e diagnostics.
+	(
+		window as Window & {
+			__lastToastEvent?: { message: string; variant: string };
+		}
+	).__lastToastEvent = undefined;
+
 	let errorReportDialogOpen = $state(false);
 	let errorReportMessage = $state('');
 	let errorReportError = $state<unknown>(undefined);
@@ -24,6 +31,11 @@
 		clearTimeout(toastTimeout);
 		toastMessage = event.detail.message;
 		toastVariant = event.detail.variant ?? 'default';
+		(
+			window as Window & {
+				__lastToastEvent?: { message: string; variant: string };
+			}
+		).__lastToastEvent = { message: toastMessage, variant: toastVariant };
 		toastOpen = true;
 		if (event.detail.error !== undefined) {
 			errorReportError = event.detail.error;

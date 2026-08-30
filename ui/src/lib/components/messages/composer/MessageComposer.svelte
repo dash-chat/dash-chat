@@ -191,7 +191,6 @@
 				media = undefined;
 			}
 			if (replying === replyTo) replying = null;
-			messageInput?.reset();
 			onSent?.(hash);
 			return true;
 		} catch (e) {
@@ -367,6 +366,7 @@
 					onSend={send}
 					onpaste={onPaste}
 					onfocus={() => (showMediaPanel = false)}
+					hidden={recordingCoversInput}
 					before={isMobile && !isIos ? emojiButton : undefined}
 					banner={editing !== null ? editingBanner : replyBanner}
 				>

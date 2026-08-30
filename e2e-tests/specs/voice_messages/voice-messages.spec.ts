@@ -63,4 +63,13 @@ describe('Voice messages', () => {
 			{ timeoutMsg: 'Scrubber did not track the real audio duration' },
 		);
 	});
+
+	it('does not offer Edit on my own voice message', async () => {
+		const message = await agent1.directChatPage.messages.lastVoiceMessage();
+		expect(message).not.toBeNull();
+
+		await message!.openActions();
+		await message!.deleteAction.waitForDisplayed();
+		expect(await message!.editAction.isExisting()).toBe(false);
+	});
 });

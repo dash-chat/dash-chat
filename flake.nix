@@ -162,12 +162,7 @@
               pkgs.libopus
             ];
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            shellHook =
-              hostBuildEnvHook
-              + voiceHostEnvHook
-              + lib.optionalString pkgs.stdenv.isLinux ''
-                export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS -Zcodegen-backend=cranelift"
-              '';
+            shellHook = hostBuildEnvHook + voiceHostEnvHook;
           };
 
           devShells.androidDev = pkgs.mkShell {

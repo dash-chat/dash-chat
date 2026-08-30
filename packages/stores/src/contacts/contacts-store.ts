@@ -386,7 +386,12 @@ export class ContactsStore {
 		const lastOperation = descendantSortedOperations[0];
 
 		if (!lastOperation) {
-			// Fallback: use profile from inbox contact request if personal topic hasn't synced
+			// Prefer a profile cached locally from a ContactRequestAccept; if none
+			// is available yet, re-fetch the profile from the server
+			// in case it has change by other means.
+			const serverProfile = await this.client.getProfile(agentId);
+			if (serverProfile) return serverProfile;
+
 			return await this.inboxProfile(agentId);
 		}
 

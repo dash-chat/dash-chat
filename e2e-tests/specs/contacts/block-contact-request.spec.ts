@@ -1,6 +1,6 @@
-import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
-import { SYNC_TIMEOUT } from '../helpers/timeouts';
-import { type Agent, setupAgents } from '../setup/setup-agents';
+import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
+import { SYNC_TIMEOUT } from '../../helpers/timeouts';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('pending contact request', () => {
 	let agent1: Agent;

@@ -242,11 +242,11 @@ export class Composer extends TestHelper {
 		await this.waitForStagedMedia();
 	}
 
-	/** Type `text` and send it by dispatching Enter, the way a desktop user
-	 * sends. An operation arriving in the type→Enter window re-renders the
+	/** Type `text` and send it the way a user on this platform does — see
+	 * `send()`. An operation arriving in the type→send window re-renders the
 	 * composer and can swallow the keydown, so if the textarea hasn't cleared,
-	 * dispatch Enter once more — the send() `sending` guard makes the retry a
-	 * no-op when the first send is merely slow. */
+	 * send once more — the send() `sending` guard makes the retry a no-op when
+	 * the first send is merely slow. */
 	async sendMessage(text: string): Promise<void> {
 		// In direct chats the composer only mounts once the chat leaves the
 		// pending state, which depends on the peer's profile syncing
@@ -254,14 +254,14 @@ export class Composer extends TestHelper {
 		await this.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
 		await this.typeInto(tid('message-input-textarea'), text);
 		await this.agent.pause(50);
-		await this.dispatchEnter();
+		await this.send();
 		try {
 			await this.agent.waitUntil(
 				async () => (await this.textareaValue()) === '',
 				{ timeout: 5_000 },
 			);
 		} catch {
-			await this.dispatchEnter();
+			await this.send();
 			await this.agent.waitUntil(
 				async () => (await this.textareaValue()) === '',
 				{ timeoutMsg: `Composer did not clear after sending "${text}"` },
@@ -269,7 +269,9 @@ export class Composer extends TestHelper {
 		}
 	}
 
-	private async dispatchEnter(): Promise<void> {
+	/** Press Enter in the composer. Sends on desktop; on mobile the app leaves
+	 * the key to the soft keyboard, which types a line break. */
+	async pressEnter(): Promise<void> {
 		await this.agent.execute((sel: string) => {
 			const el = document.querySelector(sel) as HTMLTextAreaElement;
 			el.focus();
@@ -343,7 +345,7 @@ export class Composer extends TestHelper {
 			await this.sendButton.click();
 			return;
 		}
-		await this.dispatchEnter();
+		await this.pressEnter();
 	}
 
 	/** Discard the staged draft: the preview's remove button on desktop,

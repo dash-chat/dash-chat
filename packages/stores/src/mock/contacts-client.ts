@@ -1,4 +1,8 @@
-import type { IContactsClient, Profile } from '../contacts/contacts-client';
+import type {
+	AddContactResult,
+	IContactsClient,
+	Profile,
+} from '../contacts/contacts-client';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
 import { type LocalStorageLogsClient, chatIdForDevices } from './client';
@@ -36,6 +40,10 @@ export class MockContactsClient implements IContactsClient {
 		});
 	}
 
+	async getProfile(_agentId: AgentId): Promise<Profile | undefined> {
+		return undefined;
+	}
+
 	async createContactCode(): Promise<string> {
 		const bytes = new Uint8Array(45);
 		crypto.getRandomValues(bytes);
@@ -46,8 +54,11 @@ export class MockContactsClient implements IContactsClient {
 		return this.inboxTopics;
 	}
 
-	async addContact(_contactCode: string): Promise<string> {
-		return chatIdForDevices(this.deviceId, this.deviceId);
+	async addContact(_contactCode: string): Promise<AddContactResult> {
+		return {
+			kind: 'NewRequest',
+			chatId: chatIdForDevices(this.deviceId, this.deviceId),
+		};
 	}
 
 	async acceptContact(agentId: AgentId): Promise<void> {

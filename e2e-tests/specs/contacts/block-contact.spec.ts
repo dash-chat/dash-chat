@@ -1,6 +1,6 @@
-import { blockAgent } from '../helpers/flows/block-agent';
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { type Agent, setupAgents } from '../setup/setup-agents';
+import { blockAgent } from '../../helpers/flows/block-agent';
+import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('block contact', () => {
 	let agent1: Agent;

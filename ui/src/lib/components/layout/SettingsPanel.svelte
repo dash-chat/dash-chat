@@ -92,13 +92,13 @@
 				{#snippet after()}
 					<a
 						href="/settings/profile/add-contact"
-						class="qr-button"
+						class="qr-button text-black dark:text-white"
 						data-testid="settings-qr-link"
 						use:stopPropagation
 						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 16px'}
 						aria-label={m.addContact()}
 					>
-						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 18px"
+						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 22px"
 						></wa-icon>
 					</a>
 				{/snippet}
@@ -217,7 +217,6 @@
 		background-color: var(--k-color-bg-300, rgba(128, 128, 128, 0.15));
 		cursor: pointer;
 		text-decoration: none;
-		color: inherit;
 		-webkit-tap-highlight-color: transparent;
 	}
 

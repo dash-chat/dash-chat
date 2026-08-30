@@ -2,6 +2,9 @@ use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
 
+use crate::Topic;
+use crate::topic::kind::Chat;
+
 #[derive(Debug, Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
 pub enum Error {
@@ -42,6 +45,13 @@ pub enum AddContactError {
     #[error(transparent)]
     #[serde(untagged)]
     Common(#[from] Error),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", content = "chatId")]
+pub enum AddContactResult {
+    NewRequest(Topic<Chat>),
+    AlreadyRequested(Topic<Chat>),
 }
 
 #[derive(Debug, Error, Serialize)]
