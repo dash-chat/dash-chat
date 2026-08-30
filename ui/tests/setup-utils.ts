@@ -48,6 +48,89 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
+export interface ConnectionStatusSample {
+	status: string;
+	/** Epoch ms on the device, so samples can be ordered against each other
+	 * without comparing against the test runner's clock on another machine. */
+	at: number;
+	/** Whether the page was on screen when this was rendered. A status the app
+	 * painted while hidden was never shown to anyone; only what survives to the
+	 * next `visible` moment is a bug the user can see. */
+	visibility: DocumentVisibilityState;
+	/** True for the sample taken at a visibility transition rather than at a
+	 * DOM mutation — what was on screen at the instant the page became visible,
+	 * which no mutation reports because nothing changed. */
+	onVisibilityChange: boolean;
+}
+
+const connectionStatuses: ConnectionStatusSample[] = [];
+let connectionStatusObserver: MutationObserver | undefined;
+let connectionStatusToken: string | undefined;
+
+function currentConnectionStatus(): string {
+	const chip = document.querySelector<HTMLElement>(
+		'[data-testid="connection-status"]',
+	);
+	return chip?.dataset.status ?? 'connected';
+}
+
+/** Start recording every connection status the indicator renders, returning a
+ * token identifying this recording. A MutationObserver rather than polling: its
+ * callback runs as a microtask on the mutation itself, so a status held for a
+ * single frame is still recorded. That is the case worth catching — a stale
+ * "disconnected" painted on resume and replaced milliseconds later by the
+ * backend's re-measurement is invisible to any sampler, but the user sees it. */
+function sampleConnectionStatus(onVisibilityChange: boolean) {
+	const status = currentConnectionStatus();
+	const previous = connectionStatuses[connectionStatuses.length - 1];
+	// A visibility transition is always recorded: what was on screen the moment
+	// the page came back is the whole question, and it produces no mutation
+	// because the DOM did not change.
+	if (!onVisibilityChange && previous?.status === status) return;
+	connectionStatuses.push({
+		status,
+		at: Date.now(),
+		visibility: document.visibilityState,
+		onVisibilityChange,
+	});
+}
+
+function recordConnectionStatus(): string {
+	connectionStatuses.length = 0;
+	connectionStatusToken = `${Date.now()}-${Math.random()}`;
+	sampleConnectionStatus(false);
+	if (connectionStatusObserver === undefined) {
+		connectionStatusObserver = new MutationObserver(() =>
+			sampleConnectionStatus(false),
+		);
+		connectionStatusObserver.observe(document.body, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ['data-status'],
+		});
+		document.addEventListener('visibilitychange', () =>
+			sampleConnectionStatus(true),
+		);
+	}
+	return connectionStatusToken;
+}
+
+/** The distinct connection statuses rendered since [`recordConnectionStatus`],
+ * in order, with the token of the recording they came from. A caller that gets
+ * back a different token than it started is looking at a fresh page — the
+ * webview reloaded and the history it wanted was lost, which must not read as
+ * "nothing was ever shown". */
+function connectionStatusHistory(): {
+	token: string | null;
+	statuses: ConnectionStatusSample[];
+} {
+	return {
+		token: connectionStatusToken ?? null,
+		statuses: [...connectionStatuses],
+	};
+}
+
 const mediaDownloads = new Map<string, number>();
 let mediaObserver: PerformanceObserver | undefined;
 
@@ -454,6 +537,8 @@ export const testUtils = {
 	failNextVoiceLoad,
 	recordMediaDownloads,
 	photoDownloadMs,
+	recordConnectionStatus,
+	connectionStatusHistory,
 	interceptFilePickers,
 	collectFilePickers,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
