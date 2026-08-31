@@ -367,6 +367,28 @@ function installedApkMd5(udid: string): string | null {
 	}
 }
 
+/** Bridge the device's baked loopback ports to the host's servers. A device
+ * that re-enumerates on the USB bus (a marginal cable renegotiates the link
+ * and adb sees a brand new transport) loses every reverse it had, and the app
+ * then fails every mailbox poll for the rest of the run while the host servers
+ * look perfectly healthy. Re-asserted per session rather than once per run so
+ * a blip costs at most the spec it happens in. */
+function bridgeHostPorts(udid: string): void {
+	const mailboxPort = process.env._WDIO_MAILBOX_PORT;
+	if (mailboxPort === undefined) return;
+	execSync(
+		`adb -s ${udid} reverse tcp:${DEVICE_MAILBOX_PORT} tcp:${mailboxPort}`,
+		{
+			env: androidEnv,
+		},
+	);
+	const pushPort = process.env._WDIO_PUSH_PORT;
+	if (pushPort === undefined) return;
+	execSync(`adb -s ${udid} reverse tcp:${DEVICE_PUSH_PORT} tcp:${pushPort}`, {
+		env: androidEnv,
+	});
+}
+
 /** Comfortably longer than the slowest spec, so no wait can outlive the screen. */
 const SCREEN_OFF_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -548,30 +570,34 @@ export class AndroidPlatform implements AgentPlatform {
 			envWithoutWdioLoader(bakedEnv, androidEnv),
 		);
 
+		// A remote mailbox is reached directly; only a local one is bridged.
+		// Pinned in the env so the workers' beforeSession can re-assert the
+		// bridge, the same way ports are pinned for capabilities.
+		if (ctx.mailboxPort !== null) {
+			process.env._WDIO_MAILBOX_PORT = String(ctx.mailboxPort);
+			if (ctx.pushPort !== null) {
+				process.env._WDIO_PUSH_PORT = String(ctx.pushPort);
+			}
+		}
+
 		for (const udid of this.udids.values()) {
 			ensureApkInstalled(udid);
 			keepScreenAwake(udid);
-
-			// A remote mailbox is reached directly; only a local one is bridged.
-			if (ctx.mailboxPort === null) continue;
-			// Bridge the device's loopback port (baked into the APK) to the
-			// host's mailbox server over USB.
-			execSync(
-				`adb -s ${udid} reverse tcp:${DEVICE_MAILBOX_PORT} tcp:${ctx.mailboxPort}`,
-				{ env: androidEnv },
-			);
-			// Same for the push server, when the real-device push spec is enabled.
-			if (ctx.pushPort !== null) {
-				execSync(
-					`adb -s ${udid} reverse tcp:${DEVICE_PUSH_PORT} tcp:${ctx.pushPort}`,
-					{ env: androidEnv },
-				);
-			}
+			bridgeHostPorts(udid);
 		}
 	}
 
 	async beforeSession() {
 		for (const [slot, udid] of this.udids) {
+			try {
+				bridgeHostPorts(udid);
+			} catch (err) {
+				// The spec is going to fail on its own if the device is really
+				// gone; a warning here is what names the reason.
+				console.warn(
+					`[android] could not bridge ports to ${udid}: ${String(err)}`,
+				);
+			}
 			this.loggers.get(slot)?.kill();
 			this.loggers.set(slot, startLogcatLogger(`agent-${slot}`, udid));
 		}

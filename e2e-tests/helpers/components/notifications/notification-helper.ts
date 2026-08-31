@@ -66,16 +66,41 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 		await this.switchToWebview();
 	}
 
+	/** Bring the app to the front. The recovery paths below run with the app
+	 * wherever the failing test left it, which for a push test is usually
+	 * backgrounded or quit — and a backgrounded app publishes no WEBVIEW
+	 * context, so switching back to one is impossible until it is resumed.
+	 * `activateApp` is idempotent: it launches a stopped app and merely
+	 * foregrounds a running one. */
+	private async foregroundApp(): Promise<void> {
+		const caps = this.agent.requestedCapabilities as Record<string, unknown>;
+		const appId = caps['appium:appPackage'] ?? caps['appium:bundleId'];
+		if (typeof appId !== 'string') return;
+		await this.agent.activateApp(appId);
+	}
+
+	/** Close the notification UI, resume the app and return to its webview, so
+	 * the session is driveable again for whatever runs next. */
+	private async restoreWebview(): Promise<void> {
+		await this.dismissNotificationUi();
+		await this.foregroundApp();
+		await this.switchToWebview();
+	}
+
 	/** Best-effort recovery for spec-level cleanup: close the notification UI
 	 * and return to the webview. For when a test fails *between* native-context
 	 * helper calls (e.g. a content assertion after a successful wait), which
 	 * [`restoringWebviewOnFailure`] cannot see. */
 	async recover(): Promise<void> {
 		try {
-			await this.dismissNotificationUi();
-			await this.switchToWebview();
-		} catch {
-			// best-effort: the original test failure is what should surface
+			await this.restoreWebview();
+		} catch (err) {
+			// best-effort: the original test failure is what should surface, but
+			// a session left in NATIVE_APP fails every later test on an
+			// unrelated-looking "invalid selector", so name the real reason.
+			console.warn(
+				`[notifications] could not restore the webview: ${String(err)}`,
+			);
 		}
 	}
 
@@ -93,10 +118,14 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 			return await fn();
 		} catch (err) {
 			try {
-				await this.dismissNotificationUi();
-				await this.switchToWebview();
-			} catch {
-				// surface the original failure, not the recovery's
+				await this.restoreWebview();
+			} catch (restoreErr) {
+				// surface the original failure, not the recovery's — but name the
+				// recovery's too, since it is what turns one failure into a run of
+				// "invalid selector" cascades.
+				console.warn(
+					`[notifications] could not restore the webview: ${String(restoreErr)}`,
+				);
 			}
 			throw err;
 		}

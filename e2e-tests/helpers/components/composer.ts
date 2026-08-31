@@ -23,6 +23,9 @@ export class Composer extends TestHelper {
 	discardDraftConfirm = this.el(tid('composer-discard-draft-confirm'));
 	attachButton = this.el(tid('message-input-attach'));
 	cameraButton = this.el(tid('message-input-camera'));
+	/** Only rendered while the composer holds no content, so its absence is how
+	 *  a staged draft shows up in the DOM. */
+	voiceRecordButton = this.el(tid('message-input-voice-record'));
 	mediaPanel = this.el(tid('message-input-media-panel'));
 	recentPhotos = new RecentPhotosStrip(this.agent);
 
@@ -195,6 +198,14 @@ export class Composer extends TestHelper {
 			durationMs,
 			audioDurationMs,
 		);
+		// Confirm the draft actually landed. A dropped injection leaves the
+		// composer empty, and `send()` then falls through to Enter — which types
+		// a newline on mobile rather than sending — so the spec would fail much
+		// later on a missing message instead of here on a missing draft.
+		await this.voiceRecordButton.waitForExist({
+			reverse: true,
+			timeoutMsg: 'Injected voice draft never landed in the composer',
+		});
 	}
 
 	/** Injects a WAV through the real `transcode_voice_message` command, so the

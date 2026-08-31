@@ -10,6 +10,10 @@ const GET_STARTED_CARD_IDS = [
 
 type GetStartedCardId = (typeof GET_STARTED_CARD_IDS)[number];
 
+/** How many times [`HomePage.openChat`] clicks the row before giving up. Each
+ *  attempt costs a full `waitforTimeout`, so this stays small. */
+const OPEN_CHAT_ATTEMPTS = 2;
+
 export class HomePage extends TestHelper {
 	settingsLink = this.el(tid('home-settings-link'));
 	newMessageButton = this.el(tid('home-new-message-btn'));
@@ -65,21 +69,32 @@ export class HomePage extends TestHelper {
 	 * the row's href, because a group row carries member names in its
 	 * last-event summary and would otherwise win the text match. An arriving
 	 * message re-renders the list, so a click can land on a row that is being
-	 * replaced — retry until the chat is actually open. */
+	 * replaced — retry until the chat is actually open.
+	 *
+	 * Each attempt waits for the chat with its own `waitForExist` rather than
+	 * polling inside one `waitUntil`: on Android the first element query after
+	 * the navigation blocks until the webview answers again, which took the
+	 * whole shared budget and left the loop with a single attempt — reported as
+	 * "did not open" against a chat that was open and rendered. */
 	async openChat(contactName: string): Promise<void> {
 		await this.chatListItem(contactName).waitForExist();
 		const messages = this.agent.$(tid('direct-chat-messages'));
-		await this.agent.waitUntil(
-			async () => {
-				if (await messages.isExisting()) return true;
-				const href = await this.directChatHref(contactName);
-				if (href === null) return false;
+		for (let attempt = 1; ; attempt++) {
+			if (await messages.isExisting()) return;
+			const href = await this.directChatHref(contactName);
+			if (href !== null) {
 				const row = this.agent.$(`${tid('all-chats-list')} a[href="${href}"]`);
 				if (await row.isExisting()) await row.click();
-				return messages.isExisting();
-			},
-			{ timeoutMsg: `Direct chat with "${contactName}" did not open` },
-		);
+			}
+			try {
+				await messages.waitForExist();
+				return;
+			} catch {
+				if (attempt === OPEN_CHAT_ATTEMPTS) {
+					throw new Error(`Direct chat with "${contactName}" did not open`);
+				}
+			}
+		}
 	}
 
 	/** The href of the chat-list row linking to the direct chat with

@@ -253,9 +253,18 @@
 	}
 
 	// Popping the staged-media history entry (hardware/browser back or
-	// `history.back()` from the page) discards the staged draft.
+	// `history.back()` from the page) discards the staged draft. Voice notes are
+	// exempt: they never open the staged-media page, so they never push that
+	// history entry, and the rule would discard every voice draft the moment it
+	// was staged.
 	$effect(() => {
-		if (isMobile && media && !page.state.stagedMedia) media = undefined;
+		if (
+			isMobile &&
+			media &&
+			media.kind !== 'voice_note' &&
+			!page.state.stagedMedia
+		)
+			media = undefined;
 	});
 
 	$effect(() => {
