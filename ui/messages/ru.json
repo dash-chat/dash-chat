@@ -319,6 +319,7 @@
     "menuSelectAll": "Выберите все",
     "menuOpenLogsFolder": "Открыть папку журналов",
     "offlineFunctionality": "Функциональность",
+    "localMessageServer": "Локальный центр сообщений",
     "enableLocalMessageServer": "Включить локальное сообщение",
     "localMessageServerDescription": "Запускается местный хаб для приема сообщений, пока приложение закрыто. Другие устройства в вашей сети могут доставлять сообщения в этот хаб.",
     "connectionStatusDisconnectedTitle": "Отключение",

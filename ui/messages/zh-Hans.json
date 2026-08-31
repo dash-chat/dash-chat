@@ -231,6 +231,7 @@
     "voicePlayFailed": "能否发出声音。 请再次审判.",
     "errorAddContactInvalidLink": "无效联系。 请联系人再次交流联系.",
     "menuRunLocalMailbox": "当地信息网络",
+    "localMessageServer": "本地消息中心",
     "enableLocalMessageServer": "Enable Local Information Hub",
     "localMessageServerDescription": "运行一个当地中心,在信号关闭时接收信息。 您网络上的其他装置可以向这个中心传递信息.",
     "connectionStatusLocalTitle": "地方信息枢纽",

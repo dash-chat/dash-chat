@@ -72,6 +72,7 @@
 	<div class="column" style="flex: 1">
 		{#if !isMobile}
 			<div class="column center-in-desktop">
+				<BlockTitle>{m.localMessageServer()}</BlockTitle>
 				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 					<ListItem
 						title={m.enableLocalMessageServer()}

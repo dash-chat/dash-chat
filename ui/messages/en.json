@@ -325,6 +325,7 @@
 	"menuOpenLogsFolder": "Open Logs Folder",
 
 	"offlineFunctionality": "Offline functionality",
+	"localMessageServer": "Local Message Hub",
 	"enableLocalMessageServer": "Enable Local Message Hub",
 	"localMessageServerDescription": "Runs a local hub to receive messages while the app is closed. Other devices on your network can deliver messages to this hub.",
 
