@@ -41,6 +41,7 @@ import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import {
 	APP_PACKAGE,
+	adbShell,
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
@@ -140,6 +141,16 @@ export type Agent = WebdriverIO.Browser & {
 	 *  action that makes the app shut itself down (today only delete_account).
 	 *  Follow with [`startApp`] to get a driveable session again. */
 	waitForAppExit(): Promise<void>;
+	/** Drop and restore Wi-Fi, leaving the app foregrounded throughout, and
+	 *  resolve once the device holds a routable IPv4 address again. Android
+	 *  only; throws elsewhere, since no other platform can lose its LAN without
+	 *  also losing the driver session. Returns the address it came back on so
+	 *  callers can tell a same-network reassociation from a jump to a different
+	 *  SSID, which would invalidate any discovery measurement taken after it. */
+	cycleWifi(downMs: number): Promise<string>;
+	/** This device's current IPv4 address on wlan0, or '' when it has none.
+	 *  Android only. */
+	wifiAddress(): Promise<string>;
 };
 
 /** The device serial this Appium session was launched against. */
@@ -348,8 +359,48 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		attachPages(agent, b);
 		if (agent.platform === 'desktop') await agent.setWideScreen(false);
 	};
+	agent.cycleWifi = async (downMs: number) => {
+		if (agent.platform !== 'android') {
+			throw new Error(
+				`cycleWifi needs a physical android device, got ${agent.platform}`,
+			);
+		}
+		const udid = androidUdid(b);
+		adbShell(udid, 'svc wifi disable');
+		await b.pause(downMs);
+		adbShell(udid, 'svc wifi enable');
+		let address = '';
+		await b.waitUntil(
+			async () => {
+				address = androidWifiAddress(udid);
+				return address !== '';
+			},
+			{
+				timeout: WIFI_REASSOCIATE_MS,
+				interval: 1_000,
+				timeoutMsg: `device never regained a wifi address ${WIFI_REASSOCIATE_MS / 1_000}s after re-enabling`,
+			},
+		);
+		return address;
+	};
+	agent.wifiAddress = async () => androidWifiAddress(androidUdid(b));
 
 	return agent;
+}
+
+/** Comfortably longer than a WPA2 association plus DHCP on a busy 2.4GHz AP. */
+const WIFI_REASSOCIATE_MS = 90_000;
+
+/** The device's current IPv4 address on wlan0, or '' while it has none. While
+ *  wifi is down the interface itself disappears and adb exits non-zero, which
+ *  is the same "no address yet" answer as an empty match. */
+function androidWifiAddress(udid: string): string {
+	try {
+		const out = adbShell(udid, 'ip -4 addr show wlan0');
+		return out.match(/inet (\d+\.\d+\.\d+\.\d+)/)?.[1] ?? '';
+	} catch {
+		return '';
+	}
 }
 
 /** Comfortably past ProcessLifecycleOwner's 700ms background-dispatch delay, so

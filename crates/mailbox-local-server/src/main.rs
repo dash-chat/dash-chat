@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use futures::FutureExt;
-use mailbox_local_server::MDNS_SERVICE_TYPE;
+use local_hub_discovery::MDNS_SERVICE_TYPE;
 use mdns_sd::ServiceDaemon;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

@@ -1,0 +1,12 @@
+[package]
+name = "tauri-plugin-network-interfaces"
+version = "0.1.0"
+edition = "2021"
+links = "tauri-plugin-network-interfaces"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
+
+[dependencies]
+tauri = { version = "2", default-features = false }
+log = "0.4"

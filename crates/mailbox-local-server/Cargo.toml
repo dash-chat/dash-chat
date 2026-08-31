@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 dashchat-utils = { workspace = true }
+local-hub-discovery = { workspace = true }
 mailbox-server = { workspace = true }
 iroh = { workspace = true }
 iroh-blobs = { workspace = true }

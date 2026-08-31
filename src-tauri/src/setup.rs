@@ -153,6 +153,8 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .level_for("dashchat_utils", log::LevelFilter::Debug)
         .level_for("mailbox_client", log::LevelFilter::Debug)
         .level_for("mailbox_server", log::LevelFilter::Debug)
+        .level_for("mailbox_local_server", log::LevelFilter::Debug)
+        .level_for("local_hub_discovery", log::LevelFilter::Debug)
         .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
         .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
         .format(|out, message, _record| out.finish(format_args!("{message}")))

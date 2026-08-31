@@ -100,6 +100,12 @@ impl AppNode {
         if !self.context.enable_mdns_mailbox() {
             return;
         }
+        // Stop the previous browse before starting the next one. Spawning first
+        // would leave both alive for a moment, and the new one's `stop_browse`
+        // closes the old one's event channel — which the old loop reads as the
+        // daemon shutting down and gives up on. Dropping first makes the
+        // replacement clean instead of a race between two browses.
+        *self.mdns_discovery.lock().unwrap() = None;
         match crate::mailbox::spawn_local_mailbox_mdns_discovery(app, self.node.clone()) {
             Ok(task) => *self.mdns_discovery.lock().unwrap() = Some(task),
             Err(err) => log::warn!("Failed to re-arm local mailbox mdns discovery: {err:?}"),

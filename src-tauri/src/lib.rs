@@ -57,6 +57,10 @@ pub fn run() {
         // affects sockets opened after the bind).
         builder = builder.plugin(tauri_plugin_android_fs::init());
         builder = builder.plugin(tauri_plugin_medialibrary::init());
+        // Holds a MulticastLock so mDNS announcements reach us at all; without
+        // it the wifi driver filters them and discovery only ever finds hubs in
+        // response to its own queries.
+        builder = builder.plugin(tauri_plugin_network_interfaces::init());
         builder = builder.plugin(
             tauri_plugin_lifecycle::Builder::new()
                 .on_pause(|app| async move {
