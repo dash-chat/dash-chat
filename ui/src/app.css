@@ -59,6 +59,23 @@ body {
 	background-color: transparent !important;
 }
 
+/* This is an app shell, not a document. iOS answers a long press on anything
+   selectable with its selection loupe and callout menu, which fights our own
+   press-and-hold gestures — holding the mic and sliding away would start
+   selecting whatever the finger landed on. Text fields opt back in below. */
+html {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+input,
+textarea {
+	-webkit-touch-callout: default;
+	-webkit-user-select: text;
+	user-select: text;
+}
+
 .column {
 	display: flex;
 	flex-direction: column;

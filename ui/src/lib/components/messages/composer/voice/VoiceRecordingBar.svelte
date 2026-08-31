@@ -1,9 +1,8 @@
 <script module lang="ts">
 	/** How long the mobile bar takes to morph out of, and back into, the message
-	 * input. The composer keeps the input hidden for exactly this long on the way
-	 * out, so the two pills are never stacked. Other themes swap instantly. */
-	export function morphMs(theme: string): number {
-		return theme === 'ios' ? 90 : 0;
+	 * input. Other themes swap instantly. */
+	function morphMs(theme: string): number {
+		return theme === 'ios' ? 200 : 0;
 	}
 </script>
 
@@ -21,9 +20,10 @@
 
 	interface Props {
 		voice: VoiceRecorder;
+		onLeavingChange?: (leaving: boolean) => void;
 	}
 
-	let { voice }: Props = $props();
+	let { voice, onLeavingChange }: Props = $props();
 
 	const theme = $derived(useTheme());
 	// Matches the message input's pill so every composer surface looks alike.
@@ -56,7 +56,9 @@
 	}
 
 	const morphParams = $derived({ duration: morphMs(theme) });
-	const contentFadeMs = $derived(Math.round(morphMs(theme) / 3));
+	// Dissolve the contents across the whole slide rather than up front, so the
+	// pill is never travelling home visibly empty.
+	const contentFadeMs = $derived(morphMs(theme));
 </script>
 
 {#if hold || locked}
@@ -68,9 +70,9 @@
 			: 'ps-3 pe-2'}"
 		data-testid={hold ? 'voice-recording-overlay' : 'voice-locked-bar'}
 		transition:morph={morphParams}
+		onoutrostart={() => onLeavingChange?.(true)}
+		onoutroend={() => onLeavingChange?.(false)}
 	>
-		<!-- The recorder's contents clear out well before the pill finishes
-		     collapsing, so what travels back to the input is an empty pill. -->
 		<div
 			class="flex flex-1 items-center gap-2"
 			out:fade={{ duration: contentFadeMs }}

@@ -18,9 +18,7 @@
 		MAX_MESSAGE_BYTES,
 	} from '$lib/utils/media';
 	import VoiceRecordButton from '$lib/components/messages/composer/voice/VoiceRecordButton.svelte';
-	import VoiceRecordingBar, {
-		morphMs,
-	} from '$lib/components/messages/composer/voice/VoiceRecordingBar.svelte';
+	import VoiceRecordingBar from '$lib/components/messages/composer/voice/VoiceRecordingBar.svelte';
 	import { VoiceRecorder } from '$lib/components/messages/composer/voice/voice-recorder.svelte';
 	import {
 		type Hash,
@@ -271,16 +269,32 @@
 		if (editing) messageInput?.focus();
 	});
 
-	const voice = new VoiceRecorder(draft => {
+	// A recorded voice note sends itself the moment it lands, so it is never a
+	// draft the user acts on. Tracking that separately keeps the composer from
+	// morphing into its drafting layout — mic out, send button in — for the
+	// length of the send and straight back again.
+	let sendingVoiceNote = $state(false);
+
+	const voice = new VoiceRecorder(async draft => {
 		media = { kind: 'voice_note', voice: draft };
-		void send();
+		sendingVoiceNote = true;
+		try {
+			await send();
+		} finally {
+			sendingVoiceNote = false;
+		}
 	});
 
-	const showVoiceButton = $derived(!editing && !hasContent);
+	/** Whether the composer holds something the user still has to send. */
+	const drafting = $derived(hasContent && !sendingVoiceNote);
+
+	const showVoiceButton = $derived(!editing && !drafting);
+	let voiceBarLeaving = $state(false);
 	// The hold/locked bars are translucent on iOS and leave the trailing slot
-	// open, so the input row must not show through while they're up.
+	// open, so the input row must not show through while they're up — including
+	// while the bar is still playing its exit transition back onto the input.
 	const recordingCoversInput = $derived(
-		voice.view === 'hold' || voice.view === 'locked',
+		voice.view === 'hold' || voice.view === 'locked' || voiceBarLeaving,
 	);
 
 	function openEmojiPicker() {
@@ -348,12 +362,15 @@
 		{/if}
 
 		<div class="m-2 relative">
-			<VoiceRecordingBar {voice} />
+			<VoiceRecordingBar
+				{voice}
+				onLeavingChange={leaving => (voiceBarLeaving = leaving)}
+			/>
 
 			<div
 				class="input-row row gap-2"
 				class:covered={recordingCoversInput}
-				style="align-items: flex-end; --uncover-delay: {morphMs(theme)}ms"
+				style="align-items: flex-end"
 			>
 				{#if editing}
 					{#if !isWideScreen.value}
@@ -381,17 +398,17 @@
 				>
 					{#snippet after()}
 						{#if !editing && isMobile}
-							{#if hasContent && theme === 'material'}
+							{#if drafting && theme === 'material'}
 								<InlineAttachButton
 									expanded={showMediaPanel}
 									onClick={toggleMediaPanel}
 								/>
 							{/if}
 							<div
-								class="flex shrink-0 items-center overflow-hidden transition-all duration-200 ease-out {hasContent
+								class="flex shrink-0 items-center overflow-hidden transition-all duration-200 ease-out {drafting
 									? 'me-0 w-0 opacity-0'
 									: 'me-1 w-10 opacity-100'}"
-								aria-hidden={hasContent}
+								aria-hidden={drafting}
 							>
 								<CameraButton onClick={captureFromCamera} />
 							</div>
@@ -417,15 +434,15 @@
 						</div>
 					{:else if isIos}
 						<div
-							class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {hasContent
+							class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {drafting
 								? 'ms-0 w-[42px] opacity-100'
 								: '-ms-2 w-0 opacity-0'}"
-							style="transform: scale({hasContent ? 1 : 0})"
-							aria-hidden={!hasContent}
+							style="transform: scale({drafting ? 1 : 0})"
+							aria-hidden={!drafting}
 						>
 							<SendButton onSend={send} />
 						</div>
-					{:else if hasContent}
+					{:else if drafting}
 						<SendButton onSend={send} />
 					{:else if theme !== 'ios'}
 						<StandaloneAttachButton
@@ -497,15 +514,8 @@
 </Sheet>
 
 <style>
-	/* The recording bar morphs back into this row as it leaves, so the row waits
-	   for it to finish: two glass pills overlapping would double the border and
-	   shadow. Hiding stays immediate — only the reveal is delayed. */
-	.input-row {
-		transition: visibility 0s linear var(--uncover-delay, 0ms);
-	}
 	.input-row.covered {
 		visibility: hidden;
-		transition-delay: 0ms;
 	}
 
 	/* During keyboard glides the bar can lead the keyboard's edge by a few px;
