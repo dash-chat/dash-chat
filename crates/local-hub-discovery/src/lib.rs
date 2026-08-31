@@ -5,7 +5,9 @@
 //! node, mailbox or app types — so it stays usable from anywhere in the
 //! workspace and the caller decides what a discovered hub means.
 
+use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use mdns_sd::{DaemonEvent, Receiver, ServiceDaemon, ServiceEvent};
@@ -24,6 +26,21 @@ const REBROWSE_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Per-address TCP probe budget.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Newest fullname announced for each hub id, so a goodbye can be matched
+/// against the announcement that is actually live. Bonjour renames a service to
+/// `name (2)` when it perceives a conflict with a stale cached entry, and both
+/// names normalise to the same id — without this, the goodbye retiring the old
+/// name drops the hub the new name has just announced. A static rather than
+/// per-service state because several browses can be running at once, and a
+/// rename seen by one must not be undone by a sibling.
+static ACTIVE_FULLNAMES: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
+
+/// Whether a goodbye for `fullname` should retire the hub, given the newest
+/// name announced for it. An unclaimed id is retired: nothing superseded it.
+fn goodbye_retires_hub(newest: Option<&str>, fullname: &str) -> bool {
+    newest.is_none_or(|newest| newest == fullname)
+}
 
 /// A hub that answered on the LAN, with an address already proven reachable.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +170,13 @@ async fn handle_browse_events(
         match event {
             ServiceEvent::ServiceResolved(resolved) => {
                 let id = instance_name_from_fullname(&resolved.fullname, &resolved.ty_domain);
+                // Claim the id for this announcement before probing, so a
+                // goodbye retiring a name this one superseded is recognised as
+                // stale even while the probe is still in flight.
+                ACTIVE_FULLNAMES
+                    .lock()
+                    .unwrap()
+                    .insert(id.clone(), resolved.fullname.clone());
                 let port = resolved.port;
                 let events = events.clone();
                 // Probing runs off the handler so a slow or unreachable peer
@@ -172,6 +196,21 @@ async fn handle_browse_events(
             }
             ServiceEvent::ServiceRemoved(ty_domain, fullname) => {
                 let id = instance_name_from_fullname(&fullname, &ty_domain);
+                let retires = {
+                    let mut active = ACTIVE_FULLNAMES.lock().unwrap();
+                    let retires =
+                        goodbye_retires_hub(active.get(&id).map(String::as_str), &fullname);
+                    if retires {
+                        active.remove(&id);
+                    }
+                    retires
+                };
+                if !retires {
+                    log::debug!(
+                        "Ignoring mdns goodbye for superseded name {fullname}: {id} is live under a newer announcement"
+                    );
+                    continue;
+                }
                 let _ = events.send(LocalHubEvent::Lost { id });
             }
             other_event => {
@@ -298,6 +337,30 @@ mod tests {
             instance_name_from_fullname("nodeid._dashchat._tcp.local.", "_dashchat._tcp.local."),
             "nodeid"
         );
+    }
+
+    #[test]
+    fn goodbye_for_the_live_name_retires_the_hub() {
+        assert!(goodbye_retires_hub(
+            Some("nodeid._dashchat._tcp.local."),
+            "nodeid._dashchat._tcp.local.",
+        ));
+    }
+
+    #[test]
+    fn goodbye_for_an_unclaimed_id_retires_the_hub() {
+        assert!(goodbye_retires_hub(None, "nodeid._dashchat._tcp.local."));
+    }
+
+    /// Bonjour renaming `nodeid` to `nodeid (2)` re-announces the same hub id
+    /// under a new name and retires the old one; that goodbye must not drop the
+    /// hub the new name has just announced.
+    #[test]
+    fn goodbye_for_a_superseded_name_is_ignored() {
+        assert!(!goodbye_retires_hub(
+            Some("nodeid (2)._dashchat._tcp.local."),
+            "nodeid._dashchat._tcp.local.",
+        ));
     }
 
     #[test]
