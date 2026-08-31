@@ -61,7 +61,7 @@
 				></wa-icon>
 			{:else}
 				<wa-icon
-					class="connection-status"
+					class="connection-status connection-status-disconnected"
 					src={wrapPathInSvg(mdiEmoticonPoop)}
 					aria-hidden="true"
 				></wa-icon>
@@ -116,6 +116,7 @@
 	.connection-status {
 		color: var(--color-brand-primary);
 		font-size: 28px;
+		width: 35px;
 	}
 	.connection-status-local {
 		font-size: 22px;
@@ -126,6 +127,7 @@
 	.connection-status-dialog-icon-local {
 		font-size: 26px;
 	}
+
 	:global(.dark) .connection-status {
 		color: white;
 	}
