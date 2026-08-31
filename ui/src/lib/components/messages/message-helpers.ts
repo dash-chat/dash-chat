@@ -18,8 +18,9 @@ export function canEditMessage(
 ): boolean {
 	if (!hasBody(message.content)) return false;
 	if (message.author !== myDeviceId) return false;
-	if (message.content.media?.some(item => item.kind === 'VoiceNote'))
-		return false;
+	// An edit only rewrites the text, so a caption-less attachment (image,
+	// file, voice note) has nothing to edit.
+	if (message.content.message.trim() === '') return false;
 	// `timestamp` is the original message op's; edits never change it.
 	return withinWindow(message.timestamp, EDIT_WINDOW_MS);
 }
