@@ -147,6 +147,7 @@ jobs:
       # configure without CMAKE_POLICY_VERSION_MINIMUM, which vendored libopus
       # cannot survive under CMake 4.
       - name: Drop cached audiopus_sys CMake build dirs
+        shell: bash
         run: rm -rf target/*/*/build/audiopus_sys-*
 
       - name: install dependencies (ubuntu only)
@@ -265,6 +266,7 @@ jobs:
           file: local-message-server-aarch64-linux
           release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
+          overwrite: true
 
   release-docker-images:
     if: ${{ !contains(github.ref_name, '-staging') }}
@@ -434,6 +436,7 @@ jobs:
           file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
           release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
+          overwrite: true
 
       - name: Upload APK to release
         uses: svenstaro/upload-release-action@v2
@@ -442,6 +445,7 @@ jobs:
           file: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
           release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
+          overwrite: true
 
       - name: Upload debug files to Sentry
         if: env.SENTRY_AUTH_TOKEN != ''
