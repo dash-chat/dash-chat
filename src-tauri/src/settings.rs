@@ -26,11 +26,11 @@ impl Default for Settings {
     }
 }
 
-// On desktop the OS-level permission is always granted, so default the
-// app-level toggle to ON. On mobile the user has to grant permission
-// through the OS dialog, which we tie to flipping the toggle ON.
+// The app-level toggle only exists on desktop; on mobile the OS-level
+// permission is the single source of truth, so default the flag to ON there
+// too and skip the app-level check when deciding to notify.
 const fn default_notifications_enabled() -> bool {
-    cfg!(desktop)
+    true
 }
 
 pub(crate) fn load_settings<R: Runtime>(handle: &AppHandle<R>) -> Settings {

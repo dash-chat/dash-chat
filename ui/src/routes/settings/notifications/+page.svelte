@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import {
 		BlockTitle,
@@ -75,21 +76,23 @@
 	</Navbar>
 
 	<div class="column" style="flex: 1">
-		<div class="column center-in-desktop">
-			<BlockTitle>{m.messages()}</BlockTitle>
-			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-				<ListItem title={m.notifications()} data-testid="notifications-toggle">
-					{#snippet after()}
-						{#await $notificationsEnabled then enabled}
-							<Toggle
-								checked={enabled}
-								disabled={toggling}
-								onChange={() => (enabled ? disable() : enable())}
-							/>
-						{/await}
-					{/snippet}
-				</ListItem>
-			</List>
-		</div>
+		{#if !isMobile}
+			<div class="column center-in-desktop">
+				<BlockTitle>{m.messages()}</BlockTitle>
+				<List strongIos inset={isWideScreen.value || theme === 'ios'}>
+					<ListItem title={m.notifications()} data-testid="notifications-toggle">
+						{#snippet after()}
+							{#await $notificationsEnabled then enabled}
+								<Toggle
+									checked={enabled}
+									disabled={toggling}
+									onChange={() => (enabled ? disable() : enable())}
+								/>
+							{/await}
+						{/snippet}
+					</ListItem>
+				</List>
+			</div>
+		{/if}
 	</div>
 </Page>

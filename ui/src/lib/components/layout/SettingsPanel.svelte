@@ -25,7 +25,7 @@
 	} from 'konsta/svelte';
 	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { isIos } from '$lib/utils/environment';
+	import { isIos, isMobile } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
 	import Avatar from '../profiles/Avatar.svelte';
 
@@ -136,19 +136,21 @@
 					></wa-icon>
 				{/snippet}
 			</ListItem>
-			<ListItem
-				link
-				class={isActive('/settings/notifications') ? 'active' : ''}
-				linkProps={{ href: '/settings/notifications' }}
-				data-testid="settings-notifications-link"
-				title={m.notifications()}
-				chevron={false}
-			>
-				{#snippet media()}
-					<wa-icon src={wrapPathInSvg(mdiBellOutline)} style="font-size: 28px"
-					></wa-icon>
-				{/snippet}
-			</ListItem>
+			{#if !isMobile}
+				<ListItem
+					link
+					class={isActive('/settings/notifications') ? 'active' : ''}
+					linkProps={{ href: '/settings/notifications' }}
+					data-testid="settings-notifications-link"
+					title={m.notifications()}
+					chevron={false}
+				>
+					{#snippet media()}
+						<wa-icon src={wrapPathInSvg(mdiBellOutline)} style="font-size: 28px"
+						></wa-icon>
+					{/snippet}
+				</ListItem>
+			{/if}
 		</List>
 
 		{#if !isIos}
