@@ -9,6 +9,7 @@
 	import {
 		BlockTitle,
 		Checkbox,
+		Link,
 		List,
 		ListInput,
 		ListItem,
@@ -18,6 +19,7 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
+	import { isIos } from '$lib/utils/environment';
 
 	const theme = $derived(useTheme());
 
@@ -29,6 +31,7 @@
 	let includeDebugLog = $state(true);
 	let screenshot = $state<File | null>(null);
 	let sending = $state(false);
+	const sendDisabled = $derived(!message || !reason || !canSend || sending);
 
 	const reasonLabels: Record<string, () => string> = {
 		bug: () => m.reasonBugReport(),
@@ -60,12 +63,25 @@
 </script>
 
 <Page>
-	<Navbar title={m.contactUs()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.contactUs()}
+		titleClass="opacity1"
+		transparent={true}
+		rightClass={sendDisabled ? 'ios-right-disabled' : ''}
+	>
 		{#snippet left()}
 			<NavbarBackLink
 				onClick={() => goto('/settings/help')}
 				data-testid="contact-us-back"
 			/>
+		{/snippet}
+
+		{#snippet right()}
+			{#if isIos}
+				<Link onClick={handleSubmit} data-testid="contact-us-send-btn">
+					{m.send()}
+				</Link>
+			{/if}
 		{/snippet}
 	</Navbar>
 
@@ -148,12 +164,14 @@
 		</div>
 	</div>
 
-	<FixedActionButton
-		onClick={handleSubmit}
-		disabled={!message || !reason || !canSend}
-		loading={sending}
-		testId="contact-us-send-btn"
-	>
-		{m.send()}
-	</FixedActionButton>
+	{#if !isIos}
+		<FixedActionButton
+			onClick={handleSubmit}
+			disabled={sendDisabled}
+			loading={sending}
+			testId="contact-us-send-btn"
+		>
+			{m.send()}
+		</FixedActionButton>
+	{/if}
 </Page>
