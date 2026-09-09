@@ -39,7 +39,7 @@ impl Node {
         let event = warn_if_slow("awaiting process_fut", process_fut).await?;
 
         // Immediately sync the published operation
-        self.mailboxes.request_sync().await;
+        self.mailboxes.request_sync(Some(*topic)).await;
         // Re-announce any still-unfetched blobs now that we've published.
         self.notify_unfetched_blob_followup();
 
