@@ -98,18 +98,14 @@
 					bind:value={reason}
 					data-testid="contact-us-reason-select"
 				>
-					{#snippet input()}
-						<select bind:value={reason}>
-							<option value={undefined} disabled>
-								{m.pleaseSelectAnOption()}
-							</option>
-							<option value="bug">{m.reasonBugReport()}</option>
-							<option value="feature">{m.reasonFeatureRequest()}</option>
-							<option value="question">{m.reasonQuestion()}</option>
-							<option value="feedback">{m.reasonGeneralFeedback()}</option>
-							<option value="other">{m.reasonOther()}</option>
-						</select>
-					{/snippet}
+					<option value={undefined} disabled>
+						{m.pleaseSelectAnOption()}
+					</option>
+					<option value="bug">{m.reasonBugReport()}</option>
+					<option value="feature">{m.reasonFeatureRequest()}</option>
+					<option value="question">{m.reasonQuestion()}</option>
+					<option value="feedback">{m.reasonGeneralFeedback()}</option>
+					<option value="other">{m.reasonOther()}</option>
 				</ListInput>
 			</List>
 
