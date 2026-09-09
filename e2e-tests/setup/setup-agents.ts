@@ -39,7 +39,8 @@ import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import {
 	APP_PACKAGE,
-	androidWifiAddress,
+	type WifiInfo,
+	androidWifiInfo,
 	connectAndroidWifi,
 	disableAndroidWifi,
 	enableAndroidWifi,
@@ -166,9 +167,9 @@ export type Agent = WebdriverIO.Browser & {
 	 *  callers can tell a same-network reassociation from a jump to a different
 	 *  SSID, which would invalidate any discovery measurement taken after it. */
 	cycleWifi(downMs: number): Promise<string>;
-	/** This device's current IPv4 address on wlan0, or '' when it has none.
-	 *  Android only. */
-	wifiAddress(): Promise<string>;
+	/** The network this device is on: its SSID and IPv4 address on wlan0,
+	 *  each '' while it has none. Android only. */
+	wifiInfo(): Promise<WifiInfo>;
 };
 
 /** The device serial this Appium session was launched against. */
@@ -386,7 +387,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.pause(downMs);
 		return await agent.enableWifi();
 	};
-	agent.wifiAddress = async () => androidWifiAddress(androidUdid(b));
+	agent.wifiInfo = async () => androidWifiInfo(androidUdid(b));
 
 	return agent;
 }

@@ -345,7 +345,7 @@ describe('Offline UX', () => {
 			// On boot the app re-resolves the cloud mailbox id from the live server;
 			// with the server down it never can, but the delivered status lives in
 			// persisted sync state and must survive.
-			killMailbox();
+			await killMailbox();
 			mailboxKilled = true;
 			await agent1.restart();
 

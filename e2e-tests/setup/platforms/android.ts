@@ -491,10 +491,21 @@ export function pressAndroidHome(udid: string): void {
 /** Comfortably longer than a WPA2 association plus DHCP on a busy 2.4GHz AP. */
 const WIFI_REASSOCIATE_MS = 90_000;
 
+export interface WifiInfo {
+	/** The SSID the device is associated with, or '' while it is on none. */
+	ssid: string;
+	/** The device's IPv4 address on wlan0, or '' while it has none. */
+	address: string;
+}
+
+export function androidWifiInfo(udid: string): WifiInfo {
+	return { ssid: androidWifiSsid(udid), address: androidWifiAddress(udid) };
+}
+
 /** The device's current IPv4 address on wlan0, or '' while it has none. While
  *  wifi is down the interface itself disappears and adb exits non-zero, which
  *  is the same "no address yet" answer as an empty match. */
-export function androidWifiAddress(udid: string): string {
+function androidWifiAddress(udid: string): string {
 	try {
 		const out = adbShell(udid, 'ip -4 addr show wlan0');
 		return out.match(/inet (\d+\.\d+\.\d+\.\d+)/)?.[1] ?? '';
@@ -553,6 +564,7 @@ export async function connectAndroidWifi(
 ): Promise<string> {
 	const security =
 		passphrase === '' ? 'open' : `wpa2 ${deviceShellQuote(passphrase)}`;
+	adbShell(udid, 'svc wifi enable');
 	adbShell(
 		udid,
 		`cmd wifi connect-network ${deviceShellQuote(ssid)} ${security}`,

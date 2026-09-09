@@ -118,7 +118,10 @@ describe('Local mailbox discovery', function () {
 		if (phone.platform === 'android-emulator') this.skip();
 		// A phone that fell back to cellular fails every case here in exactly the
 		// shape of the bug, so refuse to run rather than report four red herrings.
-		if (phone.platform === 'android' && (await phone.wifiAddress()) === '') {
+		if (
+			phone.platform === 'android' &&
+			(await phone.wifiInfo()).address === ''
+		) {
 			throw new Error(
 				'phone has no wifi address (fell back to cellular?), so it cannot reach a hub ' +
 					"on the host's LAN — reconnect it to the host's network before reading anything " +
@@ -297,7 +300,7 @@ describe('Local mailbox discovery', function () {
 			DISCOVERY_MS,
 			'hub was not connected before the wifi bounce, so the bounce would prove nothing',
 		);
-		const addressBefore = await phone.wifiAddress();
+		const addressBefore = (await phone.wifiInfo()).address;
 		const addressAfter = await phone.cycleWifi(WIFI_DOWN_MS);
 		const reconnectedAt = Date.now();
 

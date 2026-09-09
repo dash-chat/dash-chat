@@ -121,4 +121,31 @@ export class ConnectionStatusIndicator extends TestHelper {
 			);
 		}
 	}
+
+	/** Open the dialog and wait until its text says `count` local hubs are
+	 *  connected, then close it. The chip must be reading local. */
+	async waitForLocalHubCount(
+		count: number,
+		timeout: number,
+		timeoutMsg: string,
+	): Promise<void> {
+		await this.chip.click();
+		await this.dialogDescription.waitForExist();
+		let seen: number | null = null;
+		try {
+			await this.agent.waitUntil(
+				async () => {
+					const text = await this.dialogDescription.getText();
+					seen = Number(text.match(/\d+/)?.[0]);
+					return seen === count;
+				},
+				{ timeout, interval: 200 },
+			);
+		} catch {
+			throw new Error(`${timeoutMsg} (the dialog last named ${String(seen)})`);
+		} finally {
+			await this.dialogCloseButton.click();
+			await this.agent.waitUntil(async () => !(await this.isDialogOpen()));
+		}
+	}
 }

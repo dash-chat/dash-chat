@@ -7,6 +7,7 @@
  */
 import { type ChildProcess, spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -122,4 +123,16 @@ export function stopLocalHub(hub: LocalHub, timeoutMs = 10_000): Promise<void> {
 		});
 		signalHub(hub, 'SIGINT');
 	});
+}
+
+/** The host's IPv4 addresses on its up-and-running non-loopback interfaces:
+ *  one per LAN the host is on, and so one per LAN a hub can be bound to. */
+export function hostLanAddresses(): string[] {
+	return Object.values(networkInterfaces())
+		.flat()
+		.filter(
+			(info): info is NonNullable<typeof info> =>
+				info !== undefined && info.family === 'IPv4' && !info.internal,
+		)
+		.map(info => info.address);
 }
