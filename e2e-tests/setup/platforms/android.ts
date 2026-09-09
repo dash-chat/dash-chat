@@ -465,6 +465,140 @@ export function stopAndroidApp(udid: string): void {
 	);
 }
 
+/** Whether the app's main process is running. Appium's queryAppState
+ *  pgrep-matches any process whose name contains the package, and webview
+ *  renderer processes can linger for minutes after the main process exits, so
+ *  ask for the main process directly. */
+export function isAndroidAppRunning(udid: string): boolean {
+	try {
+		execSync(`adb -s ${udid} shell pidof ${APP_PACKAGE}`, {
+			stdio: 'ignore',
+			env: androidEnv,
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Press the home button: the app is backgrounded but its process stays
+ *  alive, so the background service can keep syncing — unlike am stop-app,
+ *  which tears the app down. */
+export function pressAndroidHome(udid: string): void {
+	adbShell(udid, 'input keyevent KEYCODE_HOME');
+}
+
+/** Comfortably longer than a WPA2 association plus DHCP on a busy 2.4GHz AP. */
+const WIFI_REASSOCIATE_MS = 90_000;
+
+/** The device's current IPv4 address on wlan0, or '' while it has none. While
+ *  wifi is down the interface itself disappears and adb exits non-zero, which
+ *  is the same "no address yet" answer as an empty match. */
+export function androidWifiAddress(udid: string): string {
+	try {
+		const out = adbShell(udid, 'ip -4 addr show wlan0');
+		return out.match(/inet (\d+\.\d+\.\d+\.\d+)/)?.[1] ?? '';
+	} catch {
+		return '';
+	}
+}
+
+/** How often the Wi-Fi state is re-read while waiting for it: callers time
+ *  discovery from the moment the address appears, so the poll has to be fine
+ *  next to the budget they hold it to. */
+const WIFI_POLL_MS = 250;
+
+/** Poll `read` until it answers non-empty, or throw `timeoutMsg` once
+ *  WIFI_REASSOCIATE_MS have passed. */
+async function waitForWifi(
+	read: () => string,
+	timeoutMsg: string,
+): Promise<string> {
+	const deadline = Date.now() + WIFI_REASSOCIATE_MS;
+	for (;;) {
+		const value = read();
+		if (value !== '') return value;
+		if (Date.now() > deadline) throw new Error(timeoutMsg);
+		await new Promise(resolve => setTimeout(resolve, WIFI_POLL_MS));
+	}
+}
+
+/** Quote `value` for the device's shell, through the host shell that `adb
+ *  shell` hands it to first: the host strips the double quotes, the device the
+ *  single ones, and the text arrives verbatim. */
+function deviceShellQuote(value: string): string {
+	const single = `'${value.replace(/'/g, "'\\''")}'`;
+	return `"${single.replace(/(["$`\\])/g, '\\$1')}"`;
+}
+
+/** The SSID the device is associated with, or '' while it is on none. */
+function androidWifiSsid(udid: string): string {
+	try {
+		return (
+			adbShell(udid, 'cmd wifi status').match(
+				/Wifi is connected to "(.*)"/,
+			)?.[1] ?? ''
+		);
+	} catch {
+		return '';
+	}
+}
+
+/** Join `ssid` (an empty `passphrase` means an open network), saving it on
+ *  the device if it is new, and resolve with the IPv4 address obtained on it. */
+export async function connectAndroidWifi(
+	udid: string,
+	ssid: string,
+	passphrase: string,
+): Promise<string> {
+	const security =
+		passphrase === '' ? 'open' : `wpa2 ${deviceShellQuote(passphrase)}`;
+	adbShell(
+		udid,
+		`cmd wifi connect-network ${deviceShellQuote(ssid)} ${security}`,
+	);
+	await waitForWifi(
+		() => (androidWifiSsid(udid) === ssid ? ssid : ''),
+		`device never associated with "${ssid}" within ${WIFI_REASSOCIATE_MS / 1_000}s; is it in range, and are the credentials right?`,
+	);
+	return await waitForWifi(
+		() => androidWifiAddress(udid),
+		`device never obtained a wifi address ${WIFI_REASSOCIATE_MS / 1_000}s after joining "${ssid}"`,
+	);
+}
+
+/** Forget every saved network called `ssid`, which drops the association if
+ *  that is the current one, and resolve with the IPv4 address the device is
+ *  on once it has settled on another saved network. */
+export async function forgetAndroidWifi(
+	udid: string,
+	ssid: string,
+): Promise<string> {
+	const ids = new Set<string>();
+	for (const line of adbShell(udid, 'cmd wifi list-networks').split('\n')) {
+		const match = line.match(/^(\d+)\s+(.+?)\s+\S+\s*$/);
+		if (match !== null && match[2] === ssid) ids.add(match[1]);
+	}
+	for (const id of ids) adbShell(udid, `cmd wifi forget-network ${id}`);
+	return await waitForWifi(
+		() => (androidWifiSsid(udid) === ssid ? '' : androidWifiAddress(udid)),
+		`device never settled on another network ${WIFI_REASSOCIATE_MS / 1_000}s after forgetting "${ssid}"`,
+	);
+}
+
+export function disableAndroidWifi(udid: string): void {
+	adbShell(udid, 'svc wifi disable');
+}
+
+/** Turn Wi-Fi on and resolve with the IPv4 address the device came back on. */
+export function enableAndroidWifi(udid: string): Promise<string> {
+	adbShell(udid, 'svc wifi enable');
+	return waitForWifi(
+		() => androidWifiAddress(udid),
+		`device never regained a wifi address ${WIFI_REASSOCIATE_MS / 1_000}s after re-enabling`,
+	);
+}
+
 /**
  * Agents running the e2e APK on Android devices (physical or emulator)
  * through Appium (UiAutomator2) sessions that land directly in the app's

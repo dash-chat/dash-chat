@@ -66,21 +66,6 @@ const WIFI_DOWN_MS = envInt('E2E_STRESS_WIFI_DOWN_SECONDS', 8) * 1_000;
  *  teardown gets far more room than discovery. */
 const TEARDOWN_MS = 150_000;
 
-/** Wait for the connection chip to settle on `status`. */
-async function waitForStatus(
-	phone: Agent,
-	indicator: ConnectionStatusIndicator,
-	status: 'local' | 'disconnected',
-	timeout: number,
-	timeoutMsg: string,
-): Promise<void> {
-	await phone.waitUntil(async () => (await indicator.status()) === status, {
-		timeout,
-		interval: 1_000,
-		timeoutMsg,
-	});
-}
-
 /**
  * Hold until `deadline` while keeping the chip under observation. The polling is
  * not decoration: an idle session is torn down after its driver's command
@@ -179,9 +164,7 @@ describe('Local mailbox discovery', function () {
 
 		const indicator = phone.groupChatPage.connectionStatusIndicator;
 
-		await waitForStatus(
-			phone,
-			indicator,
+		await indicator.waitForStatus(
 			'disconnected',
 			90_000,
 			'client never reported itself disconnected',
@@ -192,9 +175,7 @@ describe('Local mailbox discovery', function () {
 		await host.offlinePage.setLocalMailboxEnabled(true);
 		const startedAt = Date.now();
 
-		await waitForStatus(
-			phone,
-			indicator,
+		await indicator.waitForStatus(
 			'local',
 			DISCOVERY_MS,
 			`hub started at ${UPTIME_MS / 1_000}s of app uptime was still undiscovered ` +
@@ -209,9 +190,7 @@ describe('Local mailbox discovery', function () {
 		const indicator = phone.groupChatPage.connectionStatusIndicator;
 
 		await host.offlinePage.setLocalMailboxEnabled(false);
-		await waitForStatus(
-			phone,
-			indicator,
+		await indicator.waitForStatus(
 			'disconnected',
 			TEARDOWN_MS,
 			'client still saw a hub after the host stopped it',
@@ -229,9 +208,7 @@ describe('Local mailbox discovery', function () {
 		await phone.groupChatPage.ready();
 		const resumedAt = Date.now();
 
-		await waitForStatus(
-			phone,
-			indicator,
+		await indicator.waitForStatus(
 			'local',
 			DISCOVERY_MS,
 			'hub that started while the app was backgrounded was still undiscovered ' +
@@ -251,9 +228,7 @@ describe('Local mailbox discovery', function () {
 			await host.offlinePage.setLocalMailboxEnabled(false);
 			// A round that missed leaves the chip already disconnected, so this
 			// settles immediately rather than waiting out the teardown budget.
-			await waitForStatus(
-				phone,
-				indicator,
+			await indicator.waitForStatus(
 				'disconnected',
 				TEARDOWN_MS,
 				`hub still showed as connected ${TEARDOWN_MS / 1_000}s into cycle ${cycle}'s teardown`,
@@ -263,13 +238,7 @@ describe('Local mailbox discovery', function () {
 			const startedAt = Date.now();
 			// Rounds are scored, not asserted: one miss is tolerated below, so a
 			// failure here has to be recorded and the soak carried on.
-			const heardIn = await waitForStatus(
-				phone,
-				indicator,
-				'local',
-				HEARD_MS,
-				'',
-			).then(
+			const heardIn = await indicator.waitForStatus('local', HEARD_MS, '').then(
 				() => Date.now() - startedAt,
 				() => null,
 			);
@@ -317,17 +286,13 @@ describe('Local mailbox discovery', function () {
 		// never hears, and the precondition below would fail for the very reason
 		// this suite exists.
 		await host.offlinePage.setLocalMailboxEnabled(false);
-		await waitForStatus(
-			phone,
-			indicator,
+		await indicator.waitForStatus(
 			'disconnected',
 			TEARDOWN_MS,
 			'client still saw a hub after the host stopped it, so the bounce has no clean baseline',
 		);
 		await host.offlinePage.setLocalMailboxEnabled(true);
-		await waitForStatus(
-			phone,
-			indicator,
+		await indicator.waitForStatus(
 			'local',
 			DISCOVERY_MS,
 			'hub was not connected before the wifi bounce, so the bounce would prove nothing',
@@ -348,9 +313,7 @@ describe('Local mailbox discovery', function () {
 			);
 		}
 
-		await waitForStatus(
-			phone,
-			indicator,
+		await indicator.waitForStatus(
 			'local',
 			DISCOVERY_MS,
 			`hub on the same subnet was still undiscovered ${DISCOVERY_MS / 1_000}s after wifi came ` +

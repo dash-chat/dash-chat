@@ -50,6 +50,13 @@ export function killLeftoverMailboxServers() {
 		/* ignore */
 	}
 	try {
+		execSync('pkill -9 -f target/debug/mailbox-local-server', {
+			stdio: 'ignore',
+		});
+	} catch {
+		/* ignore */
+	}
+	try {
 		execSync('pkill -9 -f target/debug/push-notifications-server', {
 			stdio: 'ignore',
 		});

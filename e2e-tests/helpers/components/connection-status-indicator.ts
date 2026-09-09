@@ -100,4 +100,25 @@ export class ConnectionStatusIndicator extends TestHelper {
 			return !el.classList.contains('opacity-0');
 		}, tid('connection-status-dialog'));
 	}
+
+	async waitForStatus(
+		status: ConnectionStatus,
+		timeout: number,
+		timeoutMsg: string,
+	): Promise<void> {
+		let seen: ConnectionStatus | null = null;
+		try {
+			await this.agent.waitUntil(
+				async () => {
+					seen = await this.status();
+					return seen === status;
+				},
+				{ timeout, interval: 200 },
+			);
+		} catch {
+			throw new Error(
+				`${timeoutMsg} (the chip last read ${seen === 'connected' ? 'nothing: it was hidden' : String(seen)})`,
+			);
+		}
+	}
 }

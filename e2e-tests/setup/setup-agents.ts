@@ -9,8 +9,6 @@
  * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
  * multiset can't fulfill the requirements.
  */
-import { execSync } from 'node:child_process';
-
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
@@ -41,7 +39,13 @@ import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import {
 	APP_PACKAGE,
-	adbShell,
+	androidWifiAddress,
+	connectAndroidWifi,
+	disableAndroidWifi,
+	enableAndroidWifi,
+	forgetAndroidWifi,
+	isAndroidAppRunning,
+	pressAndroidHome,
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
@@ -141,6 +145,20 @@ export type Agent = WebdriverIO.Browser & {
 	 *  action that makes the app shut itself down (today only delete_account).
 	 *  Follow with [`startApp`] to get a driveable session again. */
 	waitForAppExit(): Promise<void>;
+	/** Turn Wi-Fi off, leaving the app foregrounded. Android only. */
+	disableWifi(): Promise<void>;
+	/** Turn Wi-Fi on and resolve once the device holds a routable IPv4 address
+	 *  again, returning it: the supplicant lands on whichever saved network
+	 *  scores best, so callers check it is the one they expect. Android only. */
+	enableWifi(): Promise<string>;
+	/** Join `ssid` (an empty `passphrase` means an open network), saving it on
+	 *  the device if it is new, and resolve with the IPv4 address obtained on
+	 *  it. Android only. */
+	connectWifi(ssid: string, passphrase: string): Promise<string>;
+	/** Forget `ssid`, which drops it if it is the current network, and resolve
+	 *  with the IPv4 address the device is on once it has settled on another
+	 *  saved network. Android only. */
+	forgetWifi(ssid: string): Promise<string>;
 	/** Drop and restore Wi-Fi, leaving the app foregrounded throughout, and
 	 *  resolve once the device holds a routable IPv4 address again. Android
 	 *  only; throws elsewhere, since no other platform can lose its LAN without
@@ -322,11 +340,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await b.execute('mobile: backgroundApp');
 			return;
 		}
-		// Home button press: keeps the process alive so the background service
-		// can continue syncing, unlike am stop-app which tears the app down.
-		execSync(`adb -s ${androidUdid(b)} shell input keyevent KEYCODE_HOME`, {
-			stdio: 'ignore',
-		});
+		pressAndroidHome(androidUdid(b));
 		// ProcessLifecycleOwner — which the lifecycle plugin observes — posts its
 		// ON_PAUSE/ON_STOP dispatch on a 700ms delay and cancels it outright if an
 		// activity resumes first, so it can tell a real backgrounding apart from a
@@ -359,48 +373,33 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		attachPages(agent, b);
 		if (agent.platform === 'desktop') await agent.setWideScreen(false);
 	};
+	agent.disableWifi = async () => {
+		disableAndroidWifi(wifiUdid(agent, b));
+	};
+	agent.enableWifi = async () => await enableAndroidWifi(wifiUdid(agent, b));
+	agent.connectWifi = async (ssid: string, passphrase: string) =>
+		await connectAndroidWifi(wifiUdid(agent, b), ssid, passphrase);
+	agent.forgetWifi = async (ssid: string) =>
+		await forgetAndroidWifi(wifiUdid(agent, b), ssid);
 	agent.cycleWifi = async (downMs: number) => {
-		if (agent.platform !== 'android') {
-			throw new Error(
-				`cycleWifi needs a physical android device, got ${agent.platform}`,
-			);
-		}
-		const udid = androidUdid(b);
-		adbShell(udid, 'svc wifi disable');
+		await agent.disableWifi();
 		await b.pause(downMs);
-		adbShell(udid, 'svc wifi enable');
-		let address = '';
-		await b.waitUntil(
-			async () => {
-				address = androidWifiAddress(udid);
-				return address !== '';
-			},
-			{
-				timeout: WIFI_REASSOCIATE_MS,
-				interval: 1_000,
-				timeoutMsg: `device never regained a wifi address ${WIFI_REASSOCIATE_MS / 1_000}s after re-enabling`,
-			},
-		);
-		return address;
+		return await agent.enableWifi();
 	};
 	agent.wifiAddress = async () => androidWifiAddress(androidUdid(b));
 
 	return agent;
 }
 
-/** Comfortably longer than a WPA2 association plus DHCP on a busy 2.4GHz AP. */
-const WIFI_REASSOCIATE_MS = 90_000;
-
-/** The device's current IPv4 address on wlan0, or '' while it has none. While
- *  wifi is down the interface itself disappears and adb exits non-zero, which
- *  is the same "no address yet" answer as an empty match. */
-function androidWifiAddress(udid: string): string {
-	try {
-		const out = adbShell(udid, 'ip -4 addr show wlan0');
-		return out.match(/inet (\d+\.\d+\.\d+\.\d+)/)?.[1] ?? '';
-	} catch {
-		return '';
+/** The udid behind the Android-only Wi-Fi controls: no other platform can lose
+ *  its LAN without also losing the driver session. */
+function wifiUdid(agent: Agent, b: WebdriverIO.Browser): string {
+	if (agent.platform !== 'android') {
+		throw new Error(
+			`Wi-Fi control needs a physical android device, got ${agent.platform}`,
+		);
 	}
+	return androidUdid(b);
 }
 
 /** Comfortably past ProcessLifecycleOwner's 700ms background-dispatch delay, so
@@ -595,23 +594,10 @@ async function setupAgent(
 		}
 		await b.switchContext('NATIVE_APP');
 		if (platform === 'android') {
-			// Appium's queryAppState pgrep-matches any process whose name contains
-			// the package, and webview renderer processes can linger for minutes
-			// after the main process exits, so ask for the main process directly.
 			const udid = androidUdid(b);
-			await b.waitUntil(
-				async () => {
-					try {
-						execSync(`adb -s ${udid} shell pidof ${APP_PACKAGE}`, {
-							stdio: 'ignore',
-						});
-						return false;
-					} catch {
-						return true;
-					}
-				},
-				{ timeoutMsg: 'the app never shut itself down' },
-			);
+			await b.waitUntil(async () => !isAndroidAppRunning(udid), {
+				timeoutMsg: 'the app never shut itself down',
+			});
 			return;
 		}
 		await b.waitUntil(

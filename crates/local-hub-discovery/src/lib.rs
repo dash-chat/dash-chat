@@ -16,9 +16,6 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 /// The mDNS service type Dash Chat hubs announce and browse.
 pub const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
 
-/// The service type e2e builds use instead of [`MDNS_SERVICE_TYPE`].
-pub const E2E_MDNS_SERVICE_TYPE: &str = "_dashchat-e2e._tcp.local.";
-
 /// How long to go without a query. Kept short even while a hub is already known:
 /// a hub that dies without a goodbye packet leaves its records cached, so
 /// knowing about one is no evidence that one is still reachable.
@@ -156,6 +153,10 @@ async fn wait_for_new_ip(monitor: &Receiver<DaemonEvent>) {
                 log::debug!("mdns daemon reported new local ip: {ip}");
                 return;
             }
+            Ok(DaemonEvent::IpDel(ip)) => {
+                log::debug!("mdns daemon reported lost local ip: {ip}");
+                continue;
+            }
             Ok(_) => continue,
             Err(_) => std::future::pending::<()>().await,
         }
@@ -183,8 +184,13 @@ async fn handle_browse_events(
                 // cannot stall the event loop.
                 tokio::spawn(async move {
                     let Some(host) = pick_reachable_host(&resolved, port).await else {
+                        let announced: Vec<String> = resolved
+                            .addresses
+                            .iter()
+                            .map(|addr| addr.to_ip_addr().to_string())
+                            .collect();
                         log::info!(
-                            "Resolved mdns service {id}: no address in the announcement is reachable on port {port}, waiting for next announcement"
+                            "Resolved mdns service {id}: no address in the announcement {announced:?} is reachable on port {port}, waiting for next announcement"
                         );
                         return;
                     };

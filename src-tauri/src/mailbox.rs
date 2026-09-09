@@ -1,12 +1,10 @@
-use local_hub_discovery::{spawn_local_hub_discovery, DiscoveredHub, LocalHubEvent};
+use local_hub_discovery::{
+    spawn_local_hub_discovery, DiscoveredHub, LocalHubEvent, MDNS_SERVICE_TYPE,
+};
 use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
 use tokio_util::task::AbortOnDropHandle;
 
-#[cfg(not(feature = "e2e-tests"))]
-const MDNS_SERVICE_TYPE: &str = local_hub_discovery::MDNS_SERVICE_TYPE;
-#[cfg(feature = "e2e-tests")]
-const MDNS_SERVICE_TYPE: &str = local_hub_discovery::E2E_MDNS_SERVICE_TYPE;
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
 
 #[cfg(not(mobile))]

@@ -52,3 +52,8 @@ export function allocatePinnedPort(envName: string): number {
 	}
 	return Number(process.env[envName]);
 }
+
+/** Any free TCP port, for servers whose port is not baked into a build. */
+export async function allocateFreePort(): Promise<number> {
+	return (await tryBind(0))!;
+}
