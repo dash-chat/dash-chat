@@ -9,6 +9,7 @@
  * the "local" icon once agent1's server is discovered. The chip must still
  * read "local" after 3 minutes — comfortably past the TTL.
  */
+import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import {
 	isRemoteMailbox,
 	resumeMailbox,
@@ -48,15 +49,7 @@ describe('Local mailbox connection survives the mDNS announcement TTL', function
 
 		// agent2 opens a members-less group chat — the cheapest way to a page
 		// where ConnectionStatusIndicator is mounted.
-		await agent2.homePage.newMessageButton.click();
-		await agent2.newMessagePage.ready();
-		await agent2.newMessagePage.newGroup.click();
-		await agent2.newGroupPage.addMembersStep.ready();
-		await agent2.newGroupPage.addMembersStep.nextButton.click();
-		await agent2.newGroupPage.groupInfoStep.ready();
-		await agent2.newGroupPage.groupInfoStep.setName('Solo Group');
-		await agent2.newGroupPage.groupInfoStep.createButton.click();
-		await agent2.groupChatPage.ready();
+		await createGroup(agent2, 'Solo Group', []);
 
 		suspendMailbox();
 		mailboxSuspended = true;

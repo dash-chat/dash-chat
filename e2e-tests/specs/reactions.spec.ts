@@ -62,7 +62,7 @@ describe('Message reactions', () => {
 		await agent1.homePage.ready();
 		await agent2.homePage.ready();
 
-		await createGroup(agent1, 'mygroup', 'Bob');
+		await createGroup(agent1, 'mygroup', ['Bob']);
 
 		// The group arrives over p2p sync, which can be slow on real devices.
 		await agent2.homePage.chatListItem('mygroup').waitForExist({

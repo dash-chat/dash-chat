@@ -33,7 +33,7 @@ describe('Group chat replies across a late joiner', () => {
 		await alice.homePage.ready();
 		await carol.homePage.ready();
 
-		await createGroup(alice, 'mygroup', 'Bobbi');
+		await createGroup(alice, 'mygroup', ['Bobbi']);
 
 		await bobbi.homePage
 			.chatListItem('mygroup')

@@ -27,6 +27,7 @@
  * E2E_STRESS_WIFI_DOWN_SECONDS.
  */
 import { type ConnectionStatusIndicator } from '../helpers/components/connection-status-indicator';
+import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { envInt } from '../helpers/utils';
 import {
 	isRemoteMailbox,
@@ -151,15 +152,7 @@ describe('Local mailbox discovery', function () {
 
 		// A members-less group chat is the cheapest way to a page where
 		// ConnectionStatusIndicator is mounted.
-		await phone.homePage.newMessageButton.click();
-		await phone.newMessagePage.ready();
-		await phone.newMessagePage.newGroup.click();
-		await phone.newGroupPage.addMembersStep.ready();
-		await phone.newGroupPage.addMembersStep.nextButton.click();
-		await phone.newGroupPage.groupInfoStep.ready();
-		await phone.newGroupPage.groupInfoStep.setName('Solo Group');
-		await phone.newGroupPage.groupInfoStep.createButton.click();
-		await phone.groupChatPage.ready();
+		await createGroup(phone, 'Solo Group', []);
 
 		suspendMailbox();
 		mailboxSuspended = true;
