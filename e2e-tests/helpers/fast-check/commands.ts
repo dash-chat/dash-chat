@@ -452,8 +452,11 @@ async function expectHubs(
 	const chip = sa.agent.groupChatPage.connectionStatusIndicator;
 	const expected = m.expectedHubs(sa.name);
 	if (expected === 0) {
-		await chip.waitForStatus(
-			'disconnected',
+		// A hub that left the LAN must drop off the chip within the budget. It
+		// may read 'disconnected' or, while the cloud connection is still
+		// settling after a restart or resume, be hidden — both mean no local
+		// hub, which is all this asserts.
+		await chip.waitForNotLocal(
 			DISCOVERY_MS,
 			`${sa.name}: the chip still showed a hub ${DISCOVERY_MS / 1_000}s after ${after}`,
 		);

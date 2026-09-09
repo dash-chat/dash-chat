@@ -122,6 +122,26 @@ export class ConnectionStatusIndicator extends TestHelper {
 		}
 	}
 
+	/** Wait until the chip is not showing a local hub — i.e. any state but
+	 *  'local'. Both 'disconnected' and hidden ('connected') mean no local hub
+	 *  is present, which is the whole of what "no hub reachable" asserts; which
+	 *  of the two shows depends on cloud-connection settling, a separate concern
+	 *  the hub budget does not govern. */
+	async waitForNotLocal(timeout: number, timeoutMsg: string): Promise<void> {
+		let seen: ConnectionStatus | null = null;
+		try {
+			await this.agent.waitUntil(
+				async () => {
+					seen = await this.status();
+					return seen !== 'local';
+				},
+				{ timeout, interval: 200 },
+			);
+		} catch {
+			throw new Error(`${timeoutMsg} (the chip still read local)`);
+		}
+	}
+
 	/** Open the dialog and wait until its text says `count` local hubs are
 	 *  connected, then close it. The chip must be reading local. */
 	async waitForLocalHubCount(

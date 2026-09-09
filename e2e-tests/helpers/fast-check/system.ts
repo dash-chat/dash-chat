@@ -156,7 +156,7 @@ export async function run(
 				await teardown(real);
 				await verifyConvergence(model, real);
 			}),
-			params,
+			{ includeErrorInReport: true, ...params },
 		);
 	} finally {
 		// A sequence that failed mid-way skipped its own teardown.
