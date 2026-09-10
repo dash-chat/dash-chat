@@ -143,6 +143,10 @@ impl AppNodeManager {
         // spawned its cloud-mailbox registration retry in `AppNode::new`
         // (cancelled by the slot's teardown on the next pause), and the slot
         // bumps the generation on a fresh build so forwarders re-bind.
+        // TODO: a rebuilt node starts every mailbox Active with no history, so
+        // a hub that was Stopped before backgrounding is polled aggressively
+        // again. Seeding the rebuilt tracker from the persisted sync tracker's
+        // last known status would let resume probe here like Android does.
         let context = self.app_context(app);
         node_slot::get_or_build_node(&self.data_path, context).await?;
         self.rearm_mdns_discovery().await;

@@ -72,6 +72,8 @@ pub struct MailboxConnectionState {
     pub next_poll: Instant,
     pub last_success_at: Option<DateTime<Utc>>,
     pub last_error: Option<LastError>,
+    #[serde(skip)]
+    probing: bool,
 }
 
 fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::Error> {
@@ -92,10 +94,12 @@ impl MailboxConnectionState {
             next_poll: Instant::now(),
             last_success_at: None,
             last_error: None,
+            probing: false,
         }
     }
 
     fn record_success(&mut self, config: &MailboxesConfig) {
+        self.probing = false;
         self.consecutive_errors = 0;
         self.status = SyncStatus::Active;
         self.next_poll = Instant::now() + config.active_interval + config.between_polls_delay;
@@ -104,14 +108,20 @@ impl MailboxConnectionState {
     }
 
     fn record_error(&mut self, config: &MailboxesConfig, err: String) {
-        self.consecutive_errors += 1;
-        self.status = if self.consecutive_errors >= config.stopped_threshold {
-            SyncStatus::Stopped
-        } else if self.consecutive_errors >= config.degraded_threshold {
-            SyncStatus::Degraded
+        // A failed probe confirms what the status already said; it is not a
+        // step further into backoff.
+        if self.probing {
+            self.probing = false;
         } else {
-            self.status
-        };
+            self.consecutive_errors += 1;
+            self.status = if self.consecutive_errors >= config.stopped_threshold {
+                SyncStatus::Stopped
+            } else if self.consecutive_errors >= config.degraded_threshold {
+                SyncStatus::Degraded
+            } else {
+                self.status
+            };
+        }
         self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
         self.last_error = Some(LastError {
             at: Utc::now(),
@@ -125,8 +135,16 @@ impl MailboxConnectionState {
 
     /// Treat this mailbox as healthy again and poll it immediately
     fn wakeup(&mut self) {
+        self.probing = false;
         self.status = SyncStatus::Active;
         self.consecutive_errors = 0;
+        self.next_poll = Instant::now();
+    }
+
+    /// Poll immediately without presuming the outcome: status and backoff are
+    /// left for the poll's result to decide.
+    fn probe(&mut self) {
+        self.probing = true;
         self.next_poll = Instant::now();
     }
 }
@@ -187,6 +205,10 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         self.connection_state.send_modify(|t| t.wakeup());
     }
 
+    fn probe(&self) {
+        self.connection_state.send_modify(|t| t.probe());
+    }
+
     /// If active, sync after the debounce
     fn request_sync_if_active(&self) {
         if self.connection_state.borrow().status != SyncStatus::Active {
@@ -233,6 +255,16 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 }
 
+/// What the poll loop is woken for. A nudge carries nothing the loop cannot
+/// re-derive, so it may be dropped when one is already queued; the targeted
+/// variants may not.
+#[derive(Debug, PartialEq, Eq)]
+enum Trigger {
+    Nudge,
+    Wakeup(MailboxId),
+    Probe(MailboxId),
+}
+
 #[derive(Clone)]
 pub struct Mailboxes<Item, Store>
 where
@@ -245,7 +277,7 @@ where
     store: Store,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     config: MailboxesConfig,
-    trigger: mpsc::Sender<Option<MailboxId>>,
+    trigger: mpsc::Sender<Trigger>,
 }
 
 impl<Item, Store> Mailboxes<Item, Store>
@@ -258,7 +290,7 @@ where
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
-        trigger: mpsc::Sender<Option<MailboxId>>,
+        trigger: mpsc::Sender<Trigger>,
     ) -> Self {
         let (active_mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
@@ -366,14 +398,19 @@ where
 
     /// Wake the poll loop to check for the next mailbox to poll.
     pub fn trigger_poll_loop(&self) {
-        _ = self.trigger.try_send(None);
+        _ = self.trigger.try_send(Trigger::Nudge);
     }
 
     /// Immediately activate and sync a specific mailbox, resetting any backoff.
-    /// Unlike a nudge, a targeted wakeup carries information the loop cannot
-    /// re-derive, so it waits for channel space rather than being dropped.
+    /// Use when there is evidence the mailbox is reachable; otherwise [`Self::probe`].
     pub async fn wakeup(&self, id: MailboxId) {
-        _ = self.trigger.send(Some(id)).await;
+        _ = self.trigger.send(Trigger::Wakeup(id)).await;
+    }
+
+    /// Immediately sync a specific mailbox without touching its status or
+    /// backoff; the poll's outcome decides both.
+    pub async fn probe(&self, id: MailboxId) {
+        _ = self.trigger.send(Trigger::Probe(id)).await;
     }
 
     /// Request a sync of every active mailbox
@@ -388,6 +425,14 @@ where
     pub async fn wakeup_all(&self) {
         for tracked_mailbox in self.mailboxes.lock().await.values() {
             tracked_mailbox.wakeup();
+        }
+        self.trigger_poll_loop();
+    }
+
+    /// Immediately sync every registered mailbox without touching status or backoff.
+    pub async fn probe_all(&self) {
+        for tracked_mailbox in self.mailboxes.lock().await.values() {
+            tracked_mailbox.probe();
         }
         self.trigger_poll_loop();
     }
@@ -443,7 +488,7 @@ where
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
-        let (trigger_tx, mut trigger_rx) = mpsc::channel::<Option<MailboxId>>(1);
+        let (trigger_tx, mut trigger_rx) = mpsc::channel::<Trigger>(1);
         let manager = Self::new(store, sync_tracker, config, trigger_tx);
         let r = manager.clone();
         tokio::spawn(
@@ -455,10 +500,8 @@ where
                         None => {
                             // No mailboxes registered, wait for a trigger
                             match trigger_rx.recv().await {
-                                Some(msg) => {
-                                    if let Some(id) = msg {
-                                        manager.wakeup_mailbox(&id).await;
-                                    }
+                                Some(trigger) => {
+                                    manager.handle_trigger(trigger).await;
                                     continue;
                                 }
                                 None => break,
@@ -469,11 +512,8 @@ where
                                 // Sleep until the next mailbox is due, or a trigger wakes us
                                 match tokio::time::timeout(wait, trigger_rx.recv()).await {
                                     Ok(None) => break, // channel closed
-                                    Ok(Some(Some(triggered_id))) => {
-                                        manager.wakeup_mailbox(&triggered_id).await;
-                                    }
-                                    Ok(Some(None)) => {} // general nudge, re-evaluate
-                                    Err(_) => {}         // timeout elapsed
+                                    Ok(Some(trigger)) => manager.handle_trigger(trigger).await,
+                                    Err(_) => {} // timeout elapsed
                                 }
                                 // Re-evaluate which mailbox is actually due now
                                 continue;
@@ -532,10 +572,25 @@ where
         }
     }
 
+    async fn handle_trigger(&self, trigger: Trigger) {
+        match trigger {
+            Trigger::Nudge => {}
+            Trigger::Wakeup(id) => self.wakeup_mailbox(&id).await,
+            Trigger::Probe(id) => self.probe_mailbox(&id).await,
+        }
+    }
+
     async fn wakeup_mailbox(&self, id: &MailboxId) {
         let mm = self.mailboxes.lock().await;
         if let Some(tracked_mailbox) = mm.get(id) {
             tracked_mailbox.wakeup();
+        }
+    }
+
+    async fn probe_mailbox(&self, id: &MailboxId) {
+        let mm = self.mailboxes.lock().await;
+        if let Some(tracked_mailbox) = mm.get(id) {
+            tracked_mailbox.probe();
         }
     }
 
@@ -1261,8 +1316,8 @@ mod tests {
             async move { mgr.wakeup(id).await }
         });
 
-        assert_eq!(trigger_rx.recv().await, Some(None));
-        assert_eq!(trigger_rx.recv().await, Some(Some(id)));
+        assert_eq!(trigger_rx.recv().await, Some(Trigger::Nudge));
+        assert_eq!(trigger_rx.recv().await, Some(Trigger::Wakeup(id)));
         wakeup.await.unwrap();
     }
 
@@ -1451,6 +1506,147 @@ mod tests {
         let mm = mgr.mailboxes.lock().await;
         assert_eq!(
             mm.get(&id).unwrap().connection_state().borrow().status,
+            SyncStatus::Active
+        );
+    }
+
+    // -- probe tests --
+
+    #[tokio::test(start_paused = true)]
+    async fn failed_probe_does_not_deepen_backoff() {
+        let config = test_config();
+        let mut state = MailboxConnectionState::new();
+        for _ in 0..config.stopped_threshold {
+            state.record_error(&config, "x".into());
+        }
+        assert_eq!(state.status, SyncStatus::Stopped);
+        let errors = state.consecutive_errors;
+
+        state.probe();
+        assert_eq!(state.next_poll, Instant::now());
+
+        state.record_error(&config, "still down".into());
+        assert_eq!(state.status, SyncStatus::Stopped);
+        assert_eq!(state.consecutive_errors, errors);
+        assert_eq!(state.last_error.as_ref().unwrap().message, "still down");
+        assert_eq!(
+            state.next_poll,
+            Instant::now() + config.stopped_interval + config.between_polls_delay
+        );
+
+        // Only the probe's own failure is forgiven.
+        state.record_error(&config, "x".into());
+        assert_eq!(state.consecutive_errors, errors + 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn successful_probe_restores_active() {
+        let config = test_config();
+        let mut state = MailboxConnectionState::new();
+        for _ in 0..config.stopped_threshold {
+            state.record_error(&config, "x".into());
+        }
+        state.probe();
+        state.record_success(&config);
+        assert_eq!(state.status, SyncStatus::Active);
+        assert_eq!(state.consecutive_errors, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probe_polls_stopped_mailbox_immediately_and_leaves_it_stopped() {
+        let config = MailboxesConfig {
+            active_interval: Duration::from_secs(100),
+            stopped_interval: Duration::from_secs(600),
+            between_polls_delay: Duration::from_millis(0),
+            ..test_config()
+        };
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (client, poll_count) = TrackingClient::new(true);
+        let id = client.id.clone();
+        mgr.register(client).await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(poll_count.load(Ordering::Relaxed), 1);
+
+        {
+            let mm = mgr.mailboxes.lock().await;
+            mm.get(&id).unwrap().connection_state.send_modify(|s| {
+                s.status = SyncStatus::Stopped;
+                s.consecutive_errors = 100;
+                s.next_poll = Instant::now() + Duration::from_secs(600);
+            });
+        }
+
+        mgr.probe(id.clone()).await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(poll_count.load(Ordering::Relaxed), 2);
+        let mm = mgr.mailboxes.lock().await;
+        let state = mm.get(&id).unwrap().connection_state();
+        let state = state.borrow();
+        assert_eq!(state.status, SyncStatus::Stopped);
+        assert_eq!(state.consecutive_errors, 100);
+        assert_eq!(
+            state.next_poll,
+            Instant::now() + config.stopped_interval + config.between_polls_delay
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probe_all_polls_every_mailbox_without_resetting_status() {
+        let config = MailboxesConfig {
+            active_interval: Duration::from_secs(100),
+            stopped_interval: Duration::from_secs(600),
+            between_polls_delay: Duration::from_millis(0),
+            ..test_config()
+        };
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (dead, dead_polls) = TrackingClient::new(true);
+        let dead_id = dead.id.clone();
+        let (alive, alive_polls) = TrackingClient::new(false);
+        let alive_id = alive.id.clone();
+        mgr.register(dead).await;
+        mgr.register(alive).await;
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(dead_polls.load(Ordering::Relaxed), 1);
+        assert_eq!(alive_polls.load(Ordering::Relaxed), 1);
+
+        {
+            let mm = mgr.mailboxes.lock().await;
+            mm.get(&dead_id).unwrap().connection_state.send_modify(|s| {
+                s.status = SyncStatus::Stopped;
+                s.consecutive_errors = 100;
+                s.next_poll = Instant::now() + Duration::from_secs(600);
+            });
+        }
+
+        mgr.probe_all().await;
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(dead_polls.load(Ordering::Relaxed), 2);
+        assert_eq!(alive_polls.load(Ordering::Relaxed), 2);
+        let mm = mgr.mailboxes.lock().await;
+        assert_eq!(
+            mm.get(&dead_id).unwrap().connection_state().borrow().status,
+            SyncStatus::Stopped
+        );
+        assert_eq!(
+            mm.get(&alive_id)
+                .unwrap()
+                .connection_state()
+                .borrow()
+                .status,
             SyncStatus::Active
         );
     }
