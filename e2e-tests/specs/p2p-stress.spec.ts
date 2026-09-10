@@ -3,8 +3,8 @@
  * each other as contacts, creating groups, sending texts and photos,
  * reacting, replying, editing, deleting, backgrounding and restarting the
  * app — while the cloud mailbox is suspended, so every operation must
- * propagate over a direct p2p (iroh/mDNS) connection. Convergence is
- * verified at in-pool checkpoints and at the end of the run.
+ * propagate over a direct p2p (iroh/mDNS) connection. After every move, each
+ * agent that should have received something is checked for exactly it.
  *
  * Skips itself unless E2E_STRESS=1. Run it with:
  *   PLATFORMS=android,android just e2e run p2p-stress
@@ -13,10 +13,9 @@
  * E2E_STRESS_SEED (default random; the run logs it — re-run with the same
  * seed to reproduce a failure).
  */
-import fc from 'fast-check';
-
-import { userCommand } from '../helpers/fast-check/commands';
-import { run, setupFastCheck } from '../helpers/fast-check/system';
+import { Fuzzer } from '../helpers/fuzz/fuzzer';
+import { deviceMoves } from '../helpers/fuzz/moves/device';
+import { userMoves } from '../helpers/fuzz/moves/user';
 import { envInt } from '../helpers/utils';
 import {
 	isRemoteMailbox,
@@ -58,27 +57,16 @@ describe('P2P offline stress', () => {
 	it('agents behave normally for the whole run over p2p sync only', async function () {
 		const commands = envInt('E2E_STRESS_COMMANDS', 80);
 		const seed = envInt('E2E_STRESS_SEED', Math.floor(Math.random() * 2 ** 31));
-		// Commands drive real UI flows and checkpoints wait out generous p2p
-		// sync timeouts, so budget well beyond the expected pace.
-		this.timeout(commands * 30_000 + 300_000);
-		const system = await setupFastCheck({
+		const fuzzer = await Fuzzer.prepare({
 			agents: [
 				{ agent: agent1, name: 'Alice' },
 				{ agent: agent2, name: 'Bob' },
 			],
 		});
-		await run(
-			system,
-			// A fixed-length array rather than fc.commands: its length is
-			// exactly the run's size, where fc.commands draws a random length
-			// that can come out near-empty even with size: 'max'.
-			fc.array(userCommand, { minLength: commands, maxLength: commands }),
-			// One execution against real devices; a failure reports the seed and
-			// command sequence instead of shrinking (each replay would cost a
-			// full multi-minute run against freshly reset devices). Unbiased
-			// because the bias shrinks early runs' sequences toward empty — and
-			// with a single run there is only an "early" run.
-			{ numRuns: 1, seed, endOnFailure: true, unbiased: true },
-		);
+		await fuzzer.soak(this, {
+			moves: [...userMoves, ...deviceMoves],
+			length: commands,
+			seed,
+		});
 	});
 });
