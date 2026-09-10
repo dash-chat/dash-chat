@@ -346,7 +346,7 @@ where
             // connection_state watch::Sender so UI subscribers stay attached.
             tm.replace_client(new_client).await;
             tm.wakeup();
-            self.trigger_poll_loop();
+            self.nudge_poll_loop();
         } else {
             mailboxes.insert(
                 id.clone(),
@@ -354,7 +354,7 @@ where
             );
             drop(mailboxes);
             self.publish_active_ids().await;
-            self.trigger_poll_loop();
+            self.nudge_poll_loop();
         }
     }
 
@@ -422,8 +422,8 @@ where
             .collect())
     }
 
-    /// Wake the poll loop to check for the next mailbox to poll.
-    pub fn trigger_poll_loop(&self) {
+    /// Nudge the poll loop to check for the next mailbox to poll.
+    pub fn nudge_poll_loop(&self) {
         _ = self.trigger.try_send(Trigger::Nudge);
     }
 
@@ -444,7 +444,7 @@ where
         for tracked_mailbox in self.mailboxes.lock().await.values() {
             tracked_mailbox.request_sync_if_active();
         }
-        self.trigger_poll_loop();
+        self.nudge_poll_loop();
     }
 
     /// Immediately activate and sync every registered mailbox, resetting any backoff.
@@ -452,7 +452,7 @@ where
         for tracked_mailbox in self.mailboxes.lock().await.values() {
             tracked_mailbox.wakeup();
         }
-        self.trigger_poll_loop();
+        self.nudge_poll_loop();
     }
 
     /// Immediately sync every registered mailbox without touching status or backoff.
@@ -460,7 +460,7 @@ where
         for tracked_mailbox in self.mailboxes.lock().await.values() {
             tracked_mailbox.probe();
         }
-        self.trigger_poll_loop();
+        self.nudge_poll_loop();
     }
 
     /// Send a `/report` to every currently-registered mailbox, best-effort.
@@ -671,7 +671,7 @@ where
             // The mailbox is schedulable again, so the loop
             // must re-evaluate rather than sleep on a wait
             // computed while it was in flight.
-            manager.trigger_poll_loop();
+            manager.nudge_poll_loop();
         });
         Some(task)
     }
@@ -1335,7 +1335,7 @@ mod tests {
             Mailboxes::new(DummyStore, test_sync_tracker(), test_config(), trigger_tx);
         let id: MailboxId = "mb".into();
 
-        mgr.trigger_poll_loop();
+        mgr.nudge_poll_loop();
         let wakeup = tokio::spawn({
             let mgr = mgr.clone();
             let id = id.clone();
