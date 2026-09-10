@@ -281,7 +281,7 @@ where
     store: Store,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     config: MailboxesConfig,
-    trigger: mpsc::Sender<Option<MailboxId>>,
+    trigger: mpsc::Sender<()>,
 }
 
 impl<Item, Store> Mailboxes<Item, Store>
@@ -294,7 +294,7 @@ where
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
-        trigger: mpsc::Sender<Option<MailboxId>>,
+        trigger: mpsc::Sender<()>,
     ) -> Self {
         let (active_mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
@@ -400,14 +400,17 @@ where
             .collect())
     }
 
-    /// Wake the poll loop to check for the next mailbox to poll.
+    /// Wake the poll loop to check for the next mailbox to poll. A full slot
+    /// means a wake is already queued, so a dropped send loses nothing: the
+    /// loop re-reads mailbox state whenever it wakes.
     pub fn trigger_poll_loop(&self) {
-        _ = self.trigger.try_send(None);
+        _ = self.trigger.try_send(());
     }
 
     /// Immediately activate and sync a specific mailbox, resetting any backoff.
-    pub fn wakeup(&self, id: MailboxId) {
-        _ = self.trigger.try_send(Some(id));
+    pub async fn wakeup(&self, id: MailboxId) {
+        self.wakeup_mailbox(&id).await;
+        self.trigger_poll_loop();
     }
 
     /// Request a sync of every active mailbox, covering only `topic` if given,
@@ -555,7 +558,7 @@ where
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
-        let (trigger_tx, mut trigger_rx) = mpsc::channel::<Option<MailboxId>>(1);
+        let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(1);
         let manager = Self::new(store, sync_tracker, config, trigger_tx);
         let r = manager.clone();
         tokio::spawn(
@@ -567,12 +570,7 @@ where
                         None => {
                             // No mailboxes registered, wait for a trigger
                             match trigger_rx.recv().await {
-                                Some(msg) => {
-                                    if let Some(id) = msg {
-                                        manager.wakeup_mailbox(&id).await;
-                                    }
-                                    continue;
-                                }
+                                Some(()) => continue,
                                 None => break,
                             }
                         }
@@ -581,11 +579,8 @@ where
                                 // Sleep until the next mailbox is due, or a trigger wakes us
                                 match tokio::time::timeout(wait, trigger_rx.recv()).await {
                                     Ok(None) => break, // channel closed
-                                    Ok(Some(Some(triggered_id))) => {
-                                        manager.wakeup_mailbox(&triggered_id).await;
-                                    }
-                                    Ok(Some(None)) => {} // general nudge, re-evaluate
-                                    Err(_) => {}         // timeout elapsed
+                                    Ok(Some(())) => {} // nudge, re-evaluate
+                                    Err(_) => {}       // timeout elapsed
                                 }
                                 // Re-evaluate which mailbox is actually due now
                                 continue;
@@ -1611,7 +1606,7 @@ mod tests {
         }
         assert_eq!(poll_count.load(Ordering::Relaxed), 1);
 
-        mgr.wakeup(id.clone());
+        mgr.wakeup(id.clone()).await;
 
         for _ in 0..10 {
             tokio::task::yield_now().await;
@@ -2244,6 +2239,35 @@ mod tests {
         assert_eq!(tracked.take_pending_request(), PendingRequest::None);
     }
 
+    /// A wakeup is applied to the mailbox even when the poll loop's trigger
+    /// slot is already occupied by a general nudge.
+    #[tokio::test(start_paused = true)]
+    async fn wakeup_is_not_dropped_when_trigger_slot_is_full() {
+        let (trigger_tx, _trigger_rx) = mpsc::channel(1);
+        let mgr = Mailboxes::new(DummyStore, test_sync_tracker(), test_config(), trigger_tx);
+
+        let client = MemMailbox::<Msg>::new().client();
+        let id = client.id();
+        mgr.register(client).await;
+        {
+            let mm = mgr.mailboxes.lock().await;
+            let t = mm.get(&id).unwrap();
+            t.record_error("x".into());
+            t.record_error("x".into());
+            t.record_error("x".into());
+            assert_eq!(t.connection_state().borrow().status, SyncStatus::Stopped);
+        }
+
+        mgr.trigger_poll_loop();
+        mgr.wakeup(id.clone()).await;
+
+        let mm = mgr.mailboxes.lock().await;
+        let state = mm.get(&id).unwrap().connection_state();
+        let state = state.borrow();
+        assert_eq!(state.status, SyncStatus::Active);
+        assert_eq!(state.next_poll, Instant::now());
+    }
+
     /// A wakeup that lands while a poll is in flight is not lost to the
     /// reschedule that poll ends with: the mailbox is polled again right away.
     #[tokio::test(start_paused = true)]
@@ -2263,7 +2287,7 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(10)).await;
         assert_eq!(slow_polls.load(Ordering::Relaxed), 1);
 
-        mgr.wakeup(id);
+        mgr.wakeup(id).await;
         tokio::time::sleep(Duration::from_secs(10)).await;
         assert_eq!(slow_polls.load(Ordering::Relaxed), 1);
 

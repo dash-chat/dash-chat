@@ -167,7 +167,7 @@ async fn handle_push_notification(
     // backed-off (Stopped/Degraded) cloud mailbox is force-polled immediately;
     // fall back to a general trigger if it isn't registered yet.
     if let Some(cloud_id) = crate::mailbox::cloud_mailbox_id(&node).await {
-        node.mailboxes.wakeup(cloud_id);
+        node.mailboxes.wakeup(cloud_id).await;
     } else {
         node.mailboxes.trigger_poll_loop();
     }
