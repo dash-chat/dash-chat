@@ -73,8 +73,6 @@ pub struct MailboxConnectionState {
     pub next_poll: Instant,
     pub last_success_at: Option<DateTime<Utc>>,
     pub last_error: Option<LastError>,
-    #[serde(skip)]
-    probing: bool,
 }
 
 fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::Error> {
@@ -95,12 +93,10 @@ impl MailboxConnectionState {
             next_poll: Instant::now(),
             last_success_at: None,
             last_error: None,
-            probing: false,
         }
     }
 
     fn record_success(&mut self, config: &MailboxesConfig) {
-        self.probing = false;
         self.consecutive_errors = 0;
         self.status = SyncStatus::Active;
         self.next_poll = Instant::now() + config.active_interval + config.between_polls_delay;
@@ -109,20 +105,20 @@ impl MailboxConnectionState {
     }
 
     fn record_error(&mut self, config: &MailboxesConfig, err: String) {
-        // A failed probe confirms what the status already said; it is not a
-        // step further into backoff.
-        if self.probing {
-            self.probing = false;
+        self.consecutive_errors += 1;
+        self.status = if self.consecutive_errors >= config.stopped_threshold {
+            SyncStatus::Stopped
+        } else if self.consecutive_errors >= config.degraded_threshold {
+            SyncStatus::Degraded
         } else {
-            self.consecutive_errors += 1;
-            self.status = if self.consecutive_errors >= config.stopped_threshold {
-                SyncStatus::Stopped
-            } else if self.consecutive_errors >= config.degraded_threshold {
-                SyncStatus::Degraded
-            } else {
-                self.status
-            };
-        }
+            self.status
+        };
+        self.record_probe_error(config, err);
+    }
+
+    /// A failed probe confirms what the status already said; it is not a step
+    /// further into backoff.
+    fn record_probe_error(&mut self, config: &MailboxesConfig, err: String) {
         self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
         self.last_error = Some(LastError {
             at: Utc::now(),
@@ -136,7 +132,6 @@ impl MailboxConnectionState {
 
     /// Treat this mailbox as healthy again and poll it immediately
     fn wakeup(&mut self) {
-        self.probing = false;
         self.status = SyncStatus::Active;
         self.consecutive_errors = 0;
         self.next_poll = Instant::now();
@@ -145,7 +140,6 @@ impl MailboxConnectionState {
     /// Poll immediately without presuming the outcome: status and backoff are
     /// left for the poll's result to decide.
     fn probe(&mut self) {
-        self.probing = true;
         self.next_poll = Instant::now();
     }
 }
@@ -197,6 +191,11 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
             .send_modify(|t| t.record_error(&self.config, err));
     }
 
+    fn record_probe_error(&self, err: String) {
+        self.connection_state
+            .send_modify(|t| t.record_probe_error(&self.config, err));
+    }
+
     fn reschedule(&self) {
         self.connection_state
             .send_modify(|t| t.reschedule(&self.config));
@@ -214,6 +213,9 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
 
     /// Poll every subscribed topic now without presuming the outcome.
     fn probe(&self) {
+        // As with wakeup, the pending request carries the probe past a poll
+        // already in flight.
+        self.pending_request.lock().unwrap().merge_probe();
         self.connection_state.send_modify(|t| t.probe());
     }
 
@@ -247,13 +249,18 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         self.schedule_pending_request();
     }
 
-    fn poll_failed(&self, err: String) {
-        self.record_error(err);
+    /// `probe` says whether the poll that failed was fulfilling a probe.
+    fn poll_failed(&self, err: String, probe: bool) {
+        if probe {
+            self.record_probe_error(err);
+        } else {
+            self.record_error(err);
+        }
         // A sync requested during a failed poll doesn't earn a quick retry:
-        // the request failed too, so backoff applies. A wakeup does, since it
-        // declares the mailbox healthy regardless.
+        // the request failed too, so backoff applies. A wakeup or probe does,
+        // since each demands a poll now regardless.
         let mut pending = self.pending_request.lock().unwrap();
-        if *pending != PendingRequest::Wakeup {
+        if !matches!(*pending, PendingRequest::Wakeup | PendingRequest::Probe) {
             *pending = PendingRequest::None;
         }
         drop(pending);
@@ -267,6 +274,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
             PendingRequest::None => {}
             PendingRequest::PollTopics(_) | PendingRequest::PollAll => self.sync_after_debounce(),
             PendingRequest::Wakeup => self.connection_state.send_modify(|t| t.wakeup()),
+            PendingRequest::Probe => self.connection_state.send_modify(|t| t.probe()),
         }
     }
 
@@ -750,11 +758,16 @@ where
         let subscribed = self.subscribed_topics().await;
         // Take the pending sync here info here to lock in what this poll will cover.
         // Any requests coming in after this point will be handled by the next poll.
-        let topics = match tracked_mailbox.take_pending_request() {
+        let pending = tracked_mailbox.take_pending_request();
+        let probe = pending == PendingRequest::Probe;
+        let topics = match pending {
             PendingRequest::PollTopics(topics) => {
                 topics.intersection(&subscribed).copied().collect()
             }
-            PendingRequest::None | PendingRequest::PollAll | PendingRequest::Wakeup => subscribed,
+            PendingRequest::None
+            | PendingRequest::PollAll
+            | PendingRequest::Wakeup
+            | PendingRequest::Probe => subscribed,
         };
         if topics.is_empty() {
             tracing::trace!("no topics subscribed, skipping poll for {id}");
@@ -776,7 +789,7 @@ where
                 Ok(()) => tracked_mailbox.poll_succeeded(),
                 Err(err) => {
                     tracing::error!(?err, mailbox = %id, "mailbox sync error");
-                    tracked_mailbox.poll_failed(format!("{err:?}"));
+                    tracked_mailbox.poll_failed(format!("{err:?}"), probe);
                     let tracker = tracked_mailbox.connection_state();
                     let tracker = tracker.borrow();
                     tracing::info!(
@@ -916,13 +929,16 @@ enum PendingRequest<Topic> {
     PollAll,
     /// The mailbox was woken: set as Active and poll every subscribed topic now (no debounce).
     Wakeup,
+    /// The mailbox was probed: poll every subscribed topic now (no debounce),
+    /// and let the result decide status and backoff.
+    Probe,
 }
 
 impl<Topic: Ord> PendingRequest<Topic> {
     /// Accumulate a request for `topic`, or for every subscribed topic when `None`.
     fn merge(&mut self, topic: Option<Topic>) {
         match (&mut *self, topic) {
-            (PendingRequest::PollAll | PendingRequest::Wakeup, _) => {}
+            (PendingRequest::PollAll | PendingRequest::Wakeup | PendingRequest::Probe, _) => {}
             (_, None) => *self = PendingRequest::PollAll,
             (PendingRequest::PollTopics(topics), Some(topic)) => {
                 topics.insert(topic);
@@ -935,6 +951,13 @@ impl<Topic: Ord> PendingRequest<Topic> {
 
     fn merge_wakeup(&mut self) {
         *self = PendingRequest::Wakeup;
+    }
+
+    /// A wakeup already promises everything a probe asks for, so it stands.
+    fn merge_probe(&mut self) {
+        if *self != PendingRequest::Wakeup {
+            *self = PendingRequest::Probe;
+        }
     }
 }
 
@@ -993,15 +1016,25 @@ mod tests {
         id: MailboxId,
         poll_count: Arc<AtomicU32>,
         delay: Duration,
+        should_fail: bool,
     }
 
     impl SlowClient {
         fn new(delay: Duration) -> (Self, Arc<AtomicU32>) {
+            Self::build(delay, false)
+        }
+
+        fn failing(delay: Duration) -> (Self, Arc<AtomicU32>) {
+            Self::build(delay, true)
+        }
+
+        fn build(delay: Duration, should_fail: bool) -> (Self, Arc<AtomicU32>) {
             let poll_count = Arc::new(AtomicU32::new(0));
             let client = Self {
                 id: nanoid::nanoid!(),
                 poll_count: poll_count.clone(),
                 delay,
+                should_fail,
             };
             (client, poll_count)
         }
@@ -1037,7 +1070,11 @@ mod tests {
         ) -> Result<FetchResponse<Msg>, anyhow::Error> {
             self.poll_count.fetch_add(1, Ordering::Relaxed);
             tokio::time::sleep(self.delay).await;
-            Ok(FetchResponse(BTreeMap::new()))
+            if self.should_fail {
+                Err(anyhow::anyhow!("simulated failure"))
+            } else {
+                Ok(FetchResponse(BTreeMap::new()))
+            }
         }
     }
 
@@ -1745,7 +1782,7 @@ mod tests {
         state.probe();
         assert_eq!(state.next_poll, Instant::now());
 
-        state.record_error(&config, "still down".into());
+        state.record_probe_error(&config, "still down".into());
         assert_eq!(state.status, SyncStatus::Stopped);
         assert_eq!(state.consecutive_errors, errors);
         assert_eq!(state.last_error.as_ref().unwrap().message, "still down");
@@ -1753,10 +1790,94 @@ mod tests {
             state.next_poll,
             Instant::now() + config.stopped_interval + config.between_polls_delay
         );
+    }
 
-        // Only the probe's own failure is forgiven.
-        state.record_error(&config, "x".into());
-        assert_eq!(state.consecutive_errors, errors + 1);
+    #[test]
+    fn pending_probe_yields_to_wakeup_and_absorbs_syncs() {
+        let mut pending = PendingRequest::None;
+        pending.merge(Some(1u8));
+        pending.merge_probe();
+        assert_eq!(pending, PendingRequest::Probe);
+        pending.merge(Some(2u8));
+        pending.merge(None);
+        assert_eq!(pending, PendingRequest::Probe);
+        pending.merge_wakeup();
+        pending.merge_probe();
+        assert_eq!(pending, PendingRequest::Wakeup);
+    }
+
+    /// A probe that lands while a poll is in flight is not lost to the
+    /// reschedule that poll ends with, and the in-flight poll's own failure
+    /// still counts: only the probe's result is exempt from backoff.
+    #[tokio::test(start_paused = true)]
+    async fn probe_during_in_flight_poll_repolls_immediately_and_forgives_only_itself() {
+        let config = MailboxesConfig {
+            active_interval: Duration::from_secs(100),
+            between_polls_delay: Duration::from_millis(0),
+            ..test_config()
+        };
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (slow, slow_polls) = SlowClient::failing(Duration::from_secs(30));
+        let id = slow.id.clone();
+        mgr.register(slow).await;
+
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(slow_polls.load(Ordering::Relaxed), 1);
+
+        mgr.probe(id.clone()).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(slow_polls.load(Ordering::Relaxed), 1);
+
+        // The in-flight poll fails at t=30s and counts; the probe starts then.
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        assert_eq!(slow_polls.load(Ordering::Relaxed), 2);
+        let errors_after_first = {
+            let mm = mgr.mailboxes.lock().await;
+            mm.get(&id)
+                .unwrap()
+                .connection_state()
+                .borrow()
+                .consecutive_errors
+        };
+        assert_eq!(errors_after_first, 1);
+
+        // The probe fails at t=60s and does not count.
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let mm = mgr.mailboxes.lock().await;
+        let state = mm.get(&id).unwrap().connection_state();
+        let state = state.borrow();
+        assert_eq!(state.consecutive_errors, 1);
+        assert_eq!(state.status, SyncStatus::Active);
+    }
+
+    /// A probe that finds nothing to poll is spent, not carried into whatever
+    /// poll happens next.
+    #[tokio::test(start_paused = true)]
+    async fn probe_with_nothing_to_poll_does_not_forgive_a_later_failure() {
+        let config = MailboxesConfig {
+            between_polls_delay: Duration::from_millis(0),
+            ..test_config()
+        };
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+
+        let (client, poll_count) = TrackingClient::new(true);
+        let id = client.id.clone();
+        mgr.register(client).await;
+        mgr.probe(id.clone()).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(poll_count.load(Ordering::Relaxed), 0);
+
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+        tokio::time::sleep(config.active_interval * 2).await;
+        assert!(poll_count.load(Ordering::Relaxed) > 0);
+        let mm = mgr.mailboxes.lock().await;
+        let state = mm.get(&id).unwrap().connection_state();
+        assert_eq!(
+            state.borrow().consecutive_errors,
+            poll_count.load(Ordering::Relaxed)
+        );
     }
 
     #[tokio::test(start_paused = true)]
