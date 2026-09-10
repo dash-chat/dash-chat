@@ -309,9 +309,16 @@ export class ExpectedModel {
 		);
 	}
 
+	/** The contacts `name` can act on: a mutual add whose profile has also
+	 * reached `name`. Adding is a local act, but the peer's profile arrives as
+	 * a separate op — until it does the app has only a bare key, so it shows no
+	 * contact row and the group-member picker offers none. */
 	contactsOf(name: string): string[] {
 		return this.names().filter(
-			other => other !== name && this.areContacts(name, other),
+			other =>
+				other !== name &&
+				this.areContacts(name, other) &&
+				this.knows(name).has(profileOp(other)),
 		);
 	}
 

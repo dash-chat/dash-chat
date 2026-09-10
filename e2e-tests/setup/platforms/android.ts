@@ -9,6 +9,7 @@ import { allocatePinnedPort } from '../allocate-port';
 import { hashFile } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
 import { runTurboBuild } from '../turbo-build';
+import { WIFI_REASSOCIATE_MS, type WifiInfo, waitForWifi } from '../wifi';
 import {
 	type AgentPlatform,
 	type PrepareContext,
@@ -488,16 +489,6 @@ export function pressAndroidHome(udid: string): void {
 	adbShell(udid, 'input keyevent KEYCODE_HOME');
 }
 
-/** Comfortably longer than a WPA2 association plus DHCP on a busy 2.4GHz AP. */
-const WIFI_REASSOCIATE_MS = 90_000;
-
-export interface WifiInfo {
-	/** The SSID the device is associated with, or '' while it is on none. */
-	ssid: string;
-	/** The device's IPv4 address on wlan0, or '' while it has none. */
-	address: string;
-}
-
 export function androidWifiInfo(udid: string): WifiInfo {
 	return { ssid: androidWifiSsid(udid), address: androidWifiAddress(udid) };
 }
@@ -511,26 +502,6 @@ function androidWifiAddress(udid: string): string {
 		return out.match(/inet (\d+\.\d+\.\d+\.\d+)/)?.[1] ?? '';
 	} catch {
 		return '';
-	}
-}
-
-/** How often the Wi-Fi state is re-read while waiting for it: callers time
- *  discovery from the moment the address appears, so the poll has to be fine
- *  next to the budget they hold it to. */
-const WIFI_POLL_MS = 250;
-
-/** Poll `read` until it answers non-empty, or throw `timeoutMsg` once
- *  WIFI_REASSOCIATE_MS have passed. */
-async function waitForWifi(
-	read: () => string,
-	timeoutMsg: string,
-): Promise<string> {
-	const deadline = Date.now() + WIFI_REASSOCIATE_MS;
-	for (;;) {
-		const value = read();
-		if (value !== '') return value;
-		if (Date.now() > deadline) throw new Error(timeoutMsg);
-		await new Promise(resolve => setTimeout(resolve, WIFI_POLL_MS));
 	}
 }
 
