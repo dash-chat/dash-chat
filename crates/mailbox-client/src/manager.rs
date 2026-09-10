@@ -423,7 +423,15 @@ where
     /// every active mailbox with a direct store, skipping the fetch roundtrip.
     /// A failed store, or a watermark echo short of what was pushed,
     /// falls back to a scheduled sync.
-    pub async fn publish_fast_push(&self, topic: Item::Topic, author: Item::Author) {
+    ///
+    /// Each push runs in its own task so the caller never waits on the
+    /// network; the returned handles are for tests that need to await the
+    /// pushes, and dropping them leaves the tasks running.
+    pub async fn publish_fast_push(
+        &self,
+        topic: Item::Topic,
+        author: Item::Author,
+    ) -> Vec<tokio::task::JoinHandle<()>> {
         let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
             .mailboxes
             .lock()
@@ -433,16 +441,19 @@ where
             .filter(|(_, t)| t.connection_state().borrow().status == SyncStatus::Active)
             .collect();
 
-        for (id, tracked) in mailboxes {
-            let manager = self.clone();
-            tokio::spawn(async move {
-                if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
-                    tracing::debug!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
-                    tracked.request_sync_if_active(Some(topic));
-                    manager.trigger_poll_loop();
-                }
-            });
-        }
+        mailboxes
+            .into_iter()
+            .map(|(id, tracked)| {
+                let manager = self.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
+                        tracing::debug!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
+                        tracked.request_sync_if_active(Some(topic));
+                        manager.trigger_poll_loop();
+                    }
+                })
+            })
+            .collect()
     }
 
     async fn store_fast_push(
@@ -2060,6 +2071,12 @@ mod tests {
         Mailboxes::new(store, test_sync_tracker(), config, trigger_tx)
     }
 
+    async fn join(handles: Vec<tokio::task::JoinHandle<()>>) {
+        for handle in handles {
+            handle.await.unwrap();
+        }
+    }
+
     fn msgs(topic: u8, author: char, seqs: impl IntoIterator<Item = u64>) -> Vec<Msg> {
         seqs.into_iter()
             .map(|seq| Msg { topic, author, seq })
@@ -2080,8 +2097,7 @@ mod tests {
             .await
             .unwrap();
 
-        mgr.publish_fast_push(0, 'a').await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        join(mgr.publish_fast_push(0, 'a').await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [5])]);
         assert_eq!(
@@ -2101,8 +2117,7 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
-        mgr.publish_fast_push(0, 'a').await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        join(mgr.publish_fast_push(0, 'a').await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [0])]);
         assert_eq!(
@@ -2127,8 +2142,7 @@ mod tests {
             .await
             .unwrap();
 
-        mgr.publish_fast_push(0, 'a').await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        join(mgr.publish_fast_push(0, 'a').await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', 2..=5)]);
         assert_eq!(
@@ -2152,8 +2166,7 @@ mod tests {
             .await
             .unwrap();
 
-        mgr.publish_fast_push(0, 'a').await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        join(mgr.publish_fast_push(0, 'a').await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [5])]);
         assert_eq!(
@@ -2176,8 +2189,7 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
-        mgr.publish_fast_push(0, 'a').await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        join(mgr.publish_fast_push(0, 'a').await).await;
 
         assert!(published.lock().unwrap().is_empty());
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2199,8 +2211,7 @@ mod tests {
         seqs.lock().unwrap().insert((0, 'a'), (0..=5).collect());
         mgr.register(client).await;
 
-        mgr.publish_fast_push(0, 'a').await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        join(mgr.publish_fast_push(0, 'a').await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', 0..=2)]);
         assert_eq!(
@@ -2227,8 +2238,7 @@ mod tests {
             SyncStatus::Active
         );
 
-        mgr.publish_fast_push(0, 'a').await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        join(mgr.publish_fast_push(0, 'a').await).await;
 
         assert!(published.lock().unwrap().is_empty());
         assert_eq!(tracked.take_pending_request(), PendingRequest::None);
