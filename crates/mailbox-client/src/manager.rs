@@ -538,9 +538,6 @@ where
     }
 
     async fn poll_mailbox(&self, id: &MailboxId) -> Option<tokio::task::JoinHandle<()>> {
-        if !self.begin_poll(&id).await {
-            return None;
-        }
         let tracked_mailbox = {
             let mm = self.mailboxes.lock().await;
             match mm.get(id) {
@@ -553,6 +550,10 @@ where
         if topics.is_empty() {
             tracing::trace!("no topics subscribed, skipping poll for {id}");
             tracked_mailbox.reschedule();
+            return None;
+        }
+
+        if !self.begin_poll(id).await {
             return None;
         }
 
@@ -1681,5 +1682,27 @@ mod tests {
         // without an external trigger.
         tokio::time::sleep(Duration::from_secs(25)).await;
         assert!(slow_polls.load(Ordering::Relaxed) >= 2);
+    }
+
+    /// A mailbox registered before any topic is subscribed must still be polled
+    /// once topics show up.
+    #[tokio::test(start_paused = true)]
+    async fn registering_before_any_subscription_still_polls() {
+        let config = test_config();
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+
+        let (client, polls) = TrackingClient::new(false);
+        mgr.register(client).await;
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(polls.load(Ordering::Relaxed), 0);
+
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        tokio::time::sleep(config.active_interval * 3).await;
+        assert!(
+            polls.load(Ordering::Relaxed) > 0,
+            "mailbox registered with no subscribed topics never polled again"
+        );
     }
 }
