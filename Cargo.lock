@@ -2051,7 +2051,6 @@ dependencies = [
  "mailbox-server",
  "mdns-sd",
  "nanoid 0.4.0",
- "ndk-context",
  "ndk-sys 0.6.0+11769913",
  "netdev 0.43.0",
  "objc2 0.6.4",
@@ -10993,10 +10992,12 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-network-interfaces"
 version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=05a06951ae93f4b3197cb45366520fdffb84611c#05a06951ae93f4b3197cb45366520fdffb84611c"
 dependencies = [
- "log",
+ "serde",
  "tauri",
  "tauri-plugin",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
