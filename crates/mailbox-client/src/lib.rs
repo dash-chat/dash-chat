@@ -41,7 +41,7 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     /// Publish operations to the mailbox during topic sync.
     /// Different mailbox implementations have different semantics for this,
     /// for instance separate storage for logs vs blobs.
-    async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error>;
+    async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error>;
 
     /// Fetch operations from the mailbox for the given topics.
     ///
@@ -75,6 +75,29 @@ pub type FetchTopicRequest<Item> = BTreeMap<<Item as MailboxItem>::Author, u64>;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(deserialize = "Item: DeserializeOwned"))]
 pub struct FetchResponse<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopicResponse<Item>>);
+
+/// Returned by the `publish` method: for each log in the request, the mailbox's
+/// resulting contiguity watermark (`None` when none could be established).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublishResponse<Item: MailboxItem>(
+    pub BTreeMap<Item::Topic, BTreeMap<Item::Author, Option<SeqNum>>>,
+);
+
+impl<Item: MailboxItem> Default for PublishResponse<Item> {
+    fn default() -> Self {
+        Self(BTreeMap::new())
+    }
+}
+
+impl<Item: MailboxItem> PublishResponse<Item> {
+    pub fn watermark(&self, topic: &Item::Topic, author: &Item::Author) -> Option<SeqNum> {
+        self.0
+            .get(topic)
+            .and_then(|m| m.get(author))
+            .copied()
+            .flatten()
+    }
+}
 
 /// Returned by the `fetch` method.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
