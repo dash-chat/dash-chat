@@ -34,6 +34,7 @@ impl LocalHubAnnouncementService {
 
 /// The IPv4 addresses to advertise for a hub bound to `bind_addr`. mDNS is
 /// IPv4-only here (see [`crate::base_discoverer`]), so IPv6 is not advertised;
+/// link-local (169.254/16) is skipped to match [`crate::multicast_interfaces_v4`];
 /// loopback is kept so a browser on the same host finds an in-process hub.
 fn announce_ips(bind_addr: SocketAddr) -> Vec<IpAddr> {
     if !bind_addr.ip().is_unspecified() {
@@ -43,8 +44,10 @@ fn announce_ips(bind_addr: SocketAddr) -> Vec<IpAddr> {
         .map(|interfaces| {
             interfaces
                 .into_iter()
-                .map(|interface| interface.ip())
-                .filter(|ip| ip.is_ipv4())
+                .filter_map(|interface| match interface.ip() {
+                    IpAddr::V4(v4) if !v4.is_link_local() => Some(IpAddr::V4(v4)),
+                    _ => None,
+                })
                 .collect()
         })
         .unwrap_or_default()
