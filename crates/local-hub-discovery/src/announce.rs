@@ -4,12 +4,14 @@
 use std::net::{IpAddr, SocketAddr};
 
 use swarm_discovery::DropGuard;
+use tokio::sync::broadcast;
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::{base_discoverer, SERVICE_NAME};
 
 pub struct LocalHubAnnouncementService {
-    // Its only job is to stay alive: `Drop` retires the swarm-discovery entry.
-    _guard: DropGuard,
+    // Holds the live announcement and re-arms it on each network change; drop to stop.
+    _task: AbortOnDropHandle<()>,
 }
 
 impl LocalHubAnnouncementService {
@@ -20,16 +22,40 @@ impl LocalHubAnnouncementService {
     /// just that one. Must be called within a Tokio runtime.
     pub fn spawn(instance_id: &str, bind_addr: SocketAddr) -> anyhow::Result<Self> {
         let handle = tokio::runtime::Handle::current();
-        let ips = announce_ips(bind_addr);
-        log::info!(
-            "Announcing local hub {instance_id} on the LAN via swarm-discovery ({SERVICE_NAME}) at {ips:?}:{}",
-            bind_addr.port()
-        );
-        let guard = base_discoverer(instance_id)
-            .with_addrs(bind_addr.port(), ips)
-            .spawn(&handle)?;
-        Ok(Self { _guard: guard })
+        // Eager first announce so a bad runtime or bind fails fast.
+        let initial = announce(instance_id, bind_addr, &handle)?;
+        let instance_id = instance_id.to_string();
+        // swarm-discovery pins its multicast socket and advertised addresses at
+        // spawn, so re-announce on every network change — as the browser re-binds.
+        let task = AbortOnDropHandle::new(tokio::spawn(async move {
+            let mut _announcement = Some(initial);
+            let mut network = network_watch::network_change();
+            while matches!(
+                network.recv().await,
+                Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
+            ) {
+                _announcement = announce(&instance_id, bind_addr, &handle).ok();
+            }
+        }));
+        Ok(Self { _task: task })
     }
+}
+
+/// Spawn a swarm-discovery announcer for a hub bound to `bind_addr`.
+fn announce(
+    instance_id: &str,
+    bind_addr: SocketAddr,
+    handle: &tokio::runtime::Handle,
+) -> anyhow::Result<DropGuard> {
+    let ips = announce_ips(bind_addr);
+    log::info!(
+        "Announcing local hub {instance_id} on the LAN via swarm-discovery ({SERVICE_NAME}) at {ips:?}:{}",
+        bind_addr.port()
+    );
+    let guard = base_discoverer(instance_id)
+        .with_addrs(bind_addr.port(), ips)
+        .spawn(handle)?;
+    Ok(guard)
 }
 
 /// The IPv4 addresses to advertise for a hub bound to `bind_addr`. mDNS is
