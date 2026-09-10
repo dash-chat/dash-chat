@@ -43,7 +43,12 @@ pub fn compute_initial_watermarks(db: &Database) -> Result<(), Box<dyn std::erro
 
         for (watermarks_key, sequences) in sequences_per_log {
             if let Some(watermark) = compute_contiguous_watermark(&sequences) {
-                table.insert(&watermarks_key, watermark)?;
+                // Never lower a persisted watermark: it means "held contiguously
+                // at some point" and must survive cleanup deleting old blips.
+                let existing = table.get(&watermarks_key)?.map(|v| v.value());
+                if existing.is_none_or(|e| watermark > e) {
+                    table.insert(&watermarks_key, watermark)?;
+                }
             }
         }
     }
@@ -77,6 +82,60 @@ pub fn compute_contiguous_watermark(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Cleanup deletes old blips (seq 0 first); a restart's recompute must not
+    /// lower the persisted watermark because of that.
+    #[test]
+    fn initial_watermarks_never_lower_persisted_values() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        let db = Database::create(temp.path()).unwrap();
+
+        let write_txn = db.begin_write().unwrap();
+        {
+            let mut blips = write_txn.open_table(BLIPS_TABLE).unwrap();
+            // A re-pushed seq 0 plus a surviving tail, with everything between
+            // deleted by cleanup.
+            for seq in [0, 499, 500] {
+                let key = BlipsKey::new_now("t".to_string(), "a".to_string(), seq).unwrap();
+                blips.insert(&key, b"blip".as_slice()).unwrap();
+            }
+            let mut watermarks = write_txn.open_table(WATERMARKS_TABLE).unwrap();
+            let key = WatermarksKey::new("t".to_string(), "a".to_string()).unwrap();
+            watermarks.insert(&key, 500).unwrap();
+        }
+        write_txn.commit().unwrap();
+
+        compute_initial_watermarks(&db).unwrap();
+
+        let read_txn = db.begin_read().unwrap();
+        let table = read_txn.open_table(WATERMARKS_TABLE).unwrap();
+        let key = WatermarksKey::new("t".to_string(), "a".to_string()).unwrap();
+        assert_eq!(table.get(&key).unwrap().map(|v| v.value()), Some(500));
+    }
+
+    #[test]
+    fn initial_watermarks_established_from_blips_when_missing() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        let db = Database::create(temp.path()).unwrap();
+
+        let write_txn = db.begin_write().unwrap();
+        {
+            let mut blips = write_txn.open_table(BLIPS_TABLE).unwrap();
+            for seq in [0, 1, 2, 4] {
+                let key = BlipsKey::new_now("t".to_string(), "a".to_string(), seq).unwrap();
+                blips.insert(&key, b"blip".as_slice()).unwrap();
+            }
+            let _ = write_txn.open_table(WATERMARKS_TABLE).unwrap();
+        }
+        write_txn.commit().unwrap();
+
+        compute_initial_watermarks(&db).unwrap();
+
+        let read_txn = db.begin_read().unwrap();
+        let table = read_txn.open_table(WATERMARKS_TABLE).unwrap();
+        let key = WatermarksKey::new("t".to_string(), "a".to_string()).unwrap();
+        assert_eq!(table.get(&key).unwrap().map(|v| v.value()), Some(2));
+    }
 
     #[test]
     fn test_compute_contiguous_watermark_empty() {

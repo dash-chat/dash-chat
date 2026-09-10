@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
-use mailbox_server::{Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest};
+use mailbox_server::{
+    Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest, StoreBlipsResponse,
+};
 
 use super::*;
 
@@ -229,9 +231,9 @@ where
         Some(self.base_url.clone())
     }
 
-    async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
+    async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error> {
         if ops.is_empty() {
-            return Ok(());
+            return Ok(PublishResponse::default());
         }
 
         // Group operations by topic -> author -> seq_num
@@ -266,8 +268,18 @@ where
             .await?;
 
         if response.status().is_success() {
+            let response: StoreBlipsResponse = response.json().await?;
             self.store_blobs(blob_hashes).await?;
-            Ok(())
+
+            let mut result = PublishResponse::default();
+            for (topic_str, authors) in response.watermarks {
+                let topic = Self::log_id_from_string(&topic_str)?;
+                for (author_str, watermark) in authors {
+                    let author = Self::device_id_from_string(&author_str)?;
+                    result.0.entry(topic).or_default().insert(author, watermark);
+                }
+            }
+            Ok(result)
         } else {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();

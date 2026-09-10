@@ -46,3 +46,55 @@ impl MailboxStore<Msg> for DummyStore {
         Ok(vec![])
     }
 }
+
+/// A store holding one complete log per (topic, author): seqs `0..=height`.
+#[derive(Clone, Default)]
+pub struct MemStore {
+    heights: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(u8, char), u64>>>,
+}
+
+impl MemStore {
+    pub fn set_height(&self, topic: u8, author: char, height: u64) {
+        self.heights.lock().unwrap().insert((topic, author), height);
+    }
+}
+
+#[async_trait::async_trait]
+impl MailboxStore<Msg> for MemStore {
+    async fn get_log(
+        &self,
+        author: &char,
+        topic: &u8,
+        from: u64,
+    ) -> Result<Option<Vec<Msg>>, anyhow::Error> {
+        let Some(height) = self
+            .heights
+            .lock()
+            .unwrap()
+            .get(&(*topic, *author))
+            .copied()
+        else {
+            return Ok(None);
+        };
+        Ok(Some(
+            (from..=height)
+                .map(|seq| Msg {
+                    topic: *topic,
+                    author: *author,
+                    seq,
+                })
+                .collect(),
+        ))
+    }
+
+    async fn get_log_heights(&self, topic: &u8) -> Result<Vec<(char, u64)>, anyhow::Error> {
+        Ok(self
+            .heights
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|((t, _), _)| t == topic)
+            .map(|((_, a), h)| (*a, *h))
+            .collect())
+    }
+}

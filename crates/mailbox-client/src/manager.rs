@@ -378,6 +378,72 @@ where
         self.trigger_sync();
     }
 
+    /// Deliver ops just published in `topic` by `author` (the local device) to
+    /// every active mailbox with a direct store, skipping the fetch roundtrip.
+    /// A failed store, or a watermark echo short of what was pushed,
+    /// falls back to a scheduled sync.
+    pub async fn publish_fast_push(&self, topic: Item::Topic, author: Item::Author) {
+        let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
+            .mailboxes
+            .lock()
+            .await
+            .iter()
+            .map(|(id, t)| (id.clone(), t.clone()))
+            .filter(|(_, t)| t.connection_state().borrow().status == SyncStatus::Active)
+            .collect();
+
+        for (id, tracked) in mailboxes {
+            let manager = self.clone();
+            tokio::spawn(async move {
+                if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
+                    tracing::debug!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
+                    tracked.request_sync_if_active(Some(topic));
+                    manager.trigger_sync();
+                }
+            });
+        }
+    }
+
+    async fn store_fast_push(
+        &self,
+        id: &MailboxId,
+        tracked: &TrackedMailbox<Item>,
+        topic: Item::Topic,
+        author: Item::Author,
+    ) -> anyhow::Result<()> {
+        let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
+        let start = synced.map_or(0, |n| n + 1);
+        let ops = self
+            .store
+            .get_log(&author, &topic, start)
+            .await?
+            .unwrap_or_default();
+        let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
+            return Ok(());
+        };
+        let response = tracked.client().await.publish(ops).await?;
+
+        let watermark = response.watermark(&topic, &author);
+        if let Some(wm) = watermark {
+            self.sync_tracker
+                .record_synced(id, &[(topic, author, wm)])
+                .await?;
+        }
+        // An echo behind what we pushed means the ops landed above a gap the
+        // tracker didn't know about (e.g. the mailbox lost state); a full sync
+        // will backfill it.
+        if watermark.is_none_or(|wm| wm < top) {
+            tracing::warn!(
+                mailbox = %id,
+                pushed = top,
+                echoed = ?watermark,
+                "mailbox watermark behind after direct store"
+            );
+            anyhow::bail!("mailbox watermark {watermark:?} behind published seq {top}");
+        }
+        Ok(())
+    }
+
     /// Immediately activate and sync every registered mailbox, resetting any backoff.
     pub async fn wakeup_all(&self) {
         for tracked_mailbox in self.mailboxes.lock().await.values() {
@@ -716,7 +782,7 @@ mod tests {
     use super::*;
     use crate::{
         mem::MemMailbox,
-        testing::{DummyStore, Msg},
+        testing::{DummyStore, MemStore, Msg},
     };
 
     /// A mailbox client that counts fetch() calls and optionally returns errors.
@@ -743,8 +809,8 @@ mod tests {
         fn id(&self) -> MailboxId {
             self.id.clone()
         }
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<(), anyhow::Error> {
-            Ok(())
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
         }
         async fn fetch(
             &self,
@@ -781,8 +847,8 @@ mod tests {
         fn id(&self) -> MailboxId {
             self.id.clone()
         }
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<(), anyhow::Error> {
-            Ok(())
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
         }
         async fn fetch(
             &self,
@@ -1470,8 +1536,8 @@ mod tests {
         fn id(&self) -> MailboxId {
             self.id.clone()
         }
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<(), anyhow::Error> {
-            Ok(())
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
         }
         async fn fetch(
             &self,
@@ -1775,5 +1841,255 @@ mod tests {
             tracked.take_pending_sync(),
             PendingSync::Topics(BTreeSet::from([2]))
         );
+    }
+
+    // -- sync_after_publish tests --
+
+    type EchoSeqs = Arc<std::sync::Mutex<BTreeMap<(u8, char), BTreeSet<u64>>>>;
+    type Published = Arc<std::sync::Mutex<Vec<Vec<Msg>>>>;
+
+    /// A mailbox client that stores published ops and echoes the resulting
+    /// contiguous watermark, mimicking the real server.
+    struct EchoClient {
+        id: MailboxId,
+        fail_stores: bool,
+        seqs: EchoSeqs,
+        published: Published,
+    }
+
+    impl EchoClient {
+        fn new(fail_stores: bool) -> (Self, EchoSeqs, Published) {
+            let seqs: EchoSeqs = Default::default();
+            let published: Published = Default::default();
+            let client = Self {
+                id: nanoid::nanoid!(),
+                fail_stores,
+                seqs: seqs.clone(),
+                published: published.clone(),
+            };
+            (client, seqs, published)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for EchoClient {
+        fn id(&self) -> MailboxId {
+            self.id.clone()
+        }
+        async fn publish(&self, ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            if self.fail_stores {
+                anyhow::bail!("simulated store failure");
+            }
+            self.published.lock().unwrap().push(ops.clone());
+            let mut seqs = self.seqs.lock().unwrap();
+            let mut logs = BTreeSet::new();
+            for op in ops {
+                seqs.entry((op.topic, op.author))
+                    .or_default()
+                    .insert(op.seq);
+                logs.insert((op.topic, op.author));
+            }
+            let mut response = PublishResponse::default();
+            for (topic, author) in logs {
+                let mut wm = None;
+                for &s in &seqs[&(topic, author)] {
+                    if s == wm.map_or(0, |w| w + 1) {
+                        wm = Some(s);
+                    } else {
+                        break;
+                    }
+                }
+                response.0.entry(topic).or_default().insert(author, wm);
+            }
+            Ok(response)
+        }
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            Ok(FetchResponse(Default::default()))
+        }
+    }
+
+    fn test_mailboxes_with_store(
+        config: MailboxesConfig,
+        store: MemStore,
+    ) -> Mailboxes<Msg, MemStore> {
+        let (trigger_tx, _trigger_rx) = mpsc::channel(1);
+        Mailboxes::new(store, test_sync_tracker(), config, trigger_tx)
+    }
+
+    fn msgs(topic: u8, author: char, seqs: impl IntoIterator<Item = u64>) -> Vec<Msg> {
+        seqs.into_iter()
+            .map(|seq| Msg { topic, author, seq })
+            .collect()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn publish_to_synced_mailbox_stores_directly() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 5);
+        let mgr = test_mailboxes_with_store(test_config(), store);
+        let (client, seqs, published) = EchoClient::new(false);
+        let id = client.id();
+        seqs.lock().unwrap().insert((0, 'a'), (0..=4).collect());
+        mgr.register(client).await;
+        mgr.sync_tracker()
+            .record_synced(&id, &[(0, 'a', 4)])
+            .await
+            .unwrap();
+
+        mgr.publish_fast_push(0, 'a').await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [5])]);
+        assert_eq!(
+            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            Some(5)
+        );
+        let tracked = mgr.tracked_mailbox(&id).await.unwrap();
+        assert_eq!(tracked.take_pending_sync(), PendingSync::None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn first_publish_stores_directly_from_zero() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 0);
+        let mgr = test_mailboxes_with_store(test_config(), store);
+        let (client, _seqs, published) = EchoClient::new(false);
+        let id = client.id();
+        mgr.register(client).await;
+
+        mgr.publish_fast_push(0, 'a').await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [0])]);
+        assert_eq!(
+            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            Some(0)
+        );
+        let tracked = mgr.tracked_mailbox(&id).await.unwrap();
+        assert_eq!(tracked.take_pending_sync(), PendingSync::None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn publish_delta_covers_everything_above_the_watermark() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 5);
+        let mgr = test_mailboxes_with_store(test_config(), store);
+        let (client, seqs, published) = EchoClient::new(false);
+        let id = client.id();
+        seqs.lock().unwrap().insert((0, 'a'), (0..=1).collect());
+        mgr.register(client).await;
+        mgr.sync_tracker()
+            .record_synced(&id, &[(0, 'a', 1)])
+            .await
+            .unwrap();
+
+        mgr.publish_fast_push(0, 'a').await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', 2..=5)]);
+        assert_eq!(
+            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            Some(5)
+        );
+    }
+
+    /// The mailbox lost state the tracker still remembers: the pushed ops land
+    /// above a gap, so the short echo must schedule a full sync to backfill.
+    #[tokio::test(start_paused = true)]
+    async fn watermark_echo_behind_push_schedules_full_sync() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 5);
+        let mgr = test_mailboxes_with_store(test_config(), store);
+        let (client, _seqs, published) = EchoClient::new(false);
+        let id = client.id();
+        mgr.register(client).await;
+        mgr.sync_tracker()
+            .record_synced(&id, &[(0, 'a', 4)])
+            .await
+            .unwrap();
+
+        mgr.publish_fast_push(0, 'a').await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [5])]);
+        assert_eq!(
+            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            Some(4)
+        );
+        let tracked = mgr.tracked_mailbox(&id).await.unwrap();
+        assert_eq!(
+            tracked.take_pending_sync(),
+            PendingSync::Topics(BTreeSet::from([0]))
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn failed_direct_store_schedules_full_sync() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 0);
+        let mgr = test_mailboxes_with_store(test_config(), store);
+        let (client, _seqs, published) = EchoClient::new(true);
+        let id = client.id();
+        mgr.register(client).await;
+
+        mgr.publish_fast_push(0, 'a').await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(published.lock().unwrap().is_empty());
+        let tracked = mgr.tracked_mailbox(&id).await.unwrap();
+        assert_eq!(
+            tracked.take_pending_sync(),
+            PendingSync::Topics(BTreeSet::from([0]))
+        );
+    }
+
+    /// A lost tracker re-pushes a prefix the mailbox already holds: the echo
+    /// runs ahead of the push, which is fine, and refreshes the tracker.
+    #[tokio::test(start_paused = true)]
+    async fn echo_ahead_of_push_is_accepted() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 2);
+        let mgr = test_mailboxes_with_store(test_config(), store);
+        let (client, seqs, published) = EchoClient::new(false);
+        let id = client.id();
+        seqs.lock().unwrap().insert((0, 'a'), (0..=5).collect());
+        mgr.register(client).await;
+
+        mgr.publish_fast_push(0, 'a').await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', 0..=2)]);
+        assert_eq!(
+            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            Some(5)
+        );
+        let tracked = mgr.tracked_mailbox(&id).await.unwrap();
+        assert_eq!(tracked.take_pending_sync(), PendingSync::None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn inactive_mailboxes_are_not_stored_to() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 0);
+        let mgr = test_mailboxes_with_store(test_config(), store);
+        let (client, _seqs, published) = EchoClient::new(false);
+        let id = client.id();
+        mgr.register(client).await;
+        let tracked = mgr.tracked_mailbox(&id).await.unwrap();
+        tracked.record_error("e".into());
+        tracked.record_error("e".into());
+        assert_ne!(
+            tracked.connection_state().borrow().status,
+            SyncStatus::Active
+        );
+
+        mgr.publish_fast_push(0, 'a').await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(published.lock().unwrap().is_empty());
+        assert_eq!(tracked.take_pending_sync(), PendingSync::None);
     }
 }
