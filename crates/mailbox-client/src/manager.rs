@@ -477,18 +477,7 @@ where
                                 continue;
                             }
 
-                            if !manager.begin_poll(&id).await {
-                                continue;
-                            }
-                            let manager = manager.clone();
-                            tokio::spawn(async move {
-                                manager.poll_mailbox(&id).await;
-                                manager.end_poll(&id).await;
-                                // The mailbox is schedulable again, so the loop
-                                // must re-evaluate rather than sleep on a wait
-                                // computed while it was in flight.
-                                manager.trigger_poll_loop();
-                            });
+                            let _task = manager.poll_mailbox(&id).await;
                         }
                     }
                 }
@@ -548,12 +537,15 @@ where
         }
     }
 
-    async fn poll_mailbox(&self, id: &MailboxId) {
+    async fn poll_mailbox(&self, id: &MailboxId) -> Option<tokio::task::JoinHandle<()>> {
+        if !self.begin_poll(&id).await {
+            return None;
+        }
         let tracked_mailbox = {
             let mm = self.mailboxes.lock().await;
             match mm.get(id) {
                 Some(t) => t.clone(),
-                None => return,
+                None => return None,
             }
         };
 
@@ -561,33 +553,43 @@ where
         if topics.is_empty() {
             tracing::trace!("no topics subscribed, skipping poll for {id}");
             tracked_mailbox.reschedule();
-            return;
+            return None;
         }
 
         tracing::debug!("polling mailbox {id}");
         let client = tracked_mailbox.client().await;
         // Anything requested from here on is not covered by this poll.
         tracked_mailbox.clear_sync_request();
-        let result = self.sync_topics(topics.into_iter(), &client).await;
 
-        match result {
-            Ok(()) => tracked_mailbox.poll_succeeded(),
-            Err(err) => {
-                // A sync requested during a failed poll doesn't earn a quick
-                // retry: the request failed too, so backoff applies.
-                tracked_mailbox.clear_sync_request();
-                tracing::error!(?err, mailbox = %id, "mailbox sync error");
-                tracked_mailbox.record_error(format!("{err:?}"));
-                let tracker = tracked_mailbox.connection_state();
-                let tracker = tracker.borrow();
-                tracing::info!(
-                    mailbox = %id,
-                    status = ?tracker.status,
-                    errors = tracker.consecutive_errors,
-                    "mailbox status updated"
-                );
+        let manager = self.clone();
+        let id = id.clone();
+        let task = tokio::spawn(async move {
+            let result = manager.sync_topics(topics.into_iter(), &client).await;
+            match result {
+                Ok(()) => tracked_mailbox.poll_succeeded(),
+                Err(err) => {
+                    // A sync requested during a failed poll doesn't earn a quick
+                    // retry: the request failed too, so backoff applies.
+                    tracked_mailbox.clear_sync_request();
+                    tracing::error!(?err, mailbox = %id, "mailbox sync error");
+                    tracked_mailbox.record_error(format!("{err:?}"));
+                    let tracker = tracked_mailbox.connection_state();
+                    let tracker = tracker.borrow();
+                    tracing::info!(
+                        mailbox = %id,
+                        status = ?tracker.status,
+                        errors = tracker.consecutive_errors,
+                        "mailbox status updated"
+                    );
+                }
             }
-        }
+            manager.end_poll(&id).await;
+            // The mailbox is schedulable again, so the loop
+            // must re-evaluate rather than sleep on a wait
+            // computed while it was in flight.
+            manager.trigger_poll_loop();
+        });
+        Some(task)
     }
 
     /// Immediately sync the given topics with the given mailbox:
