@@ -7,7 +7,7 @@ use swarm_discovery::DropGuard;
 use tokio::sync::broadcast;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::{base_discoverer, SERVICE_NAME};
+use crate::{base_discoverer, multicast_interfaces_v4, SERVICE_NAME};
 
 pub struct LocalHubAnnouncementService {
     // Holds the live announcement and re-arms it on each network change; drop to stop.
@@ -28,13 +28,15 @@ impl LocalHubAnnouncementService {
         // swarm-discovery pins its multicast socket and advertised addresses at
         // spawn, so re-announce on every network change — as the browser re-binds.
         let task = AbortOnDropHandle::new(tokio::spawn(async move {
-            let mut _announcement = Some(initial);
+            let mut _announcement = initial;
             let mut network = network_watch::network_change();
             while matches!(
                 network.recv().await,
                 Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
             ) {
-                _announcement = announce(&instance_id, bind_addr, &handle).ok();
+                if let Ok(next) = announce(&instance_id, bind_addr, &handle) {
+                    _announcement = next;
+                }
             }
         }));
         Ok(Self { _task: task })
@@ -52,7 +54,7 @@ fn announce(
         "Announcing local hub {instance_id} on the LAN via swarm-discovery ({SERVICE_NAME}) at {ips:?}:{}",
         bind_addr.port()
     );
-    let guard = base_discoverer(instance_id)
+    let guard = base_discoverer(instance_id, multicast_interfaces_v4())
         .with_addrs(bind_addr.port(), ips)
         .spawn(handle)?;
     Ok(guard)

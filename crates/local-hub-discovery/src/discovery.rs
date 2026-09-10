@@ -1,108 +1,150 @@
-//! Browsing for local hubs on the LAN over mDNS (swarm-discovery).
-//!
-//! swarm-discovery's synchronous callback forwards each sighting over a channel;
-//! [`LocalHubDiscoveryService::recv`] TCP-probes the advertised addresses and
-//! yields a [`LocalHubEvent`] once a hub is reachable (or has aged out). The
-//! browser is respawned on every network change, since swarm-discovery joins the
-//! multicast group only at spawn — a hub that becomes reachable after we gain a
-//! routable IP is picked up on the next cadence, with no explicit retry here.
+//! Browsing for local hubs on the LAN over mDNS (swarm-discovery): every
+//! sighting is TCP-probed, and a hub is reported found once it answers and lost
+//! once it doesn't, whether because a probe failed or because it aged out of
+//! the swarm. One browser lives as long as the service, kept joined to the
+//! current interfaces across network changes so its view of the swarm (and so
+//! its expiry) carries across them.
 
-use std::collections::BTreeSet;
-use std::net::{IpAddr, SocketAddr};
+use std::collections::{BTreeMap, BTreeSet};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
-use swarm_discovery::{DropGuard, Peer};
+use futures::channel::mpsc::{unbounded, UnboundedSender};
+use futures::future::ready;
+use futures::stream::{BoxStream, Stream, StreamExt};
+use swarm_discovery::DropGuard;
 use tokio::sync::broadcast;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::{base_discoverer, SERVICE_NAME};
+use crate::{base_discoverer, multicast_interfaces_v4, SERVICE_NAME};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// How many sightings are probed at once; the rest wait their turn.
+const MAX_PROBES: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LocalHubEvent {
-    /// A hub became reachable on the LAN
-    /// `id` is the announcer's instance name (the hub's MailboxId); `url` is an
-    /// `http://host:port` that accepted a TCP connection.
+    /// A hub became reachable on the LAN, or answered again at a possibly new
+    /// url after a network change. `id` is the announcer's instance name (the
+    /// hub's MailboxId); `url` is an `http://host:port` that accepted a TCP
+    /// connection.
     Found { id: String, url: String },
-    /// A hub aged out of the swarm.
+    /// A hub aged out of the swarm, or stopped answering.
     Lost { id: String },
 }
 
-/// A sighting handed from the swarm-discovery callback to [`recv`]: the hub's
-/// instance name (its MailboxId) and the swarm-discovery snapshot of it (an
-/// expired peer carries no addresses — see [`Peer::is_expiry`]).
-type Sighting = (String, Peer);
+/// A hub as the browser saw it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Sighting {
+    /// The announcer's instance name (the hub's MailboxId).
+    id: String,
+    /// The advertised addresses; none once the hub aged out of the swarm.
+    addrs: Vec<(IpAddr, u16)>,
+    /// How many network changes came before it. A hub found before a change
+    /// thus reads as sighted anew after it, and is probed and reported found
+    /// again, so the mailbox layer refreshes our own address with it.
+    network_changes: u64,
+}
+
+/// A swarm-discovery browser, with the interfaces it has joined.
+type Browser = (DropGuard, BTreeSet<Ipv4Addr>);
 
 pub struct LocalHubDiscoveryService {
-    sightings: UnboundedReceiver<Sighting>,
-    reachable: BTreeSet<String>,
+    events: BoxStream<'static, LocalHubEvent>,
     _browser: AbortOnDropHandle<()>,
 }
 
 impl LocalHubDiscoveryService {
     /// Browse for local hubs until the returned service is dropped.
     pub fn spawn() -> Self {
-        let (sightings_tx, sightings_rx) = unbounded_channel::<Sighting>();
-        let browser = spawn_browser(browse_id(), sightings_tx);
         log::info!("Started local hub discovery (swarm-discovery, {SERVICE_NAME})");
+        let (sightings_tx, sightings) = unbounded();
+        let browser = AbortOnDropHandle::new(tokio::spawn(browse(sightings_tx)));
+        Self::new(sightings, browser)
+    }
+
+    /// Probe every sighting concurrently; a hub is found once it answers and
+    /// lost once it doesn't. `browser` is stopped with the service.
+    fn new(
+        sightings: impl Stream<Item = Sighting> + Send + 'static,
+        browser: AbortOnDropHandle<()>,
+    ) -> Self {
+        let mut found: BTreeMap<String, Sighting> = BTreeMap::new();
+        let events = sightings
+            .map(|sighting| async move {
+                let url = probe_reachable(&sighting.addrs).await;
+                (sighting, url)
+            })
+            .buffer_unordered(MAX_PROBES)
+            .filter_map(move |(sighting, url)| {
+                let event = match url {
+                    Some(_) if found.get(&sighting.id) == Some(&sighting) => None,
+                    Some(url) => {
+                        let id = sighting.id.clone();
+                        found.insert(id.clone(), sighting);
+                        Some(LocalHubEvent::Found { id, url })
+                    }
+                    None => found
+                        .remove(&sighting.id)
+                        .map(|_| LocalHubEvent::Lost { id: sighting.id }),
+                };
+                ready(event)
+            })
+            .boxed();
         Self {
-            sightings: sightings_rx,
-            reachable: BTreeSet::new(),
+            events,
             _browser: browser,
         }
     }
 
-    /// The next discovery event, or `None` once discovery has stopped. Probes
-    /// each sighting and dedups by id, so a hub re-surfacing every cadence yields
-    /// at most one `Found`.
+    /// The next discovery event, or `None` once discovery has stopped.
     pub async fn recv(&mut self) -> Option<LocalHubEvent> {
-        loop {
-            let (id, peer) = self.sightings.recv().await?;
-            if peer.is_expiry() {
-                if self.reachable.remove(&id) {
-                    return Some(LocalHubEvent::Lost { id });
-                }
-            } else if !self.reachable.contains(&id) {
-                if let Some(url) = probe_reachable(&peer).await {
-                    self.reachable.insert(id.clone());
-                    return Some(LocalHubEvent::Found { id, url });
-                }
-            }
-        }
+        self.events.next().await
     }
 }
 
-// Browse for hubs in the network, resilient to network changes
-fn spawn_browser(browse_id: String, sightings: UnboundedSender<Sighting>) -> AbortOnDropHandle<()> {
-    AbortOnDropHandle::new(tokio::spawn(async move {
-        // The live discoverer. Reassigning spawns the replacement before the
-        // previous one drops, so a rebind never leaves a gap with no browser.
-        let mut _discoverer = spawn_discoverer(&browse_id, sightings.clone());
-        let mut network = network_watch::network_change();
-        while matches!(
-            network.recv().await,
-            Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
-        ) {
-            _discoverer = spawn_discoverer(&browse_id, sightings.clone());
-        }
-    }))
+/// One browser for the whole run, kept on the current interfaces across
+/// network changes (or spawned on one, if there was no routable IPv4 to spawn
+/// it on before). Sightings are stamped with the network changes so far.
+async fn browse(sightings: UnboundedSender<Sighting>) {
+    let network_changes = Arc::new(AtomicU64::new(0));
+    let mut browser = spawn_browser(&sightings, &network_changes);
+    let mut network = network_watch::network_change();
+    while matches!(
+        network.recv().await,
+        Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
+    ) {
+        network_changes.fetch_add(1, Ordering::Relaxed);
+        browser = match browser {
+            Some(browser) => Some(update_interfaces(browser)),
+            None => spawn_browser(&sightings, &network_changes),
+        };
+    }
 }
 
-/// Spawn a swarm-discovery browser, or `None` if binding the multicast socket
-/// fails (e.g. no routable IPv4 yet, mid network change) — the caller retries on
-/// the next network change rather than treating it as fatal.
-fn spawn_discoverer(browse_id: &str, sightings: UnboundedSender<Sighting>) -> Option<DropGuard> {
-    let handle = tokio::runtime::Handle::current();
-    let discoverer = base_discoverer(browse_id).with_callback(move |id, peer| {
+/// A swarm-discovery browser on the current interfaces, forwarding every
+/// sighting to `sightings`; `None` if binding the multicast socket fails.
+fn spawn_browser(
+    sightings: &UnboundedSender<Sighting>,
+    network_changes: &Arc<AtomicU64>,
+) -> Option<Browser> {
+    let interfaces: BTreeSet<Ipv4Addr> = multicast_interfaces_v4().into_iter().collect();
+    let sightings = sightings.clone();
+    let network_changes = network_changes.clone();
+    let discoverer = base_discoverer(&browse_id(), interfaces.iter().copied().collect())
         // Runs on swarm-discovery's thread and must not block, so it only
-        // forwards the sighting; recv does the TCP probe.
-        let _ = sightings.send((id.to_string(), peer.clone()));
-    });
-    match discoverer.spawn(&handle) {
-        Ok(guard) => Some(guard),
+        // forwards the sighting.
+        .with_callback(move |id, peer| {
+            let _ = sightings.unbounded_send(Sighting {
+                id: id.to_string(),
+                addrs: peer.addrs().to_vec(),
+                network_changes: network_changes.load(Ordering::Relaxed),
+            });
+        });
+    match discoverer.spawn(&tokio::runtime::Handle::current()) {
+        Ok(guard) => Some((guard, interfaces)),
         Err(err) => {
             log::warn!(
                 "Failed to bind local hub discovery (retrying on next network change): {err}"
@@ -110,6 +152,20 @@ fn spawn_discoverer(browse_id: &str, sightings: UnboundedSender<Sighting>) -> Op
             None
         }
     }
+}
+
+/// Join the interfaces that appeared since the browser last joined and leave
+/// the ones that went, so the one browser (and its view of the swarm) carries
+/// across network changes.
+fn update_interfaces((guard, joined): Browser) -> Browser {
+    let current: BTreeSet<Ipv4Addr> = multicast_interfaces_v4().into_iter().collect();
+    for gone in joined.difference(&current) {
+        guard.remove_interface_v4(*gone);
+    }
+    for new in current.difference(&joined) {
+        guard.add_interface_v4(*new);
+    }
+    (guard, current)
 }
 
 /// A per-process browse id (a valid DNS label). swarm-discovery needs one even to
@@ -120,13 +176,10 @@ fn browse_id() -> String {
     format!("browse-{}-{}", std::process::id(), n)
 }
 
-/// TCP-probe a peer's advertised addresses
-async fn probe_reachable(peer: &Peer) -> Option<String> {
-    let (loopback, routable): (Vec<_>, Vec<_>) = peer
-        .addrs()
-        .iter()
-        .copied()
-        .partition(|(ip, _)| ip.is_loopback());
+/// TCP-probe a hub's advertised addresses
+async fn probe_reachable(addrs: &[(IpAddr, u16)]) -> Option<String> {
+    let (loopback, routable): (Vec<_>, Vec<_>) =
+        addrs.iter().copied().partition(|(ip, _)| ip.is_loopback());
     for group in [routable, loopback] {
         if let Some(addr) = race_connect(&group).await {
             return Some(format!("http://{addr}"));
@@ -161,5 +214,174 @@ async fn probe_tcp(addr: SocketAddr) -> bool {
             log::trace!("Probe to {addr} timed out after {PROBE_TIMEOUT:?}");
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use tokio::net::TcpListener;
+
+    use super::*;
+
+    /// A blackhole (TEST-NET-1): connecting hangs until `PROBE_TIMEOUT`.
+    const DEAD_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)), 9);
+
+    /// The pipe fed sightings and network changes by hand, with no browser.
+    struct Harness {
+        sightings: UnboundedSender<Sighting>,
+        network_changes: u64,
+        service: LocalHubDiscoveryService,
+    }
+
+    impl Harness {
+        fn new() -> Self {
+            let (sightings, sightings_rx) = unbounded();
+            Self {
+                sightings,
+                network_changes: 0,
+                service: LocalHubDiscoveryService::new(
+                    sightings_rx,
+                    AbortOnDropHandle::new(tokio::spawn(async {})),
+                ),
+            }
+        }
+
+        fn seen(&self, id: &str, addr: SocketAddr) {
+            self.sighted(id, vec![(addr.ip(), addr.port())]);
+        }
+
+        fn expired(&self, id: &str) {
+            self.sighted(id, vec![]);
+        }
+
+        fn sighted(&self, id: &str, addrs: Vec<(IpAddr, u16)>) {
+            let _ = self.sightings.unbounded_send(Sighting {
+                id: id.to_string(),
+                addrs,
+                network_changes: self.network_changes,
+            });
+        }
+
+        fn network_changed(&mut self) {
+            self.network_changes += 1;
+        }
+
+        async fn next(&mut self) -> LocalHubEvent {
+            tokio::time::timeout(Duration::from_secs(10), self.service.recv())
+                .await
+                .expect("an event")
+                .expect("discovery running")
+        }
+
+        /// The next two events, sorted, since probes finish in any order.
+        async fn next_two(&mut self) -> Vec<LocalHubEvent> {
+            sorted(vec![self.next().await, self.next().await])
+        }
+    }
+
+    async fn listen() -> TcpListener {
+        TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap()
+    }
+
+    fn found(id: &str, addr: SocketAddr) -> LocalHubEvent {
+        LocalHubEvent::Found {
+            id: id.to_string(),
+            url: format!("http://{addr}"),
+        }
+    }
+
+    fn lost(id: &str) -> LocalHubEvent {
+        LocalHubEvent::Lost { id: id.to_string() }
+    }
+
+    fn sorted(mut events: Vec<LocalHubEvent>) -> Vec<LocalHubEvent> {
+        events.sort_by_key(|event| format!("{event:?}"));
+        events
+    }
+
+    #[tokio::test]
+    async fn a_hub_is_found_once_however_often_it_is_sighted() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let hub_addr = hub.local_addr().unwrap();
+        h.seen("hub", hub_addr);
+        assert_eq!(h.next().await, found("hub", hub_addr));
+
+        let other = listen().await;
+        let other_addr = other.local_addr().unwrap();
+        h.seen("hub", hub_addr);
+        h.seen("hub", hub_addr);
+        h.seen("other", other_addr);
+        assert_eq!(h.next().await, found("other", other_addr));
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_hub_does_not_delay_a_reachable_one() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let hub_addr = hub.local_addr().unwrap();
+        h.seen("dead", DEAD_ADDR);
+        h.seen("hub", hub_addr);
+
+        let started = Instant::now();
+        assert_eq!(h.next().await, found("hub", hub_addr));
+        assert!(started.elapsed() < PROBE_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn a_hub_sighted_at_new_addresses_is_found_again_there() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let hub_addr = hub.local_addr().unwrap();
+        h.seen("hub", hub_addr);
+        assert_eq!(h.next().await, found("hub", hub_addr));
+
+        let moved = listen().await;
+        let moved_addr = moved.local_addr().unwrap();
+        h.seen("hub", moved_addr);
+        assert_eq!(h.next().await, found("hub", moved_addr));
+    }
+
+    #[tokio::test]
+    async fn an_expired_hub_is_lost_only_if_it_was_found() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let hub_addr = hub.local_addr().unwrap();
+        h.seen("hub", hub_addr);
+        assert_eq!(h.next().await, found("hub", hub_addr));
+
+        h.seen("dead", DEAD_ADDR);
+        h.expired("dead");
+        h.expired("hub");
+        assert_eq!(h.next().await, lost("hub"));
+    }
+
+    #[tokio::test]
+    async fn after_a_network_change_a_survivor_is_found_again_and_a_dead_hub_lost() {
+        let mut h = Harness::new();
+        let survivor = listen().await;
+        let survivor_addr = survivor.local_addr().unwrap();
+        let dead = listen().await;
+        let dead_addr = dead.local_addr().unwrap();
+        h.seen("survivor", survivor_addr);
+        h.seen("dead", dead_addr);
+        assert_eq!(
+            h.next_two().await,
+            sorted(vec![
+                found("survivor", survivor_addr),
+                found("dead", dead_addr)
+            ])
+        );
+
+        drop(dead);
+        h.network_changed();
+        h.seen("survivor", survivor_addr);
+        h.seen("dead", dead_addr);
+        assert_eq!(
+            h.next_two().await,
+            sorted(vec![found("survivor", survivor_addr), lost("dead")])
+        );
     }
 }
