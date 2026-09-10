@@ -7,8 +7,11 @@ edition = "2021"
 anyhow = "1"
 log = "0.4"
 futures = "0.3"
-mdns-sd = "0.20"
+swarm-discovery = "0.6.3"
+if-addrs = "0.15"
+network-watch = { workspace = true }
 tokio = { version = "1", features = ["macros", "net", "rt", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
