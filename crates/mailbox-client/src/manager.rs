@@ -370,8 +370,10 @@ where
     }
 
     /// Immediately activate and sync a specific mailbox, resetting any backoff.
-    pub fn wakeup(&self, id: MailboxId) {
-        _ = self.trigger.try_send(Some(id));
+    /// Unlike a nudge, a targeted wakeup carries information the loop cannot
+    /// re-derive, so it waits for channel space rather than being dropped.
+    pub async fn wakeup(&self, id: MailboxId) {
+        _ = self.trigger.send(Some(id)).await;
     }
 
     /// Request a sync of every active mailbox
@@ -1246,6 +1248,25 @@ mod tests {
     // -- wakeup tests --
 
     #[tokio::test(start_paused = true)]
+    async fn wakeup_is_not_dropped_behind_a_queued_nudge() {
+        let (trigger_tx, mut trigger_rx) = mpsc::channel(1);
+        let mgr: Mailboxes<Msg, DummyStore> =
+            Mailboxes::new(DummyStore, test_sync_tracker(), test_config(), trigger_tx);
+        let id: MailboxId = "mb".into();
+
+        mgr.trigger_poll_loop();
+        let wakeup = tokio::spawn({
+            let mgr = mgr.clone();
+            let id = id.clone();
+            async move { mgr.wakeup(id).await }
+        });
+
+        assert_eq!(trigger_rx.recv().await, Some(None));
+        assert_eq!(trigger_rx.recv().await, Some(Some(id)));
+        wakeup.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn wakeup_mailbox_resets_status_and_schedule() {
         let config = test_config();
         let mgr = test_mailboxes(config.clone());
@@ -1420,7 +1441,7 @@ mod tests {
         }
         assert_eq!(poll_count.load(Ordering::Relaxed), 1);
 
-        mgr.wakeup(id.clone());
+        mgr.wakeup(id.clone()).await;
 
         for _ in 0..10 {
             tokio::task::yield_now().await;
