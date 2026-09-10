@@ -94,8 +94,10 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
 ///
 /// Safe to re-run — `MailboxManager::register` swaps the client in place — which
 /// matters because every re-browse re-resolves the hubs it already knows.
+/// Registration ends on an mDNS goodbye or on the hub reaching Stopped.
 async fn register_local_hub(node: &dashchat_node::Node, hub: DiscoveredHub) {
     let DiscoveredHub { id, url } = hub;
+    let newly_tracked = !node.mailboxes.is_tracked(&id).await;
     node.mailboxes
         .register(
             mailbox_client::toy::ToyMailboxClient::new(
@@ -107,6 +109,13 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: DiscoveredHub) {
             .with_blob_reader(node.blob_reader()),
         )
         .await;
+    // A hub that stops answering is gone as far as we are concerned, whether or
+    // not its mDNS records have expired yet; the re-browse re-registers it if
+    // it comes back. Only the first registration arms this, since a re-browse
+    // re-registers every hub it still sees.
+    if newly_tracked {
+        node.mailboxes.unregister_on_stopped(&id).await;
+    }
     // Add the hub's dialing address to the address book so the blob downloader
     // can reach it by EndpointId rather than relying solely on p2panda mDNS
     // resolution timing.
