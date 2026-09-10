@@ -12,25 +12,24 @@ pub struct LocalHubAnnouncementService {
     _guard: DropGuard,
 }
 
-/// Announce a local hub on the LAN over mDNS (swarm-discovery), so browsers on
-/// the same network discover it. `instance_id` is the swarm id peers see.
-/// `bind_addr` is where the hub listens: an unspecified host (`[::]` / `0.0.0.0`)
-/// advertises every routable local IPv4 plus loopback; a specific host advertises
-/// just that one. Must be called within a Tokio runtime.
-pub fn spawn_local_hub_announcement(
-    instance_id: &str,
-    bind_addr: SocketAddr,
-) -> anyhow::Result<LocalHubAnnouncementService> {
-    let handle = tokio::runtime::Handle::current();
-    let ips = announce_ips(bind_addr);
-    log::info!(
-        "Announcing local hub {instance_id} on the LAN via swarm-discovery ({SERVICE_NAME}) at {ips:?}:{}",
-        bind_addr.port()
-    );
-    let guard = base_discoverer(instance_id)
-        .with_addrs(bind_addr.port(), ips)
-        .spawn(&handle)?;
-    Ok(LocalHubAnnouncementService { _guard: guard })
+impl LocalHubAnnouncementService {
+    /// Announce a local hub on the LAN over mDNS (swarm-discovery), so browsers on
+    /// the same network discover it. `instance_id` is the swarm id peers see.
+    /// `bind_addr` is where the hub listens: an unspecified host (`[::]` / `0.0.0.0`)
+    /// advertises every routable local IPv4 plus loopback; a specific host advertises
+    /// just that one. Must be called within a Tokio runtime.
+    pub fn spawn(instance_id: &str, bind_addr: SocketAddr) -> anyhow::Result<Self> {
+        let handle = tokio::runtime::Handle::current();
+        let ips = announce_ips(bind_addr);
+        log::info!(
+            "Announcing local hub {instance_id} on the LAN via swarm-discovery ({SERVICE_NAME}) at {ips:?}:{}",
+            bind_addr.port()
+        );
+        let guard = base_discoverer(instance_id)
+            .with_addrs(bind_addr.port(), ips)
+            .spawn(&handle)?;
+        Ok(Self { _guard: guard })
+    }
 }
 
 /// The IPv4 addresses to advertise for a hub bound to `bind_addr`. mDNS is

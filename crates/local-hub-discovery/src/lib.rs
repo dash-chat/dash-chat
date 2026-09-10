@@ -7,7 +7,7 @@ use swarm_discovery::{Discoverer, IpClass};
 mod announce;
 mod discovery;
 
-pub use announce::{spawn_local_hub_announcement, LocalHubAnnouncementService};
+pub use announce::LocalHubAnnouncementService;
 pub use discovery::{LocalHubDiscoveryService, LocalHubEvent};
 
 /// The swarm-discovery service name Dash Chat hubs announce and browse under

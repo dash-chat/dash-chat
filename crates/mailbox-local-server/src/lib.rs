@@ -107,5 +107,5 @@ pub fn spawn_local_hub_announcement(
     endpoint_id: EndpointId,
     bind_addr: SocketAddr,
 ) -> anyhow::Result<LocalHubAnnouncementService> {
-    local_hub_discovery::spawn_local_hub_announcement(&encode_mailbox_id(endpoint_id), bind_addr)
+    LocalHubAnnouncementService::spawn(&encode_mailbox_id(endpoint_id), bind_addr)
 }
