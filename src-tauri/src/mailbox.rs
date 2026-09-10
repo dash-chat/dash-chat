@@ -1,8 +1,5 @@
-use local_hub_discovery::{
-    spawn_local_hub_discovery, DiscoveredHub, LocalHubEvent, MDNS_SERVICE_TYPE,
-};
-use mdns_sd::ServiceDaemon;
-use tauri::{AppHandle, Manager, Runtime};
+use local_hub_discovery::{spawn_local_hub_discovery, DiscoveredHub, LocalHubEvent};
+use tauri::{AppHandle, Runtime};
 use tokio_util::task::AbortOnDropHandle;
 
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
@@ -62,16 +59,11 @@ pub(crate) async fn cloud_mailbox_id(
 }
 
 /// Keep the node's mailbox manager in step with the local hubs on the LAN.
-///
-/// Discovery itself — the mDNS browse, its re-arm on network changes, and the
-/// reachability probing — lives in `local-hub-discovery`. What remains here is
-/// only the node-side policy for what a discovered hub means.
 pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
-    handle: &AppHandle<R>,
+    _handle: &AppHandle<R>,
     node: dashchat_node::Node,
 ) -> anyhow::Result<AbortOnDropHandle<()>> {
-    let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
-    let mut discovery = spawn_local_hub_discovery(mdns, MDNS_SERVICE_TYPE)?;
+    let mut discovery = spawn_local_hub_discovery();
 
     let handler_task = tokio::spawn(async move {
         while let Some(event) = discovery.recv().await {

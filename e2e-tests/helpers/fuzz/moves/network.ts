@@ -8,6 +8,7 @@ import fc from 'fast-check';
 import { startHotspot, stopHotspot } from '../../../setup/hotspot';
 import {
 	type Real,
+	type StressAgent,
 	at,
 	byName,
 	goHome,
@@ -143,6 +144,27 @@ class PeerLeaveMove extends Move {
 	}
 }
 
+/** How long a phone may sit without an automation command before the device
+ *  idles its UiAutomator2 / WebDriver session out from under us. */
+const SESSION_IDLE_LIMIT_MS = 20_000;
+
+/** Pause `ms` while touching each phone's session within
+ *  [`SESSION_IDLE_LIMIT_MS`]: a bare `pause` sends no command, so a long
+ *  sit-still lets the session go stale and the next move finds it gone. */
+async function idle(
+	real: Real,
+	agents: StressAgent[],
+	ms: number,
+): Promise<void> {
+	const until = Date.now() + ms;
+	while (Date.now() < until) {
+		await real.agents[0].agent.pause(
+			Math.min(SESSION_IDLE_LIMIT_MS, until - Date.now()),
+		);
+		for (const sa of agents) await sa.agent.execute(() => true);
+	}
+}
+
 /** Sit still with the chats open, then every driveable phone must still show
  *  exactly the hubs on its LAN. */
 class SleepMove extends Move {
@@ -158,7 +180,7 @@ class SleepMove extends Move {
 		log(this.toString());
 		const watching = m.activeNames().map(name => byName(real, name));
 		for (const sa of watching) await openChat(sa, chipChat(m, sa.name), m);
-		await real.agents[0].agent.pause(this.seconds * 1_000);
+		await idle(real, watching, this.seconds * 1_000);
 		for (const sa of watching) {
 			await expectHubs(m, sa, `sleeping ${this.seconds}s`);
 			await goHome(sa, sa.agent.groupChatPage);

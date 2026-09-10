@@ -52,14 +52,9 @@ pub fn run() {
     }
     #[cfg(target_os = "android")]
     {
-        // Registered first so it binds the process to the default network before
-        // the iroh endpoint creates its sockets (bindProcessToNetwork only
-        // affects sockets opened after the bind).
         builder = builder.plugin(tauri_plugin_android_fs::init());
         builder = builder.plugin(tauri_plugin_medialibrary::init());
-        // Holds a MulticastLock so mDNS announcements reach us at all; without
-        // it the wifi driver filters them and discovery only ever finds hubs in
-        // response to its own queries.
+        // Holds a MulticastLock so inbound mDNS reaches us (the wifi driver otherwise filters it).
         builder = builder.plugin(tauri_plugin_network_interfaces::init());
         builder = builder.plugin(
             tauri_plugin_lifecycle::Builder::new()
