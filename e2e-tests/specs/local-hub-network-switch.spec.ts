@@ -115,4 +115,24 @@ describe('Local hub discovery after a network switch', function () {
 			await phone.pause(AWAY_MS);
 		}
 	});
+
+	it('drops the hub from the chip after it is killed', async () => {
+		const chip = phone.groupChatPage.connectionStatusIndicator;
+		await phone.connectWifi(hotspot.ssid, hotspot.passphrase);
+		await chip.waitForStatus(
+			'local',
+			UI_TIMEOUT,
+			'the hub was not shown before killing it, so the kill would prove nothing',
+		);
+		await stopLocalHub(hub);
+		const killedAt = Date.now();
+		await chip.waitForStatus(
+			'disconnected',
+			UI_TIMEOUT,
+			'the chip still showed the hub after it was killed',
+		);
+		console.log(
+			`${new Date().toISOString().slice(11, 23)} hub gone from chip ${Date.now() - killedAt}ms after being killed`,
+		);
+	});
 });
