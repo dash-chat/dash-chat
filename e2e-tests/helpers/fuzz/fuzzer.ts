@@ -99,9 +99,8 @@ export class Fuzzer {
 	 * into a `replay`.
 	 */
 	search(ctx: Mocha.Context, opts: SearchOptions): Promise<void> {
-		const budget = 2 * opts.attempts * sequenceBudget(opts.length);
-		// The replay in flight when the limit hits still runs to its end.
-		ctx.timeout(budget + sequenceBudget(opts.length));
+		const budget = searchBudget(opts.attempts, opts.length);
+		ctx.timeout(searchTimeout(opts.attempts, opts.length));
 		return this.run(
 			fc.commands([oneOf(opts.moves)], {
 				maxCommands: opts.length,
@@ -177,6 +176,17 @@ export class Fuzzer {
 
 function sequenceBudget(length: number): number {
 	return length * MOVE_BUDGET_MS + SEQUENCE_BUDGET_MS;
+}
+
+/** How long a search may spend trying sequences and shrinking a failing one. */
+export function searchBudget(attempts: number, length: number): number {
+	return 2 * attempts * sequenceBudget(length);
+}
+
+/** The mocha timeout a search needs: its budget, plus the replay in flight
+ *  when the limit hits, which still runs to its end. */
+export function searchTimeout(attempts: number, length: number): number {
+	return searchBudget(attempts, length) + sequenceBudget(length);
 }
 
 async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {

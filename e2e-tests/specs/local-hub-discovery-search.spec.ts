@@ -15,7 +15,7 @@
  * (moves per sequence, default 15), E2E_STRESS_SEED (default random; the run
  * logs it and a failure reports it — re-run with the same seed to reproduce).
  */
-import { Fuzzer } from '../helpers/fuzz/fuzzer';
+import { Fuzzer, searchTimeout } from '../helpers/fuzz/fuzzer';
 import { deviceMoves } from '../helpers/fuzz/moves/device';
 import { hubMoves } from '../helpers/fuzz/moves/hub';
 import { networkMoves } from '../helpers/fuzz/moves/network';
@@ -28,7 +28,14 @@ import {
 } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
+const ATTEMPTS = envInt('E2E_STRESS_RUNS', 10);
+const LENGTH = envInt('E2E_STRESS_COMMANDS', 15);
+
+// wdio arms its per-test abort timer from the mocha timeout at invocation time,
+// so this has to be set suite-wide rather than inside the test body.
 describe('Local hub discovery', function () {
+	this.timeout(searchTimeout(ATTEMPTS, LENGTH));
+
 	let alice: Agent;
 	let bob: Agent;
 	let fuzzer: Fuzzer;
@@ -70,8 +77,8 @@ describe('Local hub discovery', function () {
 	it('shows the reachable hubs and reaches the reachable peers after any move', async function () {
 		await fuzzer.search(this, {
 			moves: [...networkMoves, ...hubMoves, ...deviceMoves],
-			attempts: envInt('E2E_STRESS_RUNS', 10),
-			length: envInt('E2E_STRESS_COMMANDS', 15),
+			attempts: ATTEMPTS,
+			length: LENGTH,
 			seed: envInt('E2E_STRESS_SEED', Math.floor(Math.random() * 2 ** 31)),
 		});
 	});
