@@ -40,7 +40,8 @@ async fn main() -> anyhow::Result<()> {
             .public()
     };
 
-    // Held until the process exits; its `Drop` retires the announcement.
+    // Held until the process exits, when its `Drop` stops the announcement.
+    // Nothing goes on the wire to say so — browsers notice once it ages out.
     let _announcement = mailbox_local_server::spawn_local_hub_announcement(endpoint_id, args.port)?;
 
     let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));

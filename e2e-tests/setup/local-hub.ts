@@ -100,10 +100,11 @@ function signalHub(hub: LocalHub, signal: NodeJS.Signals): void {
 }
 
 /**
- * Stop a hub and wait for it to exit. SIGINT by default: the hub only sends
- * its mDNS goodbye on a graceful shutdown, and without one every phone on the
- * LAN keeps its records cached until they age out. SIGKILL is for a spec that
- * wants exactly that: a hub that vanished without a word.
+ * Stop a hub and wait for it to exit. SIGINT by default, so the hub gets to run
+ * its shutdown; SIGKILL is for a spec that wants it to vanish mid-flight. Either
+ * way nothing goes out on the wire to retire the announcement — a phone only
+ * notices once the hub ages out of its swarm — so the two look alike to
+ * discovery.
  */
 export function stopLocalHub(
 	hub: LocalHub,

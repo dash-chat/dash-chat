@@ -14,7 +14,7 @@
  * real access points.
  */
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
-import { DISCOVERY_MS } from '../helpers/fuzz/checks';
+import { DEPARTURE_MS, DISCOVERY_MS } from '../helpers/fuzz/checks';
 import { MDNS_RECORD_TTL_S } from '../helpers/fuzz/moves/network';
 import { UI_TIMEOUT } from '../helpers/timeouts';
 import { joinWifi, leaveWifi, wifiDevice } from '../setup/host-wifi';
@@ -61,8 +61,8 @@ describe('Local hub discovery', function () {
 
 	async function expectNoHub(after: string): Promise<void> {
 		await chip().waitForNotLocal(
-			DISCOVERY_MS,
-			`the chip still showed the hub ${DISCOVERY_MS / 1_000}s after ${after}`,
+			DEPARTURE_MS,
+			`the chip still showed the hub ${DEPARTURE_MS / 1_000}s after ${after}`,
 		);
 	}
 
