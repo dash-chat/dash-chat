@@ -105,7 +105,6 @@ tauri-plugin-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-life
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 ndk-sys = "0.6"
-ndk-context = "0.1"
 # Saves photos to the shared gallery (MediaStore).
 tauri-plugin-android-fs = { version = "=28.4.0" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos
@@ -113,7 +112,7 @@ tauri-plugin-android-fs = { version = "=28.4.0" }
 tauri-plugin-medialibrary = "=0.13"
 tauri-plugin-background-service = "1.0"
 # Holds the MulticastLock mDNS discovery needs to hear hub announcements.
-tauri-plugin-network-interfaces = { path = "../crates/tauri-plugin-network-interfaces" }
+tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "05a06951ae93f4b3197cb45366520fdffb84611c" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"

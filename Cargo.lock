@@ -2051,7 +2051,6 @@ dependencies = [
  "mailbox-server",
  "mdns-sd",
  "nanoid 0.4.0",
- "ndk-context",
  "ndk-sys 0.6.0+11769913",
  "netdev 0.43.0",
  "objc2 0.6.4",
@@ -2146,6 +2145,7 @@ dependencies = [
  "mailbox-server",
  "maplit",
  "nanoid 0.4.0",
+ "network-watch",
  "p2panda",
  "p2panda-auth",
  "p2panda-core",
@@ -2178,7 +2178,6 @@ dependencies = [
  "async-trait",
  "ciborium",
  "futures",
- "if-watch",
  "iroh",
  "iroh-blobs",
  "log",
@@ -6175,6 +6174,17 @@ dependencies = [
  "windows 0.62.2",
  "windows-result 0.4.1",
  "wmi",
+]
+
+[[package]]
+name = "network-watch"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "if-addrs",
+ "if-watch",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -10982,10 +10992,12 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-network-interfaces"
 version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=05a06951ae93f4b3197cb45366520fdffb84611c#05a06951ae93f4b3197cb45366520fdffb84611c"
 dependencies = [
- "log",
+ "serde",
  "tauri",
  "tauri-plugin",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -11094,6 +11106,7 @@ dependencies = [
  "anyhow",
  "dashchat-utils",
  "log",
+ "network-watch",
  "regex",
  "reqwest 0.13.4",
  "rustls 0.23.43",

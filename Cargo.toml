@@ -24,6 +24,7 @@ tracing = "0.1"
 
 dashchat-compat = { path = "crates/dashchat-compat" }
 dashchat-utils = { path = "crates/dashchat-utils" }
+network-watch = { path = "crates/network-watch" }
 mailbox-client = { path = "crates/mailbox-client" }
 opus-transcode = { path = "crates/opus-transcode" }
 tauri-plugin-sentry-reporting = { path = "crates/tauri-plugin-sentry-reporting" }
