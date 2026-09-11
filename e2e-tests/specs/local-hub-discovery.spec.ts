@@ -151,6 +151,18 @@ describe('Local hub discovery', function () {
 		await expectLocal('coming back to the foreground');
 	});
 
+	it('drops a hub that stopped while the app was in the background', async function () {
+		if (!agent.isMobile) this.skip();
+		await agent.backgroundApp();
+		await agent.pause(BACKGROUNDED_MS);
+		await stopLocalHub(hub);
+		await agent.startApp();
+		await agent.groupChatPage.ready();
+		await expectNoHub('coming back to the foreground');
+		hub = await restartLocalHub(hub);
+		await expectLocal('the hub started');
+	});
+
 	it('shows the hub again within 2 seconds of the phone rejoining the LAN', async function () {
 		if (!agent.isMobile) this.skip();
 		const { ssid } = await agent.wifiInfo();
