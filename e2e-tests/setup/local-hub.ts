@@ -47,8 +47,8 @@ export async function spawnLocalHub(
 	const bin = path.join(ROOT, 'target', 'debug', LOCAL_HUB_PACKAGE);
 	if (!existsSync(bin)) {
 		throw new Error(
-			`${bin} not found — run the suite with E2E_STRESS=1 (which builds it) ` +
-				`or 'cargo build -p ${LOCAL_HUB_PACKAGE}'`,
+			`${bin} not found — the suite builds it against a local mailbox; ` +
+				`otherwise run 'cargo build -p ${LOCAL_HUB_PACKAGE}'`,
 		);
 	}
 	if (port === undefined) port = await allocateFreePort();
