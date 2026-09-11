@@ -35,7 +35,10 @@ pub(crate) fn mailbox_id_to_label(mailbox_id: &str) -> anyhow::Result<String> {
 }
 
 /// Recover the MailboxId from a label produced by [`mailbox_id_to_label`].
+/// DNS names are case-insensitive and mDNS delivers the label lowercased,
+/// which base32 decoding does not accept as is.
 pub(crate) fn label_to_mailbox_id(label: &str) -> anyhow::Result<String> {
+    let label = label.to_ascii_uppercase();
     Ok(URL_SAFE_NO_PAD.encode(BASE32_NOPAD.decode(label.as_bytes())?))
 }
 
@@ -74,5 +77,15 @@ mod tests {
             .bytes()
             .all(|b| b.is_ascii_uppercase() || (b'2'..=b'7').contains(&b)));
         assert_eq!(label_to_mailbox_id(&label).unwrap(), mailbox_id);
+    }
+
+    #[test]
+    fn a_label_lowercased_on_the_wire_still_recovers_the_mailbox_id() {
+        let mailbox_id = URL_SAFE_NO_PAD.encode([0x5A; 32]);
+        let label = mailbox_id_to_label(&mailbox_id).unwrap();
+        assert_eq!(
+            label_to_mailbox_id(&label.to_ascii_lowercase()).unwrap(),
+            mailbox_id
+        );
     }
 }
