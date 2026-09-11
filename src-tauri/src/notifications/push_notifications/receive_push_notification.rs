@@ -169,7 +169,7 @@ async fn handle_push_notification(
     if let Some(cloud_id) = crate::mailbox::cloud_mailbox_id(&node).await {
         node.mailboxes.wakeup(cloud_id);
     } else {
-        node.mailboxes.trigger_sync();
+        node.mailboxes.trigger_poll_loop();
     }
 
     // Poll for the operation to arrive (up to 15 seconds)

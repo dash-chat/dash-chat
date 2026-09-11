@@ -140,6 +140,7 @@ pub struct TrackedMailbox<Item: MailboxItem> {
     pub(crate) client: Mutex<Arc<dyn MailboxClient<Item>>>,
     pub(crate) connection_state: watch::Sender<MailboxConnectionState>,
     pending_sync_request: AtomicBool,
+    polling: AtomicBool,
     config: MailboxesConfig,
 }
 
@@ -150,6 +151,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
             client: Mutex::new(client),
             connection_state,
             pending_sync_request: AtomicBool::new(false),
+            polling: AtomicBool::new(false),
             config,
         }
     }
@@ -215,6 +217,61 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
 
     fn clear_sync_request(&self) {
         self.pending_sync_request.store(false, Ordering::Relaxed);
+    }
+
+    /// Claim this mailbox for a poll, returning `false` if one is already in flight.
+    fn begin_poll(&self) -> bool {
+        !self.polling.swap(true, Ordering::SeqCst)
+    }
+
+    fn end_poll(&self) {
+        self.polling.store(false, Ordering::SeqCst);
+    }
+
+    fn is_polling(&self) -> bool {
+        self.polling.load(Ordering::SeqCst)
+    }
+}
+
+/// Clears the in-flight flag and re-arms the poll loop however the poll task
+/// exits, so a panic mid-poll costs one cycle instead of stranding the mailbox
+/// as permanently "polling" and thus never due again.
+struct PollGuard<Item: MailboxItem> {
+    tracked_mailbox: Arc<TrackedMailbox<Item>>,
+    trigger: mpsc::Sender<Option<MailboxId>>,
+    completed: bool,
+}
+
+impl<Item: MailboxItem> PollGuard<Item> {
+    /// Claim the mailbox for a poll, returning `None` if one is already in flight.
+    pub fn claim(
+        tracked_mailbox: Arc<TrackedMailbox<Item>>,
+        trigger: mpsc::Sender<Option<MailboxId>>,
+    ) -> Option<Self> {
+        if !tracked_mailbox.begin_poll() {
+            return None;
+        }
+        Some(Self {
+            tracked_mailbox,
+            trigger,
+            completed: false,
+        })
+    }
+
+    pub fn complete(mut self) {
+        self.completed = true;
+    }
+}
+
+impl<Item: MailboxItem> Drop for PollGuard<Item> {
+    fn drop(&mut self) {
+        if !self.completed {
+            // An unwinding poll recorded neither success nor error, so nothing
+            // moved `next_poll` off the past and it would be re-polled instantly.
+            self.tracked_mailbox.reschedule();
+        }
+        self.tracked_mailbox.end_poll();
+        _ = self.trigger.try_send(None);
     }
 }
 
@@ -299,7 +356,7 @@ where
             // connection_state watch::Sender so UI subscribers stay attached.
             tm.replace_client(new_client).await;
             tm.wakeup();
-            self.trigger_sync();
+            self.trigger_poll_loop();
         } else {
             mailboxes.insert(
                 id.clone(),
@@ -307,7 +364,7 @@ where
             );
             drop(mailboxes);
             self.publish_active_ids().await;
-            self.trigger_sync();
+            self.trigger_poll_loop();
         }
     }
 
@@ -349,7 +406,8 @@ where
             .collect())
     }
 
-    pub fn trigger_sync(&self) {
+    /// Wake the poll loop to check for the next mailbox to poll.
+    pub fn trigger_poll_loop(&self) {
         _ = self.trigger.try_send(None);
     }
 
@@ -363,7 +421,7 @@ where
         for tracked_mailbox in self.mailboxes.lock().await.values() {
             tracked_mailbox.request_sync_if_active();
         }
-        self.trigger_sync();
+        self.trigger_poll_loop();
     }
 
     /// Immediately activate and sync every registered mailbox, resetting any backoff.
@@ -371,7 +429,7 @@ where
         for tracked_mailbox in self.mailboxes.lock().await.values() {
             tracked_mailbox.wakeup();
         }
-        self.trigger_sync();
+        self.trigger_poll_loop();
     }
 
     /// Send a `/report` to every currently-registered mailbox, best-effort.
@@ -461,7 +519,7 @@ where
                                 continue;
                             }
 
-                            manager.poll_mailbox(&id).await;
+                            let _task = manager.poll_mailbox(&id).await;
                         }
                     }
                 }
@@ -484,10 +542,13 @@ where
         }
 
         let now = Instant::now();
+        // A mailbox already being polled isn't due: its `next_poll` only moves
+        // once that poll finishes, so leaving it in would schedule it again
+        // immediately, over and over.
         let (id, tracked) = mm
             .iter()
-            .min_by_key(|(_, t)| t.connection_state().borrow().next_poll)
-            .unwrap();
+            .filter(|(_, t)| !t.is_polling())
+            .min_by_key(|(_, t)| t.connection_state().borrow().next_poll)?;
 
         let next = tracked.connection_state().borrow().next_poll;
         let wait = if next <= now {
@@ -506,12 +567,12 @@ where
         }
     }
 
-    async fn poll_mailbox(&self, id: &MailboxId) {
+    async fn poll_mailbox(&self, id: &MailboxId) -> Option<tokio::task::JoinHandle<()>> {
         let tracked_mailbox = {
             let mm = self.mailboxes.lock().await;
             match mm.get(id) {
                 Some(t) => t.clone(),
-                None => return,
+                None => return None,
             }
         };
 
@@ -519,33 +580,41 @@ where
         if topics.is_empty() {
             tracing::trace!("no topics subscribed, skipping poll for {id}");
             tracked_mailbox.reschedule();
-            return;
+            return None;
         }
+
+        let guard = PollGuard::claim(tracked_mailbox.clone(), self.trigger.clone())?;
 
         tracing::debug!("polling mailbox {id}");
         let client = tracked_mailbox.client().await;
         // Anything requested from here on is not covered by this poll.
         tracked_mailbox.clear_sync_request();
-        let result = self.sync_topics(topics.into_iter(), &client).await;
 
-        match result {
-            Ok(()) => tracked_mailbox.poll_succeeded(),
-            Err(err) => {
-                // A sync requested during a failed poll doesn't earn a quick
-                // retry: the request failed too, so backoff applies.
-                tracked_mailbox.clear_sync_request();
-                tracing::error!(?err, mailbox = %id, "mailbox sync error");
-                tracked_mailbox.record_error(format!("{err:?}"));
-                let tracker = tracked_mailbox.connection_state();
-                let tracker = tracker.borrow();
-                tracing::info!(
-                    mailbox = %id,
-                    status = ?tracker.status,
-                    errors = tracker.consecutive_errors,
-                    "mailbox status updated"
-                );
+        let manager = self.clone();
+        let id = id.clone();
+        let task = tokio::spawn(async move {
+            let result = manager.sync_topics(topics.into_iter(), &client).await;
+            match result {
+                Ok(()) => tracked_mailbox.poll_succeeded(),
+                Err(err) => {
+                    // A sync requested during a failed poll doesn't earn a quick
+                    // retry: the request failed too, so backoff applies.
+                    tracked_mailbox.clear_sync_request();
+                    tracing::error!(?err, mailbox = %id, "mailbox sync error");
+                    tracked_mailbox.record_error(format!("{err:?}"));
+                    let tracker = tracked_mailbox.connection_state();
+                    let tracker = tracker.borrow();
+                    tracing::info!(
+                        mailbox = %id,
+                        status = ?tracker.status,
+                        errors = tracker.consecutive_errors,
+                        "mailbox status updated"
+                    );
+                }
             }
-        }
+            guard.complete();
+        });
+        Some(task)
     }
 
     /// Immediately sync the given topics with the given mailbox:
@@ -699,6 +768,43 @@ mod tests {
             } else {
                 Ok(FetchResponse(BTreeMap::new()))
             }
+        }
+    }
+
+    /// A mailbox client whose fetch() takes `delay` to complete.
+    struct SlowClient {
+        id: MailboxId,
+        poll_count: Arc<AtomicU32>,
+        delay: Duration,
+    }
+
+    impl SlowClient {
+        fn new(delay: Duration) -> (Self, Arc<AtomicU32>) {
+            let poll_count = Arc::new(AtomicU32::new(0));
+            let client = Self {
+                id: nanoid::nanoid!(),
+                poll_count: poll_count.clone(),
+                delay,
+            };
+            (client, poll_count)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for SlowClient {
+        fn id(&self) -> MailboxId {
+            self.id.clone()
+        }
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<(), anyhow::Error> {
+            Ok(())
+        }
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            self.poll_count.fetch_add(1, Ordering::Relaxed);
+            tokio::time::sleep(self.delay).await;
+            Ok(FetchResponse(BTreeMap::new()))
         }
     }
 
@@ -1388,6 +1494,58 @@ mod tests {
         }
     }
 
+    /// A mailbox client whose fetch() panics.
+    struct PanickingClient {
+        id: MailboxId,
+        poll_count: Arc<AtomicU32>,
+    }
+
+    impl PanickingClient {
+        fn new() -> (Self, Arc<AtomicU32>) {
+            let poll_count = Arc::new(AtomicU32::new(0));
+            let client = Self {
+                id: nanoid::nanoid!(),
+                poll_count: poll_count.clone(),
+            };
+            (client, poll_count)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for PanickingClient {
+        fn id(&self) -> MailboxId {
+            self.id.clone()
+        }
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<(), anyhow::Error> {
+            Ok(())
+        }
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            self.poll_count.fetch_add(1, Ordering::Relaxed);
+            panic!("simulated panic");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn panicking_poll_does_not_strand_mailbox() {
+        let mgr = spawn_test_mailboxes(test_config()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (client, poll_count) = PanickingClient::new();
+        let id = client.id();
+        mgr.register(client).await;
+
+        tokio::time::sleep(Duration::from_secs(30)).await;
+
+        assert!(
+            poll_count.load(Ordering::Relaxed) > 1,
+            "mailbox was never polled again after a panicking poll"
+        );
+        assert!(!mgr.tracked_mailbox(&id).await.unwrap().is_polling());
+    }
+
     /// Assert all values in the slice deviate by at most `max_diff` from each other.
     fn assert_within_group(label: &str, polls: &[u32], max_diff: u32) {
         let min = *polls.iter().min().unwrap();
@@ -1563,6 +1721,64 @@ mod tests {
         assert!(
             (ratio_active_degraded - expected_active_degraded).abs() < tolerance,
             "active/degraded ratio {ratio_active_degraded:.2} too far from expected {expected_active_degraded:.2}"
+        );
+    }
+
+    /// A mailbox is polled one at a time: a slow mailbox holds exactly one
+    /// in-flight poll while a healthy one keeps polling on its own schedule.
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_mailbox_holds_only_one_in_flight_poll() {
+        let config = MailboxesConfig {
+            active_interval: Duration::from_secs(1),
+            between_polls_delay: Duration::from_millis(0),
+            ..test_config()
+        };
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (slow, slow_polls) = SlowClient::new(Duration::from_secs(30));
+        mgr.register(slow).await;
+        let (fast, fast_polls) = TrackingClient::new(false);
+        mgr.register(fast).await;
+
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        assert_eq!(
+            slow_polls.load(Ordering::Relaxed),
+            1,
+            "the slow mailbox was polled again while its first poll was in flight"
+        );
+        assert!(
+            fast_polls.load(Ordering::Relaxed) >= 5,
+            "the healthy mailbox stopped polling: {}",
+            fast_polls.load(Ordering::Relaxed)
+        );
+
+        // Once the slow poll finishes the loop picks it up again on its own,
+        // without an external trigger.
+        tokio::time::sleep(Duration::from_secs(25)).await;
+        assert!(slow_polls.load(Ordering::Relaxed) >= 2);
+    }
+
+    /// A mailbox registered before any topic is subscribed must still be polled
+    /// once topics show up.
+    #[tokio::test(start_paused = true)]
+    async fn registering_before_any_subscription_still_polls() {
+        let config = test_config();
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+
+        let (client, polls) = TrackingClient::new(false);
+        mgr.register(client).await;
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(polls.load(Ordering::Relaxed), 0);
+
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        tokio::time::sleep(config.active_interval * 3).await;
+        assert!(
+            polls.load(Ordering::Relaxed) > 0,
+            "mailbox registered with no subscribed topics never polled again"
         );
     }
 }
