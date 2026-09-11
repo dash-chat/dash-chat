@@ -114,7 +114,12 @@ async fn browse(sightings: UnboundedSender<Sighting>) {
             Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
                 network_changes.fetch_add(1, Ordering::Relaxed);
             }
-            Err(broadcast::error::RecvError::Closed) => return,
+            Err(broadcast::error::RecvError::Closed) => {
+                log::warn!(
+                    "Network change signal closed; local hub discovery stays on the current interfaces"
+                );
+                return;
+            }
         }
     }
 }

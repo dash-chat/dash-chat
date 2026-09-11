@@ -83,7 +83,8 @@ pub fn spawn_local_mailbox_mdns_discovery(
 /// dialing address, and hand it ours.
 ///
 /// Safe to re-run — `MailboxManager::register` swaps the client in place — which
-/// matters because every re-browse re-resolves the hubs it already knows.
+/// matters because a hub is reported found again whenever its addresses change
+/// or a network change comes between sightings.
 async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String) {
     node.mailboxes
         .register(
@@ -110,8 +111,8 @@ async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String)
         }
     }
     // Tell the hub our own dialing address so its blob fetch pool can reach us as
-    // a source. A re-browse re-resolves every known hub, so this also refreshes
-    // the EndpointAddr after a network change. Cloud mailboxes have no such hook;
+    // a source. A hub is reported found again after every network change, so
+    // this also refreshes the EndpointAddr then. Cloud mailboxes have no such hook;
     // refreshing there would need a network-change callback from the node layer.
     if let Err(err) = node.register_with_mailbox(&url).await {
         log::warn!("Failed to register our addr with local mailbox {id}: {err}");

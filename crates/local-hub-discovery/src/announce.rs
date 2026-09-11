@@ -30,10 +30,16 @@ impl LocalHubAnnouncementService {
         let task = AbortOnDropHandle::new(tokio::spawn(async move {
             let mut _announcement = initial;
             let mut network = network_watch::network_change();
-            while matches!(
-                network.recv().await,
-                Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
-            ) {
+            loop {
+                match network.recv().await {
+                    Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => {
+                        log::warn!(
+                            "Network change signal closed; local hub {instance_id} keeps its current announcement"
+                        );
+                        return;
+                    }
+                }
                 if let Ok(next) = announce(&instance_id, port, &handle) {
                     _announcement = next;
                 }
