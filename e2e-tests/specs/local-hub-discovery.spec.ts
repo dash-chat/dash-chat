@@ -1,22 +1,19 @@
 /**
- * Local hub discovery on the paths it is known to break on, walked in order on
- * a real phone and a real access point: a hub the phone joins its LAN to find,
- * the hub stopping and starting under a foregrounded and a backgrounded app,
- * the phone and then the hub's host leaving and rejoining the LAN, a sit-still
+ * Local hub discovery on the paths it is known to break on, walked in order:
+ * a hub starting under the open app, stopping with and without its mDNS
+ * goodbye, restarting several times in a row, starting while the app is
+ * closed or backgrounded, the phone leaving and rejoining its LAN, a sit-still
  * past the mDNS record TTL, and a Wi-Fi bounce. The hub is the standalone
- * `mailbox-local-server` on the host, on the LAN through the host's Wi-Fi
- * card; the cloud mailbox is killed so the chip is on screen and reads the
- * hub. local-hub-discovery-stress walks the same moves at random.
- *
- * Skips itself unless E2E_STRESS=1 and E2E_WIFI_NETWORKS names a network (see
- * .env.development.example). Run it with:
- *   PLATFORMS=android just e2e run local-hub-discovery
+ * `mailbox-local-server` on the host, heard on whatever LAN the host is on —
+ * a phone only has to be on the host's Wi-Fi; the cloud mailbox is killed so
+ * the chip is on screen and reads the hub. The cases that need a phone's
+ * Wi-Fi or background skip themselves on desktop. local-hub-discovery-stress
+ * walks these and the network moves at random on real access points.
  */
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { DISCOVERY_MS } from '../helpers/fuzz/checks';
 import { MDNS_RECORD_TTL_S } from '../helpers/fuzz/moves/network';
 import { UI_TIMEOUT } from '../helpers/timeouts';
-import { joinWifi, leaveWifi, wifiDevice } from '../setup/host-wifi';
 import {
 	type LocalHub,
 	restartLocalHub,
@@ -29,7 +26,6 @@ import {
 	restartMailbox,
 } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
-import { wifiNetworks } from '../setup/test-env';
 
 /** Time for the OS to stop delivering multicast to the backgrounded app. */
 const BACKGROUNDED_MS = 60_000;
@@ -44,13 +40,11 @@ const WIFI_DOWN_MS = 8_000;
 describe('Local hub discovery', function () {
 	this.timeout(600_000);
 
-	const network = wifiNetworks()[0];
-	let hostDevice: string;
-	let phone: Agent;
+	let agent: Agent;
 	let hub: LocalHub;
 	let mailboxKilled = false;
 
-	const chip = () => phone.groupChatPage.connectionStatusIndicator;
+	const chip = () => agent.groupChatPage.connectionStatusIndicator;
 
 	async function expectLocal(after: string): Promise<void> {
 		await chip().waitForStatus(
@@ -67,70 +61,56 @@ describe('Local hub discovery', function () {
 		);
 	}
 
+	/** The supplicant picks whatever saved network scores best; elsewhere the
+	 *  hub is reached over another LAN and the move proves nothing. */
+	async function expectBackOn(ssid: string): Promise<void> {
+		const { ssid: now } = await agent.wifiInfo();
+		if (now !== ssid) {
+			throw new Error(
+				`the phone came back on "${now}", not "${ssid}"; re-run with the host's network scoring best`,
+			);
+		}
+	}
+
 	before(async function () {
-		if (process.env.E2E_STRESS !== '1') this.skip();
-		if (network === undefined) this.skip();
 		if (isRemoteMailbox()) this.skip();
-		const device = wifiDevice();
-		if (device === null) throw new Error('the host has no Wi-Fi card');
-		hostDevice = device;
+		[agent] = await setupAgents(this, [{ platform: 'any' }]);
+		// An emulator is NAT'd off the host's LAN, so no hub can reach it.
+		if (agent.platform === 'android-emulator') this.skip();
 		await killMailbox();
 		mailboxKilled = true;
-
-		[phone] = await setupAgents(this, [{ platform: 'android' }]);
-		// An emulator is NAT'd off the host and cannot change networks.
-		if (phone.platform === 'android-emulator') this.skip();
-		await phone.createProfilePage.createProfile('Alice', 'Hub');
-		await createGroup(phone, 'Solo Group', []);
-		// Off the air: the hub answers on the host's usual LAN too, and the phone
-		// must not find it there before joining the hub's.
-		await phone.disableWifi();
-
-		await joinWifi(hostDevice, network.ssid, network.passphrase);
-		hub = await spawnLocalHub('a');
+		await agent.createProfilePage.createProfile('Alice', 'Hub');
+		await createGroup(agent, 'Solo Group', []);
 		await chip().waitForStatus(
 			'disconnected',
 			UI_TIMEOUT,
-			"the chip showed a hub before the phone joined the hub's LAN, so the " +
-				'join would prove nothing',
+			'the chip showed a hub before the spec started one, so the LAN is ' +
+				'not clean and the run would prove nothing',
 		);
 	});
 
 	after(async () => {
-		if (phone !== undefined) {
-			try {
-				await phone.enableWifi();
-				await phone.forgetWifi(network.ssid);
-			} catch {
-				/* the phone is back on its usual network either way */
-			}
-		}
 		if (hub !== undefined) await stopLocalHub(hub);
-		if (network !== undefined) leaveWifi(network.ssid);
 		if (mailboxKilled) await restartMailbox();
 	});
 
-	it('shows a hub already on the LAN within 2 seconds of the phone joining it', async () => {
-		await phone.connectWifi(network.ssid, network.passphrase);
-		await expectLocal("joining the hub's LAN");
+	it('shows a hub within 2 seconds of it starting', async () => {
+		hub = await spawnLocalHub('a');
+		await expectLocal('the hub started');
 	});
 
-	it('drops the hub when it stops and shows it again when it starts under the foregrounded app', async () => {
+	it('drops the hub when it stops and shows it again when it starts', async () => {
 		await stopLocalHub(hub);
 		await expectNoHub('the hub stopped');
 		hub = await restartLocalHub(hub);
 		await expectLocal('the hub started');
 	});
 
-	it('shows a hub that started while the app was in the background', async () => {
-		await stopLocalHub(hub);
-		await expectNoHub('the hub stopped');
-		await phone.backgroundApp();
-		await phone.pause(BACKGROUNDED_MS);
+	it('drops a hub that was killed without its goodbye', async () => {
+		await stopLocalHub(hub, 'SIGKILL');
+		await expectNoHub('the hub was killed');
 		hub = await restartLocalHub(hub);
-		await phone.startApp();
-		await phone.groupChatPage.ready();
-		await expectLocal('coming back to the foreground');
+		await expectLocal('the hub started');
 	});
 
 	it('shows the hub again after each of several restarts', async () => {
@@ -142,38 +122,53 @@ describe('Local hub discovery', function () {
 		}
 	});
 
-	it('shows the hub again within 2 seconds of the phone rejoining the LAN', async () => {
-		await phone.disableWifi();
-		await expectNoHub('the phone left the LAN');
-		await phone.connectWifi(network.ssid, network.passphrase);
-		await expectLocal('rejoining the LAN');
+	it('shows a hub that started while the app was closed', async () => {
+		await stopLocalHub(hub);
+		await expectNoHub('the hub stopped');
+		await agent.stopApp();
+		hub = await restartLocalHub(hub);
+		await agent.startApp();
+		await agent.homePage.ready();
+		await agent.homePage.chatListItem('Solo Group').click();
+		await agent.groupChatPage.ready();
+		await expectLocal('the app came back');
 	});
 
-	it('drops the hub when its host leaves the LAN and shows it again when the host rejoins', async () => {
-		leaveWifi(network.ssid);
-		await expectNoHub("the hub's host left the LAN");
-		await joinWifi(hostDevice, network.ssid, network.passphrase);
-		await expectLocal("the hub's host rejoined the LAN");
+	it('shows a hub that started while the app was in the background', async function () {
+		if (!agent.isMobile) this.skip();
+		await stopLocalHub(hub);
+		await expectNoHub('the hub stopped');
+		await agent.backgroundApp();
+		await agent.pause(BACKGROUNDED_MS);
+		hub = await restartLocalHub(hub);
+		await agent.startApp();
+		await agent.groupChatPage.ready();
+		await expectLocal('coming back to the foreground');
+	});
+
+	it('shows the hub again within 2 seconds of the phone rejoining the LAN', async function () {
+		if (!agent.isMobile) this.skip();
+		const { ssid } = await agent.wifiInfo();
+		await agent.disableWifi();
+		await expectNoHub('the phone left the LAN');
+		await agent.enableWifi();
+		await expectBackOn(ssid);
+		await expectLocal('rejoining the LAN');
 	});
 
 	it('keeps showing the hub past the mDNS record TTL', async () => {
 		const until = Date.now() + (MDNS_RECORD_TTL_S + 10) * 1_000;
 		while (Date.now() < until) {
-			await phone.pause(Math.min(10_000, until - Date.now()));
+			await agent.pause(Math.min(10_000, until - Date.now()));
 			expect(await chip().status()).toBe('local');
 		}
 	});
 
-	it('shows the hub again after a Wi-Fi bounce', async () => {
-		await phone.cycleWifi(WIFI_DOWN_MS);
-		// The supplicant picks whatever saved network scores best; elsewhere the
-		// hub is reached over another LAN and the bounce proves nothing.
-		const { ssid } = await phone.wifiInfo();
-		if (ssid !== network.ssid) {
-			throw new Error(
-				`the phone came back on "${ssid}", not "${network.ssid}"; re-run with the hub's network scoring best`,
-			);
-		}
+	it('shows the hub again after a Wi-Fi bounce', async function () {
+		if (!agent.isMobile) this.skip();
+		const { ssid } = await agent.wifiInfo();
+		await agent.cycleWifi(WIFI_DOWN_MS);
+		await expectBackOn(ssid);
 		await expectLocal('Wi-Fi came back');
 	});
 });
