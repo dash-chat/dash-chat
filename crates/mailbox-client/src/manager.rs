@@ -310,6 +310,48 @@ enum Trigger {
     Probe(MailboxId),
 }
 
+/// Clears the in-flight flag and re-arms the poll loop however the poll task
+/// exits, so a panic mid-poll costs one cycle instead of stranding the mailbox
+/// as permanently "polling" and thus never due again.
+struct PollGuard<Item: MailboxItem> {
+    tracked_mailbox: Arc<TrackedMailbox<Item>>,
+    trigger: mpsc::Sender<Trigger>,
+    completed: bool,
+}
+
+impl<Item: MailboxItem> PollGuard<Item> {
+    /// Claim the mailbox for a poll, returning `None` if one is already in flight.
+    pub fn claim(
+        tracked_mailbox: Arc<TrackedMailbox<Item>>,
+        trigger: mpsc::Sender<Trigger>,
+    ) -> Option<Self> {
+        if !tracked_mailbox.begin_poll() {
+            return None;
+        }
+        Some(Self {
+            tracked_mailbox,
+            trigger,
+            completed: false,
+        })
+    }
+
+    pub fn complete(mut self) {
+        self.completed = true;
+    }
+}
+
+impl<Item: MailboxItem> Drop for PollGuard<Item> {
+    fn drop(&mut self) {
+        if !self.completed {
+            // An unwinding poll recorded neither success nor error, so nothing
+            // moved `next_poll` off the past and it would be re-polled instantly.
+            self.tracked_mailbox.reschedule();
+        }
+        self.tracked_mailbox.end_poll();
+        _ = self.trigger.try_send(Trigger::Nudge);
+    }
+}
+
 #[derive(Clone)]
 pub struct Mailboxes<Item, Store>
 where
@@ -521,7 +563,7 @@ where
                 let manager = self.clone();
                 tokio::spawn(async move {
                     if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
-                        tracing::debug!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
+                        tracing::warn!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
                         tracked.request_sync_if_active(Some(topic));
                         manager.nudge_poll_loop();
                     }
@@ -712,18 +754,6 @@ where
         })
     }
 
-    async fn begin_poll(&self, id: &MailboxId) -> bool {
-        let mm = self.mailboxes.lock().await;
-        mm.get(id).is_some_and(|t| t.begin_poll())
-    }
-
-    async fn end_poll(&self, id: &MailboxId) {
-        let mm = self.mailboxes.lock().await;
-        if let Some(t) = mm.get(id) {
-            t.end_poll();
-        }
-    }
-
     async fn handle_trigger(&self, trigger: Trigger) {
         match trigger {
             Trigger::Nudge => {}
@@ -756,7 +786,7 @@ where
         };
 
         let subscribed = self.subscribed_topics().await;
-        // Take the pending sync here info here to lock in what this poll will cover.
+        // Take the pending sync info here to lock in what this poll will cover.
         // Any requests coming in after this point will be handled by the next poll.
         let pending = tracked_mailbox.take_pending_request();
         let probe = pending == PendingRequest::Probe;
@@ -775,12 +805,11 @@ where
             return None;
         }
 
-        if !self.begin_poll(id).await {
-            return None;
-        }
+        let guard = PollGuard::claim(tracked_mailbox.clone(), self.trigger.clone())?;
 
         tracing::debug!("polling mailbox {id}");
         let client = tracked_mailbox.client().await;
+
         let manager = self.clone();
         let id = id.clone();
         let task = tokio::spawn(async move {
@@ -800,11 +829,7 @@ where
                     );
                 }
             }
-            manager.end_poll(&id).await;
-            // The mailbox is schedulable again, so the loop
-            // must re-evaluate rather than sleep on a wait
-            // computed while it was in flight.
-            manager.nudge_poll_loop();
+            guard.complete();
         });
         Some(task)
     }
@@ -2048,6 +2073,58 @@ mod tests {
             self.poll_count.fetch_add(1, Ordering::Relaxed);
             Err(anyhow::anyhow!("simulated failure"))
         }
+    }
+
+    /// A mailbox client whose fetch() panics.
+    struct PanickingClient {
+        id: MailboxId,
+        poll_count: Arc<AtomicU32>,
+    }
+
+    impl PanickingClient {
+        fn new() -> (Self, Arc<AtomicU32>) {
+            let poll_count = Arc::new(AtomicU32::new(0));
+            let client = Self {
+                id: nanoid::nanoid!(),
+                poll_count: poll_count.clone(),
+            };
+            (client, poll_count)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for PanickingClient {
+        fn id(&self) -> MailboxId {
+            self.id.clone()
+        }
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
+        }
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            self.poll_count.fetch_add(1, Ordering::Relaxed);
+            panic!("simulated panic");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn panicking_poll_does_not_strand_mailbox() {
+        let mgr = spawn_test_mailboxes(test_config()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (client, poll_count) = PanickingClient::new();
+        let id = client.id();
+        mgr.register(client).await;
+
+        tokio::time::sleep(Duration::from_secs(30)).await;
+
+        assert!(
+            poll_count.load(Ordering::Relaxed) > 1,
+            "mailbox was never polled again after a panicking poll"
+        );
+        assert!(!mgr.tracked_mailbox(&id).await.unwrap().is_polling());
     }
 
     /// Assert all values in the slice deviate by at most `max_diff` from each other.

@@ -29,6 +29,7 @@ aliased = { workspace = true }
 anyhow = "1.0.95"
 dashchat-compat = { workspace = true }
 dashchat-utils = { workspace = true }
+network-watch = { workspace = true }
 ed25519-dalek = { workspace = true }
 thiserror = "2.0"
 async-trait = "0.1.85"

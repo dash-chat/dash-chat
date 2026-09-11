@@ -195,7 +195,7 @@ impl<S: EnvelopeSender + 'static> Drainer<S> {
 
         let background = drainer.clone();
         tauri::async_runtime::spawn(async move {
-            let mut settled = dashchat_utils::network_settled();
+            let mut settled = network_watch::network_change();
             let mut backoff = INITIAL_BACKOFF;
             loop {
                 let report = background.drain_pass().await;

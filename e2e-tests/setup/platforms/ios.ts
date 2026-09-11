@@ -19,7 +19,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..', '..');
 
-const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
+export const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
 // Fixed home for the .ipa the sessions install, copied here by the
 // e2e:build:ios task's export-session-ipa.ts step. The capabilities
@@ -166,6 +166,8 @@ function ensureXcuitestDriver() {
 
 /** `mobile: queryAppState` value for "the app is not running". */
 export const APP_STATE_NOT_RUNNING = 1;
+/** `mobile: queryAppState` value for "the app is on screen". */
+export const APP_STATE_FOREGROUND = 4;
 
 /** Reset an iOS agent to first-launch state without reinstalling the app.
  *

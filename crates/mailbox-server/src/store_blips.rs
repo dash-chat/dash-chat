@@ -55,12 +55,12 @@ pub async fn store_blips(
     Ok((StatusCode::CREATED, Json(StoreBlipsResponse { watermarks })))
 }
 
-/// Returns a map of topic_id → map of op_id (author:seq) → author for newly inserted blips.
-/// The author is preserved separately so the push-notifications-server can filter the
-/// author out of the subscriber list (devices don't get pushes for their own messages).
 type TopicsWithNewBlips = BTreeMap<TopicId, BTreeMap<String, Author>>;
 type ResultingWatermarks = BTreeMap<TopicId, BTreeMap<Author, Option<SequenceNumber>>>;
 
+/// Returns a map of topic_id → map of op_id (author:seq) → author for newly inserted blips.
+/// The author is preserved separately so the push-notifications-server can filter the
+/// author out of the subscriber list (devices don't get pushes for their own messages).
 fn store_blips_inner(
     db: &Database,
     request: &StoreBlipsRequest,

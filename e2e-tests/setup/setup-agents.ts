@@ -39,7 +39,6 @@ import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import {
 	APP_PACKAGE,
-	type WifiInfo,
 	androidWifiInfo,
 	connectAndroidWifi,
 	disableAndroidWifi,
@@ -52,8 +51,16 @@ import {
 } from './platforms/android';
 import { killAgentApp, readOpenedUrls } from './platforms/desktop';
 import { APP_STATE_NOT_RUNNING, resetIosAppState } from './platforms/ios';
+import {
+	connectIosWifi,
+	disableIosWifi,
+	enableIosWifi,
+	forgetIosWifi,
+	iosWifiInfo,
+} from './platforms/ios-wifi';
 import { type AgentPlatformName, platformNames } from './test-env';
 import { switchToWebview, waitForTestUtils } from './webview';
+import type { WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
@@ -146,29 +153,33 @@ export type Agent = WebdriverIO.Browser & {
 	 *  action that makes the app shut itself down (today only delete_account).
 	 *  Follow with [`startApp`] to get a driveable session again. */
 	waitForAppExit(): Promise<void>;
-	/** Turn Wi-Fi off, leaving the app foregrounded. Android only. */
+	/** Turn Wi-Fi off, leaving the app foregrounded. Physical phones only:
+	 *  Android through adb, with the app on screen throughout; iOS through the
+	 *  Settings app, which takes the app off screen for the duration and puts
+	 *  it back, as a user changing networks does. Same for the rest of the
+	 *  Wi-Fi controls. */
 	disableWifi(): Promise<void>;
 	/** Turn Wi-Fi on and resolve once the device holds a routable IPv4 address
 	 *  again, returning it: the supplicant lands on whichever saved network
-	 *  scores best, so callers check it is the one they expect. Android only. */
+	 *  scores best, so callers check it is the one they expect. */
 	enableWifi(): Promise<string>;
 	/** Join `ssid` (an empty `passphrase` means an open network), saving it on
 	 *  the device if it is new, and resolve with the IPv4 address obtained on
-	 *  it. Android only. */
+	 *  it. */
 	connectWifi(ssid: string, passphrase: string): Promise<string>;
 	/** Forget `ssid`, which drops it if it is the current network, and resolve
 	 *  with the IPv4 address the device is on once it has settled on another
-	 *  saved network. Android only. */
+	 *  saved network. */
 	forgetWifi(ssid: string): Promise<string>;
-	/** Drop and restore Wi-Fi, leaving the app foregrounded throughout, and
-	 *  resolve once the device holds a routable IPv4 address again. Android
-	 *  only; throws elsewhere, since no other platform can lose its LAN without
-	 *  also losing the driver session. Returns the address it came back on so
-	 *  callers can tell a same-network reassociation from a jump to a different
-	 *  SSID, which would invalidate any discovery measurement taken after it. */
+	/** Drop and restore Wi-Fi and resolve once the device holds a routable
+	 *  IPv4 address again. Physical phones only; throws elsewhere, since no
+	 *  other platform can lose its LAN without also losing the driver session.
+	 *  Returns the address it came back on so callers can tell a same-network
+	 *  reassociation from a jump to a different SSID, which would invalidate
+	 *  any discovery measurement taken after it. */
 	cycleWifi(downMs: number): Promise<string>;
-	/** The network this device is on: its SSID and IPv4 address on wlan0,
-	 *  each '' while it has none. Android only. */
+	/** The network this device is on: its SSID and IPv4 address, each ''
+	 *  while it has none. */
 	wifiInfo(): Promise<WifiInfo>;
 };
 
@@ -375,29 +386,44 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		if (agent.platform === 'desktop') await agent.setWideScreen(false);
 	};
 	agent.disableWifi = async () => {
+		if (agent.platform === 'ios') {
+			await disableIosWifi(b);
+			return;
+		}
 		disableAndroidWifi(wifiUdid(agent, b));
 	};
-	agent.enableWifi = async () => await enableAndroidWifi(wifiUdid(agent, b));
+	agent.enableWifi = async () =>
+		agent.platform === 'ios'
+			? await enableIosWifi(b)
+			: await enableAndroidWifi(wifiUdid(agent, b));
 	agent.connectWifi = async (ssid: string, passphrase: string) =>
-		await connectAndroidWifi(wifiUdid(agent, b), ssid, passphrase);
+		agent.platform === 'ios'
+			? await connectIosWifi(b, ssid, passphrase)
+			: await connectAndroidWifi(wifiUdid(agent, b), ssid, passphrase);
 	agent.forgetWifi = async (ssid: string) =>
-		await forgetAndroidWifi(wifiUdid(agent, b), ssid);
+		agent.platform === 'ios'
+			? await forgetIosWifi(b, ssid)
+			: await forgetAndroidWifi(wifiUdid(agent, b), ssid);
 	agent.cycleWifi = async (downMs: number) => {
 		await agent.disableWifi();
 		await b.pause(downMs);
 		return await agent.enableWifi();
 	};
-	agent.wifiInfo = async () => androidWifiInfo(androidUdid(b));
+	agent.wifiInfo = async () =>
+		agent.platform === 'ios'
+			? await iosWifiInfo(b)
+			: androidWifiInfo(androidUdid(b));
 
 	return agent;
 }
 
-/** The udid behind the Android-only Wi-Fi controls: no other platform can lose
- *  its LAN without also losing the driver session. */
+/** The udid behind the adb side of the Wi-Fi controls: a desktop cannot lose
+ *  its LAN without also losing the driver session, and an emulator is not on
+ *  one. */
 function wifiUdid(agent: Agent, b: WebdriverIO.Browser): string {
 	if (agent.platform !== 'android') {
 		throw new Error(
-			`Wi-Fi control needs a physical android device, got ${agent.platform}`,
+			`Wi-Fi control needs a physical phone, got ${agent.platform}`,
 		);
 	}
 	return androidUdid(b);

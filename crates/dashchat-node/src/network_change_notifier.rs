@@ -15,7 +15,7 @@
 //! sockets and never reconnects until the process restarts. Non-Android
 //! platforms detect changes natively, so iroh is only notified on Android.
 //!
-//! Detection and debouncing live in [`dashchat_utils::network_settled`], shared
+//! Detection and debouncing live in [`network_watch::network_change`], shared
 //! with the other subsystems that need to know a connection came back.
 
 use tokio::task::JoinHandle;
@@ -31,7 +31,7 @@ pub(crate) fn spawn(
     mailboxes: Mailboxes<MailboxOperation, OpStore>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let mut settled = dashchat_utils::network_settled();
+        let mut settled = network_watch::network_change();
         loop {
             match settled.recv().await {
                 Ok(()) => {}
