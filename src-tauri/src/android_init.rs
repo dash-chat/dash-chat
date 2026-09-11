@@ -1,10 +1,10 @@
-//! Initializes the NDK context as early as possible on Android.
+//! Installs iroh's Android DNS JNI context as early as possible.
 //!
-//! `tao` 0.35 (pulled in via `wry`/`tauri-runtime-wry`) no longer calls
-//! `ndk_context::initialize_android_context`, unlike 0.34. Libraries that read
-//! Android system state through `ndk-context` — notably iroh's `hickory-resolver`,
-//! which reads the system DNS configuration — therefore panic with
-//! "android context was not initialized" the first time they run.
+//! iroh's `DnsResolver` reads the system DNS config through JNI (`ndk-context` →
+//! `LinkProperties`), which needs a JVM context installed before the resolver is
+//! built — otherwise the lookup panics ("android context was not initialized")
+//! and falls back to Google's DNS. `tao` 0.35 (via `wry`) no longer installs it,
+//! unlike 0.34, so we must, via [`iroh::dns::install_android_jni_context`].
 //!
 //! `JNI_OnLoad` runs the moment `System.loadLibrary("tauri_app_lib")` executes,
 //! before any Tauri or activity code, so it is the earliest and most reliable
@@ -52,7 +52,7 @@ fn init_ndk_context(raw_vm: *mut jni::sys::JavaVM) -> Result<(), jni::errors::Er
     let application = env.new_global_ref(&application)?;
 
     unsafe {
-        ndk_context::initialize_android_context(
+        iroh::dns::install_android_jni_context(
             vm.get_java_vm_pointer() as *mut std::ffi::c_void,
             application.as_obj().as_raw() as *mut std::ffi::c_void,
         );
@@ -62,6 +62,6 @@ fn init_ndk_context(raw_vm: *mut jni::sys::JavaVM) -> Result<(), jni::errors::Er
     // forever so the raw pointer handed to ndk-context stays valid.
     std::mem::forget(application);
 
-    log::info!("NDK context initialized from JNI_OnLoad");
+    log::info!("Installed iroh Android DNS JNI context from JNI_OnLoad");
     Ok(())
 }

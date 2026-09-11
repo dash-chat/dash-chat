@@ -450,7 +450,7 @@ where
                 let manager = self.clone();
                 tokio::spawn(async move {
                     if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
-                        tracing::debug!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
+                        tracing::warn!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
                         tracked.request_sync_if_active(Some(topic));
                         manager.trigger_poll_loop();
                     }
@@ -670,7 +670,7 @@ where
         };
 
         let subscribed = self.subscribed_topics().await;
-        // Take the pending sync here info here to lock in what this poll will cover.
+        // Take the pending sync info here to lock in what this poll will cover.
         // Any requests coming in after this point will be handled by the next poll.
         let topics = match tracked_mailbox.take_pending_request() {
             PendingRequest::PollTopics(topics) => {
@@ -2295,5 +2295,27 @@ mod tests {
         // one start then, not after active_interval.
         tokio::time::sleep(Duration::from_secs(15)).await;
         assert_eq!(slow_polls.load(Ordering::Relaxed), 2);
+    }
+
+    /// A mailbox registered before any topic is subscribed must still be polled
+    /// once topics show up.
+    #[tokio::test(start_paused = true)]
+    async fn registering_before_any_subscription_still_polls() {
+        let config = test_config();
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+
+        let (client, polls) = TrackingClient::new(false);
+        mgr.register(client).await;
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(polls.load(Ordering::Relaxed), 0);
+
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        tokio::time::sleep(config.active_interval * 3).await;
+        assert!(
+            polls.load(Ordering::Relaxed) > 0,
+            "mailbox registered with no subscribed topics never polled again"
+        );
     }
 }
