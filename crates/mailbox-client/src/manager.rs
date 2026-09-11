@@ -4,7 +4,7 @@ use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Serializer};
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 
 use super::*;
@@ -130,17 +130,10 @@ impl MailboxConnectionState {
         self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
     }
 
-    /// Treat this mailbox as healthy again and poll it immediately
+    /// Treat this mailbox as healthy again
     fn wakeup(&mut self) {
         self.status = SyncStatus::Active;
         self.consecutive_errors = 0;
-        self.next_poll = Instant::now();
-    }
-
-    /// Poll immediately without presuming the outcome: status and backoff are
-    /// left for the poll's result to decide.
-    fn probe(&mut self) {
-        self.next_poll = Instant::now();
     }
 }
 
@@ -204,19 +197,13 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     /// Treat this mailbox as healthy again and poll every subscribed topic
     /// immediately.
     fn wakeup(&self) {
-        // While a poll is in flight `next_poll` is already in the past, so the
-        // deadline set below is a no-op and the pending request is what carries
-        // the wakeup past the reschedule that poll ends with.
         self.pending_request.lock().unwrap().merge_wakeup();
         self.connection_state.send_modify(|t| t.wakeup());
     }
 
     /// Poll every subscribed topic now without presuming the outcome.
     fn probe(&self) {
-        // As with wakeup, the pending request carries the probe past a poll
-        // already in flight.
         self.pending_request.lock().unwrap().merge_probe();
-        self.connection_state.send_modify(|t| t.probe());
     }
 
     /// If active, sync `topic` (or every subscribed topic, when `None`) after
@@ -225,28 +212,17 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         if self.connection_state.borrow().status != SyncStatus::Active {
             return;
         }
-        // While a poll is in flight `next_poll` is already in the past, so the
-        // deadline below is a no-op and the pending request is what carries the
-        // request past the reschedule that poll ends with.
-        self.pending_request.lock().unwrap().merge(topic);
-        self.sync_after_debounce();
+        self.pending_request.lock().unwrap().merge_poll(topic);
     }
 
-    fn sync_after_debounce(&self) {
-        let at = Instant::now() + self.config.sync_debounce;
-        self.connection_state.send_if_modified(|t| {
-            if at < t.next_poll {
-                t.next_poll = at;
-                true
-            } else {
-                false
-            }
-        });
-    }
-
-    fn poll_succeeded(&self) {
-        self.record_success();
-        self.schedule_pending_request();
+    /// When this mailbox should next be polled: its scheduled poll, or sooner
+    /// if a request is pending.
+    fn due_at(&self, now: Instant) -> Instant {
+        let next_poll = self.connection_state.borrow().next_poll;
+        self.pending_request
+            .lock()
+            .unwrap()
+            .due_at(now, next_poll, self.config.sync_debounce)
     }
 
     /// `probe` says whether the poll that failed was fulfilling a probe.
@@ -262,19 +238,6 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         let mut pending = self.pending_request.lock().unwrap();
         if !matches!(*pending, PendingRequest::Wakeup | PendingRequest::Probe) {
             *pending = PendingRequest::None;
-        }
-        drop(pending);
-        self.schedule_pending_request();
-    }
-
-    /// Schedule the poll that fulfils whatever was requested while the poll
-    /// that just ended was in flight.
-    fn schedule_pending_request(&self) {
-        match *self.pending_request.lock().unwrap() {
-            PendingRequest::None => {}
-            PendingRequest::PollTopics(_) | PendingRequest::PollAll => self.sync_after_debounce(),
-            PendingRequest::Wakeup => self.connection_state.send_modify(|t| t.wakeup()),
-            PendingRequest::Probe => self.connection_state.send_modify(|t| t.probe()),
         }
     }
 
@@ -300,37 +263,24 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 }
 
-/// What the poll loop is woken for. A nudge carries nothing the loop cannot
-/// re-derive, so it may be dropped when one is already queued; the targeted
-/// variants may not.
-#[derive(Debug, PartialEq, Eq)]
-enum Trigger {
-    Nudge,
-    Wakeup(MailboxId),
-    Probe(MailboxId),
-}
-
 /// Clears the in-flight flag and re-arms the poll loop however the poll task
 /// exits, so a panic mid-poll costs one cycle instead of stranding the mailbox
 /// as permanently "polling" and thus never due again.
 struct PollGuard<Item: MailboxItem> {
     tracked_mailbox: Arc<TrackedMailbox<Item>>,
-    trigger: mpsc::Sender<Trigger>,
+    nudge: Arc<Notify>,
     completed: bool,
 }
 
 impl<Item: MailboxItem> PollGuard<Item> {
     /// Claim the mailbox for a poll, returning `None` if one is already in flight.
-    pub fn claim(
-        tracked_mailbox: Arc<TrackedMailbox<Item>>,
-        trigger: mpsc::Sender<Trigger>,
-    ) -> Option<Self> {
+    pub fn claim(tracked_mailbox: Arc<TrackedMailbox<Item>>, nudge: Arc<Notify>) -> Option<Self> {
         if !tracked_mailbox.begin_poll() {
             return None;
         }
         Some(Self {
             tracked_mailbox,
-            trigger,
+            nudge,
             completed: false,
         })
     }
@@ -348,7 +298,7 @@ impl<Item: MailboxItem> Drop for PollGuard<Item> {
             self.tracked_mailbox.reschedule();
         }
         self.tracked_mailbox.end_poll();
-        _ = self.trigger.try_send(Trigger::Nudge);
+        self.nudge.notify_one();
     }
 }
 
@@ -364,7 +314,7 @@ where
     store: Store,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     config: MailboxesConfig,
-    trigger: mpsc::Sender<Trigger>,
+    nudge: Arc<Notify>,
 }
 
 impl<Item, Store> Mailboxes<Item, Store>
@@ -377,7 +327,6 @@ where
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
-        trigger: mpsc::Sender<Trigger>,
     ) -> Self {
         let (active_mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
@@ -387,7 +336,7 @@ where
             store,
             sync_tracker,
             config,
-            trigger,
+            nudge: Arc::new(Notify::new()),
         }
     }
 
@@ -511,19 +460,25 @@ where
 
     /// Nudge the poll loop to check for the next mailbox to poll.
     pub fn nudge_poll_loop(&self) {
-        _ = self.trigger.try_send(Trigger::Nudge);
+        self.nudge.notify_one();
     }
 
     /// Immediately activate and sync a specific mailbox, resetting any backoff.
     /// Use when there is evidence the mailbox is reachable; otherwise [`Self::probe`].
     pub async fn wakeup(&self, id: MailboxId) {
-        _ = self.trigger.send(Trigger::Wakeup(id)).await;
+        if let Some(tracked_mailbox) = self.tracked_mailbox(&id).await {
+            tracked_mailbox.wakeup();
+        }
+        self.nudge_poll_loop();
     }
 
     /// Immediately sync a specific mailbox without touching its status or
     /// backoff; the poll's outcome decides both.
     pub async fn probe(&self, id: MailboxId) {
-        _ = self.trigger.send(Trigger::Probe(id)).await;
+        if let Some(tracked_mailbox) = self.tracked_mailbox(&id).await {
+            tracked_mailbox.probe();
+        }
+        self.nudge_poll_loop();
     }
 
     /// Request a sync of every active mailbox, covering only `topic` if given,
@@ -679,45 +634,23 @@ where
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
-        let (trigger_tx, mut trigger_rx) = mpsc::channel::<Trigger>(1);
-        let manager = Self::new(store, sync_tracker, config, trigger_tx);
+        let manager = Self::new(store, sync_tracker, config);
         let r = manager.clone();
         tokio::spawn(
             async move {
                 loop {
-                    let next = manager.find_next_due().await;
-
-                    match next {
-                        None => {
-                            // No mailboxes registered, wait for a trigger
-                            match trigger_rx.recv().await {
-                                Some(trigger) => {
-                                    manager.handle_trigger(trigger).await;
-                                    continue;
-                                }
-                                None => break,
-                            }
+                    match manager.find_next_due().await {
+                        // No mailboxes registered, wait for a nudge
+                        None => manager.nudge.notified().await,
+                        Some(NextDue { wait, .. }) if !wait.is_zero() => {
+                            // Sleep until the next mailbox is due, or a nudge
+                            // wakes us; either way re-evaluate what is due now.
+                            _ = tokio::time::timeout(wait, manager.nudge.notified()).await;
                         }
-                        Some(NextDue { id, wait }) => {
-                            if !wait.is_zero() {
-                                // Sleep until the next mailbox is due, or a trigger wakes us
-                                match tokio::time::timeout(wait, trigger_rx.recv()).await {
-                                    Ok(None) => break, // channel closed
-                                    Ok(Some(trigger)) => manager.handle_trigger(trigger).await,
-                                    Err(_) => {} // timeout elapsed
-                                }
-                                // Re-evaluate which mailbox is actually due now
-                                continue;
-                            }
-
+                        Some(NextDue { id, .. }) => {
                             let _task = manager.poll_mailbox(&id).await;
                         }
                     }
-                }
-
-                #[allow(unused)]
-                {
-                    tracing::warn!("poll mailboxes loop exited");
                 }
             }
             .instrument(tracing::info_span!("poll mailboxes")),
@@ -736,44 +669,16 @@ where
         // A mailbox already being polled isn't due: its `next_poll` only moves
         // once that poll finishes, so leaving it in would schedule it again
         // immediately, over and over.
-        let (id, tracked) = mm
+        let (id, due) = mm
             .iter()
             .filter(|(_, t)| !t.is_polling())
-            .min_by_key(|(_, t)| t.connection_state().borrow().next_poll)?;
-
-        let next = tracked.connection_state().borrow().next_poll;
-        let wait = if next <= now {
-            Duration::ZERO
-        } else {
-            next - now
-        };
+            .map(|(id, t)| (id, t.due_at(now)))
+            .min_by_key(|(_, due)| *due)?;
 
         Some(NextDue {
             id: id.clone(),
-            wait,
+            wait: due.saturating_duration_since(now),
         })
-    }
-
-    async fn handle_trigger(&self, trigger: Trigger) {
-        match trigger {
-            Trigger::Nudge => {}
-            Trigger::Wakeup(id) => self.wakeup_mailbox(&id).await,
-            Trigger::Probe(id) => self.probe_mailbox(&id).await,
-        }
-    }
-
-    async fn wakeup_mailbox(&self, id: &MailboxId) {
-        let mm = self.mailboxes.lock().await;
-        if let Some(tracked_mailbox) = mm.get(id) {
-            tracked_mailbox.wakeup();
-        }
-    }
-
-    async fn probe_mailbox(&self, id: &MailboxId) {
-        let mm = self.mailboxes.lock().await;
-        if let Some(tracked_mailbox) = mm.get(id) {
-            tracked_mailbox.probe();
-        }
     }
 
     async fn poll_mailbox(&self, id: &MailboxId) -> Option<tokio::task::JoinHandle<()>> {
@@ -791,11 +696,11 @@ where
         let pending = tracked_mailbox.take_pending_request();
         let probe = pending == PendingRequest::Probe;
         let topics = match pending {
-            PendingRequest::PollTopics(topics) => {
+            PendingRequest::PollTopics { topics, .. } => {
                 topics.intersection(&subscribed).copied().collect()
             }
             PendingRequest::None
-            | PendingRequest::PollAll
+            | PendingRequest::PollAll { .. }
             | PendingRequest::Wakeup
             | PendingRequest::Probe => subscribed,
         };
@@ -805,7 +710,7 @@ where
             return None;
         }
 
-        let guard = PollGuard::claim(tracked_mailbox.clone(), self.trigger.clone())?;
+        let guard = PollGuard::claim(tracked_mailbox.clone(), self.nudge.clone())?;
 
         tracing::debug!("polling mailbox {id}");
         let client = tracked_mailbox.client().await;
@@ -815,7 +720,7 @@ where
         let task = tokio::spawn(async move {
             let result = manager.sync_topics(topics.into_iter(), &client).await;
             match result {
-                Ok(()) => tracked_mailbox.poll_succeeded(),
+                Ok(()) => tracked_mailbox.record_success(),
                 Err(err) => {
                     tracing::error!(?err, mailbox = %id, "mailbox sync error");
                     tracked_mailbox.poll_failed(format!("{err:?}"), probe);
@@ -943,15 +848,22 @@ struct NextDue {
     wait: Duration,
 }
 
-/// The poll/wakeup action requested of a mailbox since its last poll.
+/// The poll/wakeup action requested of a mailbox since its last poll. It is
+/// what carries a request past a poll already in flight: that poll's fetch was
+/// built before the request, so the request is only fulfilled by the next one.
 #[derive(Debug, PartialEq, Eq)]
 enum PendingRequest<Topic> {
     /// No action was requested since last poll: wait for regularly scheduled poll.
     None,
-    /// A specific topic set was requested: poll them after the debounce.
-    PollTopics(BTreeSet<Topic>),
-    /// Every subscribed topic was requested: poll them after the debounce.
-    PollAll,
+    /// A specific topic set was requested: poll them once the debounce that
+    /// started with the first request has elapsed.
+    PollTopics {
+        topics: BTreeSet<Topic>,
+        since: Instant,
+    },
+    /// Every subscribed topic was requested: poll them once the debounce that
+    /// started with the first request has elapsed.
+    PollAll { since: Instant },
     /// The mailbox was woken: set as Active and poll every subscribed topic now (no debounce).
     Wakeup,
     /// The mailbox was probed: poll every subscribed topic now (no debounce),
@@ -961,16 +873,41 @@ enum PendingRequest<Topic> {
 
 impl<Topic: Ord> PendingRequest<Topic> {
     /// Accumulate a request for `topic`, or for every subscribed topic when `None`.
-    fn merge(&mut self, topic: Option<Topic>) {
+    fn merge_poll(&mut self, topic: Option<Topic>) {
         match (&mut *self, topic) {
-            (PendingRequest::PollAll | PendingRequest::Wakeup | PendingRequest::Probe, _) => {}
-            (_, None) => *self = PendingRequest::PollAll,
-            (PendingRequest::PollTopics(topics), Some(topic)) => {
+            (
+                PendingRequest::PollAll { .. } | PendingRequest::Wakeup | PendingRequest::Probe,
+                _,
+            ) => {}
+            (PendingRequest::PollTopics { since, .. }, None) => {
+                *self = PendingRequest::PollAll { since: *since }
+            }
+            (PendingRequest::None, None) => {
+                *self = PendingRequest::PollAll {
+                    since: Instant::now(),
+                }
+            }
+            (PendingRequest::PollTopics { topics, .. }, Some(topic)) => {
                 topics.insert(topic);
             }
             (PendingRequest::None, Some(topic)) => {
-                *self = PendingRequest::PollTopics(BTreeSet::from([topic]))
+                *self = PendingRequest::PollTopics {
+                    topics: BTreeSet::from([topic]),
+                    since: Instant::now(),
+                }
             }
+        }
+    }
+
+    /// When this request wants the mailbox polled, given the regularly
+    /// scheduled poll at `next_poll`.
+    fn due_at(&self, now: Instant, next_poll: Instant, debounce: Duration) -> Instant {
+        match self {
+            PendingRequest::None => next_poll,
+            PendingRequest::PollTopics { since, .. } | PendingRequest::PollAll { since } => {
+                next_poll.min(*since + debounce)
+            }
+            PendingRequest::Wakeup | PendingRequest::Probe => now,
         }
     }
 
@@ -1139,10 +1076,17 @@ mod tests {
         Arc::new(MailboxSyncTracker::in_memory())
     }
 
+    /// A topic request made now (paused time keeps `since` stable).
+    fn poll_topics(topics: impl IntoIterator<Item = u8>) -> PendingRequest<u8> {
+        PendingRequest::PollTopics {
+            topics: topics.into_iter().collect(),
+            since: Instant::now(),
+        }
+    }
+
     /// Create a Mailboxes instance without spawning the background loop
     fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        let (trigger_tx, _trigger_rx) = mpsc::channel(1);
-        Mailboxes::new(DummyStore, test_sync_tracker(), config, trigger_tx)
+        Mailboxes::new(DummyStore, test_sync_tracker(), config)
     }
 
     async fn spawn_test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
@@ -1585,25 +1529,6 @@ mod tests {
     // -- wakeup tests --
 
     #[tokio::test(start_paused = true)]
-    async fn wakeup_is_not_dropped_behind_a_queued_nudge() {
-        let (trigger_tx, mut trigger_rx) = mpsc::channel(1);
-        let mgr: Mailboxes<Msg, DummyStore> =
-            Mailboxes::new(DummyStore, test_sync_tracker(), test_config(), trigger_tx);
-        let id: MailboxId = "mb".into();
-
-        mgr.nudge_poll_loop();
-        let wakeup = tokio::spawn({
-            let mgr = mgr.clone();
-            let id = id.clone();
-            async move { mgr.wakeup(id).await }
-        });
-
-        assert_eq!(trigger_rx.recv().await, Some(Trigger::Nudge));
-        assert_eq!(trigger_rx.recv().await, Some(Trigger::Wakeup(id)));
-        wakeup.await.unwrap();
-    }
-
-    #[tokio::test(start_paused = true)]
     async fn wakeup_mailbox_resets_status_and_schedule() {
         let config = test_config();
         let mgr = test_mailboxes(config.clone());
@@ -1626,7 +1551,7 @@ mod tests {
         let NextDue { wait, .. } = mgr.find_next_due().await.unwrap();
         assert!(wait > Duration::ZERO);
 
-        mgr.wakeup_mailbox(&client_id).await;
+        mgr.wakeup(client_id.clone()).await;
 
         let NextDue { id, wait, .. } = mgr.find_next_due().await.unwrap();
         assert_eq!(id, client_id);
@@ -1677,10 +1602,10 @@ mod tests {
 
         let mm = mgr.mailboxes.lock().await;
         let now = Instant::now();
-        let next_poll = |id| mm.get(id).unwrap().connection_state().borrow().next_poll;
-        assert_eq!(next_poll(&active_id), now + config.sync_debounce);
-        assert!(next_poll(&degraded_id) > now + config.sync_debounce);
-        assert!(next_poll(&stopped_id) > now + config.sync_debounce);
+        let due_at = |id| mm.get(id).unwrap().due_at(now);
+        assert_eq!(due_at(&active_id), now + config.sync_debounce);
+        assert!(due_at(&degraded_id) > now + config.sync_debounce);
+        assert!(due_at(&stopped_id) > now + config.sync_debounce);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1707,10 +1632,7 @@ mod tests {
         mgr.request_sync(None).await;
 
         let mm = mgr.mailboxes.lock().await;
-        assert_eq!(
-            mm.get(&id).unwrap().connection_state().borrow().next_poll,
-            deadline
-        );
+        assert_eq!(mm.get(&id).unwrap().due_at(Instant::now()), deadline);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1718,24 +1640,22 @@ mod tests {
         let config = test_config();
         let tracked =
             TrackedMailbox::new(Arc::new(MemMailbox::<Msg>::new().client()), config.clone());
-        let next_poll = || tracked.connection_state().borrow().next_poll;
+        let due_at = || tracked.due_at(Instant::now());
         let interval = config.active_interval + config.between_polls_delay;
 
         // Requested before the poll started, so the poll covered it.
         tracked.request_sync_if_active(None);
         tracked.take_pending_request();
-        tracked.poll_succeeded();
-        assert_eq!(next_poll(), Instant::now() + interval);
+        tracked.record_success();
+        assert_eq!(due_at(), Instant::now() + interval);
 
         // Due again, so the next poll starts.
         tokio::time::advance(interval).await;
         tracked.take_pending_request();
 
         tracked.request_sync_if_active(None);
-        assert!(next_poll() <= Instant::now());
-
-        tracked.poll_succeeded();
-        assert_eq!(next_poll(), Instant::now() + config.sync_debounce);
+        tracked.record_success();
+        assert_eq!(due_at(), Instant::now() + config.sync_debounce);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1804,9 +1724,6 @@ mod tests {
         assert_eq!(state.status, SyncStatus::Stopped);
         let errors = state.consecutive_errors;
 
-        state.probe();
-        assert_eq!(state.next_poll, Instant::now());
-
         state.record_probe_error(&config, "still down".into());
         assert_eq!(state.status, SyncStatus::Stopped);
         assert_eq!(state.consecutive_errors, errors);
@@ -1820,11 +1737,11 @@ mod tests {
     #[test]
     fn pending_probe_yields_to_wakeup_and_absorbs_syncs() {
         let mut pending = PendingRequest::None;
-        pending.merge(Some(1u8));
+        pending.merge_poll(Some(1u8));
         pending.merge_probe();
         assert_eq!(pending, PendingRequest::Probe);
-        pending.merge(Some(2u8));
-        pending.merge(None);
+        pending.merge_poll(Some(2u8));
+        pending.merge_poll(None);
         assert_eq!(pending, PendingRequest::Probe);
         pending.merge_wakeup();
         pending.merge_probe();
@@ -1912,7 +1829,6 @@ mod tests {
         for _ in 0..config.stopped_threshold {
             state.record_error(&config, "x".into());
         }
-        state.probe();
         state.record_success(&config);
         assert_eq!(state.status, SyncStatus::Active);
         assert_eq!(state.consecutive_errors, 0);
@@ -2366,23 +2282,43 @@ mod tests {
 
     // -- PendingSync tests --
 
-    #[test]
-    fn pending_request_accumulates_topics() {
+    #[tokio::test(start_paused = true)]
+    async fn pending_request_accumulates_topics() {
         let mut pending = PendingRequest::None;
-        pending.merge(Some(1u8));
-        pending.merge(Some(2u8));
-        pending.merge(Some(1u8));
-        assert_eq!(pending, PendingRequest::PollTopics(BTreeSet::from([1, 2])));
+        pending.merge_poll(Some(1u8));
+        pending.merge_poll(Some(2u8));
+        pending.merge_poll(Some(1u8));
+        assert_eq!(pending, poll_topics([1, 2]));
     }
 
     /// A request for every topic can't be narrowed by a later single-topic one.
-    #[test]
-    fn pending_request_all_absorbs_topics() {
+    #[tokio::test(start_paused = true)]
+    async fn pending_request_all_absorbs_topics() {
         let mut pending = PendingRequest::None;
-        pending.merge(Some(1u8));
-        pending.merge(None);
-        pending.merge(Some(2u8));
-        assert_eq!(pending, PendingRequest::PollAll);
+        pending.merge_poll(Some(1u8));
+        pending.merge_poll(None);
+        pending.merge_poll(Some(2u8));
+        assert_eq!(
+            pending,
+            PendingRequest::PollAll {
+                since: Instant::now()
+            }
+        );
+    }
+
+    /// A burst of requests is polled on the first one's debounce, not the last's.
+    #[tokio::test(start_paused = true)]
+    async fn pending_request_keeps_the_first_debounce() {
+        let debounce = Duration::from_millis(100);
+        let far = Instant::now() + Duration::from_secs(60);
+        let mut pending = PendingRequest::None;
+        pending.merge_poll(Some(1u8));
+        let deadline = Instant::now() + debounce;
+        tokio::time::advance(Duration::from_millis(20)).await;
+        pending.merge_poll(Some(2u8));
+        tokio::time::advance(Duration::from_millis(20)).await;
+        pending.merge_poll(None);
+        assert_eq!(pending.due_at(Instant::now(), far, debounce), deadline);
     }
 
     // -- topic-scoped sync tests --
@@ -2464,21 +2400,15 @@ mod tests {
             TrackedMailbox::new(Arc::new(MemMailbox::<Msg>::new().client()), config.clone());
 
         tracked.request_sync_if_active(Some(1u8));
-        assert_eq!(
-            tracked.take_pending_request(),
-            PendingRequest::PollTopics(BTreeSet::from([1]))
-        );
+        assert_eq!(tracked.take_pending_request(), poll_topics([1]));
 
         tracked.request_sync_if_active(Some(2u8));
-        tracked.poll_succeeded();
+        tracked.record_success();
         assert_eq!(
-            tracked.connection_state().borrow().next_poll,
+            tracked.due_at(Instant::now()),
             Instant::now() + config.sync_debounce
         );
-        assert_eq!(
-            tracked.take_pending_request(),
-            PendingRequest::PollTopics(BTreeSet::from([2]))
-        );
+        assert_eq!(tracked.take_pending_request(), poll_topics([2]));
     }
 
     // -- sync_after_publish tests --
@@ -2555,8 +2485,7 @@ mod tests {
         config: MailboxesConfig,
         store: MemStore,
     ) -> Mailboxes<Msg, MemStore> {
-        let (trigger_tx, _trigger_rx) = mpsc::channel(1);
-        Mailboxes::new(store, test_sync_tracker(), config, trigger_tx)
+        Mailboxes::new(store, test_sync_tracker(), config)
     }
 
     async fn join(handles: Vec<tokio::task::JoinHandle<()>>) {
@@ -2662,10 +2591,7 @@ mod tests {
             Some(4)
         );
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
-        assert_eq!(
-            tracked.take_pending_request(),
-            PendingRequest::PollTopics(BTreeSet::from([0]))
-        );
+        assert_eq!(tracked.take_pending_request(), poll_topics([0]));
     }
 
     #[tokio::test(start_paused = true)]
@@ -2681,10 +2607,7 @@ mod tests {
 
         assert!(published.lock().unwrap().is_empty());
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
-        assert_eq!(
-            tracked.take_pending_request(),
-            PendingRequest::PollTopics(BTreeSet::from([0]))
-        );
+        assert_eq!(tracked.take_pending_request(), poll_topics([0]));
     }
 
     /// A lost tracker re-pushes a prefix the mailbox already holds: the echo
