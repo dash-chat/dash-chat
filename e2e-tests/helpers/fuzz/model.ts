@@ -67,6 +67,9 @@ export interface ExpectedHub {
 /** A LAN available to a run, by its real network name. */
 export interface ExpectedNetwork {
 	name: string;
+	/** The host's own LAN: every running hub is on it, whatever LAN the
+	 * host's card is on, since the host reaches it by wire too. */
+	home: boolean;
 }
 
 export interface InteractionTarget {
@@ -141,10 +144,10 @@ export class ExpectedModel {
 
 	constructor(
 		agents: { name: string; mobile: boolean }[],
-		networks: string[] = [],
+		networks: ExpectedNetwork[] = [],
 	) {
 		this.agents = agents;
-		this.networks = networks.map(name => ({ name }));
+		this.networks = networks;
 		for (const { name } of agents) {
 			this.knowledge.set(name, new Set());
 			this.record(name, {
@@ -214,6 +217,15 @@ export class ExpectedModel {
 		return this.networks.map(n => n.name);
 	}
 
+	/** The LANs the hubs can be moved onto: every one but the home LAN. */
+	hubNetworkNames(): string[] {
+		return this.networks.filter(n => !n.home).map(n => n.name);
+	}
+
+	homeNetwork(): string | null {
+		return this.networks.find(n => n.home)?.name ?? null;
+	}
+
 	hasNetworks(): boolean {
 		return this.networks.length > 0;
 	}
@@ -252,9 +264,10 @@ export class ExpectedModel {
 		this.hub(name).running = false;
 	}
 
-	/** The running hubs on `network`. */
+	/** The running hubs on `network`: all of them on the home LAN. */
 	private hubsOn(network: string): ExpectedHub[] {
-		return this.hubs.filter(h => h.running && h.network === network);
+		const home = network === this.homeNetwork();
+		return this.hubs.filter(h => h.running && (home || h.network === network));
 	}
 
 	/** Hubs `name`'s app must show as connected: the running ones on its
@@ -658,13 +671,13 @@ export class ExpectedModel {
  * contacts, no hub anywhere, everyone foregrounded and off the air. */
 export function newModel(real: {
 	agents: { agent: { platform: string }; name: string }[];
-	networks: { ssid: string }[];
+	networks: { ssid: string; home: boolean }[];
 }): ExpectedModel {
 	return new ExpectedModel(
 		real.agents.map(({ agent, name }) => ({
 			name,
 			mobile: agent.platform !== 'desktop',
 		})),
-		real.networks.map(n => n.ssid),
+		real.networks.map(n => ({ name: n.ssid, home: n.home })),
 	);
 }

@@ -18,11 +18,23 @@ function sameLan(...names: string[]): ExpectedModel {
 
 const N1 = 'lab-a';
 const N2 = 'lab-b';
+const HOME = 'office';
 
 function lans(networks: string[], ...names: string[]): ExpectedModel {
 	return new ExpectedModel(
 		names.map(name => ({ name, mobile: true })),
-		networks,
+		networks.map(name => ({ name, home: false })),
+	);
+}
+
+/** `networks` plus the home LAN every running hub is on. */
+function lansWithHome(networks: string[], ...names: string[]): ExpectedModel {
+	return new ExpectedModel(
+		names.map(name => ({ name, mobile: true })),
+		[
+			...networks.map(name => ({ name, home: false })),
+			{ name: HOME, home: true },
+		],
 	);
 }
 
@@ -206,4 +218,47 @@ test('propagateShared unions everyone as one LAN, whatever the topology', () => 
 	assert.equal(m.propagate().has(B), false);
 	assert.deepEqual([...(m.propagateShared().get(B) ?? [])], [chat]);
 	assert.equal(m.view(B, chat).pending, false);
+});
+
+test('running hubs are on the home network wherever the card is', () => {
+	const m = lansWithHome([N1], A, B);
+	const hub = m.createHub();
+	m.agentJoin(A, HOME);
+	m.agentJoin(B, N1);
+	assert.equal(m.expectedHubs(A), 0);
+	m.startHub(hub.name);
+	assert.equal(m.expectedHubs(A), 1);
+	assert.equal(m.expectedHubs(B), 0);
+	m.hubJoin(hub.name, N1);
+	assert.equal(m.expectedHubs(A), 1);
+	assert.equal(m.expectedHubs(B), 1);
+	m.hubLeave(hub.name);
+	assert.equal(m.expectedHubs(A), 1);
+	assert.equal(m.expectedHubs(B), 0);
+	m.stopHub(hub.name);
+	assert.equal(m.expectedHubs(A), 0);
+});
+
+test('the home network is not one the hubs can be moved onto', () => {
+	const m = lansWithHome([N1, N2], A);
+	assert.deepEqual(m.networkNames(), [N1, N2, HOME]);
+	assert.deepEqual(m.hubNetworkNames(), [N1, N2]);
+	assert.equal(m.homeNetwork(), HOME);
+	assert.equal(lans([N1], A).homeNetwork(), null);
+});
+
+test('a running hub relays between its LAN and the home network', () => {
+	const m = lansWithHome([N1], A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const hub = m.createHub();
+	m.hubJoin(hub.name, N1);
+	m.startHub(hub.name);
+	m.agentJoin(A, HOME);
+	m.agentJoin(B, N1);
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	const growth = m.propagate();
+	assert.deepEqual([...(growth.get(B) ?? [])], [chat]);
+	assert.equal(m.knows(B).has('message:sm-1'), true);
 });

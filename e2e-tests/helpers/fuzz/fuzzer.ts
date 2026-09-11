@@ -10,7 +10,7 @@
  */
 import fc from 'fast-check';
 
-import { leaveWifi, wifiDevice } from '../../setup/host-wifi';
+import { hostWifiNetwork, leaveWifi, wifiDevice } from '../../setup/host-wifi';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
 import { navigateToAddContact } from '../flows/exchange-contacts';
@@ -21,6 +21,7 @@ import {
 	addContact,
 	ensureHome,
 	goHome,
+	labNetworks,
 	log,
 	newReal,
 	openChatPage,
@@ -87,6 +88,8 @@ export class Fuzzer {
 	 * features on, each one's contact link collected, and — given networks
 	 * to walk phones and hubs through, and a Wi-Fi card on the host for the
 	 * hubs — a members-less group chat each, to read the connection chip in.
+	 * The network the host's card is on joins the run's networks as its home
+	 * network: phones may walk onto it, and every running hub is on it.
 	 * Every agent is left on its home page. Preparation is not repeatable,
 	 * so a spec prepares once, from its `before` hook — whose context `ctx`
 	 * is, so that the suite's tests can be freed of their timeout before any
@@ -116,6 +119,10 @@ export class Fuzzer {
 		});
 		if (networked && real.hubsDevice === null) {
 			throw new Error('networks are configured but the host has no Wi-Fi card');
+		}
+		if (networked) {
+			await restoreNetworks(real);
+			addHomeNetwork(real);
 		}
 		const model = newModel(real);
 		await prepareAgents(model, real);
@@ -213,12 +220,29 @@ async function restorePhone(
 
 /** The host's card and every phone back on their usual networks. */
 async function restoreNetworks(real: Real): Promise<void> {
-	for (const network of real.networks) leaveWifi(network.ssid);
-	for (const sa of real.agents) await restorePhone(sa, real.networks);
+	for (const network of labNetworks(real)) leaveWifi(network.ssid);
+	for (const sa of real.agents) await restorePhone(sa, labNetworks(real));
+}
+
+/** Append the network the host's card is on, if any, as the run's home
+ *  network. Read once the card is back off the lab networks, so a leftover
+ *  association from an aborted run is not taken for the host's own LAN. */
+function addHomeNetwork(real: Real): void {
+	if (real.hubsDevice === null) return;
+	const home = hostWifiNetwork(real.hubsDevice);
+	if (home === null) {
+		console.log('[wifi] the host is on no Wi-Fi network; no home network');
+		return;
+	}
+	if (labNetworks(real).some(n => n.ssid === home.ssid)) {
+		console.log(`[wifi] the host is still on ${home.ssid}; no home network`);
+		return;
+	}
+	console.log(`[wifi] home network: ${home.ssid}`);
+	real.networks.push(home);
 }
 
 async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {
-	if (model.hasNetworks()) await restoreNetworks(real);
 	for (const sa of real.agents) {
 		await sa.agent.enablePreviewFeatures();
 		await sa.agent.homePage.ready();
@@ -291,10 +315,10 @@ async function resetNetworks(model: ExpectedModel, real: Real): Promise<void> {
 async function teardown(real: Real): Promise<void> {
 	await parkHubs(real);
 	if (real.networks.length === 0) return;
-	for (const network of real.networks) leaveWifi(network.ssid);
+	for (const network of labNetworks(real)) leaveWifi(network.ssid);
 	for (const sa of real.agents) {
 		try {
-			await restorePhone(sa, real.networks);
+			await restorePhone(sa, labNetworks(real));
 		} catch {
 			/* no saved network in range; nothing to restore */
 		}
