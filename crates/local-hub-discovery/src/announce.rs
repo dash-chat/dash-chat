@@ -40,8 +40,11 @@ impl LocalHubAnnouncementService {
                         return;
                     }
                 }
-                if let Ok(next) = announce(&instance_id, port, &handle) {
-                    _announcement = next;
+                match announce(&instance_id, port, &handle) {
+                    Ok(next) => _announcement = next,
+                    Err(err) => log::warn!(
+                        "Failed to re-announce local hub {instance_id} (keeping the previous announcement, retrying on next network change): {err}"
+                    ),
                 }
             }
         }));
