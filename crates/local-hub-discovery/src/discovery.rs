@@ -1,5 +1,5 @@
 //! Browsing for local hubs on the LAN over mDNS (swarm-discovery): every
-//! sighting is TCP-probed, and a hub is reported found once it answers and lost
+//! sighting is TCP-probed, and a hub is reported "found" once it answers and "lost"
 //! once it doesn't, whether because a probe failed or because it aged out of
 //! the swarm. One browser lives as long as the service, kept joined to the
 //! current interfaces across network changes so its view of the swarm (and so
@@ -65,8 +65,8 @@ impl LocalHubDiscoveryService {
         Self::new(sightings, browser)
     }
 
-    /// Probe every sighting concurrently; a hub is found once it answers and
-    /// lost once it doesn't. `browser` is stopped with the service.
+    /// Probe every sighting concurrently; a hub is "found" once it answers and
+    /// "lost" once it doesn't. `browser` is stopped with the service.
     fn new(
         sightings: impl Stream<Item = Sighting> + Send + 'static,
         browser: AbortOnDropHandle<()>,
@@ -305,6 +305,7 @@ mod tests {
         }
 
         /// No event for long enough that every in-flight probe has finished.
+        /// Waits for two whole probe timeouts when successful: use sparingly.
         async fn quiet(&mut self) {
             let event = tokio::time::timeout(PROBE_TIMEOUT * 2, self.service.recv()).await;
             assert!(event.is_err(), "unexpected event: {event:?}");
