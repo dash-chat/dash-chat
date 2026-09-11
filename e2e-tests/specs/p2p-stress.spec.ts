@@ -27,6 +27,7 @@ import { type Agent, setupAgents } from '../setup/setup-agents';
 describe('P2P offline stress', () => {
 	let agent1: Agent;
 	let agent2: Agent;
+	let fuzzer: Fuzzer;
 	let mailboxSuspended = false;
 
 	before(async function () {
@@ -43,6 +44,12 @@ describe('P2P offline stress', () => {
 		mailboxSuspended = true;
 		await agent1.createProfilePage.createProfile('Alice', 'Stress');
 		await agent2.createProfilePage.createProfile('Bob', 'Stress');
+		fuzzer = await Fuzzer.prepare(this, {
+			agents: [
+				{ agent: agent1, name: 'Alice' },
+				{ agent: agent2, name: 'Bob' },
+			],
+		});
 	});
 
 	after(() => {
@@ -54,16 +61,10 @@ describe('P2P offline stress', () => {
 		}
 	});
 
-	it('agents behave normally for the whole run over p2p sync only', async function () {
+	it('agents behave normally for the whole run over p2p sync only', async () => {
 		const commands = envInt('E2E_STRESS_COMMANDS', 80);
 		const seed = envInt('E2E_STRESS_SEED', Math.floor(Math.random() * 2 ** 31));
-		const fuzzer = await Fuzzer.prepare({
-			agents: [
-				{ agent: agent1, name: 'Alice' },
-				{ agent: agent2, name: 'Bob' },
-			],
-		});
-		await fuzzer.soak(this, {
+		await fuzzer.soak({
 			moves: [...userMoves, ...deviceMoves],
 			length: commands,
 			seed,

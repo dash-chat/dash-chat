@@ -47,7 +47,7 @@ class ForegroundMove extends Move {
 		await actor.agent.startApp();
 		await actor.agent.homePage.ready();
 		m.foreground(actor.name);
-		if (m.networkCapacity > 0) {
+		if (m.hasNetworks()) {
 			await checkHubs(m, actor, 'coming back to the foreground');
 		}
 	}
@@ -78,7 +78,7 @@ class RestartMove extends Move {
 			await actor.agent.startApp();
 		}
 		await actor.agent.homePage.ready();
-		if (m.networkCapacity > 0) {
+		if (m.hasNetworks()) {
 			await checkHubs(m, actor, 'the app restarted');
 		}
 	}

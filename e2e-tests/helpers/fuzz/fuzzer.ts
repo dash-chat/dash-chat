@@ -10,19 +10,21 @@
  */
 import fc from 'fast-check';
 
-import { stopHotspot } from '../../setup/hotspot';
-import { stopLocalHub } from '../../setup/local-hub';
+import { leaveWifi, wifiDevice } from '../../setup/host-wifi';
 import type { Agent } from '../../setup/setup-agents';
+import type { WifiNetwork } from '../../setup/test-env';
 import { navigateToAddContact } from '../flows/exchange-contacts';
 import { createGroup } from '../flows/exchange-contacts-and-create-group';
 import {
 	type Real,
+	type StressAgent,
 	addContact,
 	ensureHome,
 	goHome,
 	log,
 	newReal,
 	openChatPage,
+	parkHub,
 } from './agents';
 import { type ExpectedModel, newModel } from './model';
 import type { Move, Moves } from './moves/move';
@@ -35,6 +37,12 @@ function oneOf(moves: Moves): fc.Arbitrary<Move> {
 	if (moves.length === 0) throw new Error('no moves to draw from');
 	return fc.oneof(...moves);
 }
+
+/** A fuzz test runs as long as its moves take: `prepare` lifts the mocha
+ *  timeout of every test in its suite to this. It has to happen before a
+ *  test starts, since wdio arms its per-test abort timer from that timeout
+ *  at that moment. `search` bounds itself through fast-check instead. */
+const FUZZ_TEST_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
 
 /** What a move may take: it drives a real UI flow and its checks wait out
  *  generous sync timeouts. */
@@ -76,16 +84,39 @@ export class Fuzzer {
 
 	/**
 	 * A fuzzer over `agents`, driven to where moves expect them: preview
-	 * features on, each one's contact link collected, and — given Wi-Fi cards
-	 * to raise LANs on — a members-less group chat each, to read the
-	 * connection chip in. Every agent is left on its home page. Preparation
-	 * is not repeatable, so a spec prepares once and runs as often as it likes.
+	 * features on, each one's contact link collected, and — given networks
+	 * to walk phones and hubs through, and a Wi-Fi card on the host for the
+	 * hubs — a members-less group chat each, to read the connection chip in.
+	 * Every agent is left on its home page. Preparation is not repeatable,
+	 * so a spec prepares once, from its `before` hook — whose context `ctx`
+	 * is, so that the suite's tests can be freed of their timeout before any
+	 * of them starts — and runs as often as it likes.
 	 */
-	static async prepare(init: {
-		agents: { agent: Agent; name: string }[];
-		wifiDevices?: string[];
-	}): Promise<Fuzzer> {
-		const real = newReal(init);
+	static async prepare(
+		ctx: Mocha.Context,
+		init: {
+			agents: { agent: Agent; name: string }[];
+			networks?: WifiNetwork[];
+		},
+	): Promise<Fuzzer> {
+		const suite = ctx.test?.parent;
+		if (
+			!ctx.test?.title.startsWith('"before all" hook') ||
+			suite === undefined
+		) {
+			throw new Error(
+				"Fuzzer.prepare must be called from the suite's before()",
+			);
+		}
+		suite.eachTest(test => test.timeout(FUZZ_TEST_TIMEOUT_MS));
+		const networked = init.networks !== undefined && init.networks.length > 0;
+		const real = newReal({
+			...init,
+			hubsDevice: networked ? wifiDevice() : null,
+		});
+		if (networked && real.hubsDevice === null) {
+			throw new Error('networks are configured but the host has no Wi-Fi card');
+		}
 		const model = newModel(real);
 		await prepareAgents(model, real);
 		return new Fuzzer(model, real);
@@ -98,10 +129,8 @@ export class Fuzzer {
 	 * was given, and reported with the seed as `move` builders ready to paste
 	 * into a `replay`.
 	 */
-	search(ctx: Mocha.Context, opts: SearchOptions): Promise<void> {
+	search(opts: SearchOptions): Promise<void> {
 		const budget = 2 * opts.attempts * sequenceBudget(opts.length);
-		// The replay in flight when the limit hits still runs to its end.
-		ctx.timeout(budget + sequenceBudget(opts.length));
 		return this.run(
 			fc.commands([oneOf(opts.moves)], {
 				maxCommands: opts.length,
@@ -117,8 +146,7 @@ export class Fuzzer {
 
 	/** One long random sequence: the app under ordinary use for a while. A
 	 *  failure is reported as is, without shrinking. */
-	soak(ctx: Mocha.Context, opts: SoakOptions): Promise<void> {
-		ctx.timeout(sequenceBudget(opts.length));
+	soak(opts: SoakOptions): Promise<void> {
 		return this.run(
 			fc.array(oneOf(opts.moves), {
 				minLength: opts.length,
@@ -129,8 +157,7 @@ export class Fuzzer {
 	}
 
 	/** Run a reported sequence exactly as the search that found it did. */
-	replay(ctx: Mocha.Context, moves: Move[]): Promise<void> {
-		ctx.timeout(sequenceBudget(moves.length));
+	replay(moves: Move[]): Promise<void> {
 		return this.run(fc.constant(moves), { numRuns: 1, endOnFailure: true });
 	}
 
@@ -179,7 +206,25 @@ function sequenceBudget(length: number): number {
 	return length * MOVE_BUDGET_MS + SEQUENCE_BUDGET_MS;
 }
 
+/** Put a phone back on its usual network however a run left it: on the
+ *  air, with every test network forgotten so the supplicant cannot pick one
+ *  again. Throws if no saved network is in range. */
+async function restorePhone(
+	sa: StressAgent,
+	networks: WifiNetwork[],
+): Promise<void> {
+	await sa.agent.enableWifi();
+	for (const network of networks) await sa.agent.forgetWifi(network.ssid);
+}
+
+/** The host's card and every phone back on their usual networks. */
+async function restoreNetworks(real: Real): Promise<void> {
+	for (const network of real.networks) leaveWifi(network.ssid);
+	for (const sa of real.agents) await restorePhone(sa, real.networks);
+}
+
 async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {
+	if (model.hasNetworks()) await restoreNetworks(real);
 	for (const sa of real.agents) {
 		await sa.agent.enablePreviewFeatures();
 		await sa.agent.homePage.ready();
@@ -188,13 +233,13 @@ async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {
 		await sa.agent.addContactPage.back.click();
 		await sa.agent.newMessagePage.back.click();
 		await sa.agent.homePage.ready();
-		if (model.networkCapacity === 0) continue;
+		if (!model.hasNetworks()) continue;
 		const chatName = model.nextGroupName();
 		await createGroup(sa.agent, chatName, []);
 		await ensureHome(sa);
 		model.addGroup(sa.name, [], chatName);
 	}
-	if (model.networkCapacity === 0) return;
+	if (!model.hasNetworks()) return;
 	// The peer checks probe every direct chat, so every pair are contacts
 	// before the first sequence — established, profiles included, while the
 	// phones still share their usual LAN.
@@ -216,29 +261,27 @@ async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {
 	model.propagateShared();
 }
 
-/** Take down every hub process and every LAN the run raised. */
-async function stopNetworks(real: Real): Promise<void> {
-	for (const hub of real.hubs) {
-		if (hub.process === null) continue;
-		await stopLocalHub(hub.process);
-		hub.process = null;
-	}
-	for (const network of real.networks) stopHotspot(network.ssid);
-	real.networks.length = 0;
+/** Park every hub and take the host's card off the test networks. */
+async function parkHubs(real: Real): Promise<void> {
+	for (const hub of real.hubs) await parkHub(hub);
+	if (real.hubsNetwork !== null) leaveWifi(real.hubsNetwork);
+	real.hubsNetwork = null;
 }
 
 /**
- * Put the network side back to its starting state — no LAN up, every hub
- * parked, every phone foregrounded, at home and off the air — so that every
+ * Put the network side back to its starting state — every hub parked and on
+ * no LAN, every phone foregrounded, at home and off the air — so that every
  * sequence, drawn or shrunk, begins from the same place. Chats and messages
  * are left alone: they carry over as they do on the devices, and so does what
  * the model says each agent knows.
  */
 async function resetNetworks(model: ExpectedModel, real: Real): Promise<void> {
-	if (model.networkCapacity === 0) return;
-	await stopNetworks(real);
-	for (const hub of model.hubs) hub.network = null;
-	for (const name of model.networkNames()) model.killNetwork(name);
+	if (!model.hasNetworks()) return;
+	await parkHubs(real);
+	for (const hub of model.hubs) {
+		hub.network = null;
+		hub.running = false;
+	}
 	for (const sa of real.agents) {
 		await sa.agent.startApp();
 		model.foreground(sa.name);
@@ -248,14 +291,16 @@ async function resetNetworks(model: ExpectedModel, real: Real): Promise<void> {
 	}
 }
 
-/** Leave nothing of a run behind: LANs and hubs down, and the phones back on
- *  the air so they return to their usual network. */
+/** Leave nothing of a run behind: hubs down, the host's card and the phones
+ *  back on their usual networks. The test networks stay on the air, so the
+ *  phones forget them or the supplicant may pick one again. */
 async function teardown(real: Real): Promise<void> {
-	await stopNetworks(real);
-	if (real.wifiDevices.length === 0) return;
+	await parkHubs(real);
+	if (real.networks.length === 0) return;
+	for (const network of real.networks) leaveWifi(network.ssid);
 	for (const sa of real.agents) {
 		try {
-			await sa.agent.enableWifi();
+			await restorePhone(sa, real.networks);
 		} catch {
 			/* no saved network in range; nothing to restore */
 		}

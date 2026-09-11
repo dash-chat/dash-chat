@@ -1,83 +1,22 @@
-/** Moves that make and break LANs, and walk phones into and out of them.
- *  They only apply to a run with a network capacity; elsewhere their `check`
- *  is false and they are skipped. Each ends by asserting what the connection
- *  chips show, so a sequence fails at the exact move peer or hub discovery
- *  did not survive. */
+/** Moves that walk phones into and out of LANs, and sit still on them.
+ *  They only apply to a run with networks; elsewhere their `check` is false
+ *  and they are skipped. Each ends by asserting what the connection chips
+ *  show, so a sequence fails at the exact move peer or hub discovery did
+ *  not survive. */
 import fc from 'fast-check';
 
-import { startHotspot, stopHotspot } from '../../../setup/hotspot';
 import {
 	type Real,
 	type StressAgent,
 	at,
 	byName,
 	goHome,
-	hubNamed,
 	log,
 	networkNamed,
-	parkHub,
 } from '../agents';
-import { checkHubs, chipChat, expectHubs, openChat } from '../checks';
+import { chipChat, expectHubs, openChat } from '../checks';
 import type { ExpectedModel } from '../model';
 import { Move, type Moves } from './move';
-
-/** Raise a LAN on a free Wi-Fi card. */
-class CreateNetworkMove extends Move {
-	check(m: Readonly<ExpectedModel>): boolean {
-		return m.canCreateNetwork();
-	}
-
-	async perform(m: ExpectedModel, real: Real): Promise<void> {
-		const device = real.wifiDevices.find(
-			d => !real.networks.some(n => n.device === d),
-		);
-		if (device === undefined) throw new Error('no Wi-Fi card is free');
-		const network = m.createNetwork();
-		log(`${this.toString()} -> ${network.name} on ${device}`);
-		real.networks.push(await startHotspot(network.name, device));
-	}
-
-	toString(): string {
-		return 'createNetwork()';
-	}
-}
-
-/** Take a LAN down under whoever is on it. Its hubs are left parked, on no
- *  network; its phones are left on no network, and must show no hub. */
-class KillNetworkMove extends Move {
-	constructor(readonly networkIdx: number) {
-		super();
-	}
-
-	check(m: Readonly<ExpectedModel>): boolean {
-		return m.networks.length > 0;
-	}
-
-	async perform(m: ExpectedModel, real: Real): Promise<void> {
-		const name = at(m.networkNames(), this.networkIdx).valueOf();
-		log(`${this.toString()} -> kills ${name}`);
-		const orphans = m.activeNamesOn(name).map(n => byName(real, n));
-		stopHotspot(name);
-		real.networks.splice(
-			real.networks.findIndex(n => n.ssid === name),
-			1,
-		);
-		for (const hub of m.hubs) {
-			if (hub.network === name) await parkHub(hubNamed(real, hub.name));
-		}
-		// Off the air rather than wherever the supplicant would fall back to:
-		// a network outside the model would be invisible to it.
-		for (const sa of orphans) await sa.agent.disableWifi();
-		m.killNetwork(name);
-		for (const sa of orphans) {
-			await checkHubs(m, sa, `${name} was killed under it`);
-		}
-	}
-
-	toString(): string {
-		return `killNetwork(${this.networkIdx})`;
-	}
-}
 
 /** Walk a phone into a LAN with the app on screen. The chip is on screen
  *  before the move, so the budget runs from the move alone. */
@@ -165,6 +104,10 @@ async function idle(
 	}
 }
 
+/** How long a hub's mDNS records live in a phone's cache: a sit-still past
+ *  it is what shows whether the app keeps them refreshed. */
+const MDNS_TTL_S = 120;
+
 /** Sit still with the chats open, then every driveable phone must still show
  *  exactly the hubs on its LAN. */
 class SleepMove extends Move {
@@ -173,7 +116,7 @@ class SleepMove extends Move {
 	}
 
 	check(m: Readonly<ExpectedModel>): boolean {
-		return m.networkCapacity > 0;
+		return m.hasNetworks();
 	}
 
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
@@ -193,8 +136,6 @@ class SleepMove extends Move {
 }
 
 export const networkMoves: Moves = [
-	{ arbitrary: fc.constant(new CreateNetworkMove()), weight: 3 },
-	{ arbitrary: fc.nat().map(n => new KillNetworkMove(n)), weight: 1 },
 	{
 		arbitrary: fc
 			.tuple(fc.nat(), fc.nat())
@@ -203,15 +144,15 @@ export const networkMoves: Moves = [
 	},
 	{ arbitrary: fc.nat().map(a => new PeerLeaveMove(a)), weight: 2 },
 	{
-		arbitrary: fc.integer({ min: 1, max: 300 }).map(s => new SleepMove(s)),
-		weight: 3,
+		arbitrary: fc
+			.integer({ min: 1, max: MDNS_TTL_S + 10 })
+			.map(s => new SleepMove(s)),
+		weight: 1,
 	},
 ];
 
 /** The network moves by the names a search prints them under. */
 export const move = {
-	createNetwork: (): Move => new CreateNetworkMove(),
-	killNetwork: (networkIdx: number): Move => new KillNetworkMove(networkIdx),
 	peerJoin: (agentIdx: number, networkIdx: number): Move =>
 		new PeerJoinMove(agentIdx, networkIdx),
 	peerLeave: (agentIdx: number): Move => new PeerLeaveMove(agentIdx),

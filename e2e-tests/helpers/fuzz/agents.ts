@@ -3,9 +3,9 @@
  * networks and hubs a run creates — and the UI navigation moves are built
  * from. Nothing here compares a screen with the model: that is `checks.ts`.
  */
-import type { Hotspot } from '../../setup/hotspot';
 import { type LocalHub, stopLocalHub } from '../../setup/local-hub';
 import type { Agent } from '../../setup/setup-agents';
+import type { WifiNetwork } from '../../setup/test-env';
 import { navigateToAddContact } from '../flows/exchange-contacts';
 import type { DirectChatPage } from '../pages/direct-chats/direct-chat-page';
 import type { GroupChatPage } from '../pages/group-chat/group-chat-page';
@@ -33,26 +33,36 @@ export interface HubReal {
 	process: LocalHub | null;
 }
 
-/** The driveable agents, the Wi-Fi cards networks can be raised on, and the
- * networks and hubs the run has created so far. The fuzzer owns it so it can
+/** The driveable agents, the networks a run may use, where the hubs are,
+ * and the hubs the run has created so far. The fuzzer owns it so it can
  * tear down whatever a run leaves behind. */
 export interface Real {
 	agents: StressAgent[];
-	wifiDevices: string[];
-	networks: Hotspot[];
+	/** The configured networks, in the order moves index them. */
+	networks: WifiNetwork[];
+	/** The host's Wi-Fi card, null when it has none or no network is
+	 * configured. */
+	hubsDevice: string | null;
+	/** The SSID the card is on, null while off. Where every hub is today: a
+	 * later slice with a card (or a machine) per hub replaces this with a
+	 * location on `HubReal`. */
+	hubsNetwork: string | null;
 	hubs: HubReal[];
 }
 
-/** A `Real` with nothing raised yet, able to put up one network per card in
- * `wifiDevices`. Pure: the agents are driven only by preparation. */
+/** A `Real` with no hub yet and the card off every test network. Pure: the
+ * agents are driven only by preparation. */
 export function newReal(init: {
 	agents: { agent: Agent; name: string }[];
-	wifiDevices?: string[];
+	networks?: WifiNetwork[];
+	hubsDevice?: string | null;
 }): Real {
+	const networks = init.networks ?? [];
 	return {
 		agents: init.agents.map(({ agent, name }) => ({ agent, name, link: null })),
-		wifiDevices: init.wifiDevices ?? [],
-		networks: [],
+		networks,
+		hubsDevice: networks.length === 0 ? null : (init.hubsDevice ?? null),
+		hubsNetwork: null,
 		hubs: [],
 	};
 }
@@ -75,7 +85,7 @@ export function byName(real: Real, name: string): StressAgent {
 	return found;
 }
 
-export function networkNamed(real: Real, name: string): Hotspot {
+export function networkNamed(real: Real, name: string): WifiNetwork {
 	const found = real.networks.find(n => n.ssid === name);
 	if (found === undefined) throw new Error(`no network named ${name}`);
 	return found;
@@ -87,10 +97,14 @@ export function hubNamed(real: Real, name: string): HubReal {
 	return found;
 }
 
-/** Park a hub's process: the hub keeps its identity for a later join. */
-export async function parkHub(hub: HubReal): Promise<void> {
+/** Stop a hub's process, gracefully or not: the hub keeps its identity for
+ * a later start. */
+export async function parkHub(
+	hub: HubReal,
+	signal: 'SIGINT' | 'SIGKILL' = 'SIGINT',
+): Promise<void> {
 	if (hub.process === null) return;
-	await stopLocalHub(hub.process);
+	await stopLocalHub(hub.process, signal);
 	hub.process = null;
 }
 
