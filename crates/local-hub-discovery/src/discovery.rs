@@ -18,7 +18,7 @@ use swarm_discovery::DropGuard;
 use tokio::sync::broadcast;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::{base_discoverer, multicast_interfaces_v4, SERVICE_NAME};
+use crate::{base_discoverer, label_to_mailbox_id, multicast_interfaces_v4, SERVICE_NAME};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// How many sightings are probed at once; the rest wait their turn.
@@ -71,27 +71,14 @@ impl LocalHubDiscoveryService {
         sightings: impl Stream<Item = Sighting> + Send + 'static,
         browser: AbortOnDropHandle<()>,
     ) -> Self {
-        let mut found: BTreeMap<String, Sighting> = BTreeMap::new();
+        let mut found = FoundHubs::default();
         let events = sightings
             .map(|sighting| async move {
                 let url = probe_reachable(&sighting.addrs).await;
                 (sighting, url)
             })
             .buffer_unordered(MAX_PROBES)
-            .filter_map(move |(sighting, url)| {
-                let event = match url {
-                    Some(_) if found.get(&sighting.id) == Some(&sighting) => None,
-                    Some(url) => {
-                        let id = sighting.id.clone();
-                        found.insert(id.clone(), sighting);
-                        Some(LocalHubEvent::Found { id, url })
-                    }
-                    None => found
-                        .remove(&sighting.id)
-                        .map(|_| LocalHubEvent::Lost { id: sighting.id }),
-                };
-                ready(event)
-            })
+            .filter_map(move |(sighting, url)| ready(found.update(sighting, url)))
             .boxed();
         Self {
             events,
@@ -137,8 +124,11 @@ fn spawn_browser(
         // Runs on swarm-discovery's thread and must not block, so it only
         // forwards the sighting.
         .with_callback(move |id, peer| {
+            let Ok(id) = label_to_mailbox_id(id) else {
+                return;
+            };
             let _ = sightings.unbounded_send(Sighting {
-                id: id.to_string(),
+                id,
                 addrs: peer.addrs().to_vec(),
                 network_changes: network_changes.load(Ordering::Relaxed),
             });
@@ -174,6 +164,34 @@ fn browse_id() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("browse-{}-{}", std::process::id(), n)
+}
+
+/// The hubs reported found so far, each as the sighting it was found from.
+#[derive(Default)]
+struct FoundHubs(BTreeMap<String, Sighting>);
+
+impl FoundHubs {
+    /// The event a probe of `sighting` calls for, `url` being where it
+    /// answered: `Found` for a hub not found yet or since sighted differently,
+    /// `Lost` for one that aged out of the swarm or stopped answering at the
+    /// very addresses it was found at. Probes finish in any order, so a failure
+    /// at other (stale) addresses says nothing about where it was found since.
+    fn update(&mut self, sighting: Sighting, url: Option<String>) -> Option<LocalHubEvent> {
+        let expired = sighting.addrs.is_empty();
+        match (url, self.0.get(&sighting.id)) {
+            (Some(_), Some(known)) if *known == sighting => None,
+            (Some(url), _) => {
+                let id = sighting.id.clone();
+                self.0.insert(id.clone(), sighting);
+                Some(LocalHubEvent::Found { id, url })
+            }
+            (None, Some(known)) if expired || known.addrs == sighting.addrs => {
+                self.0.remove(&sighting.id);
+                Some(LocalHubEvent::Lost { id: sighting.id })
+            }
+            (None, _) => None,
+        }
+    }
 }
 
 /// TCP-probe a hub's advertised addresses
@@ -279,6 +297,12 @@ mod tests {
         async fn next_two(&mut self) -> Vec<LocalHubEvent> {
             sorted(vec![self.next().await, self.next().await])
         }
+
+        /// No event for long enough that every in-flight probe has finished.
+        async fn quiet(&mut self) {
+            let event = tokio::time::timeout(PROBE_TIMEOUT * 2, self.service.recv()).await;
+            assert!(event.is_err(), "unexpected event: {event:?}");
+        }
     }
 
     async fn listen() -> TcpListener {
@@ -342,6 +366,27 @@ mod tests {
         let moved_addr = moved.local_addr().unwrap();
         h.seen("hub", moved_addr);
         assert_eq!(h.next().await, found("hub", moved_addr));
+    }
+
+    #[tokio::test]
+    async fn a_stale_probe_failing_late_does_not_lose_a_hub_found_again_elsewhere() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let hub_addr = hub.local_addr().unwrap();
+        let old_addrs = vec![
+            (DEAD_ADDR.ip(), DEAD_ADDR.port()),
+            (hub_addr.ip(), hub_addr.port()),
+        ];
+        h.sighted("hub", old_addrs.clone());
+        assert_eq!(h.next().await, found("hub", hub_addr));
+
+        let moved = listen().await;
+        let moved_addr = moved.local_addr().unwrap();
+        drop(hub);
+        h.sighted("hub", old_addrs);
+        h.seen("hub", moved_addr);
+        assert_eq!(h.next().await, found("hub", moved_addr));
+        h.quiet().await;
     }
 
     #[tokio::test]

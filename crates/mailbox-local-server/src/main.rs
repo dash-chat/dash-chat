@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -13,9 +12,9 @@ struct Args {
     #[arg(short, long, default_value = "mailbox.redb")]
     db_path: PathBuf,
 
-    /// Address to bind the server to.
-    #[arg(short, long, default_value = "[::]:3000")]
-    addr: SocketAddr,
+    /// Port to listen on, on every interface.
+    #[arg(short, long, default_value_t = 3000)]
+    port: u16,
 }
 
 #[tokio::main]
@@ -42,13 +41,13 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Held until the process exits; its `Drop` retires the announcement.
-    let _announcement = mailbox_local_server::spawn_local_hub_announcement(endpoint_id, args.addr)?;
+    let _announcement = mailbox_local_server::spawn_local_hub_announcement(endpoint_id, args.port)?;
 
     let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
     // No relay — the server stays fully local.
     mailbox_server::spawn_server(
         args.db_path,
-        args.addr.to_string(),
+        format!("[::]:{}", args.port),
         None,
         None,
         None,

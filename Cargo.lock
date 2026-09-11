@@ -5462,6 +5462,8 @@ name = "local-hub-discovery"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
+ "data-encoding",
  "futures",
  "if-addrs",
  "log",

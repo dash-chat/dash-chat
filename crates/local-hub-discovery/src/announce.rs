@@ -1,13 +1,13 @@
 //! Advertising a local hub on the LAN over mDNS (swarm-discovery), so browsers
 //! on the same network can discover it.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 
 use swarm_discovery::DropGuard;
 use tokio::sync::broadcast;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::{base_discoverer, multicast_interfaces_v4, SERVICE_NAME};
+use crate::{base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, SERVICE_NAME};
 
 pub struct LocalHubAnnouncementService {
     // Holds the live announcement and re-arms it on each network change; drop to stop.
@@ -16,14 +16,14 @@ pub struct LocalHubAnnouncementService {
 
 impl LocalHubAnnouncementService {
     /// Announce a local hub on the LAN over mDNS (swarm-discovery), so browsers on
-    /// the same network discover it. `instance_id` is the swarm id peers see.
-    /// `bind_addr` is where the hub listens: an unspecified host (`[::]` / `0.0.0.0`)
-    /// advertises every routable local IPv4 plus loopback; a specific host advertises
-    /// just that one. Must be called within a Tokio runtime.
-    pub fn spawn(instance_id: &str, bind_addr: SocketAddr) -> anyhow::Result<Self> {
+    /// the same network discover it. `instance_id` is the swarm id peers see;
+    /// `port` is where the hub listens on every interface. Every routable local
+    /// IPv4 is advertised (loopback only if there is none), re-enumerated on each
+    /// network change. Must be called within a Tokio runtime.
+    pub fn spawn(instance_id: &str, port: u16) -> anyhow::Result<Self> {
         let handle = tokio::runtime::Handle::current();
         // Eager first announce so a bad runtime or bind fails fast.
-        let initial = announce(instance_id, bind_addr, &handle)?;
+        let initial = announce(instance_id, port, &handle)?;
         let instance_id = instance_id.to_string();
         // swarm-discovery pins its multicast socket and advertised addresses at
         // spawn, so re-announce on every network change — as the browser re-binds.
@@ -34,7 +34,7 @@ impl LocalHubAnnouncementService {
                 network.recv().await,
                 Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
             ) {
-                if let Ok(next) = announce(&instance_id, bind_addr, &handle) {
+                if let Ok(next) = announce(&instance_id, port, &handle) {
                     _announcement = next;
                 }
             }
@@ -43,40 +43,37 @@ impl LocalHubAnnouncementService {
     }
 }
 
-/// Spawn a swarm-discovery announcer for a hub bound to `bind_addr`.
+/// Spawn a swarm-discovery announcer for a hub listening on `port`.
 fn announce(
     instance_id: &str,
-    bind_addr: SocketAddr,
+    port: u16,
     handle: &tokio::runtime::Handle,
 ) -> anyhow::Result<DropGuard> {
-    let ips = announce_ips(bind_addr);
+    let ips = announce_ips();
     log::info!(
-        "Announcing local hub {instance_id} on the LAN via swarm-discovery ({SERVICE_NAME}) at {ips:?}:{}",
-        bind_addr.port()
+        "Announcing local hub {instance_id} on the LAN via swarm-discovery ({SERVICE_NAME}) at {ips:?}:{port}"
     );
-    let guard = base_discoverer(instance_id, multicast_interfaces_v4())
-        .with_addrs(bind_addr.port(), ips)
-        .spawn(handle)?;
+    let guard = base_discoverer(
+        &mailbox_id_to_label(instance_id)?,
+        multicast_interfaces_v4(),
+    )
+    .with_addrs(port, ips)
+    .spawn(handle)?;
     Ok(guard)
 }
 
-/// The IPv4 addresses to advertise for a hub bound to `bind_addr`. mDNS is
-/// IPv4-only here (see [`crate::base_discoverer`]), so IPv6 is not advertised;
-/// link-local (169.254/16) is skipped to match [`crate::multicast_interfaces_v4`];
-/// loopback is kept so a browser on the same host finds an in-process hub.
-fn announce_ips(bind_addr: SocketAddr) -> Vec<IpAddr> {
-    if !bind_addr.ip().is_unspecified() {
-        return vec![bind_addr.ip()];
-    }
-    if_addrs::get_if_addrs()
-        .map(|interfaces| {
-            interfaces
-                .into_iter()
-                .filter_map(|interface| match interface.ip() {
-                    IpAddr::V4(v4) if !v4.is_link_local() => Some(IpAddr::V4(v4)),
-                    _ => None,
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+/// The IPv4 addresses to advertise: the interfaces multicast goes out on
+/// (mDNS is IPv4-only here, see [`crate::base_discoverer`]), minus loopback
+/// whenever there is any other, since a browser elsewhere on the LAN would
+/// take a 127.0.0.1 it hears to mean its own host.
+fn announce_ips() -> Vec<IpAddr> {
+    let (loopback, routable): (Vec<_>, Vec<_>) = multicast_interfaces_v4()
+        .into_iter()
+        .partition(|v4| v4.is_loopback());
+    let ips = if routable.is_empty() {
+        loopback
+    } else {
+        routable
+    };
+    ips.into_iter().map(IpAddr::V4).collect()
 }

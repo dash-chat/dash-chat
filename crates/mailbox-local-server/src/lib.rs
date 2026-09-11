@@ -2,7 +2,6 @@
 //! blob store, and announce it on the LAN via mDNS so peers can discover and
 //! sync against it without any cloud service.
 
-use std::net::{Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -83,8 +82,7 @@ pub async fn spawn_local_mailbox_server(
         }
     });
 
-    let bind_addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
-    let announcement = spawn_local_hub_announcement(endpoint_id, bind_addr)?;
+    let announcement = spawn_local_hub_announcement(endpoint_id, port)?;
 
     Ok(LocalMailboxServer {
         url: format!("http://127.0.0.1:{port}"),
@@ -101,11 +99,11 @@ fn free_port() -> anyhow::Result<u16> {
 }
 
 /// Announce a mailbox on the LAN so peers discover it. The instance id is the
-/// hub's MailboxId (base64url-no-pad of the endpoint's public key). `bind_addr`
-/// is where the server listens.
+/// hub's MailboxId (base64url-no-pad of the endpoint's public key). `port` is
+/// where the server listens on every interface.
 pub fn spawn_local_hub_announcement(
     endpoint_id: EndpointId,
-    bind_addr: SocketAddr,
+    port: u16,
 ) -> anyhow::Result<LocalHubAnnouncementService> {
-    LocalHubAnnouncementService::spawn(&encode_mailbox_id(endpoint_id), bind_addr)
+    LocalHubAnnouncementService::spawn(&encode_mailbox_id(endpoint_id), port)
 }

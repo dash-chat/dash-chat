@@ -64,7 +64,7 @@ export async function spawnLocalHub(
 	// signal -pid without touching the test runner.
 	const proc = spawn(
 		bin,
-		['--db-path', path.join(dir, 'mailbox.redb'), '--addr', `[::]:${port}`],
+		['--db-path', path.join(dir, 'mailbox.redb'), '--port', String(port)],
 		{ cwd: ROOT, stdio: ['ignore', logFd, logFd], detached: true },
 	);
 	closeSync(logFd);
@@ -83,6 +83,12 @@ export async function spawnLocalHub(
 		`[hub-${name}] ready on port ${port} (pid=${proc.pid}, mailbox id ${health.endpoint_id})`,
 	);
 	return { name, id: health.endpoint_id, url, port, proc, logger };
+}
+
+/** Bring a stopped hub back as the same hub: same db, so same key, MailboxId
+ *  and port. */
+export function restartLocalHub(hub: LocalHub): Promise<LocalHub> {
+	return spawnLocalHub(hub.name, hub.port);
 }
 
 function signalHub(hub: LocalHub, signal: NodeJS.Signals): void {

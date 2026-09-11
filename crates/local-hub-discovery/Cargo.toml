@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 log = "0.4"
+base64 = "0.22"
+data-encoding = "2"
 futures = "0.3"
 swarm-discovery = "0.6.3"
 if-addrs = "0.15"

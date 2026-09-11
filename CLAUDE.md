@@ -398,7 +398,7 @@ PLATFORMS=ios just e2e run settings-pages
 - Desktop agents get `DATA_DIR` and `MAILBOX_URL` through each agent's tauri-driver spawn env (`e2e-tests/setup/platforms/desktop.ts`); Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events.
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run.
-- The hub fuzz (`local-hub-stress`) walks phones and local hubs through real Wi-Fi networks. `E2E_WIFI_NETWORKS=ssid:pass,ssid:pass` in a gitignored `.env.development` (see `.env.development.example`, which also lists what the access points must look like) names them; the host's Wi-Fi card joins them as a client for the length of the run, which is what puts the hubs (processes on the host) on a LAN. Unset, every hub and network move stays out of the runs.
+- The hub fuzz (`local-hub-discovery-stress`) walks phones and local hubs through real Wi-Fi networks. `E2E_WIFI_NETWORKS=ssid:pass,ssid:pass` in a gitignored `.env.development` (see `.env.development.example`, which also lists what the access points must look like) names them; the host's Wi-Fi card joins them as a client for the length of the run, which is what puts the hubs (processes on the host) on a LAN. Unset, every hub and network move stays out of the runs.
 
 **E2E coding style:**
 

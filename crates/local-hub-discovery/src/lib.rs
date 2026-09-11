@@ -2,6 +2,8 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use data_encoding::BASE32_NOPAD;
 use swarm_discovery::{Discoverer, IpClass};
 
 mod announce;
@@ -23,8 +25,24 @@ pub(crate) fn base_discoverer(instance_id: &str, interfaces: Vec<Ipv4Addr>) -> D
         .with_multicast_interfaces_v4(interfaces)
 }
 
+/// swarm-discovery announces a hub under its instance id as a DNS label, but a
+/// MailboxId is base64url and a leading `-` from that alphabet is an invalid
+/// label swarm-discovery refuses. Re-encode the key bytes as base32 (`A-Z2-7`
+/// only, always a valid label and 52 chars < the 63-octet limit) for the wire;
+/// [`label_to_mailbox_id`] reverses it on the browse side.
+pub(crate) fn mailbox_id_to_label(mailbox_id: &str) -> anyhow::Result<String> {
+    Ok(BASE32_NOPAD.encode(&URL_SAFE_NO_PAD.decode(mailbox_id)?))
+}
+
+/// Recover the MailboxId from a label produced by [`mailbox_id_to_label`].
+pub(crate) fn label_to_mailbox_id(label: &str) -> anyhow::Result<String> {
+    Ok(URL_SAFE_NO_PAD.encode(BASE32_NOPAD.decode(label.as_bytes())?))
+}
+
 /// The local IPv4 interfaces to pin mDNS multicast egress to. Link-local
-/// (169.254/16) is skipped: it can't route multicast reliably.
+/// (169.254/16) is skipped: it can't route multicast reliably. Loopback is
+/// kept: on a host with no other interface it is where its own hub is announced
+/// and the only way to hear it.
 pub(crate) fn multicast_interfaces_v4() -> Vec<Ipv4Addr> {
     if_addrs::get_if_addrs()
         .map(|interfaces| {
@@ -37,4 +55,24 @@ pub(crate) fn multicast_interfaces_v4() -> Vec<Ipv4Addr> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_mailbox_id_starting_with_a_hyphen_round_trips_through_a_valid_label() {
+        // A key whose leading 6 bits are 0b111110 encodes to a base64url string
+        // starting with '-' — an invalid DNS label, the case that crashed the
+        // announce before this codec.
+        let mailbox_id = URL_SAFE_NO_PAD.encode([0xF8; 32]);
+        assert!(mailbox_id.starts_with('-'));
+
+        let label = mailbox_id_to_label(&mailbox_id).unwrap();
+        assert!(label
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || (b'2'..=b'7').contains(&b)));
+        assert_eq!(label_to_mailbox_id(&label).unwrap(), mailbox_id);
+    }
 }
