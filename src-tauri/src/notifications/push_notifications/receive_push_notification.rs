@@ -163,13 +163,13 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
-    // Fetch the new operation. Wake the cloud mailbox specifically so a
-    // backed-off (Stopped/Degraded) cloud mailbox is force-polled immediately;
-    // fall back to a general trigger if it isn't registered yet.
+    // Fetch the new operation. Probe the cloud mailbox specifically so a
+    // backed-off (Stopped/Degraded) cloud mailbox is polled immediately; fall
+    // back to a general trigger if it isn't registered yet.
     if let Some(cloud_id) = crate::mailbox::cloud_mailbox_id(&node).await {
-        node.mailboxes.wakeup(cloud_id);
+        node.mailboxes.probe(cloud_id).await;
     } else {
-        node.mailboxes.trigger_poll_loop();
+        node.mailboxes.nudge_poll_loop();
     }
 
     // Poll for the operation to arrive (up to 15 seconds)
