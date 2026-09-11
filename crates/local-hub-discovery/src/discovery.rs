@@ -97,26 +97,34 @@ impl LocalHubDiscoveryService {
 /// it on before). Sightings are stamped with the network changes so far.
 async fn browse(sightings: UnboundedSender<Sighting>) {
     let network_changes = Arc::new(AtomicU64::new(0));
-    let mut browser = spawn_browser(&sightings, &network_changes);
     let mut network = network_watch::network_change();
-    while matches!(
-        network.recv().await,
-        Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
-    ) {
-        network_changes.fetch_add(1, Ordering::Relaxed);
+    let mut browser: Option<Browser> = None;
+    loop {
         browser = match browser {
             Some(browser) => Some(update_interfaces(browser)),
-            None => spawn_browser(&sightings, &network_changes),
+            None => spawn_browser(&sightings, &network_changes)
+                .inspect_err(|err| {
+                    log::warn!(
+                        "Failed to bind local hub discovery (retrying on next network change): {err}"
+                    )
+                })
+                .ok(),
         };
+        match network.recv().await {
+            Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                network_changes.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(broadcast::error::RecvError::Closed) => return,
+        }
     }
 }
 
 /// A swarm-discovery browser on the current interfaces, forwarding every
-/// sighting to `sightings`; `None` if binding the multicast socket fails.
+/// sighting to `sightings`; fails if binding the multicast socket does.
 fn spawn_browser(
     sightings: &UnboundedSender<Sighting>,
     network_changes: &Arc<AtomicU64>,
-) -> Option<Browser> {
+) -> anyhow::Result<Browser> {
     let interfaces: BTreeSet<Ipv4Addr> = multicast_interfaces_v4().into_iter().collect();
     let sightings = sightings.clone();
     let network_changes = network_changes.clone();
@@ -133,15 +141,8 @@ fn spawn_browser(
                 network_changes: network_changes.load(Ordering::Relaxed),
             });
         });
-    match discoverer.spawn(&tokio::runtime::Handle::current()) {
-        Ok(guard) => Some((guard, interfaces)),
-        Err(err) => {
-            log::warn!(
-                "Failed to bind local hub discovery (retrying on next network change): {err}"
-            );
-            None
-        }
-    }
+    let guard = discoverer.spawn(&tokio::runtime::Handle::current())?;
+    Ok((guard, interfaces))
 }
 
 /// Join the interfaces that appeared since the browser last joined and leave
