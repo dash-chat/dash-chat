@@ -29,6 +29,7 @@ target
 # nix
 .direnv/
 .envrc
+.env.development
 result*
 
 # tauri

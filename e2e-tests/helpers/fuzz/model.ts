@@ -58,11 +58,13 @@ export interface ChatView {
 
 export interface ExpectedHub {
 	name: string;
-	/** The LAN it is on, or null while it is down. */
+	/** The LAN it is on, or null while it is on none. */
 	network: string | null;
+	/** Whether its process is up: only a running hub is shown and relays. */
+	running: boolean;
 }
 
-/** A LAN a run raised, by its real network name. */
+/** A LAN available to a run, by its real network name. */
 export interface ExpectedNetwork {
 	name: string;
 }
@@ -114,13 +116,11 @@ function chatTopic(chat: ExpectedChat): Topic {
 
 export class ExpectedModel {
 	readonly agents: { name: string; mobile: boolean }[];
-	/** How many LANs can be up at once: one per Wi-Fi card the host has.
-	 * Zero means every agent shares its usual LAN, and keeps every network
-	 * move out of the run. */
-	readonly networkCapacity: number;
 	readonly chats: ExpectedChat[] = [];
-	/** The LANs currently up. */
-	readonly networks: ExpectedNetwork[] = [];
+	/** The LANs the run may use, up for its whole length. None means every
+	 * agent shares its usual LAN, and keeps every hub and network move out
+	 * of the run. */
+	readonly networks: ExpectedNetwork[];
 	readonly hubs: ExpectedHub[] = [];
 	private readonly messages = new Map<string, ExpectedMessage>();
 	private readonly ops: Op[] = [];
@@ -138,14 +138,13 @@ export class ExpectedModel {
 	private messageCounter = 0;
 	private groupCounter = 0;
 	private hubCounter = 0;
-	private networkCounter = 0;
 
 	constructor(
 		agents: { name: string; mobile: boolean }[],
-		networkCapacity = 0,
+		networks: string[] = [],
 	) {
 		this.agents = agents;
-		this.networkCapacity = networkCapacity;
+		this.networks = networks.map(name => ({ name }));
 		for (const { name } of agents) {
 			this.knowledge.set(name, new Set());
 			this.record(name, {
@@ -215,31 +214,8 @@ export class ExpectedModel {
 		return this.networks.map(n => n.name);
 	}
 
-	canCreateNetwork(): boolean {
-		return this.networks.length < this.networkCapacity;
-	}
-
-	/** Zero-padded so `dash-e2e-net-01` can never substring-match `-010`. */
-	createNetwork(): ExpectedNetwork {
-		const network: ExpectedNetwork = {
-			name: `dash-e2e-net-${String(++this.networkCounter).padStart(2, '0')}`,
-		};
-		this.networks.push(network);
-		return network;
-	}
-
-	/** Take a LAN down. Its hubs stay hubs, on no network until they join
-	 * another; its agents end up on no network. */
-	killNetwork(name: string): void {
-		const index = this.networks.findIndex(n => n.name === name);
-		if (index === -1) throw new Error(`no network named ${name}`);
-		this.networks.splice(index, 1);
-		for (const hub of this.hubs) {
-			if (hub.network === name) hub.network = null;
-		}
-		for (const [agent, network] of this.network) {
-			if (network === name) this.network.delete(agent);
-		}
+	hasNetworks(): boolean {
+		return this.networks.length > 0;
 	}
 
 	/** Zero-padded so `hub-01` can never substring-match `hub-010`. */
@@ -247,6 +223,7 @@ export class ExpectedModel {
 		const hub: ExpectedHub = {
 			name: `hub-${String(++this.hubCounter).padStart(2, '0')}`,
 			network: null,
+			running: false,
 		};
 		this.hubs.push(hub);
 		this.knowledge.set(hub.name, new Set());
@@ -267,12 +244,25 @@ export class ExpectedModel {
 		this.hub(name).network = null;
 	}
 
-	/** Hubs `name`'s app must show as connected: the ones on its network,
-	 * none while it is on no network. */
+	startHub(name: string): void {
+		this.hub(name).running = true;
+	}
+
+	stopHub(name: string): void {
+		this.hub(name).running = false;
+	}
+
+	/** The running hubs on `network`. */
+	private hubsOn(network: string): ExpectedHub[] {
+		return this.hubs.filter(h => h.running && h.network === network);
+	}
+
+	/** Hubs `name`'s app must show as connected: the running ones on its
+	 * network, none while it is on no network. */
 	expectedHubs(name: string): number {
 		const network = this.networkOf(name);
 		if (network === null) return 0;
-		return this.hubs.filter(h => h.network === network).length;
+		return this.hubsOn(network).length;
 	}
 
 	areContacts(a: string, b: string): boolean {
@@ -591,9 +581,9 @@ export class ExpectedModel {
 
 	/** The holders that can sync with each other right now, grouped. */
 	private components(): string[][] {
-		if (this.networkCapacity === 0) return [this.activeNames()];
+		if (!this.hasNetworks()) return [this.activeNames()];
 		return this.networks.map(n => [
-			...this.hubs.filter(h => h.network === n.name).map(h => h.name),
+			...this.hubsOn(n.name).map(h => h.name),
 			...this.activeNamesOn(n.name),
 		]);
 	}
@@ -665,16 +655,16 @@ export class ExpectedModel {
 }
 
 /** The model for `real`, before anything has happened: no chats, no
- * contacts, no LAN up, everyone foregrounded and off the air. */
+ * contacts, no hub anywhere, everyone foregrounded and off the air. */
 export function newModel(real: {
 	agents: { agent: { platform: string }; name: string }[];
-	wifiDevices: string[];
+	networks: { ssid: string }[];
 }): ExpectedModel {
 	return new ExpectedModel(
 		real.agents.map(({ agent, name }) => ({
 			name,
 			mobile: agent.platform !== 'desktop',
 		})),
-		real.wifiDevices.length,
+		real.networks.map(n => n.ssid),
 	);
 }

@@ -13,16 +13,16 @@ function contacts(m: ExpectedModel, a: string, b: string): void {
 }
 
 function sameLan(...names: string[]): ExpectedModel {
-	return new ExpectedModel(
-		names.map(name => ({ name, mobile: true })),
-		0,
-	);
+	return new ExpectedModel(names.map(name => ({ name, mobile: true })));
 }
 
-function lans(capacity: number, ...names: string[]): ExpectedModel {
+const N1 = 'lab-a';
+const N2 = 'lab-b';
+
+function lans(networks: string[], ...names: string[]): ExpectedModel {
 	return new ExpectedModel(
 		names.map(name => ({ name, mobile: true })),
-		capacity,
+		networks,
 	);
 }
 
@@ -74,13 +74,11 @@ test('phones exchange only topics both subscribe to', () => {
 });
 
 test('a phone forwards a third author’s ops on a shared chat', () => {
-	const m = lans(2, A, B, C);
+	const m = lans([N1, N2], A, B, C);
 	contacts(m, A, B);
 	contacts(m, B, C);
 	contacts(m, A, C);
-	const n1 = m.createNetwork().name;
-	const n2 = m.createNetwork().name;
-	for (const n of [A, B, C]) m.agentJoin(n, n1);
+	for (const n of [A, B, C]) m.agentJoin(n, N1);
 	m.propagate();
 	const g = m.addGroup(A, [B, C], 'g1');
 	m.propagate();
@@ -88,31 +86,78 @@ test('a phone forwards a third author’s ops on a shared chat', () => {
 	m.addMessage(g, A, 'text', 'sm-1');
 	m.propagate();
 	assert.equal(m.knows(C).has('message:sm-1'), false);
-	m.agentJoin(B, n2);
-	m.agentJoin(C, n2);
+	m.agentJoin(B, N2);
+	m.agentJoin(C, N2);
 	const growth = m.propagate();
 	assert.deepEqual([...(growth.get(C) ?? [])], [g]);
 	assert.equal(m.knows(C).has('message:sm-1'), true);
 });
 
 test('a hub keeps everything for a phone that meets it later', () => {
-	const m = lans(1, A, B);
+	const m = lans([N1], A, B);
 	contacts(m, A, B);
 	m.propagate();
-	const n1 = m.createNetwork().name;
 	const hub = m.createHub();
-	m.hubJoin(hub.name, n1);
-	m.agentJoin(A, n1);
+	m.hubJoin(hub.name, N1);
+	m.startHub(hub.name);
+	m.agentJoin(A, N1);
 	const chat = m.directChat(A, B);
 	m.addMessage(chat, A, 'photo', 'ph-1');
 	m.propagate();
 	m.agentLeave(A);
-	m.agentJoin(B, n1);
+	m.agentJoin(B, N1);
 	const growth = m.propagate();
 	assert.deepEqual([...(growth.get(B) ?? [])], [chat]);
 	const [photo] = m.view(B, chat).messages;
 	assert.equal(photo.kind, 'photo');
 	assert.equal(photo.loaded, true);
+});
+
+test('a stopped hub is neither expected on a chip nor a relay', () => {
+	const m = lans([N1], A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const hub = m.createHub();
+	m.hubJoin(hub.name, N1);
+	m.agentJoin(A, N1);
+	m.agentJoin(B, N1);
+	assert.equal(m.expectedHubs(A), 0);
+	m.startHub(hub.name);
+	assert.equal(m.expectedHubs(A), 1);
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	m.stopHub(hub.name);
+	assert.equal(m.expectedHubs(A), 0);
+	m.agentLeave(B);
+	m.addMessage(chat, A, 'text', 'sm-2');
+	m.propagate();
+	m.agentLeave(A);
+	m.agentJoin(B, N1);
+	m.propagate();
+	assert.equal(m.knows(B).has('message:sm-2'), false);
+	m.startHub(hub.name);
+	m.propagate();
+	assert.equal(m.knows(B).has('message:sm-1'), true);
+});
+
+test('hubs are expected only on the network they are on', () => {
+	const m = lans([N1, N2], A, B);
+	const h1 = m.createHub();
+	const h2 = m.createHub();
+	m.hubJoin(h1.name, N1);
+	m.hubJoin(h2.name, N2);
+	m.startHub(h1.name);
+	m.startHub(h2.name);
+	m.agentJoin(A, N1);
+	m.agentJoin(B, N2);
+	assert.equal(m.expectedHubs(A), 1);
+	assert.equal(m.expectedHubs(B), 1);
+	m.hubLeave(h1.name);
+	assert.equal(m.expectedHubs(A), 0);
+	assert.equal(m.expectedHubs(B), 1);
+	m.agentLeave(B);
+	assert.equal(m.expectedHubs(B), 0);
 });
 
 test('learning a group subscribes to its chat in the same step', () => {
@@ -154,7 +199,7 @@ test('a view folds only the revisions the viewer knows', () => {
 });
 
 test('propagateShared unions everyone as one LAN, whatever the topology', () => {
-	const m = lans(1, A, B);
+	const m = lans([N1], A, B);
 	contacts(m, A, B);
 	const chat = m.directChat(A, B);
 	m.addMessage(chat, A, 'text', 'sm-1');

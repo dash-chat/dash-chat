@@ -36,15 +36,12 @@ export interface LocalHub {
  * Spawn a hub, wait until it answers /health, and echo its log with a
  * `[hub-<name>]` prefix. Each hub gets its own db, hence its own key and
  * MailboxId. It announces the production service type, exactly as a deployed
- * hub does. mDNS announces every address of the host regardless of
- * `bindHost`; binding to one address is how a hub is made reachable from a
- * single LAN of the host's, the way a deployed hub only ever is. Passing the
- * `port` a previous hub of the same `name` had brings that hub back as a
- * restart: same key, same MailboxId, same URL.
+ * hub does, on every LAN the host is on. Passing the `port` a previous hub
+ * of the same `name` had brings that hub back as a restart: same key, same
+ * MailboxId, same URL.
  */
 export async function spawnLocalHub(
 	name: string,
-	bindHost = '[::]',
 	port?: number,
 ): Promise<LocalHub> {
 	const bin = path.join(ROOT, 'target', 'debug', LOCAL_HUB_PACKAGE);
@@ -67,16 +64,11 @@ export async function spawnLocalHub(
 	// signal -pid without touching the test runner.
 	const proc = spawn(
 		bin,
-		[
-			'--db-path',
-			path.join(dir, 'mailbox.redb'),
-			'--addr',
-			`${bindHost}:${port}`,
-		],
+		['--db-path', path.join(dir, 'mailbox.redb'), '--addr', `[::]:${port}`],
 		{ cwd: ROOT, stdio: ['ignore', logFd, logFd], detached: true },
 	);
 	closeSync(logFd);
-	const url = `http://${bindHost === '[::]' ? '127.0.0.1' : bindHost}:${port}`;
+	const url = `http://127.0.0.1:${port}`;
 	try {
 		await waitForMailboxReady(url);
 	} catch (err) {
@@ -102,11 +94,16 @@ function signalHub(hub: LocalHub, signal: NodeJS.Signals): void {
 }
 
 /**
- * Stop a hub and wait for it to exit. SIGINT rather than SIGKILL: the hub only
- * sends its mDNS goodbye on a graceful shutdown, and without one every phone on
- * the LAN keeps its records cached until they age out.
+ * Stop a hub and wait for it to exit. SIGINT by default: the hub only sends
+ * its mDNS goodbye on a graceful shutdown, and without one every phone on the
+ * LAN keeps its records cached until they age out. SIGKILL is for a spec that
+ * wants exactly that: a hub that vanished without a word.
  */
-export function stopLocalHub(hub: LocalHub, timeoutMs = 10_000): Promise<void> {
+export function stopLocalHub(
+	hub: LocalHub,
+	signal: 'SIGINT' | 'SIGKILL' = 'SIGINT',
+	timeoutMs = 10_000,
+): Promise<void> {
 	hub.logger.kill();
 	return new Promise(resolve => {
 		if (hub.proc.exitCode !== null) {
@@ -121,7 +118,7 @@ export function stopLocalHub(hub: LocalHub, timeoutMs = 10_000): Promise<void> {
 			clearTimeout(timer);
 			resolve();
 		});
-		signalHub(hub, 'SIGINT');
+		signalHub(hub, signal);
 	});
 }
 
