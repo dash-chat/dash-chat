@@ -1680,8 +1680,8 @@ mod tests {
         fn id(&self) -> MailboxId {
             self.id.clone()
         }
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<(), anyhow::Error> {
-            Ok(())
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
         }
         async fn fetch(
             &self,
