@@ -1,5 +1,4 @@
 use local_hub_discovery::{LocalHubDiscoveryService, LocalHubEvent};
-use tauri::{AppHandle, Runtime};
 use tokio_util::task::AbortOnDropHandle;
 
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
@@ -59,8 +58,7 @@ pub(crate) async fn cloud_mailbox_id(
 }
 
 /// Keep the node's mailbox manager in step with the local hubs on the LAN.
-pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
-    _handle: &AppHandle<R>,
+pub fn spawn_local_mailbox_mdns_discovery(
     node: dashchat_node::Node,
 ) -> anyhow::Result<AbortOnDropHandle<()>> {
     let mut discovery = LocalHubDiscoveryService::spawn();
