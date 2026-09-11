@@ -414,7 +414,7 @@ where
             let manager = self.clone();
             tokio::spawn(async move {
                 if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
-                    tracing::debug!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
+                    tracing::warn!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
                     tracked.request_sync_if_active(Some(topic));
                     manager.trigger_poll_loop();
                 }
@@ -630,7 +630,7 @@ where
         };
 
         let subscribed = self.subscribed_topics().await;
-        // Take the pending sync here info here to lock in what this poll will cover.
+        // Take the pending sync info here to lock in what this poll will cover.
         // Any requests coming in after this point will be handled by the next poll.
         let topics = match tracked_mailbox.take_pending_sync() {
             PendingSync::Topics(topics) => topics.intersection(&subscribed).copied().collect(),
