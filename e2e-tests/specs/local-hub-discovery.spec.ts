@@ -3,17 +3,21 @@
  * a hub starting under the open app, stopping with and without its mDNS
  * goodbye, restarting several times in a row, starting while the app is
  * closed or backgrounded, the phone leaving and rejoining its LAN, a sit-still
- * past the mDNS record TTL, and a Wi-Fi bounce. The hub is the standalone
+ * past the mDNS record TTL, a Wi-Fi bounce, and the hub's host joining the
+ * LAN the phone is already on. The hub is the standalone
  * `mailbox-local-server` on the host, heard on whatever LAN the host is on —
  * a phone only has to be on the host's Wi-Fi; the cloud mailbox is killed so
  * the chip is on screen and reads the hub. The cases that need a phone's
- * Wi-Fi or background skip themselves on desktop. local-hub-discovery-stress
- * walks these and the network moves at random on real access points.
+ * Wi-Fi or background skip themselves on desktop, and the host-joins case
+ * also needs a network from E2E_WIFI_NETWORKS the host is not on yet.
+ * local-hub-discovery-stress walks these and the network moves at random on
+ * real access points.
  */
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { DISCOVERY_MS } from '../helpers/fuzz/checks';
 import { MDNS_RECORD_TTL_S } from '../helpers/fuzz/moves/network';
 import { UI_TIMEOUT } from '../helpers/timeouts';
+import { joinWifi, leaveWifi, wifiDevice } from '../setup/host-wifi';
 import {
 	type LocalHub,
 	restartLocalHub,
@@ -26,6 +30,7 @@ import {
 	restartMailbox,
 } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
+import { wifiNetworks } from '../setup/test-env';
 
 /** Time for the OS to stop delivering multicast to the backgrounded app. */
 const BACKGROUNDED_MS = 60_000;
@@ -170,5 +175,21 @@ describe('Local hub discovery', function () {
 		await agent.cycleWifi(WIFI_DOWN_MS);
 		await expectBackOn(ssid);
 		await expectLocal('Wi-Fi came back');
+	});
+
+	it('shows the hub when its host joins the LAN the phone is already on', async function () {
+		const [network] = wifiNetworks();
+		if (!agent.isMobile || network === undefined) this.skip();
+		const device = wifiDevice();
+		if (device === null) throw new Error('the host has no Wi-Fi card');
+		try {
+			await agent.connectWifi(network.ssid, network.passphrase);
+			await expectNoHub('the phone moved to a LAN the hub is not on');
+			await joinWifi(device, network.ssid, network.passphrase);
+			await expectLocal("the hub's host joined the phone's LAN");
+		} finally {
+			leaveWifi(network.ssid);
+			await agent.forgetWifi(network.ssid);
+		}
 	});
 });
