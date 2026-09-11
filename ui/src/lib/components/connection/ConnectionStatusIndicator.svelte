@@ -4,7 +4,7 @@
 	import { getContext, type Snippet } from 'svelte';
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { shouldShowDisconnectedChip } from './connection-chip';
+	import { connectionChipStatus } from './connection-chip';
 	import { mdiEmoticonPoop } from '@mdi/js';
 	import { Chip, Dialog, DialogButton } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -26,15 +26,15 @@
 
 {#await $connectionStatus then connectionStatus}
 	{@const localCount = connectionStatus.connectedLocalMailboxCount}
-	{@const isLocal = localCount > 0}
-	{@const showChip = shouldShowDisconnectedChip(
+	{@const status = connectionChipStatus(
 		connectionStatus,
 		renderingResumedAt.value,
 	)}
-	{#if showChip}
+	{@const isLocal = status === 'local'}
+	{#if status !== null}
 		<Chip
 			data-testid="connection-status"
-			data-status={isLocal ? 'local' : 'disconnected'}
+			data-status={status}
 			class="p-1 cursor-pointer"
 			colors={{
 				fillBgIos: 'bg-black/10 dark:bg-brand-primary',
