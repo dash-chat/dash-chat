@@ -1,5 +1,5 @@
 use mailbox_client::{
-    FetchRequest, FetchResponse, MailboxClient, MailboxId,
+    FetchRequest, FetchResponse, MailboxClient, MailboxId, PublishResponse,
     mem::{MemMailbox, MemMailboxClient},
     toy::ToyMailboxClient,
 };
@@ -190,7 +190,10 @@ impl MailboxClient<MailboxOperation> for TestMailboxClient {
         }
     }
 
-    async fn publish(&self, ops: Vec<MailboxOperation>) -> Result<(), anyhow::Error> {
+    async fn publish(
+        &self,
+        ops: Vec<MailboxOperation>,
+    ) -> Result<PublishResponse<MailboxOperation>, anyhow::Error> {
         match self {
             Self::Mem(client) => client.publish(ops).await,
             Self::Toy(client) => client.publish(ops).await,

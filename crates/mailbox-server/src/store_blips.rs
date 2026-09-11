@@ -17,15 +17,22 @@ pub struct StoreBlipsRequest {
     pub signature: Vec<u8>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct StoreBlipsResponse {
+    /// The resulting contiguity watermark for each log in the request
+    /// (`None` when none could be established).
+    pub watermarks: BTreeMap<TopicId, BTreeMap<Author, Option<SequenceNumber>>>,
+}
+
 pub async fn store_blips(
     State(state): State<AppState>,
     Json(payload): Json<StoreBlipsRequest>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<(StatusCode, Json<StoreBlipsResponse>), (StatusCode, String)> {
     let db = state.db.clone();
     // Use spawn_blocking because redb's begin_write() is a blocking call that waits
     // for exclusive write access. Running this directly in async context would block
     // tokio worker threads and cause deadlocks under concurrent load.
-    let topics_with_new_blips =
+    let (topics_with_new_blips, watermarks) =
         tokio::task::spawn_blocking(move || store_blips_inner(&db, &payload))
             .await
             .map_err(|e| {
@@ -45,8 +52,11 @@ pub async fn store_blips(
 
     notify_topics_subscribers(&state, topics_with_new_blips).await;
 
-    Ok(StatusCode::CREATED)
+    Ok((StatusCode::CREATED, Json(StoreBlipsResponse { watermarks })))
 }
+
+type TopicsWithNewBlips = BTreeMap<TopicId, BTreeMap<String, Author>>;
+type ResultingWatermarks = BTreeMap<TopicId, BTreeMap<Author, Option<SequenceNumber>>>;
 
 /// Returns a map of topic_id → map of op_id (author:seq) → author for newly inserted blips.
 /// The author is preserved separately so the push-notifications-server can filter the
@@ -54,13 +64,14 @@ pub async fn store_blips(
 fn store_blips_inner(
     db: &Database,
     request: &StoreBlipsRequest,
-) -> Result<BTreeMap<TopicId, BTreeMap<String, Author>>, String> {
+) -> Result<(TopicsWithNewBlips, ResultingWatermarks), String> {
     let write_txn = db
         .begin_write()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
     let mut blip_count = 0;
-    let mut topics_with_new_blips: BTreeMap<TopicId, BTreeMap<String, Author>> = BTreeMap::new();
+    let mut topics_with_new_blips: TopicsWithNewBlips = BTreeMap::new();
+    let mut watermarks: ResultingWatermarks = BTreeMap::new();
 
     {
         let mut blips_table = write_txn
@@ -105,6 +116,11 @@ fn store_blips_inner(
                     &stored_seqs,
                 )?;
 
+                watermarks
+                    .entry(topic_id.clone())
+                    .or_default()
+                    .insert(author.clone(), new_watermark);
+
                 if let Some(wm) = new_watermark {
                     // Only update if watermark changed or was newly established
                     if current_watermark != Some(wm) {
@@ -134,7 +150,7 @@ fn store_blips_inner(
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
     tracing::debug!("Stored {} blips", blip_count);
-    Ok(topics_with_new_blips)
+    Ok((topics_with_new_blips, watermarks))
 }
 
 /// Computes the new watermark after storing blips.

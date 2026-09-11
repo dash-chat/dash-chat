@@ -50,7 +50,7 @@ pub use register_hashes::{
 pub use register_peer::RegisterPeerRequest;
 pub use reports_table::REPORTS_TABLE;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
-pub use store_blips::{store_blips, StoreBlipsRequest};
+pub use store_blips::{store_blips, StoreBlipsRequest, StoreBlipsResponse};
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 

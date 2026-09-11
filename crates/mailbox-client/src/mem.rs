@@ -72,9 +72,9 @@ where
         self.mailbox.id.clone()
     }
 
-    async fn publish(&self, ops: Vec<Item>) -> Result<(), anyhow::Error> {
+    async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error> {
         let mut store = self.mailbox.ops.write().await;
-        // ops.entry(topic).or_insert_with(Vec::new).push(op.into());
+        let mut logs: BTreeSet<(Item::Topic, Item::Author)> = BTreeSet::new();
         for op in ops {
             let author = op.author();
             let seq_num = op.seq_num();
@@ -86,8 +86,22 @@ where
                 .entry(author)
                 .or_default()
                 .insert(seq_num, op);
+            logs.insert((topic, author));
         }
-        Ok(())
+
+        let mut response = PublishResponse::default();
+        for (topic, author) in logs {
+            let watermark = store
+                .get(&topic)
+                .and_then(|authors| authors.get(&author))
+                .and_then(contiguous_watermark);
+            response
+                .0
+                .entry(topic)
+                .or_default()
+                .insert(author, watermark);
+        }
+        Ok(response)
     }
 
     async fn fetch(&self, request: FetchRequest<Item>) -> anyhow::Result<FetchResponse<Item>> {
@@ -171,6 +185,27 @@ mod tests {
     use crate::testing::Msg;
 
     use super::*;
+
+    fn msg(topic: u8, author: char, seq: u64) -> Msg {
+        Msg { topic, author, seq }
+    }
+
+    #[tokio::test]
+    async fn publish_echoes_contiguous_watermark() {
+        let client = MemMailbox::<Msg>::new().client();
+
+        let response = client
+            .publish(vec![msg(0, 'a', 0), msg(0, 'a', 1), msg(0, 'a', 3)])
+            .await
+            .unwrap();
+        assert_eq!(response.watermark(&0, &'a'), Some(1));
+
+        let response = client.publish(vec![msg(0, 'a', 2)]).await.unwrap();
+        assert_eq!(response.watermark(&0, &'a'), Some(3));
+
+        let response = client.publish(vec![msg(1, 'b', 5)]).await.unwrap();
+        assert_eq!(response.watermark(&1, &'b'), None);
+    }
 
     pub type MsgTopic = u8;
 
@@ -306,4 +341,17 @@ mod tests {
             }
         );
     }
+}
+
+/// Highest `n` such that seqs `0..=n` are all present.
+fn contiguous_watermark<Item>(log: &BTreeMap<u64, Item>) -> Option<u64> {
+    let mut watermark = None;
+    for &seq in log.keys() {
+        if seq == watermark.map_or(0, |w| w + 1) {
+            watermark = Some(seq);
+        } else {
+            break;
+        }
+    }
+    watermark
 }
