@@ -57,6 +57,9 @@ export interface WifiNetwork {
 	ssid: string;
 	/** '' for an open network. */
 	passphrase: string;
+	/** The host's own LAN rather than a lab one: the host is on it as a
+	 *  matter of course, and a run never leaves, forgets or deletes it. */
+	home: boolean;
 }
 
 /**
@@ -75,6 +78,6 @@ export function wifiNetworks(): WifiNetwork[] {
 				`E2E_WIFI_NETWORKS entry '${entry.trim()}' is not 'ssid' or 'ssid:passphrase'`,
 			);
 		}
-		return { ssid: parts[0], passphrase: parts[1] ?? '' };
+		return { ssid: parts[0], passphrase: parts[1] ?? '', home: false };
 	});
 }

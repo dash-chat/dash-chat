@@ -38,7 +38,8 @@ export interface HubReal {
  * tear down whatever a run leaves behind. */
 export interface Real {
 	agents: StressAgent[];
-	/** The configured networks, in the order moves index them. */
+	/** The configured networks, in the order moves index them, the host's
+	 * own home network last when its card is on one. */
 	networks: WifiNetwork[];
 	/** The host's Wi-Fi card, null when it has none or no network is
 	 * configured. */
@@ -83,6 +84,11 @@ export function byName(real: Real, name: string): StressAgent {
 	const found = real.agents.find(a => a.name === name);
 	if (found === undefined) throw new Error(`no agent named ${name}`);
 	return found;
+}
+
+/** The lab networks: the ones a run joins, leaves and forgets. */
+export function labNetworks(real: Real): WifiNetwork[] {
+	return real.networks.filter(n => !n.home);
 }
 
 export function networkNamed(real: Real, name: string): WifiNetwork {

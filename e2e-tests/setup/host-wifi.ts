@@ -7,8 +7,44 @@
  */
 import { execFileSync } from 'node:child_process';
 
+import type { WifiNetwork } from './test-env';
+
 function nmcli(...args: string[]): string {
 	return execFileSync('nmcli', args, { encoding: 'utf8' });
+}
+
+/** The network `device` is on right now — the host's own, as a home
+ *  network — or null while it is on none. */
+export function hostWifiNetwork(device: string): WifiNetwork | null {
+	const active = nmcli(
+		'-t',
+		'-f',
+		'NAME,TYPE,DEVICE',
+		'connection',
+		'show',
+		'--active',
+	)
+		.split('\n')
+		.map(line => line.split(':'))
+		.find(([, type, dev]) => type === '802-11-wireless' && dev === device);
+	if (active === undefined) return null;
+	const [name] = active;
+	const ssid = nmcli(
+		'-g',
+		'802-11-wireless.ssid',
+		'connection',
+		'show',
+		name,
+	).trim();
+	const passphrase = nmcli(
+		'-s',
+		'-g',
+		'802-11-wireless-security.psk',
+		'connection',
+		'show',
+		name,
+	).trim();
+	return { ssid, passphrase, home: true };
 }
 
 /** The host's first Wi-Fi device, or null when it has none. */

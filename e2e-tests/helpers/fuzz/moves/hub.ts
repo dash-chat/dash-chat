@@ -1,6 +1,7 @@
 /** Moves a local hub makes: coming into being, its process starting,
  *  stopping or dying, and joining or leaving a LAN. Every hub is a process
- *  on the host, whose one Wi-Fi card is the hubs' location, so a join or a
+ *  on the host, whose one Wi-Fi card is the hubs' location among the lab
+ *  networks — the home network has them all along — so a join or a
  *  leave moves all of them at once. Each ends by asserting what the
  *  connection chips show, so a sequence fails at the exact move hub
  *  discovery did not survive. */
@@ -38,14 +39,16 @@ class CreateHubMove extends Move {
 	}
 }
 
-/** Every driveable phone on the hubs' LAN checks its chip, if they are on one. */
+/** Every driveable phone on a LAN the hubs are on checks its chip: the
+ *  one the card is on, if any, and the home network, if there is one. */
 async function checkHubsLan(
 	m: ExpectedModel,
 	real: Real,
 	after: string,
 ): Promise<void> {
-	if (real.hubsNetwork === null) return;
-	await checkHubsOn(m, real, real.hubsNetwork, after);
+	for (const network of [real.hubsNetwork, m.homeNetwork()]) {
+		if (network !== null) await checkHubsOn(m, real, network, after);
+	}
 }
 
 /** Bring a hub's process up. Phones on its LAN must show it. */
@@ -122,7 +125,7 @@ class HubJoinMove extends Move {
 	/** Every hub shares the card, so any one says where they all are. */
 	private elsewhere(m: Readonly<ExpectedModel>): string[] {
 		if (m.hubs.length === 0) return [];
-		return m.networkNames().filter(n => n !== m.hubs[0].network);
+		return m.hubNetworkNames().filter(n => n !== m.hubs[0].network);
 	}
 
 	check(m: Readonly<ExpectedModel>): boolean {
