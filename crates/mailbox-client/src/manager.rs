@@ -233,6 +233,48 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 }
 
+/// Clears the in-flight flag and re-arms the poll loop however the poll task
+/// exits, so a panic mid-poll costs one cycle instead of stranding the mailbox
+/// as permanently "polling" and thus never due again.
+struct PollGuard<Item: MailboxItem> {
+    tracked_mailbox: Arc<TrackedMailbox<Item>>,
+    trigger: mpsc::Sender<Option<MailboxId>>,
+    completed: bool,
+}
+
+impl<Item: MailboxItem> PollGuard<Item> {
+    /// Claim the mailbox for a poll, returning `None` if one is already in flight.
+    pub fn claim(
+        tracked_mailbox: Arc<TrackedMailbox<Item>>,
+        trigger: mpsc::Sender<Option<MailboxId>>,
+    ) -> Option<Self> {
+        if !tracked_mailbox.begin_poll() {
+            return None;
+        }
+        Some(Self {
+            tracked_mailbox,
+            trigger,
+            completed: false,
+        })
+    }
+
+    pub fn complete(mut self) {
+        self.completed = true;
+    }
+}
+
+impl<Item: MailboxItem> Drop for PollGuard<Item> {
+    fn drop(&mut self) {
+        if !self.completed {
+            // An unwinding poll recorded neither success nor error, so nothing
+            // moved `next_poll` off the past and it would be re-polled instantly.
+            self.tracked_mailbox.reschedule();
+        }
+        self.tracked_mailbox.end_poll();
+        _ = self.trigger.try_send(None);
+    }
+}
+
 #[derive(Clone)]
 pub struct Mailboxes<Item, Store>
 where
@@ -518,18 +560,6 @@ where
         Some((id.clone(), wait))
     }
 
-    async fn begin_poll(&self, id: &MailboxId) -> bool {
-        let mm = self.mailboxes.lock().await;
-        mm.get(id).is_some_and(|t| t.begin_poll())
-    }
-
-    async fn end_poll(&self, id: &MailboxId) {
-        let mm = self.mailboxes.lock().await;
-        if let Some(t) = mm.get(id) {
-            t.end_poll();
-        }
-    }
-
     async fn wakeup_mailbox(&self, id: &MailboxId) {
         let mm = self.mailboxes.lock().await;
         if let Some(tracked_mailbox) = mm.get(id) {
@@ -553,9 +583,7 @@ where
             return None;
         }
 
-        if !self.begin_poll(id).await {
-            return None;
-        }
+        let guard = PollGuard::claim(tracked_mailbox.clone(), self.trigger.clone())?;
 
         tracing::debug!("polling mailbox {id}");
         let client = tracked_mailbox.client().await;
@@ -584,11 +612,7 @@ where
                     );
                 }
             }
-            manager.end_poll(&id).await;
-            // The mailbox is schedulable again, so the loop
-            // must re-evaluate rather than sleep on a wait
-            // computed while it was in flight.
-            manager.trigger_poll_loop();
+            guard.complete();
         });
         Some(task)
     }
@@ -1468,6 +1492,58 @@ mod tests {
             self.poll_count.fetch_add(1, Ordering::Relaxed);
             Err(anyhow::anyhow!("simulated failure"))
         }
+    }
+
+    /// A mailbox client whose fetch() panics.
+    struct PanickingClient {
+        id: MailboxId,
+        poll_count: Arc<AtomicU32>,
+    }
+
+    impl PanickingClient {
+        fn new() -> (Self, Arc<AtomicU32>) {
+            let poll_count = Arc::new(AtomicU32::new(0));
+            let client = Self {
+                id: nanoid::nanoid!(),
+                poll_count: poll_count.clone(),
+            };
+            (client, poll_count)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for PanickingClient {
+        fn id(&self) -> MailboxId {
+            self.id.clone()
+        }
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<(), anyhow::Error> {
+            Ok(())
+        }
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            self.poll_count.fetch_add(1, Ordering::Relaxed);
+            panic!("simulated panic");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn panicking_poll_does_not_strand_mailbox() {
+        let mgr = spawn_test_mailboxes(test_config()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (client, poll_count) = PanickingClient::new();
+        let id = client.id();
+        mgr.register(client).await;
+
+        tokio::time::sleep(Duration::from_secs(30)).await;
+
+        assert!(
+            poll_count.load(Ordering::Relaxed) > 1,
+            "mailbox was never polled again after a panicking poll"
+        );
+        assert!(!mgr.tracked_mailbox(&id).await.unwrap().is_polling());
     }
 
     /// Assert all values in the slice deviate by at most `max_diff` from each other.
