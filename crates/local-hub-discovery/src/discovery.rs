@@ -41,7 +41,7 @@ struct Sighting {
     /// The announcer's instance name (the hub's MailboxId).
     id: String,
     /// The advertised addresses; none once the hub aged out of the swarm.
-    addrs: Vec<(IpAddr, u16)>,
+    addrs: BTreeSet<(IpAddr, u16)>,
     /// How many network changes came before it. A hub found before a change
     /// thus reads as sighted anew after it, and is probed and reported found
     /// again, so the mailbox layer refreshes our own address with it.
@@ -142,7 +142,7 @@ fn spawn_browser(
             };
             let _ = sightings.unbounded_send(Sighting {
                 id,
-                addrs: peer.addrs().to_vec(),
+                addrs: peer.addrs().iter().copied().collect(),
                 network_changes: network_changes.load(Ordering::Relaxed),
             });
         });
@@ -201,7 +201,7 @@ impl FoundHubs {
 }
 
 /// TCP-probe a hub's advertised addresses
-async fn probe_reachable(addrs: &[(IpAddr, u16)]) -> Option<String> {
+async fn probe_reachable(addrs: &BTreeSet<(IpAddr, u16)>) -> Option<String> {
     let (loopback, routable): (Vec<_>, Vec<_>) =
         addrs.iter().copied().partition(|(ip, _)| ip.is_loopback());
     for group in [routable, loopback] {
@@ -283,7 +283,7 @@ mod tests {
         fn sighted(&self, id: &str, addrs: Vec<(IpAddr, u16)>) {
             let _ = self.sightings.unbounded_send(Sighting {
                 id: id.to_string(),
-                addrs,
+                addrs: addrs.into_iter().collect(),
                 network_changes: self.network_changes,
             });
         }
@@ -345,6 +345,20 @@ mod tests {
         h.seen("hub", hub_addr);
         h.seen("other", other_addr);
         assert_eq!(h.next().await, found("other", other_addr));
+    }
+
+    #[tokio::test]
+    async fn a_hub_sighted_at_the_same_addresses_in_another_order_is_not_found_again() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let hub_addr = hub.local_addr().unwrap();
+        let dead = (DEAD_ADDR.ip(), DEAD_ADDR.port());
+        let alive = (hub_addr.ip(), hub_addr.port());
+        h.sighted("hub", vec![dead, alive]);
+        assert_eq!(h.next().await, found("hub", hub_addr));
+
+        h.sighted("hub", vec![alive, dead]);
+        h.quiet().await;
     }
 
     #[tokio::test]
