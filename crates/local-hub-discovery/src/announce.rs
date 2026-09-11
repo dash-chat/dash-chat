@@ -1,7 +1,7 @@
 //! Advertising a local hub on the LAN over mDNS (swarm-discovery), so browsers
 //! on the same network can discover it.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 
 use swarm_discovery::DropGuard;
 use tokio::sync::broadcast;
@@ -49,16 +49,14 @@ fn announce(
     port: u16,
     handle: &tokio::runtime::Handle,
 ) -> anyhow::Result<DropGuard> {
-    let ips = announce_ips();
+    let interfaces = multicast_interfaces_v4();
+    let ips = announce_ips(&interfaces);
     log::info!(
         "Announcing local hub {instance_id} on the LAN via swarm-discovery ({SERVICE_NAME}) at {ips:?}:{port}"
     );
-    let guard = base_discoverer(
-        &mailbox_id_to_label(instance_id)?,
-        multicast_interfaces_v4(),
-    )
-    .with_addrs(port, ips)
-    .spawn(handle)?;
+    let guard = base_discoverer(&mailbox_id_to_label(instance_id)?, interfaces)
+        .with_addrs(port, ips)
+        .spawn(handle)?;
     Ok(guard)
 }
 
@@ -66,10 +64,9 @@ fn announce(
 /// (mDNS is IPv4-only here, see [`crate::base_discoverer`]), minus loopback
 /// whenever there is any other, since a browser elsewhere on the LAN would
 /// take a 127.0.0.1 it hears to mean its own host.
-fn announce_ips() -> Vec<IpAddr> {
-    let (loopback, routable): (Vec<_>, Vec<_>) = multicast_interfaces_v4()
-        .into_iter()
-        .partition(|v4| v4.is_loopback());
+fn announce_ips(interfaces: &[Ipv4Addr]) -> Vec<IpAddr> {
+    let (loopback, routable): (Vec<Ipv4Addr>, Vec<Ipv4Addr>) =
+        interfaces.iter().copied().partition(|v4| v4.is_loopback());
     let ips = if routable.is_empty() {
         loopback
     } else {
