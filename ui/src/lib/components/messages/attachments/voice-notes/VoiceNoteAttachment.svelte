@@ -46,8 +46,9 @@
 	</div>
 
 	<div class="flex items-center justify-between text-xs">
-		<span class="w-9 shrink-0 text-center opacity-70"
-			>{formatDuration(labelMs)}</span
+		<span
+			class="w-9 shrink-0 text-center opacity-70"
+			data-testid="voice-duration">{formatDuration(labelMs)}</span
 		>
 		{#if metadata}
 			<span class="flex items-center gap-1 whitespace-nowrap select-none">

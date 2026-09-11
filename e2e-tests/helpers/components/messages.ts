@@ -23,6 +23,18 @@ export type SystemMessageKind =
 
 // Driver for a chat's rendered message list — the messages themselves plus the
 // scroll-to-bottom button and unread affordances around them.
+/** What identifies one rendered message: its body text, its media names or
+ * voice duration, or that it is the deleted placeholder. */
+export interface RenderedMessage {
+	text: string | null;
+	photoAlts: string[];
+	photosLoaded: boolean;
+	fileName: string | null;
+	voiceDuration: string | null;
+	deleted: boolean;
+	reactions: string[];
+}
+
 export class Messages extends TestHelper {
 	constructor(
 		agent: WebdriverIO.Browser,
@@ -441,6 +453,74 @@ export class Messages extends TestHelper {
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
+	}
+
+	/** One entry per rendered message. A photo scrolled out of view never
+	 * decodes (loading="lazy"), so an unloaded one is scrolled into view for the
+	 * next call. */
+	async renderedMessages(): Promise<RenderedMessage[]> {
+		return this.agent.execute(
+			(
+				messagesSel: string,
+				photosSel: string,
+				fileSel: string,
+				voiceSel: string,
+				deletedSel: string,
+				quoteSel: string,
+				chipPrefix: string,
+			) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				return Array.from(wrappers).map(w => {
+					const imgs = Array.from(
+						w.querySelectorAll<HTMLImageElement>(`${photosSel} img`),
+					);
+					const loaded = (img: HTMLImageElement) =>
+						img.complete && img.naturalWidth > 0;
+					for (const img of imgs) {
+						if (!loaded(img)) img.scrollIntoView({ block: 'center' });
+					}
+					const body = Array.from(
+						w.querySelectorAll<HTMLElement>('[data-message-text]'),
+					).find(el => el.closest(quoteSel) === null);
+					const chips = w.querySelectorAll<HTMLElement>(
+						`[data-testid^="${chipPrefix}"]`,
+					);
+					return {
+						text: body?.textContent ?? null,
+						photoAlts: imgs.map(img => img.alt),
+						photosLoaded: imgs.every(loaded),
+						fileName: w.querySelector(fileSel)?.textContent ?? null,
+						voiceDuration:
+							w.querySelector(voiceSel)?.textContent?.trim() ?? null,
+						deleted: w.querySelector(deletedSel) !== null,
+						reactions: Array.from(chips).map(
+							el => el.dataset.testid?.slice(chipPrefix.length) ?? '',
+						),
+					};
+				});
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			tid('message-attachment-file'),
+			tid('voice-duration'),
+			tid('message-deleted-placeholder'),
+			tid('reply-quote'),
+			'reaction-chip-',
+		);
+	}
+
+	/** Wait until a voice message showing `duration` (as `m:ss`) renders. */
+	async waitForVoiceMessageOf(
+		duration: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				(await this.renderedMessages()).some(r => r.voiceDuration === duration),
+			{ timeout, timeoutMsg: `Voice message of ${duration} not found` },
+		);
 	}
 
 	async waitForVoiceMessage(timeout = SYNC_TIMEOUT): Promise<void> {

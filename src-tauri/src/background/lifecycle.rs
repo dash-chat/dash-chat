@@ -54,6 +54,6 @@ async fn wakeup_cloud_mailbox(app: &AppHandle<Wry>) {
     };
     match crate::mailbox::cloud_mailbox_id(&node).await {
         Some(cloud_id) => node.mailboxes.wakeup(cloud_id),
-        None => node.mailboxes.trigger_sync(),
+        None => node.mailboxes.trigger_poll_loop(),
     }
 }
