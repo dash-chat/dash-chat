@@ -855,20 +855,24 @@ struct NextDue {
 enum PendingRequest<Topic> {
     /// No action was requested since last poll: wait for regularly scheduled poll.
     None,
+
     /// A specific topic set was requested: poll them once the debounce that
     /// started with the first request has elapsed.
     PollTopics {
         topics: BTreeSet<Topic>,
         since: Instant,
     },
+
     /// Every subscribed topic was requested: poll them once the debounce that
     /// started with the first request has elapsed.
     PollAll { since: Instant },
-    /// The mailbox was woken: set as Active and poll every subscribed topic now (no debounce).
-    Wakeup,
+
     /// The mailbox was probed: poll every subscribed topic now (no debounce),
     /// and let the result decide status and backoff.
     Probe,
+
+    /// The mailbox was woken: set as Active and poll every subscribed topic now (no debounce).
+    Wakeup,
 }
 
 impl<Topic: Ord> PendingRequest<Topic> {
