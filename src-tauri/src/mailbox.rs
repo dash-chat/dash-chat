@@ -1,8 +1,4 @@
-use local_hub_discovery::{
-    spawn_local_hub_discovery, DiscoveredHub, LocalHubEvent, MDNS_SERVICE_TYPE,
-};
-use mdns_sd::ServiceDaemon;
-use tauri::{AppHandle, Manager, Runtime};
+use local_hub_discovery::{LocalHubDiscoveryService, LocalHubEvent};
 use tokio_util::task::AbortOnDropHandle;
 
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
@@ -62,21 +58,15 @@ pub(crate) async fn cloud_mailbox_id(
 }
 
 /// Keep the node's mailbox manager in step with the local hubs on the LAN.
-///
-/// Discovery itself — the mDNS browse, its re-arm on network changes, and the
-/// reachability probing — lives in `local-hub-discovery`. What remains here is
-/// only the node-side policy for what a discovered hub means.
-pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
-    handle: &AppHandle<R>,
+pub fn spawn_local_mailbox_mdns_discovery(
     node: dashchat_node::Node,
 ) -> anyhow::Result<AbortOnDropHandle<()>> {
-    let mdns: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
-    let mut discovery = spawn_local_hub_discovery(mdns, MDNS_SERVICE_TYPE)?;
+    let mut discovery = LocalHubDiscoveryService::spawn();
 
     let handler_task = tokio::spawn(async move {
         while let Some(event) = discovery.recv().await {
             match event {
-                LocalHubEvent::Found(hub) => register_local_hub(&node, hub).await,
+                LocalHubEvent::Found { id, url } => register_local_hub(&node, id, url).await,
                 LocalHubEvent::Lost { id } => {
                     if node.mailboxes.unregister(&id).await {
                         log::info!("*** Removed local mailbox client via mdns: {id} ***");
@@ -93,9 +83,9 @@ pub fn spawn_local_mailbox_mdns_discovery<R: Runtime>(
 /// dialing address, and hand it ours.
 ///
 /// Safe to re-run — `MailboxManager::register` swaps the client in place — which
-/// matters because every re-browse re-resolves the hubs it already knows.
-async fn register_local_hub(node: &dashchat_node::Node, hub: DiscoveredHub) {
-    let DiscoveredHub { id, url } = hub;
+/// matters because a hub is reported found again whenever its addresses change
+/// or a network change comes between sightings.
+async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String) {
     node.mailboxes
         .register(
             mailbox_client::toy::ToyMailboxClient::new(
@@ -121,8 +111,8 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: DiscoveredHub) {
         }
     }
     // Tell the hub our own dialing address so its blob fetch pool can reach us as
-    // a source. A re-browse re-resolves every known hub, so this also refreshes
-    // the EndpointAddr after a network change. Cloud mailboxes have no such hook;
+    // a source. A hub is reported found again after every network change, so
+    // this also refreshes the EndpointAddr then. Cloud mailboxes have no such hook;
     // refreshing there would need a network-change callback from the node layer.
     if let Err(err) = node.register_with_mailbox(&url).await {
         log::warn!("Failed to register our addr with local mailbox {id}: {err}");
