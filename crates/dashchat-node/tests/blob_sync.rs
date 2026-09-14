@@ -168,3 +168,87 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         "restarted node should re-queue the stored media blob for its chat topic, got {topics:?}",
     );
 }
+
+/// While bobbi's fetch loop downloads alice's photo, bobbi's notification
+/// channel carries BlobProgress events whose byte counts never decrease and
+/// which end with `complete = true`; afterwards `blob_progress` reports the
+/// blob complete.
+#[tokio::test(flavor = "multi_thread")]
+async fn blob_progress_notifications_reach_completion() {
+    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
+
+    let poll = PollConfig::default();
+    let config = NodeConfig::testing();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
+    let media = OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
+            data: photo_bytes,
+            name: "pic.png".into(),
+            mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
+        }],
+    };
+    alice
+        .send_message(chat, "progress", Some(media), None)
+        .await
+        .unwrap();
+
+    let mut events = vec![];
+    loop {
+        let event = bobbi
+            .watcher
+            .lock()
+            .await
+            .watch_mapped(
+                std::time::Duration::from_secs(60),
+                |n: &Notification| match n {
+                    Notification::BlobProgress(e) => Some(e.clone()),
+                    _ => None,
+                },
+            )
+            .await
+            .expect("blob progress notification");
+        events.push(event.clone());
+        if event.complete {
+            break;
+        }
+    }
+    for pair in events.windows(2) {
+        assert!(
+            pair[1].bytes >= pair[0].bytes,
+            "bytes must not decrease: {events:?}"
+        );
+    }
+    let last = events.last().unwrap();
+    assert_eq!(last.bytes, 8192);
+
+    poll.wait_for(|| async {
+        let snap = bobbi
+            .blob_progress(vec![last.hash.to_string()])
+            .await
+            .unwrap();
+        snap[0]
+            .complete
+            .then_some(())
+            .ok_or("snapshot not complete yet")
+    })
+    .await
+    .unwrap();
+}

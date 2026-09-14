@@ -379,6 +379,7 @@ impl Node {
                     blob_fetch,
                     source_lookup,
                     local_store.clone(),
+                    notification_tx.clone(),
                 )
                 .await?,
             )
@@ -2091,6 +2092,47 @@ impl Node {
                 anyhow::bail!("blob {hash} not available after {timeout:?}");
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    }
+
+    pub async fn blob_progress(
+        &self,
+        hashes: Vec<String>,
+    ) -> anyhow::Result<Vec<crate::blob_progress::BlobProgressEvent>> {
+        let blob_sync = self.require_blob_sync()?;
+        let hashes = hashes
+            .iter()
+            .map(|h| h.parse::<iroh_blobs::Hash>())
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(blob_sync.progress.snapshot(hashes).await)
+    }
+
+    /// Kick an on-demand fetch of `hash` in the background, using the
+    /// background loop's attempt timeout. Returns as soon as it is spawned.
+    pub async fn fetch_blob_now(&self, hash: String) -> anyhow::Result<()> {
+        let hash: iroh_blobs::Hash = hash.parse()?;
+        let blob_sync = self.require_blob_sync()?.clone();
+        let timeout = self.config.blob_fetch.attempt_timeout;
+        tokio::spawn(async move {
+            blob_sync.fetch_now(hash, timeout).await;
+        });
+        Ok(())
+    }
+
+    /// Stop or restart the background blob fetch loop. Test-only: lets an e2e
+    /// spec hold a blob in its "downloading" state long enough to observe it.
+    pub async fn set_blob_fetch_paused(&self, paused: bool) {
+        let mut handle = self.blob_fetch_handle.lock().await;
+        if paused {
+            if let Some(h) = handle.take() {
+                h.abort();
+            }
+            return;
+        }
+        if handle.is_none() {
+            if let Some(blob_sync) = &self.blob_sync {
+                handle.replace(blob_sync.spawn_fetch_loop(self.config.blob_fetch.clone()));
+            }
         }
     }
 

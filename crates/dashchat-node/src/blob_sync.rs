@@ -48,6 +48,7 @@ pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub fetch_pool: BlobFetchPool,
     pub sources: MixedSourceLookup,
+    pub progress: crate::blob_progress::BlobProgress,
     downloader: Downloader,
 }
 
@@ -58,6 +59,7 @@ impl BlobSync {
         blob_fetch: BlobFetchPool,
         sources: MixedSourceLookup,
         local_store: LocalStore,
+        notification_tx: Option<tokio::sync::mpsc::Sender<crate::node::Notification>>,
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
 
@@ -80,10 +82,13 @@ impl BlobSync {
             Default::default(),
         );
 
+        let progress = crate::blob_progress::BlobProgress::new(blobs.clone(), notification_tx);
+
         Ok(Self {
             blobs,
             fetch_pool: blob_fetch,
             sources,
+            progress,
             downloader,
         })
     }
@@ -120,6 +125,7 @@ impl BlobSync {
         if self.blobs.has(hash).await.unwrap_or(false) {
             return true;
         }
+        self.progress.watch(hash).await;
 
         let sources = match self.sources.sources(topic).await {
             Ok(sources) => sources,
@@ -227,6 +233,7 @@ impl BlobSync {
                 }
             }
             self.fetch_pool.remove(topic, hash).await;
+            self.progress.stop(hash).await;
         }
     }
 
@@ -244,6 +251,7 @@ impl BlobSync {
             if self.blobs.has(hash).await.unwrap_or(false) {
                 return true;
             }
+            self.progress.watch(hash).await;
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             if remaining.is_zero() {
                 return false;
