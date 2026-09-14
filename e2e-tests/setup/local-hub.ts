@@ -47,8 +47,8 @@ export async function spawnLocalHub(
 	const bin = path.join(ROOT, 'target', 'debug', LOCAL_HUB_PACKAGE);
 	if (!existsSync(bin)) {
 		throw new Error(
-			`${bin} not found — run the suite with E2E_STRESS=1 (which builds it) ` +
-				`or 'cargo build -p ${LOCAL_HUB_PACKAGE}'`,
+			`${bin} not found — the suite builds it against a local mailbox; ` +
+				`otherwise run 'cargo build -p ${LOCAL_HUB_PACKAGE}'`,
 		);
 	}
 	if (port === undefined) port = await allocateFreePort();
@@ -64,7 +64,7 @@ export async function spawnLocalHub(
 	// signal -pid without touching the test runner.
 	const proc = spawn(
 		bin,
-		['--db-path', path.join(dir, 'mailbox.redb'), '--addr', `[::]:${port}`],
+		['--db-path', path.join(dir, 'mailbox.redb'), '--port', String(port)],
 		{ cwd: ROOT, stdio: ['ignore', logFd, logFd], detached: true },
 	);
 	closeSync(logFd);
@@ -85,6 +85,12 @@ export async function spawnLocalHub(
 	return { name, id: health.endpoint_id, url, port, proc, logger };
 }
 
+/** Bring a stopped hub back as the same hub: same db, so same key, MailboxId
+ *  and port. */
+export function restartLocalHub(hub: LocalHub): Promise<LocalHub> {
+	return spawnLocalHub(hub.name, hub.port);
+}
+
 function signalHub(hub: LocalHub, signal: NodeJS.Signals): void {
 	try {
 		process.kill(-hub.proc.pid!, signal);
@@ -94,10 +100,11 @@ function signalHub(hub: LocalHub, signal: NodeJS.Signals): void {
 }
 
 /**
- * Stop a hub and wait for it to exit. SIGINT by default: the hub only sends
- * its mDNS goodbye on a graceful shutdown, and without one every phone on the
- * LAN keeps its records cached until they age out. SIGKILL is for a spec that
- * wants exactly that: a hub that vanished without a word.
+ * Stop a hub and wait for it to exit. SIGINT by default, so the hub gets to run
+ * its shutdown; SIGKILL is for a spec that wants it to vanish mid-flight. Either
+ * way nothing goes out on the wire to retire the announcement — a phone only
+ * notices once the hub ages out of its swarm — so the two look alike to
+ * discovery.
  */
 export function stopLocalHub(
 	hub: LocalHub,

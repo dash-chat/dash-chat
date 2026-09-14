@@ -137,7 +137,6 @@ export class Fuzzer {
 	 * into a `replay`.
 	 */
 	search(opts: SearchOptions): Promise<void> {
-		const budget = 2 * opts.attempts * sequenceBudget(opts.length);
 		return this.run(
 			fc.commands([oneOf(opts.moves)], {
 				maxCommands: opts.length,
@@ -146,7 +145,6 @@ export class Fuzzer {
 			{
 				numRuns: opts.attempts,
 				seed: opts.seed,
-				interruptAfterTimeLimit: budget,
 			},
 		);
 	}
@@ -207,10 +205,6 @@ export class Fuzzer {
 			);
 		}
 	}
-}
-
-function sequenceBudget(length: number): number {
-	return length * MOVE_BUDGET_MS + SEQUENCE_BUDGET_MS;
 }
 
 /** Put a phone back on its usual network however a run left it: on the
