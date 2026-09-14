@@ -150,7 +150,9 @@ async fn notification_loop(
     mut notification_rx: mpsc::Receiver<Notification>,
 ) {
     while let Some(notification) = notification_rx.recv().await {
-        log::info!("Received notification: {:?}", notification);
+        if !matches!(notification, Notification::BlobProgress(_)) {
+            log::info!("Received notification: {:?}", notification);
+        }
 
         match notification {
             Notification::Op(n) => {
@@ -182,6 +184,11 @@ async fn notification_loop(
             Notification::System(n) => {
                 if let Err(err) = app_handle.emit("dashchat://system-event", n) {
                     log::error!("Failed to emit system event: {err:?}");
+                }
+            }
+            Notification::BlobProgress(event) => {
+                if let Err(err) = app_handle.emit("blob://progress", event) {
+                    log::error!("Failed to emit blob progress: {err:?}");
                 }
             }
         }
