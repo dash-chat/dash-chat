@@ -150,7 +150,8 @@ async fn notification_loop(
     mut notification_rx: mpsc::Receiver<Notification>,
 ) {
     while let Some(notification) = notification_rx.recv().await {
-        if !matches!(notification, Notification::BlobProgress(_)) {
+        let is_blob_progress = matches!(notification, Notification::BlobProgress(_));
+        if !is_blob_progress {
             log::info!("Received notification: {:?}", notification);
         }
 
@@ -195,7 +196,9 @@ async fn notification_loop(
 
         // Small delay between emissions to avoid overwhelming the WebKitGTK
         // event loop with rapid-fire events (which can freeze the webview).
-        if cfg!(feature = "e2e-tests") {
+        // Progress events are already rate-limited at the source and must not
+        // back-pressure operation notifications behind them.
+        if cfg!(feature = "e2e-tests") && !is_blob_progress {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     }

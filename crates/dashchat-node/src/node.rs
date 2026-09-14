@@ -2121,6 +2121,7 @@ impl Node {
 
     /// Stop or restart the background blob fetch loop. Test-only: lets an e2e
     /// spec hold a blob in its "downloading" state long enough to observe it.
+    #[cfg(feature = "testing")]
     pub async fn set_blob_fetch_paused(&self, paused: bool) {
         let mut handle = self.blob_fetch_handle.lock().await;
         if paused {
