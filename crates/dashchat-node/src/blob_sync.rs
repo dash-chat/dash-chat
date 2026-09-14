@@ -123,6 +123,7 @@ impl BlobSync {
         attempt_timeout: Duration,
     ) -> bool {
         if self.blobs.has(hash).await.unwrap_or(false) {
+            self.progress.notify_complete(hash).await;
             return true;
         }
         self.progress.watch(hash).await;
@@ -249,6 +250,7 @@ impl BlobSync {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if self.blobs.has(hash).await.unwrap_or(false) {
+                self.progress.notify_complete(hash).await;
                 return true;
             }
             self.progress.watch(hash).await;

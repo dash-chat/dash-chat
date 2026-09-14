@@ -4,6 +4,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use futures::StreamExt;
+use iroh_blobs::api::blobs::BlobStatus;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::Mutex, task::JoinHandle};
 
@@ -70,16 +71,7 @@ impl BlobProgress {
     pub async fn snapshot(&self, hashes: Vec<iroh_blobs::Hash>) -> Vec<BlobProgressEvent> {
         let mut out = Vec::with_capacity(hashes.len());
         for hash in hashes {
-            let complete = self.blobs.has(hash).await.unwrap_or(false);
-            let bytes = if complete {
-                self.blobs
-                    .get_bytes(hash)
-                    .await
-                    .map(|b| b.len() as u64)
-                    .unwrap_or(0)
-            } else {
-                self.bytes.lock().await.get(&hash).copied().unwrap_or(0)
-            };
+            let (bytes, complete) = self.local_progress(hash).await;
             out.push(BlobProgressEvent {
                 hash,
                 bytes,
@@ -87,6 +79,34 @@ impl BlobProgress {
             });
         }
         out
+    }
+
+    /// Emit a completion event for a blob that is already local, without
+    /// starting an observer.
+    pub async fn notify_complete(&self, hash: iroh_blobs::Hash) {
+        let (bytes, _) = self.local_progress(hash).await;
+        self.send(BlobProgressEvent {
+            hash,
+            bytes,
+            complete: true,
+        })
+        .await;
+    }
+
+    /// How many bytes of `hash` are present locally and whether it is complete,
+    /// read from the store's metadata rather than its payload.
+    async fn local_progress(&self, hash: iroh_blobs::Hash) -> (u64, bool) {
+        match self.blobs.status(hash).await {
+            Ok(BlobStatus::Complete { size }) => (size, true),
+            Ok(_) => (
+                self.bytes.lock().await.get(&hash).copied().unwrap_or(0),
+                false,
+            ),
+            Err(err) => {
+                tracing::warn!(%hash, ?err, "failed to read blob status");
+                (0, false)
+            }
+        }
     }
 
     async fn observe(&self, hash: iroh_blobs::Hash) {
@@ -180,6 +200,38 @@ mod tests {
                 complete: true
             }]
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn notify_complete_emits_one_event_with_the_stored_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = iroh_blobs::store::fs::FsStore::load(dir.path())
+            .await
+            .unwrap();
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+        let progress = BlobProgress::new(blobs.clone(), Some(tx));
+
+        let tag = blobs.add_bytes(vec![3u8; 1234]).await.unwrap();
+        progress.notify_complete(tag.hash).await;
+
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let Notification::BlobProgress(event) = event else {
+            panic!("expected a blob progress notification");
+        };
+        assert_eq!(
+            event,
+            BlobProgressEvent {
+                hash: tag.hash,
+                bytes: 1234,
+                complete: true
+            }
+        );
+        assert!(!progress.is_watching(tag.hash).await);
+        assert!(rx.try_recv().is_err());
     }
 
     #[tokio::test(flavor = "multi_thread")]
