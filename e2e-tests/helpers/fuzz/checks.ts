@@ -30,9 +30,7 @@ export const DISCOVERY_MS = 2_000;
 /** What a hub that stopped gets before it has to be off the chip. Longer than
  *  [`DISCOVERY_MS`] because nothing goes on the wire when a hub goes away —
  *  swarm-discovery neither sends a goodbye nor reads one — so a phone only
- *  notices once the hub ages out of its swarm: 3τ of silence (2.1s at the
- *  interactive cadence, for up to two hubs) checked on a ~0.86s sweep, then the
- *  app's own unregister. 4s clears that worst case with margin. */
+ *  notices once the hub ages out of its swarm. */
 export const DEPARTURE_MS = 4_000;
 
 /** Open `chat` on `sa` and check it against the model before returning. */

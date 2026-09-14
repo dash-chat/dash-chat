@@ -2,8 +2,7 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use data_encoding::BASE32_NOPAD;
+use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use swarm_discovery::{Discoverer, IpClass};
 
 mod announce;
@@ -31,7 +30,7 @@ pub(crate) fn base_discoverer(instance_id: &str, interfaces: Vec<Ipv4Addr>) -> D
 /// only, always a valid label and 52 chars < the 63-octet limit) for the wire;
 /// [`label_to_mailbox_id`] reverses it on the browse side.
 pub(crate) fn mailbox_id_to_label(mailbox_id: &str) -> anyhow::Result<String> {
-    Ok(BASE32_NOPAD.encode(&URL_SAFE_NO_PAD.decode(mailbox_id)?))
+    Ok(BASE32_NOPAD.encode(&BASE64URL_NOPAD.decode(mailbox_id.as_bytes())?))
 }
 
 /// Recover the MailboxId from a label produced by [`mailbox_id_to_label`].
@@ -39,7 +38,7 @@ pub(crate) fn mailbox_id_to_label(mailbox_id: &str) -> anyhow::Result<String> {
 /// which base32 decoding does not accept as is.
 pub(crate) fn label_to_mailbox_id(label: &str) -> anyhow::Result<String> {
     let label = label.to_ascii_uppercase();
-    Ok(URL_SAFE_NO_PAD.encode(BASE32_NOPAD.decode(label.as_bytes())?))
+    Ok(BASE64URL_NOPAD.encode(&BASE32_NOPAD.decode(label.as_bytes())?))
 }
 
 /// The local IPv4 interfaces to pin mDNS multicast egress to. Link-local
@@ -69,7 +68,7 @@ mod tests {
         // A key whose leading 6 bits are 0b111110 encodes to a base64url string
         // starting with '-' — an invalid DNS label, the case that crashed the
         // announce before this codec.
-        let mailbox_id = URL_SAFE_NO_PAD.encode([0xF8; 32]);
+        let mailbox_id = BASE64URL_NOPAD.encode(&[0xF8; 32]);
         assert!(mailbox_id.starts_with('-'));
 
         let label = mailbox_id_to_label(&mailbox_id).unwrap();
@@ -81,7 +80,7 @@ mod tests {
 
     #[test]
     fn a_label_lowercased_on_the_wire_still_recovers_the_mailbox_id() {
-        let mailbox_id = URL_SAFE_NO_PAD.encode([0x5A; 32]);
+        let mailbox_id = BASE64URL_NOPAD.encode(&[0x5A; 32]);
         let label = mailbox_id_to_label(&mailbox_id).unwrap();
         assert_eq!(
             label_to_mailbox_id(&label.to_ascii_lowercase()).unwrap(),

@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::channel::mpsc::{unbounded, UnboundedSender};
+use futures::channel::mpsc::{channel, Sender};
 use futures::future::ready;
 use futures::stream::{BoxStream, Stream, StreamExt};
 use swarm_discovery::DropGuard;
@@ -23,6 +23,9 @@ use crate::{base_discoverer, label_to_mailbox_id, multicast_interfaces_v4, SERVI
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// How many sightings are probed at once; the rest wait their turn.
 const MAX_PROBES: usize = 16;
+/// How many sightings may wait for a probe slot; further ones are dropped, and
+/// the hub is picked up again on its next announcement.
+const MAX_PENDING_SIGHTINGS: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LocalHubEvent {
@@ -60,7 +63,7 @@ impl LocalHubDiscoveryService {
     /// Browse for local hubs until the returned service is dropped.
     pub fn spawn() -> Self {
         log::info!("Started local hub discovery (swarm-discovery, {SERVICE_NAME})");
-        let (sightings_tx, sightings) = unbounded();
+        let (sightings_tx, sightings) = channel(MAX_PENDING_SIGHTINGS);
         let browser = AbortOnDropHandle::new(tokio::spawn(browse(sightings_tx)));
         Self::new(sightings, browser)
     }
@@ -95,7 +98,7 @@ impl LocalHubDiscoveryService {
 /// One browser for the whole run, kept on the current interfaces across
 /// network changes (or spawned on one, if there was no routable IPv4 to spawn
 /// it on before). Sightings are stamped with the network changes so far.
-async fn browse(sightings: UnboundedSender<Sighting>) {
+async fn browse(sightings: Sender<Sighting>) {
     let network_changes = Arc::new(AtomicU64::new(0));
     let mut network = network_watch::network_change();
     let mut browser: Option<Browser> = None;
@@ -127,20 +130,20 @@ async fn browse(sightings: UnboundedSender<Sighting>) {
 /// A swarm-discovery browser on the current interfaces, forwarding every
 /// sighting to `sightings`; fails if binding the multicast socket does.
 fn spawn_browser(
-    sightings: &UnboundedSender<Sighting>,
+    sightings: &Sender<Sighting>,
     network_changes: &Arc<AtomicU64>,
 ) -> anyhow::Result<Browser> {
     let interfaces: BTreeSet<Ipv4Addr> = multicast_interfaces_v4().into_iter().collect();
-    let sightings = sightings.clone();
+    let mut sightings = sightings.clone();
     let network_changes = network_changes.clone();
     let discoverer = base_discoverer(&browse_id(), interfaces.iter().copied().collect())
         // Runs on swarm-discovery's thread and must not block, so it only
-        // forwards the sighting.
+        // forwards the sighting, dropping it if the probes have fallen behind.
         .with_callback(move |id, peer| {
             let Ok(id) = label_to_mailbox_id(id) else {
                 return;
             };
-            let _ = sightings.unbounded_send(Sighting {
+            let _ = sightings.try_send(Sighting {
                 id,
                 addrs: peer.addrs().iter().copied().collect(),
                 network_changes: network_changes.load(Ordering::Relaxed),
@@ -254,14 +257,14 @@ mod tests {
 
     /// The pipe fed sightings and network changes by hand, with no browser.
     struct Harness {
-        sightings: UnboundedSender<Sighting>,
+        sightings: Sender<Sighting>,
         network_changes: u64,
         service: LocalHubDiscoveryService,
     }
 
     impl Harness {
         fn new() -> Self {
-            let (sightings, sightings_rx) = unbounded();
+            let (sightings, sightings_rx) = channel(MAX_PENDING_SIGHTINGS);
             Self {
                 sightings,
                 network_changes: 0,
@@ -272,16 +275,16 @@ mod tests {
             }
         }
 
-        fn seen(&self, id: &str, addr: SocketAddr) {
+        fn seen(&mut self, id: &str, addr: SocketAddr) {
             self.sighted(id, vec![(addr.ip(), addr.port())]);
         }
 
-        fn expired(&self, id: &str) {
+        fn expired(&mut self, id: &str) {
             self.sighted(id, vec![]);
         }
 
-        fn sighted(&self, id: &str, addrs: Vec<(IpAddr, u16)>) {
-            let _ = self.sightings.unbounded_send(Sighting {
+        fn sighted(&mut self, id: &str, addrs: Vec<(IpAddr, u16)>) {
+            let _ = self.sightings.try_send(Sighting {
                 id: id.to_string(),
                 addrs: addrs.into_iter().collect(),
                 network_changes: self.network_changes,
