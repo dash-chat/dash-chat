@@ -144,6 +144,17 @@ class SettingsApp {
 		);
 	}
 
+	/** The "More Info" button of a row named `ssid`, in one lookup: the list
+	 *  can briefly hold a row of that name without the button, and a row
+	 *  matched on its own would then be waited on for the whole timeout. */
+	private moreInfoButton(ssid: string) {
+		return this.b.$(
+			classChain(
+				`**/XCUIElementTypeCell[\`name BEGINSWITH ${quoted(`${ssid},`)}\`]/**/XCUIElementTypeButton[\`name == "More Info"\`]`,
+			),
+		);
+	}
+
 	/** Wi-Fi page -> `ssid`'s info page. The list re-renders as scans come in,
 	 *  and a tap on a row replaced in between reports success without opening
 	 *  anything, so the tap is repeated until the page is up. */
@@ -152,7 +163,9 @@ class SettingsApp {
 		await this.b.waitUntil(
 			async () => {
 				if (await bar.isExisting()) return true;
-				await this.networkRow(ssid).$('~More Info').click();
+				const button = this.moreInfoButton(ssid);
+				if (!(await button.isExisting())) return false;
+				await button.click();
 				return await bar
 					.waitForExist({ timeout: INFO_PAGE_MS })
 					.then(() => true)
