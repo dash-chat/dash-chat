@@ -190,8 +190,10 @@ describe('Local hub discovery', function () {
 	});
 
 	it('shows the hub when its host joins the LAN the phone is already on', async function () {
-		const [network] = wifiNetworks();
-		if (!agent.isMobile || network === undefined) this.skip();
+		if (!agent.isMobile) this.skip();
+		const { ssid } = await agent.wifiInfo();
+		const network = wifiNetworks().find(n => n.ssid !== ssid);
+		if (network === undefined) this.skip();
 		const device = wifiDevice();
 		if (device === null) throw new Error('the host has no Wi-Fi card');
 		try {
