@@ -659,8 +659,11 @@ export class Message extends TestHelper {
 
 	/** Open this message's actions menu with the gesture its platform uses — a
 	 * long-press on mobile, which opens the spotlight overlay, or the hover
-	 * toolbar's ⋯ button on desktop — and wait for it to actually open. */
+	 * toolbar's ⋯ button on desktop — and wait for it to actually open. The
+	 * message is scrolled to the middle first: a menu anchored to a message
+	 * at the very top opens past the viewport's edge. */
 	async openActions() {
+		await this.wrapper.scrollIntoView({ block: 'center' });
 		if (await this.isMobileBuild()) {
 			await this.longPressBubble();
 		} else {
