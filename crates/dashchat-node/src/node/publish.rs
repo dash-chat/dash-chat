@@ -38,8 +38,10 @@ impl Node {
         // Now we await the operation being published and processed on the system layer.
         let event = warn_if_slow("awaiting process_fut", process_fut).await?;
 
-        // Immediately sync the published operation
-        self.mailboxes.request_sync().await;
+        // Immediately deliver the published operation
+        self.mailboxes
+            .publish_fast_push(*topic, self.device_id())
+            .await;
         // Re-announce any still-unfetched blobs now that we've published.
         self.notify_unfetched_blob_followup();
 
