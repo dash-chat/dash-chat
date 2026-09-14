@@ -113,13 +113,21 @@ impl MailboxConnectionState {
         } else {
             self.status
         };
-        self.record_probe_error(config, err);
+        self.reschedule(config);
+        self.set_last_error(err);
     }
 
     /// A failed probe confirms what the status already said; it is not a step
-    /// further into backoff.
+    /// further into backoff, and it never defers the scheduled poll, so a
+    /// storm of probes can't keep the status from ever being re-judged.
     fn record_probe_error(&mut self, config: &MailboxesConfig, err: String) {
-        self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
+        let after_probe =
+            Instant::now() + self.status.interval(config) + config.between_polls_delay;
+        self.next_poll = self.next_poll.min(after_probe);
+        self.set_last_error(err);
+    }
+
+    fn set_last_error(&mut self, err: String) {
         self.last_error = Some(LastError {
             at: Utc::now(),
             message: err,
@@ -225,9 +233,13 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
             .due_at(now, next_poll, self.config.sync_debounce)
     }
 
-    /// `probe` says whether the poll that failed was fulfilling a probe.
+    /// `probe` says whether the poll that failed was fulfilling a probe. A
+    /// probe failing against a mailbox still believed Active is news, not
+    /// confirmation, so it counts like any other error.
     fn poll_failed(&self, err: String, probe: bool) {
-        if probe {
+        let confirms_known_failure =
+            probe && self.connection_state.borrow().status != SyncStatus::Active;
+        if confirms_known_failure {
             self.record_probe_error(err);
         } else {
             self.record_error(err);
@@ -1738,6 +1750,46 @@ mod tests {
         );
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn repeated_probe_failures_never_defer_the_scheduled_poll() {
+        let config = test_config();
+        let mut state = MailboxConnectionState::new();
+        state.record_success(&config);
+        let scheduled = state.next_poll;
+
+        for _ in 0..10 {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            state.record_probe_error(&config, "flap".into());
+            assert!(state.next_poll <= scheduled);
+        }
+    }
+
+    /// A failed probe against a mailbox believed healthy is the first sign of
+    /// trouble and counts; once the status already says the mailbox is down,
+    /// further failed probes only confirm it.
+    #[tokio::test(start_paused = true)]
+    async fn failed_probe_counts_only_while_active() {
+        let config = test_config();
+        let tracked =
+            TrackedMailbox::new(Arc::new(MemMailbox::<Msg>::new().client()), config.clone());
+
+        for _ in 0..config.degraded_threshold {
+            tracked.poll_failed("flap".into(), true);
+        }
+        {
+            let state = tracked.connection_state.borrow();
+            assert_eq!(state.status, SyncStatus::Degraded);
+            assert_eq!(state.consecutive_errors, config.degraded_threshold);
+        }
+
+        for _ in 0..config.stopped_threshold {
+            tracked.poll_failed("flap".into(), true);
+        }
+        let state = tracked.connection_state.borrow();
+        assert_eq!(state.status, SyncStatus::Degraded);
+        assert_eq!(state.consecutive_errors, config.degraded_threshold);
+    }
+
     #[test]
     fn pending_probe_yields_to_wakeup_and_absorbs_syncs() {
         let mut pending = PendingRequest::None;
@@ -1760,6 +1812,7 @@ mod tests {
         let config = MailboxesConfig {
             active_interval: Duration::from_secs(100),
             between_polls_delay: Duration::from_millis(0),
+            degraded_threshold: 1,
             ..test_config()
         };
         let mgr = spawn_test_mailboxes(config.clone()).await;
@@ -1795,7 +1848,7 @@ mod tests {
         let state = mm.get(&id).unwrap().connection_state();
         let state = state.borrow();
         assert_eq!(state.consecutive_errors, 1);
-        assert_eq!(state.status, SyncStatus::Active);
+        assert_eq!(state.status, SyncStatus::Degraded);
     }
 
     /// A probe that finds nothing to poll is spent, not carried into whatever
