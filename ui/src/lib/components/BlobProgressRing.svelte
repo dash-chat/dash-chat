@@ -40,7 +40,7 @@
 	data-testid="blob-progress-ring"
 	data-stalled={stalled}
 	title={stalled ? m.blobDownloadStalledRetry() : undefined}
-	aria-busy={!stalled}
+	aria-busy={!stalled && fraction < 1}
 >
 	<svg
 		class="absolute inset-0 -rotate-90 {indeterminate ? 'animate-spin' : ''}"
