@@ -1,5 +1,6 @@
 mod message;
 mod validation;
+pub(crate) use message::hash_bytes;
 pub use message::*;
 pub use validation::*;
 
