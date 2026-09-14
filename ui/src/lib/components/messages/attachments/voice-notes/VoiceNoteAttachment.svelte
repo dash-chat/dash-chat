@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
-	import type { VoiceNote } from 'dash-chat-stores';
+	import { getContext, untrack, type Snippet } from 'svelte';
+	import type { BlobStore, VoiceNote } from 'dash-chat-stores';
 	import { formatDuration } from '$lib/utils/time';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { VoicePlayer } from './voice-player.svelte';
 	import VoicePlayButton from './VoicePlayButton.svelte';
 	import Waveform from './Waveform.svelte';
@@ -15,6 +16,9 @@
 	}
 
 	let { voice, metadata }: Props = $props();
+
+	const blobStore: BlobStore = getContext('blob-store');
+	const download = $derived(useReactiveValue(blobStore.progress, voice.hash));
 
 	const peaks = $derived(Array.from(voice.waveform, v => v / 255));
 
@@ -40,6 +44,9 @@
 			paused={player.paused}
 			loading={player.loading}
 			onclick={() => void player.toggle()}
+			download={$download}
+			totalBytes={voice.size}
+			onretry={() => void blobStore.retry(voice.hash)}
 		/>
 
 		<Waveform {peaks} {player} />
