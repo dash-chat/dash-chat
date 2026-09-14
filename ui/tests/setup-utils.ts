@@ -172,6 +172,13 @@ function disableP2p(): Promise<void> {
 	return invokeAfterSetup('close_iroh_endpoint');
 }
 
+/** Pause or resume this agent's background blob fetch loop, so a spec can
+ * observe an attachment's downloading state. Backed by the
+ * `set_blob_fetch_paused` command (only registered under `e2e-tests`). */
+function setBlobFetchPaused(paused: boolean): Promise<void> {
+	return invokeAfterSetup('set_blob_fetch_paused', { paused });
+}
+
 /** Reset the app to first-launch state: clear web storage, then run the real
  * `delete_account` command — the same code path as Settings → Account →
  * Delete account — which shuts the node down, deletes the data dir, and (on
@@ -525,6 +532,7 @@ export const testUtils = {
 	simulateUpdate,
 	hasText,
 	disableP2p,
+	setBlobFetchPaused,
 	resetToFirstLaunch,
 	showKeyboard,
 	pasteFiles,
