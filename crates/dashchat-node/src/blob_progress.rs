@@ -90,6 +90,12 @@ impl BlobProgress {
     }
 
     async fn observe(&self, hash: iroh_blobs::Hash) {
+        self.observe_until_complete(hash).await;
+        self.bytes.lock().await.remove(&hash);
+        self.tasks.lock().await.remove(&hash);
+    }
+
+    async fn observe_until_complete(&self, hash: iroh_blobs::Hash) {
         let stream = match self.blobs.observe(hash).stream().await {
             Ok(stream) => stream,
             Err(err) => {
@@ -117,8 +123,6 @@ impl BlobProgress {
                 break;
             }
         }
-        self.bytes.lock().await.remove(&hash);
-        self.tasks.lock().await.remove(&hash);
     }
 
     async fn send(&self, event: BlobProgressEvent) {
