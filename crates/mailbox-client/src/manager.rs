@@ -579,14 +579,6 @@ where
         Ok(())
     }
 
-    /// Immediately activate and sync every registered mailbox, resetting any backoff.
-    pub async fn wakeup_all(&self) {
-        for tracked_mailbox in self.mailboxes.lock().await.values() {
-            tracked_mailbox.wakeup();
-        }
-        self.nudge_poll_loop();
-    }
-
     /// Immediately sync every registered mailbox without touching status or backoff.
     pub async fn probe_all(&self) {
         for tracked_mailbox in self.mailboxes.lock().await.values() {
