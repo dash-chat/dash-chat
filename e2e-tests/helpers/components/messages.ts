@@ -471,6 +471,14 @@ export class Messages extends TestHelper {
 		return this.photoCell(label).$(tid('blob-progress-bytes'));
 	}
 
+	/** Whether the photo's progress ring is showing its stalled (retry) state. */
+	async photoProgressStalled(label: string): Promise<boolean> {
+		return (
+			(await this.photoProgressRing(label).getAttribute('data-stalled')) ===
+			'true'
+		);
+	}
+
 	/** The file row whose text contains `name`. Uses raw xpath rather than the
 	 * `*=` selector shorthand: that shorthand excludes an element that has a
 	 * descendant sharing its testid as a substring, which the file row's own
