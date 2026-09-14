@@ -27,6 +27,8 @@
 		imgStyle?: string;
 		/** Defer loading until near the viewport (grid cells); the lightbox loads eagerly. */
 		lazy?: boolean;
+		/** Small surfaces (filmstrip thumbs): a 20px ring and no byte pill. */
+		compact?: boolean;
 	}
 
 	let {
@@ -35,6 +37,7 @@
 		imgClass = '',
 		imgStyle = '',
 		lazy = false,
+		compact = false,
 	}: Props = $props();
 
 	const blobStore: BlobStore = getContext('blob-store');
@@ -108,12 +111,19 @@
 		style={imgStyle}
 		data-testid="blob-image-downloading"
 	>
-		<BlobProgressRing {bytes} total={item.size} {stalled} />
-		<span
-			class="absolute start-1 top-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] leading-tight text-white"
-			data-testid="blob-progress-bytes"
-			>{formatFileSize(bytes)} / {formatFileSize(item.size)}</span
-		>
+		<BlobProgressRing
+			{bytes}
+			total={item.size}
+			{stalled}
+			size={compact ? 20 : 40}
+		/>
+		{#if !compact}
+			<span
+				class="absolute start-1 top-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] leading-tight text-white"
+				data-testid="blob-progress-bytes"
+				>{formatFileSize(bytes)} / {formatFileSize(item.size)}</span
+			>
+		{/if}
 	</div>
 {:else if status === 'error'}
 	<span
