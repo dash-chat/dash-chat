@@ -569,8 +569,15 @@ export async function forgetAndroidWifi(
 	);
 }
 
-export function disableAndroidWifi(udid: string): void {
+/** Turn Wi-Fi off and resolve once the device holds no Wi-Fi address: the
+ *  radio takes a moment to drop after the command returns, and a peer that
+ *  sends in that moment still gets through. */
+export async function disableAndroidWifi(udid: string): Promise<void> {
 	adbShell(udid, 'svc wifi disable');
+	await waitForWifi(
+		() => (androidWifiAddress(udid) === '' ? 'off' : ''),
+		`device still held a wifi address ${WIFI_REASSOCIATE_MS / 1_000}s after disabling`,
+	);
 }
 
 /** Turn Wi-Fi on and resolve with the IPv4 address the device came back on. */

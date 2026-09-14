@@ -390,7 +390,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await disableIosWifi(b);
 			return;
 		}
-		disableAndroidWifi(wifiUdid(agent, b));
+		await disableAndroidWifi(wifiUdid(agent, b));
 	};
 	agent.enableWifi = async () =>
 		agent.platform === 'ios'
