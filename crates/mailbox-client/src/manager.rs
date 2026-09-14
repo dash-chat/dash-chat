@@ -424,6 +424,25 @@ where
             }
         }
 
+        // Seed a fresh registration from the last session's judged status so a
+        // mailbox that was backed off before a restart (or an iOS node rebuild)
+        // doesn't restart aggressive polling; its immediate first poll re-judges
+        // it. Read before taking the mailboxes lock (no DB I/O under it), and
+        // only when not already tracked (re-registration keeps its live state).
+        // If a concurrent unregister lands in between, the fallback to Active
+        // matches pre-seeding behavior and the first poll corrects it.
+        let seeded_status = if self.is_tracked(&id).await {
+            SyncStatus::Active
+        } else {
+            match self.sync_tracker.get_status(&id).await {
+                Ok(status) => status.unwrap_or(SyncStatus::Active),
+                Err(err) => {
+                    tracing::error!(?err, mailbox = %id, "failed to load persisted mailbox status");
+                    SyncStatus::Active
+                }
+            }
+        };
+
         let mut mailboxes = self.mailboxes.lock().await;
         if let Some(tm) = mailboxes.get(&id).cloned() {
             drop(mailboxes);
@@ -438,17 +457,6 @@ where
             self.persist_status_change(&id, &tm, |tm| tm.wakeup()).await;
             self.nudge_poll_loop();
         } else {
-            // Seed a fresh registration from the last session's judged status
-            // so a mailbox that was backed off before a restart (or an iOS
-            // node rebuild) doesn't restart aggressive polling; its immediate
-            // first poll re-judges it.
-            let seeded_status = match self.sync_tracker.get_status(&id).await {
-                Ok(status) => status.unwrap_or(SyncStatus::Active),
-                Err(err) => {
-                    tracing::error!(?err, mailbox = %id, "failed to load persisted mailbox status");
-                    SyncStatus::Active
-                }
-            };
             mailboxes.insert(
                 id.clone(),
                 Arc::new(TrackedMailbox::new(
