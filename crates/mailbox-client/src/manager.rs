@@ -476,6 +476,14 @@ where
         let mut mailboxes = self.mailboxes.lock().await;
         if mailboxes.remove(id).is_some() {
             drop(mailboxes);
+            // An unregistered mailbox only comes back with fresh evidence (an
+            // mDNS re-announcement), so it earns a fresh Active start with the
+            // full backoff runway instead of a status seeded from history —
+            // otherwise a flaky hub would churn through register, one failed
+            // poll, unregister on every re-browse.
+            if let Err(err) = self.sync_tracker.clear_status(id).await {
+                tracing::error!(?err, mailbox = %id, "failed to clear mailbox status");
+            }
             self.publish_active_ids().await;
             true
         } else {
@@ -2206,6 +2214,31 @@ mod tests {
             mgr.sync_tracker().get_status(&id).await.unwrap(),
             Some(SyncStatus::Stopped)
         );
+    }
+
+    /// Unregistering forgets the persisted status: a re-discovered hub earns a
+    /// fresh Active start with the full backoff runway.
+    #[tokio::test(start_paused = true)]
+    async fn unregister_forgets_persisted_status() {
+        let config = test_config();
+        let mgr = test_mailboxes(config.clone());
+
+        let mb = MemMailbox::<Msg>::new();
+        let id = mb.client().id();
+        mgr.sync_tracker()
+            .record_status(&id, SyncStatus::Stopped)
+            .await
+            .unwrap();
+        mgr.register(mb.client()).await;
+        assert!(mgr.unregister(&id).await);
+        assert_eq!(mgr.sync_tracker().get_status(&id).await.unwrap(), None);
+
+        mgr.register(mb.client()).await;
+        let mm = mgr.mailboxes.lock().await;
+        let state = mm.get(&id).unwrap().connection_state();
+        let state = state.borrow();
+        assert_eq!(state.status, SyncStatus::Active);
+        assert_eq!(state.consecutive_errors, 0);
     }
 
     /// A status seeded Stopped from history must not unregister the mailbox

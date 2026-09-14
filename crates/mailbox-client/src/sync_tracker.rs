@@ -284,6 +284,23 @@ where
         }
     }
 
+    /// Forget the persisted status for a mailbox, so its next registration
+    /// starts from Active.
+    pub async fn clear_status(&self, mailbox: &MailboxId) -> anyhow::Result<()> {
+        match &self.inner {
+            SyncBackend::Sqlite(pool) => {
+                sqlx::query("DELETE FROM mailbox_status WHERE mailbox_id = ?")
+                    .bind(mailbox)
+                    .execute(pool)
+                    .await?;
+            }
+            SyncBackend::Mem(rows) => {
+                rows.lock().await.statuses.remove(mailbox);
+            }
+        }
+        Ok(())
+    }
+
     /// The id of the mailbox last recorded at `url`, if any.
     pub async fn mailbox_id_for_url(&self, url: &str) -> anyhow::Result<Option<MailboxId>> {
         match &self.inner {
@@ -722,6 +739,12 @@ mod tests {
             store.get_status(&"mb1".into()).await.unwrap(),
             Some(SyncStatus::Active),
         );
+        store.clear_status(&"mb1".into()).await.unwrap();
+        assert_eq!(store.get_status(&"mb1".into()).await.unwrap(), None);
+        store
+            .record_status(&"mb1".into(), SyncStatus::Stopped)
+            .await
+            .unwrap();
         store.drop_mailbox(&"mb1".into()).await.unwrap();
         assert_eq!(store.get_status(&"mb1".into()).await.unwrap(), None);
     }
