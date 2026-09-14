@@ -1,13 +1,19 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
-	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
-	import { mediaSrc } from '$lib/utils/media';
+	import { getContext, untrack } from 'svelte';
+	import type {
+		BlobStore,
+		FileAttachment,
+		PhotoAttachment,
+	} from 'dash-chat-stores';
+	import { formatFileSize, mediaSrc } from '$lib/utils/media';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		acquireBlob,
 		blobToken,
 		releaseBlob,
 		retryBlob,
 	} from '$lib/stores/blob-load-store.svelte';
+	import BlobProgressRing from '$lib/components/BlobProgressRing.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Preloader } from 'konsta/svelte';
 	import { mdiReload } from '@mdi/js';
@@ -30,6 +36,12 @@
 		imgStyle = '',
 		lazy = false,
 	}: Props = $props();
+
+	const blobStore: BlobStore = getContext('blob-store');
+	const download = $derived(useReactiveValue(blobStore.progress, item.hash));
+	const complete = $derived($download?.complete === true);
+	const stalled = $derived($download?.stalled === true);
+	const bytes = $derived($download?.bytes ?? 0);
 
 	// Load status is this element's own — each <img> fetches independently, so a
 	// failure here never blanks another surface of the same blob. Only the
@@ -57,10 +69,13 @@
 		});
 	});
 
-	/** If this image is showing its reload placeholder, re-fetch the blob on every
-	 * surface and report that the click was handled. Lets a parent decide a click
-	 * means "retry" vs. its normal action without tracking load state itself. */
+	/** If this image is stalled or errored, retry and report that the click was
+	 * handled, so a parent can tell "retry" from its normal click action. */
 	export function retryIfErrored(): boolean {
+		if (stalled) {
+			void blobStore.retry(item.hash);
+			return true;
+		}
 		if (status !== 'error') return false;
 		retryBlob(item.hash);
 		return true;
@@ -87,7 +102,20 @@
 	});
 </script>
 
-{#if status === 'error'}
+{#if !complete}
+	<div
+		class="absolute inset-0 flex items-center justify-center text-black/60 dark:text-white/70 {imgClass}"
+		style={imgStyle}
+		data-testid="blob-image-downloading"
+	>
+		<BlobProgressRing {bytes} total={item.size} {stalled} />
+		<span
+			class="absolute start-1 top-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] leading-tight text-white"
+			data-testid="blob-progress-bytes"
+			>{formatFileSize(bytes)} / {formatFileSize(item.size)}</span
+		>
+	</div>
+{:else if status === 'error'}
 	<span
 		class="absolute inset-0 flex cursor-pointer items-center justify-center border-none p-0 text-black/50 dark:text-white/60 {imgClass}"
 		style={imgStyle}
