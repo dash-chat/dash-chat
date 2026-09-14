@@ -25,14 +25,18 @@
 
 	const blobStore: BlobStore = getContext('blob-store');
 	const download = $derived(useReactiveValue(blobStore.progress, file.hash));
-	const complete = $derived($download?.complete === true);
+	// Unknown until the first snapshot resolves; treat it as not downloading so
+	// an already-local file never flashes the ring.
+	const downloadingBlob = $derived(
+		$download !== undefined && !$download.complete,
+	);
 	const stalled = $derived($download?.stalled === true);
 	const bytes = $derived($download?.bytes ?? 0);
 
 	let downloading = $state(false);
 
 	async function handleSave() {
-		if (!complete) {
+		if (downloadingBlob) {
 			if (stalled) void blobStore.retry(file.hash);
 			return;
 		}
@@ -55,14 +59,14 @@
 	type="button"
 	class="flex w-full cursor-pointer items-center border-none bg-transparent px-1 py-0.5 text-start text-inherit"
 	data-testid="message-attachment-file"
-	data-downloading={!complete}
+	data-downloading={downloadingBlob}
 	onclick={handleSave}
 >
 	<div
 		class="me-2.5 flex h-10 w-8 shrink-0 items-center justify-center"
 		data-testid="message-attachment-file-icon"
 	>
-		{#if !complete}
+		{#if downloadingBlob}
 			<BlobProgressRing {bytes} total={mediaSize(file)} {stalled} size={32} />
 		{:else if downloading}
 			<Preloader class="h-6 w-6" />
@@ -76,7 +80,7 @@
 			>{file.name}</span
 		>
 		<span class="text-xs opacity-70" data-testid="message-attachment-file-size">
-			{#if complete}
+			{#if !downloadingBlob}
 				{formatFileSize(mediaSize(file))}
 			{:else}
 				{formatFileSize(bytes)} / {formatFileSize(mediaSize(file))}

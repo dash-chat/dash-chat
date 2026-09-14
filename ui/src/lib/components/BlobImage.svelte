@@ -42,7 +42,10 @@
 
 	const blobStore: BlobStore = getContext('blob-store');
 	const download = $derived(useReactiveValue(blobStore.progress, item.hash));
-	const complete = $derived($download?.complete === true);
+	// Until the first snapshot resolves the download state is unknown; showing
+	// the ring then would flash it on every already-local photo.
+	const known = $derived($download !== undefined);
+	const downloading = $derived(known && $download?.complete !== true);
 	const stalled = $derived($download?.stalled === true);
 	const bytes = $derived($download?.bytes ?? 0);
 
@@ -105,7 +108,7 @@
 	});
 </script>
 
-{#if !complete}
+{#if downloading}
 	<div
 		class="absolute inset-0 flex items-center justify-center text-black/60 dark:text-white/70 {imgClass}"
 		style={imgStyle}

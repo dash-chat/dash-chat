@@ -46,12 +46,16 @@
 		rounded
 		inline
 		onClick={handleClick}
-		class="!h-9 !w-9 shrink-0 !p-0 !text-inherit {downloading && !stalled
+		class="!h-9 !w-9 !p-0 !text-inherit {downloading && !stalled
 			? 'opacity-50'
 			: ''}"
 		style="background: color-mix(in srgb, currentColor 15%, transparent)"
 		data-testid="voice-play-button"
-		aria-label={paused ? m.voicePlay() : m.voicePause()}
+		aria-label={stalled
+			? m.blobDownloadStalledRetry()
+			: paused
+				? m.voicePlay()
+				: m.voicePause()}
 		aria-busy={loading}
 		aria-disabled={downloading && !stalled}
 	>
@@ -63,12 +67,15 @@
 		{/if}
 	</Button>
 	{#if downloading && download}
-		<BlobProgressRing
-			bytes={download.bytes}
-			total={totalBytes}
-			{stalled}
-			size={36}
-			class="pointer-events-none absolute inset-0"
-		/>
+		<div
+			class="pointer-events-none absolute inset-0 flex items-center justify-center"
+		>
+			<BlobProgressRing
+				bytes={download.bytes}
+				total={totalBytes}
+				{stalled}
+				size={36}
+			/>
+		</div>
 	{/if}
 </div>
