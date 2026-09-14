@@ -6,6 +6,7 @@
 import { type LocalHub, stopLocalHub } from '../../setup/local-hub';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
+import type { Link } from '../../setup/toxiproxy';
 import { navigateToAddContact } from '../flows/exchange-contacts';
 import type { DirectChatPage } from '../pages/direct-chats/direct-chat-page';
 import type { GroupChatPage } from '../pages/group-chat/group-chat-page';
@@ -49,6 +50,9 @@ export interface Real {
 	 * location on `HubReal`. */
 	hubsNetwork: string | null;
 	hubs: HubReal[];
+	/** The link every agent reaches the cloud mailbox through, when the run
+	 * degrades it; null keeps the cloud out of the model. */
+	cloud: Link | null;
 }
 
 /** A `Real` with no hub yet and the card off every test network. Pure: the
@@ -57,6 +61,7 @@ export function newReal(init: {
 	agents: { agent: Agent; name: string }[];
 	networks?: WifiNetwork[];
 	hubsDevice?: string | null;
+	cloud?: Link;
 }): Real {
 	const networks = init.networks ?? [];
 	return {
@@ -65,6 +70,7 @@ export function newReal(init: {
 		hubsDevice: networks.length === 0 ? null : (init.hubsDevice ?? null),
 		hubsNetwork: null,
 		hubs: [],
+		cloud: init.cloud ?? null,
 	};
 }
 

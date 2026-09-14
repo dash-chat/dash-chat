@@ -117,6 +117,10 @@ function chatTopic(chat: ExpectedChat): Topic {
 	return `chat:d:${[...chat.members].sort().join('+')}`;
 }
 
+/** The cloud mailbox as a holder: it subscribes to everything, like a hub,
+ * and every foregrounded agent reaches it while its link is usable. */
+const CLOUD = 'cloud';
+
 export class ExpectedModel {
 	readonly agents: { name: string; mobile: boolean }[];
 	readonly chats: ExpectedChat[] = [];
@@ -125,6 +129,9 @@ export class ExpectedModel {
 	 * of the run. */
 	readonly networks: ExpectedNetwork[];
 	readonly hubs: ExpectedHub[] = [];
+	/** The cloud mailbox, when the run models one; null keeps every cloud
+	 * move out of the run. */
+	readonly cloud: { usable: boolean } | null;
 	private readonly messages = new Map<string, ExpectedMessage>();
 	private readonly ops: Op[] = [];
 	private readonly opsByTopic = new Map<Topic, Op[]>();
@@ -145,9 +152,12 @@ export class ExpectedModel {
 	constructor(
 		agents: { name: string; mobile: boolean }[],
 		networks: ExpectedNetwork[] = [],
+		cloud = false,
 	) {
 		this.agents = agents;
 		this.networks = networks;
+		this.cloud = cloud ? { usable: true } : null;
+		if (cloud) this.knowledge.set(CLOUD, new Set());
 		for (const { name } of agents) {
 			this.knowledge.set(name, new Set());
 			this.record(name, {
@@ -228,6 +238,27 @@ export class ExpectedModel {
 
 	hasNetworks(): boolean {
 		return this.networks.length > 0;
+	}
+
+	hasCloud(): boolean {
+		return this.cloud !== null;
+	}
+
+	/** Whether agents reach the cloud mailbox right now. */
+	cloudUsable(): boolean {
+		return this.cloud?.usable === true;
+	}
+
+	setCloudUsable(usable: boolean): void {
+		if (this.cloud === null) throw new Error('the run has no cloud mailbox');
+		this.cloud.usable = usable;
+	}
+
+	/** Whether every agent has a members-less group to read its connection
+	 * chip in: a run with LANs reads hubs on it, one with a cloud reads the
+	 * cloud. */
+	watchesChip(): boolean {
+		return this.hasNetworks() || this.hasCloud();
 	}
 
 	/** Zero-padded so `hub-01` can never substring-match `hub-010`. */
@@ -579,9 +610,10 @@ export class ExpectedModel {
 		else view.reactions.set(op.reactor, op.emoji);
 	}
 
-	/** Topics `holder` syncs, or null for a hub, which syncs them all. */
+	/** Topics `holder` syncs, or null for a hub or the cloud, which sync them
+	 * all. */
 	private subscriptions(holder: string): Set<Topic> | null {
-		if (this.hubs.some(h => h.name === holder)) return null;
+		if (holder === CLOUD || this.hubs.some(h => h.name === holder)) return null;
 		const topics = new Set<Topic>([`announce:${holder}`, `inbox:${holder}`]);
 		for (const other of this.names()) {
 			if (!this.added.has(`${holder}>${other}`)) continue;
@@ -592,13 +624,17 @@ export class ExpectedModel {
 		return topics;
 	}
 
-	/** The holders that can sync with each other right now, grouped. */
+	/** The holders that can sync with each other right now, grouped: per
+	 * LAN, plus everyone with the cloud while its link is usable. */
 	private components(): string[][] {
-		if (!this.hasNetworks()) return [this.activeNames()];
-		return this.networks.map(n => [
-			...this.hubsOn(n.name).map(h => h.name),
-			...this.activeNamesOn(n.name),
-		]);
+		const lans = this.hasNetworks()
+			? this.networks.map(n => [
+					...this.hubsOn(n.name).map(h => h.name),
+					...this.activeNamesOn(n.name),
+				])
+			: [this.activeNames()];
+		if (!this.cloudUsable()) return lans;
+		return [...lans, [CLOUD, ...this.activeNames()]];
 	}
 
 	/** One round of per-topic union within `component`; whether anything
@@ -668,10 +704,12 @@ export class ExpectedModel {
 }
 
 /** The model for `real`, before anything has happened: no chats, no
- * contacts, no hub anywhere, everyone foregrounded and off the air. */
+ * contacts, no hub anywhere, everyone foregrounded and off the air, the
+ * cloud link (if the run has one) healthy. */
 export function newModel(real: {
 	agents: { agent: { platform: string }; name: string }[];
 	networks: { ssid: string; home: boolean }[];
+	cloud: object | null;
 }): ExpectedModel {
 	return new ExpectedModel(
 		real.agents.map(({ agent, name }) => ({
@@ -679,5 +717,6 @@ export function newModel(real: {
 			mobile: agent.platform !== 'desktop',
 		})),
 		real.networks.map(n => ({ name: n.ssid, home: n.home })),
+		real.cloud !== null,
 	);
 }

@@ -63,6 +63,11 @@ export function killLeftoverMailboxServers() {
 	} catch {
 		/* ignore */
 	}
+	try {
+		execSync('pkill -9 -f toxiproxy-server', { stdio: 'ignore' });
+	} catch {
+		/* ignore */
+	}
 }
 
 /** Kill any process listening on the given TCP ports. */

@@ -36,6 +36,7 @@ import {
 	platformNames,
 	remoteMailboxUrl,
 } from './setup/test-env';
+import { startToxiproxy } from './setup/toxiproxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -99,9 +100,11 @@ let mailboxServer: ChildProcess | undefined;
 let mailboxLogger: ChildProcess | undefined;
 let pushServer: ChildProcess | undefined;
 let pushLogger: ChildProcess | undefined;
+let toxiproxy: ChildProcess | undefined;
+let toxiproxyLogger: ChildProcess | undefined;
 
 async function teardown() {
-	for (const server of [mailboxServer, pushServer]) {
+	for (const server of [mailboxServer, pushServer, toxiproxy]) {
 		if (server?.pid) {
 			// Negative PID = signal the entire detached process group.
 			try {
@@ -116,6 +119,7 @@ async function teardown() {
 	}
 	mailboxLogger?.kill();
 	pushLogger?.kill();
+	toxiproxyLogger?.kill();
 }
 
 /** Save a per-agent screenshot of the current webview to .dbs/e2e/failures/. */
@@ -246,6 +250,9 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				}
 
 				await mailboxBuild;
+				// The mailbox's public port is a link through this, for the
+				// specs that degrade it.
+				({ proc: toxiproxy, logger: toxiproxyLogger } = await startToxiproxy());
 				// Start a local mailbox server so e2e tests don't hit the internet.
 				({
 					proc: mailboxServer,

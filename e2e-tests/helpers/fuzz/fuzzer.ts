@@ -13,6 +13,7 @@ import fc from 'fast-check';
 import { hostWifiNetwork, leaveWifi, wifiDevice } from '../../setup/host-wifi';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
+import type { Link } from '../../setup/toxiproxy';
 import { navigateToAddContact } from '../flows/exchange-contacts';
 import { createGroup } from '../flows/exchange-contacts-and-create-group';
 import {
@@ -87,19 +88,21 @@ export class Fuzzer {
 	 * A fuzzer over `agents`, driven to where moves expect them: preview
 	 * features on, each one's contact link collected, and — given networks
 	 * to walk phones and hubs through, and a Wi-Fi card on the host for the
-	 * hubs — a members-less group chat each, to read the connection chip in.
-	 * The network the host's card is on joins the run's networks as its home
-	 * network: phones may walk onto it, and every running hub is on it.
-	 * Every agent is left on its home page. Preparation is not repeatable,
-	 * so a spec prepares once, from its `before` hook — whose context `ctx`
-	 * is, so that the suite's tests can be freed of their timeout before any
-	 * of them starts — and runs as often as it likes.
+	 * hubs, or the `cloud` mailbox's link to degrade — a members-less group
+	 * chat each, to read the connection chip in. The network the host's card
+	 * is on joins the run's networks as its home network: phones may walk
+	 * onto it, and every running hub is on it. Every agent is left on its
+	 * home page. Preparation is not repeatable, so a spec prepares once,
+	 * from its `before` hook — whose context `ctx` is, so that the suite's
+	 * tests can be freed of their timeout before any of them starts — and
+	 * runs as often as it likes.
 	 */
 	static async prepare(
 		ctx: Mocha.Context,
 		init: {
 			agents: { agent: Agent; name: string }[];
 			networks?: WifiNetwork[];
+			cloud?: Link;
 		},
 	): Promise<Fuzzer> {
 		const suite = ctx.test?.parent;
@@ -251,7 +254,7 @@ async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {
 		await sa.agent.addContactPage.back.click();
 		await sa.agent.newMessagePage.back.click();
 		await sa.agent.homePage.ready();
-		if (!model.hasNetworks()) continue;
+		if (!model.watchesChip()) continue;
 		const chatName = model.nextGroupName();
 		await createGroup(sa.agent, chatName, []);
 		await ensureHome(sa);
@@ -287,13 +290,17 @@ async function parkHubs(real: Real): Promise<void> {
 }
 
 /**
- * Put the network side back to its starting state — every hub parked and on
- * no LAN, every phone foregrounded, at home and off the air — so that every
- * sequence, drawn or shrunk, begins from the same place. Chats and messages
- * are left alone: they carry over as they do on the devices, and so does what
- * the model says each agent knows.
+ * Put the network side back to its starting state — the cloud link healthy,
+ * every hub parked and on no LAN, every phone foregrounded, at home and off
+ * the air — so that every sequence, drawn or shrunk, begins from the same
+ * place. Chats and messages are left alone: they carry over as they do on
+ * the devices, and so does what the model says each agent knows.
  */
 async function resetNetworks(model: ExpectedModel, real: Real): Promise<void> {
+	if (real.cloud !== null) {
+		await real.cloud.heal();
+		model.setCloudUsable(true);
+	}
 	if (!model.hasNetworks()) return;
 	await parkHubs(real);
 	for (const hub of model.hubs) {
@@ -309,10 +316,12 @@ async function resetNetworks(model: ExpectedModel, real: Real): Promise<void> {
 	}
 }
 
-/** Leave nothing of a run behind: hubs down, the host's card and the phones
- *  back on their usual networks. The test networks stay on the air, so the
- *  phones forget them or the supplicant may pick one again. */
+/** Leave nothing of a run behind: the cloud link healthy, hubs down, the
+ *  host's card and the phones back on their usual networks. The test
+ *  networks stay on the air, so the phones forget them or the supplicant
+ *  may pick one again. */
 async function teardown(real: Real): Promise<void> {
+	if (real.cloud !== null) await real.cloud.heal();
 	await parkHubs(real);
 	if (real.networks.length === 0) return;
 	for (const network of labNetworks(real)) leaveWifi(network.ssid);

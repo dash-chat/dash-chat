@@ -262,3 +262,49 @@ test('a running hub relays between its LAN and the home network', () => {
 	assert.deepEqual([...(growth.get(B) ?? [])], [chat]);
 	assert.equal(m.knows(B).has('message:sm-1'), true);
 });
+
+/** `networks` and a cloud mailbox every foregrounded phone reaches while
+ * its link is usable. */
+function lansWithCloud(networks: string[], ...names: string[]): ExpectedModel {
+	return new ExpectedModel(
+		names.map(name => ({ name, mobile: true })),
+		networks.map(name => ({ name, home: false })),
+		true,
+	);
+}
+
+test('the cloud relays between LANs only while its link is usable', () => {
+	const m = lansWithCloud([N1, N2], A, B);
+	contacts(m, A, B);
+	m.agentJoin(A, N1);
+	m.agentJoin(B, N2);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
+	m.setCloudUsable(false);
+	m.addMessage(chat, A, 'text', 'sm-2');
+	assert.equal(m.propagate().has(B), false);
+	assert.equal(m.knows(B).has('message:sm-2'), false);
+	m.setCloudUsable(true);
+	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
+	assert.equal(m.knows(B).has('message:sm-2'), true);
+});
+
+test('the cloud holds a message for a backgrounded phone through a cut', () => {
+	const m = lansWithCloud([N1, N2], A, B);
+	contacts(m, A, B);
+	m.agentJoin(A, N1);
+	m.agentJoin(B, N2);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.background(B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	m.setCloudUsable(false);
+	m.foreground(B);
+	assert.equal(m.propagate().has(B), false);
+	m.setCloudUsable(true);
+	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
+	assert.equal(m.knows(B).has('message:sm-1'), true);
+});
