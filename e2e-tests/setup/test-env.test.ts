@@ -3,16 +3,20 @@ import { test } from 'node:test';
 
 import { wifiNetworks } from './test-env.ts';
 
-function withEnv<T>(value: string | undefined, body: () => T): T {
-	const before = process.env.E2E_WIFI_NETWORKS;
-	if (value === undefined) delete process.env.E2E_WIFI_NETWORKS;
-	else process.env.E2E_WIFI_NETWORKS = value;
+function withVar<T>(name: string, value: string | undefined, body: () => T): T {
+	const before = process.env[name];
+	if (value === undefined) delete process.env[name];
+	else process.env[name] = value;
 	try {
 		return body();
 	} finally {
-		if (before === undefined) delete process.env.E2E_WIFI_NETWORKS;
-		else process.env.E2E_WIFI_NETWORKS = before;
+		if (before === undefined) delete process.env[name];
+		else process.env[name] = before;
 	}
+}
+
+function withEnv<T>(value: string | undefined, body: () => T): T {
+	return withVar('E2E_WIFI_NETWORKS', value, body);
 }
 
 test('no networks when unset or blank', () => {

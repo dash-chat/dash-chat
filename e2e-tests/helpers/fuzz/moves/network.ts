@@ -106,7 +106,7 @@ async function idle(
 
 /** How long a hub's mDNS records live in a phone's cache: a sit-still past
  *  it is what shows whether the app keeps them refreshed. */
-const MDNS_TTL_S = 120;
+export const MDNS_RECORD_TTL_S = 120;
 
 /** Sit still with the chats open, then every driveable phone must still show
  *  exactly the hubs on its LAN. */
@@ -145,7 +145,7 @@ export const networkMoves: Moves = [
 	{ arbitrary: fc.nat().map(a => new PeerLeaveMove(a)), weight: 2 },
 	{
 		arbitrary: fc
-			.integer({ min: 1, max: MDNS_TTL_S + 10 })
+			.integer({ min: 1, max: MDNS_RECORD_TTL_S + 10 })
 			.map(s => new SleepMove(s)),
 		weight: 1,
 	},

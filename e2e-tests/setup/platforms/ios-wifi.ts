@@ -17,6 +17,10 @@ const SETTINGS_BUNDLE_ID = 'com.apple.Preferences';
  *  before the join is taken to be waiting on one. */
 const PASSWORD_SHEET_MS = 5_000;
 
+/** How long a tapped "More Info" gets to push the network's info page before
+ *  the tap is taken to have missed. */
+const INFO_PAGE_MS = 5_000;
+
 /** What the root screen's Wi-Fi row names instead of an SSID. */
 const NO_NETWORK_LABELS = ['Off', 'Not Connected'];
 
@@ -132,24 +136,51 @@ class SettingsApp {
 		});
 	}
 
-	/** Wi-Fi page -> `ssid`'s info page. */
+	private infoPageBar(ssid: string) {
+		return this.b.$(
+			classChain(
+				`**/XCUIElementTypeNavigationBar[\`name == ${quoted(ssid)}\`]`,
+			),
+		);
+	}
+
+	/** The "More Info" button of a row named `ssid`, in one lookup: the list
+	 *  can briefly hold a row of that name without the button, and a row
+	 *  matched on its own would then be waited on for the whole timeout. */
+	private moreInfoButton(ssid: string) {
+		return this.b.$(
+			classChain(
+				`**/XCUIElementTypeCell[\`name BEGINSWITH ${quoted(`${ssid},`)}\`]/**/XCUIElementTypeButton[\`name == "More Info"\`]`,
+			),
+		);
+	}
+
+	/** Wi-Fi page -> `ssid`'s info page. The list re-renders as scans come in,
+	 *  and a tap on a row replaced in between reports success without opening
+	 *  anything, so the tap is repeated until the page is up. */
 	async openInfo(ssid: string): Promise<void> {
-		await this.networkRow(ssid).$('~More Info').click();
-		await this.b
-			.$(
-				classChain(
-					`**/XCUIElementTypeNavigationBar[\`name == ${quoted(ssid)}\`]`,
-				),
-			)
-			.waitForExist();
+		const bar = this.infoPageBar(ssid);
+		await this.b.waitUntil(
+			async () => {
+				if (await bar.isExisting()) return true;
+				const button = this.moreInfoButton(ssid);
+				if (!(await button.isExisting())) return false;
+				await button.click();
+				return await bar
+					.waitForExist({ timeout: INFO_PAGE_MS })
+					.then(() => true)
+					.catch(() => false);
+			},
+			{ timeoutMsg: `the info page of "${ssid}" never opened` },
+		);
 	}
 
 	/** Info page: the IPv4 address, '' while the network has not handed one
-	 *  out. */
+	 *  out. The cell has no name of its own; "IP Address" is its label child. */
 	async ipAddress(): Promise<string> {
 		const value = this.b.$(
 			classChain(
-				'**/XCUIElementTypeCell[`name == "IP Address"`]/XCUIElementTypeStaticText[2]',
+				'**/XCUIElementTypeCell[$name == "IP Address"$]/XCUIElementTypeStaticText[2]',
 			),
 		);
 		if (!(await value.isExisting())) return '';

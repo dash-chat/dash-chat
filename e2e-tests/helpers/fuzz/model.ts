@@ -264,10 +264,12 @@ export class ExpectedModel {
 		this.hub(name).running = false;
 	}
 
-	/** The running hubs on `network`: all of them on the home LAN. */
+	/** The running hubs on `network`. A hub is wherever the host's card is:
+	 * the LAN it was moved onto, or the home LAN while it is on none. */
 	private hubsOn(network: string): ExpectedHub[] {
-		const home = network === this.homeNetwork();
-		return this.hubs.filter(h => h.running && (home || h.network === network));
+		return this.hubs.filter(
+			h => h.running && (h.network ?? this.homeNetwork()) === network,
+		);
 	}
 
 	/** Hubs `name`'s app must show as connected: the running ones on its

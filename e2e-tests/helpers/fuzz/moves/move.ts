@@ -1,6 +1,6 @@
 import type fc from 'fast-check';
 
-import type { Real } from '../agents';
+import { type Real, log } from '../agents';
 import { settle } from '../checks';
 import type { ExpectedModel } from '../model';
 
@@ -16,9 +16,16 @@ export abstract class Move implements fc.AsyncCommand<ExpectedModel, Real> {
 	abstract perform(m: ExpectedModel, real: Real): Promise<void>;
 	abstract toString(): string;
 
+	/** A failure is logged here as well as thrown: the search only reports
+	 *  it once shrinking is done, which can be many replays later. */
 	async run(m: ExpectedModel, real: Real): Promise<void> {
-		await this.perform(m, real);
-		await settle(m, real);
+		try {
+			await this.perform(m, real);
+			await settle(m, real);
+		} catch (err) {
+			log(`${this.toString()} failed: ${String(err)}`);
+			throw err;
+		}
 	}
 }
 

@@ -57,15 +57,12 @@ const androidKinds = new Map<number, AndroidKind>(
 	),
 );
 
-/** The host mailbox-server build — plus the standalone hub the stress specs
- * spawn — kicked off before the Android platform is constructed so it overlaps
- * the emulator boots that block construction. Awaited in onPrepare. */
+/** The host mailbox-server build — plus the standalone hub the discovery
+ * specs spawn — kicked off before the Android platform is constructed so it
+ * overlaps the emulator boots that block construction. Awaited in onPrepare. */
 const mailboxBuild =
 	process.env.WDIO_WORKER_ID === undefined && remoteMailboxUrl() === null
-		? buildCargoPackages([
-				'mailbox-server',
-				...(process.env.E2E_STRESS === '1' ? [LOCAL_HUB_PACKAGE] : []),
-			])
+		? buildCargoPackages(['mailbox-server', LOCAL_HUB_PACKAGE])
 		: null;
 // Register a handler now so a build failure before onPrepare awaits the
 // promise doesn't crash node with an unhandled rejection.

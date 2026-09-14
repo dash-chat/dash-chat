@@ -12,7 +12,9 @@ export async function deleteAccount(agent: Agent): Promise<void> {
 	await agent.settingsPage.accountLink.click();
 	await agent.accountPage.ready();
 	await agent.accountPage.deleteItem.click();
-	await agent.accountPage.deleteConfirm.click();
+	// Confirming ends the process at once, so the tap cannot be confirmed on
+	// the page it took down; a tap that missed shows up as the app never exiting.
+	await agent.accountPage.deleteConfirm.click().catch(() => {});
 	await agent.waitForAppExit();
 	if (agent.platform === 'desktop') {
 		// Desktop delete_account restarts the app into a process the WebDriver

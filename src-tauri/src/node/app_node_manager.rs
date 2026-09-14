@@ -88,13 +88,6 @@ impl AppNodeManager {
     ///
     /// Reports "not ready" unless the slot holds an `App`-role node — a
     /// push-built node in the slot isn't the app's to hand out.
-    /// Re-issue the local-mailbox mDNS browse on the live node, if any.
-    pub async fn rearm_mdns_discovery(&self) {
-        if let Some(app_node) = node_slot::current_node().await {
-            app_node.rearm_mdns_discovery();
-        }
-    }
-
     pub async fn get(&self) -> Result<Node, crate::error::Error> {
         node_slot::current_node_for_role(NodeRole::App)
             .await
@@ -149,7 +142,6 @@ impl AppNodeManager {
         // last known status would let resume probe here like Android does.
         let context = self.app_context(app);
         node_slot::get_or_build_node(&self.data_path, context).await?;
-        self.rearm_mdns_discovery().await;
         Ok(())
     }
 }

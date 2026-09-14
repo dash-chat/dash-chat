@@ -1,10 +1,7 @@
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::Parser;
 use futures::FutureExt;
-use local_hub_discovery::MDNS_SERVICE_TYPE;
-use mdns_sd::ServiceDaemon;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -15,13 +12,11 @@ struct Args {
     #[arg(short, long, default_value = "mailbox.redb")]
     db_path: PathBuf,
 
-    /// Address to bind the server to.
-    #[arg(short, long, default_value = "[::]:3000")]
-    addr: SocketAddr,
+    /// Port to listen on, on every interface.
+    #[arg(short, long, default_value_t = 3000)]
+    port: u16,
 }
 
-// TODO: refactor this to go through `spawn_local_mailbox_server` rather than
-// driving `spawn_server` directly.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
@@ -35,8 +30,8 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    // Load the identity up front (spawn_server reloads the same key from the
-    // same db) so the mDNS instance name can encode the EndpointId.
+    // Load the identity up front so the mDNS instance name can encode the
+    // EndpointId; spawn_server reloads the same key from the same db.
     let endpoint_id = {
         let db = mailbox_server::init_db(args.db_path.clone())
             .map_err(|e| anyhow::anyhow!("failed to open db: {e}"))?;
@@ -45,35 +40,20 @@ async fn main() -> anyhow::Result<()> {
             .public()
     };
 
-    let daemon = ServiceDaemon::new()?;
-    let mdns_fullname = mailbox_local_server::register_mdns_with_retry(
-        &daemon,
-        MDNS_SERVICE_TYPE,
-        endpoint_id,
-        args.addr.port(),
-        3,
-    )?;
+    // Held until the process exits, when its `Drop` stops the announcement.
+    // Nothing goes on the wire to say so — browsers notice once it ages out.
+    let _announcement = mailbox_local_server::spawn_local_hub_announcement(endpoint_id, args.port)?;
 
     let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
-    // No relay is configured, so the server stays fully local and needs no
-    // internet access — peers reach it over the addresses mDNS announces.
-    let result = mailbox_server::spawn_server(
+    // No relay — the server stays fully local.
+    mailbox_server::spawn_server(
         args.db_path,
-        args.addr.to_string(),
+        format!("[::]:{}", args.port),
         None,
         None,
         None,
         signal,
     )
     .await
-    .map_err(|e| anyhow::anyhow!("server failed: {e}"));
-
-    if let Err(e) = daemon.unregister(&mdns_fullname) {
-        log::error!("Failed to unregister MDNS service: {e:?}");
-    }
-    if let Err(e) = daemon.shutdown() {
-        log::error!("Failed to shut down MDNS daemon: {e:?}");
-    }
-
-    result
+    .map_err(|e| anyhow::anyhow!("server failed: {e}"))
 }
