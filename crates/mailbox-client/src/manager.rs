@@ -443,9 +443,7 @@ where
             // backoff. Keeping the existing TrackedMailbox preserves its
             // connection_state watch::Sender so UI subscribers stay attached.
             tm.replace_client(new_client).await;
-            let status_before = tm.connection_state.borrow().status;
-            tm.wakeup();
-            self.persist_status_change(&id, status_before, &tm).await;
+            self.persist_status_change(&id, &tm, |tm| tm.wakeup()).await;
             self.nudge_poll_loop();
         } else {
             mailboxes.insert(
@@ -538,22 +536,23 @@ where
     /// Use when there is evidence the mailbox is reachable; otherwise [`Self::probe`].
     pub async fn wakeup(&self, id: MailboxId) {
         if let Some(tracked_mailbox) = self.tracked_mailbox(&id).await {
-            let status_before = tracked_mailbox.connection_state.borrow().status;
-            tracked_mailbox.wakeup();
-            self.persist_status_change(&id, status_before, &tracked_mailbox)
+            self.persist_status_change(&id, &tracked_mailbox, |tm| tm.wakeup())
                 .await;
         }
         self.nudge_poll_loop();
     }
 
-    /// Persist the mailbox's status when it moved off `status_before`, so a
-    /// future registration seeds from the last judged status.
+    /// Apply `transition` to the mailbox's connection state and persist the
+    /// status if it moved, so a future registration seeds from the last
+    /// judged status.
     async fn persist_status_change(
         &self,
         id: &MailboxId,
-        status_before: SyncStatus,
         tracked_mailbox: &TrackedMailbox<Item>,
+        transition: impl FnOnce(&TrackedMailbox<Item>),
     ) {
+        let status_before = tracked_mailbox.connection_state.borrow().status;
+        transition(tracked_mailbox);
         let status_after = tracked_mailbox.connection_state.borrow().status;
         if status_after == status_before {
             return;
@@ -802,24 +801,22 @@ where
         let id = id.clone();
         let task = tokio::spawn(async move {
             let result = manager.sync_topics(topics.into_iter(), &client).await;
-            let status_before = tracked_mailbox.connection_state.borrow().status;
-            match result {
-                Ok(()) => tracked_mailbox.record_success(),
-                Err(err) => {
-                    tracing::error!(?err, mailbox = %id, "mailbox sync error");
-                    tracked_mailbox.poll_failed(format!("{err:?}"), probe);
-                    let tracker = tracked_mailbox.connection_state();
-                    let tracker = tracker.borrow();
-                    tracing::info!(
-                        mailbox = %id,
-                        status = ?tracker.status,
-                        errors = tracker.consecutive_errors,
-                        "mailbox status updated"
-                    );
-                }
-            }
             manager
-                .persist_status_change(&id, status_before, &tracked_mailbox)
+                .persist_status_change(&id, &tracked_mailbox, |tracked_mailbox| match result {
+                    Ok(()) => tracked_mailbox.record_success(),
+                    Err(err) => {
+                        tracing::error!(?err, mailbox = %id, "mailbox sync error");
+                        tracked_mailbox.poll_failed(format!("{err:?}"), probe);
+                        let tracker = tracked_mailbox.connection_state();
+                        let tracker = tracker.borrow();
+                        tracing::info!(
+                            mailbox = %id,
+                            status = ?tracker.status,
+                            errors = tracker.consecutive_errors,
+                            "mailbox status updated"
+                        );
+                    }
+                })
                 .await;
             guard.complete();
         });
