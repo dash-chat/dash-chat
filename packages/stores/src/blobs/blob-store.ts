@@ -19,25 +19,44 @@ export class BlobStore {
 	progress = reactive(
 		(hash: Hash): ReactivePromise<BlobState> =>
 			relay(state => {
+				let interval: ReturnType<typeof setInterval> | undefined;
+				// Signalium's build transform evaluates a closure's captured
+				// bindings where the closure is defined, so nothing declared
+				// before `tracker` may name it directly.
+				let onStall: (() => void) | undefined;
+
+				const stopPolling = () => {
+					clearInterval(interval);
+					interval = undefined;
+				};
+
 				const tracker = new BlobProgressTracker(s => {
 					state.value = s;
+					if (s.complete) stopPolling();
+					// A completion that landed while no listener was attached is never
+					// replayed, so a stall re-reads the snapshot to self-heal.
+					else if (s.stalled) onStall?.();
 				});
 				this.#trackers.set(hash, tracker);
 				state.value = tracker.state;
 
-				const fetchProgress = async () => {
-					const [progress] = await this.client.getBlobProgress([hash]);
-					if (progress) tracker.apply(progress);
+				const fetchProgress = () => {
+					this.client
+						.getBlobProgress([hash])
+						.then(([progress]) => {
+							if (progress) tracker.apply(progress);
+						})
+						.catch(e => console.error('blob progress snapshot failed', e));
 				};
+				onStall = fetchProgress;
 
 				fetchProgress();
-				const interval = POLLING_ENABLED
-					? setInterval(fetchProgress, POLL_INTERVAL_MS)
-					: undefined;
+				if (POLLING_ENABLED)
+					interval = setInterval(fetchProgress, POLL_INTERVAL_MS);
 				const unsub = this.client.onBlobProgress(hash, p => tracker.apply(p));
 
 				return () => {
-					clearInterval(interval);
+					stopPolling();
 					unsub();
 					tracker.dispose();
 					if (this.#trackers.get(hash) === tracker) this.#trackers.delete(hash);
