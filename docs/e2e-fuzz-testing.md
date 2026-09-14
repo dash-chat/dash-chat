@@ -1,46 +1,35 @@
 # E2E Fuzz Testing
 
-The fuzz specs drive the real app through the e2e harness with random sequences of user, device, hub and network moves, and check after every move that each agent's screen shows exactly what a model of the system says it must. The property under test is the whole sequence: a run fails at the first move whose effects never reach the agents that should have seen them, or that shows an agent something it cannot know yet.
+The fuzzer drives the real app through the e2e harness with random sequences of user, device, hub and network moves, and checks after every move that each agent's screen shows exactly what a model of the system says it must. The property under test is the whole sequence: a run fails at the first move whose effects never reach the agents that should have seen them, or that shows an agent something it cannot know yet.
 
 Everything lives under `e2e-tests/helpers/fuzz/`. The property-testing machinery is [fast-check](https://fast-check.dev/) model-based testing (`fc.commands` / `fc.asyncModelRun`); the specs never touch it directly.
 
 Real devices (physical phones, emulators, Wi-Fi lab) are covered in [e2e-real-devices.md](./e2e-real-devices.md).
 
-## The specs
+## Using it from a spec
 
-| Spec | Mode | Moves | Mailbox | Agents |
-|---|---|---|---|---|
-| `p2p-stress` | soak | user + device | suspended (`SIGSTOP`) | any two |
-| `local-hub-discovery-stress` | search | hub + network + device | killed | two physical phones + host Wi-Fi card + `E2E_WIFI_NETWORKS` |
+A spec sets up its agents and whatever mailbox state it wants (suspended, killed, live), prepares one `Fuzzer` from its `before()` hook, and runs it:
 
-`p2p-stress` is "two users use the app normally for a while with no cloud": every op has to travel over direct p2p sync (iroh/mDNS). `local-hub-discovery-stress` is "hubs start, stop, die and move between LANs while phones walk in and out, background and restart": the connection chip has to name exactly the running hubs on the phone's LAN after every move.
+```ts
+before(async function () {
+  [agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }]);
+  await agent1.createProfilePage.createProfile('Alice', 'Stress');
+  await agent2.createProfilePage.createProfile('Bob', 'Stress');
+  fuzzer = await Fuzzer.prepare(this, {
+    agents: [
+      { agent: agent1, name: 'Alice' },
+      { agent: agent2, name: 'Bob' },
+    ],
+    networks: wifiNetworks(), // omit for a run without hub and network moves
+  });
+});
 
-Both skip themselves unless `E2E_STRESS=1`, and when the mailbox is remote (`MAILBOX_URL` set), since they need to suspend or kill it.
-
-### Running
-
-`just e2e run <name>` sets `E2E_STRESS=1` for you; `just e2e` (the whole suite) does not, `just e2e all` does.
-
-```bash
-# soak over p2p only, desktop + desktop
-just e2e run p2p-stress
-
-# same on two phones
-PLATFORMS=android,android just e2e run p2p-stress
-
-# hub discovery search (needs the Wi-Fi lab, see the real-devices doc)
-PLATFORMS=android,android just e2e run local-hub-discovery-stress
+it('...', async () => {
+  await fuzzer.search({ moves: [...userMoves, ...deviceMoves], attempts: 20, length: 15 });
+});
 ```
 
-Tunables, all read with `envInt`:
-
-| Variable | Used by | Default | Meaning |
-|---|---|---|---|
-| `E2E_STRESS_COMMANDS` | both | 80 (soak) / 15 (search) | moves per sequence |
-| `E2E_STRESS_ATTEMPTS` | search | 20 | sequences to try before giving up on finding a failure |
-| `E2E_STRESS_SEED` | both | random | fast-check seed; the run logs it |
-
-The mocha timeout of every test in a fuzz suite is lifted to 24 hours by `Fuzzer.prepare`; the run is bounded by its moves, not by a timer.
+`Fuzzer.prepare` lifts the mocha timeout of every test in the suite to 24 hours; a run is bounded by its moves, not by a timer.
 
 ### Reading a failure
 
@@ -53,7 +42,7 @@ Reproduction: [move.addContact(0,1), move.addContact(1,0), move.sendText(0,0)]
 
 Two ways to reproduce:
 
-- **Same search again**: `E2E_STRESS_SEED=1234567 just e2e run local-hub-discovery-stress`. Same seed, same draws, same shrinking.
+- **Same search again**: pass the seed back as the `seed` option of `search` or `soak`. Same seed, same draws, same shrinking.
 - **Replay the exact sequence**: call `fuzzer.replay([...])` with the printed list, importing `move` from the module(s) the moves came from (`moves/user`, `moves/device`, `moves/hub`, `moves/network` each export a `move` builder map under the same name; alias them if you need several). Replay runs once and does not shrink.
 
 In search mode the first failing sequence is shrunk (fewer moves, then smaller arguments) before it is reported, so the reproduction is usually short. In soak mode the failing sequence is reported as is.
@@ -63,7 +52,7 @@ Failure screenshots of every agent land in `.dbs/e2e/failures/`, as for any spec
 ## Architecture
 
 ```
-specs/*-stress.spec.ts        picks agents, kills/suspends the mailbox, prepares a Fuzzer, runs it
+a spec                        picks agents, sets the mailbox state, prepares a Fuzzer, runs it
 helpers/fuzz/
   fuzzer.ts                   Fuzzer: prepare / search / soak / replay; network reset + teardown
   model.ts                    ExpectedModel: ops, holders, propagation, per-agent views (pure)
@@ -127,7 +116,7 @@ Hub and network moves end with their own chip assertion (`checkHubs*` / `expectH
 - `propagate()` spreads knowledge the way the app does: within each LAN, per topic, the holders subscribed to that topic end up with the union of their ops. A hub subscribes to everything; an agent subscribes to its own announce and inbox, to those of every peer it has added, and to every chat it can open. It iterates until nothing changes (learning a group subscribes to that group's chat). It returns, per agent that learnt something, the chats whose view changed, which is what `settle` checks.
 - `view(agent, chat)` folds the ops that agent knows into what its screen must show: each message's current text (edits), deleted state, reactions, and whether media bytes have arrived. A direct chat is **pending** (no composer) until the peer's profile op has arrived.
 - Networks: an agent is on at most one LAN (`agentJoin`/`agentLeave`); a backgrounded agent is on none. Every hub is wherever the host's Wi-Fi card is: the lab LAN it joined, or the home LAN while the card is on none. `expectedHubs(agent)` is the number of running hubs on the agent's LAN.
-- Without networks (`p2p-stress`) everyone is one component: every foregrounded agent syncs with every other.
+- Without networks everyone is one component: every foregrounded agent syncs with every other.
 
 The model has its own unit tests: `pnpm --filter dash-chat-e2e test:fuzz-model` (also part of `pnpm check`). Change the model, add a case there first.
 
@@ -169,8 +158,32 @@ Hubs are `mailbox-local-server` processes spawned by `setup/local-hub.ts` on the
 
 ## Gotchas
 
-- **Emulators are NAT'd** off the host: no lab network can reach them, so the hub-discovery fuzz skips itself if any agent is an emulator. Desktop cannot lose its LAN without losing its driver session either. Network moves are physical-phone only.
-- **Suspend vs kill**: `p2p-stress` suspends the mailbox (`SIGSTOP`, connections hang) so nothing syncs through it; `local-hub-discovery-stress` kills it (connections refused). A suspended cloud is wrong for the chip: a network change wakes the mailbox pollers, which then count the cloud as connected until their polls time out, hiding the chip for any hub found meanwhile.
+- **Emulators are NAT'd** off the host: no lab network can reach them, so a spec that passes networks must skip itself if any agent is an emulator. Desktop cannot lose its LAN without losing its driver session either. Network moves are physical-phone only.
+- **Suspend vs kill**: suspending the mailbox (`SIGSTOP`) makes connections hang, killing it makes them refused. Kill it for any run that reads the connection chip: a network change wakes the mailbox pollers, which count a suspended cloud as connected until their polls time out, hiding the chip for any hub found meanwhile.
 - **Restart on mobile** is stop + activate inside the same Appium session, not `reloadSession`: a new session fast-resets the app (`pm clear`) and wipes the profile.
 - **iOS Wi-Fi** is driven through the Settings app, which takes the app off screen for the duration; the Settings labels are matched in English.
 - **Only one fuzz run at a time** on a host: the phones, the pinned Appium/adb/mailbox ports and the host Wi-Fi card are all shared, and `onPrepare` wipes `.dbs/e2e`.
+
+## Example specs
+
+| Spec | Mode | Moves | Mailbox | Agents |
+|---|---|---|---|---|
+| `p2p-stress` | soak | user + device | suspended | any two |
+| `local-hub-discovery-stress` | search | hub + network + device | killed | two physical phones, host Wi-Fi card, `E2E_WIFI_NETWORKS` |
+
+`p2p-stress` is "two users use the app normally for a while with no cloud": every op has to travel over direct p2p sync. `local-hub-discovery-stress` is "hubs start, stop, die and move between LANs while phones walk in and out, background and restart": the connection chip has to name exactly the running hubs on the phone's LAN after every move.
+
+Both skip themselves unless `E2E_STRESS=1` (which `just e2e run <name>` and `just e2e all` set, and plain `just e2e` does not) and when the mailbox is remote. Both read their run parameters from the environment:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `E2E_STRESS_COMMANDS` | 80 (soak) / 15 (search) | moves per sequence |
+| `E2E_STRESS_ATTEMPTS` | 20 | search only: sequences to try |
+| `E2E_STRESS_SEED` | random | the seed to reproduce a run with |
+
+```bash
+just e2e run p2p-stress
+PLATFORMS=android,android just e2e run p2p-stress
+PLATFORMS=android,android just e2e run local-hub-discovery-stress
+E2E_STRESS_SEED=1234567 PLATFORMS=android,android just e2e run local-hub-discovery-stress
+```
