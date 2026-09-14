@@ -57,6 +57,16 @@ pub(crate) async fn cloud_mailbox_id(
         .unwrap_or(None)
 }
 
+/// Poll the cloud mailbox now without presuming the result: one success
+/// restores Active, one failure only confirms an existing backoff. Falls back
+/// to nudging the poll loop when the cloud mailbox has never been reached.
+pub(crate) async fn probe_cloud_mailbox(node: &dashchat_node::Node) {
+    match cloud_mailbox_id(node).await {
+        Some(cloud_id) => node.mailboxes.probe(cloud_id).await,
+        None => node.mailboxes.nudge_poll_loop(),
+    }
+}
+
 /// Keep the node's mailbox manager in step with the local hubs on the LAN.
 pub fn spawn_local_mailbox_mdns_discovery(
     node: dashchat_node::Node,

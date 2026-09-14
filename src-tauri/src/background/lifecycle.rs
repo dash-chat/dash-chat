@@ -40,8 +40,5 @@ async fn probe_cloud_mailbox(app: &AppHandle<Wry>) {
     let Ok(node) = app_node_manager.get().await else {
         return;
     };
-    match crate::mailbox::cloud_mailbox_id(&node).await {
-        Some(cloud_id) => node.mailboxes.probe(cloud_id).await,
-        None => node.mailboxes.nudge_poll_loop(),
-    }
+    crate::mailbox::probe_cloud_mailbox(&node).await;
 }

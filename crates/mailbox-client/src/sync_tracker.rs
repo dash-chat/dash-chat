@@ -15,6 +15,7 @@ use sqlx::{
 use tokio::sync::{Mutex, watch};
 
 use crate::MailboxId;
+use crate::manager::SyncStatus;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         mailbox_id TEXT NOT NULL,
@@ -28,6 +29,11 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
     CREATE TABLE IF NOT EXISTS mailbox_url (
         mailbox_id TEXT NOT NULL PRIMARY KEY,
         url        TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS mailbox_status (
+        mailbox_id TEXT NOT NULL PRIMARY KEY,
+        status     TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
     );";
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
@@ -57,6 +63,8 @@ struct MemRows {
     rows: BTreeMap<(MailboxId, Vec<u8>, Vec<u8>), u64>,
     /// `mailbox_id -> base url`
     urls: BTreeMap<MailboxId, String>,
+    /// `mailbox_id -> last known sync status`
+    statuses: BTreeMap<MailboxId, SyncStatus>,
 }
 
 impl<T, A> MailboxSyncTracker<T, A>
@@ -232,6 +240,50 @@ where
         Ok(())
     }
 
+    /// Persist the last judged sync status for a mailbox, so a later
+    /// registration (e.g. after a restart or an iOS node rebuild) can seed its
+    /// tracker from history instead of assuming the mailbox is healthy.
+    pub async fn record_status(
+        &self,
+        mailbox: &MailboxId,
+        status: SyncStatus,
+    ) -> anyhow::Result<()> {
+        match &self.inner {
+            SyncBackend::Sqlite(pool) => {
+                sqlx::query(
+                    "INSERT INTO mailbox_status (mailbox_id, status, updated_at) VALUES (?, ?, ?)
+                     ON CONFLICT (mailbox_id) DO UPDATE SET
+                        status = excluded.status,
+                        updated_at = excluded.updated_at",
+                )
+                .bind(mailbox)
+                .bind(status.as_db_str())
+                .bind(chrono::Utc::now().timestamp_millis())
+                .execute(pool)
+                .await?;
+            }
+            SyncBackend::Mem(rows) => {
+                rows.lock().await.statuses.insert(mailbox.clone(), status);
+            }
+        }
+        Ok(())
+    }
+
+    /// The last recorded sync status for a mailbox, if any.
+    pub async fn get_status(&self, mailbox: &MailboxId) -> anyhow::Result<Option<SyncStatus>> {
+        match &self.inner {
+            SyncBackend::Sqlite(pool) => {
+                let row: Option<(String,)> =
+                    sqlx::query_as("SELECT status FROM mailbox_status WHERE mailbox_id = ?")
+                        .bind(mailbox)
+                        .fetch_optional(pool)
+                        .await?;
+                Ok(row.and_then(|(s,)| SyncStatus::from_db_str(&s)))
+            }
+            SyncBackend::Mem(rows) => Ok(rows.lock().await.statuses.get(mailbox).copied()),
+        }
+    }
+
     /// The id of the mailbox last recorded at `url`, if any.
     pub async fn mailbox_id_for_url(&self, url: &str) -> anyhow::Result<Option<MailboxId>> {
         match &self.inner {
@@ -365,11 +417,16 @@ where
                     .bind(mailbox)
                     .execute(pool)
                     .await?;
+                sqlx::query("DELETE FROM mailbox_status WHERE mailbox_id = ?")
+                    .bind(mailbox)
+                    .execute(pool)
+                    .await?;
             }
             SyncBackend::Mem(rows) => {
                 let mut rows = rows.lock().await;
                 rows.rows.retain(|(m, _, _), _| m != mailbox);
                 rows.urls.remove(mailbox);
+                rows.statuses.remove(mailbox);
             }
         }
         self.all_ids_tx.send_if_modified(|ids| ids.remove(mailbox));
@@ -644,6 +701,61 @@ mod tests {
         rx.changed().await.unwrap();
         assert!(!rx.borrow().contains("mb1"));
         assert!(rx.borrow().contains("mb2"));
+    }
+
+    async fn record_status_round_trip_impl(b: Backend) {
+        let (_dir, store) = open(b).await;
+        assert_eq!(store.get_status(&"mb1".into()).await.unwrap(), None);
+        store
+            .record_status(&"mb1".into(), SyncStatus::Stopped)
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get_status(&"mb1".into()).await.unwrap(),
+            Some(SyncStatus::Stopped),
+        );
+        store
+            .record_status(&"mb1".into(), SyncStatus::Active)
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get_status(&"mb1".into()).await.unwrap(),
+            Some(SyncStatus::Active),
+        );
+        store.drop_mailbox(&"mb1".into()).await.unwrap();
+        assert_eq!(store.get_status(&"mb1".into()).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn record_status_round_trip_sqlite() {
+        record_status_round_trip_impl(Backend::Sqlite).await;
+    }
+
+    #[tokio::test]
+    async fn record_status_round_trip_mem() {
+        record_status_round_trip_impl(Backend::Mem).await;
+    }
+
+    #[tokio::test]
+    async fn status_persists_across_reopen_sqlite() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sync_state.db");
+
+        {
+            let store: MailboxSyncTracker<u8, char> =
+                MailboxSyncTracker::open(&path).await.unwrap();
+            store
+                .record_status(&"mb1".into(), SyncStatus::Degraded)
+                .await
+                .unwrap();
+            store.close().await;
+        }
+
+        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::open(&path).await.unwrap();
+        assert_eq!(
+            store.get_status(&"mb1".into()).await.unwrap(),
+            Some(SyncStatus::Degraded),
+        );
     }
 
     async fn record_url_round_trip_impl(b: Backend) {
