@@ -213,6 +213,33 @@ class SettingsApp {
 	}
 }
 
+/** How long a freshly launched Settings gets to show its root screen. */
+const SETTINGS_ROOT_MS = 5_000;
+
+/** Launch Settings on its root screen. A relaunch now and then comes up on
+ *  the page it was last on instead, so the root is walked back to, and the
+ *  launch repeated if walking back does not get there. */
+async function openSettingsAtRoot(b: WebdriverIO.Browser): Promise<void> {
+	const root = b.$('~com.apple.settings.wifi');
+	const back = b.$(
+		classChain('**/XCUIElementTypeNavigationBar/XCUIElementTypeButton[1]'),
+	);
+	for (let launch = 1; launch <= 3; launch++) {
+		await b.terminateApp(SETTINGS_BUNDLE_ID);
+		await b.activateApp(SETTINGS_BUNDLE_ID);
+		for (let page = 0; page < 4; page++) {
+			const atRoot = await root
+				.waitForExist({ timeout: SETTINGS_ROOT_MS })
+				.then(() => true)
+				.catch(() => false);
+			if (atRoot) return;
+			if (!(await back.isExisting())) break;
+			await back.click();
+		}
+	}
+	throw new Error('Settings never showed its root screen');
+}
+
 /** Run `body` against a freshly opened Settings app and put things back:
  *  Settings closed, the app on screen again if it was, the session in the
  *  app's webview if it was. A backgrounded or stopped app is left so. */
@@ -225,10 +252,8 @@ async function inSettings<T>(
 	const wasOnScreen =
 		Number(await b.queryAppState(APP_BUNDLE_ID)) === APP_STATE_FOREGROUND;
 	await b.switchContext('NATIVE_APP');
-	await b.terminateApp(SETTINGS_BUNDLE_ID);
-	await b.activateApp(SETTINGS_BUNDLE_ID);
+	await openSettingsAtRoot(b);
 	const settings = new SettingsApp(b);
-	await b.$('~com.apple.settings.wifi').waitForExist();
 	try {
 		return await body(settings);
 	} finally {
