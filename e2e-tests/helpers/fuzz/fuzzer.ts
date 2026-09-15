@@ -10,7 +10,7 @@
  */
 import fc from 'fast-check';
 
-import { leaveWifi, wifiDevice } from '../../setup/host-wifi';
+import { assertInRange, leaveWifi, wifiDevice } from '../../setup/host-wifi';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
 import type { Link } from '../../setup/toxiproxy';
@@ -29,16 +29,11 @@ import {
 	parkHub,
 } from './agents';
 import { type ExpectedModel, newModel } from './model';
-import type { Move, Moves } from './moves/move';
+import { type Move, type Moves, steps } from './moves/move';
 
 export type { Move, Moves } from './moves/move';
 
 type Sequence = Iterable<fc.AsyncCommand<ExpectedModel, Real>>;
-
-function oneOf(moves: Moves): fc.Arbitrary<Move> {
-	if (moves.length === 0) throw new Error('no moves to draw from');
-	return fc.oneof(...moves);
-}
 
 /** A fuzz test runs as long as its moves take: `prepare` lifts the mocha
  *  timeout of every test in its suite to this. It has to happen before a
@@ -120,25 +115,34 @@ export class Fuzzer {
 			...init,
 			hubsDevice: networked ? wifiDevice() : null,
 		});
-		if (networked && real.hubsDevice === null) {
-			throw new Error('networks are configured but the host has no Wi-Fi card');
+		if (networked) {
+			if (real.hubsDevice === null) {
+				throw new Error(
+					'networks are configured but the host has no Wi-Fi card',
+				);
+			}
+			await restoreNetworks(real);
+			assertInRange(
+				real.hubsDevice,
+				labNetworks(real).map(n => n.ssid),
+			);
 		}
-		if (networked) await restoreNetworks(real);
 		const model = newModel(real);
 		await prepareAgents(model, real);
 		return new Fuzzer(model, real);
 	}
 
 	/**
-	 * Try up to `attempts` random sequences of at most `length` moves. The
-	 * first that fails is shrunk to the smallest failing sequence — dropping
+	 * Try up to `attempts` random sequences of `length` moves, each step
+	 * resolving to a move that can be made when it is reached. The first
+	 * sequence that fails is shrunk to the smallest failing one — dropping
 	 * moves, then lowering their arguments — for as long again as the search
 	 * was given, and reported with the seed as `move` builders ready to paste
 	 * into a `replay`.
 	 */
 	search(opts: SearchOptions): Promise<void> {
 		return this.run(
-			fc.commands([oneOf(opts.moves)], {
+			fc.commands([steps(opts.moves)], {
 				maxCommands: opts.length,
 				size: 'max',
 			}),
@@ -153,7 +157,7 @@ export class Fuzzer {
 	 *  failure is reported as is, without shrinking. */
 	soak(opts: SoakOptions): Promise<void> {
 		return this.run(
-			fc.array(oneOf(opts.moves), {
+			fc.array(steps(opts.moves), {
 				minLength: opts.length,
 				maxLength: opts.length,
 			}),
@@ -181,14 +185,17 @@ export class Fuzzer {
 		const seed = params.seed ?? Math.floor(Math.random() * 2 ** 31);
 		log(`seed ${seed}`);
 		let out: fc.RunDetails<[Sequence]>;
+		let sequence = 0;
 		try {
 			out = await fc.check(
-				fc.asyncProperty(sequences, moves =>
-					fc.asyncModelRun(async () => {
+				fc.asyncProperty(sequences, moves => {
+					sequence++;
+					log(`sequence ${sequence}: ${[...moves].length} moves drawn`);
+					return fc.asyncModelRun(async () => {
 						await resetNetworks(model, real);
 						return { model, real };
-					}, moves),
-				),
+					}, moves);
+				}),
 				// Unbiased: the bias draws early runs' sequences short and their
 				// arguments small, and a run of one is all "early".
 				{ ...params, seed, unbiased: true, includeErrorInReport: true },
@@ -197,6 +204,9 @@ export class Fuzzer {
 			// A sequence that failed mid-way skipped its own teardown.
 			await teardown(real);
 		}
+		log(
+			`${out.numRuns} sequences run, ${out.numSkips} skipped, interrupted=${String(out.interrupted)}, failed=${String(out.failed)}`,
+		);
 		if (out.failed) {
 			const moves = out.counterexample?.[0];
 			throw new Error(
@@ -245,7 +255,7 @@ async function inferHomeNetwork(real: Real): Promise<void> {
 async function restoreNetworks(real: Real): Promise<void> {
 	for (const sa of real.agents) await sa.agent.enableWifi();
 	await inferHomeNetwork(real);
-	for (const network of labNetworks(real)) leaveWifi(network.ssid);
+	for (const network of labNetworks(real)) await leaveWifi(network.ssid);
 	for (const sa of real.agents) await restorePhone(sa, labNetworks(real));
 }
 
@@ -289,7 +299,7 @@ async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {
 /** Park every hub and take the host's card off the test networks. */
 async function parkHubs(real: Real): Promise<void> {
 	for (const hub of real.hubs) await parkHub(hub);
-	if (real.hubsNetwork !== null) leaveWifi(real.hubsNetwork);
+	if (real.hubsNetwork !== null) await leaveWifi(real.hubsNetwork);
 	real.hubsNetwork = null;
 }
 
@@ -328,7 +338,7 @@ async function teardown(real: Real): Promise<void> {
 	if (real.cloud !== null) await real.cloud.heal();
 	await parkHubs(real);
 	if (real.networks.length === 0) return;
-	for (const network of labNetworks(real)) leaveWifi(network.ssid);
+	for (const network of labNetworks(real)) await leaveWifi(network.ssid);
 	for (const sa of real.agents) {
 		try {
 			await restorePhone(sa, labNetworks(real));

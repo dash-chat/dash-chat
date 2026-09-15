@@ -1,7 +1,5 @@
 /** Moves a device makes on its own: leaving and returning to the foreground,
  *  and restarting the app. */
-import fc from 'fast-check';
-
 import { type Real, at, byName, log } from '../agents';
 import { checkHubs } from '../checks';
 import type { ExpectedModel } from '../model';
@@ -89,9 +87,9 @@ class RestartMove extends Move {
 }
 
 export const deviceMoves: Moves = [
-	{ arbitrary: fc.nat().map(a => new BackgroundMove(a)), weight: 3 },
-	{ arbitrary: fc.nat().map(a => new ForegroundMove(a)), weight: 3 },
-	{ arbitrary: fc.nat().map(a => new RestartMove(a)), weight: 1 },
+	{ build: a => new BackgroundMove(a), weight: 3 },
+	{ build: a => new ForegroundMove(a), weight: 3 },
+	{ build: a => new RestartMove(a), weight: 1 },
 ];
 
 /** The device moves by the names a search prints them under. */

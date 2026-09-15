@@ -8,6 +8,7 @@
 
 	async function confirm() {
 		setAppShuttingDown(true);
+		localStorage.clear();
 		try {
 			// On success the app exits immediately,
 			// so no code after this line executes on the happy path.

@@ -3,8 +3,6 @@
  *  and they are skipped. Each ends by asserting what the connection chips
  *  show, so a sequence fails at the exact move peer or hub discovery did
  *  not survive. */
-import fc from 'fast-check';
-
 import {
 	type Real,
 	type StressAgent,
@@ -136,17 +134,10 @@ class SleepMove extends Move {
 }
 
 export const networkMoves: Moves = [
+	{ build: (a, n) => new PeerJoinMove(a, n), weight: 5 },
+	{ build: a => new PeerLeaveMove(a), weight: 2 },
 	{
-		arbitrary: fc
-			.tuple(fc.nat(), fc.nat())
-			.map(([a, n]) => new PeerJoinMove(a, n)),
-		weight: 5,
-	},
-	{ arbitrary: fc.nat().map(a => new PeerLeaveMove(a)), weight: 2 },
-	{
-		arbitrary: fc
-			.integer({ min: 1, max: MDNS_RECORD_TTL_S + 10 })
-			.map(s => new SleepMove(s)),
+		build: s => new SleepMove(1 + (s % (MDNS_RECORD_TTL_S + 10))),
 		weight: 1,
 	},
 ];

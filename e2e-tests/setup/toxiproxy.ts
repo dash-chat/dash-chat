@@ -43,7 +43,13 @@ export async function startToxiproxy(): Promise<{
 	const proc = spawn(
 		'toxiproxy-server',
 		['-host', '127.0.0.1', '-port', String(port)],
-		{ stdio: ['ignore', logFd, logFd], detached: true },
+		{
+			stdio: ['ignore', logFd, logFd],
+			detached: true,
+			// The checkout-scoped cleanup tells this run's server from another
+			// checkout's by this path in its environment.
+			env: { ...process.env, E2E_DBS: path.join(ROOT, '.dbs') + path.sep },
+		},
 	);
 	closeSync(logFd);
 	proc.on('error', err => {

@@ -17,7 +17,12 @@ import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group
 import { DEPARTURE_MS, DISCOVERY_MS } from '../helpers/fuzz/checks';
 import { MDNS_RECORD_TTL_S } from '../helpers/fuzz/moves/network';
 import { UI_TIMEOUT } from '../helpers/timeouts';
-import { joinWifi, leaveWifi, wifiDevice } from '../setup/host-wifi';
+import {
+	assertInRange,
+	joinWifi,
+	leaveWifi,
+	wifiDevice,
+} from '../setup/host-wifi';
 import {
 	type LocalHub,
 	restartLocalHub,
@@ -196,13 +201,14 @@ describe('Local hub discovery', function () {
 		if (network === undefined) this.skip();
 		const device = wifiDevice();
 		if (device === null) throw new Error('the host has no Wi-Fi card');
+		assertInRange(device, [network.ssid]);
 		try {
 			await agent.connectWifi(network.ssid, network.passphrase);
 			await expectNoHub('the phone moved to a LAN the hub is not on');
 			await joinWifi(device, network.ssid, network.passphrase);
 			await expectLocal("the hub's host joined the phone's LAN");
 		} finally {
-			leaveWifi(network.ssid);
+			await leaveWifi(network.ssid);
 			await agent.forgetWifi(network.ssid);
 		}
 	});

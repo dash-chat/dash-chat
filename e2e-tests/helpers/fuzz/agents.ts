@@ -12,6 +12,7 @@ import type { DirectChatPage } from '../pages/direct-chats/direct-chat-page';
 import type { GroupChatPage } from '../pages/group-chat/group-chat-page';
 import { tid } from '../selectors';
 import { SYNC_TIMEOUT } from '../timeouts';
+import { stampedLog } from '../utils';
 import type { ExpectedChat, ExpectedModel } from './model';
 
 // Mirrors QUICK_EMOJIS in ui/src/lib/utils/emojis.ts.
@@ -77,7 +78,7 @@ export function newReal(init: {
 export type ChatPage = DirectChatPage | GroupChatPage;
 
 export function log(text: string): void {
-	console.log(`[fuzz ${new Date().toISOString().slice(11, 23)}] ${text}`);
+	stampedLog(`[fuzz] ${text}`);
 }
 
 /** Resolve an abstract index against whatever options exist right now. */

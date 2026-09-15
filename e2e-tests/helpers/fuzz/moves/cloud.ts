@@ -3,8 +3,6 @@
  *  cloud; elsewhere their `check` is false and they are skipped. Each ends
  *  by asserting what every driveable agent's chip shows, so a sequence
  *  fails at the exact move the chip stopped telling the truth. */
-import fc from 'fast-check';
-
 import type { Link } from '../../../setup/toxiproxy';
 import { MAILBOX_HEALED_MS, MAILBOX_UNANSWERED_MS } from '../../timeouts';
 import { type Real, byName, log } from '../agents';
@@ -101,10 +99,10 @@ class CloudHealMove extends Move {
 }
 
 export const cloudMoves: Moves = [
-	{ arbitrary: fc.constant(new CloudSlowMove()), weight: 1 },
-	{ arbitrary: fc.constant(new CloudDropMove('hang')), weight: 2 },
-	{ arbitrary: fc.constant(new CloudDropMove('cut')), weight: 2 },
-	{ arbitrary: fc.constant(new CloudHealMove()), weight: 4 },
+	{ build: () => new CloudSlowMove(), weight: 1 },
+	{ build: () => new CloudDropMove('hang'), weight: 2 },
+	{ build: () => new CloudDropMove('cut'), weight: 2 },
+	{ build: () => new CloudHealMove(), weight: 4 },
 ];
 
 /** The cloud moves by the names a search prints them under. */
