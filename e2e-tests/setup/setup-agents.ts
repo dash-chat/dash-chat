@@ -49,7 +49,12 @@ import {
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
-import { killAgentApp, readOpenedUrls } from './platforms/desktop';
+import {
+	killAgentApp,
+	launchAgentApp,
+	macWindowRect,
+	readOpenedUrls,
+} from './platforms/desktop';
 import { APP_STATE_NOT_RUNNING, resetIosAppState } from './platforms/ios';
 import {
 	connectIosWifi,
@@ -372,6 +377,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			} catch {
 				// Session gone — the app was stopped; relaunch below.
 			}
+			await launchAgentApp(slot);
 			await b.reloadSession();
 		} else {
 			// activateApp is itself idempotent: it launches a stopped app and
@@ -437,6 +443,10 @@ const PROCESS_LIFECYCLE_DISPATCH_MS = 1_500;
  *  a scroll, and well under the app's 500ms long-press threshold. */
 const TAP_HOLD_MS = 100;
 
+/** Between the two reads of a tap target's centre that must agree before it
+ *  is tapped: a fraction of the app's longest open transition (400ms). */
+const TAP_SETTLE_MS = 100;
+
 /** How many times to re-tap an element whose tap never reached the page. */
 const TAP_ATTEMPTS = 3;
 
@@ -481,26 +491,36 @@ async function tapPoint(
 	// stale elements) rather than reusing the one it was given. Selectors here
 	// are not all CSS — `a*=name` chains off a parent — so this cannot be a
 	// `document.querySelector` inside the page.
+	const centreIfTopmost = (el: HTMLElement) => {
+		let rect = el.getBoundingClientRect();
+		let x = rect.x + rect.width / 2;
+		let y = rect.y + rect.height / 2;
+		if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
+			el.scrollIntoView({ block: 'center', inline: 'center' });
+			rect = el.getBoundingClientRect();
+			x = rect.x + rect.width / 2;
+			y = rect.y + rect.height / 2;
+		}
+		const topmost = document.elementFromPoint(x, y);
+		return topmost !== null && (topmost === el || el.contains(topmost))
+			? { x, y }
+			: null;
+	};
 	return await agent.waitUntil(
 		async () => {
 			const live = await refetch(element);
 			if (live === null) return null;
-			const point = await agent.execute((el: HTMLElement) => {
-				let rect = el.getBoundingClientRect();
-				let x = rect.x + rect.width / 2;
-				let y = rect.y + rect.height / 2;
-				if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
-					el.scrollIntoView({ block: 'center', inline: 'center' });
-					rect = el.getBoundingClientRect();
-					x = rect.x + rect.width / 2;
-					y = rect.y + rect.height / 2;
-				}
-				const topmost = document.elementFromPoint(x, y);
-				return topmost !== null && (topmost === el || el.contains(topmost))
-					? { x, y }
-					: null;
-			}, live);
-			return point === null ? null : { ...point, live };
+			const point = await agent.execute(centreIfTopmost, live);
+			if (point === null) return null;
+			// A menu still scaling or sliding in reports the centre it has now,
+			// not the one it settles at, and a tap there lands beside it — on a
+			// backdrop that closes the menu. Tap only once the centre holds still.
+			await agent.pause(TAP_SETTLE_MS);
+			const settled = await agent.execute(centreIfTopmost, live);
+			if (settled === null || settled.x !== point.x || settled.y !== point.y) {
+				return null;
+			}
+			return { ...point, live };
 		},
 		{
 			timeoutMsg:
@@ -525,6 +545,7 @@ async function clickReachedElement(
 	element: WebdriverIO.Element,
 	x: number,
 	y: number,
+	pointerType: PointerType,
 ): Promise<boolean> {
 	await agent.execute((el: HTMLElement) => {
 		delete document.documentElement.dataset.e2eClick;
@@ -540,7 +561,7 @@ async function clickReachedElement(
 		);
 	}, element);
 	await agent
-		.action('pointer', { parameters: { pointerType: 'touch' } })
+		.action('pointer', { parameters: { pointerType } })
 		.move({ x: Math.round(x), y: Math.round(y) })
 		.down()
 		.pause(TAP_HOLD_MS)
@@ -550,6 +571,8 @@ async function clickReachedElement(
 		() => document.documentElement.dataset.e2eClick === 'seen',
 	);
 }
+
+type PointerType = 'touch' | 'mouse';
 
 /** Make webview clicks tap the element's own on-screen rect.
  *
@@ -562,20 +585,31 @@ async function clickReachedElement(
  *  webview it lands tens of points off and the tap silently misses. CSS pixels
  *  here already are screen points, so the rect is the tap point. A pointer
  *  action rather than `mobile: tap`: that one is an instantaneous
- *  XCUICoordinate tap, which WebKit drops inside a scrolling container. */
-function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
+ *  XCUICoordinate tap, which WebKit drops inside a scrolling container.
+ *
+ *  A desktop agent needs the same, with a mouse: the app's embedded
+ *  WebDriver implements element click as `el.click()` on the element itself,
+ *  which never reaches a handler on a child (a Konsta list item's link), while
+ *  a pointer action is dispatched at the point's innermost element and
+ *  bubbles up like a real click. */
+function tapWebElementsAtTheirRect(
+	agent: WebdriverIO.Browser,
+	pointerType: PointerType,
+): void {
 	agent.overwriteCommand(
 		'click',
 		async function (this: WebdriverIO.Element, origClick) {
-			const context = await agent.getContext();
-			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
-				return await origClick();
+			if (pointerType === 'touch') {
+				const context = await agent.getContext();
+				if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+					return await origClick();
+				}
 			}
 			for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
 				const { x, y, live } = await tapPoint(agent, this);
-				if (await clickReachedElement(agent, live, x, y)) return;
+				if (await clickReachedElement(agent, live, x, y, pointerType)) return;
 				console.warn(
-					`[ios] tap at ${x},${y} did not reach ${String(this.selector)} ` +
+					`[${pointerType}] tap at ${x},${y} did not reach ${String(this.selector)} ` +
 						`(attempt ${attempt}/${TAP_ATTEMPTS})`,
 				);
 			}
@@ -627,16 +661,22 @@ async function setupAgent(
 		await resetIosAppState(b);
 		// Before makeAgent: it resolves every page object's element, and an
 		// element built before the overwrite keeps the original click.
-		tapWebElementsAtTheirRect(b);
-	} else if (platform !== 'desktop') {
+		tapWebElementsAtTheirRect(b, 'touch');
+	} else if (platform === 'desktop') {
+		tapWebElementsAtTheirRect(b, 'mouse');
+		if (process.platform === 'darwin') {
+			const { x, y, width, height } = macWindowRect(slot);
+			await b.setWindowRect(x, y, width, height);
+		}
+	} else {
 		tapWebElementsWithTouch(b);
 	}
 	const agent = makeAgent(b, slot);
 	agent.platform = platform;
 	agent.waitForAppExit = async () => {
 		if (platform === 'desktop') {
-			// The session breaking is the exit signal: tauri-driver has no other
-			// way to report that the process it launched is gone.
+			// The session breaking is the exit signal: the WebDriver server lives
+			// in the app, so it goes when the app does.
 			await b.waitUntil(
 				async () => {
 					try {

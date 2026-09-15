@@ -124,6 +124,7 @@ tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios
 objc2 = "0.6"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"
@@ -131,7 +132,7 @@ mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
 
 [features]
-e2e-tests = ["dashchat-node/testing"]
+e2e-tests = ["dashchat-node/testing", "dep:tauri-plugin-wdio-webdriver"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

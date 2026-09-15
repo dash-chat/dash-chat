@@ -14,7 +14,7 @@ suite *ARGS:
 
 # a named spec runs whatever it is, including the stress specs that
 # otherwise skip themselves.
-[doc('run a single spec by name (e.g. `just e2e run full-flow`)')]
+[doc('run a single spec by name (e.g. `just e2e run send-messages`)')]
 run NAME *ARGS:
     cd e2e-tests && E2E_STRESS=1 pnpm wdio run wdio.conf.ts --spec 'specs/{{NAME}}.spec.ts' {{ARGS}}
 

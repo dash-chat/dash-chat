@@ -24,7 +24,6 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libasound2-dev \
-            webkit2gtk-driver \
             xvfb
 
       - name: Setup just
@@ -49,9 +48,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-
-      - name: Install tauri-driver
-        run: cargo install tauri-driver --locked
 
       - name: Install pnpm dependencies
         run: pnpm install --reporter=append-only
