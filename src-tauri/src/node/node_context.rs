@@ -49,6 +49,17 @@ impl NodeRole {
     }
 }
 
+/// The p2p network e2e agents live on. An e2e build is given an
+/// `E2E_NETWORK_ID`, hashed to the id's width, so test runs sharing a LAN,
+/// each built with its own id, refuse each other's peers; a build without one
+/// gets the id every such build shares.
+fn e2e_network_id() -> [u8; 32] {
+    match option_env!("E2E_NETWORK_ID") {
+        Some(id) => *p2panda_core::Hash::digest(format!("dashchat e2e {id}")).as_bytes(),
+        None => *b"dashchat end-to-end test network",
+    }
+}
+
 /// The capabilities and wiring with which a Node is built.
 ///
 /// A `NodeContext` describes what a Node is allowed to do and which external
@@ -138,7 +149,7 @@ impl NodeContext {
             // cross-talk with production/dev instances on the same LAN: every
             // ALPN is hashed with the network id, so foreign connections are
             // rejected at protocol negotiation.
-            config.network_id = *b"dashchat end-to-end test network";
+            config.network_id = e2e_network_id();
             config.message_ack_debounce = std::time::Duration::from_millis(300);
             config
         } else {

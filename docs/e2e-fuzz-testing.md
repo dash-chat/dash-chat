@@ -162,7 +162,7 @@ Hubs are `mailbox-local-server` processes spawned by `setup/local-hub.ts` on the
 - **Suspend vs kill**: suspending the mailbox (`SIGSTOP`) makes connections hang, killing it makes them refused. Kill it for any run that reads the connection chip: a network change wakes the mailbox pollers, which count a suspended cloud as connected until their polls time out, hiding the chip for any hub found meanwhile.
 - **Restart on mobile** is stop + activate inside the same Appium session, not `reloadSession`: a new session fast-resets the app (`pm clear`) and wipes the profile.
 - **iOS Wi-Fi** is driven through the Settings app, which takes the app off screen for the duration; the Settings labels are matched in English.
-- **Only one fuzz run at a time** on a host: the phones, the pinned Appium/adb/mailbox ports and the host Wi-Fi card are all shared, and `onPrepare` wipes `.dbs/e2e`.
+- **Runs from different checkouts can share a host.** Each checkout's builds bake in their own `E2E_NETWORK_ID` (a hash of the checkout path), so its agents refuse another run's peers and only browse their own hubs; ports are allocated per run; a phone is claimed by one run at a time (`<tmpdir>/dash-chat-e2e/devices/`, a stale claim of a dead run is taken over) and a run asking for a phone another run holds fails at once; the host Wi-Fi card is claimed the same way by the first spec that joins a network with it, held to the end of that spec file, and a run that needs it meanwhile waits; and cleanup only touches the checkout's own processes. Two runs from the *same* checkout still collide on `.dbs/e2e`, which `onPrepare` wipes.
 
 ## Example specs
 

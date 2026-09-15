@@ -7,7 +7,7 @@ use swarm_discovery::DropGuard;
 use tokio::sync::broadcast;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::{base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, SERVICE_NAME};
+use crate::{base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, service_name};
 
 pub struct LocalHubAnnouncementService {
     // Holds the live announcement and re-arms it on each network change; drop to stop.
@@ -61,7 +61,8 @@ fn announce(
     let interfaces = multicast_interfaces_v4();
     let ips = announce_ips(&interfaces);
     log::info!(
-        "Announcing local hub {instance_id} on the LAN via swarm-discovery ({SERVICE_NAME}) at {ips:?}:{port}"
+        "Announcing local hub {instance_id} on the LAN via swarm-discovery ({}) at {ips:?}:{port}",
+        service_name()
     );
     let guard = base_discoverer(&mailbox_id_to_label(instance_id)?, interfaces)
         .with_addrs(port, ips)
