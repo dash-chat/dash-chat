@@ -27,7 +27,7 @@ describe('Blocked group member', () => {
 
 		// The group has to exist before the block: a blocked contact is hidden
 		// from the member pickers, so Bob could not be added afterwards.
-		await createGroup(agent1, GROUP, 'Bob');
+		await createGroup(agent1, GROUP, ['Bob']);
 		await agent2.homePage
 			.chatListItem(GROUP)
 			.waitForExist({ timeout: SYNC_TIMEOUT });

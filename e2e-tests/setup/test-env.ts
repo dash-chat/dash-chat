@@ -52,3 +52,36 @@ export function remoteMailboxUrl(): string | null {
 	if (/^http:\/\/localhost:\d+\/?$/.test(url)) return null;
 	return url;
 }
+
+export interface WifiNetwork {
+	ssid: string;
+	/** '' for an open network. */
+	passphrase: string;
+	/** The host's own LAN rather than a lab one: the phones and the host are
+	 *  on it to begin with, and a run never leaves, forgets or deletes it. */
+	home: boolean;
+}
+
+/** One `ssid` or `ssid:passphrase` entry; a bare `ssid` is an open network.
+ *  Neither part may contain ':' or ','. */
+function parseNetwork(entry: string): WifiNetwork {
+	const parts = entry.trim().split(':');
+	if (parts.length > 2 || parts[0] === '') {
+		throw new Error(
+			`E2E_WIFI_NETWORKS entry '${entry.trim()}' is not 'ssid' or 'ssid:passphrase'`,
+		);
+	}
+	return { ssid: parts[0], passphrase: parts[1] ?? '', home: false };
+}
+
+/**
+ * The Wi-Fi networks a run may walk phones and hubs through, from
+ * E2E_WIFI_NETWORKS as `ssid:passphrase,ssid:passphrase` in the order moves
+ * index them; empty when unset. Which of them, if any, is the run's home
+ * network is read off the phones when the run starts.
+ */
+export function wifiNetworks(): WifiNetwork[] {
+	const raw = process.env.E2E_WIFI_NETWORKS;
+	if (raw === undefined || raw.trim() === '') return [];
+	return raw.split(',').map(parseNetwork);
+}

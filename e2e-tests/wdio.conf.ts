@@ -15,11 +15,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
+import { claimAllWhenFreeSync, release } from './setup/claims';
 import { killLeftoverMailboxServers } from './setup/cleanup';
+import { releaseWifiDevice } from './setup/host-wifi';
+import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
 import {
-	buildMailboxServer,
+	buildCargoPackages,
 	startLocalMailboxServer,
 } from './setup/mailbox-server';
+import { CHECKOUT_CLAIM } from './setup/network-id';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
 import { DesktopPlatform } from './setup/platforms/desktop';
 import { IosPlatform } from './setup/platforms/ios';
@@ -56,12 +60,19 @@ const androidKinds = new Map<number, AndroidKind>(
 	),
 );
 
-/** The host mailbox-server build, kicked off before the Android platform is
- * constructed so it overlaps the emulator boots that block construction.
- * Awaited in onPrepare. */
+// Before anything is built, killed or claimed: the launcher waits for any run
+// already going in this checkout — its data dir and baked network id are one
+// per checkout. Workers inherit the launcher's claim.
+if (process.env.WDIO_WORKER_ID === undefined) {
+	claimAllWhenFreeSync([{ candidates: [CHECKOUT_CLAIM], needed: 1 }]);
+}
+
+/** The host mailbox-server build — plus the standalone hub the discovery
+ * specs spawn — kicked off before the Android platform is constructed so it
+ * overlaps the emulator boots that block construction. Awaited in onPrepare. */
 const mailboxBuild =
 	process.env.WDIO_WORKER_ID === undefined && remoteMailboxUrl() === null
-		? buildMailboxServer()
+		? buildCargoPackages(['mailbox-server', LOCAL_HUB_PACKAGE])
 		: null;
 // Register a handler now so a build failure before onPrepare awaits the
 // promise doesn't crash node with an unhandled rejection.
@@ -115,6 +126,7 @@ async function teardown() {
 	}
 	mailboxLogger?.kill();
 	pushLogger?.kill();
+	release(CHECKOUT_CLAIM);
 }
 
 /** Save a per-agent screenshot of the current webview to .dbs/e2e/failures/. */
@@ -297,6 +309,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	async afterSession() {
+		releaseWifiDevice();
 		for (const platform of platforms) {
 			await platform.afterSession();
 		}

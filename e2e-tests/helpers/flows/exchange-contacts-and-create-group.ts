@@ -21,13 +21,17 @@ export async function exchangeContactsAndCreateGroup(
 	await agent1.homePage.ready();
 	await agent2.homePage.ready();
 
-	await createGroup(agent1, 'mygroup', 'Bob');
+	await createGroup(agent1, 'mygroup', ['Bob']);
 }
 
+/** Walk `agent` from the home page through the new-group flow, picking each
+ *  of `members` by contact name, and leave it on the new group's chat page. An
+ *  empty `members` makes a members-less group: the cheapest page where the
+ *  connection chip is mounted. */
 export async function createGroup(
 	agent: Agent,
 	groupName: string,
-	addContactName: string | null = null,
+	members: string[],
 ): Promise<void> {
 	await agent.homePage.ready();
 	await agent.homePage.newMessageButton.click();
@@ -35,8 +39,8 @@ export async function createGroup(
 	await agent.newMessagePage.newGroup.click();
 
 	await agent.newGroupPage.addMembersStep.ready();
-	if (addContactName) {
-		await agent.newGroupPage.addMembersStep.addContactByName(addContactName);
+	for (const member of members) {
+		await agent.newGroupPage.addMembersStep.addContactByName(member);
 	}
 	await agent.newGroupPage.addMembersStep.nextButton.click();
 

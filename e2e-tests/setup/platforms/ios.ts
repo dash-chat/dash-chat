@@ -6,8 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import {
+	type Want,
+	claimAllWhenFreeSync,
+	describeHeld,
+	release,
+} from '../claims';
 import { deviceHasBuild, recordInstalled } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
+import { E2E_NETWORK_ID } from '../network-id';
 import { runTurboBuild } from '../turbo-build';
 import { switchToWebview, waitForTestUtils } from '../webview';
 import {
@@ -19,7 +26,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..', '..');
 
-const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
+export const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
 // Fixed home for the .ipa the sessions install, copied here by the
 // e2e:build:ios task's export-session-ipa.ts step. The capabilities
@@ -121,29 +128,50 @@ function connectedDevices(): string[] {
 
 // Claim one connected iPhone per slot
 function claimDevices(slots: number[]): Map<number, string> {
-	const pool = connectedDevices();
-	const udids = new Map<number, string>();
+	const pinnedOf = (slot: number) =>
+		process.env[`_WDIO_IOS_UDID${slot}`] ?? process.env[`IOS_UDID${slot}`];
+	const pinned = new Set(slots.map(pinnedOf).filter(u => u !== undefined));
+	const connected = connectedDevices();
+	// Slots wanting the same thing — a pinned device, or any iPhone — claim
+	// it as one group, so a run holds all it needs or nothing.
+	const groups = new Map<string, { slots: number[]; want: Want }>();
 	for (const slot of slots) {
-		const pinned =
-			process.env[`_WDIO_IOS_UDID${slot}`] ?? process.env[`IOS_UDID${slot}`];
-		if (pinned !== undefined) {
-			udids.set(slot, pinned);
-			process.env[`_WDIO_IOS_UDID${slot}`] = pinned;
-			const i = pool.indexOf(pinned);
-			if (i !== -1) pool.splice(i, 1);
-			continue;
-		}
-		const udid = pool.shift();
-		if (udid === undefined) {
-			throw new Error(
-				`Not enough connected iPhones for agent${slot} ` +
-					`(connected: ${connectedDevices().join(', ') || 'none'}). Connect a ` +
-					`trusted device, or set IOS_UDID${slot}.`,
-			);
-		}
-		process.env[`_WDIO_IOS_UDID${slot}`] = udid;
-		udids.set(slot, udid);
+		const key = pinnedOf(slot) ?? 'any';
+		const group = groups.get(key) ?? {
+			slots: [],
+			want: {
+				candidates:
+					key === 'any' ? connected.filter(d => !pinned.has(d)) : [key],
+				needed: 0,
+			},
+		};
+		group.slots.push(slot);
+		group.want.needed += 1;
+		groups.set(key, group);
 	}
+	for (const { slots: wanting, want } of groups.values()) {
+		if (want.candidates.length >= want.needed) continue;
+		const slot = wanting[want.candidates.length];
+		throw new Error(
+			`Not enough iPhones for agent${slot} ` +
+				`(${describeHeld(connected)}). Connect a ` +
+				`trusted device, or set IOS_UDID${slot}.`,
+		);
+	}
+	const wants = [...groups.values()].map(g => g.want);
+	// The launcher claims, waiting for devices another run is driving; the
+	// workers inherit its claims through the pinned env.
+	const taken =
+		process.env.WDIO_WORKER_ID === undefined
+			? claimAllWhenFreeSync(wants)
+			: wants.map(w => w.candidates.slice(0, w.needed));
+	const udids = new Map<number, string>();
+	[...groups.values()].forEach(({ slots: wanting }, i) => {
+		wanting.forEach((slot, j) => {
+			process.env[`_WDIO_IOS_UDID${slot}`] = taken[i][j];
+			udids.set(slot, taken[i][j]);
+		});
+	});
 	return udids;
 }
 
@@ -166,6 +194,8 @@ function ensureXcuitestDriver() {
 
 /** `mobile: queryAppState` value for "the app is not running". */
 export const APP_STATE_NOT_RUNNING = 1;
+/** `mobile: queryAppState` value for "the app is on screen". */
+export const APP_STATE_FOREGROUND = 4;
 
 /** Reset an iOS agent to first-launch state without reinstalling the app.
  *
@@ -350,6 +380,7 @@ export class IosPlatform implements AgentPlatform {
 		// host still holds before each session.
 		process.env._WDIO_IOS_HOST_IP = hostIp;
 		const bakedEnv: Record<string, string> = {
+			E2E_NETWORK_ID,
 			MAILBOX_URL: `http://${hostIp}:${mailboxPort}`,
 		};
 		if (pushPort !== null) {
@@ -426,6 +457,9 @@ export class IosPlatform implements AgentPlatform {
 		for (const logger of this.loggers.values()) logger.kill();
 		// The launcher never owned the workers' tails, so kill them by device or
 		// the run leaves one attached per spec, blocking the next run's logging.
-		for (const udid of this.udids.values()) killStaleSyslogLoggers(udid);
+		for (const udid of this.udids.values()) {
+			killStaleSyslogLoggers(udid);
+			release(udid);
+		}
 	}
 }

@@ -33,7 +33,7 @@
 		"@tauri-apps/plugin-updater": "^2.10.0",
 		"@universalappfactory/tauri-plugin-medialibrary": "^0.13.0",
 		"cbor": "^10.0.11",
-		"dash-chat-stores": "workspace:^0.0.0",
+		"dash-chat-stores": "workspace:*",
 		"emoji-picker-element": "^1.29.0",
 		"image-blob-reduce": "^5.0.0",
 		"jsqr": "^1.4.0",

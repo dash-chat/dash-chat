@@ -87,12 +87,31 @@ export function resumeMailbox(): void {
 	signalGroup(localInfo().pid, 'SIGCONT');
 }
 
-/** Kill the mailbox server outright so connections to it are refused. */
-export function killMailbox(): void {
+/** Kill the mailbox server outright so connections to it are refused, and
+ *  confirm it is gone: a spec that goes on believing it killed the server
+ *  measures a cloud-connected app instead of an offline one. */
+export async function killMailbox(): Promise<void> {
+	const { pid } = localInfo();
 	try {
-		signalGroup(localInfo().pid, 'SIGKILL');
+		signalGroup(pid, 'SIGKILL');
 	} catch {
 		/* already gone */
+	}
+	const deadline = Date.now() + 5_000;
+	while (isAlive(pid)) {
+		if (Date.now() > deadline) {
+			throw new Error(`mailbox server pid ${pid} is still alive after SIGKILL`);
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+}
+
+function isAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
 	}
 }
 

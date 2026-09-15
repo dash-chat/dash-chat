@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use dashchat_node::Node;
 use tokio_util::sync::CancellationToken;
@@ -53,9 +53,8 @@ pub struct AppNode {
     pub context: NodeContext,
     /// The Node itself.
     pub node: Node,
-    /// Local-mailbox mDNS discovery task. Replaceable so it can be re-armed;
-    /// the old task is aborted when the handle is replaced or dropped.
-    pub mdns_discovery: Arc<Mutex<Option<AbortOnDropHandle<()>>>>,
+    /// Local-mailbox mDNS discovery task; aborted when the last clone drops it.
+    mdns_discovery: Option<Arc<AbortOnDropHandle<()>>>,
     /// Cloud-mailbox registration retry. `None` when the context does not run it
     /// (only the main app does).
     registration: Option<CloudMailboxRegistration>,
@@ -66,18 +65,10 @@ impl AppNode {
     /// app-specific tasks (like local-mailbox mDNS discovery) when enabled by
     /// the context.
     pub fn new(context: NodeContext, node: Node) -> anyhow::Result<Self> {
-        let mdns_discovery = match context.app_handle.as_ref() {
-            Some(app) if context.enable_mdns_mailbox() => Some(
-                crate::mailbox::spawn_local_mailbox_mdns_discovery(app, node.clone())?,
-            ),
-            None if context.enable_mdns_mailbox() => {
-                log::error!(
-                    "enable_mdns_mailbox is true but app_handle is missing; skipping mDNS discovery"
-                );
-                None
-            }
-            _ => None,
-        };
+        let mdns_discovery = context
+            .enable_mdns_mailbox()
+            .then(|| crate::mailbox::spawn_local_mailbox_mdns_discovery(node.clone()))
+            .transpose()?;
 
         let registration = context
             .enable_cloud_mailbox_registration()
@@ -86,30 +77,9 @@ impl AppNode {
         Ok(Self {
             context,
             node,
-            mdns_discovery: Arc::new(Mutex::new(mdns_discovery)),
+            mdns_discovery: mdns_discovery.map(Arc::new),
             registration,
         })
-    }
-
-    /// Re-issue the local-mailbox mDNS browse, so a hub that announced while the
-    /// app was backgrounded is found now rather than up to an hour later.
-    pub fn rearm_mdns_discovery(&self) {
-        let Some(app) = self.context.app_handle.as_ref() else {
-            return;
-        };
-        if !self.context.enable_mdns_mailbox() {
-            return;
-        }
-        // Stop the previous browse before starting the next one. Spawning first
-        // would leave both alive for a moment, and the new one's `stop_browse`
-        // closes the old one's event channel — which the old loop reads as the
-        // daemon shutting down and gives up on. Dropping first makes the
-        // replacement clean instead of a race between two browses.
-        *self.mdns_discovery.lock().unwrap() = None;
-        match crate::mailbox::spawn_local_mailbox_mdns_discovery(app, self.node.clone()) {
-            Ok(task) => *self.mdns_discovery.lock().unwrap() = Some(task),
-            Err(err) => log::warn!("Failed to re-arm local mailbox mdns discovery: {err:?}"),
-        }
     }
 
     /// Whether this Node can be reused to satisfy a request for the given
@@ -125,7 +95,7 @@ impl AppNode {
         if let Some(registration) = self.registration {
             registration.shutdown().await;
         }
-        if let Some(discovery) = self.mdns_discovery.lock().unwrap().take() {
+        if let Some(discovery) = self.mdns_discovery {
             discovery.abort();
         }
         if let Err(err) = self.node.shutdown().await {

@@ -26,7 +26,7 @@ describe('Removing group members', () => {
 	});
 
 	it('admin can remove a non-admin member', async () => {
-		await createGroup(agent1, 'Test Group', 'Bob');
+		await createGroup(agent1, 'Test Group', ['Bob']);
 
 		await agent1.groupChatPage.ready();
 		await agent1.groupChatPage.infoLink.click();
@@ -74,7 +74,7 @@ describe('Removing group members', () => {
 	});
 
 	it('non-admin cannot remove another member', async () => {
-		await createGroup(agent1, 'Test Group 2', 'Bob');
+		await createGroup(agent1, 'Test Group 2', ['Bob']);
 
 		// Bob navigates to the group
 		await agent2.homePage.ready();

@@ -27,7 +27,7 @@ describe('Leaving group', () => {
 	});
 
 	it('creator can leave a group they created alone', async () => {
-		await createGroup(agent1, 'Solo Group', null);
+		await createGroup(agent1, 'Solo Group', []);
 
 		await agent1.groupChatPage.ready();
 		await agent1.groupChatPage.composer.sendMessage('Hello group');
@@ -107,7 +107,7 @@ describe('Leaving group', () => {
 	});
 
 	it('creator cant leave a group with another member but no other admins', async () => {
-		await createGroup(agent1, 'Two member group', 'Bob');
+		await createGroup(agent1, 'Two member group', ['Bob']);
 
 		await agent1.groupChatPage.infoLink.click();
 		await agent1.groupInfoPage.ready();
@@ -138,7 +138,7 @@ describe('Leaving group', () => {
 	it('stops receiving messages sent to a group after leaving it', async () => {
 		// Bob owns this one so Alice is a plain member and may leave: the last
 		// admin of a group with other members cannot.
-		await createGroup(agent2, 'Left Group', 'Alice');
+		await createGroup(agent2, 'Left Group', ['Alice']);
 
 		await agent1.homePage
 			.chatListItem('Left Group')

@@ -1,0 +1,14 @@
+[package]
+name = "network-watch"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+if-watch = { version = "3", features = ["tokio"] }
+if-addrs = "0.15"
+futures = "0.3"
+tokio = { version = "1", features = ["time", "sync", "rt", "macros"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread", "test-util"] }

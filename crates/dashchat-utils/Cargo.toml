@@ -8,7 +8,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 iroh = { workspace = true, optional = true }
 iroh-blobs = { workspace = true, optional = true }
-if-watch = { version = "3", features = ["tokio"] }
 futures = "0.3"
 log = "0.4"
 tokio = { version = "1", features = ["time", "sync", "rt", "macros"] }

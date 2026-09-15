@@ -3,8 +3,8 @@
  * each other as contacts, creating groups, sending texts and photos,
  * reacting, replying, editing, deleting, backgrounding and restarting the
  * app — while the cloud mailbox is suspended, so every operation must
- * propagate over a direct p2p (iroh/mDNS) connection. Convergence is
- * verified at in-pool checkpoints and at the end of the run.
+ * propagate over a direct p2p (iroh/mDNS) connection. After every move, each
+ * agent that should have received something is checked for exactly it.
  *
  * Skips itself unless E2E_STRESS=1. Run it with:
  *   PLATFORMS=android,android just e2e run p2p-stress
@@ -13,7 +13,9 @@
  * E2E_STRESS_SEED (default random; the run logs it — re-run with the same
  * seed to reproduce a failure).
  */
-import { runRandomBehavior } from '../helpers/fast-check/run';
+import { Fuzzer } from '../helpers/fuzz/fuzzer';
+import { deviceMoves } from '../helpers/fuzz/moves/device';
+import { userMoves } from '../helpers/fuzz/moves/user';
 import { envInt } from '../helpers/utils';
 import {
 	isRemoteMailbox,
@@ -25,6 +27,7 @@ import { type Agent, setupAgents } from '../setup/setup-agents';
 describe('P2P offline stress', () => {
 	let agent1: Agent;
 	let agent2: Agent;
+	let fuzzer: Fuzzer;
 	let mailboxSuspended = false;
 
 	before(async function () {
@@ -41,6 +44,12 @@ describe('P2P offline stress', () => {
 		mailboxSuspended = true;
 		await agent1.createProfilePage.createProfile('Alice', 'Stress');
 		await agent2.createProfilePage.createProfile('Bob', 'Stress');
+		fuzzer = await Fuzzer.prepare(this, {
+			agents: [
+				{ agent: agent1, name: 'Alice' },
+				{ agent: agent2, name: 'Bob' },
+			],
+		});
 	});
 
 	after(() => {
@@ -52,18 +61,13 @@ describe('P2P offline stress', () => {
 		}
 	});
 
-	it('agents behave normally for the whole run over p2p sync only', async function () {
+	it('agents behave normally for the whole run over p2p sync only', async () => {
 		const commands = envInt('E2E_STRESS_COMMANDS', 80);
 		const seed = envInt('E2E_STRESS_SEED', Math.floor(Math.random() * 2 ** 31));
-		// Commands drive real UI flows and checkpoints wait out generous p2p
-		// sync timeouts, so budget well beyond the expected pace.
-		this.timeout(commands * 30_000 + 300_000);
-		await runRandomBehavior(
-			[
-				{ agent: agent1, name: 'Alice', platform: agent1.platform },
-				{ agent: agent2, name: 'Bob', platform: agent2.platform },
-			],
-			{ commands, seed },
-		);
+		await fuzzer.soak({
+			moves: [...userMoves, ...deviceMoves],
+			length: commands,
+			seed,
+		});
 	});
 });

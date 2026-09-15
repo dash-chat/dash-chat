@@ -1,17 +1,11 @@
 use crate::node::AppNodeManager;
 use mailbox_local_server::LocalMailboxServer;
-use mdns_sd::ServiceDaemon;
 use tauri::{AppHandle, Manager, Runtime};
 use tokio::sync::Mutex;
 
 use crate::filesystem::FileSystem;
 
-pub(crate) struct LocalMailboxState {
-    server: LocalMailboxServer,
-    mdns_fullname: String,
-}
-
-pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxState>>;
+pub(crate) type LocalMailboxMutex = Mutex<Option<LocalMailboxServer>>;
 
 pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
     let mutex = handle.state::<LocalMailboxMutex>();
@@ -25,10 +19,8 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         .get()
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
-    let endpoint_id = node.endpoint_id();
     let endpoint = node.iroh_endpoint().await?;
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
-    let daemon: ServiceDaemon = handle.state::<ServiceDaemon>().inner().clone();
 
     let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
     let node_for_peer_addrs = node.clone();
@@ -41,9 +33,8 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     });
 
     // The in-process mailbox shares the node's iroh endpoint and blob store, so
-    // its EndpointId equals the node's device id and relayed blobs are served
-    // from the same store on the same endpoint. The mDNS instance name therefore
-    // encodes that EndpointId and resolves to this shared endpoint.
+    // its EndpointId equals the node's and relayed blobs are served from the same
+    // store.
     let blob_sync = node.blob_sync_optional().expect("blob sync is enabled");
     let server = mailbox_local_server::spawn_local_mailbox_server(
         path,
@@ -56,25 +47,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     )
     .await?;
 
-    // Interface changes (a new network appearing after startup) are handled by
-    // the mdns-sd daemon itself: it re-checks interfaces periodically and
-    // announces `addr_auto` services on new ones. Re-registering the service
-    // ourselves must be avoided — mdns-sd 0.20 probes on re-register, mistakes
-    // its own just-unregistered records for a conflicting peer, and renames the
-    // service, after which it no longer answers SRV refresh queries and
-    // browsers drop it when the announcement TTL expires.
-    let mdns_fullname = mailbox_local_server::register_mdns_with_retry(
-        &daemon,
-        super::MDNS_SERVICE_TYPE,
-        endpoint_id,
-        server.port,
-        3,
-    )?;
-
-    *guard = Some(LocalMailboxState {
-        server,
-        mdns_fullname,
-    });
+    *guard = Some(server);
 
     log::info!("Started local mailbox");
 
@@ -84,18 +57,12 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
 pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Result<()> {
     let mutex = handle.state::<LocalMailboxMutex>();
     let mut guard = mutex.lock().await;
-    let Some(state) = guard.take() else {
+    let Some(server) = guard.take() else {
         log::warn!("Tried to stop local mailbox, but it was not running");
         return Ok(());
     };
     log::info!("Sending stop signal to local mailbox...");
-    state.server.stop().await;
-    if let Err(e) = handle
-        .state::<ServiceDaemon>()
-        .unregister(&state.mdns_fullname)
-    {
-        log::error!("Failed to unregister MDNS service: {e:?}");
-    }
+    server.stop().await;
 
     log::info!("Local mailbox stopped");
     Ok(())

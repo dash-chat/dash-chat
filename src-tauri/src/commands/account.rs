@@ -45,10 +45,12 @@ pub async fn delete_account(
         log::info!("Account deleted successfully");
     }
 
+    // Not `app.exit`: tao cannot exit an iOS event loop and panics in its
+    // app-state machine, which records a crash shown as a sheet on the next launch.
     #[cfg(mobile)]
     {
-        app.exit(0);
-        Ok(())
+        app.cleanup_before_exit();
+        std::process::exit(0);
     }
 
     #[cfg(desktop)]

@@ -17,6 +17,7 @@ import {
 	formatStatusTrace,
 	samplesOnResume,
 } from '../helpers/components/connection-status-indicator';
+import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 /** How long the app stays backgrounded. Android cuts a backgrounded app's
@@ -55,15 +56,7 @@ describe('Connection status after resuming from the background', function () {
 
 		// A members-less group chat is the cheapest way to a page where
 		// ConnectionStatusIndicator is mounted.
-		await agent.homePage.newMessageButton.click();
-		await agent.newMessagePage.ready();
-		await agent.newMessagePage.newGroup.click();
-		await agent.newGroupPage.addMembersStep.ready();
-		await agent.newGroupPage.addMembersStep.nextButton.click();
-		await agent.newGroupPage.groupInfoStep.ready();
-		await agent.newGroupPage.groupInfoStep.setName('Solo Group');
-		await agent.newGroupPage.groupInfoStep.createButton.click();
-		await agent.groupChatPage.ready();
+		await createGroup(agent, 'Solo Group', []);
 	});
 
 	it('does not show the disconnected chip on returning from a long background', async () => {

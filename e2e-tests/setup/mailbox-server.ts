@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
 import { allocatePreferredPort } from './allocate-port';
+import { E2E_NETWORK_ID } from './network-id';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -25,17 +26,20 @@ export function mailboxLogFile(dbPath: string): string {
 	return path.join(path.dirname(dbPath), 'mailbox.log');
 }
 
-/** Run `cargo build -p mailbox-server`, resolving when the binary is built. */
-export function buildMailboxServer(): Promise<void> {
+/** Run `cargo build -p <package>...`, resolving when the binaries are built.
+ *  The hub binary bakes the run's network id in, like the app does. */
+export function buildCargoPackages(packages: string[]): Promise<void> {
+	const args = ['build', ...packages.flatMap(name => ['-p', name])];
 	return new Promise<void>((resolve, reject) => {
-		const proc = spawn('cargo', ['build', '-p', 'mailbox-server'], {
+		const proc = spawn('cargo', args, {
 			cwd: ROOT,
 			stdio: 'inherit',
+			env: { ...process.env, E2E_NETWORK_ID },
 		});
 		proc.on('error', reject);
 		proc.on('exit', code => {
 			if (code === 0) resolve();
-			else reject(new Error(`cargo build -p mailbox-server exited ${code}`));
+			else reject(new Error(`cargo ${args.join(' ')} exited ${code}`));
 		});
 	});
 }
@@ -141,5 +145,5 @@ export async function waitForMailboxReady(
 		}
 		await new Promise(r => setTimeout(r, 500));
 	}
-	throw new Error('Mailbox server failed to become ready');
+	throw new Error(`Mailbox server at ${url} failed to become ready`);
 }

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use regex::Regex;
@@ -58,6 +58,7 @@ pub struct SentryState {
     pub(crate) client: sentry::ClientInitGuard,
     pub(crate) redact: Vec<Regex>,
     pub(crate) logs_dir: PathBuf,
+    pub(crate) extra_logs_dirs: Vec<crate::NamedLogDir>,
     pub(crate) pending: Arc<PendingLogs>,
     pub(crate) outbox: Arc<Outbox>,
     pub(crate) drainer: Arc<Drainer<HttpSender>>,
@@ -75,10 +76,23 @@ impl SentryState {
             client: sentry::init(client::options(&config, pending.clone())),
             redact: config.redact,
             logs_dir: config.logs_dir,
+            extra_logs_dirs: config.extra_logs_dirs,
             pending,
             outbox,
             drainer,
         })
+    }
+
+    /// The named log directories to attach to reports, with the main app log
+    /// dir always first.
+    pub(crate) fn log_attachment_dirs(&self) -> Vec<(&str, &Path)> {
+        let mut logs: Vec<(&str, &Path)> = vec![("Dash Chat.log", &self.logs_dir)];
+        logs.extend(
+            self.extra_logs_dirs
+                .iter()
+                .map(|named| (named.name.as_str(), named.dir.as_path())),
+        );
+        logs
     }
 
     /// Queue a user-approved report and try to deliver it now. The answer is
