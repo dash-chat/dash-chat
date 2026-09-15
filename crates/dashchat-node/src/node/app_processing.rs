@@ -20,6 +20,7 @@ use super::*;
 pub enum Notification {
     Op(OpNotification),
     System(SystemNotification),
+    BlobProgress(crate::blob_progress::BlobProgressEvent),
 }
 
 impl Notification {

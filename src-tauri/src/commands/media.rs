@@ -48,3 +48,25 @@ fn sanitized_file_name(name: &str) -> String {
         .unwrap_or("attachment")
         .to_string()
 }
+
+#[tauri::command]
+pub async fn get_blob_progress(
+    hashes: Vec<String>,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<Vec<dashchat_node::BlobProgressEvent>, String> {
+    let node = app_node_manager.get().await?;
+    node.blob_progress(hashes)
+        .await
+        .map_err(|e| format!("Failed to read blob progress: {e:?}"))
+}
+
+#[tauri::command]
+pub async fn fetch_blob_now(
+    hash: String,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<(), String> {
+    let node = app_node_manager.get().await?;
+    node.fetch_blob_now(hash.clone())
+        .await
+        .map_err(|e| format!("Failed to start blob fetch {hash}: {e:?}"))
+}

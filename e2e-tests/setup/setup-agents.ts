@@ -146,6 +146,8 @@ export type Agent = WebdriverIO.Browser & {
 	 *  One-way for the life of the process; the agent still reads/writes
 	 *  locally and talks to a mailbox. */
 	disableP2p(): Promise<void>;
+	/** Pause or resume this agent's blob fetch loop (e2e-only command). */
+	setBlobFetchPaused(paused: boolean): Promise<void>;
 	/** The urls this agent asked the OS to open, once at least `count` have
 	 *  arrived. Recorded by the harness's `xdg-open` stub, so desktop only. */
 	waitForOpenedUrls(count?: number): Promise<string[]>;
@@ -305,6 +307,13 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	agent.disableP2p = async () => {
 		await b.executeAsync((done: () => void) =>
 			window.__test.disableP2p().then(done, done),
+		);
+	};
+	agent.setBlobFetchPaused = async (paused: boolean) => {
+		await b.executeAsync(
+			(p: boolean, done: () => void) =>
+				window.__test.setBlobFetchPaused(p).then(done, done),
+			paused,
 		);
 	};
 	agent.restart = async () => {

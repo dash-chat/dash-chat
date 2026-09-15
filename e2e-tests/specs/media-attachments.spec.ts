@@ -8,6 +8,11 @@ import { tid } from '../helpers/selectors';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
+/** Mirror of `BLOB_STALL_INTERVAL_MS` in
+ * `packages/stores/src/blobs/blob-progress-tracker.ts`; the e2e package does
+ * not depend on `dash-chat-stores`. */
+const BLOB_STALL_INTERVAL_MS = 10_000;
+
 describe('Media attachments', () => {
 	let agent1: Agent;
 	let agent2: Agent;
@@ -55,6 +60,59 @@ describe('Media attachments', () => {
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForPhotoMessage('single');
 		await agent2.directChatPage.messages.waitForPhotoMessage('single');
+	});
+
+	it('shows download progress on the receiver until the photo blob arrives', async () => {
+		await agent2.setBlobFetchPaused(true);
+		try {
+			await agent1.directChatPage.composer.attachNoisePhoto('held', 800, 600);
+			await agent1.directChatPage.composer.send();
+			await agent1.directChatPage.messages.waitForPhotoMessage('held');
+
+			const ring = agent2.directChatPage.messages.photoProgressRing('held');
+			await ring.waitForDisplayed({ timeout: SYNC_TIMEOUT });
+			const bytes = agent2.directChatPage.messages.photoProgressBytes('held');
+			await bytes.waitForDisplayed();
+			expect(await bytes.getText()).toMatch(/^0 B \/ /);
+		} finally {
+			await agent2.setBlobFetchPaused(false);
+		}
+		await agent2.directChatPage.messages.waitForPhotoMessage('held');
+		await agent2.directChatPage.messages
+			.photoProgressRing('held')
+			.waitForDisplayed({ reverse: true });
+	});
+
+	it('recovers a stalled photo download when the cell is tapped', async () => {
+		await agent2.setBlobFetchPaused(true);
+		try {
+			await agent1.directChatPage.composer.attachNoisePhoto(
+				'stalled',
+				800,
+				600,
+			);
+			await agent1.directChatPage.composer.send();
+			await agent1.directChatPage.messages.waitForPhotoMessage('stalled');
+
+			const messages = agent2.directChatPage.messages;
+			await messages
+				.photoProgressRing('stalled')
+				.waitForDisplayed({ timeout: SYNC_TIMEOUT });
+			await agent2.waitUntil(() => messages.photoProgressStalled('stalled'), {
+				timeout: BLOB_STALL_INTERVAL_MS + 5000,
+				timeoutMsg: 'Progress ring never entered its stalled state',
+			});
+		} finally {
+			await agent2.setBlobFetchPaused(false);
+		}
+
+		// The cell click routes through BlobImage.retryIfErrored, which re-runs
+		// the on-demand fetch for a stalled blob.
+		await agent2.directChatPage.messages.photoCell('stalled').click();
+		await agent2.directChatPage.messages.waitForPhotoMessage('stalled');
+		await agent2.directChatPage.messages
+			.photoProgressRing('stalled')
+			.waitForDisplayed({ reverse: true });
 	});
 
 	it('sizes a lone photo from its sender-measured dimensions', async () => {
@@ -105,6 +163,29 @@ describe('Media attachments', () => {
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForFileMessage('e2e-notes.txt');
 		await agent2.directChatPage.messages.waitForFileMessage('e2e-notes.txt');
+	});
+
+	it('shows download progress on the receiver until the file blob arrives', async () => {
+		await agent2.setBlobFetchPaused(true);
+		try {
+			await agent1.directChatPage.composer.attachFile(
+				'held-notes.txt',
+				'hello again from e2e',
+				'text/plain',
+			);
+			await agent1.directChatPage.composer.send();
+			await agent1.directChatPage.messages.waitForFileMessage('held-notes.txt');
+
+			const ring =
+				agent2.directChatPage.messages.fileProgressRing('held-notes.txt');
+			await ring.waitForDisplayed({ timeout: SYNC_TIMEOUT });
+		} finally {
+			await agent2.setBlobFetchPaused(false);
+		}
+		await agent2.directChatPage.messages.waitForFileMessage('held-notes.txt');
+		await agent2.directChatPage.messages
+			.fileProgressRing('held-notes.txt')
+			.waitForDisplayed({ reverse: true });
 	});
 
 	it('rejects an attachment that exceeds the 16 MiB cap', async () => {

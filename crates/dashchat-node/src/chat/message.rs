@@ -109,7 +109,7 @@ impl MediaMetadata {
     }
 }
 
-mod hash_bytes {
+pub(crate) mod hash_bytes {
     use std::fmt;
 
     use iroh_blobs::Hash;
