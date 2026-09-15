@@ -315,16 +315,18 @@ async function resetNetworks(model: ExpectedModel, real: Real): Promise<void> {
 		await real.cloud.heal();
 		model.setCloudUsable(true);
 	}
-	if (!model.hasNetworks()) return;
-	await parkHubs(real);
-	for (const hub of model.hubs) {
-		hub.network = null;
-		hub.running = false;
+	if (model.hasNetworks()) {
+		await parkHubs(real);
+		for (const hub of model.hubs) {
+			hub.network = null;
+			hub.running = false;
+		}
 	}
 	for (const sa of real.agents) {
 		await sa.agent.startApp();
 		model.foreground(sa.name);
 		await ensureHome(sa);
+		if (!model.hasNetworks()) continue;
 		await sa.agent.disableWifi();
 		model.agentLeave(sa.name);
 	}

@@ -1,5 +1,11 @@
 import fc from 'fast-check';
+import path from 'node:path';
 
+import {
+	failureSlug,
+	failuresDir,
+	saveFailureScreenshot,
+} from '../../../setup/failure-screenshots';
 import { type Real, at, log } from '../agents';
 import { settle } from '../checks';
 import type { ExpectedModel } from '../model';
@@ -16,8 +22,9 @@ export abstract class Move implements fc.AsyncCommand<ExpectedModel, Real> {
 	abstract perform(m: ExpectedModel, real: Real): Promise<void>;
 	abstract toString(): string;
 
-	/** A failure is logged here as well as thrown: the search only reports
-	 *  it once shrinking is done, which can be many replays later. */
+	/** A failure is logged here as well as thrown, with every agent's screen
+	 *  saved as it was: the search only reports it once shrinking is done,
+	 *  which can be many replays later. */
 	async run(m: ExpectedModel, real: Real): Promise<void> {
 		try {
 			await this.perform(m, real);
@@ -26,8 +33,19 @@ export abstract class Move implements fc.AsyncCommand<ExpectedModel, Real> {
 			log(
 				`${this.toString()} failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
 			);
+			await saveScreens(real, this.toString());
 			throw err;
 		}
+	}
+}
+
+async function saveScreens(real: Real, move: string): Promise<void> {
+	const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, '-');
+	for (const sa of real.agents) {
+		await saveFailureScreenshot(
+			sa.agent,
+			path.join(failuresDir(), `${stamp}-${failureSlug(move)}-${sa.name}.png`),
+		);
 	}
 }
 

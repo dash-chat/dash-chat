@@ -122,7 +122,9 @@ function chatTopic(chat: ExpectedChat): Topic {
 const CLOUD = 'cloud';
 
 export class ExpectedModel {
-	readonly agents: { name: string; mobile: boolean }[];
+	/** `p2p: false` is an agent run without peer-to-peer connectivity: on no
+	 * LAN component, it reaches nothing but the cloud. */
+	readonly agents: { name: string; mobile: boolean; p2p?: boolean }[];
 	readonly chats: ExpectedChat[] = [];
 	/** The LANs the run may use, up for its whole length. None means every
 	 * agent shares its usual LAN, and keeps every hub and network move out
@@ -150,7 +152,7 @@ export class ExpectedModel {
 	private hubCounter = 0;
 
 	constructor(
-		agents: { name: string; mobile: boolean }[],
+		agents: { name: string; mobile: boolean; p2p?: boolean }[],
 		networks: ExpectedNetwork[] = [],
 		cloud = false,
 	) {
@@ -626,15 +628,21 @@ export class ExpectedModel {
 		return topics;
 	}
 
+	private syncsDirectly(name: string): boolean {
+		return this.agents.find(a => a.name === name)?.p2p !== false;
+	}
+
 	/** The holders that can sync with each other right now, grouped: per
 	 * LAN, plus everyone with the cloud while its link is usable. */
 	private components(): string[][] {
+		const direct = (names: string[]) =>
+			names.filter(n => this.syncsDirectly(n));
 		const lans = this.hasNetworks()
 			? this.networks.map(n => [
 					...this.hubsOn(n.name).map(h => h.name),
-					...this.activeNamesOn(n.name),
+					...direct(this.activeNamesOn(n.name)),
 				])
-			: [this.activeNames()];
+			: [direct(this.activeNames())];
 		if (!this.cloudUsable()) return lans;
 		return [...lans, [CLOUD, ...this.activeNames()]];
 	}
@@ -709,7 +717,7 @@ export class ExpectedModel {
  * contacts, no hub anywhere, everyone foregrounded and off the air, the
  * cloud link (if the run has one) healthy. */
 export function newModel(real: {
-	agents: { agent: { platform: string }; name: string }[];
+	agents: { agent: { platform: string; p2p: boolean }; name: string }[];
 	networks: { ssid: string; home: boolean }[];
 	cloud: object | null;
 }): ExpectedModel {
@@ -717,6 +725,7 @@ export function newModel(real: {
 		real.agents.map(({ agent, name }) => ({
 			name,
 			mobile: agent.platform !== 'desktop',
+			p2p: agent.p2p,
 		})),
 		real.networks.map(n => ({ name: n.ssid, home: n.home })),
 		real.cloud !== null,

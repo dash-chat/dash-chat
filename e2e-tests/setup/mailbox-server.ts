@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort, allocatePreferredPort } from './allocate-port';
-import { E2E_NETWORK_ID } from './network-id';
+import { E2E_NETWORK_ID, MAILBOX_PREFERRED_PORT } from './network-id';
 import { Link } from './toxiproxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -102,9 +102,7 @@ export async function startLocalMailboxServer(
 	port: number;
 	url: string;
 }> {
-	// A stable port keeps the mailbox URL baked into iOS builds valid across
-	// runs, so turbo's build skip can actually fire (the URL is a hashed input).
-	const port = await allocatePreferredPort(3300);
+	const port = await allocatePreferredPort(MAILBOX_PREFERRED_PORT);
 	const bindPort = await allocateFreePort();
 	await Link.open(MAILBOX_LINK, port, bindPort);
 	const url = `http://localhost:${port}`;

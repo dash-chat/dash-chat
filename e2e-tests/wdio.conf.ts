@@ -17,6 +17,11 @@ import { fileURLToPath } from 'node:url';
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
 import { claimAllWhenFreeSync, release } from './setup/claims';
 import { killLeftoverMailboxServers } from './setup/cleanup';
+import {
+	failureSlug,
+	failuresDir,
+	saveFailureScreenshot,
+} from './setup/failure-screenshots';
 import { releaseWifiDevice } from './setup/host-wifi';
 import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
 import {
@@ -138,32 +143,13 @@ async function saveFailureScreenshots(test: {
 	parent: string;
 	title: string;
 }): Promise<void> {
-	const dir = path.join(ROOT, '.dbs', 'e2e', 'failures');
-	mkdirSync(dir, { recursive: true });
-	const slug = `${test.parent} ${test.title}`
-		.replace(/[^a-zA-Z0-9]+/g, '-')
-		.slice(0, 80);
+	const dir = failuresDir();
+	const slug = failureSlug(`${test.parent} ${test.title}`);
 	for (const name of browser.instances) {
-		try {
-			const agent = browser.getInstance(name);
-			// Mobile: screenshot from the native context. A webview-context
-			// screenshot goes through chromedriver, which blocks for minutes
-			// against the frozen renderer of a backgrounded app — precisely the
-			// state many failures leave the device in. The native screenshot
-			// always works and also captures system UI like the shade.
-			let restoreTo: string | undefined;
-			if (agent.isMobile) {
-				const context = await agent.getContext();
-				if (typeof context === 'string' && context !== 'NATIVE_APP') {
-					restoreTo = context;
-					await agent.switchContext('NATIVE_APP');
-				}
-			}
-			await agent.saveScreenshot(path.join(dir, `${slug}-${name}.png`));
-			if (restoreTo !== undefined) await agent.switchContext(restoreTo);
-		} catch {
-			/* session may already be dead */
-		}
+		await saveFailureScreenshot(
+			browser.getInstance(name),
+			path.join(dir, `${slug}-${name}.png`),
+		);
 	}
 }
 

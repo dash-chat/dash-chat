@@ -294,6 +294,26 @@ test('the cloud relays between LANs only while its link is usable', () => {
 	assert.equal(m.knows(B).has('message:sm-2'), true);
 });
 
+test('agents without p2p sync through the cloud alone', () => {
+	const m = new ExpectedModel(
+		[A, B].map(name => ({ name, mobile: false, p2p: false })),
+		[],
+		true,
+	);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
+	m.setCloudUsable(false);
+	m.addMessage(chat, A, 'text', 'sm-2');
+	assert.equal(m.propagate().has(B), false);
+	assert.equal(m.knows(B).has('message:sm-2'), false);
+	m.setCloudUsable(true);
+	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
+	assert.equal(m.knows(B).has('message:sm-2'), true);
+});
+
 test('the cloud holds a message for a backgrounded phone through a cut', () => {
 	const m = lansWithCloud([N1, N2], A, B);
 	contacts(m, A, B);

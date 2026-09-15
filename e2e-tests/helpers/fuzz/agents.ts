@@ -191,5 +191,13 @@ export async function ensureHome(sa: StressAgent): Promise<void> {
 			return;
 		}
 	}
+	if (await sa.agent.homePage.settingsLink.isExisting()) {
+		await sa.agent.homePage.ready();
+		return;
+	}
+	// A failed move can leave the agent on any page, with any dialog open —
+	// nowhere a click path back home is known from, so the route is set
+	// directly.
+	await sa.agent.goto('/');
 	await sa.agent.homePage.ready();
 }

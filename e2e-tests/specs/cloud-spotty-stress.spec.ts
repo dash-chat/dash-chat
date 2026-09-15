@@ -6,13 +6,16 @@
  * connections and heals under them. After every move, each agent that
  * should have received something is checked for exactly it, and every
  * cloud move checks what each agent's connection chip says of the cloud.
+ * A failing sequence is shrunk to the smallest that still fails.
  *
- * Skips itself unless E2E_STRESS=1. Run it with:
- *   PLATFORMS=android,android just e2e run cloud-spotty-stress
+ * Both agents run without p2p, so the cloud link is the only way an op can
+ * travel. Skips itself unless E2E_STRESS=1. Run it with:
+ *   PLATFORMS=desktop,desktop just e2e run cloud-spotty-stress
  *
- * Tunables: E2E_STRESS_COMMANDS (default 80, roughly several minutes),
- * E2E_STRESS_SEED (default random; the run logs it — re-run with the same
- * seed to reproduce a failure).
+ * Tunables: E2E_STRESS_ATTEMPTS (sequences to try, default 20),
+ * E2E_STRESS_COMMANDS (moves per sequence, default 40), E2E_STRESS_SEED
+ * (default random; the run logs it — re-run with the same seed to reproduce
+ * a failure).
  */
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
 import { cloudMoves } from '../helpers/fuzz/moves/cloud';
@@ -32,9 +35,11 @@ describe('Spotty cloud stress', () => {
 		// The mailbox's link must be ours to degrade, which a remote
 		// environment's is not.
 		if (isRemoteMailbox()) this.skip();
+		// Without p2p every op has to travel through the cloud mailbox, so
+		// its link is the only thing the checks measure.
 		[agent1, agent2] = await setupAgents(this, [
-			{ platform: 'any' },
-			{ platform: 'any' },
+			{ platform: 'any', p2p: false },
+			{ platform: 'any', p2p: false },
 		]);
 		await agent1.createProfilePage.createProfile('Alice', 'Stress');
 		await agent2.createProfilePage.createProfile('Bob', 'Stress');
@@ -48,11 +53,13 @@ describe('Spotty cloud stress', () => {
 	});
 
 	it('agents behave normally for the whole run while the cloud link flaps', async () => {
-		const commands = envInt('E2E_STRESS_COMMANDS', 80);
+		const attempts = envInt('E2E_STRESS_ATTEMPTS', 20);
+		const length = envInt('E2E_STRESS_COMMANDS', 40);
 		const seed = envInt('E2E_STRESS_SEED', Math.floor(Math.random() * 2 ** 31));
-		await fuzzer.soak({
+		await fuzzer.search({
 			moves: [...userMoves, ...deviceMoves, ...cloudMoves],
-			length: commands,
+			attempts,
+			length,
 			seed,
 		});
 	});
