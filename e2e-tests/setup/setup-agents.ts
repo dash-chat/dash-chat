@@ -54,7 +54,11 @@ import {
 	readOpenedUrls,
 	respawnDesktopAgent,
 } from './platforms/desktop';
-import { APP_STATE_NOT_RUNNING, resetIosAppState } from './platforms/ios';
+import {
+	APP_STATE_NOT_RUNNING,
+	killIosPushExtension,
+	resetIosAppState,
+} from './platforms/ios';
 import {
 	connectIosWifi,
 	disableIosWifi,
@@ -69,6 +73,8 @@ import type { WifiInfo } from './wifi';
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
 	platform: AgentPlatformName;
+	/** The launch slot, which names the agent's data dir and log file. */
+	slot: number;
 	/** Whether the app was launched with peer-to-peer connectivity; false
 	 *  means it reaches peers through a mailbox only. */
 	p2p: boolean;
@@ -188,6 +194,9 @@ export type Agent = WebdriverIO.Browser & {
 	/** The network this device is on: its SSID and IPv4 address, each ''
 	 *  while it has none. */
 	wifiInfo(): Promise<WifiInfo>;
+	/** Kill the phone's push extension process, so the next push starts a
+	 *  fresh one. iOS only. */
+	killPushExtension(): Promise<void>;
 };
 
 /** The device serial this Appium session was launched against. */
@@ -233,6 +242,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 
 export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	const agent = b as Agent;
+	agent.slot = slot;
 	attachPages(agent, b);
 
 	agent.goto = async (path: string) => {
@@ -420,6 +430,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await iosWifiInfo(b)
 			: androidWifiInfo(androidUdid(b));
+	agent.killPushExtension = async () => {
+		if (agent.platform !== 'ios') {
+			throw new Error(`only iOS runs a push extension, got ${agent.platform}`);
+		}
+		killIosPushExtension(androidUdid(b));
+	};
 
 	return agent;
 }
