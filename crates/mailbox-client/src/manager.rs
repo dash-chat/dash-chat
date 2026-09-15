@@ -57,6 +57,23 @@ impl SyncStatus {
             SyncStatus::Stopped => config.stopped_interval,
         }
     }
+
+    pub(crate) fn as_db_str(&self) -> &'static str {
+        match self {
+            SyncStatus::Active => "active",
+            SyncStatus::Degraded => "degraded",
+            SyncStatus::Stopped => "stopped",
+        }
+    }
+
+    pub(crate) fn from_db_str(s: &str) -> Option<Self> {
+        match s {
+            "active" => Some(SyncStatus::Active),
+            "degraded" => Some(SyncStatus::Degraded),
+            "stopped" => Some(SyncStatus::Stopped),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -93,6 +110,23 @@ impl MailboxConnectionState {
             next_poll: Instant::now(),
             last_success_at: None,
             last_error: None,
+        }
+    }
+
+    /// Start from a previous session's last judged status: a failure backs off
+    /// at that status's interval instead of climbing there again from Active,
+    /// while the immediate first poll still gives a recovered mailbox its
+    /// instant comeback.
+    fn seeded(status: SyncStatus, config: &MailboxesConfig) -> Self {
+        let consecutive_errors = match status {
+            SyncStatus::Active => 0,
+            SyncStatus::Degraded => config.degraded_threshold,
+            SyncStatus::Stopped => config.stopped_threshold,
+        };
+        Self {
+            status,
+            consecutive_errors,
+            ..Self::new()
         }
     }
 
@@ -159,8 +193,13 @@ pub struct TrackedMailbox<Item: MailboxItem> {
 }
 
 impl<Item: MailboxItem> TrackedMailbox<Item> {
-    fn new(client: Arc<dyn MailboxClient<Item>>, config: MailboxesConfig) -> Self {
-        let (connection_state, _) = watch::channel(MailboxConnectionState::new());
+    fn new(
+        client: Arc<dyn MailboxClient<Item>>,
+        config: MailboxesConfig,
+        initial_status: SyncStatus,
+    ) -> Self {
+        let (connection_state, _) =
+            watch::channel(MailboxConnectionState::seeded(initial_status, &config));
         Self {
             client: Mutex::new(client),
             connection_state,
@@ -385,6 +424,25 @@ where
             }
         }
 
+        // Seed a fresh registration from the last session's judged status so a
+        // mailbox that was backed off before a restart (or an iOS node rebuild)
+        // doesn't restart aggressive polling; its immediate first poll re-judges
+        // it. Read before taking the mailboxes lock (no DB I/O under it), and
+        // only when not already tracked (re-registration keeps its live state).
+        // If a concurrent unregister lands in between, the fallback to Active
+        // matches pre-seeding behavior and the first poll corrects it.
+        let seeded_status = if self.is_tracked(&id).await {
+            SyncStatus::Active
+        } else {
+            match self.sync_tracker.get_status(&id).await {
+                Ok(status) => status.unwrap_or(SyncStatus::Active),
+                Err(err) => {
+                    tracing::error!(?err, mailbox = %id, "failed to load persisted mailbox status");
+                    SyncStatus::Active
+                }
+            }
+        };
+
         let mut mailboxes = self.mailboxes.lock().await;
         if let Some(tm) = mailboxes.get(&id).cloned() {
             drop(mailboxes);
@@ -392,13 +450,20 @@ where
             // new URL): swap the client in place and reset any Stopped/Degraded
             // backoff. Keeping the existing TrackedMailbox preserves its
             // connection_state watch::Sender so UI subscribers stay attached.
+            // The wakeup's Active is persisted like any other transition:
+            // registration is reachability evidence, and the immediate poll
+            // re-judges it either way.
             tm.replace_client(new_client).await;
-            tm.wakeup();
+            self.persist_status_change(&id, &tm, |tm| tm.wakeup()).await;
             self.nudge_poll_loop();
         } else {
             mailboxes.insert(
                 id.clone(),
-                Arc::new(TrackedMailbox::new(new_client, self.config.clone())),
+                Arc::new(TrackedMailbox::new(
+                    new_client,
+                    self.config.clone(),
+                    seeded_status,
+                )),
             );
             drop(mailboxes);
             self.publish_active_ids().await;
@@ -411,6 +476,14 @@ where
         let mut mailboxes = self.mailboxes.lock().await;
         if mailboxes.remove(id).is_some() {
             drop(mailboxes);
+            // An unregistered mailbox only comes back with fresh evidence (an
+            // mDNS re-announcement), so it earns a fresh Active start with the
+            // full backoff runway instead of a status seeded from history —
+            // otherwise a flaky hub would churn through register, one failed
+            // poll, unregister on every re-browse.
+            if let Err(err) = self.sync_tracker.clear_status(id).await {
+                tracing::error!(?err, mailbox = %id, "failed to clear mailbox status");
+            }
             self.publish_active_ids().await;
             true
         } else {
@@ -426,7 +499,10 @@ where
     /// Unregister `id` once it reaches Stopped. For mailboxes whose registration
     /// only proves they were reachable at the time (LAN hubs found over mDNS),
     /// Stopped is as good a sign they are gone as their announcement lapsing.
-    /// The task ends when the mailbox is unregistered by any route.
+    /// The initial state is ignored: it may be seeded Stopped from a previous
+    /// session's history, and only a poll observed after arming gets to confirm
+    /// the mailbox is really gone. The task ends when the mailbox is
+    /// unregistered by any route.
     pub async fn unregister_on_stopped(&self, id: &MailboxId) {
         let Some(tracked_mailbox) = self.tracked_mailbox(id).await else {
             return;
@@ -437,12 +513,12 @@ where
         let id = id.clone();
         tokio::spawn(async move {
             loop {
+                if state.changed().await.is_err() {
+                    return;
+                }
                 if state.borrow_and_update().status == SyncStatus::Stopped {
                     tracing::info!(mailbox = %id, "mailbox stopped, unregistering");
                     manager.unregister(&id).await;
-                    return;
-                }
-                if state.changed().await.is_err() {
                     return;
                 }
             }
@@ -479,9 +555,30 @@ where
     /// Use when there is evidence the mailbox is reachable; otherwise [`Self::probe`].
     pub async fn wakeup(&self, id: MailboxId) {
         if let Some(tracked_mailbox) = self.tracked_mailbox(&id).await {
-            tracked_mailbox.wakeup();
+            self.persist_status_change(&id, &tracked_mailbox, |tm| tm.wakeup())
+                .await;
         }
         self.nudge_poll_loop();
+    }
+
+    /// Apply `transition` to the mailbox's connection state and persist the
+    /// status if it moved, so a future registration seeds from the last
+    /// judged status.
+    async fn persist_status_change(
+        &self,
+        id: &MailboxId,
+        tracked_mailbox: &TrackedMailbox<Item>,
+        transition: impl FnOnce(&TrackedMailbox<Item>),
+    ) {
+        let status_before = tracked_mailbox.connection_state.borrow().status;
+        transition(tracked_mailbox);
+        let status_after = tracked_mailbox.connection_state.borrow().status;
+        if status_after == status_before {
+            return;
+        }
+        if let Err(err) = self.sync_tracker.record_status(id, status_after).await {
+            tracing::error!(?err, mailbox = %id, "failed to record mailbox status");
+        }
     }
 
     /// Immediately sync a specific mailbox without touching its status or
@@ -723,21 +820,23 @@ where
         let id = id.clone();
         let task = tokio::spawn(async move {
             let result = manager.sync_topics(topics.into_iter(), &client).await;
-            match result {
-                Ok(()) => tracked_mailbox.record_success(),
-                Err(err) => {
-                    tracing::error!(?err, mailbox = %id, "mailbox sync error");
-                    tracked_mailbox.poll_failed(format!("{err:?}"), probe);
-                    let tracker = tracked_mailbox.connection_state();
-                    let tracker = tracker.borrow();
-                    tracing::info!(
-                        mailbox = %id,
-                        status = ?tracker.status,
-                        errors = tracker.consecutive_errors,
-                        "mailbox status updated"
-                    );
-                }
-            }
+            manager
+                .persist_status_change(&id, &tracked_mailbox, |tracked_mailbox| match result {
+                    Ok(()) => tracked_mailbox.record_success(),
+                    Err(err) => {
+                        tracing::error!(?err, mailbox = %id, "mailbox sync error");
+                        tracked_mailbox.poll_failed(format!("{err:?}"), probe);
+                        let tracker = tracked_mailbox.connection_state();
+                        let tracker = tracker.borrow();
+                        tracing::info!(
+                            mailbox = %id,
+                            status = ?tracker.status,
+                            errors = tracker.consecutive_errors,
+                            "mailbox status updated"
+                        );
+                    }
+                })
+                .await;
             guard.complete();
         });
         Some(task)
@@ -1646,8 +1745,11 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn sync_requested_during_a_poll_survives_it() {
         let config = test_config();
-        let tracked =
-            TrackedMailbox::new(Arc::new(MemMailbox::<Msg>::new().client()), config.clone());
+        let tracked = TrackedMailbox::new(
+            Arc::new(MemMailbox::<Msg>::new().client()),
+            config.clone(),
+            SyncStatus::Active,
+        );
         let due_at = || tracked.due_at(Instant::now());
         let interval = config.active_interval + config.between_polls_delay;
 
@@ -1762,8 +1864,11 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn failed_probe_counts_only_while_active() {
         let config = test_config();
-        let tracked =
-            TrackedMailbox::new(Arc::new(MemMailbox::<Msg>::new().client()), config.clone());
+        let tracked = TrackedMailbox::new(
+            Arc::new(MemMailbox::<Msg>::new().client()),
+            config.clone(),
+            SyncStatus::Active,
+        );
 
         for _ in 0..config.degraded_threshold {
             tracked.poll_failed("flap".into(), true);
@@ -2002,6 +2107,170 @@ mod tests {
         tokio::time::sleep(config.degraded_interval * 4).await;
         assert!(!mgr.is_tracked(&id).await);
         assert_eq!(poll_count.load(Ordering::Relaxed), config.stopped_threshold);
+    }
+
+    // -- persisted status seeding tests --
+
+    #[tokio::test(start_paused = true)]
+    async fn register_seeds_status_from_persisted_history() {
+        let config = test_config();
+        let mgr = test_mailboxes(config.clone());
+
+        let (client, _polls) = TrackingClient::new(true);
+        let id = client.id.clone();
+        mgr.sync_tracker()
+            .record_status(&id, SyncStatus::Stopped)
+            .await
+            .unwrap();
+
+        mgr.register(client).await;
+
+        {
+            let mm = mgr.mailboxes.lock().await;
+            let state = mm.get(&id).unwrap().connection_state();
+            let state = state.borrow();
+            assert_eq!(state.status, SyncStatus::Stopped);
+            assert_eq!(state.consecutive_errors, config.stopped_threshold);
+        }
+
+        // Registration is fresh evidence, so the first poll is still due now.
+        let NextDue { wait, .. } = mgr.find_next_due().await.unwrap();
+        assert_eq!(wait, Duration::ZERO);
+    }
+
+    /// A mailbox seeded Stopped from history goes back to its stopped interval
+    /// after one failed poll instead of climbing down from Active again.
+    #[tokio::test(start_paused = true)]
+    async fn seeded_stopped_mailbox_backs_off_after_one_failed_poll() {
+        let config = test_config();
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (client, poll_count) = TrackingClient::new(true);
+        let id = client.id.clone();
+        mgr.sync_tracker()
+            .record_status(&id, SyncStatus::Stopped)
+            .await
+            .unwrap();
+        mgr.register(client).await;
+
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(poll_count.load(Ordering::Relaxed), 1);
+
+        // Well past the active and degraded intervals: still no re-poll.
+        tokio::time::sleep(config.degraded_interval * 2).await;
+        assert_eq!(poll_count.load(Ordering::Relaxed), 1);
+
+        tokio::time::sleep(config.stopped_interval).await;
+        assert!(poll_count.load(Ordering::Relaxed) >= 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn seeded_stopped_mailbox_recovers_on_first_successful_poll() {
+        let config = test_config();
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (client, poll_count) = TrackingClient::new(false);
+        let id = client.id.clone();
+        mgr.sync_tracker()
+            .record_status(&id, SyncStatus::Stopped)
+            .await
+            .unwrap();
+        mgr.register(client).await;
+
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(poll_count.load(Ordering::Relaxed), 1);
+        {
+            let mm = mgr.mailboxes.lock().await;
+            let state = mm.get(&id).unwrap().connection_state();
+            let state = state.borrow();
+            assert_eq!(state.status, SyncStatus::Active);
+            assert_eq!(state.consecutive_errors, 0);
+        }
+        // The recovery is persisted, so the next registration seeds Active.
+        assert_eq!(
+            mgr.sync_tracker().get_status(&id).await.unwrap(),
+            Some(SyncStatus::Active)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn poll_failures_persist_status_transitions() {
+        let config = test_config();
+        let mgr = spawn_test_mailboxes(config.clone()).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        let (client, _polls) = FailingClient::new();
+        let id = client.id.clone();
+        mgr.register(client).await;
+
+        tokio::time::sleep(config.stopped_interval).await;
+        assert_eq!(
+            mgr.sync_tracker().get_status(&id).await.unwrap(),
+            Some(SyncStatus::Stopped)
+        );
+    }
+
+    /// Unregistering forgets the persisted status: a re-discovered hub earns a
+    /// fresh Active start with the full backoff runway.
+    #[tokio::test(start_paused = true)]
+    async fn unregister_forgets_persisted_status() {
+        let config = test_config();
+        let mgr = test_mailboxes(config.clone());
+
+        let mb = MemMailbox::<Msg>::new();
+        let id = mb.client().id();
+        mgr.sync_tracker()
+            .record_status(&id, SyncStatus::Stopped)
+            .await
+            .unwrap();
+        mgr.register(mb.client()).await;
+        assert!(mgr.unregister(&id).await);
+        assert_eq!(mgr.sync_tracker().get_status(&id).await.unwrap(), None);
+
+        mgr.register(mb.client()).await;
+        let mm = mgr.mailboxes.lock().await;
+        let state = mm.get(&id).unwrap().connection_state();
+        let state = state.borrow();
+        assert_eq!(state.status, SyncStatus::Active);
+        assert_eq!(state.consecutive_errors, 0);
+    }
+
+    /// A status seeded Stopped from history must not unregister the mailbox
+    /// before a poll observed after arming confirms it.
+    #[tokio::test(start_paused = true)]
+    async fn unregister_on_stopped_waits_for_a_poll_to_confirm_seeded_status() {
+        let config = test_config();
+        let mgr = test_mailboxes(config.clone());
+
+        let mb = MemMailbox::<Msg>::new();
+        let id = mb.client().id();
+        mgr.sync_tracker()
+            .record_status(&id, SyncStatus::Stopped)
+            .await
+            .unwrap();
+        mgr.register(mb.client()).await;
+        mgr.unregister_on_stopped(&id).await;
+
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(mgr.is_tracked(&id).await);
+
+        // A failed poll confirms the mailbox really is gone.
+        mgr.tracked_mailbox(&id)
+            .await
+            .unwrap()
+            .record_error("x".into());
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!mgr.is_tracked(&id).await);
     }
 
     // -- Fairness test with full spawn loop --
@@ -2445,8 +2714,11 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn topic_requested_during_a_poll_survives_it() {
         let config = test_config();
-        let tracked =
-            TrackedMailbox::new(Arc::new(MemMailbox::<Msg>::new().client()), config.clone());
+        let tracked = TrackedMailbox::new(
+            Arc::new(MemMailbox::<Msg>::new().client()),
+            config.clone(),
+            SyncStatus::Active,
+        );
 
         tracked.request_sync_if_active(Some(1u8));
         assert_eq!(tracked.take_pending_request(), poll_topics([1]));
