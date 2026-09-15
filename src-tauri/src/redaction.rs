@@ -39,6 +39,11 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""data"\s*:\s*\[[\d,\s]*\]"#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
+        // Debug format: NotificationData fields carrying user content — title
+        // (sender or group name), body/large_body/summary (message text), and
+        // conversation_title (group name). The NSE logs the built notification,
+        // so these reach a report attachment and must be stripped.
+        r#"\b(title|body|large_body|summary|conversation_title):\s*(Some\()?"[^"]*"(\))?"#,
         // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
         r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
         // JSON format: "profile_name":"..." — contact request QR placeholder.
@@ -50,6 +55,8 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""message"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
         r#""emoji"\s*:\s*"[^"]*""#,
+        // JSON format: notification title/body/summary/conversation_title.
+        r#""(title|body|large_body|summary|conversation_title)"\s*:\s*"[^"]*""#,
         // OS username inside filesystem paths. The whole `/home/<user>` (or
         // `/Users/<user>` / `\Users\<user>`) prefix is collapsed to [REDACTED];
         // the rest of the path is preserved so logs stay readable.
@@ -351,6 +358,51 @@ mod tests {
     fn redacts_reaction_json() {
         let input = r#""emoji":"👍""#;
         assert_eq!(redact(input), "[REDACTED]");
+    }
+
+    #[test]
+    fn redacts_notification_data_debug() {
+        // The shape the NSE logs when showing a built notification: sender name
+        // in `title`, message text in `body`, group name in `conversation_title`.
+        let input = r#"NotificationData { id: 1, title: Some("Macky"), body: Some("lalala"), large_body: None, summary: None, conversation_style: Some(ConversationStyle { sender_id: Some("abc"), conversation_title: Some("Family Chat") }) }"#;
+        let result = redact(input);
+        assert!(!result.contains("Macky"), "title (name) leaked: {result}");
+        assert!(
+            !result.contains("lalala"),
+            "body (message) leaked: {result}"
+        );
+        assert!(
+            !result.contains("Family Chat"),
+            "conversation_title leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_notification_data_json() {
+        let input = r#"{"title":"Macky","body":"lalala","large_body":"long text","summary":"2 messages","conversation_title":"Family Chat"}"#;
+        let result = redact(input);
+        assert!(!result.contains("Macky"), "title leaked: {result}");
+        assert!(!result.contains("lalala"), "body leaked: {result}");
+        assert!(!result.contains("long text"), "large_body leaked: {result}");
+        assert!(!result.contains("2 messages"), "summary leaked: {result}");
+        assert!(
+            !result.contains("Family Chat"),
+            "conversation_title leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn preserves_large_body_field_name_boundary() {
+        // `\b` must not let the `body` alternative match inside `large_body`;
+        // `large_body` is covered by its own alternative, but a bare
+        // `large_body: None` (no quoted value) must be left untouched.
+        let input = r#"large_body: None, body: Some("hi")"#;
+        let result = redact(input);
+        assert!(
+            result.contains("large_body: None"),
+            "over-redacted: {result}"
+        );
+        assert!(!result.contains("hi"), "body not redacted: {result}");
     }
 
     #[test]
