@@ -3,15 +3,7 @@
  *  and they are skipped. Each ends by asserting what the connection chips
  *  show, so a sequence fails at the exact move peer or hub discovery did
  *  not survive. */
-import {
-	type Real,
-	type StressAgent,
-	at,
-	byName,
-	goHome,
-	log,
-	networkNamed,
-} from '../agents';
+import { type Real, at, byName, goHome, log, networkNamed } from '../agents';
 import { chipChat, expectHubs, openChat } from '../checks';
 import type { ExpectedModel } from '../model';
 import { Move, type Moves } from './move';
@@ -81,27 +73,6 @@ class PeerLeaveMove extends Move {
 	}
 }
 
-/** How long a phone may sit without an automation command before the device
- *  idles its UiAutomator2 / WebDriver session out from under us. */
-const SESSION_IDLE_LIMIT_MS = 20_000;
-
-/** Pause `ms` while touching each phone's session within
- *  [`SESSION_IDLE_LIMIT_MS`]: a bare `pause` sends no command, so a long
- *  sit-still lets the session go stale and the next move finds it gone. */
-async function idle(
-	real: Real,
-	agents: StressAgent[],
-	ms: number,
-): Promise<void> {
-	const until = Date.now() + ms;
-	while (Date.now() < until) {
-		await real.agents[0].agent.pause(
-			Math.min(SESSION_IDLE_LIMIT_MS, until - Date.now()),
-		);
-		for (const sa of agents) await sa.agent.execute(() => true);
-	}
-}
-
 /** How long a hub's mDNS records live in a phone's cache: a sit-still past
  *  it is what shows whether the app keeps them refreshed. */
 export const MDNS_RECORD_TTL_S = 120;
@@ -121,7 +92,7 @@ class SleepMove extends Move {
 		log(this.toString());
 		const watching = m.activeNames().map(name => byName(real, name));
 		for (const sa of watching) await openChat(sa, chipChat(m, sa.name), m);
-		await idle(real, watching, this.seconds * 1_000);
+		await real.agents[0].agent.pause(this.seconds * 1_000);
 		for (const sa of watching) {
 			await expectHubs(m, sa, `sleeping ${this.seconds}s`);
 			await goHome(sa, sa.agent.groupChatPage);
