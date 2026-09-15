@@ -33,7 +33,7 @@ it('...', async () => {
 
 ### Reading a failure
 
-The run logs `[fuzz HH:MM:SS.mmm] seed N` at the start and one line per move (`Alice: sendText(3,1) in Bob`). A failure throws fast-check's report plus:
+The run logs `HH:MM:SS.mmm [fuzz] seed N` at the start and one line per move (`Alice: sendText(3,1) in Bob`). A failure throws fast-check's report plus:
 
 ```
 Seed: 1234567
