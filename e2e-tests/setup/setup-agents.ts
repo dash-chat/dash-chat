@@ -486,9 +486,15 @@ async function tapPoint(
 			const live = await refetch(element);
 			if (live === null) return null;
 			const point = await agent.execute((el: HTMLElement) => {
-				const rect = el.getBoundingClientRect();
-				const x = rect.x + rect.width / 2;
-				const y = rect.y + rect.height / 2;
+				let rect = el.getBoundingClientRect();
+				let x = rect.x + rect.width / 2;
+				let y = rect.y + rect.height / 2;
+				if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
+					el.scrollIntoView({ block: 'center', inline: 'center' });
+					rect = el.getBoundingClientRect();
+					x = rect.x + rect.width / 2;
+					y = rect.y + rect.height / 2;
+				}
 				const topmost = document.elementFromPoint(x, y);
 				return topmost !== null && (topmost === el || el.contains(topmost))
 					? { x, y }
@@ -582,6 +588,29 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 	);
 }
 
+/** Tap web elements with a touch action instead of chromedriver's click, which
+ *  spends about ten devtools round trips over USB (~800ms on a phone) where the
+ *  action needs two. */
+function tapWebElementsWithTouch(agent: WebdriverIO.Browser): void {
+	agent.overwriteCommand(
+		'click',
+		async function (this: WebdriverIO.Element, origClick) {
+			const context = await agent.getContext();
+			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+				return await origClick();
+			}
+			const { x, y } = await tapPoint(agent, this);
+			await agent
+				.action('pointer', { parameters: { pointerType: 'touch' } })
+				.move({ x: Math.round(x), y: Math.round(y) })
+				.down()
+				.up()
+				.perform();
+		},
+		true,
+	);
+}
+
 /** Build an agent by capability name and wait for window.__test to be ready.
  *  Defaults to narrow (mobile) layout so back buttons and FABs render — review
  *  checks switch to wide explicitly when they need the desktop two-panel UI. */
@@ -599,6 +628,8 @@ async function setupAgent(
 		// Before makeAgent: it resolves every page object's element, and an
 		// element built before the overwrite keeps the original click.
 		tapWebElementsAtTheirRect(b);
+	} else if (platform !== 'desktop') {
+		tapWebElementsWithTouch(b);
 	}
 	const agent = makeAgent(b, slot);
 	agent.platform = platform;
