@@ -23,8 +23,13 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // unbroken chars. Anchored on the label so it can't over-match other
         // long url-safe tokens.
         r"\bmailbox[ =:]+[A-Za-z0-9_\-]{20,}",
-        // Device / app-group container UUIDs embedded in filesystem paths.
-        r"\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b",
+        // Device / app-group container UUID, which only appears as a path
+        // segment (`<app_root>/<UUID>/0.13`). Anchored on the trailing `/`
+        // (the regex crate has no lookahead, so the slash is consumed) so it
+        // can't match bare UUID leaves such as Sentry's `debug_id` — redacting
+        // those makes the event fail to deserialize back into a DebugId and the
+        // whole report is dropped as unredactable.
+        r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/",
         // DeviceId and AgentId wrappers (must precede bare VerifyingKey/Hash patterns)
         r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
         // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...])
@@ -552,5 +557,14 @@ mod tests {
             !result.contains("1A2B3C4D-F4CD-4E51-B851-69CF2F22D0AA"),
             "uuid leaked: {result}"
         );
+    }
+
+    #[test]
+    fn preserves_bare_uuid_debug_id() {
+        // Sentry's `debug_id` is a bare UUID leaf that must stay parseable when
+        // the event is re-serialized; the container-UUID rule must only fire in
+        // path context, never on a standalone UUID.
+        let input = "84a04d24-0e60-3810-a8c0-90d5b4f8e4a3";
+        assert_eq!(redact(input), input);
     }
 }
