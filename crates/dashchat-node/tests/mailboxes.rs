@@ -241,3 +241,75 @@ async fn test_multiple_mailboxes_group_pivot() {
 
     todo!("this test is only really meaningful when we have groups");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
+    dashchat_node::testing::setup_tracing(
+        &[
+            "dashchat=info",
+            "mailbox_server=info",
+            "p2panda_stream=warn",
+            "p2panda_auth=warn",
+            "p2panda_spaces=warn",
+            "aliased=warn",
+        ],
+        true,
+    );
+
+    let mut config = NodeConfig::testing();
+    config.mailboxes_config.active_interval = Duration::from_secs(60);
+
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config, "alice").await;
+    let chat = alice
+        .create_group(std::collections::BTreeMap::new())
+        .await
+        .unwrap();
+
+    alice.add_mailbox(&mailbox).await;
+    let mailbox_id = alice
+        .mailboxes
+        .active_mailbox_ids()
+        .borrow()
+        .iter()
+        .next()
+        .cloned()
+        .unwrap();
+    let tracked = alice.mailboxes.tracked_mailbox(&mailbox_id).await.unwrap();
+    PollConfig::default()
+        .wait_for(|| async {
+            tracked
+                .connection_state()
+                .borrow()
+                .last_success_at
+                .is_some()
+                .then_some(())
+                .ok_or("registration poll hasn't completed")
+        })
+        .await
+        .unwrap();
+
+    let synced_before_send = alice
+        .mailboxes
+        .sync_tracker()
+        .get_synced(&mailbox_id, &chat, &alice.device_id())
+        .await
+        .unwrap();
+
+    alice.send_message_raw(chat, "Hello".into()).await.unwrap();
+
+    PollConfig::seconds(5)
+        .wait_for(|| async {
+            let synced = alice
+                .mailboxes
+                .sync_tracker()
+                .get_synced(&mailbox_id, &chat, &alice.device_id())
+                .await
+                .unwrap();
+            (synced > synced_before_send)
+                .then_some(())
+                .ok_or(format!("mailbox still at {synced:?}"))
+        })
+        .await
+        .unwrap();
+}
