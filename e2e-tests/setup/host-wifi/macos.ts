@@ -79,7 +79,7 @@ function visibleNetworks(device: string): string[] | null {
 	return ssids.includes('<redacted>') ? null : ssids;
 }
 
-function leaveWifi(ssid: string): void {
+async function leaveWifi(ssid: string): Promise<void> {
 	const device = wifiDevice();
 	if (device === null) return;
 	if (joinedNetworks.delete(ssid)) {
@@ -87,7 +87,12 @@ function leaveWifi(ssid: string): void {
 	}
 	networksetup('-setairportpower', device, 'off');
 	networksetup('-setairportpower', device, 'on');
-	console.log(`[wifi] ${device} left ${ssid}`);
+	const home = await waitForAddress(
+		() => address(device),
+		() => {},
+		`${device} never got back on a network after leaving "${ssid}"`,
+	);
+	console.log(`[wifi] ${device} left ${ssid}, back at ${home}`);
 }
 
 export const macos: HostWifi = {
@@ -114,7 +119,7 @@ export const macos: HostWifi = {
 		}
 		const joined = await waitForAddress(
 			() => address(device),
-			() => leaveWifi(ssid),
+			() => void leaveWifi(ssid),
 			`joined "${ssid}" but ${device} never got an address`,
 		);
 		console.log(`[wifi] ${device} joined ${ssid} at ${joined}`);

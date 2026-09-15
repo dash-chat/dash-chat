@@ -208,7 +208,7 @@ describe('Local hub discovery', function () {
 			await joinWifi(device, network.ssid, network.passphrase);
 			await expectLocal("the hub's host joined the phone's LAN");
 		} finally {
-			leaveWifi(network.ssid);
+			await leaveWifi(network.ssid);
 			await agent.forgetWifi(network.ssid);
 		}
 	});

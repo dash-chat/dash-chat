@@ -9,8 +9,9 @@ export interface HostWifi {
 	/** Join `ssid` on `device` and resolve with the IPv4 address obtained on
 	 *  it. */
 	joinWifi(device: string, ssid: string, passphrase: string): Promise<string>;
-	/** Leave `ssid`; the card goes back to its usual network. */
-	leaveWifi(ssid: string): void;
+	/** Leave `ssid` and resolve once the card is back on its usual network,
+	 *  with an address — where every hub is again from then on. */
+	leaveWifi(ssid: string): Promise<void>;
 }
 
 /** Poll `read` every 500ms until it answers an address, for up to 20s; past

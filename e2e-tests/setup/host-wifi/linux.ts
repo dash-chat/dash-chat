@@ -8,9 +8,15 @@ function nmcli(...args: string[]): string {
 	return execFileSync('nmcli', args, { encoding: 'utf8' });
 }
 
+function address(device: string): string {
+	return nmcli('-g', 'IP4.ADDRESS', 'device', 'show', device)
+		.trim()
+		.split('/')[0];
+}
+
 /** Drops the profile the join created as well, so the card cannot pick
  *  the network again. */
-function leaveWifi(ssid: string): void {
+async function leaveWifi(ssid: string): Promise<void> {
 	for (const action of ['down', 'delete']) {
 		try {
 			execFileSync('nmcli', ['connection', action, ssid], {
@@ -20,16 +26,25 @@ function leaveWifi(ssid: string): void {
 			/* not joined, or already gone */
 		}
 	}
+	const device = wifiDevice();
+	if (device === null) return;
+	await waitForAddress(
+		() => address(device),
+		() => {},
+		`${device} never got back on a network after leaving "${ssid}"`,
+	);
+}
+
+function wifiDevice(): string | null {
+	const found = nmcli('-t', '-f', 'DEVICE,TYPE', 'device')
+		.split('\n')
+		.map(line => line.split(':'))
+		.find(([, type]) => type === 'wifi');
+	return found === undefined ? null : found[0];
 }
 
 export const linux: HostWifi = {
-	wifiDevice() {
-		const found = nmcli('-t', '-f', 'DEVICE,TYPE', 'device')
-			.split('\n')
-			.map(line => line.split(':'))
-			.find(([, type]) => type === 'wifi');
-		return found === undefined ? null : found[0];
-	},
+	wifiDevice,
 
 	visibleNetworks(device) {
 		const ssids = nmcli(
@@ -74,20 +89,17 @@ export const linux: HostWifi = {
 						`could not join "${ssid}" on ${device}: ${String(err)}`,
 					);
 				}
-				leaveWifi(ssid);
+				await leaveWifi(ssid);
 				await new Promise(resolve => setTimeout(resolve, 3_000));
 			}
 		}
-		const address = await waitForAddress(
-			() =>
-				nmcli('-g', 'IP4.ADDRESS', 'device', 'show', device)
-					.trim()
-					.split('/')[0],
-			() => leaveWifi(ssid),
+		const joined = await waitForAddress(
+			() => address(device),
+			() => void leaveWifi(ssid),
 			`joined "${ssid}" but ${device} never got an address`,
 		);
-		console.log(`[wifi] ${device} joined ${ssid} at ${address}`);
-		return address;
+		console.log(`[wifi] ${device} joined ${ssid} at ${joined}`);
+		return joined;
 	},
 
 	leaveWifi,
