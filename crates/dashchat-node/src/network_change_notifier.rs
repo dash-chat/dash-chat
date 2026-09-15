@@ -3,8 +3,11 @@
 //!
 //! The mailbox manager backs off to slow polling (up to `stopped_interval`)
 //! while offline, so without a nudge a restored connection waits out the full
-//! backoff before the next sync. `wakeup_all()` resets every mailbox to an
-//! immediate poll, making reconnection feel instant on all platforms.
+//! backoff before the next sync. `probe_all()` polls every mailbox now,
+//! making reconnection feel instant on all platforms. It is a probe rather
+//! than a wakeup because an interface change says nothing about which
+//! mailboxes are reachable: a hub left behind on the old network stays Stopped
+//! unless the poll proves otherwise.
 //!
 //! iroh cannot detect network changes by itself on Android — its native network
 //! monitor has no working backend there (see [`iroh::Endpoint::network_change`]).
@@ -39,8 +42,8 @@ pub(crate) fn spawn(
                     return;
                 }
             }
-            tracing::info!("network-change notifier: waking mailbox sync");
-            mailboxes.wakeup_all().await;
+            tracing::info!("network-change notifier: probing mailboxes");
+            mailboxes.probe_all().await;
             notify_iroh(&endpoint).await;
         }
     })

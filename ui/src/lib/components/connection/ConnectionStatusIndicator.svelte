@@ -7,6 +7,7 @@
 	import { connectionChipStatus } from './connection-chip';
 	import { mdiEmoticonPoop } from '@mdi/js';
 	import { Chip, Dialog, DialogButton } from 'konsta/svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
@@ -86,29 +87,33 @@
 			</div>
 		{/snippet}
 
-		<Dialog
-			data-testid="connection-status-dialog"
-			opened={dialogOpened}
-			onBackdropClick={() => (dialogOpened = false)}
-			title={asTitle(titleSlot)}
-		>
-			<span data-testid="connection-status-dialog-description">
-				{#if isLocal}
-					{m.connectionStatusLocalDescription({ count: localCount })}
-				{:else}
-					{m.connectionStatusDisconnectedDescription()}
-				{/if}
-			</span>
-
-			{#snippet buttons()}
-				<DialogButton
-					data-testid="connection-status-dialog-close"
-					onClick={() => (dialogOpened = false)}
+		<Modal bind:opened={dialogOpened}>
+			{#snippet children(modal)}
+				<Dialog
+					data-testid="connection-status-dialog"
+					opened={modal.opened}
+					onBackdropClick={modal.close}
+					title={asTitle(titleSlot)}
 				>
-					{m.close()}
-				</DialogButton>
+					<span data-testid="connection-status-dialog-description">
+						{#if isLocal}
+							{m.connectionStatusLocalDescription({ count: localCount })}
+						{:else}
+							{m.connectionStatusDisconnectedDescription()}
+						{/if}
+					</span>
+
+					{#snippet buttons()}
+						<DialogButton
+							data-testid="connection-status-dialog-close"
+							onClick={modal.close}
+						>
+							{m.close()}
+						</DialogButton>
+					{/snippet}
+				</Dialog>
 			{/snippet}
-		</Dialog>
+		</Modal>
 	{/if}
 {/await}
 

@@ -40,14 +40,14 @@ export interface HubReal {
 export interface Real {
 	agents: StressAgent[];
 	/** The configured networks, in the order moves index them, the host's
-	 * own home network last when its card is on one. */
+	 * own one marked as home. */
 	networks: WifiNetwork[];
 	/** The host's Wi-Fi card, null when it has none or no network is
 	 * configured. */
 	hubsDevice: string | null;
-	/** The SSID the card is on, null while off. Where every hub is today: a
-	 * later slice with a card (or a machine) per hub replaces this with a
-	 * location on `HubReal`. */
+	/** The lab SSID the card is on, null while it is on its usual network.
+	 * Where every hub is today: a later slice with a card (or a machine) per
+	 * hub replaces this with a location on `HubReal`. */
 	hubsNetwork: string | null;
 	hubs: HubReal[];
 	/** The link every agent reaches the cloud mailbox through, when the run

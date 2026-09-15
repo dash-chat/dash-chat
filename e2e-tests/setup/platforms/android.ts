@@ -1,5 +1,11 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -405,6 +411,9 @@ const SCREEN_OFF_TIMEOUT_MS = 30 * 60 * 1000;
  * silently never engages. */
 function keepScreenAwake(udid: string): void {
 	try {
+		// Sessions skip Appium's unlock, so a simple lock screen is cleared
+		// once here; with the screen held on it does not come back.
+		execSync(`adb -s ${udid} shell wm dismiss-keyguard`, { env: androidEnv });
 		execSync(`adb -s ${udid} shell svc power stayon true`, { env: androidEnv });
 		// `stayon` alone has been observed not to engage even once set, so raise
 		// the timeout too rather than trust one of them. Both are persistent
@@ -569,8 +578,15 @@ export async function forgetAndroidWifi(
 	);
 }
 
-export function disableAndroidWifi(udid: string): void {
+/** Turn Wi-Fi off and resolve once the device holds no Wi-Fi address: the
+ *  radio takes a moment to drop after the command returns, and a peer that
+ *  sends in that moment still gets through. */
+export async function disableAndroidWifi(udid: string): Promise<void> {
 	adbShell(udid, 'svc wifi disable');
+	await waitForWifi(
+		() => (androidWifiAddress(udid) === '' ? 'off' : ''),
+		`device still held a wifi address ${WIFI_REASSOCIATE_MS / 1_000}s after disabling`,
+	);
 }
 
 /** Turn Wi-Fi on and resolve with the IPv4 address the device came back on. */
@@ -629,6 +645,13 @@ export class AndroidPlatform implements AgentPlatform {
 				'appium:appPackage': APP_PACKAGE,
 				'appium:appActivity': '.MainActivity',
 				'appium:autoGrantPermissions': true,
+				// onPrepare clears the keyguard and keeps the screen on, the harness
+				// tails logcat itself, and a dedicated test device needs none of the
+				// per-session readiness checks.
+				'appium:skipUnlock': true,
+				'appium:skipDeviceInitialization': true,
+				'appium:skipLogcatCapture': true,
+				'appium:disableWindowAnimation': true,
 				'appium:autoWebview': true,
 				'appium:autoWebviewTimeout': 30_000,
 				'appium:systemPort': allocatePinnedPort(`_WDIO_SYSTEM_PORT${slot}`),
@@ -682,6 +705,11 @@ export class AndroidPlatform implements AgentPlatform {
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
 			E2E_ANDROID_TARGETS: [...targets].join(' '),
 		};
+		// Gradle packages incrementally, patching the previous APK in place and
+		// leaving holes where replaced entries were: an e2e APK built over a dev
+		// build measured 853MB for 129MB of content. With no APK to patch it
+		// packages from scratch (a cache hit restores the clean one).
+		rmSync(APK_DIR, { recursive: true, force: true });
 		runTurboBuild(
 			'e2e:build:android',
 			envWithoutWdioLoader(bakedEnv, androidEnv),

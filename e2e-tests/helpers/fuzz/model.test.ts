@@ -27,7 +27,8 @@ function lans(networks: string[], ...names: string[]): ExpectedModel {
 	);
 }
 
-/** `networks` plus the home LAN every running hub is on. */
+/** `networks` plus the home LAN the hubs are on while the card is on none
+ *  of them. */
 function lansWithHome(networks: string[], ...names: string[]): ExpectedModel {
 	return new ExpectedModel(
 		names.map(name => ({ name, mobile: true })),
@@ -220,7 +221,7 @@ test('propagateShared unions everyone as one LAN, whatever the topology', () => 
 	assert.equal(m.view(B, chat).pending, false);
 });
 
-test('running hubs are on the home network wherever the card is', () => {
+test('running hubs follow the card, at home while it is on no lab LAN', () => {
 	const m = lansWithHome([N1], A, B);
 	const hub = m.createHub();
 	m.agentJoin(A, HOME);
@@ -230,7 +231,7 @@ test('running hubs are on the home network wherever the card is', () => {
 	assert.equal(m.expectedHubs(A), 1);
 	assert.equal(m.expectedHubs(B), 0);
 	m.hubJoin(hub.name, N1);
-	assert.equal(m.expectedHubs(A), 1);
+	assert.equal(m.expectedHubs(A), 0);
 	assert.equal(m.expectedHubs(B), 1);
 	m.hubLeave(hub.name);
 	assert.equal(m.expectedHubs(A), 1);
@@ -247,17 +248,19 @@ test('the home network is not one the hubs can be moved onto', () => {
 	assert.equal(lans([N1], A).homeNetwork(), null);
 });
 
-test('a running hub relays between its LAN and the home network', () => {
+test('a running hub carries what it learnt at home onto the LAN it moves to', () => {
 	const m = lansWithHome([N1], A, B);
 	contacts(m, A, B);
 	m.propagate();
 	const hub = m.createHub();
-	m.hubJoin(hub.name, N1);
 	m.startHub(hub.name);
 	m.agentJoin(A, HOME);
 	m.agentJoin(B, N1);
 	const chat = m.directChat(A, B);
 	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.equal(m.knows(B).has('message:sm-1'), false);
+	m.hubJoin(hub.name, N1);
 	const growth = m.propagate();
 	assert.deepEqual([...(growth.get(B) ?? [])], [chat]);
 	assert.equal(m.knows(B).has('message:sm-1'), true);

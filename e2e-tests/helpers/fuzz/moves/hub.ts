@@ -39,16 +39,15 @@ class CreateHubMove extends Move {
 	}
 }
 
-/** Every driveable phone on a LAN the hubs are on checks its chip: the
- *  one the card is on, if any, and the home network, if there is one. */
+/** Every driveable phone on the LAN the hubs are on checks its chip: the
+ *  one the card is on, or the home network while it is on none. */
 async function checkHubsLan(
 	m: ExpectedModel,
 	real: Real,
 	after: string,
 ): Promise<void> {
-	for (const network of [real.hubsNetwork, m.homeNetwork()]) {
-		if (network !== null) await checkHubsOn(m, real, network, after);
-	}
+	const network = real.hubsNetwork ?? m.homeNetwork();
+	if (network !== null) await checkHubsOn(m, real, network, after);
 }
 
 /** Bring a hub's process up. Phones on its LAN must show it. */
@@ -116,7 +115,7 @@ class StopHubMove extends Move {
 
 /** Put the hubs on a LAN they are not on — the host's card joining it —
  *  bringing every hub along. Phones there must show the running ones;
- *  phones on the LAN they left must drop them. */
+ *  phones on the LAN they left, home or not, must drop them. */
 class HubJoinMove extends Move {
 	constructor(readonly networkIdx: number) {
 		super();
@@ -143,8 +142,9 @@ class HubJoinMove extends Move {
 		real.hubsNetwork = network;
 		for (const hub of m.hubs) m.hubJoin(hub.name, network);
 		await checkHubsOn(m, real, network, `the hubs joined ${network}`);
-		if (from !== null) {
-			await checkHubsOn(m, real, from, `the hubs left ${from}`);
+		const left = from ?? m.homeNetwork();
+		if (left !== null) {
+			await checkHubsOn(m, real, left, `the hubs left ${left}`);
 		}
 	}
 
@@ -153,8 +153,8 @@ class HubJoinMove extends Move {
 	}
 }
 
-/** Take the hubs off the air — the host's card leaving its LAN. Phones
- *  there must drop them. */
+/** Take the hubs back home — the host's card leaving its lab LAN for its
+ *  usual one. Phones there must drop them; phones at home must show them. */
 class HubLeaveMove extends Move {
 	check(m: Readonly<ExpectedModel>): boolean {
 		return m.hubs.some(h => h.network !== null);
@@ -168,6 +168,10 @@ class HubLeaveMove extends Move {
 		real.hubsNetwork = null;
 		for (const hub of m.hubs) m.hubLeave(hub.name);
 		await checkHubsOn(m, real, from, `the hubs left ${from}`);
+		const home = m.homeNetwork();
+		if (home !== null) {
+			await checkHubsOn(m, real, home, `the hubs came back to ${home}`);
+		}
 	}
 
 	toString(): string {

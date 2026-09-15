@@ -138,6 +138,15 @@ impl AppNodeManager {
         // bumps the generation on a fresh build so forwarders re-bind.
         let context = self.app_context(app);
         node_slot::get_or_build_node(&self.data_path, context).await?;
+
+        // A rebuilt node re-registers its mailboxes seeded from the sync
+        // tracker's persisted status, each polled immediately on registration;
+        // a re-adopted node kept trackers that may have backed off while the
+        // app was backgrounded. Probe like Android's on_resume so recovery is
+        // immediate either way, without presuming the result.
+        if let Ok(node) = self.get().await {
+            crate::mailbox::probe_cloud_mailbox(&node).await;
+        }
         Ok(())
     }
 }
