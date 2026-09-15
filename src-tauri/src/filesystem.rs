@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Runtime};
 
-const DATABASE_VERSION: &str = "0.13";
+const DATABASE_VERSION: &str = "0.14";
 
 /// When `DATA_DIR` is set, isolate the XDG directories under it so concurrently
 /// running desktop instances don't share WebKitGTK's SQLite databases (which

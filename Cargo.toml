@@ -33,16 +33,16 @@ mailbox-local-server = { path = "crates/mailbox-local-server" }
 local-hub-discovery = { path = "crates/local-hub-discovery" }
 reporting = { path = "crates/reporting" }
 
-p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park", features = [
   "test_utils",
 ] }
 
@@ -54,11 +54,12 @@ iroh-blobs = "0.103.0"
 
 [patch.crates-io]
 iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
-# Fork of iroh 1.0.3 (dash-chat/iroh) with the iroh#4390 fix
-iroh = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
-iroh-base = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
-iroh-dns = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
-iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
+# Fork of iroh main (1.2.0 + PR #4512, the relay-backpressure fix) carrying the
+# iroh#4390 pending_open_paths fix (dash-chat/iroh branch dashchat)
+iroh = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
+iroh-base = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
+iroh-dns = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
+iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
@@ -69,13 +70,13 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 # task can't poison the store and abort the process. See the iOS push-extension /
 # shared-DB crash investigation.
 # [patch."https://github.com/p2panda/p2panda"]
-# p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
