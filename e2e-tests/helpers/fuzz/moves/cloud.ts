@@ -4,7 +4,11 @@
  *  by asserting what every driveable agent's chip shows, so a sequence
  *  fails at the exact move the chip stopped telling the truth. */
 import type { Link } from '../../../setup/toxiproxy';
-import { MAILBOX_HEALED_MS, MAILBOX_UNANSWERED_MS } from '../../timeouts';
+import {
+	MAILBOX_HEALED_MS,
+	MAILBOX_HUNG_MS,
+	MAILBOX_UNANSWERED_MS,
+} from '../../timeouts';
 import { type Real, byName, log } from '../agents';
 import { checkCloud } from '../checks';
 import type { ExpectedModel } from '../model';
@@ -70,7 +74,7 @@ class CloudDropMove extends Move {
 			m,
 			real,
 			this.how === 'hang' ? 'the cloud link hung' : 'the cloud link was cut',
-			MAILBOX_UNANSWERED_MS,
+			this.how === 'hang' ? MAILBOX_HUNG_MS : MAILBOX_UNANSWERED_MS,
 		);
 	}
 

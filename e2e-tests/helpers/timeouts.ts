@@ -18,6 +18,11 @@ export const MEDIA_SYNC_TIMEOUT = 120_000;
  *  Beyond this the chip reads as lying about the connection. */
 export const MAILBOX_UNANSWERED_MS = 4_000;
 
+/** The same, for a mailbox that hangs rather than refuses: a request only
+ *  counts as failed once it times out, 10 s, the chip flips on the second
+ *  failure, and a poll interval, 2.5 s, precedes each of the two. */
+export const MAILBOX_HUNG_MS = 30_000;
+
 /** What the app gets to tell the user the mailbox answers again. */
 export const MAILBOX_HEALED_MS = 4_000;
 

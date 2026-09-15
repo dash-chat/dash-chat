@@ -8,6 +8,7 @@
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import {
 	MAILBOX_HEALED_MS,
+	MAILBOX_HUNG_MS,
 	MAILBOX_UNANSWERED_MS,
 	UI_TIMEOUT,
 } from '../helpers/timeouts';
@@ -37,11 +38,14 @@ describe('Cloud mailbox on a spotty link', function () {
 		);
 	}
 
-	async function expectDisconnected(after: string): Promise<void> {
+	async function expectDisconnected(
+		after: string,
+		within: number,
+	): Promise<void> {
 		await chip().waitForStatus(
 			'disconnected',
-			MAILBOX_UNANSWERED_MS,
-			`the chip did not read disconnected within ${MAILBOX_UNANSWERED_MS / 1_000}s after ${after}`,
+			within,
+			`the chip did not read disconnected within ${within / 1_000}s after ${after}`,
 		);
 	}
 
@@ -75,7 +79,7 @@ describe('Cloud mailbox on a spotty link', function () {
 
 	it('reads disconnected while the link hangs, holds the message back, and hands it over once the link heals', async () => {
 		await link.hang();
-		await expectDisconnected('the link hung');
+		await expectDisconnected('the link hung', MAILBOX_HUNG_MS);
 		await sendHeldBack('while you were hanging');
 		await link.heal();
 		await expectConnected('the link healed', MAILBOX_HEALED_MS);
@@ -86,7 +90,7 @@ describe('Cloud mailbox on a spotty link', function () {
 
 	it('reads disconnected while connections are refused, holds the message back, and hands it over once they are accepted again', async () => {
 		await link.cut();
-		await expectDisconnected('the link was cut');
+		await expectDisconnected('the link was cut', MAILBOX_UNANSWERED_MS);
 		await sendHeldBack('while you were refusing');
 		await link.heal();
 		await expectConnected('the link healed', MAILBOX_HEALED_MS);
