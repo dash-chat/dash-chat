@@ -333,7 +333,7 @@ impl<Item, Store> Mailboxes<Item, Store>
 where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
-    Item::Topic: OptionalItemTraits,
+    Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
     fn new(
         store: Store,
@@ -616,7 +616,7 @@ where
         &self,
         topic: Item::Topic,
     ) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
-        tracing::info!(topic = ?topic, "subscribing to topic");
+        tracing::info!(topic = %topic, "subscribing to topic");
 
         let mut tt = self.topics.lock().await;
         if tt.contains_key(&topic) {
@@ -628,7 +628,7 @@ where
     }
 
     pub async fn unsubscribe(&self, topic: Item::Topic) -> Result<(), anyhow::Error> {
-        tracing::info!(topic = ?topic, "unsubscribing from topic");
+        tracing::info!(topic = %topic, "unsubscribing from topic");
         self.topics.lock().await.remove(&topic);
         Ok(())
     }
@@ -768,10 +768,10 @@ where
         for (topic, response) in response.into_iter() {
             let FetchTopicResponse { items, missing } = response;
             if items.is_empty() && missing.is_empty() {
-                tracing::trace!(topic = ?topic, "Syncing with mailbox: nothing to do");
+                tracing::trace!(topic = %topic, "Syncing with mailbox: nothing to do");
             } else {
                 tracing::info!(
-                    topic = ?topic,
+                    topic = %topic,
                     items = items.len(),
                     missing = missing.len(),
                     "fetched operations"
@@ -795,7 +795,7 @@ where
             }
 
             let Some(sender) = self.topics.lock().await.get(&topic).cloned() else {
-                tracing::warn!(topic = ?topic, "no sender for topic");
+                tracing::warn!(topic = %topic, "no sender for topic");
                 continue;
             };
 
@@ -813,7 +813,7 @@ where
                     .await
                     .map_err(|err| anyhow::anyhow!("failed to get log for {topic:?}: {err}"))?
                 else {
-                    tracing::error!(author = ?author, topic = ?topic, lowest = ?lowest, "no log found");
+                    tracing::error!(author = ?author, topic = %topic, lowest = ?lowest, "no log found");
                     continue;
                 };
 
