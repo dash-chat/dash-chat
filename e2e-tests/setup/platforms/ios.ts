@@ -6,8 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import {
+	type Want,
+	claimAllWhenFreeSync,
+	describeHeld,
+	release,
+} from '../claims';
 import { deviceHasBuild, recordInstalled } from '../device-installs';
-import { claimDevice, isDeviceFree, releaseDevice } from '../device-lock';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { runTurboBuild } from '../turbo-build';
@@ -123,32 +128,50 @@ function connectedDevices(): string[] {
 
 // Claim one connected iPhone per slot
 function claimDevices(slots: number[]): Map<number, string> {
-	const pool = connectedDevices().filter(isDeviceFree);
-	const udids = new Map<number, string>();
+	const pinnedOf = (slot: number) =>
+		process.env[`_WDIO_IOS_UDID${slot}`] ?? process.env[`IOS_UDID${slot}`];
+	const pinned = new Set(slots.map(pinnedOf).filter(u => u !== undefined));
+	const connected = connectedDevices();
+	// Slots wanting the same thing — a pinned device, or any iPhone — claim
+	// it as one group, so a run holds all it needs or nothing.
+	const groups = new Map<string, { slots: number[]; want: Want }>();
 	for (const slot of slots) {
-		const pinned =
-			process.env[`_WDIO_IOS_UDID${slot}`] ?? process.env[`IOS_UDID${slot}`];
-		if (pinned !== undefined) {
-			// The launcher claims; the workers inherit its claim through the env.
-			if (process.env.WDIO_WORKER_ID === undefined) claimDevice(pinned);
-			udids.set(slot, pinned);
-			process.env[`_WDIO_IOS_UDID${slot}`] = pinned;
-			const i = pool.indexOf(pinned);
-			if (i !== -1) pool.splice(i, 1);
-			continue;
-		}
-		const udid = pool.shift();
-		if (udid === undefined) {
-			throw new Error(
-				`Not enough connected iPhones for agent${slot} ` +
-					`(connected: ${connectedDevices().join(', ') || 'none'}). Connect a ` +
-					`trusted device, or set IOS_UDID${slot}.`,
-			);
-		}
-		claimDevice(udid);
-		process.env[`_WDIO_IOS_UDID${slot}`] = udid;
-		udids.set(slot, udid);
+		const key = pinnedOf(slot) ?? 'any';
+		const group = groups.get(key) ?? {
+			slots: [],
+			want: {
+				candidates:
+					key === 'any' ? connected.filter(d => !pinned.has(d)) : [key],
+				needed: 0,
+			},
+		};
+		group.slots.push(slot);
+		group.want.needed += 1;
+		groups.set(key, group);
 	}
+	for (const { slots: wanting, want } of groups.values()) {
+		if (want.candidates.length >= want.needed) continue;
+		const slot = wanting[want.candidates.length];
+		throw new Error(
+			`Not enough iPhones for agent${slot} ` +
+				`(${describeHeld(connected)}). Connect a ` +
+				`trusted device, or set IOS_UDID${slot}.`,
+		);
+	}
+	const wants = [...groups.values()].map(g => g.want);
+	// The launcher claims, waiting for devices another run is driving; the
+	// workers inherit its claims through the pinned env.
+	const taken =
+		process.env.WDIO_WORKER_ID === undefined
+			? claimAllWhenFreeSync(wants)
+			: wants.map(w => w.candidates.slice(0, w.needed));
+	const udids = new Map<number, string>();
+	[...groups.values()].forEach(({ slots: wanting }, i) => {
+		wanting.forEach((slot, j) => {
+			process.env[`_WDIO_IOS_UDID${slot}`] = taken[i][j];
+			udids.set(slot, taken[i][j]);
+		});
+	});
 	return udids;
 }
 
@@ -436,7 +459,7 @@ export class IosPlatform implements AgentPlatform {
 		// the run leaves one attached per spec, blocking the next run's logging.
 		for (const udid of this.udids.values()) {
 			killStaleSyslogLoggers(udid);
-			releaseDevice(udid);
+			release(udid);
 		}
 	}
 }

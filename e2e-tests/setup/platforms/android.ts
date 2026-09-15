@@ -12,8 +12,13 @@ import { fileURLToPath } from 'node:url';
 import { envInt } from '../../helpers/utils';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import {
+	type Want,
+	claimAllWhenFreeSync,
+	describeHeld,
+	release,
+} from '../claims';
 import { hashFile } from '../device-installs';
-import { claimDevice, isDeviceFree, releaseDevice } from '../device-lock';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { runTurboBuild } from '../turbo-build';
@@ -278,43 +283,63 @@ function connectedDevices(): string[] {
 function claimDevices(
 	kindBySlot: Map<number, AndroidKind>,
 ): Map<number, string> {
-	const devices = connectedDevices().filter(isDeviceFree);
+	const pinnedOf = (slot: number) =>
+		process.env[`_WDIO_ANDROID_UDID${slot}`] ??
+		process.env[`ANDROID_UDID${slot}`];
+	const pinned = new Set(
+		[...kindBySlot.keys()].map(pinnedOf).filter(u => u !== undefined),
+	);
+	const connected = connectedDevices();
 	const pools: Record<AndroidKind, string[]> = {
-		android: devices.filter(d => !d.startsWith('emulator-')),
-		'android-emulator': devices.filter(d => d.startsWith('emulator-')),
+		android: connected.filter(d => !d.startsWith('emulator-')),
+		'android-emulator': connected.filter(d => d.startsWith('emulator-')),
 	};
-	const udids = new Map<number, string>();
+	// Slots wanting the same thing — a pinned device, or any device of a
+	// kind — claim it as one group, so a run holds all it needs or nothing.
+	const groups = new Map<string, { slots: number[]; want: Want }>();
 	for (const [slot, kind] of kindBySlot) {
-		const pinned =
-			process.env[`_WDIO_ANDROID_UDID${slot}`] ??
-			process.env[`ANDROID_UDID${slot}`];
-		if (pinned !== undefined) {
-			// The launcher claims; the workers inherit its claim through the env.
-			if (process.env.WDIO_WORKER_ID === undefined) claimDevice(pinned);
-			udids.set(slot, pinned);
-			process.env[`_WDIO_ANDROID_UDID${slot}`] = pinned;
-			for (const pool of Object.values(pools)) {
-				const i = pool.indexOf(pinned);
-				if (i !== -1) pool.splice(i, 1);
-			}
-			continue;
-		}
-		const udid = pools[kind].shift();
-		if (udid === undefined) {
-			throw new Error(
-				kind === 'android'
-					? `Not enough physical Android devices connected for agent${slot} ` +
-						`(connected: ${devices.join(', ') || 'none'}). Connect a device ` +
-						`with USB debugging enabled, or set ANDROID_UDID${slot}.`
-					: `No running emulator left for agent${slot} ` +
-						`(connected: ${devices.join(', ') || 'none'}). Boot one with ` +
-						`'just android boot-emulator'.`,
-			);
-		}
-		claimDevice(udid);
-		process.env[`_WDIO_ANDROID_UDID${slot}`] = udid;
-		udids.set(slot, udid);
+		const key = pinnedOf(slot) ?? kind;
+		const group = groups.get(key) ?? {
+			slots: [],
+			want: {
+				candidates:
+					pinnedOf(slot) !== undefined
+						? [key]
+						: pools[kind].filter(d => !pinned.has(d)),
+				needed: 0,
+			},
+		};
+		group.slots.push(slot);
+		group.want.needed += 1;
+		groups.set(key, group);
 	}
+	for (const [key, { slots, want }] of groups) {
+		if (want.candidates.length >= want.needed) continue;
+		const slot = slots[want.candidates.length];
+		throw new Error(
+			key === 'android-emulator'
+				? `No running emulator left for agent${slot} ` +
+					`(${describeHeld(connected)}). Boot one with ` +
+					`'just android boot-emulator'.`
+				: `Not enough physical Android devices for agent${slot} ` +
+					`(${describeHeld(connected)}). Connect a device ` +
+					`with USB debugging enabled, or set ANDROID_UDID${slot}.`,
+		);
+	}
+	const wants = [...groups.values()].map(g => g.want);
+	// The launcher claims, waiting for devices another run is driving; the
+	// workers inherit its claims through the pinned env.
+	const taken =
+		process.env.WDIO_WORKER_ID === undefined
+			? claimAllWhenFreeSync(wants)
+			: wants.map(w => w.candidates.slice(0, w.needed));
+	const udids = new Map<number, string>();
+	[...groups.values()].forEach(({ slots }, i) => {
+		slots.forEach((slot, j) => {
+			process.env[`_WDIO_ANDROID_UDID${slot}`] = taken[i][j];
+			udids.set(slot, taken[i][j]);
+		});
+	});
 	return udids;
 }
 
@@ -772,7 +797,7 @@ export class AndroidPlatform implements AgentPlatform {
 					/* device gone or reverse already removed */
 				}
 			}
-			releaseDevice(udid);
+			release(udid);
 		}
 		for (const logger of this.loggers.values()) {
 			logger.kill();

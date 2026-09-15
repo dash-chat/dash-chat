@@ -17,3 +17,8 @@ export const E2E_NETWORK_ID = createHash('sha256')
 	.update(ROOT)
 	.digest('hex')
 	.slice(0, 8);
+
+/** What a run claims to be the one run of this checkout: its data dir and
+ *  its baked network id are the checkout's, so two runs of it cannot
+ *  coexist and the second waits for the first. */
+export const CHECKOUT_CLAIM = `checkout-${E2E_NETWORK_ID}`;

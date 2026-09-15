@@ -6,7 +6,7 @@
  * own tooling does the work: NetworkManager on Linux, `networksetup` on
  * macOS.
  */
-import { claimDeviceWhenFree, releaseDevice } from '../device-lock';
+import { claimWhenFree, release } from '../claims';
 import { linux } from './linux';
 import { macos } from './macos';
 
@@ -22,7 +22,7 @@ let claimed: string | null = null;
  *  waits for whichever run is moving it now, and keeps it until it ends. */
 async function claimFirst(device: string): Promise<void> {
 	if (claimed === device) return;
-	await claimDeviceWhenFree(device);
+	await claimWhenFree(device);
 	claimed = device;
 }
 
@@ -46,7 +46,7 @@ export async function leaveWifi(ssid: string): Promise<void> {
 /** Give the card back at the end of the spec file. */
 export function releaseWifiDevice(): void {
 	if (claimed === null) return;
-	releaseDevice(claimed);
+	release(claimed);
 	claimed = null;
 }
 
