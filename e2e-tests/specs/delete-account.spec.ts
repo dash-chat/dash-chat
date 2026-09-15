@@ -10,7 +10,14 @@ describe('Delete account', () => {
 	});
 
 	it('wipes all data and restarts at first launch when confirmed', async () => {
+		await agent.homePage.dismissGetStartedCardButton('add-contact').click();
+		await agent.homePage
+			.getStartedCard('add-contact')
+			.waitForExist({ reverse: true });
+
 		await deleteAccount(agent);
 		await agent.createProfilePage.createProfile('Fresh', 'Start');
+
+		await agent.homePage.getStartedCard('add-contact').waitForExist();
 	});
 });
