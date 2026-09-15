@@ -27,11 +27,7 @@ pub(crate) async fn build_logs_attachments(
     .unwrap_or_default()
 }
 
-fn redacted_log(
-    patterns: &[Regex],
-    filename: &str,
-    logs_dir: &std::path::PathBuf,
-) -> Option<Attachment> {
+fn redacted_log(patterns: &[Regex], filename: &str, logs_dir: &Path) -> Option<Attachment> {
     match redaction::redacted_log_tail(patterns, logs_dir, MAX_BYTES) {
         Ok(text) => Some(Attachment {
             buffer: text.into_bytes(),

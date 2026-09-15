@@ -98,6 +98,7 @@ pub fn receive_push_notification(
 
 #[cfg(target_os = "ios")]
 fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
+    use log::Log;
     use tauri_plugin_log::fern;
 
     let fs = FileSystem::from_app_root_dir(data_dir.to_path_buf())?;

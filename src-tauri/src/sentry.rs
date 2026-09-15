@@ -27,9 +27,13 @@ pub fn config(
     let mut extra_logs_dirs: Vec<NamedLogDir> = Vec::new();
     #[cfg(target_os = "ios")]
     {
+        // The NSE writes to `<app_root>/logs-nse`; `logs_dir` is `<app_root>/logs`,
+        // so its parent is the app root. `data_dir` is the error-reporting outbox,
+        // which is a different directory.
+        let app_root = logs_dir.parent().unwrap_or(&logs_dir);
         extra_logs_dirs.push(NamedLogDir {
             name: "notification-service.log".into(),
-            dir: data_dir.join("logs-nse"),
+            dir: app_root.join("logs-nse"),
         });
     }
 
