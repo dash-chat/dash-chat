@@ -2,7 +2,7 @@
  * The only code that compares a screen with the model. `expectView` asserts
  * one chat on one agent is exactly what the model says that agent knows;
  * `settle` runs after every move and asserts every agent that learnt
- * something; `expectHubs` asserts the connection chip.
+ * something; `expectHubs` and `expectCloud` assert the connection chip.
  */
 import type { RenderedMessage } from '../components/messages';
 import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
@@ -154,6 +154,44 @@ export async function checkHubs(
 ): Promise<void> {
 	const page = await openChat(sa, chipChat(m, sa.name), m);
 	await expectHubs(m, sa, after);
+	await goHome(sa, page);
+}
+
+/** Wait until `sa`'s chip shows what the model says of the cloud: hidden
+ *  while its link is usable, disconnected otherwise. For runs with no hub
+ *  to show. Assumes the agent is on its chip chat. */
+export async function expectCloud(
+	m: ExpectedModel,
+	sa: StressAgent,
+	after: string,
+	within: number,
+): Promise<void> {
+	const chip = sa.agent.groupChatPage.connectionStatusIndicator;
+	if (m.cloudUsable()) {
+		await chip.waitForStatus(
+			'connected',
+			within,
+			`${sa.name}: the chip did not hide within ${within / 1_000}s after ${after}`,
+		);
+		return;
+	}
+	await chip.waitForStatus(
+		'disconnected',
+		within,
+		`${sa.name}: the chip did not read disconnected within ${within / 1_000}s after ${after}`,
+	);
+}
+
+/** Open `sa`'s chip chat, check the chip against the model's cloud, and
+ *  return home. */
+export async function checkCloud(
+	m: ExpectedModel,
+	sa: StressAgent,
+	after: string,
+	within: number,
+): Promise<void> {
+	const page = await openChat(sa, chipChat(m, sa.name), m);
+	await expectCloud(m, sa, after, within);
 	await goHome(sa, page);
 }
 

@@ -136,6 +136,7 @@
             pkgsPnpm.pnpm
             pkgs.cargo-nextest
             pkgs.doctl
+            pkgs.toxiproxy
             inputs'.tauri-driver.packages.tauri-driver
           ]
           ++ lib.optionals pkgs.stdenv.isLinux [

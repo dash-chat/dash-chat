@@ -14,6 +14,19 @@ export const SYNC_TIMEOUT = 60_000;
  *  is slower still than op sync on cold CI runners. */
 export const MEDIA_SYNC_TIMEOUT = 120_000;
 
+/** What the app gets to tell the user the cloud mailbox stopped answering:
+ *  the chip flips on the second consecutive failure, and polls are 2.5 s
+ *  apart, so a refusal is seen within two intervals. */
+export const MAILBOX_UNANSWERED_MS = 6_000;
+
+/** The same, for a mailbox that hangs rather than refuses: a request only
+ *  counts as failed once it times out, 10 s, the chip flips on the second
+ *  failure, and a poll interval, 2.5 s, precedes each of the two. */
+export const MAILBOX_HUNG_MS = 30_000;
+
+/** What the app gets to tell the user the mailbox answers again. */
+export const MAILBOX_HEALED_MS = 4_000;
+
 /** How long something already on screen must survive to count as untouched by
  *  an arriving message. One arrival re-renders a chat more than once: the
  *  message itself, then the read receipt its appearance publishes on a 500ms

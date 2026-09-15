@@ -60,6 +60,15 @@ class AddContactMove extends Move {
 		log(`${actor.name}: ${this.toString()} -> adds ${peer.name}`);
 		await addContact(actor, peer);
 		m.recordAdded(actor.name, peer.name);
+		// The add that completes a pair puts the chat on the peer's screen too,
+		// which settle would miss: the peer may have known the actor's profile
+		// since its own add, so its knowledge does not grow here.
+		if (!m.areContacts(actor.name, peer.name) || m.isBackgrounded(peer.name)) {
+			return;
+		}
+		const chat = m.directChat(actor.name, peer.name);
+		log(`${peer.name}: should now see ${m.chatListName(chat, peer.name)}`);
+		await goHome(peer, await openChat(peer, chat, m));
 	}
 
 	toString(): string {

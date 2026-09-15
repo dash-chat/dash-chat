@@ -104,12 +104,27 @@ export function readOpenedUrls(slot: number): string[] {
 		.filter(line => line !== '');
 }
 
+/** The run's desktop platform, for the agent factory to reach from outside
+ *  wdio's hooks. */
+let current: DesktopPlatform | null = null;
+
+/** Relaunch `slot`'s app with `env` on top of its usual environment; see
+ *  [`DesktopPlatform.respawn`]. */
+export async function respawnDesktopAgent(
+	slot: number,
+	env: NodeJS.ProcessEnv,
+): Promise<void> {
+	if (current === null) throw new Error('this run launched no desktop agent');
+	await current.respawn(slot, env);
+}
+
 /** Agents running the desktop binary, one tauri-driver instance per slot. */
 export class DesktopPlatform implements AgentPlatform {
 	private agents: DesktopAgent[];
 
 	constructor(readonly slots: number[]) {
 		assertTauriDriverAvailable();
+		current = this;
 		this.agents = slots.map(slot => ({
 			slot,
 			port: allocatePinnedPort(`_WDIO_PORT${slot}`),
@@ -158,11 +173,6 @@ export class DesktopPlatform implements AgentPlatform {
 		// Wait for ports to be fully released after SIGKILL.
 		await Promise.all(this.ports.map(p => waitForPortFree(p)));
 
-		const mailboxUrl = process.env.MAILBOX_URL;
-		if (mailboxUrl === undefined) {
-			throw new Error('MAILBOX_URL not set — onPrepare must run first');
-		}
-
 		for (const agent of this.agents) {
 			// Clean all agent data for a fresh start (important for
 			// specFileRetries). Must remove the entire agent directory, not just
@@ -177,7 +187,7 @@ export class DesktopPlatform implements AgentPlatform {
 			}
 
 			mkdirSync(dataDir, { recursive: true });
-			const binDir = installXdgOpenStub(agent.slot);
+			installXdgOpenStub(agent.slot);
 
 			// tauri-plugin-log names the file after productName (tauri.conf.json).
 			agent.logger = startAgentLogger(
@@ -185,39 +195,62 @@ export class DesktopPlatform implements AgentPlatform {
 				path.join(dataDir, 'logs', 'Dash Chat.log'),
 			);
 
-			agent.driver = spawn(
-				'tauri-driver',
-				[
-					'--port',
-					String(agent.port),
-					'--native-port',
-					String(agent.nativePort),
-				],
-				{
-					stdio: ['ignore', 'ignore', 'pipe'],
-					env: {
-						...process.env,
-						DATA_DIR: dataDir,
-						MAILBOX_URL: mailboxUrl,
-						PATH: `${binDir}:${process.env.PATH}`,
-						// Disable AT-SPI accessibility bridge to prevent D-Bus
-						// contention.
-						NO_AT_BRIDGE: '1',
-						GTK_A11Y: 'none',
-						// Disable the DMA-BUF renderer — it causes
-						// non-deterministic WebKitGTK freezes. See
-						// https://github.com/tauri-apps/tauri/issues/13498
-						WEBKIT_DISABLE_DMABUF_RENDERER: '1',
-					},
-				},
-			);
-			agent.driver.stderr?.on('data', (data: Buffer) => {
-				console.error(`[tauri-driver:${agent.port}] ${data.toString().trim()}`);
-			});
+			this.spawnDriver(agent, {});
 		}
 
 		// Wait for tauri-driver instances to accept connections.
 		await Promise.all(this.agents.map(a => waitForPortListening(a.port)));
+	}
+
+	/** Start `agent`'s tauri-driver, which launches the app with the same
+	 *  environment: the usual one, with `env` on top. */
+	private spawnDriver(agent: DesktopAgent, env: NodeJS.ProcessEnv): void {
+		const mailboxUrl = process.env.MAILBOX_URL;
+		if (mailboxUrl === undefined) {
+			throw new Error('MAILBOX_URL not set — onPrepare must run first');
+		}
+		const dataDir = agentDir(agent.slot);
+		agent.driver = spawn(
+			'tauri-driver',
+			['--port', String(agent.port), '--native-port', String(agent.nativePort)],
+			{
+				stdio: ['ignore', 'ignore', 'pipe'],
+				env: {
+					...process.env,
+					DATA_DIR: dataDir,
+					MAILBOX_URL: mailboxUrl,
+					PATH: `${path.join(dataDir, 'bin')}:${process.env.PATH}`,
+					// Disable AT-SPI accessibility bridge to prevent D-Bus
+					// contention.
+					NO_AT_BRIDGE: '1',
+					GTK_A11Y: 'none',
+					// Disable the DMA-BUF renderer — it causes
+					// non-deterministic WebKitGTK freezes. See
+					// https://github.com/tauri-apps/tauri/issues/13498
+					WEBKIT_DISABLE_DMABUF_RENDERER: '1',
+					...env,
+				},
+			},
+		);
+		agent.driver.stderr?.on('data', (data: Buffer) => {
+			console.error(`[tauri-driver:${agent.port}] ${data.toString().trim()}`);
+		});
+	}
+
+	/** Relaunch `slot`'s tauri-driver, and so its app, with `env` on top of
+	 *  the usual environment. The app's data dir is kept; the caller reloads
+	 *  the session. */
+	async respawn(slot: number, env: NodeJS.ProcessEnv): Promise<void> {
+		const agent = this.agents.find(a => a.slot === slot);
+		if (agent === undefined)
+			throw new Error(`no desktop agent in slot ${slot}`);
+		await killAndWait(agent.driver);
+		killAgentApp(slot);
+		const ports = [agent.port, agent.nativePort];
+		killPortHolders(ports);
+		await Promise.all(ports.map(p => waitForPortFree(p)));
+		this.spawnDriver(agent, env);
+		await waitForPortListening(agent.port);
 	}
 
 	async afterSession() {

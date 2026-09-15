@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
 import { allocatePreferredPort } from './allocate-port';
+import { PUSH_PREFERRED_PORT } from './network-id';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -131,9 +132,7 @@ export async function startLocalPushServer(): Promise<{
 	const serviceAccountKey = pushServiceAccountKey();
 	if (serviceAccountKey === null) return null;
 
-	// Stable for the same reason as the mailbox port: the push URL is baked
-	// into device builds, and a churning port would defeat the build skip.
-	const port = await allocatePreferredPort(3301);
+	const port = await allocatePreferredPort(PUSH_PREFERRED_PORT);
 	const url = `http://localhost:${port}`;
 	const dbPath = path.join(ROOT, '.dbs', 'e2e', 'push-server', 'push.db');
 	mkdirSync(path.dirname(dbPath), { recursive: true });
