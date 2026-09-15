@@ -53,6 +53,35 @@ export function allocatePinnedPort(envName: string): number {
 	return Number(process.env[envName]);
 }
 
+/** Whether `port` can be bound right now. Sync, like [`allocatePort`]. */
+function isFree(port: number): boolean {
+	try {
+		execSync(
+			`node -e "const s=require('net').createServer();s.once('error',()=>process.exit(1));s.listen(${port},()=>{s.close()})"`,
+			{ stdio: 'ignore' },
+		);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Like [`allocatePinnedPort`], but the port is the first free one from
+ * `base` up rather than any free one. For a port a phone binds as well as
+ * the host: any-free lands in the range iOS also hands its own outgoing
+ * connections (49152 and up), where the phone's bind then fails with
+ * "Address already in use" as soon as the app has a few sockets open.
+ */
+export function allocatePinnedPortFrom(envName: string, base: number): number {
+	if (process.env[envName] === undefined) {
+		let port = base;
+		while (!isFree(port)) port += 1;
+		process.env[envName] = String(port);
+	}
+	return Number(process.env[envName]);
+}
+
 /** Any free TCP port, for servers whose port is not baked into a build. */
 export async function allocateFreePort(): Promise<number> {
 	return (await tryBind(0))!;
