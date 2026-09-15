@@ -9,9 +9,11 @@ export abstract class TestHelper {
 	constructor(protected agent: WebdriverIO.Browser) {}
 
 	/** Wraps `$(selector)` so it re-resolves on every use — never reusing a stale
-	 * handle across re-renders. Pass `tid('id')` for a `data-testid` element. */
+	 * handle across re-renders. Pass `tid('id')` for a `data-testid` element.
+	 * The proxy target is a placeholder: `$()` sends its lookup as soon as it is
+	 * called, and a page object declares dozens of elements at construction. */
 	protected el(selector: string) {
-		return new Proxy(this.agent.$(selector), {
+		return new Proxy({} as ChainablePromiseElement, {
 			get: (_target, prop) => {
 				const fresh = this.agent.$(selector);
 				const value = Reflect.get(fresh, prop);
