@@ -10,8 +10,21 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"[A-Za-z0-9_:\-]{100,}",
         // Hex strings (40+ chars) — public keys, hashes, signatures
         r"[0-9a-fA-F]{40,}",
+        // iroh/p2panda node ids in short hex form (`me=fa30b1af97`,
+        // `peer=0a753b78eb`) that the 40-char hex rule above is too long to
+        // catch. Anchored on the `me=`/`peer=` label so ordinary short hex
+        // (contact codes) stays readable.
+        r"\b(me|peer)=[0-9a-fA-F]{8,}\b",
         // Base64 blobs (40+ chars)
         r"[A-Za-z0-9+/]{40,}={0,2}",
+        // Mailbox id (base64url inbox address) as logged by the mailbox
+        // manager: `polling mailbox <id>` / `mailbox=<id>`. The base64 rule
+        // above misses it because the url-safe `-`/`_` split it below 40
+        // unbroken chars. Anchored on the label so it can't over-match other
+        // long url-safe tokens.
+        r"\bmailbox[ =:]+[A-Za-z0-9_\-]{20,}",
+        // Device / app-group container UUIDs embedded in filesystem paths.
+        r"\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b",
         // DeviceId and AgentId wrappers (must precede bare VerifyingKey/Hash patterns)
         r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
         // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...])
@@ -487,5 +500,57 @@ mod tests {
             "message not redacted: {result}"
         );
         assert!(!result.contains("32, 145"), "key not redacted: {result}");
+    }
+
+    #[test]
+    fn redacts_short_form_node_keys() {
+        let input = "gossip; me=fa30b1af97 conn; peer=0a753b78eb";
+        let result = redact(input);
+        assert!(!result.contains("fa30b1af97"), "me key leaked: {result}");
+        assert!(!result.contains("0a753b78eb"), "peer key leaked: {result}");
+    }
+
+    #[test]
+    fn preserves_short_hex_contact_code() {
+        // The short-form key rule must stay anchored to `me=`/`peer=` and not
+        // touch other short hex like contact codes.
+        let input = "code=abcdef12";
+        assert_eq!(redact(input), "code=abcdef12");
+    }
+
+    #[test]
+    fn redacts_mailbox_id() {
+        let input = "polling mailbox 2wgdUYYgohPKdhkjbgmBjlZgfh-hZBHVpi6GkXkRYxc";
+        let result = redact(input);
+        assert!(
+            !result.contains("2wgdUYYgohPKdhkjbgmBjlZgfh"),
+            "mailbox id leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_mailbox_id_key_value_form() {
+        let input = "mailbox=2wgdUYYgohPKdhkjbgmBjlZgfh-hZBHVpi6GkXkRYxc sync error";
+        let result = redact(input);
+        assert!(
+            !result.contains("2wgdUYYgohPKdhkjbgmBjlZgfh"),
+            "mailbox id leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn preserves_mailbox_module_path() {
+        let input = "mailbox_client::manager crates/mailbox-client/src/manager.rs:719";
+        assert_eq!(redact(input), input);
+    }
+
+    #[test]
+    fn redacts_device_container_uuid() {
+        let input = "data path: 1A2B3C4D-F4CD-4E51-B851-69CF2F22D0AA/0.13";
+        let result = redact(input);
+        assert!(
+            !result.contains("1A2B3C4D-F4CD-4E51-B851-69CF2F22D0AA"),
+            "uuid leaked: {result}"
+        );
     }
 }
