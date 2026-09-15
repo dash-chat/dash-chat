@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use tauri_plugin_sentry_reporting::NamedLogDir;
+
 use crate::redaction::REDACTION_REGEXES;
 
 /// `SENTRY_DSN` is set by CI at build time — one DSN for every environment, with
@@ -21,6 +23,16 @@ pub fn config(
         None => format!("dash-chat@{}", env!("CARGO_PKG_VERSION")),
     };
 
+    #[allow(unused_mut)]
+    let mut extra_logs_dirs: Vec<NamedLogDir> = Vec::new();
+    #[cfg(target_os = "ios")]
+    {
+        extra_logs_dirs.push(NamedLogDir {
+            name: "notification-service.log".into(),
+            dir: data_dir.join("logs-nse"),
+        });
+    }
+
     Some(tauri_plugin_sentry_reporting::Config {
         dsn,
         release,
@@ -29,6 +41,7 @@ pub fn config(
         environment: option_env!("ENV").unwrap_or("development").to_string(),
         redact: REDACTION_REGEXES.clone(),
         logs_dir,
+        extra_logs_dirs,
         data_dir,
     })
 }

@@ -7,7 +7,7 @@ use sentry::protocol::{Log, LogLevel};
 use sentry::Envelope;
 
 use crate::state::SentryState;
-use crate::Config;
+use crate::{Config, NamedLogDir};
 
 pub(crate) fn config(dir: &Path) -> Config {
     Config {
@@ -16,6 +16,10 @@ pub(crate) fn config(dir: &Path) -> Config {
         environment: "test".into(),
         redact: vec![regex::Regex::new(r"secret-\w+").unwrap()],
         logs_dir: dir.to_path_buf(),
+        extra_logs_dirs: vec![NamedLogDir {
+            name: "some-other.log".into(),
+            dir: dir.to_path_buf(),
+        }],
         data_dir: dir.to_path_buf(),
     }
 }
