@@ -9,5 +9,21 @@
 import { linux } from './linux';
 import { macos } from './macos';
 
-export const { wifiDevice, joinWifi, leaveWifi } =
+export const { wifiDevice, visibleNetworks, joinWifi, leaveWifi } =
 	process.platform === 'darwin' ? macos : linux;
+
+/** Fails a run before its first join when `device` cannot see every one of
+ *  `ssids`, instead of timing out on that join move after move. */
+export function assertInRange(device: string, ssids: string[]): void {
+	const visible = visibleNetworks(device);
+	if (visible === null) {
+		console.log(`[wifi] ${device} will not list networks; joining blind`);
+		return;
+	}
+	const missing = ssids.filter(ssid => !visible.includes(ssid));
+	if (missing.length === 0) return;
+	const quote = (list: string[]) => list.map(s => `"${s}"`).join(', ');
+	throw new Error(
+		`${device} cannot see ${quote(missing)}; it sees ${quote(visible)}`,
+	);
+}

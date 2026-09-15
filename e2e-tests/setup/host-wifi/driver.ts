@@ -3,6 +3,9 @@
 export interface HostWifi {
 	/** The host's first Wi-Fi device, or null when it has none. */
 	wifiDevice(): string | null;
+	/** The SSIDs `device` can see after a fresh scan, or null when the
+	 *  platform withholds them. */
+	visibleNetworks(device: string): string[] | null;
 	/** Join `ssid` on `device` and resolve with the IPv4 address obtained on
 	 *  it. */
 	joinWifi(device: string, ssid: string, passphrase: string): Promise<string>;

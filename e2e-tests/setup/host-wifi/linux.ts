@@ -31,6 +31,24 @@ export const linux: HostWifi = {
 		return found === undefined ? null : found[0];
 	},
 
+	visibleNetworks(device) {
+		const ssids = nmcli(
+			'-t',
+			'-f',
+			'SSID',
+			'device',
+			'wifi',
+			'list',
+			'ifname',
+			device,
+			'--rescan',
+			'yes',
+		)
+			.split('\n')
+			.filter(ssid => ssid !== '');
+		return [...new Set(ssids)];
+	},
+
 	async joinWifi(device, ssid, passphrase) {
 		// NetworkManager refuses while the card is still re-joining its usual
 		// network after the previous leave.

@@ -44,6 +44,41 @@ function wifiDevice(): string | null {
 	return device === null ? null : device[1];
 }
 
+interface AirPortNetwork {
+	_name: string;
+}
+
+interface AirPortInterface {
+	_name: string;
+	spairport_current_network_information?: AirPortNetwork;
+	spairport_airport_other_local_wireless_networks?: AirPortNetwork[];
+}
+
+interface AirPortReport {
+	SPAirPortDataType: { spairport_airport_interfaces: AirPortInterface[] }[];
+}
+
+/** Since macOS 15.6 the report names networks `<redacted>` unless the
+ *  caller holds location access, which a shell does not. */
+function visibleNetworks(device: string): string[] | null {
+	const report = JSON.parse(
+		execFileSync('system_profiler', ['SPAirPortDataType', '-json'], {
+			encoding: 'utf8',
+		}),
+	) as AirPortReport;
+	const iface = report.SPAirPortDataType.flatMap(
+		data => data.spairport_airport_interfaces,
+	).find(i => i._name === device);
+	if (iface === undefined) return [];
+	const current = iface.spairport_current_network_information;
+	const networks = [
+		...(current === undefined ? [] : [current]),
+		...(iface.spairport_airport_other_local_wireless_networks ?? []),
+	];
+	const ssids = [...new Set(networks.map(n => n._name))];
+	return ssids.includes('<redacted>') ? null : ssids;
+}
+
 function leaveWifi(ssid: string): void {
 	const device = wifiDevice();
 	if (device === null) return;
@@ -57,6 +92,7 @@ function leaveWifi(ssid: string): void {
 
 export const macos: HostWifi = {
 	wifiDevice,
+	visibleNetworks,
 
 	async joinWifi(device, ssid, passphrase) {
 		// The card scans for the network itself, but a scan right after

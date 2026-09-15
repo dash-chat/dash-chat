@@ -10,7 +10,7 @@
  */
 import fc from 'fast-check';
 
-import { leaveWifi, wifiDevice } from '../../setup/host-wifi';
+import { assertInRange, leaveWifi, wifiDevice } from '../../setup/host-wifi';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
 import { navigateToAddContact } from '../flows/exchange-contacts';
@@ -117,10 +117,18 @@ export class Fuzzer {
 			...init,
 			hubsDevice: networked ? wifiDevice() : null,
 		});
-		if (networked && real.hubsDevice === null) {
-			throw new Error('networks are configured but the host has no Wi-Fi card');
+		if (networked) {
+			if (real.hubsDevice === null) {
+				throw new Error(
+					'networks are configured but the host has no Wi-Fi card',
+				);
+			}
+			await restoreNetworks(real);
+			assertInRange(
+				real.hubsDevice,
+				labNetworks(real).map(n => n.ssid),
+			);
 		}
-		if (networked) await restoreNetworks(real);
 		const model = newModel(real);
 		await prepareAgents(model, real);
 		return new Fuzzer(model, real);
