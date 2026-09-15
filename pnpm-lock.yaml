@@ -242,7 +242,7 @@ importers:
         specifier: ^10.0.11
         version: 10.0.11
       dash-chat-stores:
-        specifier: workspace:^0.0.0
+        specifier: workspace:*
         version: link:../packages/stores
       emoji-picker-element:
         specifier: ^1.29.0
