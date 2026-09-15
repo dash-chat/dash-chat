@@ -4,8 +4,8 @@
  * running — a mailbox that is up but slow, hanging or refusing, which no
  * signal to its process can produce. wdio.conf.ts spawns one
  * `toxiproxy-server` per run in its own process group, like the mailbox, and
- * records its API port so spec workers can reach it; a link's toxics are
- * driven over the HTTP API.
+ * records its API port so spec workers can reach it through the
+ * `toxiproxy-node-client` library.
  */
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
 import {
@@ -17,6 +17,12 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+	type Latency,
+	type Proxy,
+	type Timeout,
+	Toxiproxy,
+} from 'toxiproxy-node-client';
 
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort } from './allocate-port';
@@ -82,28 +88,12 @@ export async function startToxiproxy(): Promise<{
 	return { proc, logger, port };
 }
 
-function apiUrl(): string {
+/** The run's server, from the port `startToxiproxy` recorded. */
+function server(): Toxiproxy {
 	const { port } = JSON.parse(readFileSync(INFO_PATH, 'utf-8')) as {
 		port: number;
 	};
-	return `http://127.0.0.1:${port}`;
-}
-
-async function api(
-	method: 'POST' | 'PATCH' | 'DELETE',
-	pathname: string,
-	body?: object,
-): Promise<void> {
-	const res = await fetch(`${apiUrl()}${pathname}`, {
-		method,
-		headers: { 'content-type': 'application/json' },
-		body: body === undefined ? undefined : JSON.stringify(body),
-	});
-	if (!res.ok) {
-		throw new Error(
-			`toxiproxy ${method} ${pathname} answered ${res.status}: ${await res.text()}`,
-		);
-	}
+	return new Toxiproxy(`http://127.0.0.1:${port}`);
 }
 
 /** The link between a port agents connect to and the server bound behind
@@ -119,7 +109,7 @@ export class Link {
 	): Promise<Link> {
 		// IPv4, as the mailbox bound before the proxy fronted it: agents reach
 		// it over IPv4, and a v6-only socket refuses them where bindv6only=1.
-		await api('POST', '/proxies', {
+		await server().createProxy({
 			name,
 			listen: `0.0.0.0:${port}`,
 			upstream: `127.0.0.1:${upstreamPort}`,
@@ -128,44 +118,70 @@ export class Link {
 		return new Link(name);
 	}
 
-	private toxic(type: string, stream: string, attributes: object) {
-		return api('POST', `/proxies/${this.name}/toxics`, {
-			name: `${type}_${stream}`,
-			type,
-			stream,
-			toxicity: 1,
-			attributes,
-		});
+	private proxy(): Promise<Proxy> {
+		return server().get(this.name);
 	}
 
 	/** Every request still answers, about a second late. */
 	async slow(): Promise<void> {
-		await this.heal();
-		const attributes = { latency: SLOW_LATENCY_MS, jitter: SLOW_JITTER_MS };
-		await this.toxic('latency', 'upstream', attributes);
-		await this.toxic('latency', 'downstream', attributes);
+		const proxy = await this.healed();
+		const attributes: Latency = {
+			latency: SLOW_LATENCY_MS,
+			jitter: SLOW_JITTER_MS,
+		};
+		for (const stream of ['upstream', 'downstream'] as const) {
+			await proxy.addToxic<Latency>({
+				name: `latency_${stream}`,
+				type: 'latency',
+				stream,
+				toxicity: 1,
+				attributes,
+			});
+		}
 	}
 
 	/** Connections open but nothing ever reaches the server, so every request
 	 *  hangs until the client gives up. */
 	async hang(): Promise<void> {
-		await this.heal();
-		await this.toxic('timeout', 'upstream', { timeout: 0 });
+		const proxy = await this.healed();
+		await proxy.addToxic<Timeout>({
+			name: 'timeout_upstream',
+			type: 'timeout',
+			stream: 'upstream',
+			toxicity: 1,
+			attributes: { timeout: 0 },
+		});
 	}
 
 	/** Connections are refused. */
 	async cut(): Promise<void> {
-		await this.heal();
-		await api('PATCH', `/proxies/${this.name}`, { enabled: false });
+		const proxy = await this.healed();
+		await this.enable(proxy, false);
 	}
 
 	/** Back to a healthy link. */
 	async heal(): Promise<void> {
-		const res = await fetch(`${apiUrl()}/proxies/${this.name}/toxics`);
-		const toxics = (await res.json()) as { name: string }[];
+		await this.healed();
+	}
+
+	/** The proxy with every toxic removed and its port listening. */
+	private async healed(): Promise<Proxy> {
+		const proxy = await this.proxy();
+		// The client's Proxy carries no toxics, whatever its typings say.
+		const { data: toxics } = await proxy.api.get<{ name: string }[]>(
+			`${proxy.getPath()}/toxics`,
+		);
 		for (const { name } of toxics) {
-			await api('DELETE', `/proxies/${this.name}/toxics/${name}`);
+			await (await proxy.getToxic(name)).remove();
 		}
-		await api('PATCH', `/proxies/${this.name}`, { enabled: true });
+		return await this.enable(proxy, true);
+	}
+
+	private enable(proxy: Proxy, enabled: boolean): Promise<Proxy> {
+		return proxy.update({
+			enabled,
+			listen: proxy.listen,
+			upstream: proxy.upstream,
+		});
 	}
 }
