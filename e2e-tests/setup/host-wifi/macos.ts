@@ -86,6 +86,9 @@ async function leaveWifi(ssid: string): Promise<void> {
 		networksetup('-removepreferredwirelessnetwork', device, ssid);
 	}
 	networksetup('-setairportpower', device, 'off');
+	// The old lease is reported for a moment after power-off; an address read
+	// before it clears would pass for the new network's.
+	await waitForNoAddress(device);
 	networksetup('-setairportpower', device, 'on');
 	const home = await waitForAddress(
 		() => address(device),
@@ -93,6 +96,15 @@ async function leaveWifi(ssid: string): Promise<void> {
 		`${device} never got back on a network after leaving "${ssid}"`,
 	);
 	console.log(`[wifi] ${device} left ${ssid}, back at ${home}`);
+}
+
+/** Poll until `device` has no address, for up to 10s; past that carry on,
+ *  since a lease the system will not let go of blocks nothing by itself. */
+async function waitForNoAddress(device: string): Promise<void> {
+	const deadline = Date.now() + 10_000;
+	while (address(device) !== '' && Date.now() < deadline) {
+		await new Promise(resolve => setTimeout(resolve, 250));
+	}
 }
 
 export const macos: HostWifi = {
