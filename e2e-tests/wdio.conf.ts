@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
+import { claimAllWhenFreeSync, release } from './setup/claims';
 import { killLeftoverMailboxServers } from './setup/cleanup';
 import { releaseWifiDevice } from './setup/host-wifi';
 import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
@@ -22,6 +23,7 @@ import {
 	buildCargoPackages,
 	startLocalMailboxServer,
 } from './setup/mailbox-server';
+import { CHECKOUT_CLAIM } from './setup/network-id';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
 import { DesktopPlatform } from './setup/platforms/desktop';
 import { IosPlatform } from './setup/platforms/ios';
@@ -58,6 +60,13 @@ const androidKinds = new Map<number, AndroidKind>(
 			entry[1] !== 'desktop' && entry[1] !== 'ios',
 	),
 );
+
+// Before anything is built, killed or claimed: the launcher waits for any run
+// already going in this checkout — its data dir and baked network id are one
+// per checkout. Workers inherit the launcher's claim.
+if (process.env.WDIO_WORKER_ID === undefined) {
+	claimAllWhenFreeSync([{ candidates: [CHECKOUT_CLAIM], needed: 1 }]);
+}
 
 /** The host mailbox-server build — plus the standalone hub the discovery
  * specs spawn — kicked off before the Android platform is constructed so it
@@ -121,6 +130,7 @@ async function teardown() {
 	mailboxLogger?.kill();
 	pushLogger?.kill();
 	toxiproxyLogger?.kill();
+	release(CHECKOUT_CLAIM);
 }
 
 /** Save a per-agent screenshot of the current webview to .dbs/e2e/failures/. */
