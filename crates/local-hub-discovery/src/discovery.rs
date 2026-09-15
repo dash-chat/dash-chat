@@ -18,7 +18,7 @@ use swarm_discovery::DropGuard;
 use tokio::sync::broadcast;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::{base_discoverer, label_to_mailbox_id, multicast_interfaces_v4, SERVICE_NAME};
+use crate::{base_discoverer, label_to_mailbox_id, multicast_interfaces_v4, service_name};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// How many sightings are probed at once; the rest wait their turn.
@@ -62,7 +62,10 @@ pub struct LocalHubDiscoveryService {
 impl LocalHubDiscoveryService {
     /// Browse for local hubs until the returned service is dropped.
     pub fn spawn() -> Self {
-        log::info!("Started local hub discovery (swarm-discovery, {SERVICE_NAME})");
+        log::info!(
+            "Started local hub discovery (swarm-discovery, {})",
+            service_name()
+        );
         let (sightings_tx, sightings) = channel(MAX_PENDING_SIGHTINGS);
         let browser = AbortOnDropHandle::new(tokio::spawn(browse(sightings_tx)));
         Self::new(sightings, browser)

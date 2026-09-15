@@ -1,6 +1,7 @@
 //! Local message hub discovery over mDNS (swarm-discovery), both halves:
 
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::LazyLock;
 
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use swarm_discovery::{Discoverer, IpClass};
@@ -13,12 +14,21 @@ pub use discovery::{LocalHubDiscoveryService, LocalHubEvent};
 
 /// The swarm-discovery service name Dash Chat hubs announce and browse under
 /// (`_dashchat._tcp.local.` on the wire). Both halves must use the same name.
-pub const SERVICE_NAME: &str = "dashchat";
+/// An e2e build is given an `E2E_NETWORK_ID`, which suffixes the name so that
+/// test runs sharing a LAN, each built with its own id, never see each
+/// other's hubs.
+pub fn service_name() -> &'static str {
+    static NAME: LazyLock<String> = LazyLock::new(|| match option_env!("E2E_NETWORK_ID") {
+        Some(id) => format!("dashchat-{id}"),
+        None => "dashchat".to_string(),
+    });
+    &NAME
+}
 
 /// A `Discoverer` configured the way both halves need it: IPv4-only, with
 /// multicast egress pinned to `interfaces`.
 pub(crate) fn base_discoverer(instance_id: &str, interfaces: Vec<Ipv4Addr>) -> Discoverer {
-    Discoverer::new_interactive(SERVICE_NAME.to_string(), instance_id.to_string())
+    Discoverer::new_interactive(service_name().to_string(), instance_id.to_string())
         .with_ip_class(IpClass::V4Only)
         .with_protocol(swarm_discovery::Protocol::Tcp)
         .with_multicast_interfaces_v4(interfaces)

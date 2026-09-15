@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
 import { killLeftoverMailboxServers } from './setup/cleanup';
+import { releaseWifiDevice } from './setup/host-wifi';
 import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
 import {
 	buildCargoPackages,
@@ -305,6 +306,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	async afterSession() {
+		releaseWifiDevice();
 		for (const platform of platforms) {
 			await platform.afterSession();
 		}

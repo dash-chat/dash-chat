@@ -13,7 +13,9 @@ import { envInt } from '../../helpers/utils';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import { hashFile } from '../device-installs';
+import { claimDevice, isDeviceFree, releaseDevice } from '../device-lock';
 import { envWithoutWdioLoader } from '../harness-env';
+import { E2E_NETWORK_ID } from '../network-id';
 import { runTurboBuild } from '../turbo-build';
 import { WIFI_REASSOCIATE_MS, type WifiInfo, waitForWifi } from '../wifi';
 import {
@@ -276,7 +278,7 @@ function connectedDevices(): string[] {
 function claimDevices(
 	kindBySlot: Map<number, AndroidKind>,
 ): Map<number, string> {
-	const devices = connectedDevices();
+	const devices = connectedDevices().filter(isDeviceFree);
 	const pools: Record<AndroidKind, string[]> = {
 		android: devices.filter(d => !d.startsWith('emulator-')),
 		'android-emulator': devices.filter(d => d.startsWith('emulator-')),
@@ -287,6 +289,8 @@ function claimDevices(
 			process.env[`_WDIO_ANDROID_UDID${slot}`] ??
 			process.env[`ANDROID_UDID${slot}`];
 		if (pinned !== undefined) {
+			// The launcher claims; the workers inherit its claim through the env.
+			if (process.env.WDIO_WORKER_ID === undefined) claimDevice(pinned);
 			udids.set(slot, pinned);
 			process.env[`_WDIO_ANDROID_UDID${slot}`] = pinned;
 			for (const pool of Object.values(pools)) {
@@ -307,6 +311,7 @@ function claimDevices(
 						`'just android boot-emulator'.`,
 			);
 		}
+		claimDevice(udid);
 		process.env[`_WDIO_ANDROID_UDID${slot}`] = udid;
 		udids.set(slot, udid);
 	}
@@ -700,6 +705,7 @@ export class AndroidPlatform implements AgentPlatform {
 							: {}),
 					};
 		const bakedEnv: Record<string, string> = {
+			E2E_NETWORK_ID,
 			...mailboxEnv,
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
@@ -766,6 +772,7 @@ export class AndroidPlatform implements AgentPlatform {
 					/* device gone or reverse already removed */
 				}
 			}
+			releaseDevice(udid);
 		}
 		for (const logger of this.loggers.values()) {
 			logger.kill();

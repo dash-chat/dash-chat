@@ -7,7 +7,9 @@ import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
 import { deviceHasBuild, recordInstalled } from '../device-installs';
+import { claimDevice, isDeviceFree, releaseDevice } from '../device-lock';
 import { envWithoutWdioLoader } from '../harness-env';
+import { E2E_NETWORK_ID } from '../network-id';
 import { runTurboBuild } from '../turbo-build';
 import { switchToWebview, waitForTestUtils } from '../webview';
 import {
@@ -121,12 +123,14 @@ function connectedDevices(): string[] {
 
 // Claim one connected iPhone per slot
 function claimDevices(slots: number[]): Map<number, string> {
-	const pool = connectedDevices();
+	const pool = connectedDevices().filter(isDeviceFree);
 	const udids = new Map<number, string>();
 	for (const slot of slots) {
 		const pinned =
 			process.env[`_WDIO_IOS_UDID${slot}`] ?? process.env[`IOS_UDID${slot}`];
 		if (pinned !== undefined) {
+			// The launcher claims; the workers inherit its claim through the env.
+			if (process.env.WDIO_WORKER_ID === undefined) claimDevice(pinned);
 			udids.set(slot, pinned);
 			process.env[`_WDIO_IOS_UDID${slot}`] = pinned;
 			const i = pool.indexOf(pinned);
@@ -141,6 +145,7 @@ function claimDevices(slots: number[]): Map<number, string> {
 					`trusted device, or set IOS_UDID${slot}.`,
 			);
 		}
+		claimDevice(udid);
 		process.env[`_WDIO_IOS_UDID${slot}`] = udid;
 		udids.set(slot, udid);
 	}
@@ -352,6 +357,7 @@ export class IosPlatform implements AgentPlatform {
 		// host still holds before each session.
 		process.env._WDIO_IOS_HOST_IP = hostIp;
 		const bakedEnv: Record<string, string> = {
+			E2E_NETWORK_ID,
 			MAILBOX_URL: `http://${hostIp}:${mailboxPort}`,
 		};
 		if (pushPort !== null) {
@@ -428,6 +434,9 @@ export class IosPlatform implements AgentPlatform {
 		for (const logger of this.loggers.values()) logger.kill();
 		// The launcher never owned the workers' tails, so kill them by device or
 		// the run leaves one attached per spec, blocking the next run's logging.
-		for (const udid of this.udids.values()) killStaleSyslogLoggers(udid);
+		for (const udid of this.udids.values()) {
+			killStaleSyslogLoggers(udid);
+			releaseDevice(udid);
+		}
 	}
 }
