@@ -170,7 +170,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn format_record(
+pub(crate) fn format_record(
     out: tauri_plugin_log::fern::FormatCallback,
     message: &std::fmt::Arguments,
     record: &log::Record,
