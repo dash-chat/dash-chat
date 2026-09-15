@@ -392,6 +392,7 @@ PLATFORMS=ios just e2e run settings-pages
 ```
 
 **Key details:**
+- Desktop runs need `tauri-driver` and `toxiproxy-server` on the PATH; the nix dev shell provides both. Without nix: `cargo install tauri-driver`, and the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when either is missing.
 - Tests use page objects from `e2e-tests/helpers/pages/`. `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` returns one `Agent` per requirement with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
 - Platform-specific setup (tauri-driver instances, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.

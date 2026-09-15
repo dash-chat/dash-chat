@@ -7,7 +7,7 @@
  * records its API port so spec workers can reach it; a link's toxics are
  * driven over the HTTP API.
  */
-import { type ChildProcess, spawn } from 'node:child_process';
+import { type ChildProcess, execSync, spawn } from 'node:child_process';
 import {
 	closeSync,
 	mkdirSync,
@@ -30,11 +30,27 @@ const INFO_PATH = path.join(ROOT, '.dbs', 'e2e', 'toxiproxy-info.json');
 const SLOW_LATENCY_MS = 500;
 const SLOW_JITTER_MS = 250;
 
+/** Every run's mailbox goes through the proxy, so a missing binary has to
+ *  fail here, by name, rather than as a port that never listens. */
+function assertToxiproxyAvailable(): void {
+	try {
+		execSync('command -v toxiproxy-server', { stdio: 'ignore' });
+	} catch {
+		throw new Error(
+			'toxiproxy-server not found — every e2e run degrades the cloud mailbox ' +
+				'through it. Run inside the nix dev shell, or install the ' +
+				'toxiproxy-server binary from https://github.com/Shopify/toxiproxy/releases ' +
+				'(2.12.0 is the version the shell pins) onto your PATH.',
+		);
+	}
+}
+
 export async function startToxiproxy(): Promise<{
 	proc: ChildProcess;
 	logger: ChildProcess;
 	port: number;
 }> {
+	assertToxiproxyAvailable();
 	const port = await allocateFreePort();
 	const logFile = path.join(ROOT, '.dbs', 'e2e', 'toxiproxy', 'toxiproxy.log');
 	mkdirSync(path.dirname(logFile), { recursive: true });
@@ -52,8 +68,13 @@ export async function startToxiproxy(): Promise<{
 		},
 	);
 	closeSync(logFd);
-	proc.on('error', err => {
-		console.error(`[toxiproxy] ERROR ${err.message}`);
+	// A spawn failure only reaches an 'error' listener; without this it
+	// would surface as the port never listening.
+	await new Promise<void>((resolve, reject) => {
+		proc.once('spawn', resolve);
+		proc.once('error', err =>
+			reject(new Error(`could not start toxiproxy-server: ${err.message}`)),
+		);
 	});
 	await waitForPortListening(port);
 	writeFileSync(INFO_PATH, JSON.stringify({ pid: proc.pid, port }));
@@ -96,9 +117,11 @@ export class Link {
 		port: number,
 		upstreamPort: number,
 	): Promise<Link> {
+		// IPv4, as the mailbox bound before the proxy fronted it: agents reach
+		// it over IPv4, and a v6-only socket refuses them where bindv6only=1.
 		await api('POST', '/proxies', {
 			name,
-			listen: `[::]:${port}`,
+			listen: `0.0.0.0:${port}`,
 			upstream: `127.0.0.1:${upstreamPort}`,
 			enabled: true,
 		});
