@@ -1,5 +1,5 @@
 diff --git a/dist/cjs/development/debug-C46WDxhL.js b/dist/cjs/development/debug-C46WDxhL.js
-index 59b724fc95d38bae5ee00cddcbd19bbd706dc409..660fda095b3a7eb60a9ba87a5ac4eb37b8cf49d0 100644
+index 59b724fc95d38bae5ee00cddcbd19bbd706dc409..5ecda2f8f98df0dc83282dbb92c1d5701989871b 100644
 --- a/dist/cjs/development/debug-C46WDxhL.js
 +++ b/dist/cjs/development/debug-C46WDxhL.js
 @@ -769,24 +769,13 @@ function createCallback(fn, scope, deps) {
@@ -45,8 +45,21 @@ index 59b724fc95d38bae5ee00cddcbd19bbd706dc409..660fda095b3a7eb60a9ba87a5ac4eb37
      this._setValue(this._value);
    }
    async _setPromise(promise) {
+@@ -1158,7 +1152,11 @@ class ReactivePromiseImpl {
+     const newState = dirty ? 2 : 4;
+     for (const ref of awaitSubs.keys()) {
+       const signal2 = ref.deref();
+-      if (signal2 === void 0) {
++      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
++      // is Clean with no dirtyHead; marking it PendingDirty makes the next
++      // dirtySignalConsumers read `dirtyHead.ord` off undefined. If it awaits
++      // us again it resumes through `_pending`, so leave it alone.
++      if (signal2 === void 0 || signal2._state === 0) {
+         continue;
+       }
+       signal2._state = newState;
 diff --git a/dist/cjs/production/contexts-CM3QLfV8.js b/dist/cjs/production/contexts-CM3QLfV8.js
-index fc90dde43b4d9bdf76d497238448a5cbb0d80a69..2c8d48aa059290417f4ef0bf7860c1cf95200b66 100644
+index fc90dde43b4d9bdf76d497238448a5cbb0d80a69..1d803ae77a58c6c3f32d90ac9993d54e007d9a9a 100644
 --- a/dist/cjs/production/contexts-CM3QLfV8.js
 +++ b/dist/cjs/production/contexts-CM3QLfV8.js
 @@ -427,24 +427,13 @@ function createCallback(fn, scope, deps) {
@@ -92,8 +105,21 @@ index fc90dde43b4d9bdf76d497238448a5cbb0d80a69..2c8d48aa059290417f4ef0bf7860c1cf
      this._setValue(this._value);
    }
    async _setPromise(promise) {
+@@ -790,7 +784,11 @@ class ReactivePromiseImpl {
+     const newState = dirty ? 2 : 4;
+     for (const ref of awaitSubs.keys()) {
+       const signal2 = ref.deref();
+-      if (signal2 === void 0) {
++      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
++      // is Clean with no dirtyHead; marking it PendingDirty makes the next
++      // dirtySignalConsumers read `dirtyHead.ord` off undefined. If it awaits
++      // us again it resumes through `_pending`, so leave it alone.
++      if (signal2 === void 0 || signal2._state === 0) {
+         continue;
+       }
+       signal2._state = newState;
 diff --git a/dist/esm/development/debug-BTLbgTPK.js b/dist/esm/development/debug-BTLbgTPK.js
-index 59cf1668a2213dae6a6a90a635238d67a33fc96b..4c70aa880cf1390eeb297a5a814a572a7399fe8a 100644
+index 59cf1668a2213dae6a6a90a635238d67a33fc96b..e3c4d8772bbd5973d0209c99ffe533b1eec63098 100644
 --- a/dist/esm/development/debug-BTLbgTPK.js
 +++ b/dist/esm/development/debug-BTLbgTPK.js
 @@ -768,24 +768,21 @@ function createCallback(fn, scope, deps) {
@@ -148,8 +174,21 @@ index 59cf1668a2213dae6a6a90a635238d67a33fc96b..4c70aa880cf1390eeb297a5a814a572a
      this._setValue(this._value);
    }
    async _setPromise(promise) {
+@@ -1157,7 +1159,11 @@ class ReactivePromiseImpl {
+     const newState = dirty ? 2 : 4;
+     for (const ref of awaitSubs.keys()) {
+       const signal2 = ref.deref();
+-      if (signal2 === void 0) {
++      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
++      // is Clean with no dirtyHead; marking it PendingDirty makes the next
++      // dirtySignalConsumers read `dirtyHead.ord` off undefined. If it awaits
++      // us again it resumes through `_pending`, so leave it alone.
++      if (signal2 === void 0 || signal2._state === 0) {
+         continue;
+       }
+       signal2._state = newState;
 diff --git a/dist/esm/production/contexts-FxCndlvf.js b/dist/esm/production/contexts-FxCndlvf.js
-index d578ce64f32f9970e55d028e4d727d9c76a62697..c331c8f03d4c9b5f510335539649a5418f75167c 100644
+index d578ce64f32f9970e55d028e4d727d9c76a62697..160fb9a9db7bb35da7c6589eff15eabcb0c64b20 100644
 --- a/dist/esm/production/contexts-FxCndlvf.js
 +++ b/dist/esm/production/contexts-FxCndlvf.js
 @@ -426,24 +426,13 @@ function createCallback(fn, scope, deps) {
@@ -195,3 +234,16 @@ index d578ce64f32f9970e55d028e4d727d9c76a62697..c331c8f03d4c9b5f510335539649a541
      this._setValue(this._value);
    }
    async _setPromise(promise) {
+@@ -789,7 +783,11 @@ class ReactivePromiseImpl {
+     const newState = dirty ? 2 : 4;
+     for (const ref of awaitSubs.keys()) {
+       const signal2 = ref.deref();
+-      if (signal2 === void 0) {
++      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
++      // is Clean with no dirtyHead; marking it PendingDirty makes the next
++      // dirtySignalConsumers read `dirtyHead.ord` off undefined. If it awaits
++      // us again it resumes through `_pending`, so leave it alone.
++      if (signal2 === void 0 || signal2._state === 0) {
+         continue;
+       }
+       signal2._state = newState;

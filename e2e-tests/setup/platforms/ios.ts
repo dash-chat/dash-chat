@@ -175,21 +175,23 @@ function claimDevices(slots: number[]): Map<number, string> {
 	return udids;
 }
 
-/** The xcuitest driver lives in APPIUM_HOME (not node_modules); install it on
- *  first run. */
+/** Appium keeps its drivers in APPIUM_HOME, not node_modules, so on first run
+ *  link in the `appium-xcuitest-driver` devDependency: the version is pinned in
+ *  package.json (bump it there, then `pnpm install`) and the link tracks it. The
+ *  pin must be a version whose bundled WebDriverAgent compiles on current Xcode,
+ *  which needs the appium 3.x server (see the `appium` dep); xcuitest <= 9.x
+ *  ships a WDA that fails to build ("xcodebuild failed with code 65"). */
 function ensureXcuitestDriver() {
 	const installed = execSync(
 		`"${APPIUM_BIN}" driver list --installed 2>&1 || true`,
 		{ encoding: 'utf8', cwd: E2E_DIR },
 	);
-	if (!installed.includes('xcuitest')) {
-		// Pinned to the last version compatible with the appium 2.x server (8.x
-		// requires appium 3.x), like the android uiautomator2 pin.
-		execSync(`"${APPIUM_BIN}" driver install xcuitest@7.35.1`, {
-			stdio: 'inherit',
-			cwd: E2E_DIR,
-		});
-	}
+	if (installed.includes('xcuitest')) return;
+	const driverPath = path.join(E2E_DIR, 'node_modules', 'appium-xcuitest-driver');
+	execSync(`"${APPIUM_BIN}" driver install --source=local "${driverPath}"`, {
+		stdio: 'inherit',
+		cwd: E2E_DIR,
+	});
 }
 
 /** `mobile: queryAppState` value for "the app is not running". */
