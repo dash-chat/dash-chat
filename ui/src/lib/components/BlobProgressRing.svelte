@@ -41,7 +41,7 @@
 	data-stalled={stalled}
 	title={stalled ? m.blobDownloadStalledRetry() : undefined}
 	aria-busy={!stalled && fraction < 1}
-	role="progressbar"
+	role={stalled ? undefined : 'progressbar'}
 	aria-valuemin="0"
 	aria-valuemax={total}
 	aria-valuenow={indeterminate ? undefined : bytes}
