@@ -288,6 +288,12 @@ impl Node {
         // `OpStore::acked_log_height`).
         operation.ack().await?;
 
+        if DeviceId::from(operation.author()) == self.device_id() {
+            self.mailboxes
+                .publish_fast_push(operation.topic(), self.device_id())
+                .await;
+        }
+
         Ok(())
     }
 
@@ -766,8 +772,9 @@ impl Node {
         Ok(())
     }
 
-    /// Register a single node as a bootstrap (on the shared relay) so p2panda
-    /// discovery can reach it. Deduplicated so repeated calls are cheap. Used
+    /// Give p2panda a node's address on the shared relay, unless it already
+    /// knows the node, so discovery can reach it. Deduplicated so repeated
+    /// calls are cheap. Used
     /// both for mailbox-stream authors and for a freshly-scanned contact, the
     /// latter letting two nodes connect directly over the internet (relay +
     /// pkarr) without depending on a mutually-reachable mailbox.

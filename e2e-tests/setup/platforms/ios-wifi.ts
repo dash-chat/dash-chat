@@ -21,6 +21,20 @@ const PASSWORD_SHEET_MS = 5_000;
  *  the tap is taken to have missed. */
 const INFO_PAGE_MS = 5_000;
 
+/** How long the Wi-Fi list gets to show a network in range. */
+const NETWORK_LIST_MS = 10_000;
+
+/** How many times a tap that shows no effect is repeated. */
+const TAP_ATTEMPTS = 3;
+
+/** How long a tap gets to show its effect before it is taken to have missed:
+ *  a switch flipping, or a tapped network starting to associate. */
+const TAP_TOOK_MS = 5_000;
+
+/** How long a tapped network gets to associate before the tap is repeated;
+ *  a WPA2 association plus DHCP on a busy AP takes well under this. */
+const ASSOCIATE_MS = 20_000;
+
 /** What the root screen's Wi-Fi row names instead of an SSID. */
 const NO_NETWORK_LABELS = ['Off', 'Not Connected'];
 
@@ -81,22 +95,33 @@ class SettingsApp {
 		await this.wifiSwitch().waitForExist();
 	}
 
-	/** Wi-Fi page -> root. */
+	/** Wi-Fi page, or a page under it -> root. */
 	async backToRoot(): Promise<void> {
 		await this.backButton().click();
-		await this.rootWifiRow().waitForExist();
+		if (!(await walkBackToRoot(this.b))) {
+			throw new Error('Settings did not get back to its root screen');
+		}
 	}
 
-	/** Wi-Fi page: flip the switch to `on` if it is not there already. */
+	/** Wi-Fi page: flip the switch to `on` if it is not there already. A tap
+	 *  now and then does not take, so it is repeated until the switch reads
+	 *  as wanted. */
 	async setWifi(on: boolean): Promise<void> {
 		const wanted = on ? '1' : '0';
 		const wifiSwitch = this.wifiSwitch();
-		if ((await wifiSwitch.getAttribute('value')) === wanted) return;
-		await wifiSwitch.click();
-		await this.b.waitUntil(
-			async () => (await wifiSwitch.getAttribute('value')) === wanted,
-			{ timeoutMsg: `the Wi-Fi switch never turned ${on ? 'on' : 'off'}` },
-		);
+		for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
+			if ((await wifiSwitch.getAttribute('value')) === wanted) return;
+			await wifiSwitch.click();
+			const flipped = await this.b
+				.waitUntil(
+					async () => (await wifiSwitch.getAttribute('value')) === wanted,
+					{ timeout: TAP_TOOK_MS },
+				)
+				.then(() => true)
+				.catch(() => false);
+			if (flipped) return;
+		}
+		throw new Error(`the Wi-Fi switch never turned ${on ? 'on' : 'off'}`);
 	}
 
 	/** Wi-Fi page: tap `ssid` in the list once the scan shows it, and answer
@@ -153,6 +178,15 @@ class SettingsApp {
 				`**/XCUIElementTypeCell[\`name BEGINSWITH ${quoted(`${ssid},`)}\`]/**/XCUIElementTypeButton[\`name == "More Info"\`]`,
 			),
 		);
+	}
+
+	/** Wi-Fi page: whether `ssid` is listed, once the scan has had time to
+	 *  show it. */
+	async lists(ssid: string): Promise<boolean> {
+		return await this.networkRow(ssid)
+			.waitForExist({ timeout: NETWORK_LIST_MS })
+			.then(() => true)
+			.catch(() => false);
 	}
 
 	/** Wi-Fi page -> `ssid`'s info page. The list re-renders as scans come in,
@@ -213,6 +247,45 @@ class SettingsApp {
 	}
 }
 
+/** How long a freshly launched Settings gets to show its root screen. */
+const SETTINGS_ROOT_MS = 5_000;
+
+/** Tap back until the root screen shows, at most `pages` times; whether it
+ *  did. Where Settings is when an operation ends is not always where it was
+ *  expected: tapping the row of the network the phone has meanwhile joined
+ *  on its own opens that network's page rather than joining, and a relaunch
+ *  now and then comes up on the page it was last on. */
+async function walkBackToRoot(
+	b: WebdriverIO.Browser,
+	pages = 4,
+): Promise<boolean> {
+	const root = b.$('~com.apple.settings.wifi');
+	const back = b.$(
+		classChain('**/XCUIElementTypeNavigationBar/XCUIElementTypeButton[1]'),
+	);
+	for (let page = 0; page <= pages; page++) {
+		const atRoot = await root
+			.waitForExist({ timeout: SETTINGS_ROOT_MS })
+			.then(() => true)
+			.catch(() => false);
+		if (atRoot) return true;
+		if (!(await back.isExisting())) return false;
+		await back.click();
+	}
+	return false;
+}
+
+/** Launch Settings on its root screen, relaunching if walking back does
+ *  not get there. */
+async function openSettingsAtRoot(b: WebdriverIO.Browser): Promise<void> {
+	for (let launch = 1; launch <= 3; launch++) {
+		await b.terminateApp(SETTINGS_BUNDLE_ID);
+		await b.activateApp(SETTINGS_BUNDLE_ID);
+		if (await walkBackToRoot(b)) return;
+	}
+	throw new Error('Settings never showed its root screen');
+}
+
 /** Run `body` against a freshly opened Settings app and put things back:
  *  Settings closed, the app on screen again if it was, the session in the
  *  app's webview if it was. A backgrounded or stopped app is left so. */
@@ -225,10 +298,8 @@ async function inSettings<T>(
 	const wasOnScreen =
 		Number(await b.queryAppState(APP_BUNDLE_ID)) === APP_STATE_FOREGROUND;
 	await b.switchContext('NATIVE_APP');
-	await b.terminateApp(SETTINGS_BUNDLE_ID);
-	await b.activateApp(SETTINGS_BUNDLE_ID);
+	await openSettingsAtRoot(b);
 	const settings = new SettingsApp(b);
-	await b.$('~com.apple.settings.wifi').waitForExist();
 	try {
 		return await body(settings);
 	} finally {
@@ -263,23 +334,42 @@ export function iosWifiInfo(b: WebdriverIO.Browser): Promise<WifiInfo> {
 	});
 }
 
+/** Root: whether the device associates with `ssid` within `ms`. */
+async function associatedWithin(
+	settings: SettingsApp,
+	ssid: string,
+	ms: number,
+): Promise<boolean> {
+	const deadline = Date.now() + ms;
+	while (Date.now() < deadline) {
+		if ((await settings.ssid()) === ssid) return true;
+		await new Promise(resolve => setTimeout(resolve, 1_000));
+	}
+	return false;
+}
+
 /** Join `ssid` (an empty `passphrase` means an open network), saving it on
- *  the device if it is new, and resolve with the IPv4 address obtained on it. */
+ *  the device if it is new, and resolve with the IPv4 address obtained on it.
+ *  The tap on the network's row now and then does not take, so it is
+ *  repeated while the device does not associate. */
 export function connectIosWifi(
 	b: WebdriverIO.Browser,
 	ssid: string,
 	passphrase: string,
 ): Promise<string> {
 	return inSettings(b, async settings => {
-		if ((await settings.ssid()) !== ssid) {
+		for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
+			if ((await settings.ssid()) === ssid) break;
 			await settings.openWifi();
 			await settings.setWifi(true);
 			await settings.join(ssid, passphrase);
 			await settings.backToRoot();
-			await waitForWifi(
-				async () => ((await settings.ssid()) === ssid ? ssid : ''),
-				`device never associated with "${ssid}" within ${WIFI_REASSOCIATE_MS / 1_000}s; is it in range, and are the credentials right?`,
-			);
+			if (await associatedWithin(settings, ssid, ASSOCIATE_MS)) break;
+			if (attempt === TAP_ATTEMPTS) {
+				throw new Error(
+					`device never associated with "${ssid}" after ${TAP_ATTEMPTS} joins; is it in range, and are the credentials right?`,
+				);
+			}
 		}
 		return await waitForAddressOn(settings, ssid);
 	});
@@ -287,13 +377,20 @@ export function connectIosWifi(
 
 /** Forget `ssid`, which drops the association if that is the current one,
  *  and resolve with the IPv4 address the device is on once it has settled on
- *  another saved network. */
+ *  another saved network. A network not in range is not listed and cannot be
+ *  forgotten; it is left alone. */
 export function forgetIosWifi(
 	b: WebdriverIO.Browser,
 	ssid: string,
 ): Promise<string> {
 	return inSettings(b, async settings => {
 		await settings.openWifi();
+		if (!(await settings.lists(ssid))) {
+			console.log(`[wifi] "${ssid}" is not in range; nothing to forget`);
+			await settings.backToRoot();
+			const current = await settings.ssid();
+			return current === '' ? '' : await waitForAddressOn(settings, current);
+		}
 		await settings.openInfo(ssid);
 		await settings.forget();
 		await settings.backToRoot();

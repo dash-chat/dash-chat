@@ -275,7 +275,14 @@ impl Actor {
         node_id: NodeId,
         relay_url: RelayUrl,
     ) -> Result<(), NodeActorError> {
-        self.inner.insert_bootstrap(node_id, relay_url).await?;
+        // insert_node_addr replaces the whole entry, which would drop the LAN addresses of a peer
+        // we already know and leave it undialable while offline.
+        let addr = iroh::EndpointAddr::new(p2panda_net::utils::from_verifying_key(node_id))
+            .with_relay_url(relay_url);
+        if self.inner.node_addr_known(&addr).await? {
+            return Ok(());
+        }
+        self.inner.insert_node_addr(addr).await?;
         Ok(())
     }
 

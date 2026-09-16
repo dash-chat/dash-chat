@@ -33,9 +33,6 @@ pub struct AppNodeManager {
     notified_operations_store: NotifiedOperationsStore,
 }
 
-// `pause`/`resume` are driven by the iOS lifecycle plugin; they are unused on
-// desktop/Android.
-#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
 impl AppNodeManager {
     /// Build the node and wrap it in the container. Delegates to [`resume`](Self::resume),
     /// which is where node construction actually happens (startup and, on iOS,
@@ -82,6 +79,17 @@ impl AppNodeManager {
         NodeContext::for_app(app, self.notification_tx.clone(), topic_subscribed_tx)
     }
 
+    /// Persist the peer-to-peer switch and rebuild the node in that mode; off,
+    /// it syncs through mailboxes only. A no-op when the setting is unchanged.
+    pub async fn set_p2p_enabled(&self, app: &AppHandle, enabled: bool) -> anyhow::Result<()> {
+        if crate::settings::load_p2p_enabled(app) == enabled {
+            return Ok(());
+        }
+        crate::settings::save_p2p_enabled(app, enabled);
+        self.pause().await;
+        self.resume(app).await
+    }
+
     /// Snapshot the live node, or a retryable "not ready" error when paused.
     /// Returns immediately — the frontend retry loop covers the resume window,
     /// so we deliberately do not wait here.
@@ -105,12 +113,12 @@ impl AppNodeManager {
         node_slot::subscribe_generation()
     }
 
-    /// Tear the node down and release all SQLite locks so iOS can suspend the
-    /// app cleanly. Idempotent; `node_slot::clear` holds the lifecycle lock for
-    /// the whole teardown so a concurrent [`resume`](Self::resume) build can't
-    /// interleave.
+    /// Tear the node down and release all SQLite locks, so iOS can suspend the
+    /// app cleanly or a rebuild can start from nothing. Idempotent;
+    /// `node_slot::clear` holds the lifecycle lock for the whole teardown so a
+    /// concurrent [`resume`](Self::resume) build can't interleave.
     pub async fn pause(&self) {
-        log::info!("Quiescing node for iOS background suspension");
+        log::info!("Tearing the node down");
         // Clear the slot and tear down its AppNode, cancelling and draining the
         // cloud-mailbox retry, aborting mDNS discovery, and shutting the Node
         // down so nothing still touches its SQLite pools when iOS suspends.
@@ -124,11 +132,12 @@ impl AppNodeManager {
         log::info!("Node quiesced; SQLite locks released for background suspension");
     }
 
-    /// Build the node (if not already present) and start its auxiliary tasks.
-    /// Idempotent. On foreground a failed rebuild leaves the node paused (commands
-    /// keep retrying via `invokeAfterSetup`) and the next foreground retries.
+    /// Build the node for the current app context (if no compatible one is
+    /// present) and start its auxiliary tasks. Idempotent. On foreground a failed
+    /// rebuild leaves the node paused (commands keep retrying via
+    /// `invokeAfterSetup`) and the next foreground retries.
     pub async fn resume(&self, app: &AppHandle) -> anyhow::Result<()> {
-        log::info!("Rebuilding node on iOS foreground");
+        log::info!("Building node for the app context");
 
         // Build (or adopt a compatible existing) node in the slot. `node_slot`
         // serializes this against teardown and is idempotent, so a redundant
@@ -138,6 +147,15 @@ impl AppNodeManager {
         // bumps the generation on a fresh build so forwarders re-bind.
         let context = self.app_context(app);
         node_slot::get_or_build_node(&self.data_path, context).await?;
+
+        // A rebuilt node re-registers its mailboxes seeded from the sync
+        // tracker's persisted status, each polled immediately on registration;
+        // a re-adopted node kept trackers that may have backed off while the
+        // app was backgrounded. Probe like Android's on_resume so recovery is
+        // immediate either way, without presuming the result.
+        if let Ok(node) = self.get().await {
+            crate::mailbox::probe_cloud_mailbox(&node).await;
+        }
         Ok(())
     }
 }

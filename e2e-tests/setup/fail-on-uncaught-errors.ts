@@ -63,6 +63,29 @@ function scanLogs(): string[] {
 	return errors;
 }
 
+/** Device logs reach the capture files with some latency (syslog/logcat
+ *  tailing), so wait for lines from the final test to land: until every log
+ *  has been quiet for a moment, or a fixed allowance runs out. */
+async function waitForLogsToSettle(): Promise<void> {
+	const deadline = Date.now() + 2000;
+	let size = totalLogSize();
+	let quietSince = Date.now();
+	while (Date.now() < deadline) {
+		await new Promise(resolve => setTimeout(resolve, 100));
+		const now = totalLogSize();
+		if (now !== size) {
+			size = now;
+			quietSince = Date.now();
+		} else if (Date.now() - quietSince >= 300) {
+			return;
+		}
+	}
+}
+
+function totalLogSize(): number {
+	return agentLogFiles().reduce((sum, file) => sum + statSync(file).size, 0);
+}
+
 function assertNoUncaughtErrors(errors: string[], when: string): void {
 	if (errors.length > 0) {
 		throw new Error(
@@ -82,9 +105,7 @@ export const mochaHooks = {
 		assertNoUncaughtErrors(scanLogs(), 'during this test');
 	},
 	async afterAll() {
-		// Device logs reach the capture files with some latency (syslog/logcat
-		// tailing), so give lines from the final test a moment to land.
-		await new Promise(resolve => setTimeout(resolve, 2000));
+		await waitForLogsToSettle();
 		assertNoUncaughtErrors(scanLogs(), 'at the end of this spec file');
 	},
 };

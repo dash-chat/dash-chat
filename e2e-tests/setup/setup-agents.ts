@@ -49,7 +49,13 @@ import {
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
-import { killAgentApp, readOpenedUrls } from './platforms/desktop';
+import {
+	isAgentAppRunning,
+	killAgentApp,
+	launchAgentApp,
+	macWindowRect,
+	readOpenedUrls,
+} from './platforms/desktop';
 import { APP_STATE_NOT_RUNNING, resetIosAppState } from './platforms/ios';
 import {
 	connectIosWifi,
@@ -58,13 +64,16 @@ import {
 	forgetIosWifi,
 	iosWifiInfo,
 } from './platforms/ios-wifi';
-import { type AgentPlatformName, platformNames } from './test-env';
+import { type AgentPlatformName, isMobile, platformNames } from './test-env';
 import { switchToWebview, waitForTestUtils } from './webview';
 import type { WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
 	platform: AgentPlatformName;
+	/** Whether the app runs with peer-to-peer connectivity; false once
+	 *  `disableP2p` ran, after which it reaches peers through a mailbox only. */
+	p2p: boolean;
 
 	accountPage: AccountPage;
 	addContactPage: AddContactPage;
@@ -142,9 +151,9 @@ export type Agent = WebdriverIO.Browser & {
 	getColorScheme(): Promise<'light' | 'dark'>;
 	/** Enable preview features so gated UI (e.g. new-group) becomes visible. */
 	enablePreviewFeatures(): Promise<void>;
-	/** Close this agent's iroh endpoint so it can no longer sync over p2p.
-	 *  One-way for the life of the process; the agent still reads/writes
-	 *  locally and talks to a mailbox. */
+	/** Turn this agent's persisted p2p setting off and rebuild its node without
+	 *  peer-to-peer connectivity, so it syncs through mailboxes only. A spec's
+	 *  setup step: call it right after `setupAgents`, before the agents meet. */
 	disableP2p(): Promise<void>;
 	/** Pause or resume this agent's blob fetch loop (e2e-only command). */
 	setBlobFetchPaused(paused: boolean): Promise<void>;
@@ -308,6 +317,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.executeAsync((done: () => void) =>
 			window.__test.disableP2p().then(done, done),
 		);
+		agent.p2p = false;
 	};
 	agent.setBlobFetchPaused = async (paused: boolean) => {
 		await b.executeAsync(
@@ -317,18 +327,8 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		);
 	};
 	agent.restart = async () => {
-		// On mobile a new session fast-resets the app (`pm clear` on Android),
-		// so the app would come back with no profile instead of re-hydrating
-		// from the data dir; stop and start it inside this session instead.
-		if (agent.platform !== 'desktop') {
-			await agent.stopApp();
-			await agent.startApp();
-			await agent.setWideScreen(false);
-			return;
-		}
-		await b.reloadSession();
-		await waitForTestUtils(b);
-		attachPages(agent, b);
+		await agent.stopApp();
+		await agent.startApp();
 		await agent.setWideScreen(false);
 	};
 	agent.stopApp = async () => {
@@ -339,7 +339,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 				// The session is already gone when the app shut itself down; the
 				// kill below still reaps whatever is left on the data dir.
 			}
-			killAgentApp(slot);
+			await killAgentApp(slot);
 			return;
 		}
 		// Leave the webview first: the session drives it through chromedriver, so
@@ -372,15 +372,16 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
-			// reloadSession relaunches the binary even when the app is still up,
-			// so verify first: a live session means the app is running and
-			// driveable, and there is nothing to do.
+			// A live session means the app is running and driveable, and there
+			// is nothing to do: launching again would start a second process on
+			// the same data dir.
 			try {
 				await b.getTitle();
 				return;
 			} catch {
 				// Session gone — the app was stopped; relaunch below.
 			}
+			await launchAgentApp(slot);
 			await b.reloadSession();
 		} else {
 			// activateApp is itself idempotent: it launches a stopped app and
@@ -446,6 +447,10 @@ const PROCESS_LIFECYCLE_DISPATCH_MS = 1_500;
  *  a scroll, and well under the app's 500ms long-press threshold. */
 const TAP_HOLD_MS = 100;
 
+/** Between the two reads of a tap target's centre that must agree before it
+ *  is tapped: a fraction of the app's longest open transition (400ms). */
+const TAP_SETTLE_MS = 100;
+
 /** How many times to re-tap an element whose tap never reached the page. */
 const TAP_ATTEMPTS = 3;
 
@@ -490,20 +495,36 @@ async function tapPoint(
 	// stale elements) rather than reusing the one it was given. Selectors here
 	// are not all CSS — `a*=name` chains off a parent — so this cannot be a
 	// `document.querySelector` inside the page.
+	const centreIfTopmost = (el: HTMLElement) => {
+		let rect = el.getBoundingClientRect();
+		let x = rect.x + rect.width / 2;
+		let y = rect.y + rect.height / 2;
+		if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
+			el.scrollIntoView({ block: 'center', inline: 'center' });
+			rect = el.getBoundingClientRect();
+			x = rect.x + rect.width / 2;
+			y = rect.y + rect.height / 2;
+		}
+		const topmost = document.elementFromPoint(x, y);
+		return topmost !== null && (topmost === el || el.contains(topmost))
+			? { x, y }
+			: null;
+	};
 	return await agent.waitUntil(
 		async () => {
 			const live = await refetch(element);
 			if (live === null) return null;
-			const point = await agent.execute((el: HTMLElement) => {
-				const rect = el.getBoundingClientRect();
-				const x = rect.x + rect.width / 2;
-				const y = rect.y + rect.height / 2;
-				const topmost = document.elementFromPoint(x, y);
-				return topmost !== null && (topmost === el || el.contains(topmost))
-					? { x, y }
-					: null;
-			}, live);
-			return point === null ? null : { ...point, live };
+			const point = await agent.execute(centreIfTopmost, live);
+			if (point === null) return null;
+			// A menu still scaling or sliding in reports the centre it has now,
+			// not the one it settles at, and a tap there lands beside it — on a
+			// backdrop that closes the menu. Tap only once the centre holds still.
+			await agent.pause(TAP_SETTLE_MS);
+			const settled = await agent.execute(centreIfTopmost, live);
+			if (settled === null || settled.x !== point.x || settled.y !== point.y) {
+				return null;
+			}
+			return { ...point, live };
 		},
 		{
 			timeoutMsg:
@@ -528,6 +549,7 @@ async function clickReachedElement(
 	element: WebdriverIO.Element,
 	x: number,
 	y: number,
+	pointerType: PointerType,
 ): Promise<boolean> {
 	await agent.execute((el: HTMLElement) => {
 		delete document.documentElement.dataset.e2eClick;
@@ -543,7 +565,7 @@ async function clickReachedElement(
 		);
 	}, element);
 	await agent
-		.action('pointer', { parameters: { pointerType: 'touch' } })
+		.action('pointer', { parameters: { pointerType } })
 		.move({ x: Math.round(x), y: Math.round(y) })
 		.down()
 		.pause(TAP_HOLD_MS)
@@ -553,6 +575,8 @@ async function clickReachedElement(
 		() => document.documentElement.dataset.e2eClick === 'seen',
 	);
 }
+
+type PointerType = 'touch' | 'mouse';
 
 /** Make webview clicks tap the element's own on-screen rect.
  *
@@ -565,20 +589,31 @@ async function clickReachedElement(
  *  webview it lands tens of points off and the tap silently misses. CSS pixels
  *  here already are screen points, so the rect is the tap point. A pointer
  *  action rather than `mobile: tap`: that one is an instantaneous
- *  XCUICoordinate tap, which WebKit drops inside a scrolling container. */
-function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
+ *  XCUICoordinate tap, which WebKit drops inside a scrolling container.
+ *
+ *  A desktop agent needs the same, with a mouse: the app's embedded
+ *  WebDriver implements element click as `el.click()` on the element itself,
+ *  which never reaches a handler on a child (a Konsta list item's link), while
+ *  a pointer action is dispatched at the point's innermost element and
+ *  bubbles up like a real click. */
+function tapWebElementsAtTheirRect(
+	agent: WebdriverIO.Browser,
+	pointerType: PointerType,
+): void {
 	agent.overwriteCommand(
 		'click',
 		async function (this: WebdriverIO.Element, origClick) {
-			const context = await agent.getContext();
-			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
-				return await origClick();
+			if (pointerType === 'touch') {
+				const context = await agent.getContext();
+				if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+					return await origClick();
+				}
 			}
 			for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
 				const { x, y, live } = await tapPoint(agent, this);
-				if (await clickReachedElement(agent, live, x, y)) return;
+				if (await clickReachedElement(agent, live, x, y, pointerType)) return;
 				console.warn(
-					`[ios] tap at ${x},${y} did not reach ${String(this.selector)} ` +
+					`[${pointerType}] tap at ${x},${y} did not reach ${String(this.selector)} ` +
 						`(attempt ${attempt}/${TAP_ATTEMPTS})`,
 				);
 			}
@@ -588,6 +623,50 @@ function tapWebElementsAtTheirRect(agent: WebdriverIO.Browser): void {
 			);
 		},
 		true,
+	);
+}
+
+/** Tap web elements with a touch action instead of chromedriver's click, which
+ *  spends about ten devtools round trips over USB (~800ms on a phone) where the
+ *  action needs two. */
+function tapWebElementsWithTouch(agent: WebdriverIO.Browser): void {
+	agent.overwriteCommand(
+		'click',
+		async function (this: WebdriverIO.Element, origClick) {
+			const context = await agent.getContext();
+			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+				return await origClick();
+			}
+			const { x, y } = await tapPoint(agent, this);
+			await agent
+				.action('pointer', { parameters: { pointerType: 'touch' } })
+				.move({ x: Math.round(x), y: Math.round(y) })
+				.down()
+				.up()
+				.perform();
+		},
+		true,
+	);
+}
+
+/** Make deleting a desktop agent's session a no-op once its app is gone. The
+ *  WebDriver server runs inside the app, so the session ended with the
+ *  process, and a delete sent to the closed port fails instead. */
+function skipSessionDeleteOnceAppIsGone(
+	agent: WebdriverIO.Browser,
+	slot: number,
+): void {
+	agent.overwriteCommand(
+		// @ts-expect-error The typings only accept webdriverio's own commands,
+		// but a WebDriver protocol command overwrites the same way.
+		'deleteSession',
+		async (
+			origDeleteSession: WebdriverIO.Browser['deleteSession'],
+			...args: Parameters<WebdriverIO.Browser['deleteSession']>
+		) => {
+			if (!(await isAgentAppRunning(slot))) return;
+			await origDeleteSession(...args);
+		},
 	);
 }
 
@@ -607,14 +686,24 @@ async function setupAgent(
 		await resetIosAppState(b);
 		// Before makeAgent: it resolves every page object's element, and an
 		// element built before the overwrite keeps the original click.
-		tapWebElementsAtTheirRect(b);
+		tapWebElementsAtTheirRect(b, 'touch');
+	} else if (platform === 'desktop') {
+		tapWebElementsAtTheirRect(b, 'mouse');
+		skipSessionDeleteOnceAppIsGone(b, slot);
+		if (process.platform === 'darwin') {
+			const { x, y, width, height } = macWindowRect(slot);
+			await b.setWindowRect(x, y, width, height);
+		}
+	} else {
+		tapWebElementsWithTouch(b);
 	}
 	const agent = makeAgent(b, slot);
 	agent.platform = platform;
+	agent.p2p = true;
 	agent.waitForAppExit = async () => {
 		if (platform === 'desktop') {
-			// The session breaking is the exit signal: tauri-driver has no other
-			// way to report that the process it launched is gone.
+			// The session breaking is the exit signal: the WebDriver server lives
+			// in the app, so it goes when the app does.
 			await b.waitUntil(
 				async () => {
 					try {
@@ -670,14 +759,6 @@ export type PlatformRequirement =
 /** What a spec requires of one agent. */
 export interface AgentRequirement {
 	platform: PlatformRequirement;
-}
-
-function isMobile(platform: AgentPlatformName): boolean {
-	return (
-		platform === 'ios' ||
-		platform === 'android' ||
-		platform === 'android-emulator'
-	);
 }
 
 function fulfills(

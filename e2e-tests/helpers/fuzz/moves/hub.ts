@@ -5,8 +5,6 @@
  *  leave moves all of them at once. Each ends by asserting what the
  *  connection chips show, so a sequence fails at the exact move hub
  *  discovery did not survive. */
-import fc from 'fast-check';
-
 import { allocateFreePort } from '../../../setup/allocate-port';
 import { joinWifi, leaveWifi } from '../../../setup/host-wifi';
 import { spawnLocalHub } from '../../../setup/local-hub';
@@ -136,7 +134,7 @@ class HubJoinMove extends Move {
 		const network = at(this.elsewhere(m), this.networkIdx);
 		log(`${this.toString()} -> hubs join ${network}`);
 		if (real.hubsDevice === null) throw new Error('the host has no Wi-Fi card');
-		if (from !== null) leaveWifi(from);
+		if (from !== null) await leaveWifi(from);
 		const { ssid, passphrase } = networkNamed(real, network);
 		await joinWifi(real.hubsDevice, ssid, passphrase);
 		real.hubsNetwork = network;
@@ -164,7 +162,7 @@ class HubLeaveMove extends Move {
 		const from = real.hubsNetwork;
 		if (from === null) throw new Error('the hubs are on no network');
 		log(`${this.toString()} -> hubs leave ${from}`);
-		leaveWifi(from);
+		await leaveWifi(from);
 		real.hubsNetwork = null;
 		for (const hub of m.hubs) m.hubLeave(hub.name);
 		await checkHubsOn(m, real, from, `the hubs left ${from}`);
@@ -180,12 +178,12 @@ class HubLeaveMove extends Move {
 }
 
 export const hubMoves: Moves = [
-	{ arbitrary: fc.constant(new CreateHubMove()), weight: 2 },
-	{ arbitrary: fc.nat().map(h => new StartHubMove(h)), weight: 4 },
-	{ arbitrary: fc.nat().map(h => new StopHubMove(h, 'SIGINT')), weight: 2 },
-	{ arbitrary: fc.nat().map(h => new StopHubMove(h, 'SIGKILL')), weight: 1 },
-	{ arbitrary: fc.nat().map(n => new HubJoinMove(n)), weight: 4 },
-	{ arbitrary: fc.constant(new HubLeaveMove()), weight: 2 },
+	{ build: () => new CreateHubMove(), weight: 2 },
+	{ build: h => new StartHubMove(h), weight: 4 },
+	{ build: h => new StopHubMove(h, 'SIGINT'), weight: 2 },
+	{ build: h => new StopHubMove(h, 'SIGKILL'), weight: 1 },
+	{ build: n => new HubJoinMove(n), weight: 4 },
+	{ build: () => new HubLeaveMove(), weight: 2 },
 ];
 
 /** The hub moves by the names a search prints them under. */

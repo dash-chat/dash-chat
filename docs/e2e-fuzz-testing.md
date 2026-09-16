@@ -33,7 +33,7 @@ it('...', async () => {
 
 ### Reading a failure
 
-The run logs `[fuzz HH:MM:SS.mmm] seed N` at the start and one line per move (`Alice: sendText(3,1) in Bob`). A failure throws fast-check's report plus:
+The run logs `HH:MM:SS.mmm [fuzz] seed N` at the start and one line per move (`Alice: sendText(3,1) in Bob`). A failure throws fast-check's report plus:
 
 ```
 Seed: 1234567
@@ -162,7 +162,7 @@ Hubs are `mailbox-local-server` processes spawned by `setup/local-hub.ts` on the
 - **Suspend vs kill**: suspending the mailbox (`SIGSTOP`) makes connections hang, killing it makes them refused. Kill it for any run that reads the connection chip: a network change wakes the mailbox pollers, which count a suspended cloud as connected until their polls time out, hiding the chip for any hub found meanwhile.
 - **Restart on mobile** is stop + activate inside the same Appium session, not `reloadSession`: a new session fast-resets the app (`pm clear`) and wipes the profile.
 - **iOS Wi-Fi** is driven through the Settings app, which takes the app off screen for the duration; the Settings labels are matched in English.
-- **Only one fuzz run at a time** on a host: the phones, the pinned Appium/adb/mailbox ports and the host Wi-Fi card are all shared, and `onPrepare` wipes `.dbs/e2e`.
+- **Two `just e2e` commands coexist on one host, unattended.** Each checkout's builds bake in their own `E2E_NETWORK_ID` (a hash of the checkout path), so its agents refuse another run's peers and only browse their own hubs; ports are allocated per run; and cleanup only touches the checkout's own processes. What only one run at a time may use is claimed (`/tmp/dash-chat-e2e/claims/`, one file per thing holding the claimant's pid, created exclusively so a race has one winner; a claim of a dead run is taken over): the checkout itself, since its data dir and network id are one per checkout, so a second run of the same checkout waits for the first; the phones, claimed all-or-nothing at launch so two runs can't deadlock holding half of each other's, the run waiting for devices another one drives; and the host Wi-Fi card, claimed by the first spec that joins or leaves a network with it and held to the end of that spec file. A waiting run says so once a minute, naming the holder's pid.
 
 ## Example specs
 
@@ -170,6 +170,7 @@ Hubs are `mailbox-local-server` processes spawned by `setup/local-hub.ts` on the
 |---|---|---|---|---|
 | `p2p-stress` | soak | user + device | suspended | any two |
 | `local-hub-discovery-stress` | search | hub + network + device | killed | two physical phones, host Wi-Fi card, `E2E_WIFI_NETWORKS` |
+| `cloud-spotty-stress` | search | user + device + cloud | behind toxiproxy | two agents with p2p disabled |
 
 `p2p-stress` is "two users use the app normally for a while with no cloud": every op has to travel over direct p2p sync. `local-hub-discovery-stress` is "hubs start, stop, die and move between LANs while phones walk in and out, background and restart": the connection chip has to name exactly the running hubs on the phone's LAN after every move.
 

@@ -6,11 +6,13 @@
 import { type LocalHub, stopLocalHub } from '../../setup/local-hub';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
+import type { Link } from '../../setup/toxiproxy';
 import { navigateToAddContact } from '../flows/exchange-contacts';
 import type { DirectChatPage } from '../pages/direct-chats/direct-chat-page';
 import type { GroupChatPage } from '../pages/group-chat/group-chat-page';
 import { tid } from '../selectors';
 import { SYNC_TIMEOUT } from '../timeouts';
+import { stampedLog } from '../utils';
 import type { ExpectedChat, ExpectedModel } from './model';
 
 // Mirrors QUICK_EMOJIS in ui/src/lib/utils/emojis.ts.
@@ -49,6 +51,9 @@ export interface Real {
 	 * hub replaces this with a location on `HubReal`. */
 	hubsNetwork: string | null;
 	hubs: HubReal[];
+	/** The link every agent reaches the cloud mailbox through, when the run
+	 * degrades it; null keeps the cloud out of the model. */
+	cloud: Link | null;
 }
 
 /** A `Real` with no hub yet and the card off every test network. Pure: the
@@ -57,6 +62,7 @@ export function newReal(init: {
 	agents: { agent: Agent; name: string }[];
 	networks?: WifiNetwork[];
 	hubsDevice?: string | null;
+	cloud?: Link;
 }): Real {
 	const networks = init.networks ?? [];
 	return {
@@ -65,13 +71,14 @@ export function newReal(init: {
 		hubsDevice: networks.length === 0 ? null : (init.hubsDevice ?? null),
 		hubsNetwork: null,
 		hubs: [],
+		cloud: init.cloud ?? null,
 	};
 }
 
 export type ChatPage = DirectChatPage | GroupChatPage;
 
 export function log(text: string): void {
-	console.log(`[fuzz ${new Date().toISOString().slice(11, 23)}] ${text}`);
+	stampedLog(`[fuzz] ${text}`);
 }
 
 /** Resolve an abstract index against whatever options exist right now. */
@@ -184,5 +191,13 @@ export async function ensureHome(sa: StressAgent): Promise<void> {
 			return;
 		}
 	}
+	if (await sa.agent.homePage.settingsLink.isExisting()) {
+		await sa.agent.homePage.ready();
+		return;
+	}
+	// A failed move can leave the agent on any page, with any dialog open —
+	// nowhere a click path back home is known from, so the route is set
+	// directly.
+	await sa.agent.goto('/');
 	await sa.agent.homePage.ready();
 }

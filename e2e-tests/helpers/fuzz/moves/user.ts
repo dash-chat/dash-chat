@@ -2,8 +2,6 @@
  *  replying, editing, deleting, creating a group. Each drives one behaviour
  *  through one agent's UI — checking the chat it opens against the model on
  *  the way in — records its ops, and returns to the home page. */
-import fc from 'fast-check';
-
 import {
 	type ChatPage,
 	QUICK_EMOJIS,
@@ -62,6 +60,15 @@ class AddContactMove extends Move {
 		log(`${actor.name}: ${this.toString()} -> adds ${peer.name}`);
 		await addContact(actor, peer);
 		m.recordAdded(actor.name, peer.name);
+		// The add that completes a pair puts the chat on the peer's screen too,
+		// which settle would miss: the peer may have known the actor's profile
+		// since its own add, so its knowledge does not grow here.
+		if (!m.areContacts(actor.name, peer.name) || m.isBackgrounded(peer.name)) {
+			return;
+		}
+		const chat = m.directChat(actor.name, peer.name);
+		log(`${peer.name}: should now see ${m.chatListName(chat, peer.name)}`);
+		await goHome(peer, await openChat(peer, chat, m));
 	}
 
 	toString(): string {
@@ -383,24 +390,18 @@ class DeleteMove extends TargetMove {
 	}
 }
 
-const pair = fc.tuple(fc.nat(), fc.nat());
-const triple = fc.tuple(fc.nat(), fc.nat(), fc.nat());
-
 /** One move a normal user makes, weighted as a day of use is. */
 export const userMoves: Moves = [
-	{ arbitrary: pair.map(([a, p]) => new AddContactMove(a, p)), weight: 10 },
-	{ arbitrary: pair.map(([a, c]) => new SendTextMove(a, c)), weight: 10 },
-	{ arbitrary: pair.map(([a, c]) => new SendPhotoMove(a, c)), weight: 3 },
-	{ arbitrary: pair.map(([a, c]) => new SendFileMove(a, c)), weight: 2 },
-	{ arbitrary: pair.map(([a, c]) => new SendVoiceMove(a, c)), weight: 2 },
-	{
-		arbitrary: triple.map(([a, o, c]) => new CreateGroupMove(a, o, c)),
-		weight: 2,
-	},
-	{ arbitrary: triple.map(([a, t, e]) => new ReactMove(a, t, e)), weight: 5 },
-	{ arbitrary: pair.map(([a, t]) => new ReplyMove(a, t)), weight: 3 },
-	{ arbitrary: pair.map(([a, t]) => new EditMove(a, t)), weight: 3 },
-	{ arbitrary: pair.map(([a, t]) => new DeleteMove(a, t)), weight: 2 },
+	{ build: (a, p) => new AddContactMove(a, p), weight: 10 },
+	{ build: (a, c) => new SendTextMove(a, c), weight: 10 },
+	{ build: (a, c) => new SendPhotoMove(a, c), weight: 3 },
+	{ build: (a, c) => new SendFileMove(a, c), weight: 2 },
+	{ build: (a, c) => new SendVoiceMove(a, c), weight: 2 },
+	{ build: (a, o, c) => new CreateGroupMove(a, o, c), weight: 2 },
+	{ build: (a, t, e) => new ReactMove(a, t, e), weight: 5 },
+	{ build: (a, t) => new ReplyMove(a, t), weight: 3 },
+	{ build: (a, t) => new EditMove(a, t), weight: 3 },
+	{ build: (a, t) => new DeleteMove(a, t), weight: 2 },
 ];
 
 /** The user moves by the names a search prints them under. */

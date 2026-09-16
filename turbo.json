@@ -5,7 +5,7 @@
 	"tasks": {
 		"//#e2e:build:desktop": {
 			"inputs": ["$TURBO_DEFAULT$", "!e2e-tests/**", "!docs/**"],
-			"env": ["VITE_E2E", "CARGO_PROFILE_DEV_*"],
+			"env": ["VITE_E2E", "CARGO_PROFILE_DEV_*", "E2E_NETWORK_ID"],
 			"outputs": ["target/debug/dash-chat"]
 		},
 		"//#e2e:build:android": {
@@ -19,7 +19,8 @@
 				"MAILBOX_URL",
 				"PUSH_NOTIFICATIONS_SERVER_URL",
 				"CARGO_PROFILE_DEV_*",
-				"E2E_ANDROID_TARGETS"
+				"E2E_ANDROID_TARGETS",
+				"E2E_NETWORK_ID"
 			],
 			"outputs": ["src-tauri/gen/android/app/build/outputs/apk/**/*-debug.apk"]
 		},
@@ -30,7 +31,8 @@
 				"PUSH_NOTIFICATIONS_SERVER_URL",
 				"VITE_E2E",
 				"IPHONEOS_DEPLOYMENT_TARGET",
-				"CARGO_PROFILE_DEV_*"
+				"CARGO_PROFILE_DEV_*",
+				"E2E_NETWORK_ID"
 			],
 			"outputs": ["e2e-tests/.appium/dash-chat-e2e.ipa"]
 		}

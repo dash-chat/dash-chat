@@ -105,6 +105,9 @@ importers:
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
+      toxiproxy-node-client:
+        specifier: 4.1.0
+        version: 4.1.0
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@24.10.0)(typescript@5.9.3)
@@ -242,7 +245,7 @@ importers:
         specifier: ^10.0.11
         version: 10.0.11
       dash-chat-stores:
-        specifier: workspace:^0.0.0
+        specifier: workspace:*
         version: link:../packages/stores
       emoji-picker-element:
         specifier: ^1.29.0
@@ -5346,6 +5349,10 @@ packages:
   totalist@3.0.1:
     resolution: {integrity: sha512-sf4i37nQ2LBx4m3wB74y+ubopq6W/dIzXg0FDGjsYnZHVa1Da8FH853wlL2gtUhg+xJXjfk3kUZS3BRoQeoQBQ==}
     engines: {node: '>=6'}
+
+  toxiproxy-node-client@4.1.0:
+    resolution: {integrity: sha512-hdCvgbS6fUtzxPzrbvvE7MZ7dl5dt+c4c0d4T2G1I+clz3QEmjEvIpzObyojUY3WNdDuoYI7sT4kcTqgUVyXAQ==}
+    engines: {node: '>=18'}
 
   tree-kill@1.2.2:
     resolution: {integrity: sha512-L0Orpi8qGpRG//Nd+H90vFB+3iHnue1zSSGmNOOCh1GLJ7rUKVwV2HvijphGQS2UmhUZewS9VgvxYIdgr+fG1A==}
@@ -11318,6 +11325,8 @@ snapshots:
   toidentifier@1.0.1: {}
 
   totalist@3.0.1: {}
+
+  toxiproxy-node-client@4.1.0: {}
 
   tree-kill@1.2.2: {}
 

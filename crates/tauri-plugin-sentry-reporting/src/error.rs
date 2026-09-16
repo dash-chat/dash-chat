@@ -42,7 +42,8 @@ pub(crate) async fn send_error_report(
     let Some(mut envelope) = envelope::build_envelope(&state, event, logs) else {
         return Err("the report could not be prepared".into());
     };
-    if let Some(log_file) = attachment::build_logs_attachment(&state.redact, &state.logs_dir).await
+    for log_file in
+        attachment::build_logs_attachments(&state.redact, &state.log_attachment_dirs()).await
     {
         envelope.add_item(EnvelopeItem::Attachment(log_file));
     }

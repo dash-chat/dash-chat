@@ -23,6 +23,9 @@ static ANDROID_LOGS_ONCE: std::sync::Once = std::sync::Once::new();
 #[cfg(target_os = "ios")]
 static IOS_LOGGER_ONCE: std::sync::Once = std::sync::Once::new();
 
+#[cfg(target_os = "ios")]
+const MAX_NSE_LOG_SIZE: u64 = 5 * 1024 * 1024;
+
 /// Entry point called by the FirebaseMessagingService when a push notification arrives.
 /// Fetches the operation referenced by the push and builds a user-facing notification, dedup'd
 /// against the main app's sync pipeline. Android may freeze the process once this returns.
@@ -48,9 +51,14 @@ pub fn receive_push_notification(
         });
         #[cfg(target_os = "ios")]
         IOS_LOGGER_ONCE.call_once(|| {
-            let _ = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
-                .level_filter(log::LevelFilter::Debug)
-                .init();
+            if let Err(err) = setup_ios_file_logger(&context.data_dir) {
+                log::warn!(
+                    "Failed to set up NSE file logger; falling back to os_log only: {err:?}"
+                );
+                let _ = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
+                    .level_filter(log::LevelFilter::Debug)
+                    .init();
+            }
             // Now that the logger is initialized, route panics through it.
             crate::utils::install_panic_hook();
         });
@@ -86,6 +94,50 @@ pub fn receive_push_notification(
             context.data_dir,
         ))
     }
+}
+
+#[cfg(target_os = "ios")]
+fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
+    use log::Log;
+    use tauri_plugin_log::fern;
+
+    let fs = FileSystem::from_app_root_dir(data_dir.to_path_buf())?;
+    let logs_dir = fs.app_root_dir().join("logs-nse");
+    std::fs::create_dir_all(&logs_dir)?;
+    let log_path = logs_dir.join("notification-service.log");
+
+    // Simple size-based rotation: clear the file if it has grown too large.
+    if let Ok(metadata) = std::fs::metadata(&log_path) {
+        if metadata.len() > MAX_NSE_LOG_SIZE {
+            let _ = std::fs::remove_file(&log_path);
+        }
+    }
+
+    let os_logger = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
+        .level_filter(log::LevelFilter::Debug);
+
+    fern::Dispatch::new()
+        .format(crate::setup::format_record)
+        .level(log::LevelFilter::Warn)
+        .level_for("dashchat_node", log::LevelFilter::Debug)
+        .level_for("dashchat_utils", log::LevelFilter::Debug)
+        .level_for("mailbox_client", log::LevelFilter::Debug)
+        .level_for("mailbox_server", log::LevelFilter::Debug)
+        .level_for("mailbox_local_server", log::LevelFilter::Debug)
+        .level_for("local_hub_discovery", log::LevelFilter::Debug)
+        .level_for("tauri_app_lib", log::LevelFilter::Debug)
+        .chain(fern::log_file(&log_path)?)
+        .chain(fern::Output::call(move |record| {
+            os_logger.log(record);
+        }))
+        .apply()?;
+
+    // `apply()` sets the global max level to the dispatch's base level (Warn),
+    // which would silence Debug/Info on the os_log target. Keep the unified
+    // log channel verbose for on-device debugging.
+    log::set_max_level(log::LevelFilter::Debug);
+
+    Ok(())
 }
 
 async fn handle_push_notifications_with_fallback_messages(
@@ -163,13 +215,15 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
-    // Fetch the new operation. Wake the cloud mailbox specifically so a
-    // backed-off (Stopped/Degraded) cloud mailbox is force-polled immediately;
-    // fall back to a general trigger if it isn't registered yet.
+    // Fetch the new operation. The push itself is evidence the cloud mailbox is
+    // reachable — it only exists because the mailbox server took the blob and
+    // asked for it — so wake the mailbox rather than probing it, clearing any
+    // backoff a network-less background stretch left behind. Fall back to a
+    // general trigger if it isn't registered yet.
     if let Some(cloud_id) = crate::mailbox::cloud_mailbox_id(&node).await {
-        node.mailboxes.wakeup(cloud_id);
+        node.mailboxes.wakeup(cloud_id).await;
     } else {
-        node.mailboxes.trigger_poll_loop();
+        node.mailboxes.nudge_poll_loop();
     }
 
     // Poll for the operation to arrive (up to 15 seconds)

@@ -57,6 +57,16 @@ pub(crate) async fn cloud_mailbox_id(
         .unwrap_or(None)
 }
 
+/// Poll the cloud mailbox now without presuming the result: one success
+/// restores Active, one failure only confirms an existing backoff. Falls back
+/// to nudging the poll loop when the cloud mailbox has never been reached.
+pub(crate) async fn probe_cloud_mailbox(node: &dashchat_node::Node) {
+    match cloud_mailbox_id(node).await {
+        Some(cloud_id) => node.mailboxes.probe(cloud_id).await,
+        None => node.mailboxes.nudge_poll_loop(),
+    }
+}
+
 /// Keep the node's mailbox manager in step with the local hubs on the LAN.
 pub fn spawn_local_mailbox_mdns_discovery(
     node: dashchat_node::Node,
@@ -85,7 +95,10 @@ pub fn spawn_local_mailbox_mdns_discovery(
 /// Safe to re-run — `MailboxManager::register` swaps the client in place — which
 /// matters because a hub is reported found again whenever its addresses change
 /// or a network change comes between sightings.
+/// Registration ends on an mDNS goodbye or on the hub reaching Stopped.
+
 async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String) {
+    let newly_tracked = !node.mailboxes.is_tracked(&id).await;
     node.mailboxes
         .register(
             mailbox_client::toy::ToyMailboxClient::new(
@@ -97,6 +110,13 @@ async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String)
             .with_blob_reader(node.blob_reader()),
         )
         .await;
+    // A hub that stops answering is gone as far as we are concerned, whether or
+    // not its mDNS records have expired yet; the re-browse re-registers it if
+    // it comes back. Only the first registration arms this, since a re-browse
+    // re-registers every hub it still sees.
+    if newly_tracked {
+        node.mailboxes.unregister_on_stopped(&id).await;
+    }
     // Add the hub's dialing address to the address book so the blob downloader
     // can reach it by EndpointId rather than relying solely on p2panda mDNS
     // resolution timing.

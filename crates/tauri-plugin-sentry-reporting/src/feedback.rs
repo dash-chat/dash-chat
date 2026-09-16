@@ -59,7 +59,9 @@ async fn build_feedback(state: &SentryState, feedback: Feedback) -> anyhow::Resu
         });
     }
     if feedback.include_logs {
-        attachments.extend(attachment::build_logs_attachment(&state.redact, &state.logs_dir).await);
+        attachments.extend(
+            attachment::build_logs_attachments(&state.redact, &state.log_attachment_dirs()).await,
+        );
     }
 
     feedback_envelope(event, &attachments)

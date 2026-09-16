@@ -1,12 +1,12 @@
 /**
  * Unified e2e config. The PLATFORMS env var lists the agents to launch as an
  * unordered multiset of platforms (default `desktop,desktop`) — `desktop`
- * (tauri-driver against the built binary), `android` (physical device via
+ * (the built binary, driven through its embedded WebDriver server), `android` (physical device via
  * Appium), `android-emulator` (running emulator via Appium), or `ios`
  * (connected iPhone via Appium/XCUITest) — so any combo runs through this one
  * config, e.g. `PLATFORMS=ios,ios just e2e run send-messages`. Combos are bound
- * by host OS, though: `desktop` needs Linux (tauri-driver/WebKitGTK), `ios` needs
- * macOS + a device, so they can't share one host.
+ * by host OS, though: `ios` needs macOS + a device, and `desktop` runs the
+ * host's own build, on Linux or macOS.
  */
 import { setOptions } from 'expect-webdriverio';
 import type { ChildProcess } from 'node:child_process';
@@ -15,12 +15,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
+import { claimAllWhenFreeSync, release } from './setup/claims';
 import { killLeftoverMailboxServers } from './setup/cleanup';
+import {
+	failureSlug,
+	failuresDir,
+	saveFailureScreenshot,
+} from './setup/failure-screenshots';
+import { releaseWifiDevice } from './setup/host-wifi';
 import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
 import {
 	buildCargoPackages,
 	startLocalMailboxServer,
 } from './setup/mailbox-server';
+import { CHECKOUT_CLAIM } from './setup/network-id';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
 import { DesktopPlatform } from './setup/platforms/desktop';
 import { IosPlatform } from './setup/platforms/ios';
@@ -36,6 +44,7 @@ import {
 	platformNames,
 	remoteMailboxUrl,
 } from './setup/test-env';
+import { startToxiproxy } from './setup/toxiproxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -57,6 +66,13 @@ const androidKinds = new Map<number, AndroidKind>(
 	),
 );
 
+// Before anything is built, killed or claimed: the launcher waits for any run
+// already going in this checkout — its data dir and baked network id are one
+// per checkout. Workers inherit the launcher's claim.
+if (process.env.WDIO_WORKER_ID === undefined) {
+	claimAllWhenFreeSync([{ candidates: [CHECKOUT_CLAIM], needed: 1 }]);
+}
+
 /** The host mailbox-server build — plus the standalone hub the discovery
  * specs spawn — kicked off before the Android platform is constructed so it
  * overlaps the emulator boots that block construction. Awaited in onPrepare. */
@@ -68,9 +84,8 @@ const mailboxBuild =
 // promise doesn't crash node with an unhandled rejection.
 mailboxBuild?.catch(() => {});
 
-/** The push-notifications-server build, only when FCM_SERVICE_ACCOUNT_KEY is set
- * (the real-device push spec). Gated on the env var (not the throwing
- * pushServiceAccountKey()) so a bad path surfaces in onPrepare, not at load. */
+/** The push-notifications-server build, only when a service-account key is
+ * present and a mobile agent runs (the real-device push spec). */
 const pushEnabled =
 	process.env.WDIO_WORKER_ID === undefined && pushTestingEnabled();
 const pushServerBuild = pushEnabled ? buildPushServer() : null;
@@ -99,9 +114,11 @@ let mailboxServer: ChildProcess | undefined;
 let mailboxLogger: ChildProcess | undefined;
 let pushServer: ChildProcess | undefined;
 let pushLogger: ChildProcess | undefined;
+let toxiproxy: ChildProcess | undefined;
+let toxiproxyLogger: ChildProcess | undefined;
 
 async function teardown() {
-	for (const server of [mailboxServer, pushServer]) {
+	for (const server of [mailboxServer, pushServer, toxiproxy]) {
 		if (server?.pid) {
 			// Negative PID = signal the entire detached process group.
 			try {
@@ -116,6 +133,8 @@ async function teardown() {
 	}
 	mailboxLogger?.kill();
 	pushLogger?.kill();
+	toxiproxyLogger?.kill();
+	release(CHECKOUT_CLAIM);
 }
 
 /** Save a per-agent screenshot of the current webview to .dbs/e2e/failures/. */
@@ -123,32 +142,13 @@ async function saveFailureScreenshots(test: {
 	parent: string;
 	title: string;
 }): Promise<void> {
-	const dir = path.join(ROOT, '.dbs', 'e2e', 'failures');
-	mkdirSync(dir, { recursive: true });
-	const slug = `${test.parent} ${test.title}`
-		.replace(/[^a-zA-Z0-9]+/g, '-')
-		.slice(0, 80);
+	const dir = failuresDir();
+	const slug = failureSlug(`${test.parent} ${test.title}`);
 	for (const name of browser.instances) {
-		try {
-			const agent = browser.getInstance(name);
-			// Mobile: screenshot from the native context. A webview-context
-			// screenshot goes through chromedriver, which blocks for minutes
-			// against the frozen renderer of a backgrounded app — precisely the
-			// state many failures leave the device in. The native screenshot
-			// always works and also captures system UI like the shade.
-			let restoreTo: string | undefined;
-			if (agent.isMobile) {
-				const context = await agent.getContext();
-				if (typeof context === 'string' && context !== 'NATIVE_APP') {
-					restoreTo = context;
-					await agent.switchContext('NATIVE_APP');
-				}
-			}
-			await agent.saveScreenshot(path.join(dir, `${slug}-${name}.png`));
-			if (restoreTo !== undefined) await agent.switchContext(restoreTo);
-		} catch {
-			/* session may already be dead */
-		}
+		await saveFailureScreenshot(
+			browser.getInstance(name),
+			path.join(dir, `${slug}-${name}.png`),
+		);
 	}
 }
 
@@ -246,6 +246,9 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				}
 
 				await mailboxBuild;
+				// The mailbox's public port is a link through this, for the
+				// specs that degrade it.
+				({ proc: toxiproxy, logger: toxiproxyLogger } = await startToxiproxy());
 				// Start a local mailbox server so e2e tests don't hit the internet.
 				({
 					proc: mailboxServer,
@@ -298,6 +301,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	},
 
 	async afterSession() {
+		releaseWifiDevice();
 		for (const platform of platforms) {
 			await platform.afterSession();
 		}

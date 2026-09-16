@@ -301,6 +301,15 @@ impl Node {
             builder = builder.relay_url(RELAY_URL.clone());
         }
 
+        // Phones change network under a running node; the connections from before
+        // the change must die quickly so peers stop being dialled at the old address.
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            builder = builder
+                .keep_alive_interval(std::time::Duration::from_secs(1))
+                .max_idle_timeout(std::time::Duration::from_secs(3));
+        }
+
         // With p2p disabled, run zero random-walk discovery walkers so the node
         // never initiates discovery sessions. Otherwise, inserting a mailbox's
         // address (a full p2panda node when run in-process) would let discovery
@@ -568,18 +577,6 @@ impl Node {
     /// `/health` response advertises the node's dialing address.
     pub async fn iroh_endpoint(&self) -> Result<iroh::Endpoint> {
         Ok(self.endpoint.endpoint().await?)
-    }
-
-    /// Tear down all p2p connectivity by closing the iroh endpoint. Afterwards
-    /// the node can neither dial nor accept peer connections, so no gossip sync
-    /// happens; local reads and writes against the op store keep working. This
-    /// is a one-way switch intended only for e2e tests that must observe
-    /// pre-sync UI state without racing a direct p2p connection between two
-    /// agents running on the same machine.
-    #[cfg(feature = "testing")]
-    pub async fn close_iroh_endpoint(&self) -> Result<()> {
-        self.endpoint.endpoint().await?.close().await;
-        Ok(())
     }
 
     /// Add (or refresh) a peer's dialing address (relay + direct addresses) in

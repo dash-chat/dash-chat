@@ -10,8 +10,26 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"[A-Za-z0-9_:\-]{100,}",
         // Hex strings (40+ chars) — public keys, hashes, signatures
         r"[0-9a-fA-F]{40,}",
+        // iroh/p2panda node ids in short hex form (`me=fa30b1af97`,
+        // `peer=0a753b78eb`) that the 40-char hex rule above is too long to
+        // catch. Anchored on the `me=`/`peer=` label so ordinary short hex
+        // (contact codes) stays readable.
+        r"\b(me|peer)=[0-9a-fA-F]{8,}\b",
         // Base64 blobs (40+ chars)
         r"[A-Za-z0-9+/]{40,}={0,2}",
+        // Mailbox id (base64url inbox address) as logged by the mailbox
+        // manager: `polling mailbox <id>` / `mailbox=<id>`. The base64 rule
+        // above misses it because the url-safe `-`/`_` split it below 40
+        // unbroken chars. Anchored on the label so it can't over-match other
+        // long url-safe tokens.
+        r"\bmailbox[ =:]+[A-Za-z0-9_\-]{20,}",
+        // Device / app-group container UUID, which only appears as a path
+        // segment (`<app_root>/<UUID>/0.13`). Anchored on the trailing `/`
+        // (the regex crate has no lookahead, so the slash is consumed) so it
+        // can't match bare UUID leaves such as Sentry's `debug_id` — redacting
+        // those makes the event fail to deserialize back into a DebugId and the
+        // whole report is dropped as unredactable.
+        r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/",
         // DeviceId and AgentId wrappers (must precede bare VerifyingKey/Hash patterns)
         r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
         // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...])
@@ -39,6 +57,11 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""data"\s*:\s*\[[\d,\s]*\]"#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
+        // Debug format: NotificationData fields carrying user content — title
+        // (sender or group name), body/large_body/summary (message text), and
+        // conversation_title (group name). The NSE logs the built notification,
+        // so these reach a report attachment and must be stripped.
+        r#"\b(title|body|large_body|summary|conversation_title):\s*(Some\()?"[^"]*"(\))?"#,
         // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
         r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
         // JSON format: "profile_name":"..." — contact request QR placeholder.
@@ -50,6 +73,8 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""message"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
         r#""emoji"\s*:\s*"[^"]*""#,
+        // JSON format: notification title/body/summary/conversation_title.
+        r#""(title|body|large_body|summary|conversation_title)"\s*:\s*"[^"]*""#,
         // OS username inside filesystem paths. The whole `/home/<user>` (or
         // `/Users/<user>` / `\Users\<user>`) prefix is collapsed to [REDACTED];
         // the rest of the path is preserved so logs stay readable.
@@ -354,6 +379,51 @@ mod tests {
     }
 
     #[test]
+    fn redacts_notification_data_debug() {
+        // The shape the NSE logs when showing a built notification: sender name
+        // in `title`, message text in `body`, group name in `conversation_title`.
+        let input = r#"NotificationData { id: 1, title: Some("Macky"), body: Some("lalala"), large_body: None, summary: None, conversation_style: Some(ConversationStyle { sender_id: Some("abc"), conversation_title: Some("Family Chat") }) }"#;
+        let result = redact(input);
+        assert!(!result.contains("Macky"), "title (name) leaked: {result}");
+        assert!(
+            !result.contains("lalala"),
+            "body (message) leaked: {result}"
+        );
+        assert!(
+            !result.contains("Family Chat"),
+            "conversation_title leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_notification_data_json() {
+        let input = r#"{"title":"Macky","body":"lalala","large_body":"long text","summary":"2 messages","conversation_title":"Family Chat"}"#;
+        let result = redact(input);
+        assert!(!result.contains("Macky"), "title leaked: {result}");
+        assert!(!result.contains("lalala"), "body leaked: {result}");
+        assert!(!result.contains("long text"), "large_body leaked: {result}");
+        assert!(!result.contains("2 messages"), "summary leaked: {result}");
+        assert!(
+            !result.contains("Family Chat"),
+            "conversation_title leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn preserves_large_body_field_name_boundary() {
+        // `\b` must not let the `body` alternative match inside `large_body`;
+        // `large_body` is covered by its own alternative, but a bare
+        // `large_body: None` (no quoted value) must be left untouched.
+        let input = r#"large_body: None, body: Some("hi")"#;
+        let result = redact(input);
+        assert!(
+            result.contains("large_body: None"),
+            "over-redacted: {result}"
+        );
+        assert!(!result.contains("hi"), "body not redacted: {result}");
+    }
+
+    #[test]
     fn redacts_hostname_line() {
         let input = "Hostname: Alices-MacBook-Pro.local";
         let result = redact(input);
@@ -435,5 +505,66 @@ mod tests {
             "message not redacted: {result}"
         );
         assert!(!result.contains("32, 145"), "key not redacted: {result}");
+    }
+
+    #[test]
+    fn redacts_short_form_node_keys() {
+        let input = "gossip; me=fa30b1af97 conn; peer=0a753b78eb";
+        let result = redact(input);
+        assert!(!result.contains("fa30b1af97"), "me key leaked: {result}");
+        assert!(!result.contains("0a753b78eb"), "peer key leaked: {result}");
+    }
+
+    #[test]
+    fn preserves_short_hex_contact_code() {
+        // The short-form key rule must stay anchored to `me=`/`peer=` and not
+        // touch other short hex like contact codes.
+        let input = "code=abcdef12";
+        assert_eq!(redact(input), "code=abcdef12");
+    }
+
+    #[test]
+    fn redacts_mailbox_id() {
+        let input = "polling mailbox 2wgdUYYgohPKdhkjbgmBjlZgfh-hZBHVpi6GkXkRYxc";
+        let result = redact(input);
+        assert!(
+            !result.contains("2wgdUYYgohPKdhkjbgmBjlZgfh"),
+            "mailbox id leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_mailbox_id_key_value_form() {
+        let input = "mailbox=2wgdUYYgohPKdhkjbgmBjlZgfh-hZBHVpi6GkXkRYxc sync error";
+        let result = redact(input);
+        assert!(
+            !result.contains("2wgdUYYgohPKdhkjbgmBjlZgfh"),
+            "mailbox id leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn preserves_mailbox_module_path() {
+        let input = "mailbox_client::manager crates/mailbox-client/src/manager.rs:719";
+        assert_eq!(redact(input), input);
+    }
+
+    #[test]
+    fn redacts_device_container_uuid() {
+        let input = "data path: 1A2B3C4D-F4CD-4E51-B851-69CF2F22D0AA/0.13";
+        let result = redact(input);
+        assert!(
+            !result.contains("1A2B3C4D-F4CD-4E51-B851-69CF2F22D0AA"),
+            "uuid leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn preserves_bare_uuid_debug_id() {
+        // Sentry's `debug_id` is a bare UUID leaf that must stay parseable when
+        // the event is re-serialized; the container-UUID rule must only fire in
+        // path context, never on a standalone UUID.
+        let input = "84a04d24-0e60-3810-a8c0-90d5b4f8e4a3";
+        assert_eq!(redact(input), input);
     }
 }

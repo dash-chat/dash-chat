@@ -7,7 +7,7 @@
  * on its LAN.
  *
  * Skips itself unless E2E_STRESS=1 and E2E_WIFI_NETWORKS names at least one
- * network (see .env.development.example). Run it with:
+ * network (see e2e-tests/.env.example). Run it with:
  *   PLATFORMS=android,android just e2e run local-hub-discovery-stress
  *
  * Tunables: E2E_STRESS_ATTEMPTS (sequences to try, default 20),
@@ -28,7 +28,16 @@ import {
 import { type Agent, setupAgents } from '../setup/setup-agents';
 import { wifiNetworks } from '../setup/test-env';
 
-describe('Local hub stress', () => {
+/** Preparation walks two phones through Settings several times and pairs
+ *  them up, which runs past mocha's 5-minute default. */
+const PREPARE_TIMEOUT_MS = 20 * 60 * 1_000;
+
+// wdio arms its per-hook abort timer from the mocha timeout at invocation time,
+// so this has to be set suite-wide rather than inside the hook body; the tests
+// themselves get theirs from Fuzzer.prepare.
+describe('Local hub stress', function () {
+	this.timeout(PREPARE_TIMEOUT_MS);
+
 	let agent1: Agent;
 	let agent2: Agent;
 	let fuzzer: Fuzzer;

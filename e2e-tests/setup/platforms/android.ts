@@ -1,13 +1,26 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { envInt } from '../../helpers/utils';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import {
+	type Want,
+	claimAllWhenFreeSync,
+	describeHeld,
+	release,
+} from '../claims';
 import { hashFile } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
+import { E2E_NETWORK_ID } from '../network-id';
 import { runTurboBuild } from '../turbo-build';
 import { WIFI_REASSOCIATE_MS, type WifiInfo, waitForWifi } from '../wifi';
 import {
@@ -110,7 +123,7 @@ function applyAppiumServerEnv() {
 // desktop binary, and the mesa LD_LIBRARY_PATH / LIBGL / EGL vars point its
 // WebKitGTK web process at software rendering off NixOS. In a mixed
 // android+desktop run the user drives the harness from a plain shell (the
-// android capture provides tauri-driver and the rest via PATH), so without
+// android capture provides the android tools via PATH), so without
 // these the desktop build links against the nix libraries but bakes no rpath —
 // the binary then fails at launch with "libpango-1.0.so.0: cannot open shared
 // object file". Only fill in vars the outer shell didn't already set, so a run
@@ -270,40 +283,63 @@ function connectedDevices(): string[] {
 function claimDevices(
 	kindBySlot: Map<number, AndroidKind>,
 ): Map<number, string> {
-	const devices = connectedDevices();
+	const pinnedOf = (slot: number) =>
+		process.env[`_WDIO_ANDROID_UDID${slot}`] ??
+		process.env[`ANDROID_UDID${slot}`];
+	const pinned = new Set(
+		[...kindBySlot.keys()].map(pinnedOf).filter(u => u !== undefined),
+	);
+	const connected = connectedDevices();
 	const pools: Record<AndroidKind, string[]> = {
-		android: devices.filter(d => !d.startsWith('emulator-')),
-		'android-emulator': devices.filter(d => d.startsWith('emulator-')),
+		android: connected.filter(d => !d.startsWith('emulator-')),
+		'android-emulator': connected.filter(d => d.startsWith('emulator-')),
 	};
-	const udids = new Map<number, string>();
+	// Slots wanting the same thing — a pinned device, or any device of a
+	// kind — claim it as one group, so a run holds all it needs or nothing.
+	const groups = new Map<string, { slots: number[]; want: Want }>();
 	for (const [slot, kind] of kindBySlot) {
-		const pinned =
-			process.env[`_WDIO_ANDROID_UDID${slot}`] ??
-			process.env[`ANDROID_UDID${slot}`];
-		if (pinned !== undefined) {
-			udids.set(slot, pinned);
-			process.env[`_WDIO_ANDROID_UDID${slot}`] = pinned;
-			for (const pool of Object.values(pools)) {
-				const i = pool.indexOf(pinned);
-				if (i !== -1) pool.splice(i, 1);
-			}
-			continue;
-		}
-		const udid = pools[kind].shift();
-		if (udid === undefined) {
-			throw new Error(
-				kind === 'android'
-					? `Not enough physical Android devices connected for agent${slot} ` +
-						`(connected: ${devices.join(', ') || 'none'}). Connect a device ` +
-						`with USB debugging enabled, or set ANDROID_UDID${slot}.`
-					: `No running emulator left for agent${slot} ` +
-						`(connected: ${devices.join(', ') || 'none'}). Boot one with ` +
-						`'just android boot-emulator'.`,
-			);
-		}
-		process.env[`_WDIO_ANDROID_UDID${slot}`] = udid;
-		udids.set(slot, udid);
+		const key = pinnedOf(slot) ?? kind;
+		const group = groups.get(key) ?? {
+			slots: [],
+			want: {
+				candidates:
+					pinnedOf(slot) !== undefined
+						? [key]
+						: pools[kind].filter(d => !pinned.has(d)),
+				needed: 0,
+			},
+		};
+		group.slots.push(slot);
+		group.want.needed += 1;
+		groups.set(key, group);
 	}
+	for (const [key, { slots, want }] of groups) {
+		if (want.candidates.length >= want.needed) continue;
+		const slot = slots[want.candidates.length];
+		throw new Error(
+			key === 'android-emulator'
+				? `No running emulator left for agent${slot} ` +
+					`(${describeHeld(connected)}). Boot one with ` +
+					`'just android boot-emulator'.`
+				: `Not enough physical Android devices for agent${slot} ` +
+					`(${describeHeld(connected)}). Connect a device ` +
+					`with USB debugging enabled, or set ANDROID_UDID${slot}.`,
+		);
+	}
+	const wants = [...groups.values()].map(g => g.want);
+	// The launcher claims, waiting for devices another run is driving; the
+	// workers inherit its claims through the pinned env.
+	const taken =
+		process.env.WDIO_WORKER_ID === undefined
+			? claimAllWhenFreeSync(wants)
+			: wants.map(w => w.candidates.slice(0, w.needed));
+	const udids = new Map<number, string>();
+	[...groups.values()].forEach(({ slots }, i) => {
+		slots.forEach((slot, j) => {
+			process.env[`_WDIO_ANDROID_UDID${slot}`] = taken[i][j];
+			udids.set(slot, taken[i][j]);
+		});
+	});
 	return udids;
 }
 
@@ -405,6 +441,9 @@ const SCREEN_OFF_TIMEOUT_MS = 30 * 60 * 1000;
  * silently never engages. */
 function keepScreenAwake(udid: string): void {
 	try {
+		// Sessions skip Appium's unlock, so a simple lock screen is cleared
+		// once here; with the screen held on it does not come back.
+		execSync(`adb -s ${udid} shell wm dismiss-keyguard`, { env: androidEnv });
 		execSync(`adb -s ${udid} shell svc power stayon true`, { env: androidEnv });
 		// `stayon` alone has been observed not to engage even once set, so raise
 		// the timeout too rather than trust one of them. Both are persistent
@@ -446,12 +485,27 @@ function ensureApkInstalled(udid: string): void {
 		/* not installed */
 	}
 	console.log(`[android] installing the e2e APK on ${udid}...`);
-	// Generous because the debug APK is ~370MB and install time is dominated by
-	// on-device dexopt, not transfer: a Pixel 7a lands well inside a minute
-	// while a budget device measured 509s for the same file.
-	execSync(`adb -s ${udid} install "${apk}"`, {
+	try {
+		adbInstall(udid, apk);
+	} catch (err) {
+		console.warn(
+			`[android] install on ${udid} failed (${String(err)}); retrying with --no-streaming`,
+		);
+		// The USB link reset that ends a stalled transfer drops the device briefly.
+		execSync(`adb -s ${udid} wait-for-device`, {
+			timeout: 60_000,
+			env: androidEnv,
+		});
+		adbInstall(udid, apk, '--no-streaming');
+	}
+}
+
+/** A healthy install takes seconds, while a streamed transfer over a flaky USB
+ *  link can stall for minutes, so the timeout is short and the caller retries. */
+function adbInstall(udid: string, apk: string, flags = ''): void {
+	execSync(`adb -s ${udid} install ${flags} "${apk}"`, {
 		stdio: 'inherit',
-		timeout: envInt('E2E_ANDROID_INSTALL_TIMEOUT_MS', 900_000),
+		timeout: envInt('E2E_ANDROID_INSTALL_TIMEOUT_MS', 90_000),
 		env: androidEnv,
 	});
 }
@@ -636,6 +690,13 @@ export class AndroidPlatform implements AgentPlatform {
 				'appium:appPackage': APP_PACKAGE,
 				'appium:appActivity': '.MainActivity',
 				'appium:autoGrantPermissions': true,
+				// onPrepare clears the keyguard and keeps the screen on, the harness
+				// tails logcat itself, and a dedicated test device needs none of the
+				// per-session readiness checks.
+				'appium:skipUnlock': true,
+				'appium:skipDeviceInitialization': true,
+				'appium:skipLogcatCapture': true,
+				'appium:disableWindowAnimation': true,
 				'appium:autoWebview': true,
 				'appium:autoWebviewTimeout': 30_000,
 				'appium:systemPort': allocatePinnedPort(`_WDIO_SYSTEM_PORT${slot}`),
@@ -684,11 +745,17 @@ export class AndroidPlatform implements AgentPlatform {
 							: {}),
 					};
 		const bakedEnv: Record<string, string> = {
+			E2E_NETWORK_ID,
 			...mailboxEnv,
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
 			E2E_ANDROID_TARGETS: [...targets].join(' '),
 		};
+		// Gradle packages incrementally, patching the previous APK in place and
+		// leaving holes where replaced entries were: an e2e APK built over a dev
+		// build measured 853MB for 129MB of content. With no APK to patch it
+		// packages from scratch (a cache hit restores the clean one).
+		rmSync(APK_DIR, { recursive: true, force: true });
 		runTurboBuild(
 			'e2e:build:android',
 			envWithoutWdioLoader(bakedEnv, androidEnv),
@@ -745,6 +812,7 @@ export class AndroidPlatform implements AgentPlatform {
 					/* device gone or reverse already removed */
 				}
 			}
+			release(udid);
 		}
 		for (const logger of this.loggers.values()) {
 			logger.kill();

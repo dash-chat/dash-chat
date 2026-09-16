@@ -49,6 +49,17 @@ impl NodeRole {
     }
 }
 
+/// The p2p network e2e agents live on. An e2e build is given an
+/// `E2E_NETWORK_ID`, hashed to the id's width, so test runs sharing a LAN,
+/// each built with its own id, refuse each other's peers; a build without one
+/// gets the id every such build shares.
+fn e2e_network_id() -> [u8; 32] {
+    match option_env!("E2E_NETWORK_ID") {
+        Some(id) => *p2panda_core::Hash::digest(format!("dashchat e2e {id}")).as_bytes(),
+        None => *b"dashchat end-to-end test network",
+    }
+}
+
 /// The capabilities and wiring with which a Node is built.
 ///
 /// A `NodeContext` describes what a Node is allowed to do and which external
@@ -130,6 +141,17 @@ impl NodeContext {
         self.role.can_be_used_for(requested.role)
     }
 
+    /// Whether a Node built in this context takes part in peer-to-peer
+    /// connectivity: never for the push and background roles; for the app,
+    /// whatever the persisted `p2p_enabled` setting says.
+    fn p2p_enabled(&self) -> bool {
+        self.role.p2p_enabled()
+            && self
+                .app_handle
+                .as_ref()
+                .is_none_or(crate::settings::load_p2p_enabled)
+    }
+
     /// Build a [`dashchat_node::NodeConfig`] from this context.
     pub fn node_config(&self) -> dashchat_node::NodeConfig {
         let mut config = if cfg!(feature = "e2e-tests") {
@@ -138,7 +160,7 @@ impl NodeContext {
             // cross-talk with production/dev instances on the same LAN: every
             // ALPN is hashed with the network id, so foreign connections are
             // rejected at protocol negotiation.
-            config.network_id = *b"dashchat end-to-end test network";
+            config.network_id = e2e_network_id();
             config.message_ack_debounce = std::time::Duration::from_millis(300);
             config
         } else {
@@ -149,15 +171,8 @@ impl NodeContext {
         // operations to build notifications; it must not author any.
         config.enable_message_acks = self.role == NodeRole::App;
 
-        if !self.role.p2p_enabled() || std::env::var_os("DASHCHAT_NO_P2P").is_some() {
+        if !self.p2p_enabled() {
             config = config.no_p2p();
-
-            if self.role.p2p_enabled() {
-                // Dev/testing escape hatch: force all communication through mailbox
-                // servers so peers can't sync directly over p2p. Keeps blob sync so
-                // media still flows over the mailbox.
-                log::warn!("DASHCHAT_NO_P2P set: disabling peer-to-peer connectivity");
-            }
         }
 
         if !self.role.blob_sync_enabled() {
@@ -170,7 +185,26 @@ impl NodeContext {
 
 #[cfg(test)]
 mod tests {
-    use super::NodeRole;
+    use super::{NodeContext, NodeRole};
+
+    fn app_context() -> NodeContext {
+        NodeContext {
+            role: NodeRole::App,
+            notification_tx: None,
+            topic_subscribed_tx: None,
+            app_handle: None,
+        }
+    }
+
+    #[test]
+    fn p2p_follows_the_role() {
+        assert!(app_context().node_config().enable_p2p);
+        assert!(
+            !NodeContext::for_push_notifications()
+                .node_config()
+                .enable_p2p
+        );
+    }
 
     // Underpins the removal of the startup `node_slot::clear()`: because a
     // push-role node cannot satisfy an App request, `get_or_build_node(App)`

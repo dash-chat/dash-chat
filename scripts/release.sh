@@ -37,6 +37,8 @@ TAURI_CONF="$ROOT/src-tauri/tauri.conf.json"
 CARGO_TOML="$ROOT/src-tauri/Cargo.toml"
 SITE_INDEX="$ROOT/packages/site/index.html"
 IOS_PLIST="$ROOT/src-tauri/gen/apple/dash-chat_iOS/Info.plist"
+IOS_PBXPROJ="$ROOT/src-tauri/gen/apple/dash-chat.xcodeproj/project.pbxproj"
+IOS_PROJECT_YML="$ROOT/src-tauri/gen/apple/project.yml"
 
 # Check for clean working tree
 if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
@@ -56,9 +58,9 @@ echo "Releasing version $VERSION (tag: $TAG)..."
 
 # Commit, tag, and push
 if [ "${ENV:-}" = "staging" ]; then
-  git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$IOS_PLIST" "$ROOT/Cargo.lock"
+  git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$IOS_PLIST" "$IOS_PBXPROJ" "$IOS_PROJECT_YML" "$ROOT/Cargo.lock"
 else
-  git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX" "$IOS_PLIST" "$ROOT/Cargo.lock"
+  git -C "$ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$SITE_INDEX" "$IOS_PLIST" "$IOS_PBXPROJ" "$IOS_PROJECT_YML" "$ROOT/Cargo.lock"
 fi
 if git -C "$ROOT" diff --cached --quiet; then
   echo "  No changes to commit (version files already up to date)"

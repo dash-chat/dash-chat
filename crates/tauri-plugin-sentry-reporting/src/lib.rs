@@ -22,6 +22,15 @@ mod transport;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// A named log directory to attach to reports as a separate file.
+#[derive(Debug, Clone)]
+pub struct NamedLogDir {
+    /// The attachment filename shown in Sentry.
+    pub name: String,
+    /// The directory containing `*.log` files.
+    pub dir: PathBuf,
+}
+
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
 
@@ -40,8 +49,10 @@ pub struct Config {
     pub environment: String,
     /// Applied to everything on its way off the device.
     pub redact: Vec<regex::Regex>,
-    /// Where the log files a report attaches live.
+    /// Where the main app log files a report attaches live.
     pub logs_dir: PathBuf,
+    /// Additional named log directories to include as separate attachments.
+    pub extra_logs_dirs: Vec<NamedLogDir>,
     /// This crate's own folder, holding the outbox of reports waiting to go out.
     pub data_dir: PathBuf,
 }
