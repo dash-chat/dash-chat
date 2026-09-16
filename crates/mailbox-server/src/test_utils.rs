@@ -38,7 +38,7 @@ pub async fn create_test_server() -> (TestServer, NamedTempFile) {
     let (db, temp_file) = create_test_db();
     let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
     let blob_sync = test_blob_sync().await;
-    let app = create_app(Arc::new(db), None, push_tasks, blob_sync);
+    let app = create_app(Arc::new(db), None, push_tasks, blob_sync, false);
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()

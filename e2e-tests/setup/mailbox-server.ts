@@ -82,6 +82,9 @@ export function spawnMailboxServer(
 		cwd: ROOT,
 		stdio: ['ignore', logFd, logFd],
 		detached: true,
+		// Specs shape the mailbox through its testing endpoints (see
+		// mailbox-control.ts), which only an e2e run's server exposes.
+		env: { ...process.env, MAILBOX_TESTING_ENDPOINTS: '1' },
 	});
 	closeSync(logFd);
 	return server;

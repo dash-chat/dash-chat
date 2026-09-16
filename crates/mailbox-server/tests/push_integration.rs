@@ -46,6 +46,7 @@ async fn start_mailbox_server(
         Some(Arc::new(push_client)),
         push_tasks.clone(),
         blob_sync,
+        false,
     );
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),

@@ -393,7 +393,7 @@ PLATFORMS=ios just e2e run settings-pages
 ```
 
 **Key details:**
-- Desktop runs need `toxiproxy-server` on the PATH; the nix dev shell provides it. Without nix: the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when it is missing.
+- Desktop runs need `toxiproxy-server` on the PATH; the nix dev shell provides it. Without nix: the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when it is missing. The proxy only carries the mailbox's HTTP traffic: blobs travel over iroh's QUIC (UDP) connection, so a spec that needs a slow blob download caps the mailbox's own provider with `setMailboxBlobThrottle()` (`e2e-tests/setup/mailbox-control.ts`) instead.
 - Tests use page objects from `e2e-tests/helpers/pages/`. `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` returns one `Agent` per requirement with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
 - Platform-specific setup (desktop app launches, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
