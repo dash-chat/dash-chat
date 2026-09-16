@@ -1,4 +1,9 @@
-import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import {
+	type ChildProcess,
+	type StdioOptions,
+	execSync,
+	spawn,
+} from 'node:child_process';
 import {
 	existsSync,
 	mkdirSync,
@@ -31,8 +36,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
  *  (tauri-plugin-wdio-webdriver) on the port TAURI_WEBDRIVER_PORT names.
  *  The harness launches the process itself and the session goes straight to
  *  it: no tauri-driver, and so the same path on Linux and macOS, where no
- *  WebDriver for WKWebView exists. (The compat suite still drives released
- *  builds, which have no server, through tauri-driver.) */
+ *  WebDriver for WKWebView exists. */
 const MACOS = process.platform === 'darwin';
 
 const APP_BINARY = path.join(ROOT, 'target', 'debug', 'dash-chat');
@@ -88,60 +92,59 @@ export function killAgentApp(slot: number) {
 /** The apps this worker launched, by slot. */
 const launched = new Map<number, ChildProcess>();
 
-/** What the app runs with on Linux besides the agent's own env: the opener
- *  stub on PATH, and WebKitGTK kept off the paths that hang under a driver. */
-function linuxEnv(slot: number): Record<string, string> {
-	return {
-		PATH: `${installXdgOpenStub(slot)}:${process.env.PATH ?? ''}`,
-		// Disable AT-SPI accessibility bridge to prevent D-Bus contention.
-		NO_AT_BRIDGE: '1',
-		GTK_A11Y: 'none',
-		// Disable the DMA-BUF renderer — it causes non-deterministic WebKitGTK
-		// freezes. See https://github.com/tauri-apps/tauri/issues/13498
-		WEBKIT_DISABLE_DMABUF_RENDERER: '1',
-	};
-}
+/** WebKitGTK kept off the paths that hang under a driver. */
+const WEBKITGTK_ENV: Record<string, string> = {
+	// Disable AT-SPI accessibility bridge to prevent D-Bus contention.
+	NO_AT_BRIDGE: '1',
+	GTK_A11Y: 'none',
+	// Disable the DMA-BUF renderer — it causes non-deterministic WebKitGTK
+	// freezes. See https://github.com/tauri-apps/tauri/issues/13498
+	WEBKIT_DISABLE_DMABUF_RENDERER: '1',
+};
 
-/** Launch the agent's app with the usual environment, `env` on top, and
- *  resolve once its embedded WebDriver server is listening. */
-export async function launchAgentApp(
-	slot: number,
-	env: NodeJS.ProcessEnv = {},
-): Promise<void> {
+/** Launch the e2e build at `binary` against `dataDir`, with the harness's
+ *  environment and `env` on top, and resolve once the WebDriver server it
+ *  embeds is listening on `port`. */
+export async function launchDesktopApp(
+	binary: string,
+	dataDir: string,
+	port: number,
+	env: NodeJS.ProcessEnv,
+	stdio: StdioOptions = 'ignore',
+): Promise<ChildProcess> {
 	const mailboxUrl = process.env.MAILBOX_URL;
 	if (mailboxUrl === undefined) {
 		throw new Error('MAILBOX_URL not set — onPrepare must run first');
 	}
-	const port = allocatePinnedPort(`_WDIO_PORT${slot}`);
-	const app = spawn(APP_BINARY, [], {
-		stdio: 'ignore',
+	const app = spawn(binary, [], {
+		stdio,
 		env: {
 			...process.env,
-			...(MACOS ? {} : linuxEnv(slot)),
-			DATA_DIR: agentDir(slot),
+			...(MACOS ? {} : WEBKITGTK_ENV),
+			DATA_DIR: dataDir,
 			MAILBOX_URL: mailboxUrl,
-			E2E_NETWORK_ID,
 			TAURI_WEBDRIVER_PORT: String(port),
 			...env,
 		},
 	});
-	launched.set(slot, app);
 	await waitForPortListening(port);
 	if (MACOS) raiseMacApp(app.pid);
+	return app;
 }
 
-/** Relaunch `slot`'s app with `env` on top of its usual environment. The
- *  app's data dir is kept; the caller reloads the session. */
-export async function respawnDesktopAgent(
-	slot: number,
-	env: NodeJS.ProcessEnv,
-): Promise<void> {
-	await killAndWait(launched.get(slot));
-	killAgentApp(slot);
+/** Launch the agent's app and resolve once its embedded WebDriver server is
+ *  listening. On Linux the opener stub goes on its PATH. */
+export async function launchAgentApp(slot: number): Promise<void> {
 	const port = allocatePinnedPort(`_WDIO_PORT${slot}`);
-	killPortHolders([port]);
-	await waitForPortFree(port);
-	await launchAgentApp(slot, env);
+	const app = await launchDesktopApp(
+		APP_BINARY,
+		agentDir(slot),
+		port,
+		MACOS
+			? {}
+			: { PATH: `${installXdgOpenStub(slot)}:${process.env.PATH ?? ''}` },
+	);
+	launched.set(slot, app);
 }
 
 /** Bring the app's windows above every other app's. WebKit stops animation
@@ -210,6 +213,7 @@ export class DesktopPlatform implements AgentPlatform {
 			envWithoutWdioLoader({
 				VITE_E2E: 'true',
 				CARGO_PROFILE_DEV_DEBUG: '0',
+				E2E_NETWORK_ID,
 			}),
 		);
 		// Kill any leftover processes from previous interrupted runs.

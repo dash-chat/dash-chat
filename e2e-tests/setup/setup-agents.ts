@@ -54,7 +54,6 @@ import {
 	launchAgentApp,
 	macWindowRect,
 	readOpenedUrls,
-	respawnDesktopAgent,
 } from './platforms/desktop';
 import { APP_STATE_NOT_RUNNING, resetIosAppState } from './platforms/ios';
 import {
@@ -71,8 +70,8 @@ import type { WifiInfo } from './wifi';
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
 	platform: AgentPlatformName;
-	/** Whether the app was launched with peer-to-peer connectivity; false
-	 *  means it reaches peers through a mailbox only. */
+	/** Whether the app runs with peer-to-peer connectivity; false once
+	 *  `disableP2p` ran, after which it reaches peers through a mailbox only. */
 	p2p: boolean;
 
 	accountPage: AccountPage;
@@ -151,9 +150,9 @@ export type Agent = WebdriverIO.Browser & {
 	getColorScheme(): Promise<'light' | 'dark'>;
 	/** Enable preview features so gated UI (e.g. new-group) becomes visible. */
 	enablePreviewFeatures(): Promise<void>;
-	/** Close this agent's iroh endpoint so it can no longer sync over p2p.
-	 *  One-way for the life of the process; the agent still reads/writes
-	 *  locally and talks to a mailbox. */
+	/** Turn this agent's persisted p2p setting off and rebuild its node without
+	 *  peer-to-peer connectivity, so it syncs through mailboxes only. A spec's
+	 *  setup step: call it right after `setupAgents`, before the agents meet. */
 	disableP2p(): Promise<void>;
 	/** The urls this agent asked the OS to open, once at least `count` have
 	 *  arrived. Recorded by the harness's `xdg-open` stub, so desktop only. */
@@ -315,6 +314,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.executeAsync((done: () => void) =>
 			window.__test.disableP2p().then(done, done),
 		);
+		agent.p2p = false;
 	};
 	agent.restart = async () => {
 		// On mobile a new session fast-resets the app (`pm clear` on Android),
@@ -656,7 +656,6 @@ async function setupAgent(
 	agentName: string,
 	platform: AgentPlatformName,
 	slot: number,
-	p2p: boolean,
 ): Promise<Agent> {
 	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
@@ -678,7 +677,7 @@ async function setupAgent(
 	}
 	const agent = makeAgent(b, slot);
 	agent.platform = platform;
-	agent.p2p = p2p;
+	agent.p2p = true;
 	agent.waitForAppExit = async () => {
 		if (platform === 'desktop') {
 			// The session breaking is the exit signal: the WebDriver server lives
@@ -738,25 +737,6 @@ export type PlatformRequirement =
 /** What a spec requires of one agent. */
 export interface AgentRequirement {
 	platform: PlatformRequirement;
-	/** `false` launches the app without peer-to-peer connectivity
-	 *  (`DASHCHAT_NO_P2P`), so it syncs through mailboxes only. Desktop
-	 *  agents only: the phone app cannot be given environment variables. */
-	p2p?: boolean;
-}
-
-/** Relaunch `slot`'s app without p2p, under a fresh session. */
-async function launchWithoutP2p(
-	name: string,
-	platform: AgentPlatformName,
-	slot: number,
-): Promise<void> {
-	if (platform !== 'desktop') {
-		throw new Error(
-			`agent ${slot} asks for p2p: false on ${platform}, which only desktop agents support`,
-		);
-	}
-	await respawnDesktopAgent(slot, { DASHCHAT_NO_P2P: '1' });
-	await browser.getInstance(name).reloadSession();
 }
 
 function fulfills(
@@ -821,13 +801,7 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 	);
 	if (slots === null) ctx.skip();
 	const agents = await Promise.all(
-		slots.map(async (slot, i) => {
-			const name = `agent${slot}`;
-			const platform = platforms[slot - 1];
-			const p2p = requirements[i].p2p ?? true;
-			if (!p2p) await launchWithoutP2p(name, platform, slot);
-			return await setupAgent(name, platform, slot, p2p);
-		}),
+		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1], slot)),
 	);
 	return agents as { [K in keyof T]: Agent };
 }

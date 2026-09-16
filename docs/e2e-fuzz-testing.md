@@ -170,7 +170,7 @@ Hubs are `mailbox-local-server` processes spawned by `setup/local-hub.ts` on the
 |---|---|---|---|---|
 | `p2p-stress` | soak | user + device | suspended | any two |
 | `local-hub-discovery-stress` | search | hub + network + device | killed | two physical phones, host Wi-Fi card, `E2E_WIFI_NETWORKS` |
-| `cloud-spotty-stress` | search | user + device + cloud | behind toxiproxy | two desktops launched with `p2p: false` |
+| `cloud-spotty-stress` | search | user + device + cloud | behind toxiproxy | two agents with p2p disabled |
 
 `p2p-stress` is "two users use the app normally for a while with no cloud": every op has to travel over direct p2p sync. `local-hub-discovery-stress` is "hubs start, stop, die and move between LANs while phones walk in and out, background and restart": the connection chip has to name exactly the running hubs on the phone's LAN after every move.
 

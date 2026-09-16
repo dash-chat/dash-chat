@@ -13,6 +13,11 @@ pub(crate) struct Settings {
     pub notifications_enabled: bool,
     pub qr_color: Option<String>,
     pub background_mode_enabled: bool,
+    /// Whether the node takes part in peer-to-peer connectivity; off, it syncs
+    /// through mailboxes only. Written by `set_p2p_enabled`, which rebuilds the
+    /// node, never by the generic `set_setting`.
+    #[serde(default = "default_p2p_enabled")]
+    pub p2p_enabled: bool,
 }
 
 impl Default for Settings {
@@ -22,8 +27,13 @@ impl Default for Settings {
             notifications_enabled: default_notifications_enabled(),
             qr_color: None,
             background_mode_enabled: false,
+            p2p_enabled: default_p2p_enabled(),
         }
     }
+}
+
+const fn default_p2p_enabled() -> bool {
+    true
 }
 
 // On desktop the OS-level permission is always granted, so default the
@@ -75,6 +85,11 @@ pub(crate) fn set_setting<R: Runtime>(
     if !known_keys.contains(&key) {
         return Err(anyhow!("Unknown setting: {key}"));
     }
+    if key == "p2p_enabled" {
+        return Err(anyhow!(
+            "p2p_enabled is set through set_p2p_enabled, which rebuilds the node"
+        ));
+    }
 
     if let Some(obj) = current.as_object_mut() {
         obj.insert(key.clone(), value.clone());
@@ -121,6 +136,16 @@ pub(crate) fn save_settings<R: Runtime>(handle: &AppHandle<R>, settings: &Settin
     if let Ok(updated) = serde_json::to_value(settings) {
         let _ = handle.emit("settings://updated", updated);
     }
+}
+
+pub fn load_p2p_enabled<R: Runtime>(handle: &AppHandle<R>) -> bool {
+    load_settings(handle).p2p_enabled
+}
+
+pub fn save_p2p_enabled<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
+    let mut settings = load_settings(handle);
+    settings.p2p_enabled = enabled;
+    save_settings(handle, &settings);
 }
 
 #[cfg(desktop)]

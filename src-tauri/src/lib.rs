@@ -180,6 +180,7 @@ pub fn run() {
             commands::settings::set_setting,
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
+            commands::settings::set_p2p_enabled,
             commands::mailbox_state::mailbox_subscribe_active_ids,
             commands::mailbox_state::mailbox_subscribe_all_ids,
             commands::mailbox_state::mailbox_subscribe_connection_state,
@@ -187,8 +188,6 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::media::save_blob_to_cache,
             commands::voice::transcode_voice_message,
-            #[cfg(feature = "e2e-tests")]
-            commands::testing::close_iroh_endpoint,
         ])
         .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())

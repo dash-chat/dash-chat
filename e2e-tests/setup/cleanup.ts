@@ -94,10 +94,8 @@ function killOursBuiltFrom(binary: string) {
 	}
 }
 
-/** Kill this checkout's E2E dash-chat processes, and the tauri-driver ones
- *  the compat suite runs (NOT the mailbox server). */
+/** Kill this checkout's E2E dash-chat processes (NOT the mailbox server). */
 export function killAllE2EProcesses() {
-	killOursNamed('tauri-driver');
 	killOursNamed('dash-chat');
 }
 

@@ -14,6 +14,7 @@ import { invokeAfterSetup } from '../utils/invoke-after-setup';
 export interface Settings {
 	qr_color: string | null;
 	local_mailbox_enabled: boolean;
+	p2p_enabled: boolean;
 	notifications_enabled: boolean;
 	background_mode_enabled: boolean;
 }

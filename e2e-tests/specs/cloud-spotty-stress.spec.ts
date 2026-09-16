@@ -35,12 +35,13 @@ describe('Spotty cloud stress', () => {
 		// The mailbox's link must be ours to degrade, which a remote
 		// environment's is not.
 		if (isRemoteMailbox()) this.skip();
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
 		// Without p2p every op has to travel through the cloud mailbox, so
 		// its link is the only thing the checks measure.
-		[agent1, agent2] = await setupAgents(this, [
-			{ platform: 'any', p2p: false },
-			{ platform: 'any', p2p: false },
-		]);
+		await Promise.all([agent1.disableP2p(), agent2.disableP2p()]);
 		await agent1.createProfilePage.createProfile('Alice', 'Stress');
 		await agent2.createProfilePage.createProfile('Bob', 'Stress');
 		fuzzer = await Fuzzer.prepare(this, {
