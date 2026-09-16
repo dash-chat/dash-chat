@@ -4872,8 +4872,7 @@ dependencies = [
 [[package]]
 name = "iroh-gossip"
 version = "0.101.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e1dc4b05f73e7a1b9e83b531eb63c3fd671b0af3aeb13b59c546dd7ca747515"
+source = "git+https://github.com/YuniqueUnic/iroh-gossip?rev=9eb21c0b99fab5cfca9876e949b05d2aa1fae850#9eb21c0b99fab5cfca9876e949b05d2aa1fae850"
 dependencies = [
  "blake3",
  "bytes",
@@ -7332,7 +7331,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -7353,7 +7352,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "p2panda-core",
  "p2panda-store",
@@ -7370,7 +7369,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "blake3",
  "ciborium",
@@ -7385,7 +7384,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7400,7 +7399,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -7423,7 +7422,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -7451,7 +7450,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7465,7 +7464,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "p2panda-core",
  "rand 0.10.2",
@@ -7479,7 +7478,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "futures-core",
  "p2panda-core",
@@ -7492,7 +7491,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-retry-park#a3ed947145b25b559ca0fd1c8f55b8c149fb9bf9"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat#69b959afa8a9c04ca9322fb580a24997fe606c9e"
 dependencies = [
  "futures",
  "futures-util",

@@ -301,6 +301,15 @@ impl Node {
             builder = builder.relay_url(RELAY_URL.clone());
         }
 
+        // Phones change network under a running node; the connections from before
+        // the change must die quickly so peers stop being dialled at the old address.
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            builder = builder
+                .keep_alive_interval(std::time::Duration::from_secs(1))
+                .max_idle_timeout(std::time::Duration::from_secs(3));
+        }
+
         // With p2p disabled, run zero random-walk discovery walkers so the node
         // never initiates discovery sessions. Otherwise, inserting a mailbox's
         // address (a full p2panda node when run in-process) would let discovery

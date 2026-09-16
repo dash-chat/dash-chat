@@ -485,12 +485,27 @@ function ensureApkInstalled(udid: string): void {
 		/* not installed */
 	}
 	console.log(`[android] installing the e2e APK on ${udid}...`);
-	// Generous because the debug APK is ~370MB and install time is dominated by
-	// on-device dexopt, not transfer: a Pixel 7a lands well inside a minute
-	// while a budget device measured 509s for the same file.
-	execSync(`adb -s ${udid} install "${apk}"`, {
+	try {
+		adbInstall(udid, apk);
+	} catch (err) {
+		console.warn(
+			`[android] install on ${udid} failed (${String(err)}); retrying with --no-streaming`,
+		);
+		// The USB link reset that ends a stalled transfer drops the device briefly.
+		execSync(`adb -s ${udid} wait-for-device`, {
+			timeout: 60_000,
+			env: androidEnv,
+		});
+		adbInstall(udid, apk, '--no-streaming');
+	}
+}
+
+/** A healthy install takes seconds, while a streamed transfer over a flaky USB
+ *  link can stall for minutes, so the timeout is short and the caller retries. */
+function adbInstall(udid: string, apk: string, flags = ''): void {
+	execSync(`adb -s ${udid} install ${flags} "${apk}"`, {
 		stdio: 'inherit',
-		timeout: envInt('E2E_ANDROID_INSTALL_TIMEOUT_MS', 900_000),
+		timeout: envInt('E2E_ANDROID_INSTALL_TIMEOUT_MS', 90_000),
 		env: androidEnv,
 	});
 }

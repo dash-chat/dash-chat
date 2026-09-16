@@ -4,7 +4,10 @@
  * a message can only cross over a direct iroh connection. One phone drops off
  * Wi-Fi for a while — on screen, in the background or killed — while either
  * side composes a message; once it holds its address again the message has to
- * cross within seconds, and so has one sent once it is back.
+ * cross within seconds, and so has one sent once it is back. The last case
+ * walks both phones onto another Wi-Fi network with the app on screen, so it
+ * needs a second network in E2E_WIFI_NETWORKS (see e2e-tests/.env.example)
+ * and skips without one.
  *
  * Skips itself unless E2E_STRESS=1:
  *   PLATFORMS=android,android E2E_STRESS=1 just e2e run p2p-network-switch
@@ -17,6 +20,7 @@ import {
 	restartMailbox,
 } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
+import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
 
 const AWAY_MS = 60_000;
 /** Past the peer's QUIC idle timeout on every old session, so the return
@@ -49,6 +53,7 @@ describe('Pure p2p sync across a network switch', function () {
 	let alice: Agent;
 	let bob: Agent;
 	let mailboxKilled = false;
+	let otherNetwork: WifiNetwork | undefined;
 
 	before(async function () {
 		if (process.env.E2E_STRESS !== '1') this.skip();
@@ -73,6 +78,10 @@ describe('Pure p2p sync across a network switch', function () {
 	});
 
 	after(async () => {
+		if (otherNetwork !== undefined) {
+			await alice.forgetWifi(otherNetwork.ssid);
+			await bob.forgetWifi(otherNetwork.ssid);
+		}
 		if (mailboxKilled) await restartMailbox();
 	});
 
@@ -167,5 +176,17 @@ describe('Pure p2p sync across a network switch', function () {
 		await alice.homePage.chatListItem('Bob').click();
 		await alice.directChatPage.ready();
 		await expectArrival(alice, text, since);
+	});
+
+	it('receives a message the peer sent once both phones had moved to another Wi-Fi network', async function () {
+		const home = (await alice.wifiInfo()).ssid;
+		otherNetwork = wifiNetworks().find(n => n.ssid !== home);
+		if (otherNetwork === undefined) this.skip();
+		const text = 'sent once we had both moved network';
+		await alice.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
+		await bob.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
+		stampedLog(`both phones on ${otherNetwork.ssid}`);
+		await bob.directChatPage.composer.sendMessage(text);
+		await expectArrival(alice, text, Date.now());
 	});
 });

@@ -103,6 +103,11 @@ fn routable_addresses() -> BTreeSet<(String, IpAddr)> {
         .unwrap_or_default()
 }
 
+/// The routable addresses of every interface right now.
+pub fn routable_ips() -> BTreeSet<IpAddr> {
+    routable_addresses().into_iter().map(|(_, ip)| ip).collect()
+}
+
 fn is_routable(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => !v4.is_loopback() && !v4.is_link_local(),
