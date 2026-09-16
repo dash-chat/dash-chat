@@ -30,6 +30,7 @@ target
 .direnv/
 .envrc
 .env.development
+e2e-tests/.env
 result*
 
 # tauri

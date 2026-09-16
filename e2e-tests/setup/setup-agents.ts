@@ -62,7 +62,7 @@ import {
 	forgetIosWifi,
 	iosWifiInfo,
 } from './platforms/ios-wifi';
-import { type AgentPlatformName, platformNames } from './test-env';
+import { type AgentPlatformName, isMobile, platformNames } from './test-env';
 import { switchToWebview, waitForTestUtils } from './webview';
 import type { WifiInfo } from './wifi';
 
@@ -720,14 +720,6 @@ async function launchWithoutP2p(
 	}
 	await respawnDesktopAgent(slot, { DASHCHAT_NO_P2P: '1' });
 	await browser.getInstance(name).reloadSession();
-}
-
-function isMobile(platform: AgentPlatformName): boolean {
-	return (
-		platform === 'ios' ||
-		platform === 'android' ||
-		platform === 'android-emulator'
-	);
 }
 
 function fulfills(
