@@ -85,7 +85,12 @@ const describe = (value: unknown): string =>
 // Browsers surface a ResizeObserver delivery loop as an uncaught error. It is a
 // benign scheduling notice the spec requires, not an app failure, and every
 // layout pass can raise one.
-const ignoredErrors = ['ResizeObserver loop'];
+const ignoredErrors = [
+	'ResizeObserver loop',
+	// An e2e build embeds a WebDriver server whose element lookups run as page
+	// scripts, so the error it recovers from for a re-rendered element fires here.
+	...(import.meta.env.VITE_E2E === 'true' ? ['stale element reference'] : []),
+];
 
 const isIgnoredError = (message: string) =>
 	ignoredErrors.some(ignored => message.includes(ignored));
