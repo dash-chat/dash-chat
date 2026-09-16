@@ -287,6 +287,12 @@ impl Node {
         // `OpStore::acked_log_height`).
         operation.ack().await?;
 
+        if DeviceId::from(operation.author()) == self.device_id() {
+            self.mailboxes
+                .publish_fast_push(operation.topic(), self.device_id())
+                .await;
+        }
+
         Ok(())
     }
 

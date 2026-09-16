@@ -12,8 +12,13 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { spawnMailboxServer, waitForMailboxReady } from './mailbox-server';
+import {
+	MAILBOX_LINK,
+	spawnMailboxServer,
+	waitForMailboxReady,
+} from './mailbox-server';
 import { remoteMailboxUrl } from './test-env';
+import { Link } from './toxiproxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MAILBOX_INFO_PATH = path.join(
@@ -29,6 +34,7 @@ interface MailboxInfo {
 	url: string;
 	pid: number;
 	port: number;
+	bindPort: number;
 	dbPath: string;
 	pushNotificationsUrl?: string;
 }
@@ -53,6 +59,12 @@ function localInfo(): MailboxInfo {
 		);
 	}
 	return readInfo();
+}
+
+/** The link every agent reaches the mailbox through, to degrade and heal. */
+export function mailboxLink(): Link {
+	localInfo();
+	return new Link(MAILBOX_LINK);
 }
 
 function mailboxBlobsDir(): string {
@@ -123,7 +135,7 @@ function isAlive(pid: number): boolean {
 export async function restartMailbox(): Promise<void> {
 	const info = localInfo();
 	const server = spawnMailboxServer(
-		info.port,
+		info.bindPort,
 		info.dbPath,
 		info.pushNotificationsUrl,
 	);

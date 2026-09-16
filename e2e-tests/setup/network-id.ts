@@ -22,3 +22,11 @@ export const E2E_NETWORK_ID = createHash('sha256')
  *  its baked network id are the checkout's, so two runs of it cannot
  *  coexist and the second waits for the first. */
 export const CHECKOUT_CLAIM = `checkout-${E2E_NETWORK_ID}`;
+
+/** The ports this checkout's mailbox and push server prefer: stable across
+ *  its runs, so the URLs baked into device builds stay valid and turbo's
+ *  build skip fires; its own, so another checkout's run never takes a port
+ *  a spec has released, as a cut cloud link does. */
+const PORT_SLOT = parseInt(E2E_NETWORK_ID, 16) % 1000;
+export const MAILBOX_PREFERRED_PORT = 3300 + 2 * PORT_SLOT;
+export const PUSH_PREFERRED_PORT = MAILBOX_PREFERRED_PORT + 1;

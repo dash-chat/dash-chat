@@ -49,6 +49,14 @@ jobs:
         with:
           cache-on-failure: true
 
+      # The version the nix dev shell pins; the harness spawns it per run to
+      # degrade the cloud mailbox's link.
+      - name: Install toxiproxy
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/toxiproxy-server \
+            https://github.com/Shopify/toxiproxy/releases/download/v2.12.0/toxiproxy-server-linux-amd64
+          sudo chmod +x /usr/local/bin/toxiproxy-server
+
       - name: Install pnpm dependencies
         run: pnpm install --reporter=append-only
 

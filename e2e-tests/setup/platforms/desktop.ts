@@ -102,9 +102,12 @@ function linuxEnv(slot: number): Record<string, string> {
 	};
 }
 
-/** Launch the agent's app and resolve once its embedded WebDriver server is
- *  listening. */
-export async function launchAgentApp(slot: number): Promise<void> {
+/** Launch the agent's app with the usual environment, `env` on top, and
+ *  resolve once its embedded WebDriver server is listening. */
+export async function launchAgentApp(
+	slot: number,
+	env: NodeJS.ProcessEnv = {},
+): Promise<void> {
 	const mailboxUrl = process.env.MAILBOX_URL;
 	if (mailboxUrl === undefined) {
 		throw new Error('MAILBOX_URL not set — onPrepare must run first');
@@ -119,11 +122,26 @@ export async function launchAgentApp(slot: number): Promise<void> {
 			MAILBOX_URL: mailboxUrl,
 			E2E_NETWORK_ID,
 			TAURI_WEBDRIVER_PORT: String(port),
+			...env,
 		},
 	});
 	launched.set(slot, app);
 	await waitForPortListening(port);
 	if (MACOS) raiseMacApp(app.pid);
+}
+
+/** Relaunch `slot`'s app with `env` on top of its usual environment. The
+ *  app's data dir is kept; the caller reloads the session. */
+export async function respawnDesktopAgent(
+	slot: number,
+	env: NodeJS.ProcessEnv,
+): Promise<void> {
+	await killAndWait(launched.get(slot));
+	killAgentApp(slot);
+	const port = allocatePinnedPort(`_WDIO_PORT${slot}`);
+	killPortHolders([port]);
+	await waitForPortFree(port);
+	await launchAgentApp(slot, env);
 }
 
 /** Bring the app's windows above every other app's. WebKit stops animation

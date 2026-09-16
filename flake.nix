@@ -136,6 +136,7 @@
             pkgsPnpm.pnpm
             pkgs.cargo-nextest
             pkgs.doctl
+            pkgs.toxiproxy
             # The compat suite drives released builds through it.
             inputs'.tauri-driver.packages.tauri-driver
           ]
