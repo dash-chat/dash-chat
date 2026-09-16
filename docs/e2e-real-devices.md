@@ -44,7 +44,7 @@ Wi-Fi specs (`local-hub-discovery*`, `p2p-network-switch`) drive the phone with 
 
 ## Wi-Fi lab
 
-Specs that move phones and hubs between networks need real access points, listed in a gitignored `.env.development` (see `.env.development.example`):
+Specs that move phones and hubs between networks need real access points, listed in a gitignored `e2e-tests/.env` (see `e2e-tests/.env.example`):
 
 ```
 E2E_WIFI_NETWORKS=dash-lab-a:passphraseA,dash-lab-b:passphraseB

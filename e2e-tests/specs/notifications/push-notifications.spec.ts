@@ -24,7 +24,8 @@ import { type Agent, setupAgents } from '../../setup/setup-agents';
  * Tap-to-navigate assertions need the receiver device unlocked for the whole
  * run.
  *
- * Runs on either an iOS or an Android receiver. Only runs when `E2E_PUSH=1`.
+ * Runs on either an iOS or an Android receiver. Only runs when a Firebase
+ * service-account key is present (see `e2e-tests/.env.example`).
  */
 describe('Push notifications (real device, end-to-end)', () => {
 	let receiver: Agent;

@@ -19,6 +19,14 @@ const AGENT_PLATFORMS = [
 ] as const;
 export type AgentPlatformName = (typeof AGENT_PLATFORMS)[number];
 
+export function isMobile(platform: AgentPlatformName): boolean {
+	return (
+		platform === 'ios' ||
+		platform === 'android' ||
+		platform === 'android-emulator'
+	);
+}
+
 /**
  * Platforms of the launched agents, parsed from the PLATFORMS env var — an
  * unordered comma-separated multiset (duplicates set the agent count, order

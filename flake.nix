@@ -131,7 +131,7 @@
           '';
           packages = [
             pkgs.mprocs
-            pkgs.just
+            pkgsPnpm.just
             pkgs."nodejs_${nodeVersion}"
             pkgsPnpm.pnpm
             pkgs.cargo-nextest

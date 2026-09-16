@@ -1,10 +1,11 @@
 /**
  * Spawning the e2e push-notifications server for real end-to-end push tests.
- * Parallels mailbox-server.ts. Runs only when opted in with `E2E_PUSH=1` AND a
- * Firebase service-account key is present — the in-repo default
+ * Parallels mailbox-server.ts. Runs only when a Firebase service-account key is
+ * present — the in-repo default
  * (`crates/push-notifications-server/service-account-key.json`, gitignored) or
- * an `FCM_SERVICE_ACCOUNT_KEY` override; otherwise push specs skip. The key must
- * target the same Firebase project as the device's GoogleService-Info.plist.
+ * an `FCM_SERVICE_ACCOUNT_KEY` override (see `e2e-tests/.env.example`) — and a mobile
+ * agent is launched; otherwise push specs skip. The key must target the same
+ * Firebase project as the device's GoogleService-Info.plist.
  *
  * The mailbox server is spawned with `--push-notifications-url` pointing here so
  * blob arrivals are forwarded, and the app build bakes
@@ -24,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { startAgentLogger } from './agent-logger';
 import { allocatePreferredPort } from './allocate-port';
 import { PUSH_PREFERRED_PORT } from './network-id';
+import { isMobile, platformNames } from './test-env';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -43,16 +45,10 @@ function serviceAccountKeyPath(): string {
 	return path.resolve(ROOT, rel);
 }
 
-/** Whether the caller opted into push tests with `E2E_PUSH=1` (or `true`). */
-function pushOptIn(): boolean {
-	const v = (process.env.E2E_PUSH ?? '').toLowerCase();
-	return v === '1' || v === 'true';
-}
-
-/** Whether the real-device push spec + push server should run: opted in via
- * `E2E_PUSH=1` AND a service-account key present  */
+/** Whether the real-device push spec + push server should run: a
+ * service-account key present AND a mobile agent to receive the pushes. */
 export function pushTestingEnabled(): boolean {
-	return pushOptIn() && existsSync(serviceAccountKeyPath());
+	return existsSync(serviceAccountKeyPath()) && platformNames().some(isMobile);
 }
 
 /** Absolute path to the Firebase service-account key, or null when none is

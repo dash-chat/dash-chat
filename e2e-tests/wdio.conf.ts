@@ -84,9 +84,8 @@ const mailboxBuild =
 // promise doesn't crash node with an unhandled rejection.
 mailboxBuild?.catch(() => {});
 
-/** The push-notifications-server build, only when FCM_SERVICE_ACCOUNT_KEY is set
- * (the real-device push spec). Gated on the env var (not the throwing
- * pushServiceAccountKey()) so a bad path surfaces in onPrepare, not at load. */
+/** The push-notifications-server build, only when a service-account key is
+ * present and a mobile agent runs (the real-device push spec). */
 const pushEnabled =
 	process.env.WDIO_WORKER_ID === undefined && pushTestingEnabled();
 const pushServerBuild = pushEnabled ? buildPushServer() : null;

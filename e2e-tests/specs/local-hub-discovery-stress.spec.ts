@@ -7,7 +7,7 @@
  * on its LAN.
  *
  * Skips itself unless E2E_STRESS=1 and E2E_WIFI_NETWORKS names at least one
- * network (see .env.development.example). Run it with:
+ * network (see e2e-tests/.env.example). Run it with:
  *   PLATFORMS=android,android just e2e run local-hub-discovery-stress
  *
  * Tunables: E2E_STRESS_ATTEMPTS (sequences to try, default 20),
