@@ -73,13 +73,14 @@ jobs:
         run: set -o pipefail && dbus-run-session -- xvfb-run just e2e 2>&1 | tee e2e-output.log
 
       - name: Upload test logs on failure
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-logs
           path: |
             e2e-output.log
             .dbs/e2e/failures/
+            .dbs/e2e/results/
           # .dbs is a dotted directory, which upload-artifact skips by default,
           # so the failure screenshots never reached the artifact.
           include-hidden-files: true

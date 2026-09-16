@@ -50,6 +50,7 @@ import {
 	waitForAppLinksVerified,
 } from './platforms/android';
 import {
+	isAgentAppRunning,
 	killAgentApp,
 	launchAgentApp,
 	macWindowRect,
@@ -317,18 +318,8 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.p2p = false;
 	};
 	agent.restart = async () => {
-		// On mobile a new session fast-resets the app (`pm clear` on Android),
-		// so the app would come back with no profile instead of re-hydrating
-		// from the data dir; stop and start it inside this session instead.
-		if (agent.platform !== 'desktop') {
-			await agent.stopApp();
-			await agent.startApp();
-			await agent.setWideScreen(false);
-			return;
-		}
-		await b.reloadSession();
-		await waitForTestUtils(b);
-		attachPages(agent, b);
+		await agent.stopApp();
+		await agent.startApp();
 		await agent.setWideScreen(false);
 	};
 	agent.stopApp = async () => {
@@ -339,7 +330,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 				// The session is already gone when the app shut itself down; the
 				// kill below still reaps whatever is left on the data dir.
 			}
-			killAgentApp(slot);
+			await killAgentApp(slot);
 			return;
 		}
 		// Leave the webview first: the session drives it through chromedriver, so
@@ -372,9 +363,9 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
-			// reloadSession relaunches the binary even when the app is still up,
-			// so verify first: a live session means the app is running and
-			// driveable, and there is nothing to do.
+			// A live session means the app is running and driveable, and there
+			// is nothing to do: launching again would start a second process on
+			// the same data dir.
 			try {
 				await b.getTitle();
 				return;
@@ -649,6 +640,27 @@ function tapWebElementsWithTouch(agent: WebdriverIO.Browser): void {
 	);
 }
 
+/** Make deleting a desktop agent's session a no-op once its app is gone. The
+ *  WebDriver server runs inside the app, so the session ended with the
+ *  process, and a delete sent to the closed port fails instead. */
+function skipSessionDeleteOnceAppIsGone(
+	agent: WebdriverIO.Browser,
+	slot: number,
+): void {
+	agent.overwriteCommand(
+		// @ts-expect-error The typings only accept webdriverio's own commands,
+		// but a WebDriver protocol command overwrites the same way.
+		'deleteSession',
+		async (
+			origDeleteSession: WebdriverIO.Browser['deleteSession'],
+			...args: Parameters<WebdriverIO.Browser['deleteSession']>
+		) => {
+			if (!(await isAgentAppRunning(slot))) return;
+			await origDeleteSession(...args);
+		},
+	);
+}
+
 /** Build an agent by capability name and wait for window.__test to be ready.
  *  Defaults to narrow (mobile) layout so back buttons and FABs render — review
  *  checks switch to wide explicitly when they need the desktop two-panel UI. */
@@ -668,6 +680,7 @@ async function setupAgent(
 		tapWebElementsAtTheirRect(b, 'touch');
 	} else if (platform === 'desktop') {
 		tapWebElementsAtTheirRect(b, 'mouse');
+		skipSessionDeleteOnceAppIsGone(b, slot);
 		if (process.platform === 'darwin') {
 			const { x, y, width, height } = macWindowRect(slot);
 			await b.setWindowRect(x, y, width, height);

@@ -56,9 +56,11 @@ export function pidsNamedWithEnv(name: string, marker: string): number[] {
 				})
 				.map(line => Number(line.trim().split(/\s+/)[0]));
 		}
+		// `if`, not `&&`: the loop exits with its last command's status, so a
+		// last pid that doesn't match would make execSync throw the matches away.
 		return execSync(
 			`for pid in $(pgrep -x ${name}); do ` +
-				`grep -qzF ${JSON.stringify(marker)} /proc/$pid/environ 2>/dev/null && echo $pid; ` +
+				`if grep -qzF ${JSON.stringify(marker)} /proc/$pid/environ 2>/dev/null; then echo $pid; fi; ` +
 				'done',
 			{ encoding: 'utf8' },
 		)

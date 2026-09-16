@@ -25,7 +25,11 @@ import {
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { runTurboBuild } from '../turbo-build';
-import { waitForPortFree, waitForPortListening } from '../wait-for-port';
+import {
+	isPortListening,
+	waitForPortFree,
+	waitForPortListening,
+} from '../wait-for-port';
 import type { AgentPlatform } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,6 +53,10 @@ interface DesktopAgent {
 
 function agentDir(slot: number): string {
 	return path.join(ROOT, '.dbs', 'e2e', `agent-${slot}`);
+}
+
+function agentPort(slot: number): number {
+	return allocatePinnedPort(`_WDIO_PORT${slot}`);
 }
 
 function openedUrlsPath(slot: number): string {
@@ -75,8 +83,9 @@ function installXdgOpenStub(slot: number): string {
 
 /** SIGKILL any app process running against this agent's data dir — e.g. the
  *  instance `delete_account` self-restarts into (`tauri::process::restart`),
- *  which nothing here launched and no session can reattach to. */
-export function killAgentApp(slot: number) {
+ *  which nothing here launched and no session can reattach to — and wait until
+ *  the agent's WebDriver port is free. */
+export async function killAgentApp(slot: number): Promise<void> {
 	for (const pid of pidsNamedWithEnv(
 		'dash-chat',
 		`DATA_DIR=${agentDir(slot)}`,
@@ -87,6 +96,12 @@ export function killAgentApp(slot: number) {
 			/* already gone */
 		}
 	}
+	await waitForPortFree(agentPort(slot));
+}
+
+/** Whether an app is serving WebDriver on this agent's port. */
+export async function isAgentAppRunning(slot: number): Promise<boolean> {
+	return await isPortListening(agentPort(slot));
 }
 
 /** The apps this worker launched, by slot. */
@@ -135,7 +150,7 @@ export async function launchDesktopApp(
 /** Launch the agent's app and resolve once its embedded WebDriver server is
  *  listening. On Linux the opener stub goes on its PATH. */
 export async function launchAgentApp(slot: number): Promise<void> {
-	const port = allocatePinnedPort(`_WDIO_PORT${slot}`);
+	const port = agentPort(slot);
 	const app = await launchDesktopApp(
 		APP_BINARY,
 		agentDir(slot),
@@ -189,7 +204,7 @@ export class DesktopPlatform implements AgentPlatform {
 	constructor(readonly slots: number[]) {
 		this.agents = slots.map(slot => ({
 			slot,
-			port: allocatePinnedPort(`_WDIO_PORT${slot}`),
+			port: agentPort(slot),
 		}));
 	}
 
