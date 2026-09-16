@@ -5,6 +5,11 @@ import { checkHubs } from '../checks';
 import type { ExpectedModel } from '../model';
 import { Move, type Moves } from './move';
 
+/** Android keeps syncing a backgrounded app for a few seconds before it cuts
+ *  it off the network (measured ~5.5 s on the Xiaomi, ~10 s on the vivo), and
+ *  the model counts a backgrounded agent as off the network. */
+const BACKGROUND_NETWORK_CUTOFF_MS = 15_000;
+
 /** Backgrounds an agent and leaves it backgrounded: later moves keep acting
  * through the other agents (including sending to this one), and a
  * ForegroundMove brings it back, making catch-up-after-background part of
@@ -22,6 +27,7 @@ class BackgroundMove extends Move {
 		const actor = byName(real, at(m.activeMobileNames(), this.agentIdx));
 		log(`${actor.name}: ${this.toString()}`);
 		await actor.agent.backgroundApp();
+		await actor.agent.pause(BACKGROUND_NETWORK_CUTOFF_MS);
 		m.background(actor.name);
 	}
 
