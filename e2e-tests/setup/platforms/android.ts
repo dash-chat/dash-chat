@@ -241,8 +241,9 @@ function bootMissingEmulators(needed: number) {
 	console.log('Emulators ready.');
 }
 
-/** The uiautomator2 driver lives in APPIUM_HOME (not node_modules); install
- *  it on first run. Pinned to the last version compatible with appium 2.x. */
+/** Appium keeps its drivers in APPIUM_HOME, not node_modules, so on first run
+ *  link in the `appium-uiautomator2-driver` devDependency; the version is pinned
+ *  in package.json and the link tracks it. */
 function ensureUiautomator2Driver() {
 	const installed = execSync(
 		'pnpm exec appium driver list --installed 2>&1 || true',
@@ -252,13 +253,17 @@ function ensureUiautomator2Driver() {
 			env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
 		},
 	);
-	if (!installed.includes('uiautomator2')) {
-		execSync('pnpm exec appium driver install uiautomator2@4.2.9', {
-			stdio: 'inherit',
-			cwd: E2E_DIR,
-			env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
-		});
-	}
+	if (installed.includes('uiautomator2')) return;
+	const driverPath = path.join(
+		E2E_DIR,
+		'node_modules',
+		'appium-uiautomator2-driver',
+	);
+	execSync(`pnpm exec appium driver install --source=local "${driverPath}"`, {
+		stdio: 'inherit',
+		cwd: E2E_DIR,
+		env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
+	});
 }
 
 function connectedDevices(): string[] {

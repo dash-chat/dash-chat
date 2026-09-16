@@ -312,6 +312,10 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.execute(() => window.__test.enablePreviewFeatures());
 	};
 	agent.disableP2p = async () => {
+		// `set_p2p_enabled` rebuilds the node (pause + resume), a few seconds;
+		// XCUITest defaults the async-script timeout to ~0, so raise it first or
+		// `executeAsync` times out at once (desktop's driver tolerates the default).
+		await b.setTimeout({ script: 60_000 });
 		await b.executeAsync((done: () => void) =>
 			window.__test.disableP2p().then(done, done),
 		);
