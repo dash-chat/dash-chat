@@ -11,6 +11,3 @@ pub mod mailbox_state;
 pub mod media;
 pub mod settings;
 pub mod voice;
-
-#[cfg(feature = "e2e-tests")]
-pub mod testing;

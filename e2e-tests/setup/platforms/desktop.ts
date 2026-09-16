@@ -1,4 +1,9 @@
-import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import {
+	type ChildProcess,
+	type StdioOptions,
+	execSync,
+	spawn,
+} from 'node:child_process';
 import {
 	existsSync,
 	mkdirSync,
@@ -11,50 +16,47 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
-import { killAllE2EProcesses, killAndWait, killPortHolders } from '../cleanup';
+import {
+	killAllE2EProcesses,
+	killAndWait,
+	killPortHolders,
+	pidsNamedWithEnv,
+} from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { runTurboBuild } from '../turbo-build';
-import { waitForPortFree, waitForPortListening } from '../wait-for-port';
+import {
+	isPortListening,
+	waitForPortFree,
+	waitForPortListening,
+} from '../wait-for-port';
 import type { AgentPlatform } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 
-/** The desktop agent drives the app through `tauri-driver`, which targets
- *  Linux/WebKitGTK (see the GTK/XDG env in beforeSession). tauri-driver has no
- *  macOS backend — it exits with "not supported on this platform" — so a desktop
- *  agent can't run on a Mac; pair iOS agents with each other (PLATFORMS=ios,ios)
- *  or run desktop on Linux. */
-function assertTauriDriverAvailable() {
-	if (process.platform === 'darwin') {
-		throw new Error(
-			'Desktop e2e agents are not supported on macOS: tauri-driver has no macOS ' +
-				'WebView WebDriver backend and the desktop path targets Linux/WebKitGTK. ' +
-				'On a Mac run iOS-only (PLATFORMS=ios) or two devices (PLATFORMS=ios,ios); ' +
-				'the desktop agent must run on Linux.',
-		);
-	}
-	try {
-		execSync('command -v tauri-driver', { stdio: 'ignore' });
-	} catch {
-		throw new Error(
-			'tauri-driver not found — the desktop agent drives the app through it. ' +
-				'Run inside the nix dev shell, or install it with `cargo install tauri-driver`.',
-		);
-	}
-}
+/** Desktop agents are this checkout's e2e build of the app, one process per
+ *  slot, driven through the W3C WebDriver server that build embeds
+ *  (tauri-plugin-wdio-webdriver) on the port TAURI_WEBDRIVER_PORT names.
+ *  The harness launches the process itself and the session goes straight to
+ *  it: no tauri-driver, and so the same path on Linux and macOS, where no
+ *  WebDriver for WKWebView exists. */
+const MACOS = process.platform === 'darwin';
+
+const APP_BINARY = path.join(ROOT, 'target', 'debug', 'dash-chat');
 
 interface DesktopAgent {
 	slot: number;
 	port: number;
-	nativePort: number;
-	driver?: ChildProcess;
 	logger?: ChildProcess | null;
 }
 
 function agentDir(slot: number): string {
 	return path.join(ROOT, '.dbs', 'e2e', `agent-${slot}`);
+}
+
+function agentPort(slot: number): number {
+	return allocatePinnedPort(`_WDIO_PORT${slot}`);
 }
 
 function openedUrlsPath(slot: number): string {
@@ -65,7 +67,8 @@ function openedUrlsPath(slot: number): string {
  * Put an `xdg-open` stub at the front of the agent's PATH. `open`, the crate
  * behind tauri-plugin-opener, launches urls with `Command::new("xdg-open")`, so
  * the stub records what the app asked the OS to open — exercising the whole
- * real stack without a browser window appearing mid-run.
+ * real stack without a browser window appearing mid-run. Linux only: on macOS
+ * the crate runs `/usr/bin/open` by its absolute path.
  */
 function installXdgOpenStub(slot: number): string {
 	const binDir = path.join(agentDir(slot), 'bin');
@@ -80,19 +83,109 @@ function installXdgOpenStub(slot: number): string {
 
 /** SIGKILL any app process running against this agent's data dir — e.g. the
  *  instance `delete_account` self-restarts into (`tauri::process::restart`),
- *  which tauri-driver doesn't own and can't reattach to. */
-export function killAgentApp(slot: number) {
+ *  which nothing here launched and no session can reattach to — and wait until
+ *  the agent's WebDriver port is free. */
+export async function killAgentApp(slot: number): Promise<void> {
+	for (const pid of pidsNamedWithEnv(
+		'dash-chat',
+		`DATA_DIR=${agentDir(slot)}`,
+	)) {
+		try {
+			process.kill(pid, 'SIGKILL');
+		} catch {
+			/* already gone */
+		}
+	}
+	await waitForPortFree(agentPort(slot));
+}
+
+/** Whether an app is serving WebDriver on this agent's port. */
+export async function isAgentAppRunning(slot: number): Promise<boolean> {
+	return await isPortListening(agentPort(slot));
+}
+
+/** The apps this worker launched, by slot. */
+const launched = new Map<number, ChildProcess>();
+
+/** WebKitGTK kept off the paths that hang under a driver. */
+const WEBKITGTK_ENV: Record<string, string> = {
+	// Disable AT-SPI accessibility bridge to prevent D-Bus contention.
+	NO_AT_BRIDGE: '1',
+	GTK_A11Y: 'none',
+	// Disable the DMA-BUF renderer — it causes non-deterministic WebKitGTK
+	// freezes. See https://github.com/tauri-apps/tauri/issues/13498
+	WEBKIT_DISABLE_DMABUF_RENDERER: '1',
+};
+
+/** Launch the e2e build at `binary` against `dataDir`, with the harness's
+ *  environment and `env` on top, and resolve once the WebDriver server it
+ *  embeds is listening on `port`. */
+export async function launchDesktopApp(
+	binary: string,
+	dataDir: string,
+	port: number,
+	env: NodeJS.ProcessEnv,
+	stdio: StdioOptions = 'ignore',
+): Promise<ChildProcess> {
+	const mailboxUrl = process.env.MAILBOX_URL;
+	if (mailboxUrl === undefined) {
+		throw new Error('MAILBOX_URL not set — onPrepare must run first');
+	}
+	const app = spawn(binary, [], {
+		stdio,
+		env: {
+			...process.env,
+			...(MACOS ? {} : WEBKITGTK_ENV),
+			DATA_DIR: dataDir,
+			MAILBOX_URL: mailboxUrl,
+			TAURI_WEBDRIVER_PORT: String(port),
+			...env,
+		},
+	});
+	await waitForPortListening(port);
+	if (MACOS) raiseMacApp(app.pid);
+	return app;
+}
+
+/** Launch the agent's app and resolve once its embedded WebDriver server is
+ *  listening. On Linux the opener stub goes on its PATH. */
+export async function launchAgentApp(slot: number): Promise<void> {
+	const port = agentPort(slot);
+	const app = await launchDesktopApp(
+		APP_BINARY,
+		agentDir(slot),
+		port,
+		MACOS
+			? {}
+			: { PATH: `${installXdgOpenStub(slot)}:${process.env.PATH ?? ''}` },
+	);
+	launched.set(slot, app);
+}
+
+/** Bring the app's windows above every other app's. WebKit stops animation
+ *  frames and transitions in a document whose window is covered, and a
+ *  popover that fades in never becomes visible there. */
+function raiseMacApp(pid: number | undefined): void {
+	if (pid === undefined) return;
 	try {
 		execSync(
-			'for pid in $(pgrep -f "target/(debug|release)/dash-chat"); do ' +
-				`grep -qzF "DATA_DIR=${agentDir(slot)}" /proc/$pid/environ 2>/dev/null ` +
-				'&& kill -9 $pid 2>/dev/null; ' +
-				'done',
+			`osascript -e 'tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true'`,
 			{ stdio: 'ignore' },
 		);
 	} catch {
-		/* ignore */
+		/* no window server session to raise in; the run may still pass */
 	}
+}
+
+/** Where the macOS window of `slot` goes: agents side by side, so neither
+ *  covers the other (see [`raiseMacApp`]). */
+export function macWindowRect(slot: number): {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+} {
+	return { x: 20 + (slot - 1) * 940, y: 60, width: 900, height: 750 };
 }
 
 /** The urls this agent asked the OS to open, oldest first. */
@@ -104,36 +197,19 @@ export function readOpenedUrls(slot: number): string[] {
 		.filter(line => line !== '');
 }
 
-/** The run's desktop platform, for the agent factory to reach from outside
- *  wdio's hooks. */
-let current: DesktopPlatform | null = null;
-
-/** Relaunch `slot`'s app with `env` on top of its usual environment; see
- *  [`DesktopPlatform.respawn`]. */
-export async function respawnDesktopAgent(
-	slot: number,
-	env: NodeJS.ProcessEnv,
-): Promise<void> {
-	if (current === null) throw new Error('this run launched no desktop agent');
-	await current.respawn(slot, env);
-}
-
-/** Agents running the desktop binary, one tauri-driver instance per slot. */
+/** Agents running the desktop binary, one app process per slot. */
 export class DesktopPlatform implements AgentPlatform {
 	private agents: DesktopAgent[];
 
 	constructor(readonly slots: number[]) {
-		assertTauriDriverAvailable();
-		current = this;
 		this.agents = slots.map(slot => ({
 			slot,
-			port: allocatePinnedPort(`_WDIO_PORT${slot}`),
-			nativePort: allocatePinnedPort(`_WDIO_NATIVE_PORT${slot}`),
+			port: agentPort(slot),
 		}));
 	}
 
 	private get ports(): number[] {
-		return this.agents.flatMap(a => [a.port, a.nativePort]);
+		return this.agents.map(a => a.port);
 	}
 
 	remoteOptions(slot: number) {
@@ -141,10 +217,7 @@ export class DesktopPlatform implements AgentPlatform {
 		return {
 			port: agent.port,
 			capabilities: {
-				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
-				'tauri:options': {
-					application: path.join(ROOT, 'target', 'debug', 'dash-chat'),
-				},
+				platformName: MACOS ? 'mac' : 'linux',
 			} as WebdriverIO.Capabilities,
 		};
 	}
@@ -165,10 +238,10 @@ export class DesktopPlatform implements AgentPlatform {
 
 	async beforeSession() {
 		// Force-kill any leftover processes from the previous session.
-		await Promise.all(this.agents.map(a => killAndWait(a.driver)));
+		await this.killLaunched();
 		killAllE2EProcesses();
 		// Kill anything still holding our specific ports (handles orphaned
-		// dash-chat processes that inherited tauri-driver's listening sockets).
+		// dash-chat processes that inherited a listening socket).
 		killPortHolders(this.ports);
 		// Wait for ports to be fully released after SIGKILL.
 		await Promise.all(this.ports.map(p => waitForPortFree(p)));
@@ -185,9 +258,7 @@ export class DesktopPlatform implements AgentPlatform {
 			} catch {
 				/* ignore */
 			}
-
 			mkdirSync(dataDir, { recursive: true });
-			installXdgOpenStub(agent.slot);
 
 			// tauri-plugin-log names the file after productName (tauri.conf.json).
 			agent.logger = startAgentLogger(
@@ -195,67 +266,13 @@ export class DesktopPlatform implements AgentPlatform {
 				path.join(dataDir, 'logs', 'Dash Chat.log'),
 			);
 
-			this.spawnDriver(agent, {});
+			await launchAgentApp(agent.slot);
 		}
-
-		// Wait for tauri-driver instances to accept connections.
-		await Promise.all(this.agents.map(a => waitForPortListening(a.port)));
-	}
-
-	/** Start `agent`'s tauri-driver, which launches the app with the same
-	 *  environment: the usual one, with `env` on top. */
-	private spawnDriver(agent: DesktopAgent, env: NodeJS.ProcessEnv): void {
-		const mailboxUrl = process.env.MAILBOX_URL;
-		if (mailboxUrl === undefined) {
-			throw new Error('MAILBOX_URL not set — onPrepare must run first');
-		}
-		const dataDir = agentDir(agent.slot);
-		agent.driver = spawn(
-			'tauri-driver',
-			['--port', String(agent.port), '--native-port', String(agent.nativePort)],
-			{
-				stdio: ['ignore', 'ignore', 'pipe'],
-				env: {
-					...process.env,
-					DATA_DIR: dataDir,
-					MAILBOX_URL: mailboxUrl,
-					PATH: `${path.join(dataDir, 'bin')}:${process.env.PATH}`,
-					// Disable AT-SPI accessibility bridge to prevent D-Bus
-					// contention.
-					NO_AT_BRIDGE: '1',
-					GTK_A11Y: 'none',
-					// Disable the DMA-BUF renderer — it causes
-					// non-deterministic WebKitGTK freezes. See
-					// https://github.com/tauri-apps/tauri/issues/13498
-					WEBKIT_DISABLE_DMABUF_RENDERER: '1',
-					...env,
-				},
-			},
-		);
-		agent.driver.stderr?.on('data', (data: Buffer) => {
-			console.error(`[tauri-driver:${agent.port}] ${data.toString().trim()}`);
-		});
-	}
-
-	/** Relaunch `slot`'s tauri-driver, and so its app, with `env` on top of
-	 *  the usual environment. The app's data dir is kept; the caller reloads
-	 *  the session. */
-	async respawn(slot: number, env: NodeJS.ProcessEnv): Promise<void> {
-		const agent = this.agents.find(a => a.slot === slot);
-		if (agent === undefined)
-			throw new Error(`no desktop agent in slot ${slot}`);
-		await killAndWait(agent.driver);
-		killAgentApp(slot);
-		const ports = [agent.port, agent.nativePort];
-		killPortHolders(ports);
-		await Promise.all(ports.map(p => waitForPortFree(p)));
-		this.spawnDriver(agent, env);
-		await waitForPortListening(agent.port);
 	}
 
 	async afterSession() {
-		// SIGKILL tauri-drivers and wait for exit to free ports.
-		await Promise.all(this.agents.map(a => killAndWait(a.driver)));
+		// SIGKILL the apps launched here and wait for exit to free ports.
+		await this.killLaunched();
 		// Kill orphaned dash-chat E2E instances and anything holding our ports.
 		killAllE2EProcesses();
 		killPortHolders(this.ports);
@@ -266,10 +283,15 @@ export class DesktopPlatform implements AgentPlatform {
 	}
 
 	async onComplete() {
+		await this.killLaunched();
 		killAllE2EProcesses();
 		killPortHolders(this.ports);
 		for (const agent of this.agents) {
 			agent.logger?.kill();
 		}
+	}
+
+	private async killLaunched(): Promise<void> {
+		await Promise.all(this.agents.map(a => killAndWait(launched.get(a.slot))));
 	}
 }

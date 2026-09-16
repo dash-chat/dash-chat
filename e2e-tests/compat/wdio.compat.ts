@@ -1,5 +1,5 @@
-import { type ChildProcess, spawn } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import type { ChildProcess } from 'node:child_process';
+import { closeSync, mkdirSync, openSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,8 +11,9 @@ import {
 	killAndWait,
 	killPortHolders,
 } from '../setup/cleanup';
+import { launchDesktopApp } from '../setup/platforms/desktop';
 import { getSpecFileRetries } from '../setup/test-env';
-import { waitForPortFree, waitForPortListening } from '../setup/wait-for-port';
+import { waitForPortFree } from '../setup/wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..');
@@ -23,9 +24,13 @@ if (!phase || !['setup', 'verify'].includes(phase)) {
 	throw new Error('COMPAT_PHASE must be "setup" or "verify"');
 }
 
-if (!process.env.COMPAT_BINARY) {
-	throw new Error('COMPAT_BINARY env var required');
+function requiredEnv(name: string): string {
+	const value = process.env[name];
+	if (value === undefined) throw new Error(`${name} env var required`);
+	return value;
 }
+
+const compatBinary = requiredEnv('COMPAT_BINARY');
 
 const specFile =
 	phase === 'setup'
@@ -33,13 +38,35 @@ const specFile =
 		: path.join(E2E_DIR, 'specs', 'compat-verify.spec.ts');
 
 const port1 = allocatePinnedPort('_WDIO_PORT1');
-const nativePort1 = allocatePinnedPort('_WDIO_NATIVE_PORT1');
 const port2 = allocatePinnedPort('_WDIO_PORT2');
-const nativePort2 = allocatePinnedPort('_WDIO_NATIVE_PORT2');
-const ALL_PORTS = [port1, nativePort1, port2, nativePort2];
+const ALL_PORTS = [port1, port2];
 
-let tauriDriver1: ChildProcess;
-let tauriDriver2: ChildProcess;
+const PLATFORM_NAME = process.platform === 'darwin' ? 'mac' : 'linux';
+
+function agentDir(agent: number): string {
+	return path.join(ROOT, '.dbs', 'compat', `agent-${agent}`);
+}
+
+function agentLogPath(agent: number): string {
+	return path.join(agentDir(agent), 'agent.log');
+}
+
+/** Launch the compat binary for `agent`, its stdout and stderr going to the
+ *  log the runner tails; truncated per launch so retries start fresh. */
+async function launchAgent(agent: number, port: number): Promise<ChildProcess> {
+	mkdirSync(agentDir(agent), { recursive: true });
+	const log = openSync(agentLogPath(agent), 'w');
+	const app = await launchDesktopApp(compatBinary, agentDir(agent), port, {}, [
+		'ignore',
+		log,
+		log,
+	]);
+	closeSync(log);
+	return app;
+}
+
+let app1: ChildProcess | undefined;
+let app2: ChildProcess | undefined;
 let agent1Logger: ChildProcess | null = null;
 let agent2Logger: ChildProcess | null = null;
 
@@ -54,19 +81,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		agent1: {
 			port: port1,
 			capabilities: {
-				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
-				'tauri:options': {
-					application: path.join(__dirname, 'scripts', 'launch-agent1.sh'),
-				},
+				platformName: PLATFORM_NAME,
 			} as WebdriverIO.Capabilities,
 		},
 		agent2: {
 			port: port2,
 			capabilities: {
-				platformName: process.platform === 'darwin' ? 'mac' : process.platform,
-				'tauri:options': {
-					application: path.join(__dirname, 'scripts', 'launch-agent2.sh'),
-				},
+				platformName: PLATFORM_NAME,
 			} as WebdriverIO.Capabilities,
 		},
 	},
@@ -86,7 +107,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 	async beforeSession() {
 		// Force-kill any leftover processes from a previous phase.
-		await Promise.all([killAndWait(tauriDriver1), killAndWait(tauriDriver2)]);
+		await Promise.all([killAndWait(app1), killAndWait(app2)]);
 		killAllE2EProcesses();
 		killPortHolders(ALL_PORTS);
 		// Wait for ports to be fully released after SIGKILL.
@@ -99,55 +120,29 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		// not just an `studio.darksoil.dashchat` subpath that doesn't exist.
 		// Skip for verify phase — it needs data from the setup phase.
 		if (phase === 'setup') {
-			for (const agent of ['agent-1', 'agent-2']) {
-				const agentDir = path.join(ROOT, '.dbs', 'compat', agent);
+			for (const agent of [1, 2]) {
 				try {
-					rmSync(agentDir, { recursive: true, force: true });
+					rmSync(agentDir(agent), { recursive: true, force: true });
 				} catch {
 					/* ignore */
 				}
 			}
 		}
 
-		// Tail each agent's stdout/stderr (written by launch-agent.sh) and
-		// echo lines to the test runner's stdout with an agent-specific prefix.
-		agent1Logger = startAgentLogger(
-			'agent-1',
-			path.join(ROOT, '.dbs', 'compat', 'agent-1', 'agent.log'),
-		);
-		agent2Logger = startAgentLogger(
-			'agent-2',
-			path.join(ROOT, '.dbs', 'compat', 'agent-2', 'agent.log'),
-		);
+		// Tail each agent's stdout/stderr and echo lines to the test runner's
+		// stdout with an agent-specific prefix.
+		agent1Logger = startAgentLogger('agent-1', agentLogPath(1));
+		agent2Logger = startAgentLogger('agent-2', agentLogPath(2));
 
-		tauriDriver1 = spawn(
-			'tauri-driver',
-			['--port', String(port1), '--native-port', String(nativePort1)],
-			{ stdio: ['ignore', 'pipe', 'pipe'] },
-		);
-		tauriDriver1.stderr?.on('data', (data: Buffer) => {
-			console.error(`[tauri-driver:${port1}] ${data.toString().trim()}`);
-		});
-
-		tauriDriver2 = spawn(
-			'tauri-driver',
-			['--port', String(port2), '--native-port', String(nativePort2)],
-			{ stdio: ['ignore', 'pipe', 'pipe'] },
-		);
-		tauriDriver2.stderr?.on('data', (data: Buffer) => {
-			console.error(`[tauri-driver:${port2}] ${data.toString().trim()}`);
-		});
-
-		// Wait for tauri-driver instances to accept connections.
-		await Promise.all([
-			waitForPortListening(port1),
-			waitForPortListening(port2),
+		[app1, app2] = await Promise.all([
+			launchAgent(1, port1),
+			launchAgent(2, port2),
 		]);
 	},
 
 	async afterSession() {
-		// SIGKILL tauri-drivers and wait for exit to free ports.
-		await Promise.all([killAndWait(tauriDriver1), killAndWait(tauriDriver2)]);
+		// SIGKILL the apps and wait for exit to free ports.
+		await Promise.all([killAndWait(app1), killAndWait(app2)]);
 		// Kill orphaned dash-chat instances and anything holding our ports.
 		killAllE2EProcesses();
 		killPortHolders(ALL_PORTS);

@@ -10,8 +10,6 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     crane.url = "github:ipetkov/crane";
 
-    tauri-driver.url = "github:dash-chat/tauri-driver";
-
     tauri-plugin-holochain.url = "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
 
     # nixpkgs revs pinned only for the chromedrivers matching the e2e Android
@@ -137,7 +135,6 @@
             pkgs.cargo-nextest
             pkgs.doctl
             pkgs.toxiproxy
-            inputs'.tauri-driver.packages.tauri-driver
           ]
           ++ lib.optionals pkgs.stdenv.isLinux [
             pkgs.mold

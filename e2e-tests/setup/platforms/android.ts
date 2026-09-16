@@ -123,7 +123,7 @@ function applyAppiumServerEnv() {
 // desktop binary, and the mesa LD_LIBRARY_PATH / LIBGL / EGL vars point its
 // WebKitGTK web process at software rendering off NixOS. In a mixed
 // android+desktop run the user drives the harness from a plain shell (the
-// android capture provides tauri-driver and the rest via PATH), so without
+// android capture provides the android tools via PATH), so without
 // these the desktop build links against the nix libraries but bakes no rpath —
 // the binary then fails at launch with "libpango-1.0.so.0: cannot open shared
 // object file". Only fill in vars the outer shell didn't already set, so a run

@@ -29,11 +29,12 @@ describe('Links in messages', () => {
 	});
 
 	it('hands a tapped link to the OS without leaving the chat', async function () {
-		// The url only lands somewhere observable on desktop, where the harness
-		// puts an `xdg-open` stub on the app's PATH. On a phone the tap would
+		// The url only lands somewhere observable on a Linux desktop, where the
+		// harness puts an `xdg-open` stub on the app's PATH; on macOS the app
+		// runs /usr/bin/open by its absolute path, and on a phone the tap would
 		// hand the app's foreground to the system browser, so it stays skipped.
 		const agent = [agent1, agent2].find(a => a.platform === 'desktop');
-		if (!agent) this.skip();
+		if (!agent || process.platform === 'darwin') this.skip();
 		const message =
 			await agent.directChatPage.messages.waitForMessage('https://my.thing');
 		await message.tapLink('https://my.thing');

@@ -99,12 +99,17 @@ pub fn run() {
                 .build(),
         );
     }
-    #[cfg(not(mobile))]
+    // E2E tests run multiple built instances side-by-side; skip single-instance,
+    // updater, and MCP bridge plugins. macOS has no WebDriver for WKWebView, so
+    // the e2e harness drives the app through a W3C server embedded here, on
+    // the port TAURI_WEBDRIVER_PORT names.
+    #[cfg(all(not(mobile), feature = "e2e-tests"))]
     {
-        if cfg!(feature = "e2e-tests") {
-            // E2E tests run multiple built instances side-by-side;
-            // skip single-instance, updater, and MCP bridge plugins.
-        } else if !tauri::is_dev() {
+        builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    }
+    #[cfg(all(not(mobile), not(feature = "e2e-tests")))]
+    {
+        if !tauri::is_dev() {
             // single-instance must be registered before deep-link so it can
             // forward deep link URLs from a second process to this one.
             builder = builder
@@ -175,6 +180,7 @@ pub fn run() {
             commands::settings::set_setting,
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
+            commands::settings::set_p2p_enabled,
             commands::mailbox_state::mailbox_subscribe_active_ids,
             commands::mailbox_state::mailbox_subscribe_all_ids,
             commands::mailbox_state::mailbox_subscribe_connection_state,
@@ -182,8 +188,6 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::media::save_blob_to_cache,
             commands::voice::transcode_voice_message,
-            #[cfg(feature = "e2e-tests")]
-            commands::testing::close_iroh_endpoint,
         ])
         .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -213,6 +217,17 @@ pub fn run() {
             _ => {}
         })
         .setup(move |app| {
+            // The e2e harness runs several instances side by side, driven
+            // through their webviews: a window covered by another stops
+            // animating, and nothing that fades in ever shows there.
+            #[cfg(all(not(mobile), feature = "e2e-tests"))]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_always_on_top(true);
+                }
+            }
+
             #[cfg(any(target_os = "linux", windows))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;

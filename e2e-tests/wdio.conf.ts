@@ -1,12 +1,12 @@
 /**
  * Unified e2e config. The PLATFORMS env var lists the agents to launch as an
  * unordered multiset of platforms (default `desktop,desktop`) — `desktop`
- * (tauri-driver against the built binary), `android` (physical device via
+ * (the built binary, driven through its embedded WebDriver server), `android` (physical device via
  * Appium), `android-emulator` (running emulator via Appium), or `ios`
  * (connected iPhone via Appium/XCUITest) — so any combo runs through this one
  * config, e.g. `PLATFORMS=ios,ios just e2e run send-messages`. Combos are bound
- * by host OS, though: `desktop` needs Linux (tauri-driver/WebKitGTK), `ios` needs
- * macOS + a device, so they can't share one host.
+ * by host OS, though: `ios` needs macOS + a device, and `desktop` runs the
+ * host's own build, on Linux or macOS.
  */
 import { setOptions } from 'expect-webdriverio';
 import type { ChildProcess } from 'node:child_process';

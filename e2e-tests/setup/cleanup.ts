@@ -36,19 +36,51 @@ export function killAndWait(
 	});
 }
 
-/** SIGKILL every process named `name` whose environment points it at this
- *  checkout's `.dbs`, whichever run launched it. Matched by exact process
- *  name so the shell running the loop can never match itself. */
-function killOursNamed(name: string) {
+/** Pids of the processes named `name` whose environment holds `marker`.
+ *  Matched by exact process name so the shell running the check can never
+ *  match itself. Linux reads /proc; macOS has no /proc, but `ps -E` prints
+ *  the environment of the user's own processes after the command. */
+export function pidsNamedWithEnv(name: string, marker: string): number[] {
 	try {
-		execSync(
+		if (process.platform === 'darwin') {
+			return execSync('ps -E -axo pid=,command=', { encoding: 'utf8' })
+				.split('\n')
+				.filter(line => {
+					const [pid, argv0] = line.trim().split(/\s+/);
+					return (
+						pid !== undefined &&
+						argv0 !== undefined &&
+						path.basename(argv0) === name &&
+						line.includes(marker)
+					);
+				})
+				.map(line => Number(line.trim().split(/\s+/)[0]));
+		}
+		// `if`, not `&&`: the loop exits with its last command's status, so a
+		// last pid that doesn't match would make execSync throw the matches away.
+		return execSync(
 			`for pid in $(pgrep -x ${name}); do ` +
-				`grep -qzF ${JSON.stringify(DBS)} /proc/$pid/environ 2>/dev/null && kill -9 $pid 2>/dev/null; ` +
+				`if grep -qzF ${JSON.stringify(marker)} /proc/$pid/environ 2>/dev/null; then echo $pid; fi; ` +
 				'done',
-			{ stdio: 'ignore' },
-		);
+			{ encoding: 'utf8' },
+		)
+			.split('\n')
+			.filter(line => line !== '')
+			.map(Number);
 	} catch {
-		/* ignore */
+		return [];
+	}
+}
+
+/** SIGKILL every process named `name` whose environment points it at this
+ *  checkout's `.dbs`, whichever run launched it. */
+function killOursNamed(name: string) {
+	for (const pid of pidsNamedWithEnv(name, DBS)) {
+		try {
+			process.kill(pid, 'SIGKILL');
+		} catch {
+			/* already gone */
+		}
 	}
 }
 
@@ -64,10 +96,8 @@ function killOursBuiltFrom(binary: string) {
 	}
 }
 
-/** Kill this checkout's E2E dash-chat and tauri-driver processes (NOT the
- *  mailbox server). */
+/** Kill this checkout's E2E dash-chat processes (NOT the mailbox server). */
 export function killAllE2EProcesses() {
-	killOursNamed('tauri-driver');
 	killOursNamed('dash-chat');
 }
 
@@ -87,7 +117,9 @@ export function killPortHolders(ports: number[]) {
 	for (const p of ports) {
 		try {
 			execSync(
-				`ss -tlnp 'sport = :${p}' | grep -oP 'pid=\\K[0-9]+' | xargs -r kill -9`,
+				process.platform === 'darwin'
+					? `lsof -nP -iTCP:${p} -sTCP:LISTEN -t | xargs kill -9`
+					: `ss -tlnp 'sport = :${p}' | grep -oP 'pid=\\K[0-9]+' | xargs -r kill -9`,
 				{ stdio: 'ignore' },
 			);
 		} catch {

@@ -370,14 +370,14 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 
 ### E2E Tests (WebdriverIO)
 
-The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (tauri-driver against the built binary), `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
+The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (the built binary, driven through the WebDriver server the e2e build embeds), `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
 
 ```bash
 # Build the Tauri binary and run the e2e suite (recommended)
 just e2e
 
 # Build and run a single spec
-just e2e run full-flow
+just e2e run send-messages
 
 # Phone + desktop, two phones, two auto-booted emulators, or a single desktop
 PLATFORMS=android,desktop just e2e run send-messages
@@ -385,18 +385,19 @@ PLATFORMS=android,android just e2e run send-messages
 PLATFORMS=android-emulator,android-emulator just e2e run send-messages
 PLATFORMS=desktop just e2e run settings-pages
 
-# Connected iPhone; pair two iPhones for two-agent specs (desktop needs Linux,
-# so it can't share a Mac host with an iOS agent)
+# Connected iPhone; pair two iPhones for two-agent specs, or an iPhone with the
+# Mac's own desktop build
 PLATFORMS=ios,ios just e2e run send-messages
+PLATFORMS=ios,desktop just e2e run send-messages
 PLATFORMS=ios just e2e run settings-pages
 ```
 
 **Key details:**
-- Desktop runs need `tauri-driver` and `toxiproxy-server` on the PATH; the nix dev shell provides both. Without nix: `cargo install tauri-driver`, and the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when either is missing.
+- Desktop runs need `toxiproxy-server` on the PATH; the nix dev shell provides it. Without nix: the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when it is missing.
 - Tests use page objects from `e2e-tests/helpers/pages/`. `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` returns one `Agent` per requirement with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
-- Platform-specific setup (tauri-driver instances, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
-- Desktop agents get `DATA_DIR` and `MAILBOX_URL` through each agent's tauri-driver spawn env (`e2e-tests/setup/platforms/desktop.ts`); Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
+- Platform-specific setup (desktop app launches, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
+- Desktop agents are the e2e build launched by the harness with `DATA_DIR`, `MAILBOX_URL` and `TAURI_WEBDRIVER_PORT` in their env, and driven through the W3C WebDriver server that build embeds (`tauri-plugin-wdio-webdriver`, behind the `e2e-tests` cargo feature), on Linux and macOS alike (`e2e-tests/setup/platforms/desktop.ts`); the compat suite (`e2e-tests/compat/`) launches the binaries it builds from each ref the same way, so it can only test refs whose e2e build embeds that server; Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events.
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run.
 - The hub fuzz (`local-hub-discovery-stress`) walks phones and local hubs through real Wi-Fi networks. `E2E_WIFI_NETWORKS=ssid:pass,ssid:pass` in a gitignored `e2e-tests/.env` (see `e2e-tests/.env.example`, which also lists what the access points must look like; `just e2e` loads it, and `ENV=staging just e2e` layers the root `.env.staging` under it) names them; the host's Wi-Fi card joins them as a client for the length of the run, which is what puts the hubs (processes on the host) on a LAN. Unset, every hub and network move stays out of the runs.

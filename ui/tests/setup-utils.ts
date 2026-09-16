@@ -164,12 +164,11 @@ function photoDownloadMs(label: string): number | null {
 	return ms === undefined ? null : Math.round(ms);
 }
 
-/** Close this agent's iroh endpoint so it can no longer sync with peers over
- * p2p. Backed by the `close_iroh_endpoint` command (only registered under the
- * `e2e-tests` feature). One-way — the agent stays p2p-disconnected until it
- * restarts. */
+/** Turn the persisted p2p setting off and rebuild this agent's node without
+ * peer-to-peer connectivity, so it syncs through mailboxes only. Resolves once
+ * the rebuilt node is live. */
 function disableP2p(): Promise<void> {
-	return invokeAfterSetup('close_iroh_endpoint');
+	return invokeAfterSetup('set_p2p_enabled', { enabled: false });
 }
 
 /** Reset the app to first-launch state: clear web storage, then run the real

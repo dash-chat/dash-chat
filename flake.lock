@@ -48,24 +48,6 @@
         "type": "github"
       }
     },
-    "flake-parts_2": {
-      "inputs": {
-        "nixpkgs-lib": "nixpkgs-lib_2"
-      },
-      "locked": {
-        "lastModified": 1769996383,
-        "narHash": "sha256-AnYjnFWgS49RlqX7LrC4uA+sCCDBj0Ry/WOJ5XWAsa0=",
-        "owner": "hercules-ci",
-        "repo": "flake-parts",
-        "rev": "57928607ea566b5db3ad13af0e57e921e6b12381",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hercules-ci",
-        "repo": "flake-parts",
-        "type": "github"
-      }
-    },
     "flake-parts_3": {
       "inputs": {
         "nixpkgs-lib": "nixpkgs-lib_3"
@@ -329,21 +311,6 @@
         "type": "github"
       }
     },
-    "nixpkgs-lib_2": {
-      "locked": {
-        "lastModified": 1769909678,
-        "narHash": "sha256-cBEymOf4/o3FD5AZnzC3J9hLbiZ+QDT/KDuyHXVJOpM=",
-        "owner": "nix-community",
-        "repo": "nixpkgs.lib",
-        "rev": "72716169fe93074c333e8d0173151350670b824c",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-community",
-        "repo": "nixpkgs.lib",
-        "type": "github"
-      }
-    },
     "nixpkgs-lib_3": {
       "locked": {
         "lastModified": 1777168982,
@@ -391,22 +358,6 @@
         "type": "github"
       }
     },
-    "nixpkgs_3": {
-      "locked": {
-        "lastModified": 1784120854,
-        "narHash": "sha256-KesHgItiZPgGX740axSiQLcIQ8D24MDqNpkKYWIek8k=",
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nixos",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "nixpkgs_4": {
       "locked": {
         "lastModified": 1778430510,
@@ -435,7 +386,6 @@
         "nixpkgs-chromedriver-152": "nixpkgs-chromedriver-152",
         "nixpkgs-pnpm": "nixpkgs-pnpm",
         "rust-overlay": "rust-overlay",
-        "tauri-driver": "tauri-driver",
         "tauri-plugin-holochain": "tauri-plugin-holochain"
       }
     },
@@ -520,25 +470,6 @@
         "owner": "darksoil-studio",
         "ref": "main-0.6",
         "repo": "scaffolding",
-        "type": "github"
-      }
-    },
-    "tauri-driver": {
-      "inputs": {
-        "flake-parts": "flake-parts_2",
-        "nixpkgs": "nixpkgs_3"
-      },
-      "locked": {
-        "lastModified": 1784213362,
-        "narHash": "sha256-Oji62kHEzTSR4aXvOwcYx4hZXJ05PABgOUV5KVUWHRY=",
-        "owner": "dash-chat",
-        "repo": "tauri-driver",
-        "rev": "983dc796f9fb37c9ab55d16a05daae88547cf894",
-        "type": "github"
-      },
-      "original": {
-        "owner": "dash-chat",
-        "repo": "tauri-driver",
         "type": "github"
       }
     },
