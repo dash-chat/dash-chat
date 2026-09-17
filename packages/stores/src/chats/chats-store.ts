@@ -13,6 +13,7 @@ import { VerifyingKey } from '../p2panda/types';
 import { TombstoneStore } from '../tombstones/tombstone-store';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
+import { pollForChanges } from '../utils/polling-required';
 import { type IChatsClient } from './chats-client';
 import { type IMessagesClient, MessagesClient } from './messages-client';
 
@@ -38,6 +39,13 @@ export class ChatsStore {
 				this.groupChatVersion.value++;
 			}
 		});
+
+		// On iOS the notification channel above never fires for ops the push
+		// extension ingests into the shared store, so poll the group list too.
+		pollForChanges(
+			() => this.client.getGroupChats(),
+			() => this.groupChatVersion.value++,
+		);
 	}
 
 	protected groupChatClient(): IGroupChatClient {

@@ -1,11 +1,10 @@
 import { type ReactivePromise, reactive, relay } from 'signalium';
 
-import { pollingRequired } from '../utils/polling-required';
+import { POLL_INTERVAL_MS, pollingRequired } from '../utils/polling-required';
 import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
 import type { TopicId, VerifyingKey } from './types';
 
-const POLL_INTERVAL_MS = 1_000;
 const POLLING_ENABLED = pollingRequired();
 
 export class LogsStore<PAYLOAD> {
