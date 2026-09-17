@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort } from './allocate-port';
 import { waitForMailboxReady } from './mailbox-server';
+import { E2E_NETWORK_ID } from './network-id';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -64,7 +65,14 @@ export async function spawnLocalHub(
 	// signal -pid without touching the test runner.
 	const proc = spawn(
 		bin,
-		['--db-path', path.join(dir, 'mailbox.redb'), '--port', String(port)],
+		[
+			'--db-path',
+			path.join(dir, 'mailbox.redb'),
+			'--port',
+			String(port),
+			'--network-id',
+			E2E_NETWORK_ID,
+		],
 		{ cwd: ROOT, stdio: ['ignore', logFd, logFd], detached: true },
 	);
 	closeSync(logFd);

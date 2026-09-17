@@ -15,7 +15,7 @@ describe('Group unread messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await exchangeContactsAndCreateGroup(agent1, agent2);
+		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 
 		// The group arrives over p2p sync, which can be slow on real devices.
 		await agent2.homePage.chatListItem('mygroup').waitForExist({

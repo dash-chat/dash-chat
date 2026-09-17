@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort, allocatePreferredPort } from './allocate-port';
 import { E2E_NETWORK_ID, MAILBOX_PREFERRED_PORT } from './network-id';
+import { E2E_RELAY_URL } from './relay';
 import { Link } from './toxiproxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,14 +32,15 @@ export function mailboxLogFile(dbPath: string): string {
 }
 
 /** Run `cargo build -p <package>...`, resolving when the binaries are built.
- *  The hub binary bakes the run's network id in, like the app does. */
+ *  The hub binary bakes the run's network id in, and the mailbox the e2e
+ *  relay, like the app does. */
 export function buildCargoPackages(packages: string[]): Promise<void> {
 	const args = ['build', ...packages.flatMap(name => ['-p', name])];
 	return new Promise<void>((resolve, reject) => {
 		const proc = spawn('cargo', args, {
 			cwd: ROOT,
 			stdio: 'inherit',
-			env: { ...process.env, E2E_NETWORK_ID },
+			env: { ...process.env, E2E_NETWORK_ID, E2E_RELAY_URL },
 		});
 		proc.on('error', reject);
 		proc.on('exit', code => {
@@ -72,7 +74,14 @@ export function spawnMailboxServer(
 	// stdout, and a respawned server (restartMailbox) outlives the spec worker
 	// that spawned it — a pipe with no reader would eventually block its writes.
 	const logFd = openSync(mailboxLogFile(dbPath), 'a');
-	const args = ['--db-path', dbPath, '--addr', `127.0.0.1:${bindPort}`];
+	const args = [
+		'--db-path',
+		dbPath,
+		'--addr',
+		`127.0.0.1:${bindPort}`,
+		'--network-id',
+		E2E_NETWORK_ID,
+	];
 	if (pushNotificationsUrl !== undefined) {
 		args.push('--push-notifications-url', pushNotificationsUrl);
 	}

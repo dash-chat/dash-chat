@@ -1,3 +1,4 @@
+import { createProfiles } from '../../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -10,7 +11,7 @@ describe('report contact', () => {
 		await agent1.chatSettingsPage.reportConfirm.waitForClickable();
 		await agent1.chatSettingsPage.reportConfirm.click();
 		await agent1.toast.expectMessage(
-			await agent1.tr('contactReportedToast', { name: 'Bob Test' }),
+			await agent1.tr('contactReportedToast', { name: 'Bob' }),
 		);
 		await agent1.homePage.ready();
 	}
@@ -20,8 +21,7 @@ describe('report contact', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
+		await createProfiles({ Alice: agent1, Bob: agent2 });
 
 		// One-way add, so Alice lands on a chat showing Bob's contact request.
 		await navigateToAddContact(agent1);
@@ -35,7 +35,7 @@ describe('report contact', () => {
 		await agent2.directChatPage.ready();
 
 		await agent1.homePage.chatList.waitForExist();
-		await agent1.homePage.openChat('Bob Test');
+		await agent1.homePage.openChat('Bob');
 		await agent1.directChatPage.acceptButton.waitForExist();
 	});
 
@@ -43,7 +43,7 @@ describe('report contact', () => {
 		await agent1.directChatPage.reportButton.click();
 		await confirmReport();
 
-		await agent1.homePage.openChat('Bob Test');
+		await agent1.homePage.openChat('Bob');
 		await agent1.directChatPage.reportMessage.waitForDisplayed();
 		await expect(agent1.directChatPage.reportMessage).toHaveText(
 			await agent1.tr('youReportedThisContact'),
@@ -58,7 +58,7 @@ describe('report contact', () => {
 		await agent1.chatSettingsPage.reportButton.click();
 		await confirmReport();
 
-		await agent1.homePage.openChat('Bob Test');
+		await agent1.homePage.openChat('Bob');
 		await agent1.waitUntil(
 			async () => (await agent1.directChatPage.reportMessageCount()) === 2,
 		);

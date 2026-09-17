@@ -15,6 +15,10 @@ struct Args {
     /// Port to listen on, on every interface.
     #[arg(short, long, default_value_t = 3000)]
     port: u16,
+
+    /// P2P network id, as 64 hex characters (defaults to the production network)
+    #[arg(long, value_parser = mailbox_server::parse_network_id)]
+    network_id: Option<[u8; 32]>,
 }
 
 #[tokio::main]
@@ -52,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         None,
         None,
         None,
+        args.network_id.unwrap_or(*dashchat_utils::NETWORK_ID),
         signal,
     )
     .await

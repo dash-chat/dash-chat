@@ -1,4 +1,4 @@
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Deleting messages', () => {
@@ -10,9 +10,7 @@ describe('Deleting messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('deletes a message for everyone, showing a placeholder on both sides', async () => {
@@ -26,7 +24,7 @@ describe('Deleting messages', () => {
 
 		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
 		await theirs.waitForDeleted(
-			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice Test' }),
+			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice' }),
 		);
 	});
 
@@ -40,7 +38,7 @@ describe('Deleting messages', () => {
 		await mine.deleteForEveryone();
 		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
 		await theirs.waitForDeleted(
-			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice Test' }),
+			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice' }),
 		);
 
 		expect(await mine.rightClickPrevented()).toBe(false);
@@ -64,7 +62,7 @@ describe('Deleting messages', () => {
 
 		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
 		await theirs.waitForDeleted(
-			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice Test' }),
+			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice' }),
 		);
 	});
 

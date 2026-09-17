@@ -75,8 +75,16 @@ impl TestMailbox {
             let signal = async move {
                 let _ = stop_signal_rx.await;
             };
-            if let Err(e) =
-                mailbox_server::spawn_server(db_path, addr, None, None, None, signal).await
+            if let Err(e) = mailbox_server::spawn_server(
+                db_path,
+                addr,
+                None,
+                None,
+                None,
+                *dashchat_utils::NETWORK_ID,
+                signal,
+            )
+            .await
             {
                 tracing::error!("Local test mailbox server failed: {e:?}");
             }

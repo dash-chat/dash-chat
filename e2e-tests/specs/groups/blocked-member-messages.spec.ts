@@ -1,5 +1,6 @@
+import { backToHome } from '../../helpers/flows/back-to-home';
 import { blockAgent } from '../../helpers/flows/block-agent';
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
@@ -15,15 +16,8 @@ describe('Blocked group member', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.enablePreviewFeatures();
-		await agent2.enablePreviewFeatures();
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
-		await agent1.directChatPage.back.click();
-		await agent2.directChatPage.back.click();
-		await agent1.homePage.ready();
-		await agent2.homePage.ready();
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await backToHome([agent1, agent2]);
 
 		// The group has to exist before the block: a blocked contact is hidden
 		// from the member pickers, so Bob could not be added afterwards.
@@ -41,7 +35,7 @@ describe('Blocked group member', () => {
 
 		await agent1.groupChatPage.back.click();
 		await agent1.homePage.ready();
-		await agent1.homePage.openChat('Bob Test');
+		await agent1.homePage.openChat('Bob');
 		await blockAgent(agent1);
 		await agent1.directChatPage.blockedBanner.waitForDisplayed();
 		await agent1.directChatPage.back.click();
@@ -61,7 +55,7 @@ describe('Blocked group member', () => {
 	it('keeps it hidden after unblocking and across a restart', async () => {
 		await agent1.groupChatPage.back.click();
 		await agent1.homePage.ready();
-		await agent1.homePage.openChat('Bob Test');
+		await agent1.homePage.openChat('Bob');
 		await agent1.directChatPage.unblockButton.click();
 		await agent1.directChatPage.unblockConfirm.waitForClickable();
 		await agent1.directChatPage.unblockConfirm.click();

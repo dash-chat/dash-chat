@@ -1,3 +1,5 @@
+import { backToHome } from '../../helpers/flows/back-to-home';
+import { createProfiles } from '../../helpers/flows/create-profiles';
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
@@ -14,24 +16,13 @@ describe('Group chat replies across a late joiner', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await alice.enablePreviewFeatures();
-		await bobbi.enablePreviewFeatures();
-		await carol.enablePreviewFeatures();
-		await alice.createProfilePage.createProfile('Alice', 'Test');
-		await bobbi.createProfilePage.createProfile('Bobbi', 'Test');
-		await carol.createProfilePage.createProfile('Carol', 'Test');
+		await createProfiles({ Alice: alice, Bobbi: bobbi, Carol: carol });
 
-		await exchangeContacts(alice, bobbi);
-		await alice.directChatPage.back.click();
-		await bobbi.directChatPage.back.click();
-		await alice.homePage.ready();
-		await bobbi.homePage.ready();
+		await exchangeContacts([alice, bobbi]);
+		await backToHome([alice, bobbi]);
 
-		await exchangeContacts(alice, carol);
-		await alice.directChatPage.back.click();
-		await carol.directChatPage.back.click();
-		await alice.homePage.ready();
-		await carol.homePage.ready();
+		await exchangeContacts([alice, carol]);
+		await backToHome([alice, carol]);
 
 		await createGroup(alice, 'mygroup', ['Bobbi']);
 

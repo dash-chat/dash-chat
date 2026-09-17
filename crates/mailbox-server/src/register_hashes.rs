@@ -120,9 +120,14 @@ mod tests {
     async fn absent_blob_without_expected_upload_is_fetchable_at_once() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
+        let blob_sync = crate::BlobSync::new(
+            key,
+            dir.path().to_path_buf(),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
         let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
         let h = iroh_blobs::Hash::new([9; 32]);
 
@@ -142,9 +147,14 @@ mod tests {
     async fn expected_upload_defers_the_fetch_by_the_grace_window() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
+        let blob_sync = crate::BlobSync::new(
+            key,
+            dir.path().to_path_buf(),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
         let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
         let h = iroh_blobs::Hash::new([9; 32]);
 
@@ -175,9 +185,14 @@ mod tests {
     async fn uploading_a_blob_clears_its_pending_fetch() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
+        let blob_sync = crate::BlobSync::new(
+            key,
+            dir.path().to_path_buf(),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
         let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
         let data = bytes::Bytes::from_static(b"raced blob");
         let h = iroh_blobs::Hash::new(&data);
@@ -204,9 +219,14 @@ mod tests {
     async fn pushed_blob_is_stored_under_its_hash() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
+        let blob_sync = crate::BlobSync::new(
+            key,
+            dir.path().to_path_buf(),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
 
         let data = bytes::Bytes::from_static(b"pushed blob contents");
         let stored = blob_sync.store_pushed_blob(data.clone()).await.unwrap();

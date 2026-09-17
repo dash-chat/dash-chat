@@ -3,7 +3,7 @@
 // exercises the Opus transcode on send and the Rust Opus→WAV decode on playback.
 // The headless WebKitGTK harness has no microphone, so only the native capture
 // itself is bypassed.
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Voice messages (Opus transcode)', () => {
@@ -15,9 +15,7 @@ describe('Voice messages (Opus transcode)', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Opus');
-		await agent2.createProfilePage.createProfile('Bob', 'Opus');
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('transcodes a recording to Ogg/Opus that is smaller than the source', async () => {

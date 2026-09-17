@@ -16,3 +16,30 @@ export function pollingRequired(): boolean {
 			(/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1))
 	);
 }
+
+export const POLL_INTERVAL_MS = 1_000;
+
+/// Same stopgap as [`pollingRequired`], for state that comes from a backend
+/// projection query rather than from subscribed logs (e.g. the group chat list
+/// and group members): the polled log reactives don't cover it, so poll `fetch`
+/// on an interval and call `onChange` when its serialized result differs from
+/// the last. No-op off iOS. Returns a teardown that stops the poll.
+export function pollForChanges<T>(
+	fetch: () => Promise<T>,
+	onChange: () => void,
+): () => void {
+	if (!pollingRequired()) return () => {};
+	let last: string | null = null;
+	const interval = setInterval(async () => {
+		try {
+			const key = JSON.stringify(await fetch());
+			if (key !== last) {
+				last = key;
+				onChange();
+			}
+		} catch {
+			/* transient; the next tick retries */
+		}
+	}, POLL_INTERVAL_MS);
+	return () => clearInterval(interval);
+}

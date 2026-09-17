@@ -15,6 +15,7 @@ import {
 import { deviceHasBuild, recordInstalled } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
+import { E2E_RELAY_URL } from '../relay';
 import { runTurboBuild } from '../turbo-build';
 import { switchToWebview, waitForTestUtils } from '../webview';
 import {
@@ -187,7 +188,11 @@ function ensureXcuitestDriver() {
 		{ encoding: 'utf8', cwd: E2E_DIR },
 	);
 	if (installed.includes('xcuitest')) return;
-	const driverPath = path.join(E2E_DIR, 'node_modules', 'appium-xcuitest-driver');
+	const driverPath = path.join(
+		E2E_DIR,
+		'node_modules',
+		'appium-xcuitest-driver',
+	);
 	execSync(`"${APPIUM_BIN}" driver install --source=local "${driverPath}"`, {
 		stdio: 'inherit',
 		cwd: E2E_DIR,
@@ -383,6 +388,7 @@ export class IosPlatform implements AgentPlatform {
 		process.env._WDIO_IOS_HOST_IP = hostIp;
 		const bakedEnv: Record<string, string> = {
 			E2E_NETWORK_ID,
+			E2E_RELAY_URL,
 			MAILBOX_URL: `http://${hostIp}:${mailboxPort}`,
 		};
 		if (pushPort !== null) {
