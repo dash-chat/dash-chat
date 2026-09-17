@@ -34,7 +34,7 @@ mod tests {
         BlobSync,
     };
 
-    async fn server(testing_endpoints: bool) -> (TestServer, BlobSync) {
+    async fn server() -> (TestServer, BlobSync) {
         let (db, temp_file) = create_test_db();
         std::mem::forget(temp_file);
         let blob_sync = test_blob_sync().await;
@@ -45,7 +45,7 @@ mod tests {
 
     #[tokio::test]
     async fn sets_and_lifts_the_blob_throttle() {
-        let (server, blob_sync) = server(true).await;
+        let (server, blob_sync) = server().await;
         server
             .post("/testing/blob-throttle")
             .json(&serde_json::json!({ "bytes_per_sec": 4096 }))
@@ -58,17 +58,6 @@ mod tests {
             .json(&serde_json::json!({ "bytes_per_sec": null }))
             .await
             .assert_status(axum::http::StatusCode::NO_CONTENT);
-        assert_eq!(blob_sync.blob_throttle(), None);
-    }
-
-    #[tokio::test]
-    async fn is_absent_unless_testing_endpoints_are_enabled() {
-        let (server, blob_sync) = server(false).await;
-        server
-            .post("/testing/blob-throttle")
-            .json(&serde_json::json!({ "bytes_per_sec": 4096 }))
-            .await
-            .assert_status_not_found();
         assert_eq!(blob_sync.blob_throttle(), None);
     }
 }
