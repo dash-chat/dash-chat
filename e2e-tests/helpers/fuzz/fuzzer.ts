@@ -305,8 +305,9 @@ async function parkHubs(real: Real): Promise<void> {
 
 /**
  * Put the network side back to its starting state — the cloud link healthy,
- * every hub parked and on no LAN, every phone foregrounded, at home and off
- * the air — so that every sequence, drawn or shrunk, begins from the same
+ * every hub parked and on no LAN, every app started and foregrounded, every
+ * phone at home and off the air — so that every sequence, drawn or shrunk,
+ * begins from the same
  * place. Chats and messages are left alone: they carry over as they do on
  * the devices, and so does what the model says each agent knows.
  */
@@ -324,6 +325,7 @@ async function resetNetworks(model: ExpectedModel, real: Real): Promise<void> {
 	}
 	for (const sa of real.agents) {
 		await sa.agent.startApp();
+		model.startApp(sa.name);
 		model.foreground(sa.name);
 		await ensureHome(sa);
 		if (!model.hasNetworks()) continue;
