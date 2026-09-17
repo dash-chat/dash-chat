@@ -1,6 +1,5 @@
 //! Endpoints only an e2e run's mailbox exposes, to shape what it does to a
-//! client. Registered by `create_app` when its `testing_endpoints` flag is set,
-//! which `spawn_server` takes from the `MAILBOX_TESTING_ENDPOINTS` env var.
+//! client. Registered by `create_app` when the `test_utils` feature is enabled.
 
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
@@ -40,13 +39,7 @@ mod tests {
         std::mem::forget(temp_file);
         let blob_sync = test_blob_sync().await;
         let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
-        let app = create_app(
-            Arc::new(db),
-            None,
-            push_tasks,
-            blob_sync.clone(),
-            testing_endpoints,
-        );
+        let app = create_app(Arc::new(db), None, push_tasks, blob_sync.clone());
         (TestServer::new(app).unwrap(), blob_sync)
     }
 

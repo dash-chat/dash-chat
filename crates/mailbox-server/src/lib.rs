@@ -136,17 +136,7 @@ pub async fn spawn_server(
     };
 
     let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
-    let testing_endpoints = std::env::var_os("MAILBOX_TESTING_ENDPOINTS").is_some();
-    if testing_endpoints {
-        tracing::warn!("Testing endpoints enabled (MAILBOX_TESTING_ENDPOINTS is set)");
-    }
-    let app = create_app(
-        db_arc,
-        push_client,
-        Arc::clone(&push_tasks),
-        blob_sync,
-        testing_endpoints,
-    );
+    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks), blob_sync);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let addr = listener.local_addr()?;
@@ -214,7 +204,6 @@ pub fn create_app(
     push_client: Option<Arc<PushNotificationsClient>>,
     push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
     blob_sync: BlobSync,
-    testing_endpoints: bool,
 ) -> Router {
     let state = AppState {
         db,
@@ -224,9 +213,12 @@ pub fn create_app(
     };
 
     let mut router = Router::new();
-    if testing_endpoints {
+
+    #[cfg(feature = "test_utils")]
+    {
         router = router.route("/testing/blob-throttle", post(testing::set_blob_throttle));
     }
+
     router
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))

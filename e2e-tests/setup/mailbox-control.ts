@@ -72,7 +72,7 @@ export function mailboxLink(): Link {
  * `null`. Blobs travel over iroh's QUIC link rather than the mailbox's HTTP
  * port, so the toxiproxy link cannot slow them; the mailbox throttles its own
  * blob provider instead (its `/testing/blob-throttle` endpoint, enabled for
- * the e2e mailbox by `MAILBOX_TESTING_ENDPOINTS`).
+ * the e2e mailbox by the `test_utils` feature).
  */
 export async function setMailboxBlobThrottle(
 	bytesPerSec: number | null,
