@@ -333,8 +333,8 @@
     "replyingTo": "Antwort auf {{name}}",
     "voiceMessage": "Sprachnachricht",
     "messageDeleted": "Nachricht gelöscht",
-    "messageStatusSending": "Senden",
-    "messageStatusMailbox": "Sent und immer noch senden",
+    "messageStatusSending": "Versuchen zu senden",
+    "messageStatusMailbox": "Sent zum Server",
     "messageStatusDelivered": "Lieferung",
     "discardDraftTitle": "Entschlüsselung?",
     "discardDraftDescription": "Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -385,5 +385,6 @@
     "errorAddingPhoto": "Nicht fotografieren. Bitte versuchen Sie es noch mal.",
     "errorReceivedUnrecognizedLink": "Nicht erkannter Link erhalten: {{url}}",
     "contactRequestSent": "Kontaktanfrage gesendet.",
-    "errorAddContactDeviceLinkingNotSupported": "Dieser Code dient dazu, ein Gerät zu verknüpfen, keinen Kontakt hinzuzufügen."
+    "errorAddContactDeviceLinkingNotSupported": "Dieser Code dient dazu, ein Gerät zu verknüpfen, keinen Kontakt hinzuzufügen.",
+    "messageStatusUnsent": "Senden"
 }
