@@ -129,7 +129,9 @@ impl Actor {
         let groups_processor = GroupsProcessor::new(node.store());
         // Unbounded so the actor never blocks here: the application processor
         // (the only consumer) itself sends commands to this actor and awaits the
-        // reply, so a bounded channel deadlocks under a burst of events.
+        // reply, so a bounded channel deadlocks under a burst of events (see
+        // `late_joiner_syncing_crossing_replies_can_hit_target_not_found` in
+        // tests/reply_messages.rs, which used to hang this way).
         let (events_tx, events_rx) = mpsc::unbounded_channel();
 
         (

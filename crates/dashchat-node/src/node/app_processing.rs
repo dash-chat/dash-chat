@@ -162,10 +162,12 @@ impl Node {
 
         let handle = tokio::spawn(async move {
             let node = node.clone();
+            let mut backlog_warned = false;
 
             loop {
                 tokio::select! {
                     Some(processor_event) = events_rx.recv() => {
+                        backlog_warned = warn_if_backlogged(events_rx.len(), backlog_warned);
                         match processor_event {
                             ProcessorEvent::System(event) => {
                                 match event {
@@ -859,5 +861,24 @@ impl Node {
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }
         Ok(())
+    }
+}
+
+/// Events queued for the application processor (each carrying a full
+/// operation payload) above which it is considered to be falling behind.
+const EVENTS_BACKLOG_WARN_THRESHOLD: usize = 1000;
+
+/// Log once when the event backlog crosses the threshold, and re-arm once it
+/// has drained to half, so a sustained backlog leaves a breadcrumb without
+/// flooding the log. The events channel is unbounded (see `Actor::new`), so
+/// this is the only signal that memory is growing.
+fn warn_if_backlogged(depth: usize, already_warned: bool) -> bool {
+    if depth > EVENTS_BACKLOG_WARN_THRESHOLD {
+        if !already_warned {
+            warn!(depth, "application processor falling behind");
+        }
+        true
+    } else {
+        already_warned && depth > EVENTS_BACKLOG_WARN_THRESHOLD / 2
     }
 }
