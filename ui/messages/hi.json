@@ -306,11 +306,11 @@
     "someoneLeftTheGroup": "{{name}} ने समूह छोड़ दिया।।",
     "welcomeTitle": "जब सिस्टम विफल रहता है",
     "messageStatusDelivered": "वितरित",
-    "messageStatusMailbox": "भेजा और अभी भी भेजने",
+    "messageStatusMailbox": "सर्वर के लिए भेजा",
     "memberLeftTheGroup": "एक सदस्य ने समूह छोड़ दिया।।",
     "copyLink": "लिंक कॉपी करें",
     "copiedLinkToClipboard": "क्लिपबोर्ड के लिए कॉपिड लिंक।।",
-    "messageStatusSending": "भेजना",
+    "messageStatusSending": "भेजने की कोशिश",
     "youBlockedContact": "आपने {{name}} को अवरुद्ध किया।।",
     "discardDraftTitle": "मसौदा?",
     "messageDeleted": "संदेश हटाना",
@@ -379,5 +379,6 @@
     "backgroundModeDescription": "पृष्ठभूमि में चलने के लिए जारी रहेगा और ऐप बंद होने पर भी संदेश प्राप्त करेंगे। यह अधिक बैटरी का उपयोग कर सकता है।।",
     "appClosedUnexpectedly": "डैश चैट अप्रत्याशित रूप से बंद",
     "crashReportExplanation": "दुर्घटना के विवरण और एक डीबग लॉग हमें यह तय करने में मदद करता है। भेजने से पहले व्यक्तिगत जानकारी और संदेश हटा दिए जाते हैं।।",
-    "dontSend": "नहीं"
+    "dontSend": "नहीं",
+    "messageStatusUnsent": "भेजना"
 }
