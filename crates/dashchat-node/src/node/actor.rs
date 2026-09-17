@@ -121,13 +121,16 @@ pub struct Actor {
     groups_processor: GroupsProcessor,
 
     /// Channel for forwarding all received events on to the application layer processor.
-    events_tx: mpsc::Sender<ProcessorEvent>,
+    events_tx: mpsc::UnboundedSender<ProcessorEvent>,
 }
 
 impl Actor {
-    pub(crate) fn new(node: p2panda::Node) -> (Self, mpsc::Receiver<ProcessorEvent>) {
+    pub(crate) fn new(node: p2panda::Node) -> (Self, mpsc::UnboundedReceiver<ProcessorEvent>) {
         let groups_processor = GroupsProcessor::new(node.store());
-        let (events_tx, events_rx) = mpsc::channel(100);
+        // Unbounded so the actor never blocks here: the application processor
+        // (the only consumer) itself sends commands to this actor and awaits the
+        // reply, so a bounded channel deadlocks under a burst of events.
+        let (events_tx, events_rx) = mpsc::unbounded_channel();
 
         (
             Self {
@@ -347,7 +350,6 @@ impl Actor {
         // Forward the event for further application layer processing.
         self.events_tx
             .send(processor_event)
-            .await
             .map_err(|_| NodeActorError::EventSend)?;
 
         Ok(())

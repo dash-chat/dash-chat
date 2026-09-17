@@ -157,7 +157,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().aliased())))]
     pub(super) fn spawn_application_processor_task(
         &self,
-        mut events_rx: mpsc::Receiver<ProcessorEvent>,
+        mut events_rx: mpsc::UnboundedReceiver<ProcessorEvent>,
         mut cancel_rx: mpsc::Receiver<()>,
     ) -> tokio::task::JoinHandle<()> {
         let node = self.clone();
