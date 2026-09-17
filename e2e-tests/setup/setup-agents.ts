@@ -39,6 +39,7 @@ import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import {
 	APP_PACKAGE,
+	androidHasInternet,
 	androidWifiInfo,
 	connectAndroidWifi,
 	disableAndroidWifi,
@@ -190,6 +191,13 @@ export type Agent = WebdriverIO.Browser & {
 	/** The network this device is on: its SSID and IPv4 address, each ''
 	 *  while it has none. */
 	wifiInfo(): Promise<WifiInfo>;
+	/** Whether the device reaches the internet over its current network.
+	 *  Physical Android phones only; throws elsewhere. */
+	hasInternet(): Promise<boolean>;
+	/** Wipe the stopped app back to first launch, with its runtime permissions
+	 *  granted again as a new session's fast reset leaves them. Android only;
+	 *  call between [`stopApp`] and [`startApp`]. */
+	clearAppData(): Promise<void>;
 };
 
 /** The device serial this Appium session was launched against. */
@@ -418,6 +426,18 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await iosWifiInfo(b)
 			: androidWifiInfo(androidUdid(b));
+	agent.hasInternet = async () => androidHasInternet(wifiUdid(agent, b));
+	agent.clearAppData = async () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(`clearAppData needs Android, got ${agent.platform}`);
+		}
+		await b.execute('mobile: clearApp', { appId: APP_PACKAGE });
+		await b.execute('mobile: changePermissions', {
+			permissions: 'all',
+			appPackage: APP_PACKAGE,
+			action: 'grant',
+		});
+	};
 
 	return agent;
 }

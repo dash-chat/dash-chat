@@ -553,6 +553,17 @@ export function androidWifiInfo(udid: string): WifiInfo {
 	return { ssid: androidWifiSsid(udid), address: androidWifiAddress(udid) };
 }
 
+/** Whether the device reaches the internet over its current network: a TCP
+ *  connection to a public address opens. */
+export function androidHasInternet(udid: string): boolean {
+	try {
+		adbShell(udid, 'nc -z -w 3 1.1.1.1 443');
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /** The device's current IPv4 address on wlan0, or '' while it has none. While
  *  wifi is down the interface itself disappears and adb exits non-zero, which
  *  is the same "no address yet" answer as an empty match. */
