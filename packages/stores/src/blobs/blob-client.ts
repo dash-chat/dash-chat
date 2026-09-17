@@ -28,12 +28,17 @@ export class BlobClient implements IBlobClient {
 		handler: (progress: BlobProgress) => void,
 	): UnsubscribeFunction {
 		let unsub: (() => void) | undefined;
+		let cancelled = false;
 		listen('blob://progress', e => {
 			const progress = e.payload as BlobProgress;
 			if (progress.hash !== hash) return;
 			handler(progress);
-		}).then(u => (unsub = u));
+		}).then(u => {
+			if (cancelled) u();
+			else unsub = u;
+		});
 		return () => {
+			cancelled = true;
 			if (unsub) unsub();
 		};
 	}
