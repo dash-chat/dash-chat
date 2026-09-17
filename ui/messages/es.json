@@ -302,14 +302,14 @@
     "reportAndBlock": "Informe y bloqueo",
     "reportContactDescription": "Los servidores a los que está conectado serán notificados que esta persona puede estar enviando spam. No pueden ver el contenido de ninguna charla.",
     "editingMessage": "Editar mensaje",
-    "messageStatusSending": "Enviar",
+    "messageStatusSending": "Tratando de enviar",
     "voiceMessage": "Mensaje de voz",
     "reply": "Respuesta",
     "messageDeleted": "Mensaje eliminado",
     "deleteForEveryone": "Suprimir a todos",
     "deleteForMe": "Suprimirme",
     "youDeletedThisMessage": "Usted borró este mensaje.",
-    "messageStatusMailbox": "Enviado y sigue enviando",
+    "messageStatusMailbox": "Enviado al servidor",
     "welcomeContinue": "Continuar",
     "welcomeTitle": "permanecer conectado cuando los sistemas fallan",
     "deleteMessageDescription": "¿Para quién quieres borrar este mensaje?",
@@ -388,5 +388,6 @@
     "errorAddContactDeviceLinkingNotSupported": "Este código es para conectar un dispositivo, no añadir un contacto.",
     "errorAddingPhoto": "Failed to add photo. Por favor, inténtalo de nuevo.",
     "errorReceivedUnrecognizedLink": "Enlace no reconocido: {{url}}",
-    "fileDownloadFailed": "La descarga de archivos falló."
+    "fileDownloadFailed": "La descarga de archivos falló.",
+    "messageStatusUnsent": "Enviar"
 }
