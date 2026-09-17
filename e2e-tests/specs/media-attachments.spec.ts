@@ -102,17 +102,19 @@ describe('Media attachments', () => {
 				timeout: BLOB_STALL_INTERVAL_MS + 5000,
 				timeoutMsg: 'Progress ring never entered its stalled state',
 			});
+
+			// Tap while the background loop is still paused: the moment it resumes
+			// it fetches the blob itself, and a tap landing after that opens the
+			// lightbox instead of routing through BlobImage.retryIfErrored.
+			await messages.photoCell('stalled').click();
+			await messages.waitForPhotoMessage('stalled');
+			await messages
+				.photoProgressRing('stalled')
+				.waitForDisplayed({ reverse: true });
+			expect(await messages.lightbox.isOpen()).toBe(false);
 		} finally {
 			await agent2.setBlobFetchPaused(false);
 		}
-
-		// The cell click routes through BlobImage.retryIfErrored, which re-runs
-		// the on-demand fetch for a stalled blob.
-		await agent2.directChatPage.messages.photoCell('stalled').click();
-		await agent2.directChatPage.messages.waitForPhotoMessage('stalled');
-		await agent2.directChatPage.messages
-			.photoProgressRing('stalled')
-			.waitForDisplayed({ reverse: true });
 	});
 
 	it('sizes a lone photo from its sender-measured dimensions', async () => {
