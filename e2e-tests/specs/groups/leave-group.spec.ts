@@ -1,4 +1,5 @@
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { backToHome } from '../../helpers/flows/back-to-home';
+import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { tid } from '../../helpers/selectors';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
@@ -14,16 +15,8 @@ describe('Leaving group', () => {
 			{ platform: 'any' },
 		]);
 
-		await agent1.enablePreviewFeatures();
-		await agent2.enablePreviewFeatures();
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-
-		await exchangeContacts(agent1, agent2);
-		await agent1.directChatPage.back.click();
-		await agent2.directChatPage.back.click();
-		await agent1.homePage.ready();
-		await agent2.homePage.ready();
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await backToHome([agent1, agent2]);
 	});
 
 	it('creator can leave a group they created alone', async () => {
@@ -161,7 +154,7 @@ describe('Leaving group', () => {
 			agent2.groupChatPage.messages.systemMessage('group_member_left');
 		await bobsView.waitForExist({ timeout: SYNC_TIMEOUT });
 		await expect(bobsView).toHaveText(
-			await agent2.tr('someoneLeftTheGroup', { name: 'Alice Test' }),
+			await agent2.tr('someoneLeftTheGroup', { name: 'Alice' }),
 		);
 
 		await agent1.homePage.chatListItem('Left Group').click();
@@ -176,12 +169,12 @@ describe('Leaving group', () => {
 		// it lands, the link is live and his group op has had its chance too.
 		await agent2.groupChatPage.back.click();
 		await agent2.homePage.ready();
-		await agent2.homePage.openChat('Alice Test');
+		await agent2.homePage.openChat('Alice');
 		await agent2.directChatPage.composer.sendMessage('Ping after leaving');
 
 		await agent1.groupChatPage.back.click();
 		await agent1.homePage.ready();
-		await agent1.homePage.openChat('Bob Test');
+		await agent1.homePage.openChat('Bob');
 		await agent1.directChatPage.messages.waitForMessage('Ping after leaving');
 		await agent1.directChatPage.back.click();
 		await agent1.homePage.ready();

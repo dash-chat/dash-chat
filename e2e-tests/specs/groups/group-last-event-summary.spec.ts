@@ -1,4 +1,5 @@
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { backToHome } from '../../helpers/flows/back-to-home';
+import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -11,15 +12,8 @@ describe('Group chat list last-event summary', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.enablePreviewFeatures();
-		await agent2.enablePreviewFeatures();
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
-		await agent1.directChatPage.back.click();
-		await agent2.directChatPage.back.click();
-		await agent1.homePage.ready();
-		await agent2.homePage.ready();
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await backToHome([agent1, agent2]);
 	});
 
 	it('shows "You created the group." for the creator of a fresh group', async () => {
@@ -61,7 +55,7 @@ describe('Group chat list last-event summary', () => {
 
 		const aliceRow = await agent1.homePage.chatRowText('mygroup');
 		expect(aliceRow).toContain(
-			await agent1.tr('youAddedMember', { name: 'Bob Test' }),
+			await agent1.tr('youAddedMember', { name: 'Bob' }),
 		);
 
 		// The group arrives over p2p sync, which can be slow on real devices.
@@ -70,7 +64,7 @@ describe('Group chat list last-event summary', () => {
 		});
 		const bobRow = await agent2.homePage.chatRowText('mygroup');
 		expect(bobRow).toContain(
-			await agent2.tr('someoneAddedYouToTheGroup', { name: 'Alice Test' }),
+			await agent2.tr('someoneAddedYouToTheGroup', { name: 'Alice' }),
 		);
 	});
 
@@ -83,7 +77,7 @@ describe('Group chat list last-event summary', () => {
 		await agent1.homePage.ready();
 
 		const aliceRow = await agent1.homePage.chatRowText('mygroup');
-		expect(aliceRow).toContain('Alice Test');
+		expect(aliceRow).toContain('Alice');
 		expect(aliceRow).toContain('Hello group!');
 		expect(aliceRow).not.toContain('added.');
 
@@ -94,7 +88,7 @@ describe('Group chat list last-event summary', () => {
 		await agent2.homePage.ready();
 
 		const bobRow = await agent2.homePage.chatRowText('mygroup');
-		expect(bobRow).toContain('Alice Test');
+		expect(bobRow).toContain('Alice');
 		expect(bobRow).toContain('Hello group!');
 	});
 });

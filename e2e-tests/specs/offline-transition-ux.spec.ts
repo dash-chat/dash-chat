@@ -9,7 +9,7 @@
  *   - Message status: "unsent" → "sending" → "mailbox" → "delivered"
  *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
  */
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import {
 	isRemoteMailbox,
 	killMailbox,
@@ -55,12 +55,9 @@ describe('Offline UX', () => {
 			{ platform: 'desktop' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		// exchangeContacts leaves agent1 inside its direct chat with Bob —
-		// that's where MessageStatusIndicator and ConnectionStatusIndicator
-		// are mounted.
-		await exchangeContacts(agent1, agent2);
+		// This leaves agent1 inside its direct chat with Bob — that's where
+		// MessageStatusIndicator and ConnectionStatusIndicator are mounted.
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 	});
 
 	after(() => {

@@ -1,4 +1,4 @@
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Receiving a message while the actions menu is open', () => {
@@ -10,9 +10,7 @@ describe('Receiving a message while the actions menu is open', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('leaves the menu open and still acting on its own message', async () => {

@@ -1,5 +1,5 @@
 import { blockAgent } from '../../helpers/flows/block-agent';
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('block contact', () => {
@@ -11,9 +11,7 @@ describe('block contact', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 		await agent1.directChatPage.waitForPeerProfile();
 	});
 
@@ -26,7 +24,7 @@ describe('block contact', () => {
 
 		await expect(
 			agent1.directChatPage.messages.systemMessage('contact_blocked'),
-		).toHaveText(await agent1.tr('youBlockedContact', { name: 'Bob Test' }));
+		).toHaveText(await agent1.tr('youBlockedContact', { name: 'Bob' }));
 		await expect(
 			agent2.directChatPage.messages.systemMessage('contact_blocked'),
 		).not.toBeExisting();
@@ -79,7 +77,7 @@ describe('block contact', () => {
 
 		await expect(
 			agent1.directChatPage.messages.systemMessage('contact_unblocked'),
-		).toHaveText(await agent1.tr('youUnblockedContact', { name: 'Bob Test' }));
+		).toHaveText(await agent1.tr('youUnblockedContact', { name: 'Bob' }));
 		// The earlier block stays in the timeline — it's history, not state.
 		await expect(
 			agent1.directChatPage.messages.systemMessage('contact_blocked'),
@@ -130,7 +128,7 @@ describe('block contact', () => {
 		await agent1.newMessagePage.contactActionsMenu.blockConfirm.click();
 
 		await agent1.toast.expectMessage(
-			await agent1.tr('contactBlockedToast', { name: 'Bob Test' }),
+			await agent1.tr('contactBlockedToast', { name: 'Bob' }),
 		);
 		await expect(agent1.newMessagePage.contactItem('Bob')).not.toBeExisting();
 	});

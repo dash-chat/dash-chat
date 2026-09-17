@@ -1,3 +1,4 @@
+import { createProfiles } from '../../helpers/flows/create-profiles';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Deep links', () => {
@@ -9,10 +10,7 @@ describe('Deep links', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await Promise.all([
-			agent1.createProfilePage.createProfile('Alice', 'Test'),
-			agent2.createProfilePage.createProfile('Bob', 'Test'),
-		]);
+		await createProfiles({ Alice: agent1, Bob: agent2 });
 	});
 
 	describe('add-contact deep link', () => {
@@ -53,10 +51,10 @@ describe('Deep links', () => {
 			await agent1.directChatPage.ready();
 
 			await agent2.waitUntil(
-				async () => agent2.homePage.hasChatListItem('Alice Test'),
+				async () => agent2.homePage.hasChatListItem('Alice'),
 				{ timeout: 15_000 },
 			);
-			await agent2.homePage.openChat('Alice Test');
+			await agent2.homePage.openChat('Alice');
 			await agent2.waitUntil(() =>
 				agent2.directChatPage.isContactRequestBannerVisible(),
 			);

@@ -5,7 +5,7 @@
  * chat-row unread badge, and that simply entering the chat (without
  * scrolling) marks the visible messages as read.
  */
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
@@ -18,9 +18,7 @@ describe('Direct chat unread messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('shows the chat-row unread badge for messages received while at home', async () => {

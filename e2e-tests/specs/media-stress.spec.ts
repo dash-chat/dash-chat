@@ -8,7 +8,7 @@
  */
 import { statSync } from 'node:fs';
 
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { isRemoteMailbox, mailboxBlobs } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
@@ -81,9 +81,10 @@ describe('Media stress', function () {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await sender.createProfilePage.createProfile(senderName, 'Stress');
-		await receiver.createProfilePage.createProfile(receiverName, 'Stress');
-		await exchangeContacts(sender, receiver);
+		await createProfilesAndExchangeContacts({
+			[senderName]: sender,
+			[receiverName]: receiver,
+		});
 		// The composer only mounts once the chat leaves its pending state, which
 		// needs the peer's profile — so the receiver has to still be up for it.
 		await sender.directChatPage.composer.messageInput.waitForExist({

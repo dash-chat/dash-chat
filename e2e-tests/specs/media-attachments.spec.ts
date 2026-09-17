@@ -3,7 +3,7 @@
  * message, sent, and rendered on both ends, and that the 16 MiB size cap is
  * enforced.
  */
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import { tid } from '../helpers/selectors';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
@@ -17,9 +17,7 @@ describe('Media attachments', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Media');
-		await agent2.createProfilePage.createProfile('Bob', 'Media');
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('opens the desktop attach dropdown and renders the Photos and File items', async function () {

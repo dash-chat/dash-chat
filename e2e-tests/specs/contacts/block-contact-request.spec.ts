@@ -1,3 +1,4 @@
+import { createProfiles } from '../../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
@@ -11,8 +12,7 @@ describe('pending contact request', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
+		await createProfiles({ Alice: agent1, Bob: agent2 });
 
 		// One-way add, so Alice lands on a chat showing Bob's contact request.
 		await navigateToAddContact(agent1);
@@ -33,7 +33,7 @@ describe('pending contact request', () => {
 	});
 
 	it('clears the badge when the request is blocked', async () => {
-		await agent1.homePage.openChat('Bob Test');
+		await agent1.homePage.openChat('Bob');
 		await agent1.directChatPage.blockButton.waitForClickable();
 		await agent1.directChatPage.blockButton.click();
 		await agent1.directChatPage.blockConfirm.waitForClickable();
@@ -74,7 +74,7 @@ describe('pending contact request', () => {
 			},
 		);
 
-		await agent1.homePage.openChat('Bob Test');
+		await agent1.homePage.openChat('Bob');
 		await agent1.directChatPage.ready();
 		await agent1.directChatPage.requestMessagesToggle.waitForExist();
 		await expect(agent1.directChatPage.requestMessagesToggle).toHaveText(
@@ -104,7 +104,7 @@ describe('pending contact request', () => {
 		await agent1.homePage.unreadBadge.waitForDisplayed();
 		await expect(agent1.homePage.unreadBadge).toHaveText('2');
 
-		await agent1.homePage.openChat('Bob Test');
+		await agent1.homePage.openChat('Bob');
 		await agent1.directChatPage.ready();
 		await agent1.directChatPage.requestMessages.waitForExist();
 		expect(
