@@ -72,7 +72,14 @@ export function spawnMailboxServer(
 	// stdout, and a respawned server (restartMailbox) outlives the spec worker
 	// that spawned it — a pipe with no reader would eventually block its writes.
 	const logFd = openSync(mailboxLogFile(dbPath), 'a');
-	const args = ['--db-path', dbPath, '--addr', `127.0.0.1:${bindPort}`];
+	const args = [
+		'--db-path',
+		dbPath,
+		'--addr',
+		`127.0.0.1:${bindPort}`,
+		'--network-id',
+		E2E_NETWORK_ID,
+	];
 	if (pushNotificationsUrl !== undefined) {
 		args.push('--push-notifications-url', pushNotificationsUrl);
 	}

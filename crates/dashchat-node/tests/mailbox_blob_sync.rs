@@ -477,6 +477,7 @@ async fn blob_fetch_succeeds_after_peer_addr_registration() {
         iroh::SecretKey::generate(),
         sender_dir.path().join("blobs"),
         None,
+        *dashchat_utils::NETWORK_ID,
     )
     .await
     .unwrap();
@@ -492,6 +493,7 @@ async fn blob_fetch_succeeds_after_peer_addr_registration() {
         iroh::SecretKey::generate(),
         mb_dir.path().join("blobs"),
         None,
+        *dashchat_utils::NETWORK_ID,
     )
     .await
     .unwrap();

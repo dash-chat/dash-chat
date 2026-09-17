@@ -34,6 +34,7 @@ async-trait = "0.1"
 anyhow = "1"
 iroh = { version = "1.0.0", default-features = false, features = ["tls-ring"] }
 iroh-blobs = "0.103.0"
+hex = "0.4"
 
 [features]
 test_utils = ["dep:axum-test", "dep:tempfile"]
@@ -56,6 +57,5 @@ futures = "0.3"
 serial_test = "3"
 base64 = "0.22"
 ed25519-dalek = { workspace = true }
-hex = "0.4"
 reporting = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }

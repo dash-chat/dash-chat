@@ -14,12 +14,12 @@ pub use discovery::{LocalHubDiscoveryService, LocalHubEvent};
 
 /// The swarm-discovery service name Dash Chat hubs announce and browse under
 /// (`_dashchat._tcp.local.` on the wire). Both halves must use the same name.
-/// An e2e build is given an `E2E_NETWORK_ID`, which suffixes the name so that
-/// test runs sharing a LAN, each built with its own id, never see each
-/// other's hubs.
+/// An e2e build is given an `E2E_NETWORK_ID`, a prefix of which suffixes the
+/// name so that test runs sharing a LAN, each built with its own id, never see
+/// each other's hubs. The whole id would overflow the 63-octet DNS label.
 pub fn service_name() -> &'static str {
     static NAME: LazyLock<String> = LazyLock::new(|| match option_env!("E2E_NETWORK_ID") {
-        Some(id) => format!("dashchat-{id}"),
+        Some(id) => format!("dashchat-{}", &id[..8]),
         None => "dashchat".to_string(),
     });
     &NAME
