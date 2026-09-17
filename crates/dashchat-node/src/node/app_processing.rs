@@ -91,14 +91,15 @@ impl Node {
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         topic.alias_numbered();
 
-        if self.subscribe_to_topic(topic).await? {
-            self.import_mailbox_stream(topic).await?;
-        };
+        self.subscribe_to_topic(topic).await?;
+        // Not gated on the subscription being new: publishing into a topic
+        // subscribes it too, without importing its mailbox stream.
+        self.import_mailbox_stream(topic).await?;
         Ok(())
     }
 
     /// Subscribe to a topic.
-    async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
+    async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         debug!(topic = ?topic.aliased(), "subscribe to topic");
 
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -114,23 +115,21 @@ impl Node {
             return Err(anyhow!("Error sending on actor channel"));
         };
 
-        let subscribed = reply_rx.await??;
+        reply_rx.await??;
 
         if let Some(tx) = &self.topic_subscribed_tx {
             let _ = tx.send(topic).await;
         }
 
-        Ok(subscribed)
+        Ok(())
     }
 
-    /// Import external operation stream from a mailbox.
+    /// Import external operation stream from a mailbox, unless it is already imported.
     async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
-        debug!(topic = ?topic.aliased(), "import mailbox stream");
-
         let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
-            tracing::warn!("topic already initialized, skipping");
             return Ok(());
         };
+        debug!(topic = ?topic.aliased(), "import mailbox stream");
 
         let stream = Box::pin(ReceiverStream::new(mailbox_rx).map(Operation::from));
         let (reply_tx, reply_rx) = oneshot::channel();
