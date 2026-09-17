@@ -1,5 +1,5 @@
 /** Moves a device makes on its own: leaving and returning to the foreground,
- *  and restarting the app. */
+ *  and stopping, starting and restarting the app. */
 import { type Real, at, byName, log } from '../agents';
 import { checkHubs } from '../checks';
 import type { ExpectedModel } from '../model';
@@ -61,6 +61,56 @@ class ForegroundMove extends Move {
 	}
 }
 
+/** Stops an agent's app from the foreground or the background, as swiping
+ * it away on a phone or quitting it on desktop does, and leaves it stopped:
+ * later moves keep acting through the other agents, and a StartAppMove
+ * launches it again. */
+class StopAppMove extends Move {
+	constructor(readonly agentIdx: number) {
+		super();
+	}
+
+	check(m: Readonly<ExpectedModel>): boolean {
+		return m.runningNames().length > 0;
+	}
+
+	async perform(m: ExpectedModel, real: Real): Promise<void> {
+		const actor = byName(real, at(m.runningNames(), this.agentIdx));
+		log(`${actor.name}: ${this.toString()}`);
+		await actor.agent.stopApp();
+		m.stopApp(actor.name);
+	}
+
+	toString(): string {
+		return `stopApp(${this.agentIdx})`;
+	}
+}
+
+class StartAppMove extends Move {
+	constructor(readonly agentIdx: number) {
+		super();
+	}
+
+	check(m: Readonly<ExpectedModel>): boolean {
+		return m.stoppedNames().length > 0;
+	}
+
+	async perform(m: ExpectedModel, real: Real): Promise<void> {
+		const actor = byName(real, at(m.stoppedNames(), this.agentIdx));
+		log(`${actor.name}: ${this.toString()}`);
+		await actor.agent.startApp();
+		await actor.agent.homePage.ready();
+		m.startApp(actor.name);
+		if (m.hasNetworks()) {
+			await checkHubs(m, actor, 'the app started');
+		}
+	}
+
+	toString(): string {
+		return `startApp(${this.agentIdx})`;
+	}
+}
+
 class RestartMove extends Move {
 	constructor(readonly agentIdx: number) {
 		super();
@@ -95,6 +145,8 @@ class RestartMove extends Move {
 export const deviceMoves: Moves = [
 	{ build: a => new BackgroundMove(a), weight: 3 },
 	{ build: a => new ForegroundMove(a), weight: 3 },
+	{ build: a => new StopAppMove(a), weight: 1 },
+	{ build: a => new StartAppMove(a), weight: 3 },
 	{ build: a => new RestartMove(a), weight: 1 },
 ];
 
@@ -102,5 +154,7 @@ export const deviceMoves: Moves = [
 export const move = {
 	background: (agentIdx: number): Move => new BackgroundMove(agentIdx),
 	foreground: (agentIdx: number): Move => new ForegroundMove(agentIdx),
+	stopApp: (agentIdx: number): Move => new StopAppMove(agentIdx),
+	startApp: (agentIdx: number): Move => new StartAppMove(agentIdx),
 	restart: (agentIdx: number): Move => new RestartMove(agentIdx),
 };

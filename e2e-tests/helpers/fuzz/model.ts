@@ -145,6 +145,8 @@ export class ExpectedModel {
 	private readonly added = new Set<string>();
 	/** Agents currently backgrounded: off the network, their UI undriveable. */
 	private readonly backgrounded = new Set<string>();
+	/** Agents whose app is stopped: off the network, their UI undriveable. */
+	private readonly stopped = new Set<string>();
 	/** Agent name → the LAN it is on; absent while it is on none. */
 	private readonly network = new Map<string, string>();
 	private messageCounter = 0;
@@ -177,12 +179,12 @@ export class ExpectedModel {
 
 	/** Agents whose UI can be driven right now. */
 	activeNames(): string[] {
-		return this.names().filter(n => !this.backgrounded.has(n));
+		return this.names().filter(n => this.isActive(n));
 	}
 
 	activeMobileNames(): string[] {
 		return this.agents
-			.filter(a => a.mobile && !this.backgrounded.has(a.name))
+			.filter(a => a.mobile && this.isActive(a.name))
 			.map(a => a.name);
 	}
 
@@ -190,8 +192,17 @@ export class ExpectedModel {
 		return [...this.backgrounded];
 	}
 
-	isBackgrounded(name: string): boolean {
-		return this.backgrounded.has(name);
+	/** Agents whose app is running, in the foreground or the background. */
+	runningNames(): string[] {
+		return this.names().filter(n => !this.stopped.has(n));
+	}
+
+	stoppedNames(): string[] {
+		return [...this.stopped];
+	}
+
+	isActive(name: string): boolean {
+		return !this.backgrounded.has(name) && !this.stopped.has(name);
 	}
 
 	background(name: string): void {
@@ -200,6 +211,15 @@ export class ExpectedModel {
 
 	foreground(name: string): void {
 		this.backgrounded.delete(name);
+	}
+
+	stopApp(name: string): void {
+		this.backgrounded.delete(name);
+		this.stopped.add(name);
+	}
+
+	startApp(name: string): void {
+		this.stopped.delete(name);
 	}
 
 	/** The LAN `name` is on, or null while it is on none. */

@@ -75,6 +75,22 @@ test('a backgrounded agent gains nothing until it is back', () => {
 	assert.equal(m.view(B, chat).messages.length, 1);
 });
 
+test('a stopped agent gains nothing until its app starts again', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.background(B);
+	m.stopApp(B);
+	assert.deepEqual(m.backgroundedNames(), []);
+	assert.deepEqual(m.runningNames(), [A]);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	assert.equal(m.propagate().has(B), false);
+	m.startApp(B);
+	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
+	assert.equal(m.view(B, chat).messages.length, 1);
+});
+
 test('phones exchange only topics both subscribe to', () => {
 	const m = sameLan(A, B, C);
 	contacts(m, A, B);
