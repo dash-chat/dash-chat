@@ -11,10 +11,13 @@ use tracing::{debug, warn};
 use crate::AckedOp;
 use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
+use crate::node::backlog_monitor::BacklogMonitor;
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
+
+const BACKLOG_SAMPLE_SECS: u64 = 30;
 
 #[derive(Clone, Debug, Serialize, Deserialize, From)]
 pub enum Notification {
@@ -162,12 +165,18 @@ impl Node {
 
         let handle = tokio::spawn(async move {
             let node = node.clone();
-            let mut backlog_warned = false;
+            let mut backlog = BacklogMonitor::default();
+            let mut backlog_tick =
+                tokio::time::interval(std::time::Duration::from_secs(BACKLOG_SAMPLE_SECS));
 
             loop {
                 tokio::select! {
+                    // Sampled on a timer, so a processor parked inside one event
+                    // (e.g. on a stalled frontend notification channel) still gets its backlog reported.
+                    _ = backlog_tick.tick() => {
+                        backlog.sample(events_rx.len());
+                    }
                     Some(processor_event) = events_rx.recv() => {
-                        backlog_warned = warn_if_backlogged(events_rx.len(), backlog_warned);
                         match processor_event {
                             ProcessorEvent::System(event) => {
                                 match event {
@@ -861,24 +870,5 @@ impl Node {
                 .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }
         Ok(())
-    }
-}
-
-/// Events queued for the application processor (each carrying a full
-/// operation payload) above which it is considered to be falling behind.
-const EVENTS_BACKLOG_WARN_THRESHOLD: usize = 1000;
-
-/// Log once when the event backlog crosses the threshold, and re-arm once it
-/// has drained to half, so a sustained backlog leaves a breadcrumb without
-/// flooding the log. The events channel is unbounded (see `Actor::new`), so
-/// this is the only signal that memory is growing.
-fn warn_if_backlogged(depth: usize, already_warned: bool) -> bool {
-    if depth > EVENTS_BACKLOG_WARN_THRESHOLD {
-        if !already_warned {
-            warn!(depth, "application processor falling behind");
-        }
-        true
-    } else {
-        already_warned && depth > EVENTS_BACKLOG_WARN_THRESHOLD / 2
     }
 }

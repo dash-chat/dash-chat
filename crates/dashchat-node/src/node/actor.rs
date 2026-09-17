@@ -194,7 +194,9 @@ impl Actor {
                         };
                     }
                     Some((_, event)) = self.streams.next() => {
-                        let _ = self.process_event(event).await;
+                        if let Err(err) = self.process_event(event).await {
+                            warn!(?err, "actor event processing failed");
+                        }
                     }
                     else => {
                         warn!("node actor message channel closed, exiting event loop");
