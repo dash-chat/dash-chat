@@ -75,15 +75,10 @@ import type { WifiInfo } from './wifi';
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
 	platform: AgentPlatformName;
-<<<<<<< HEAD
-	/** Whether the app runs with peer-to-peer connectivity; false once
-	 *  `disableP2p` ran, after which it reaches peers through a mailbox only. */
-=======
 	/** The launch slot, which names the agent's data dir and log file. */
 	slot: number;
 	/** Whether the app was launched with peer-to-peer connectivity; false
 	 *  means it reaches peers through a mailbox only. */
->>>>>>> 4b011132 (push-while-app-open reproduction)
 	p2p: boolean;
 
 	accountPage: AccountPage;
