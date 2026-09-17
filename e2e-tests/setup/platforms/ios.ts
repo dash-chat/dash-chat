@@ -187,7 +187,11 @@ function ensureXcuitestDriver() {
 		{ encoding: 'utf8', cwd: E2E_DIR },
 	);
 	if (installed.includes('xcuitest')) return;
-	const driverPath = path.join(E2E_DIR, 'node_modules', 'appium-xcuitest-driver');
+	const driverPath = path.join(
+		E2E_DIR,
+		'node_modules',
+		'appium-xcuitest-driver',
+	);
 	execSync(`"${APPIUM_BIN}" driver install --source=local "${driverPath}"`, {
 		stdio: 'inherit',
 		cwd: E2E_DIR,
