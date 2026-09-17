@@ -21,6 +21,7 @@ import {
 import { hashFile } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
+import { E2E_RELAY_URL } from '../relay';
 import { runTurboBuild } from '../turbo-build';
 import { WIFI_REASSOCIATE_MS, type WifiInfo, waitForWifi } from '../wifi';
 import {
@@ -751,6 +752,7 @@ export class AndroidPlatform implements AgentPlatform {
 					};
 		const bakedEnv: Record<string, string> = {
 			E2E_NETWORK_ID,
+			E2E_RELAY_URL,
 			...mailboxEnv,
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
