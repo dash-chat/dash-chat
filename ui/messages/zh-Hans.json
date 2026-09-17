@@ -199,8 +199,8 @@
     "replyingTo": "答复{{name}}",
     "voiceMessage": "语音信息",
     "messageDeleted": "删除",
-    "messageStatusSending": "贷款",
-    "messageStatusMailbox": "A. 同意和仍然派遣",
+    "messageStatusSending": "调动",
+    "messageStatusMailbox": "服务器号",
     "messageStatusDelivered": "交付",
     "discardDraftTitle": "抛弃物草案?",
     "discardDraftDescription": "这一行动是不容的.",
@@ -362,5 +362,6 @@
     "errorAddingPhoto": "未能增加照片。 请再次审判.",
     "fileDownloadFailed": "文件下载失败.",
     "contactRequestSent": "发出联系请求.",
-    "errorAddContactDeviceLinkingNotSupported": "该法典将装置连接起来,而不是增加联系."
+    "errorAddContactDeviceLinkingNotSupported": "该法典将装置连接起来,而不是增加联系.",
+    "messageStatusUnsent": "贷款"
 }
