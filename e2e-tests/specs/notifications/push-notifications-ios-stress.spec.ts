@@ -20,8 +20,11 @@ const BURST = 20;
  * the app's session for the duplicate id, and the two processes contend for
  * the SQLite file, so a send fails or an incoming operation is dropped for
  * good. The collision is local to the iPhone, so the Mac is only here to push
- * traffic at it — one iPhone is enough to reproduce. Only runs when
- * `E2E_PUSH=1`.
+ * traffic at it — one iPhone is enough to reproduce.
+ *
+ * Skips itself unless E2E_STRESS=1, and unless push testing is available (a
+ * Firebase service-account key plus a mobile agent). Run it with:
+ *   PLATFORMS=ios,desktop just e2e run notifications/push-notifications-ios-stress
  */
 // wdio arms its per-test abort timer from the mocha timeout at invocation
 // time, so `this.timeout()` inside the test body comes too late — it must be
@@ -34,6 +37,7 @@ describe('Traffic landing while the app is open', function () {
 	let mac: Agent;
 
 	before(async function () {
+		if (process.env.E2E_STRESS !== '1') this.skip();
 		if (!pushTestingEnabled()) this.skip();
 		[iphone, mac] = await setupAgents(this, [
 			{ platform: 'ios' },
@@ -44,15 +48,6 @@ describe('Traffic landing while the app is open', function () {
 		await iphone.createProfilePage.createProfile('Rex', 'Test');
 		await mac.createProfilePage.createProfile('Sam', 'Test');
 	});
-
-	/** A fresh extension process builds its node from the current data; one
-	 *  left over from an earlier push holds a node under an older identity,
-	 *  which collides with nothing. iOS evicts extensions on its own schedule,
-	 *  so a push meets a fresh one often enough in real use. Only the iPhone
-	 *  runs an extension; the Mac has none. */
-	async function evictPushExtension(): Promise<void> {
-		await iphone.killPushExtension();
-	}
 
 	/** Both sides send `BURST` messages, turn and turn about, then each
 	 *  must show every message of both. */
@@ -95,12 +90,16 @@ describe('Traffic landing while the app is open', function () {
 		// The apps have to be settled on the relay before the first push: a
 		// node only seconds old has no relay session for the extension to take.
 		await iphone.pause(15_000);
-		await evictPushExtension();
+		// A fresh extension process builds its node from the current data; one
+		// left over from an earlier push holds a node under an older identity,
+		// which collides with nothing. iOS evicts extensions on its own
+		// schedule, so a push meets a fresh one often enough in real use.
+		await iphone.killPushExtension();
 		// The contact requests are pushes the iPhone gets with the app open.
 		await exchangeContacts([iphone, mac]);
 
 		for (let round = 1; round <= ROUNDS; round++) {
-			await evictPushExtension();
+			await iphone.killPushExtension();
 			await crossfire(round);
 		}
 
