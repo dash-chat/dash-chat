@@ -10,7 +10,7 @@ describe('Deleting group messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await exchangeContactsAndCreateGroup(agent1, agent2);
+		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 		await agent1.groupChatPage.ready();
 
 		await agent2.homePage.chatListItem('mygroup').waitForExist();
@@ -29,7 +29,7 @@ describe('Deleting group messages', () => {
 
 		await mine.waitForDeleted(await agent1.tr('youDeletedThisMessage'));
 		await theirs.waitForDeleted(
-			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice Test' }),
+			await agent2.tr('someoneDeletedThisMessage', { name: 'Alice' }),
 		);
 	});
 

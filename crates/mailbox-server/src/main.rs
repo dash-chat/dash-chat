@@ -1,7 +1,8 @@
 use clap::Parser;
-use dashchat_utils::RELAY_URL;
+use dashchat_utils::{NETWORK_ID, RELAY_URL};
 use futures::FutureExt;
 use mailbox_server::spawn_server;
+use p2panda_net::NetworkId;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -19,6 +20,10 @@ struct Args {
     /// URL of the push notifications server (enables push notification integration)
     #[arg(long)]
     push_notifications_url: Option<String>,
+
+    /// P2P network id, as 64 hex characters (defaults to the production network)
+    #[arg(long, value_parser = mailbox_server::parse_network_id)]
+    network_id: Option<NetworkId>,
 }
 
 #[tokio::main]
@@ -41,6 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.push_notifications_url,
         None,
         Some(RELAY_URL.clone()),
+        args.network_id.unwrap_or(*NETWORK_ID),
         signal,
     )
     .await?;

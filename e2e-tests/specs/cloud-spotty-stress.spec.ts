@@ -17,6 +17,7 @@
  * (default random; the run logs it — re-run with the same seed to reproduce
  * a failure).
  */
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
 import { cloudMoves } from '../helpers/fuzz/moves/cloud';
 import { deviceMoves } from '../helpers/fuzz/moves/device';
@@ -42,8 +43,7 @@ describe('Spotty cloud stress', () => {
 		// Without p2p every op has to travel through the cloud mailbox, so
 		// its link is the only thing the checks measure.
 		await Promise.all([agent1.disableP2p(), agent2.disableP2p()]);
-		await agent1.createProfilePage.createProfile('Alice', 'Stress');
-		await agent2.createProfilePage.createProfile('Bob', 'Stress');
+		await createProfiles({ Alice: agent1, Bob: agent2 });
 		fuzzer = await Fuzzer.prepare(this, {
 			agents: [
 				{ agent: agent1, name: 'Alice' },

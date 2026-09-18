@@ -24,6 +24,7 @@ import {
 } from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
+import { E2E_RELAY_URL } from '../relay';
 import { runTurboBuild } from '../turbo-build';
 import {
 	isPortListening,
@@ -229,6 +230,7 @@ export class DesktopPlatform implements AgentPlatform {
 				VITE_E2E: 'true',
 				CARGO_PROFILE_DEV_DEBUG: '0',
 				E2E_NETWORK_ID,
+				E2E_RELAY_URL,
 			}),
 		);
 		// Kill any leftover processes from previous interrupted runs.

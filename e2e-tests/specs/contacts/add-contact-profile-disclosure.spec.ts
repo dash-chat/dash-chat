@@ -1,3 +1,4 @@
+import { createProfiles } from '../../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
 import { tid } from '../../helpers/selectors';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
@@ -36,10 +37,7 @@ describe('Contact profile disclosure', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await Promise.all([
-			alice.createProfilePage.createProfile('Alice', 'Test'),
-			bob.createProfilePage.createProfile('Bob', 'Test'),
-		]);
+		await createProfiles({ Alice: alice, Bob: bob });
 		// Read Alice's contact code while she's online (generating it sets up her
 		// inbox gossip topic, which needs a live endpoint), then take her fully
 		// offline: suspend the mailbox so nothing relays her profile, and close her
@@ -69,7 +67,7 @@ describe('Contact profile disclosure', () => {
 
 		// The truncated name from the QR shows immediately; the full profile can't
 		// arrive yet, so the avatar stays the person placeholder.
-		await waitForTextContent(bob, tid('direct-chat-peer-header'), 'Alice Test');
+		await waitForTextContent(bob, tid('direct-chat-peer-header'), 'Alice');
 		expect(await bob.directChatPage.peerAvatarIsPlaceholder()).toBe(true);
 	});
 
@@ -78,14 +76,14 @@ describe('Contact profile disclosure', () => {
 		// then syncs both full profiles.
 		await alice.startApp();
 		await alice.homePage.ready();
-		const bobRow = alice.homePage.chatListItem('Bob Test');
+		const bobRow = alice.homePage.chatListItem('Bob');
 		await bobRow.waitForExist({ timeout: SYNC_TIMEOUT });
 		await bobRow.click();
 		await alice.directChatPage.acceptButton.waitForExist();
 		await alice.directChatPage.acceptContactRequest();
 
 		// Alice sees Bob's full profile (carried in the contact request).
-		await waitForTextContent(alice, tid('direct-chat-peer-header'), 'Bob Test');
+		await waitForTextContent(alice, tid('direct-chat-peer-header'), 'Bob');
 		await alice.directChatPage.waitForPeerProfile();
 
 		// Bob's view of Alice resolves from the QR placeholder to her real profile

@@ -713,12 +713,11 @@ where
         &self,
         topic: Item::Topic,
     ) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
-        tracing::info!(topic = %topic, "subscribing to topic");
-
         let mut tt = self.topics.lock().await;
         if tt.contains_key(&topic) {
             return Ok(None);
         }
+        tracing::info!(topic = %topic, "subscribing to topic");
         let (tx, rx) = mpsc::channel(100);
         tt.insert(topic, tx);
         Ok(Some(rx))

@@ -97,7 +97,7 @@ describe('Traffic landing while the app is open', function () {
 		await iphone.pause(15_000);
 		await evictPushExtension();
 		// The contact requests are pushes the iPhone gets with the app open.
-		await exchangeContacts(iphone, mac);
+		await exchangeContacts([iphone, mac]);
 
 		for (let round = 1; round <= ROUNDS; round++) {
 			await evictPushExtension();

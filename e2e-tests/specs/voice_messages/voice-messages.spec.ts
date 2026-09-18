@@ -1,6 +1,6 @@
 // A synthetic WAV is injected throughout: the headless WebKitGTK harness has no
 // microphone.
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Voice messages', () => {
@@ -12,9 +12,7 @@ describe('Voice messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Voice');
-		await agent2.createProfilePage.createProfile('Bob', 'Voice');
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('sends a voice message from Alice and renders on both ends', async () => {

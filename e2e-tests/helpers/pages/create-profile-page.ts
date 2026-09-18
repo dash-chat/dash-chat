@@ -19,13 +19,16 @@ export class CreateProfilePage extends TestHelper {
 		);
 	}
 
-	async typeName(name: string, surname: string) {
+	async typeName(name: string, surname?: string) {
 		await this.typeInto(`${tid('create-profile-name')} input`, name);
-		await this.typeInto(`${tid('create-profile-surname')} input`, surname);
+		if (surname !== undefined) {
+			await this.typeInto(`${tid('create-profile-surname')} input`, surname);
+		}
 	}
 
-	/** Walk the whole first-launch flow: welcome screen → profile → chat list. */
-	async createProfile(name: string, surname: string) {
+	/** Walk the whole first-launch flow: welcome screen → profile → chat list.
+	 *  Without a `surname` the optional field is left untouched. */
+	async createProfile(name: string, surname?: string) {
 		await new WelcomePage(this.agent).tapContinue();
 		await this.ready();
 		await this.typeName(name, surname);

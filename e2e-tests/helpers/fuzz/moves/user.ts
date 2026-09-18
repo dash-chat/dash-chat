@@ -63,7 +63,7 @@ class AddContactMove extends Move {
 		// The add that completes a pair puts the chat on the peer's screen too,
 		// which settle would miss: the peer may have known the actor's profile
 		// since its own add, so its knowledge does not grow here.
-		if (!m.areContacts(actor.name, peer.name) || m.isBackgrounded(peer.name)) {
+		if (!m.areContacts(actor.name, peer.name) || !m.isActive(peer.name)) {
 			return;
 		}
 		const chat = m.directChat(actor.name, peer.name);

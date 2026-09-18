@@ -15,9 +15,10 @@ export const SYNC_TIMEOUT = 60_000;
 export const MEDIA_SYNC_TIMEOUT = 120_000;
 
 /** What the app gets to tell the user the cloud mailbox stopped answering:
- *  the chip flips on the second consecutive failure, and polls are 2.5 s
- *  apart, so a refusal is seen within two intervals. */
-export const MAILBOX_UNANSWERED_MS = 6_000;
+ *  the chip flips on the second consecutive failure, and each poll starts
+ *  2.5 s after the previous one completed, so two intervals plus the time a
+ *  refused request takes to fail (about 1 s on a phone over Wi-Fi). */
+export const MAILBOX_UNANSWERED_MS = 8_000;
 
 /** The same, for a mailbox that hangs rather than refuses: a request only
  *  counts as failed once it times out, 10 s, the chip flips on the second

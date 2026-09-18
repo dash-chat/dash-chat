@@ -1,3 +1,4 @@
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
@@ -13,8 +14,7 @@ describe('QR code image upload', () => {
 	});
 
 	it('creates profiles on both agents', async () => {
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
+		await createProfiles({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('adds a contact by uploading a QR code image on desktop', async () => {

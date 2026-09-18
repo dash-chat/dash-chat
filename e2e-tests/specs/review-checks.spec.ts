@@ -4,7 +4,7 @@
  * Drives the agent through every page across all theme × layout × color ×
  * locale combinations, running overflow/dark-mode/RTL checks at each stop.
  */
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import {
 	assertNoIssues,
 	reloadToHome,
@@ -30,10 +30,7 @@ describe('Review checks', function () {
 
 		wideSupported = await agent1.supportsWideScreen();
 
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Tester');
-
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 
 		await Promise.all([
 			agent1.directChatPage.composer.messageInput.waitForExist(),

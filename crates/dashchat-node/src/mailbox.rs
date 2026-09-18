@@ -223,6 +223,39 @@ mod tests {
         .unwrap();
     }
 
+    /// A node may publish into a topic before registering it — the startup
+    /// message-ack writer races topic initialization this way — and the topic
+    /// must still sync from the mailbox once registered.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn topic_published_before_registration_syncs_from_mailbox() {
+        let mb = TestMailbox::from_env();
+        let config = NodeConfig::testing().no_p2p();
+        let poll = PollConfig::default();
+
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config.clone(), "bobbi").await;
+        alice.add_mailbox(&mb).await;
+        bobbi.add_mailbox(&mb).await;
+
+        let chat = alice.direct_chat_with(&bobbi);
+        bobbi.send_message_raw(chat, "Early".into()).await.unwrap();
+        bobbi.register_topic(chat).await.unwrap();
+
+        alice.register_topic(chat).await.unwrap();
+        alice.send_message_raw(chat, "Hello".into()).await.unwrap();
+
+        poll.wait_for(|| async {
+            let messages = bobbi.get_messages(chat).await.unwrap();
+            if messages.iter().any(|m| m.content.message() == "Hello") {
+                Ok(())
+            } else {
+                Err("alice's message has not reached bobbi through the mailbox")
+            }
+        })
+        .await
+        .unwrap();
+    }
+
     /// After a successful sync round, both nodes should record a sync
     /// watermark indicating the mailbox holds at least the sent operation.
     #[tokio::test(flavor = "multi_thread")]

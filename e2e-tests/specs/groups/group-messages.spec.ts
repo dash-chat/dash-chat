@@ -1,4 +1,4 @@
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -11,29 +11,7 @@ describe('Group messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.enablePreviewFeatures();
-		await agent2.enablePreviewFeatures();
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
-		await agent1.directChatPage.back.click();
-		await agent2.directChatPage.back.click();
-		await agent1.homePage.ready();
-		await agent2.homePage.ready();
-
-		await agent1.homePage.newMessageButton.click();
-		await agent1.newMessagePage.ready();
-		await agent1.newMessagePage.newGroup.click();
-
-		await agent1.newGroupPage.addMembersStep.ready();
-		await agent1.newGroupPage.addMembersStep.addContactByName('Bob');
-		await agent1.newGroupPage.addMembersStep.nextButton.click();
-
-		await agent1.newGroupPage.groupInfoStep.ready();
-		await agent1.newGroupPage.groupInfoStep.setName('mygroup');
-		await agent1.newGroupPage.groupInfoStep.createButton.click();
-
-		await agent1.groupChatPage.ready();
+		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('renders messages from other group members with their avatar', async () => {

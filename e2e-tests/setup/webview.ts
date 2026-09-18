@@ -38,8 +38,12 @@ export async function waitForTestUtils(
 ): Promise<void> {
 	// A cold start on a slow physical phone can take over 30s from webview
 	// attach to the page's JS running, so give it well beyond the default.
+	// The desktop WebDriver reads execute results back from a window global, which
+	// the navigation away from about:blank wipes, stalling for the script timeout.
 	await agent.waitUntil(
-		async () => agent.execute(() => typeof window.__test !== 'undefined'),
+		async () =>
+			(await agent.getUrl()) !== 'about:blank' &&
+			(await agent.execute(() => typeof window.__test !== 'undefined')),
 		{
 			timeout: 120_000,
 			interval: 500,

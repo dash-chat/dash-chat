@@ -1,5 +1,6 @@
 pub(crate) mod actor;
 mod app_processing;
+mod backlog_monitor;
 mod message_acks;
 pub(crate) mod publish;
 mod report;

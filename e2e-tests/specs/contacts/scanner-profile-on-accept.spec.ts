@@ -1,3 +1,4 @@
+import { createProfiles } from '../../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
 import { tid } from '../../helpers/selectors';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
@@ -36,10 +37,7 @@ describe('Scanner profile on accept', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await Promise.all([
-			alice.createProfilePage.createProfile('Alice', 'Test'),
-			bob.createProfilePage.createProfile('Bob', 'Test'),
-		]);
+		await createProfiles({ Alice: alice, Bob: bob });
 		// Read Bob's contact code while he's online (generating it sets up his
 		// inbox gossip topic, which needs a live endpoint), then take him fully
 		// offline: suspend the mailbox so nothing relays his profile, and close
@@ -69,7 +67,7 @@ describe('Scanner profile on accept', () => {
 
 		// The truncated name from the QR shows immediately; the full profile can't
 		// arrive yet, so the avatar stays the person placeholder.
-		await waitForTextContent(alice, tid('direct-chat-peer-header'), 'Bob Test');
+		await waitForTextContent(alice, tid('direct-chat-peer-header'), 'Bob');
 		expect(await alice.directChatPage.peerAvatarIsPlaceholder()).toBe(true);
 	});
 
@@ -80,14 +78,14 @@ describe('Scanner profile on accept', () => {
 		// ContactRequestAccept payload Bob sends back.
 		await bob.startApp();
 		await bob.homePage.ready();
-		const aliceRow = bob.homePage.chatListItem('Alice Test');
+		const aliceRow = bob.homePage.chatListItem('Alice');
 		await aliceRow.waitForExist({ timeout: SYNC_TIMEOUT });
 		await aliceRow.click();
 		await bob.directChatPage.acceptButton.waitForExist();
 		await bob.directChatPage.acceptContactRequest();
 
 		// Bob sees Alice's full profile (carried in the contact request).
-		await waitForTextContent(bob, tid('direct-chat-peer-header'), 'Alice Test');
+		await waitForTextContent(bob, tid('direct-chat-peer-header'), 'Alice');
 		await bob.directChatPage.waitForPeerProfile();
 
 		// Wait until Alice's side has processed the accept and rendered Bob's

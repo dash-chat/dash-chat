@@ -11,10 +11,13 @@ use tracing::{debug, warn};
 use crate::AckedOp;
 use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
+use crate::node::backlog_monitor::BacklogMonitor;
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
+
+const BACKLOG_SAMPLE_SECS: u64 = 30;
 
 #[derive(Clone, Debug, Serialize, Deserialize, From)]
 pub enum Notification {
@@ -91,14 +94,15 @@ impl Node {
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         topic.alias_numbered();
 
-        if self.subscribe_to_topic(topic).await? {
-            self.import_mailbox_stream(topic).await?;
-        };
+        self.subscribe_to_topic(topic).await?;
+        // Not gated on the subscription being new: publishing into a topic
+        // subscribes it too, without importing its mailbox stream.
+        self.import_mailbox_stream(topic).await?;
         Ok(())
     }
 
     /// Subscribe to a topic.
-    async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
+    async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         debug!(topic = ?topic.aliased(), "subscribe to topic");
 
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -114,23 +118,21 @@ impl Node {
             return Err(anyhow!("Error sending on actor channel"));
         };
 
-        let subscribed = reply_rx.await??;
+        reply_rx.await??;
 
         if let Some(tx) = &self.topic_subscribed_tx {
             let _ = tx.send(topic).await;
         }
 
-        Ok(subscribed)
+        Ok(())
     }
 
-    /// Import external operation stream from a mailbox.
+    /// Import external operation stream from a mailbox, unless it is already imported.
     async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
-        debug!(topic = ?topic.aliased(), "import mailbox stream");
-
         let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
-            tracing::warn!("topic already initialized, skipping");
             return Ok(());
         };
+        debug!(topic = ?topic.aliased(), "import mailbox stream");
 
         let stream = Box::pin(ReceiverStream::new(mailbox_rx).map(Operation::from));
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -156,16 +158,24 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().aliased())))]
     pub(super) fn spawn_application_processor_task(
         &self,
-        mut events_rx: mpsc::Receiver<ProcessorEvent>,
+        mut events_rx: mpsc::UnboundedReceiver<ProcessorEvent>,
         mut cancel_rx: mpsc::Receiver<()>,
     ) -> tokio::task::JoinHandle<()> {
         let node = self.clone();
 
         let handle = tokio::spawn(async move {
             let node = node.clone();
+            let mut backlog = BacklogMonitor::default();
+            let mut backlog_tick =
+                tokio::time::interval(std::time::Duration::from_secs(BACKLOG_SAMPLE_SECS));
 
             loop {
                 tokio::select! {
+                    // Sampled on a timer, so a processor parked inside one event
+                    // (e.g. on a stalled frontend notification channel) still gets its backlog reported.
+                    _ = backlog_tick.tick() => {
+                        backlog.sample(events_rx.len());
+                    }
                     Some(processor_event) = events_rx.recv() => {
                         match processor_event {
                             ProcessorEvent::System(event) => {

@@ -21,6 +21,7 @@ import {
 import { hashFile } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
+import { E2E_RELAY_URL } from '../relay';
 import { runTurboBuild } from '../turbo-build';
 import { WIFI_REASSOCIATE_MS, type WifiInfo, waitForWifi } from '../wifi';
 import {
@@ -552,6 +553,17 @@ export function androidWifiInfo(udid: string): WifiInfo {
 	return { ssid: androidWifiSsid(udid), address: androidWifiAddress(udid) };
 }
 
+/** Whether the device reaches the internet over its current network: a TCP
+ *  connection to a public address opens. */
+export function androidHasInternet(udid: string): boolean {
+	try {
+		adbShell(udid, 'nc -z -w 3 1.1.1.1 443');
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /** The device's current IPv4 address on wlan0, or '' while it has none. While
  *  wifi is down the interface itself disappears and adb exits non-zero, which
  *  is the same "no address yet" answer as an empty match. */
@@ -751,6 +763,7 @@ export class AndroidPlatform implements AgentPlatform {
 					};
 		const bakedEnv: Record<string, string> = {
 			E2E_NETWORK_ID,
+			E2E_RELAY_URL,
 			...mailboxEnv,
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
