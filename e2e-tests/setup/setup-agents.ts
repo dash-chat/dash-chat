@@ -771,12 +771,15 @@ async function setupAgent(
 }
 
 /** What a spec requires of one agent's platform. 'android' is fulfilled by a
- *  physical device or an emulator; 'ios' by a connected iPhone; 'mobile' by any
- *  of those (an iOS or Android device); 'any' by any launched platform. */
+ *  physical device or an emulator; 'ios' by a connected iPhone; 'phone' by any
+ *  physical handset, which an emulator is not — it is NAT'd off the host, so
+ *  no test network can reach it; 'mobile' by any of those; 'any' by any
+ *  launched platform. */
 export type PlatformRequirement =
 	| 'desktop'
 	| 'android'
 	| 'ios'
+	| 'phone'
 	| 'mobile'
 	| 'any';
 
@@ -791,6 +794,9 @@ function fulfills(
 ): boolean {
 	if (requirement === 'any') return true;
 	if (requirement === 'mobile') return isMobile(platform);
+	if (requirement === 'phone') {
+		return isMobile(platform) && platform !== 'android-emulator';
+	}
 	if (requirement === 'desktop') return platform === 'desktop';
 	if (requirement === 'android') {
 		return platform === 'android' || platform === 'android-emulator';
@@ -799,13 +805,14 @@ function fulfills(
 	return false;
 }
 
-/** How narrow a requirement is: exact platform > 'mobile' > 'any'. Match the
- *  narrowest first so a broad requirement never steals the only slot a narrow
- *  one could have used. */
+/** How narrow a requirement is: exact platform > 'phone' > 'mobile' > 'any'.
+ *  Match the narrowest first so a broad requirement never steals the only slot
+ *  a narrow one could have used. */
 function specificity(requirement: PlatformRequirement): number {
 	if (requirement === 'any') return 0;
 	if (requirement === 'mobile') return 1;
-	return 2;
+	if (requirement === 'phone') return 2;
+	return 3;
 }
 
 /** Assign each requirement a distinct launched slot — narrowest requirements

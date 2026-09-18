@@ -156,7 +156,7 @@
 
 						<span
 							class="text-xl font-semibold break-words text-center max-w-full"
-							>{info.name}</span
+							data-testid="group-info-name">{info.name}</span
 						>
 
 						<span

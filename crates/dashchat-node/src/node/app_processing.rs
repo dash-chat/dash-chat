@@ -11,10 +11,13 @@ use tracing::{debug, warn};
 use crate::AckedOp;
 use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
+use crate::node::backlog_monitor::BacklogMonitor;
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
+
+const BACKLOG_SAMPLE_SECS: u64 = 30;
 
 #[derive(Clone, Debug, Serialize, Deserialize, From)]
 pub enum Notification {
@@ -163,9 +166,17 @@ impl Node {
 
         let handle = tokio::spawn(async move {
             let node = node.clone();
+            let mut backlog = BacklogMonitor::default();
+            let mut backlog_tick =
+                tokio::time::interval(std::time::Duration::from_secs(BACKLOG_SAMPLE_SECS));
 
             loop {
                 tokio::select! {
+                    // Sampled on a timer, so a processor parked inside one event
+                    // (e.g. on a stalled frontend notification channel) still gets its backlog reported.
+                    _ = backlog_tick.tick() => {
+                        backlog.sample(events_rx.len());
+                    }
                     Some(processor_event) = events_rx.recv() => {
                         match processor_event {
                             ProcessorEvent::System(event) => {
