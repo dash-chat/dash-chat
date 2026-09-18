@@ -3,12 +3,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
+use dashchat_utils::{fetch_loop, mailbox_network_id, FetchConfig, FetchPool};
 use futures::StreamExt;
 use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use iroh_blobs::provider::events::{EventMask, EventSender, ProviderMessage, ThrottleMode};
 use p2panda_net::NetworkId;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
@@ -226,6 +227,42 @@ pub struct BlobSync {
     /// node keeps the router and blob store alive.
     _router: Option<Router>,
     peer_addr_registry: PeerAddrRegistry,
+    throttle: BlobThrottle,
+}
+
+/// Bytes per second this server's blob provider releases to a downloader, or
+/// `None` for no cap. Test-only knob: an e2e spec sets it to watch a download
+/// progress gradually. Only a standalone server's provider honours it.
+#[derive(Clone, Default)]
+pub struct BlobThrottle(Arc<std::sync::Mutex<Option<u64>>>);
+
+impl BlobThrottle {
+    fn bytes_per_sec(&self) -> Option<u64> {
+        *self.0.lock().unwrap()
+    }
+
+    fn set(&self, bytes_per_sec: Option<u64>) {
+        *self.0.lock().unwrap() = bytes_per_sec;
+    }
+
+    /// Answer the provider's throttle events, holding each chunk back for as
+    /// long as the budget says. Chunks are released in order per request, so
+    /// a request's transfer runs at about the budget.
+    fn spawn_handler(&self, mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>) {
+        let this = self.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                let ProviderMessage::Throttle(msg) = msg else {
+                    continue;
+                };
+                if let Some(bytes_per_sec) = this.bytes_per_sec() {
+                    let secs = msg.inner.size as f64 / bytes_per_sec as f64;
+                    tokio::time::sleep(Duration::from_secs_f64(secs)).await;
+                }
+                msg.tx.send(Ok(())).await.ok();
+            }
+        });
+    }
 }
 
 impl BlobSync {
@@ -272,9 +309,16 @@ impl BlobSync {
             add_protected: None,
         });
         let mixed_alpn =
-            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, network_id);
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, mailbox_network_id());
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
-        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        let throttle = BlobThrottle::default();
+        let mask = EventMask {
+            throttle: ThrottleMode::Intercept,
+            ..EventMask::DEFAULT
+        };
+        let (events, events_rx) = EventSender::channel(256, mask);
+        throttle.spawn_handler(events_rx);
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
         let downloader =
             Downloader::new_with_opts(&store, &endpoint, mixed_alpn.as_slice(), Default::default());
         let router = Router::builder(endpoint.clone())
@@ -291,6 +335,7 @@ impl BlobSync {
             enable_gc: true,
             _router: Some(router),
             peer_addr_registry: PeerAddrRegistry::Memory(peer_addr_lookup),
+            throttle,
         })
     }
 
@@ -315,6 +360,7 @@ impl BlobSync {
             enable_gc: false,
             _router: None,
             peer_addr_registry: PeerAddrRegistry::Channel(peer_addr_tx),
+            throttle: BlobThrottle::default(),
         }
     }
 
@@ -356,6 +402,15 @@ impl BlobSync {
                 let _ = tx.send(addr);
             }
         }
+    }
+
+    /// Cap how fast this server serves blob bytes, or lift the cap with `None`.
+    pub fn set_blob_throttle(&self, bytes_per_sec: Option<u64>) {
+        self.throttle.set(bytes_per_sec);
+    }
+
+    pub fn blob_throttle(&self) -> Option<u64> {
+        self.throttle.bytes_per_sec()
     }
 
     pub fn fetch_pool(&self) -> &BlobFetchPool {
@@ -664,5 +719,53 @@ mod tests {
             "expected fetch at the grace boundary (~5s), got {at:?}"
         );
         handle.abort();
+    }
+
+    /// A throttled provider releases one 16 KiB chunk per budget interval, so a
+    /// 64 KiB blob at 32 KiB/s cannot land in much under two seconds.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn throttled_provider_serves_a_blob_no_faster_than_its_budget() {
+        let provider = crate::test_utils::test_blob_sync().await;
+        let fetcher = crate::test_utils::test_blob_sync().await;
+        let hash = provider
+            .store_pushed_blob(vec![1u8; 64 * 1024].into())
+            .await
+            .unwrap();
+        provider.set_blob_throttle(Some(32 * 1024));
+        fetcher.add_peer_addr(provider.endpoint_addr());
+
+        let started = tokio::time::Instant::now();
+        let fetched = fetcher
+            .try_fetch(hash, vec![provider.endpoint_id()], Duration::from_secs(30))
+            .await;
+        let elapsed = started.elapsed();
+
+        assert!(fetched, "blob was not fetched");
+        assert!(
+            elapsed >= Duration::from_millis(1500),
+            "fetched in {elapsed:?}, faster than the budget allows"
+        );
+    }
+
+    /// Lifting the throttle lets the next transfer run at full speed.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn lifting_the_throttle_restores_full_speed() {
+        let provider = crate::test_utils::test_blob_sync().await;
+        let fetcher = crate::test_utils::test_blob_sync().await;
+        let hash = provider
+            .store_pushed_blob(vec![2u8; 64 * 1024].into())
+            .await
+            .unwrap();
+        provider.set_blob_throttle(Some(1024));
+        provider.set_blob_throttle(None);
+        fetcher.add_peer_addr(provider.endpoint_addr());
+
+        let started = tokio::time::Instant::now();
+        let fetched = fetcher
+            .try_fetch(hash, vec![provider.endpoint_id()], Duration::from_secs(30))
+            .await;
+
+        assert!(fetched, "blob was not fetched");
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 }

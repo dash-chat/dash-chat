@@ -162,7 +162,7 @@ impl NodeContext {
             // cross-talk with production/dev instances on the same LAN: every
             // ALPN is hashed with the network id, so foreign connections are
             // rejected at protocol negotiation.
-            config.network_id = e2e_network_id();
+            config.network_id = dashchat_utils::e2e_network_id();
             config.message_ack_debounce = std::time::Duration::from_millis(300);
             config
         } else {

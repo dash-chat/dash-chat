@@ -460,6 +460,44 @@ export class Messages extends TestHelper {
 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
 	}
 
+	/** The photo cell (button) whose aria-label contains `label`. Photo cells
+	 * are labelled with the filename, so this works before the blob loads. */
+	photoCell(label: string) {
+		return this.root.$(
+			`${tid('message-attachment-photos')} button[aria-label*="${label}"]`,
+		);
+	}
+
+	photoProgressRing(label: string) {
+		return this.photoCell(label).$(tid('blob-progress-ring'));
+	}
+
+	photoProgressBytes(label: string) {
+		return this.photoCell(label).$(tid('blob-progress-bytes'));
+	}
+
+	/** Whether the photo's progress ring is showing its stalled (retry) state. */
+	async photoProgressStalled(label: string): Promise<boolean> {
+		return (
+			(await this.photoProgressRing(label).getAttribute('data-stalled')) ===
+			'true'
+		);
+	}
+
+	/** The file row whose text contains `name`. Uses raw xpath rather than the
+	 * `*=` selector shorthand: that shorthand excludes an element that has a
+	 * descendant sharing its testid as a substring, which the file row's own
+	 * `message-attachment-file-icon`/`-size` children trigger. */
+	fileRow(name: string) {
+		return this.root.$(
+			`.//button[@data-testid="message-attachment-file" and contains(., "${name}")]`,
+		);
+	}
+
+	fileProgressRing(name: string) {
+		return this.fileRow(name).$(tid('blob-progress-ring'));
+	}
+
 	/** One entry per rendered message. A photo scrolled out of view never
 	 * decodes (loading="lazy"), so an unloaded one is scrolled into view for the
 	 * next call. */

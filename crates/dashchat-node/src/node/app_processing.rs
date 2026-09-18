@@ -23,6 +23,7 @@ const BACKLOG_SAMPLE_SECS: u64 = 30;
 pub enum Notification {
     Op(OpNotification),
     System(SystemNotification),
+    BlobProgress(crate::blob_progress::BlobProgressEvent),
 }
 
 impl Notification {

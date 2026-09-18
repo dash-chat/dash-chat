@@ -48,7 +48,43 @@ pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub fetch_pool: BlobFetchPool,
     pub sources: MixedSourceLookup,
+    pub progress: crate::blob_progress::BlobProgress,
     downloader: Downloader,
+    /// Attempts currently fetching each hash, so an attempt that gives up
+    /// only stops the shared progress observer once no other attempt is
+    /// still transferring.
+    attempts: Arc<std::sync::Mutex<HashMap<iroh_blobs::Hash, usize>>>,
+}
+
+/// An in-flight fetch attempt. Dropping it, including when the attempt's
+/// future is aborted, releases its count and stops the progress observer if
+/// it was the last attempt and did not fetch the blob.
+struct Attempt {
+    attempts: Arc<std::sync::Mutex<HashMap<iroh_blobs::Hash, usize>>>,
+    progress: crate::blob_progress::BlobProgress,
+    hash: iroh_blobs::Hash,
+    fetched: bool,
+}
+
+impl Drop for Attempt {
+    fn drop(&mut self) {
+        let mut attempts = self.attempts.lock().unwrap();
+        let remaining = attempts.get(&self.hash).copied().unwrap_or(1) - 1;
+        if remaining > 0 {
+            attempts.insert(self.hash, remaining);
+            return;
+        }
+        attempts.remove(&self.hash);
+        drop(attempts);
+        if self.fetched {
+            return;
+        }
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let progress = self.progress.clone();
+            let hash = self.hash;
+            handle.spawn(async move { progress.stop(hash).await });
+        }
+    }
 }
 
 impl BlobSync {
@@ -58,6 +94,7 @@ impl BlobSync {
         blob_fetch: BlobFetchPool,
         sources: MixedSourceLookup,
         local_store: LocalStore,
+        notification_tx: Option<tokio::sync::mpsc::Sender<crate::node::Notification>>,
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
 
@@ -80,11 +117,15 @@ impl BlobSync {
             Default::default(),
         );
 
+        let progress = crate::blob_progress::BlobProgress::new(blobs.clone(), notification_tx);
+
         Ok(Self {
             blobs,
             fetch_pool: blob_fetch,
             sources,
+            progress,
             downloader,
+            attempts: Default::default(),
         })
     }
 
@@ -104,7 +145,11 @@ impl BlobSync {
             config,
             move |(topic, hash), attempt_timeout| {
                 let this = this.clone();
-                async move { this.try_fetch(topic, hash, attempt_timeout).await }
+                async move {
+                    let mut attempt = this.begin_attempt(hash);
+                    attempt.fetched = this.try_fetch(topic, hash, attempt_timeout).await;
+                    attempt.fetched
+                }
             },
         ))
     }
@@ -118,8 +163,10 @@ impl BlobSync {
         attempt_timeout: Duration,
     ) -> bool {
         if self.blobs.has(hash).await.unwrap_or(false) {
+            self.progress.notify_complete(hash).await;
             return true;
         }
+        self.progress.watch(hash).await;
 
         let sources = match self.sources.sources(topic).await {
             Ok(sources) => sources,
@@ -144,6 +191,11 @@ impl BlobSync {
         )
         .await;
         tracing::debug!(%hash, source_count, fetched, "blob fetch attempt");
+        // Not left to the observer: a concurrent attempt that gave up may have
+        // stopped it while this download was still in flight.
+        if fetched {
+            self.progress.notify_complete(hash).await;
+        }
         fetched
     }
 
@@ -227,6 +279,7 @@ impl BlobSync {
                 }
             }
             self.fetch_pool.remove(topic, hash).await;
+            self.progress.forget(hash).await;
         }
     }
 
@@ -239,11 +292,29 @@ impl BlobSync {
     /// downloads of the same hash are coalesced by the iroh-blobs downloader,
     /// so racing the background loop is safe.
     pub async fn fetch_now(&self, hash: iroh_blobs::Hash, timeout: Duration) -> bool {
+        let mut attempt = self.begin_attempt(hash);
+        attempt.fetched = self.fetch_now_until(hash, timeout).await;
+        attempt.fetched
+    }
+
+    fn begin_attempt(&self, hash: iroh_blobs::Hash) -> Attempt {
+        *self.attempts.lock().unwrap().entry(hash).or_insert(0) += 1;
+        Attempt {
+            attempts: self.attempts.clone(),
+            progress: self.progress.clone(),
+            hash,
+            fetched: false,
+        }
+    }
+
+    async fn fetch_now_until(&self, hash: iroh_blobs::Hash, timeout: Duration) -> bool {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if self.blobs.has(hash).await.unwrap_or(false) {
+                self.progress.notify_complete(hash).await;
                 return true;
             }
+            self.progress.watch(hash).await;
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             if remaining.is_zero() {
                 return false;

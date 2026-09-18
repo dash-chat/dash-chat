@@ -1,13 +1,19 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
-	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
-	import { mediaSrc } from '$lib/utils/media';
+	import { getContext, untrack } from 'svelte';
+	import type {
+		BlobStore,
+		FileAttachment,
+		PhotoAttachment,
+	} from 'dash-chat-stores';
+	import { formatFileSize, mediaSrc } from '$lib/utils/media';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		acquireBlob,
 		blobToken,
 		releaseBlob,
 		retryBlob,
 	} from '$lib/stores/blob-load-store.svelte';
+	import BlobProgressRing from '$lib/components/BlobProgressRing.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Preloader } from 'konsta/svelte';
 	import { mdiReload } from '@mdi/js';
@@ -21,6 +27,8 @@
 		imgStyle?: string;
 		/** Defer loading until near the viewport (grid cells); the lightbox loads eagerly. */
 		lazy?: boolean;
+		/** Small surfaces (filmstrip thumbs): a 20px ring and no byte pill. */
+		compact?: boolean;
 	}
 
 	let {
@@ -29,7 +37,18 @@
 		imgClass = '',
 		imgStyle = '',
 		lazy = false,
+		compact = false,
 	}: Props = $props();
+
+	const blobStore: BlobStore = getContext('blob-store');
+	const download = $derived(useReactiveValue(blobStore.progress, item.hash));
+	// Until the first snapshot resolves the download state is unknown: showing
+	// the ring then would flash it on every already-local photo, and mounting
+	// the <img> would send a not-yet-local blob through the 30s scheme handler.
+	const known = $derived($download !== undefined);
+	const downloading = $derived(known && $download?.complete !== true);
+	const stalled = $derived($download?.stalled === true);
+	const bytes = $derived($download?.bytes ?? 0);
 
 	// Load status is this element's own — each <img> fetches independently, so a
 	// failure here never blanks another surface of the same blob. Only the
@@ -57,10 +76,13 @@
 		});
 	});
 
-	/** If this image is showing its reload placeholder, re-fetch the blob on every
-	 * surface and report that the click was handled. Lets a parent decide a click
-	 * means "retry" vs. its normal action without tracking load state itself. */
+	/** If this image is stalled or errored, retry and report that the click was
+	 * handled, so a parent can tell "retry" from its normal click action. */
 	export function retryIfErrored(): boolean {
+		if (stalled) {
+			void blobStore.retry(item.hash);
+			return true;
+		}
 		if (status !== 'error') return false;
 		retryBlob(item.hash);
 		return true;
@@ -87,7 +109,27 @@
 	});
 </script>
 
-{#if status === 'error'}
+{#if downloading}
+	<div
+		class="absolute inset-0 flex items-center justify-center text-black/60 dark:text-white/70 {imgClass}"
+		style={imgStyle}
+		data-testid="blob-image-downloading"
+	>
+		<BlobProgressRing
+			{bytes}
+			total={item.size}
+			{stalled}
+			size={compact ? 20 : 40}
+		/>
+		{#if !compact}
+			<span
+				class="absolute start-1 top-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] leading-tight text-white"
+				data-testid="blob-progress-bytes"
+				>{formatFileSize(bytes)} / {formatFileSize(item.size)}</span
+			>
+		{/if}
+	</div>
+{:else if status === 'error'}
 	<span
 		class="absolute inset-0 flex cursor-pointer items-center justify-center border-none p-0 text-black/50 dark:text-white/60 {imgClass}"
 		style={imgStyle}
@@ -99,17 +141,19 @@
 		</svg>
 	</span>
 {:else}
-	<img
-		{src}
-		{alt}
-		class={imgClass}
-		style={imgStyle}
-		loading={lazy ? 'lazy' : 'eager'}
-		data-testid="blob-image"
-		onload={() => (status = 'loaded')}
-		onerror={() => (status = 'error')}
-	/>
-	{#if status === 'loading'}
+	{#if known}
+		<img
+			{src}
+			{alt}
+			class={imgClass}
+			style={imgStyle}
+			loading={lazy ? 'lazy' : 'eager'}
+			data-testid="blob-image"
+			onload={() => (status = 'loaded')}
+			onerror={() => (status = 'error')}
+		/>
+	{/if}
+	{#if !known || status === 'loading'}
 		<div
 			class="pointer-events-none absolute inset-0 flex items-center justify-center"
 			aria-busy="true"

@@ -25,6 +25,7 @@ mod report;
 mod reports_table;
 mod server_key;
 mod store_blips;
+mod testing;
 mod watermark;
 mod watermarks_table;
 
@@ -205,6 +206,8 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     Ok(db)
 }
 
+/// Build the server's router. `testing_endpoints` adds the routes an e2e run
+/// shapes the mailbox through (see `testing.rs`); never set it in production.
 pub fn create_app(
     db: Arc<Database>,
     push_client: Option<Arc<PushNotificationsClient>>,
@@ -218,7 +221,14 @@ pub fn create_app(
         blob_sync,
     };
 
-    Router::new()
+    let mut router = Router::new();
+
+    #[cfg(feature = "test_utils")]
+    {
+        router = router.route("/testing/blob-throttle", post(testing::set_blob_throttle));
+    }
+
+    router
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
         .route(

@@ -1,3 +1,4 @@
+pub mod blob_progress;
 pub mod blob_sync;
 mod chat;
 mod contact;
@@ -20,6 +21,7 @@ pub mod testing;
 
 pub use aliased::Aliasing;
 
+pub use blob_progress::BlobProgressEvent;
 pub use chat::*;
 pub use contact::AddContactQrCode;
 pub use error::{

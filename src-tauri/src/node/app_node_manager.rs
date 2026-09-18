@@ -168,7 +168,10 @@ async fn notification_loop(
     mut notification_rx: mpsc::Receiver<Notification>,
 ) {
     while let Some(notification) = notification_rx.recv().await {
-        log::info!("Received notification: {:?}", notification);
+        let is_blob_progress = matches!(notification, Notification::BlobProgress(_));
+        if !is_blob_progress {
+            log::info!("Received notification: {:?}", notification);
+        }
 
         match notification {
             Notification::Op(n) => {
@@ -202,11 +205,18 @@ async fn notification_loop(
                     log::error!("Failed to emit system event: {err:?}");
                 }
             }
+            Notification::BlobProgress(event) => {
+                if let Err(err) = app_handle.emit("blob://progress", event) {
+                    log::error!("Failed to emit blob progress: {err:?}");
+                }
+            }
         }
 
         // Small delay between emissions to avoid overwhelming the WebKitGTK
         // event loop with rapid-fire events (which can freeze the webview).
-        if cfg!(feature = "e2e-tests") {
+        // Progress events are already rate-limited at the source and must not
+        // back-pressure operation notifications behind them.
+        if cfg!(feature = "e2e-tests") && !is_blob_progress {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     }

@@ -168,3 +168,214 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         "restarted node should re-queue the stored media blob for its chat topic, got {topics:?}",
     );
 }
+
+/// While bobbi's fetch loop downloads alice's photo, bobbi's notification
+/// channel carries BlobProgress events whose byte counts never decrease and
+/// which end with `complete = true`; afterwards `blob_progress` reports the
+/// blob complete.
+#[tokio::test(flavor = "multi_thread")]
+async fn blob_progress_notifications_reach_completion() {
+    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
+
+    let poll = PollConfig::default();
+    let config = NodeConfig::testing();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
+    let media = OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
+            data: photo_bytes,
+            name: "pic.png".into(),
+            mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
+        }],
+    };
+    alice
+        .send_message(chat, "progress", Some(media), None)
+        .await
+        .unwrap();
+
+    let mut events = vec![];
+    loop {
+        let event = bobbi
+            .watcher
+            .lock()
+            .await
+            .watch_mapped(
+                std::time::Duration::from_secs(60),
+                |n: &Notification| match n {
+                    Notification::BlobProgress(e) => Some(e.clone()),
+                    _ => None,
+                },
+            )
+            .await
+            .expect("blob progress notification");
+        events.push(event.clone());
+        if event.complete {
+            break;
+        }
+    }
+    for pair in events.windows(2) {
+        assert!(
+            pair[1].bytes >= pair[0].bytes,
+            "bytes must not decrease: {events:?}"
+        );
+    }
+    let last = events.last().unwrap();
+    assert_eq!(last.bytes, 8192);
+
+    poll.wait_for(|| async {
+        let snap = bobbi
+            .blob_progress(vec![last.hash.to_string()])
+            .await
+            .unwrap();
+        snap[0]
+            .complete
+            .then_some(())
+            .ok_or("snapshot not complete yet")
+    })
+    .await
+    .unwrap();
+}
+
+/// An on-demand attempt that gives up while another attempt is still
+/// transferring the same blob must leave the progress observer running, and
+/// once the blob lands, bobbi's channel still carries `complete = true`.
+#[tokio::test(flavor = "multi_thread")]
+async fn completion_is_notified_when_a_concurrent_attempt_gives_up_mid_download() {
+    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
+
+    let poll = PollConfig::default();
+    let config = NodeConfig::testing();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    // Only the on-demand attempts below may fetch the blob.
+    bobbi.set_blob_fetch_paused(true).await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    let mut photo_bytes = vec![0u8; 8 << 20];
+    rand::fill(&mut photo_bytes[..]);
+    let media = OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
+            data: photo_bytes,
+            name: "pic.png".into(),
+            mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
+        }],
+    };
+    alice
+        .send_message(chat, "big", Some(media), None)
+        .await
+        .unwrap();
+
+    poll.wait_for(|| async {
+        bobbi
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .iter()
+            .any(|m| m.content.media().is_some())
+            .then_some(())
+            .ok_or("bobbi has not received the media message yet")
+    })
+    .await
+    .unwrap();
+    let hash = bobbi
+        .get_messages(chat)
+        .await
+        .unwrap()
+        .into_iter()
+        .find_map(|m| m.content.media().cloned())
+        .expect("media metadata present on bobbi's copy of the message")
+        .first()
+        .expect("at least one media item")
+        .hash();
+    poll.wait_for(|| async {
+        (!bobbi.blob_fetch_pool_topics_for(hash).await.is_empty())
+            .then_some(())
+            .ok_or("blob not queued yet")
+    })
+    .await
+    .unwrap();
+
+    let blob_sync = bobbi.blob_sync().clone();
+    let background = tokio::spawn(async move {
+        blob_sync
+            .fetch_now(hash, std::time::Duration::from_secs(60))
+            .await
+    });
+
+    let started = std::time::Instant::now();
+    loop {
+        let snap = bobbi.blob_progress(vec![hash.to_string()]).await.unwrap();
+        assert!(
+            !snap[0].complete,
+            "transfer finished before it could be interrupted; use a larger blob"
+        );
+        if snap[0].bytes > 0 {
+            break;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "transfer never started"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    }
+
+    // An on-demand attempt with no time left gives up right away.
+    assert!(
+        !bobbi
+            .blob_sync()
+            .fetch_now(hash, std::time::Duration::ZERO)
+            .await,
+        "transfer finished before the second attempt gave up; use a larger blob"
+    );
+    assert!(
+        bobbi.blob_sync().progress.is_watching(hash).await,
+        "the observer stays up while the first attempt is still transferring"
+    );
+
+    assert!(
+        background.await.unwrap(),
+        "the first attempt still downloads the blob"
+    );
+    assert!(bobbi.blobs().has(hash).await.unwrap());
+
+    bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_for(std::time::Duration::from_secs(10), |n: &Notification| {
+            matches!(n, Notification::BlobProgress(e) if e.hash == hash && e.complete)
+        })
+        .await
+        .expect("completion notification after the blob landed");
+}
