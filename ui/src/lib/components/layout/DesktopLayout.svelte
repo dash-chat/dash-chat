@@ -34,9 +34,9 @@
 	);
 </script>
 
-<div class="desktop-shell">
+<div class="desktop-shell pb-keyboard-safe">
 	<TestBanner />
-	<div class="desktop-layout">
+	<div class="desktop-layout no-safe-areas-top">
 		<div class="desktop-sidebar">
 			{#if isSettings}
 				<SettingsPanel />
