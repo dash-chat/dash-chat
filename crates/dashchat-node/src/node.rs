@@ -970,6 +970,18 @@ impl Node {
         self.projection.all_contact_agent_ids().await
     }
 
+    /// The inboxes that are ours: the one advertised in our QR code, and the
+    /// private ones minted for exchanges we started
+    pub async fn my_inbox_topics(&self) -> anyhow::Result<HashSet<TopicId>> {
+        let advertised = self.local_store.get_advertised_inbox_topics().await?;
+        let reply = self.local_store.get_reply_inbox_topics().await?;
+        Ok(advertised
+            .into_iter()
+            .chain(reply)
+            .map(|inbox| *inbox.topic)
+            .collect())
+    }
+
     /// Agents added as contacts via the device group log (i.e. accepted
     /// contacts, unlike the projection's `devices` table which also records
     /// pre-accept contact requests).
