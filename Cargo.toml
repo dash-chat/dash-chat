@@ -33,16 +33,19 @@ mailbox-local-server = { path = "crates/mailbox-local-server" }
 local-hub-discovery = { path = "crates/local-hub-discovery" }
 reporting = { path = "crates/reporting" }
 
-p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
+# `dashchat-offline-node` plus one commit: SQLite transactions begin with
+# BEGIN IMMEDIATE, so the app and the iOS push extension sharing one database
+# file stop refusing each other's writes with "database is locked".
+p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx", features = [
   "test_utils",
 ] }
 
