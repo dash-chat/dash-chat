@@ -2,17 +2,26 @@
  * The only code that compares a screen with the model. `expectView` asserts
  * one chat on one agent is exactly what the model says that agent knows;
  * `settle` runs after every move and asserts every agent that learnt
- * something; `expectHubs` and `expectCloud` assert the connection chip.
+ * something; `expectNotifications` asserts every device whose notifications
+ * a run reads; `expectHubs` and `expectCloud` assert the connection chip.
  */
 import type { RenderedMessage } from '../components/messages';
-import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
+import type {
+	DeliveredNotification,
+	NotificationHelper,
+} from '../components/notifications';
+import {
+	MAILBOX_HEALED_MS,
+	MEDIA_SYNC_TIMEOUT,
+	SYNC_TIMEOUT,
+} from '../timeouts';
 import {
 	type ChatPage,
 	type Real,
 	type StressAgent,
 	byName,
-	goHome,
 	log,
+	notificationsOf,
 	openChatPage,
 } from './agents';
 import type {
@@ -20,6 +29,7 @@ import type {
 	ExpectedChat,
 	ExpectedModel,
 	MessageView,
+	NotificationView,
 } from './model';
 
 /** What any move gets before its effect has to be on screen — a hub
@@ -32,6 +42,119 @@ export const DISCOVERY_MS = 2_000;
  *  swarm-discovery neither sends a goodbye nor reads one — so a phone only
  *  notices once the hub ages out of its swarm. */
 export const DEPARTURE_MS = 4_000;
+
+/** What a notification gets to travel before it has to be on the device:
+ *  the op reaches the mailbox, which tells the push server, which goes
+ *  through FCM to the device — or, for an app still on the network, the
+ *  sync path. */
+const NOTIFICATION_TIMEOUT = 60_000;
+
+/** Check every device whose notifications the run reads against the model:
+ *  one notification per chat with messages its app was not on screen for,
+ *  titled by the sender and carrying the latest of them, and nothing else. */
+export async function expectNotifications(
+	m: ExpectedModel,
+	real: Real,
+): Promise<void> {
+	for (const sa of real.agents) {
+		if (sa.notifications === null) continue;
+		await expectShade(m, sa);
+	}
+}
+
+/** Wait until `sa`'s device holds exactly the notifications the model says.
+ *  Both halves are waited on together: a notification that must not be there
+ *  is as often one the app has yet to clear as one it should never have
+ *  posted. */
+async function expectShade(m: ExpectedModel, sa: StressAgent): Promise<void> {
+	const helper = notificationsOf(sa);
+	const expected = m.expectedNotifications(sa.name);
+	const generic = sa.notificationTexts?.generic ?? null;
+	let missing: NotificationView[] = [];
+	let extra: DeliveredNotification[] = [];
+	try {
+		await helper.readingDelivered(read =>
+			sa.agent.waitUntil(
+				async () => {
+					({ missing, extra } = matchNotifications(
+						expected,
+						besidesGeneric(await read(), generic),
+					));
+					return missing.length === 0 && extra.length === 0;
+				},
+				{ timeout: NOTIFICATION_TIMEOUT },
+			),
+		);
+	} catch (err) {
+		const problems = [
+			...missing.map(n => `never showed "${describeExpected(n)}"`),
+			...extra.map(
+				d => `shows "${d.title}: ${d.texts.join(' | ')}", which it cannot know`,
+			),
+		];
+		if (problems.length === 0) {
+			throw new Error(
+				`${sa.name}'s notifications could not be read: ${String(err)}`,
+			);
+		}
+		throw new Error(`${sa.name}'s notifications: ${problems.join('; ')}`);
+	}
+	if (helper.readingResumesApp && m.isActive(sa.name)) m.foreground(sa.name);
+	if (expected.length > 0) {
+		log(
+			`${sa.name}: device shows ${expected.map(describeExpected).join(', ')}`,
+		);
+	}
+}
+
+/**
+ * Pair every notification the model says the device has posted with one it is
+ * really holding: it must carry everything the entry names, and one of the
+ * messages that arrived unread where there are several — a chat's entry is
+ * rewritten by each arrival, and which one it ends up reading depends on the
+ * order a healed link delivered them in. What is left over on either side is
+ * missing, or is an entry the device must not have: one already read, or one
+ * from a sender who sent nothing.
+ */
+function matchNotifications(
+	expected: NotificationView[],
+	delivered: DeliveredNotification[],
+): { missing: NotificationView[]; extra: DeliveredNotification[] } {
+	const extra = [...delivered];
+	const missing: NotificationView[] = [];
+	for (const e of expected) {
+		const i = extra.findIndex(
+			d =>
+				e.shows.every(text => carries(d, text)) &&
+				(e.oneOf.length === 0 || e.oneOf.some(text => carries(d, text))),
+		);
+		if (i === -1) missing.push(e);
+		else extra.splice(i, 1);
+	}
+	return { missing, extra };
+}
+
+/** What the device holds, less the fallback the app posts when it is woken
+ *  for an operation it cannot then fetch — which is what a degraded link
+ *  produces, and which names no operation, so the model can neither predict
+ *  it nor read it as a stray. */
+function besidesGeneric(
+	delivered: DeliveredNotification[],
+	generic: string | null,
+): DeliveredNotification[] {
+	if (generic === null) return delivered;
+	return delivered.filter(d => !carries(d, generic));
+}
+
+function carries(notification: DeliveredNotification, text: string): boolean {
+	return notification.texts.some(shown => shown.includes(text));
+}
+
+function describeExpected(notification: NotificationView): string {
+	const shows = notification.shows.join(': ');
+	if (notification.oneOf.length === 0) return shows;
+	return `${shows}: one of ${notification.oneOf.join(', ')}`;
+}
 
 /** Open `chat` on `sa` and check it against the model before returning. */
 export async function openChat(
@@ -59,7 +182,7 @@ export async function expectView(
 ): Promise<void> {
 	const view = model.view(sa.name, chat);
 	const where = `${sa.name} in "${model.chatListName(chat, sa.name)}"`;
-	await expectComposer(page, view.pending, where);
+	await expectComposer(page, view, where);
 	let missing: MessageView[] = [];
 	let extra: RenderedMessage[] = [];
 	const timeout = view.messages.some(v => v.kind !== 'text')
@@ -96,8 +219,7 @@ export async function settle(model: ExpectedModel, real: Real): Promise<void> {
 		const sa = byName(real, name);
 		for (const chat of chats) {
 			log(`${name}: should now see more in ${model.chatListName(chat, name)}`);
-			const page = await openChat(sa, chat, model);
-			await goHome(sa, page);
+			await openChat(sa, chat, model);
 		}
 	}
 }
@@ -105,10 +227,8 @@ export async function settle(model: ExpectedModel, real: Real): Promise<void> {
 /** The members-less group every agent of a run with networks gets: the page
  *  its connection chip is read on. */
 export function chipChat(m: ExpectedModel, name: string): ExpectedChat {
-	const chat = m
-		.chatsFor(name)
-		.find(c => c.kind === 'group' && c.members.length === 1);
-	if (chat === undefined) {
+	const chat = m.chipChatOf(name);
+	if (chat === null) {
 		throw new Error(`${name} has no chat to read its chip in`);
 	}
 	return chat;
@@ -152,9 +272,8 @@ export async function checkHubs(
 	sa: StressAgent,
 	after: string,
 ): Promise<void> {
-	const page = await openChat(sa, chipChat(m, sa.name), m);
+	await openChat(sa, chipChat(m, sa.name), m);
 	await expectHubs(m, sa, after);
-	await goHome(sa, page);
 }
 
 /** Wait until `sa`'s chip shows what the model says of the cloud: hidden
@@ -190,9 +309,27 @@ export async function checkCloud(
 	after: string,
 	within: number,
 ): Promise<void> {
-	const page = await openChat(sa, chipChat(m, sa.name), m);
+	await openChat(sa, chipChat(m, sa.name), m);
 	await expectCloud(m, sa, after, within);
-	await goHome(sa, page);
+}
+
+/** Open `sa`'s chip chat and check the connection status the run watches:
+ *  the hubs on its LAN for a run with networks, the cloud link's state for one
+ *  with a cloud. A run with neither has no chip to read and nothing to check.
+ *  Left on the chat, as every move leaves the app where it finished. */
+export async function checkConnection(
+	m: ExpectedModel,
+	sa: StressAgent,
+	after: string,
+): Promise<void> {
+	if (m.hasNetworks()) {
+		await checkHubs(m, sa, after);
+		return;
+	}
+	if (m.hasCloud()) {
+		// Sitting still settles it, so the chip must already read right.
+		await checkCloud(m, sa, after, MAILBOX_HEALED_MS);
+	}
 }
 
 /** Every driveable agent on `network` checks its chip. */
@@ -209,17 +346,20 @@ export async function checkHubsOn(
 
 async function expectComposer(
 	page: ChatPage,
-	pending: boolean,
+	view: ChatView,
 	where: string,
 ): Promise<void> {
-	if (!pending) {
+	const readOnly = view.pending
+		? 'the peer profile has not arrived'
+		: view.blocked
+			? 'the peer is blocked'
+			: null;
+	if (readOnly === null) {
 		await page.composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
 		return;
 	}
 	if (await page.composer.messageInput.isExisting()) {
-		throw new Error(
-			`${where}: has a composer although the peer profile has not arrived`,
-		);
+		throw new Error(`${where}: has a composer although ${readOnly}`);
 	}
 }
 

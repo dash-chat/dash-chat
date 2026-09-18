@@ -51,6 +51,22 @@ export class HomePage extends TestHelper {
 		return (await this.agent.$$(tid('all-chats-row'))).length;
 	}
 
+	/** The title of every chat in the list: a peer's name for a direct chat,
+	 * the group's name for a group. Read from the title element alone, since a
+	 * row's summary quotes message text and sender names. */
+	async chatTitles(): Promise<string[]> {
+		return this.agent.execute((sel: string) => {
+			const rows = document.querySelectorAll<HTMLElement>(sel);
+			return Array.from(rows).map(row =>
+				(
+					row.querySelector<HTMLElement>(
+						'.title-truncated-wrap > div:first-child',
+					)?.textContent ?? ''
+				).trim(),
+			);
+		}, tid('all-chats-row'));
+	}
+
 	/** Full visible text of the first chat-list row containing `name`. */
 	async chatRowText(name: string): Promise<string> {
 		await this.chatListItem(name).waitForExist();

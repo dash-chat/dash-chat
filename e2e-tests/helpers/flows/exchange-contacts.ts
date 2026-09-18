@@ -9,6 +9,16 @@ export async function navigateToAddContact(agent: Agent): Promise<void> {
 	await agent.addContactPage.ready();
 }
 
+/** An agent's own add-contact link, leaving it back on its chat list. */
+export async function contactLinkOf(agent: Agent): Promise<string> {
+	await navigateToAddContact(agent);
+	const link = await agent.addContactPage.getAddContactLink();
+	await agent.addContactPage.back.click();
+	await agent.newMessagePage.back.click();
+	await agent.homePage.ready();
+	return link;
+}
+
 /**
  * Two-way contact exchange: both agents add each other's link and end up on
  * their respective direct-chat pages.

@@ -1,6 +1,7 @@
 /** Moves a device makes on its own: leaving and returning to the foreground,
- *  and stopping, starting and restarting the app. */
-import { type Real, at, byName, log } from '../agents';
+ *  and stopping, starting and restarting the app. A backgrounded app keeps
+ *  whatever it was showing, so it resumes there. */
+import { type Real, at, byName, log, waitForApp } from '../agents';
 import { checkHubs } from '../checks';
 import type { ExpectedModel } from '../model';
 import { Move, type Moves } from './move';
@@ -49,7 +50,9 @@ class ForegroundMove extends Move {
 		const actor = byName(real, at(m.backgroundedNames(), this.agentIdx));
 		log(`${actor.name}: ${this.toString()}`);
 		await actor.agent.startApp();
-		await actor.agent.homePage.ready();
+		// It resumes onto whatever it was showing, which the model already
+		// knows; nothing here navigates away from it.
+		await waitForApp(actor);
 		m.foreground(actor.name);
 		if (m.hasNetworks()) {
 			await checkHubs(m, actor, 'coming back to the foreground');
@@ -132,6 +135,8 @@ class RestartMove extends Move {
 			await actor.agent.startApp();
 		}
 		await actor.agent.homePage.ready();
+		// A cold start comes back on the chat list, whatever it was showing.
+		m.startApp(actor.name);
 		if (m.hasNetworks()) {
 			await checkHubs(m, actor, 'the app restarted');
 		}

@@ -5,6 +5,7 @@ import { TestHelper } from '../test-helper';
 export class GroupInfoPage extends TestHelper {
 	back = this.el(tid('group-info-back'));
 	avatar = new Avatar(this.agent, 'group-info-avatar');
+	name = this.el(tid('group-info-name'));
 	description = this.el(tid('group-info-description'));
 	addMembersLink = this.el(tid('group-info-add-members'));
 	editLink = this.el(tid('group-info-edit-link'));

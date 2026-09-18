@@ -7,7 +7,7 @@ pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
 use dashchat_node::{
-    DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic, TopicId,
+    ChatId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic, TopicId,
 };
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
@@ -120,6 +120,19 @@ pub async fn build_notification_data(
         return None;
     }
 
+    // A blocked contact's operations are thrown away as they arrive
+    // (`enforce_blocklist`), so nothing they write may reach the shade
+    // either — a notification for a message the chat will never show is the
+    // one way a block leaks.
+    match node.projection.is_author_blocked(&sender_device_id).await {
+        Ok(false) => {}
+        Ok(true) => return None,
+        Err(err) => {
+            log::error!("Failed to check whether {sender_device_id:?} is blocked: {err:?}");
+            return None;
+        }
+    }
+
     let id = match stable_notification_id(header.hash().as_bytes()) {
         Ok(id) => id,
         Err(err) => {
@@ -145,6 +158,18 @@ pub async fn build_notification_data(
             chat_message_notification(node, topic, sender_device_id, content, id).await
         }
         Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { profile, .. }) => {
+            // Entering someone's link publishes into the inbox their QR code
+            // advertises, which subscribes us to it — so the requests other
+            // people send them arrive on our device too. Only the inbox's
+            // owner announces what is in it.
+            match node.my_inbox_topics().await {
+                Ok(mine) if mine.contains(&topic) => {}
+                Ok(_) => return None,
+                Err(err) => {
+                    log::error!("Failed to load our inbox topics: {err:?}");
+                    return None;
+                }
+            }
             let chat_topic =
                 Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]);
             Some(NotificationData {
@@ -156,6 +181,13 @@ pub async fn build_notification_data(
                 route: Some(format!("/direct-chats/{}", chat_topic.to_hex())),
                 ..Default::default()
             })
+        }
+        // An auth/control op keeps its data in the header rather than a body:
+        // the push path decodes nothing and takes the branch above, while the
+        // sync path is handed what the node decoded. Same op, same answer.
+        #[cfg(mobile)]
+        Payload::GroupControl(_) => {
+            auth_control_op_notification(node, header, topic, sender_device_id, id).await
         }
         _ => None,
     }
@@ -189,6 +221,8 @@ async fn chat_message_notification(
         if !sender_agent_id.is_some_and(|agent_id| accepted.contains(&agent_id)) {
             return None;
         }
+    } else if !is_member_of(node, topic).await {
+        return None;
     }
 
     let sender_profile = if let Some(agent_id) = sender_agent_id {
@@ -275,6 +309,29 @@ async fn chat_message_notification(
     Some(data)
 }
 
+/// Whether we are still in the group `topic` names. Leaving one does not stop
+/// its messages arriving — the node keeps syncing the group and rejects what
+/// comes after the departure — so what is not shown in the chat must not be
+/// announced either.
+async fn is_member_of(node: &Node, topic: TopicId) -> bool {
+    let chat_id = match ChatId::from_topic_id(topic) {
+        Ok(chat_id) => chat_id,
+        Err(err) => {
+            log::error!("Failed to read a chat id off topic {topic}: {err:?}");
+            return false;
+        }
+    };
+    match node.get_group_members(chat_id).await {
+        Ok(members) => members
+            .iter()
+            .any(|(member, _)| *member == node.device_id()),
+        Err(err) => {
+            log::error!("Failed to load the members of {topic}: {err:?}");
+            false
+        }
+    }
+}
+
 /// Signal-style placeholder body for a media message with no caption,
 /// e.g. "📷 Photo", "📎 report.pdf", "🎤 Voice message".
 fn media_placeholder(media: &MediaBundle) -> String {
@@ -319,10 +376,15 @@ async fn group_title(node: &Node, topic_id: TopicId) -> String {
     }
 }
 
-/// Build the user-facing notification for a body-less p2panda auth/control op
-/// (GroupControl: Create/Add/Remove/Promote/Demote). These carry their data in
-/// the header's auth extension and have no body to decode. Returns `None` to
-/// suppress the notification (e.g. a group action targeting someone else).
+/// Build the user-facing notification for a p2panda auth/control op
+/// (GroupControl: Create/Add/Remove/Promote/Demote), whose data lives in the
+/// header's auth extension.
+///
+/// Only being added to a group is announced. Signal draws the line in the
+/// same place: every other membership change — someone else joining or
+/// leaving, being removed oneself, an admin change — is written into the
+/// conversation and never onto the shade, and the acceptance of a request is
+/// not an event its sender hears about at all.
 ///
 /// Mobile-only: on desktop we don't surface these as system notifications —
 /// the chat-list row already reflects the auth event reactively.
@@ -345,8 +407,25 @@ async fn auth_control_op_notification(
         )
     };
 
-    let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
-    let sender_name = match sender_agent_id {
+    let added_me = match action {
+        // A Create is either the acceptor authoring a new direct-chat space,
+        // which is not a group at all, or someone creating a group with us in
+        // it. The deterministic direct-chat topic with the sender tells which.
+        GroupAction::Create { initial_members } => {
+            *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)])
+                != topic
+                && initial_members.iter().any(|(m, _)| target_is_me(m))
+        }
+        GroupAction::Add { member, .. } => target_is_me(&member),
+        GroupAction::Remove { .. } | GroupAction::Promote { .. } | GroupAction::Demote { .. } => {
+            false
+        }
+    };
+    if !added_me {
+        return None;
+    }
+
+    let sender_name = match node.lookup_contact(sender_device_id).await.ok().flatten() {
         Some(agent_id) => node
             .projection
             .get_profile(agent_id)
@@ -357,84 +436,15 @@ async fn auth_control_op_notification(
         None => None,
     };
 
-    let group_route = Some(format!("/group-chat/{}", topic.to_hex()));
-
-    let (title, body, route) = match action {
-        // A Create can mean either: (a) the acceptor authoring a new
-        // direct-chat space when they accept a contact request, or (b) someone
-        // creating a new group with us in it. Distinguish by checking whether
-        // the topic matches the deterministic direct-chat topic with the
-        // sender.
-        GroupAction::Create { initial_members } => {
-            let is_direct_chat =
-                *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)])
-                    == topic;
-            if is_direct_chat {
-                let title = match &sender_name {
-                    Some(name) => sonix_i18n::t!("contactRequestAccepted", { "name": name }),
-                    None => sonix_i18n::t!("contactRequestAcceptedNoName"),
-                };
-                let route = Some(format!("/direct-chats/{}", topic.to_hex()));
-                (title, None, route)
-            } else {
-                if !initial_members.iter().any(|(m, _)| target_is_me(m)) {
-                    return None;
-                }
-                let body = match &sender_name {
-                    Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
-                    None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
-                };
-                (group_title(node, topic).await, Some(body), group_route)
-            }
-        }
-        GroupAction::Add { member, .. } => {
-            if !target_is_me(&member) {
-                return None;
-            }
-            let body = match &sender_name {
-                Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
-                None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
-            };
-            (group_title(node, topic).await, Some(body), group_route)
-        }
-        GroupAction::Remove { member } => {
-            if !target_is_me(&member) {
-                return None;
-            }
-            let title = match &sender_name {
-                Some(name) => sonix_i18n::t!("someoneRemovedYouFromTheGroup", { "name": name }),
-                None => sonix_i18n::t!("someoneRemovedYouFromTheGroupNoName"),
-            };
-            (title, None, group_route)
-        }
-        GroupAction::Promote { member, .. } => {
-            if !target_is_me(&member) {
-                return None;
-            }
-            let title = match &sender_name {
-                Some(name) => sonix_i18n::t!("someoneMadeYouAnAdmin", { "name": name }),
-                None => sonix_i18n::t!("someoneMadeYouAnAdminNoName"),
-            };
-            (title, None, group_route)
-        }
-        GroupAction::Demote { member, .. } => {
-            if !target_is_me(&member) {
-                return None;
-            }
-            let title = match &sender_name {
-                Some(name) => sonix_i18n::t!("someoneRevokedAdminFromYou", { "name": name }),
-                None => sonix_i18n::t!("someoneRevokedAdminFromYouNoName"),
-            };
-            (title, None, group_route)
-        }
-    };
-
     Some(NotificationData {
         id,
-        title: Some(title),
-        body,
+        title: Some(group_title(node, topic).await),
+        body: Some(match &sender_name {
+            Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
+            None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
+        }),
         icon: Some("ic_stat_icon".to_string()),
-        route,
+        route: Some(format!("/group-chat/{}", topic.to_hex())),
         ..Default::default()
     })
 }
