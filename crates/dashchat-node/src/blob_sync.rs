@@ -53,7 +53,38 @@ pub struct BlobSync {
     /// Attempts currently fetching each hash, so an attempt that gives up
     /// only stops the shared progress observer once no other attempt is
     /// still transferring.
-    attempts: Arc<Mutex<HashMap<iroh_blobs::Hash, usize>>>,
+    attempts: Arc<std::sync::Mutex<HashMap<iroh_blobs::Hash, usize>>>,
+}
+
+/// An in-flight fetch attempt. Dropping it, including when the attempt's
+/// future is aborted, releases its count and stops the progress observer if
+/// it was the last attempt and did not fetch the blob.
+struct Attempt {
+    attempts: Arc<std::sync::Mutex<HashMap<iroh_blobs::Hash, usize>>>,
+    progress: crate::blob_progress::BlobProgress,
+    hash: iroh_blobs::Hash,
+    fetched: bool,
+}
+
+impl Drop for Attempt {
+    fn drop(&mut self) {
+        let mut attempts = self.attempts.lock().unwrap();
+        let remaining = attempts.get(&self.hash).copied().unwrap_or(1) - 1;
+        if remaining > 0 {
+            attempts.insert(self.hash, remaining);
+            return;
+        }
+        attempts.remove(&self.hash);
+        drop(attempts);
+        if self.fetched {
+            return;
+        }
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let progress = self.progress.clone();
+            let hash = self.hash;
+            handle.spawn(async move { progress.stop(hash).await });
+        }
+    }
 }
 
 impl BlobSync {
@@ -115,10 +146,9 @@ impl BlobSync {
             move |(topic, hash), attempt_timeout| {
                 let this = this.clone();
                 async move {
-                    this.begin_attempt(hash).await;
-                    let fetched = this.try_fetch(topic, hash, attempt_timeout).await;
-                    this.end_attempt(hash, fetched).await;
-                    fetched
+                    let mut attempt = this.begin_attempt(hash);
+                    attempt.fetched = this.try_fetch(topic, hash, attempt_timeout).await;
+                    attempt.fetched
                 }
             },
         ))
@@ -262,28 +292,18 @@ impl BlobSync {
     /// downloads of the same hash are coalesced by the iroh-blobs downloader,
     /// so racing the background loop is safe.
     pub async fn fetch_now(&self, hash: iroh_blobs::Hash, timeout: Duration) -> bool {
-        self.begin_attempt(hash).await;
-        let fetched = self.fetch_now_until(hash, timeout).await;
-        self.end_attempt(hash, fetched).await;
-        fetched
+        let mut attempt = self.begin_attempt(hash);
+        attempt.fetched = self.fetch_now_until(hash, timeout).await;
+        attempt.fetched
     }
 
-    async fn begin_attempt(&self, hash: iroh_blobs::Hash) {
-        *self.attempts.lock().await.entry(hash).or_insert(0) += 1;
-    }
-
-    /// Stop the progress observer for `hash` if this was the last attempt in
-    /// flight and it gave up.
-    async fn end_attempt(&self, hash: iroh_blobs::Hash, fetched: bool) {
-        let mut attempts = self.attempts.lock().await;
-        let remaining = attempts.get(&hash).copied().unwrap_or(1) - 1;
-        if remaining > 0 {
-            attempts.insert(hash, remaining);
-            return;
-        }
-        attempts.remove(&hash);
-        if !fetched {
-            self.progress.stop(hash).await;
+    fn begin_attempt(&self, hash: iroh_blobs::Hash) -> Attempt {
+        *self.attempts.lock().unwrap().entry(hash).or_insert(0) += 1;
+        Attempt {
+            attempts: self.attempts.clone(),
+            progress: self.progress.clone(),
+            hash,
+            fetched: false,
         }
     }
 

@@ -42,8 +42,9 @@
 
 	const blobStore: BlobStore = getContext('blob-store');
 	const download = $derived(useReactiveValue(blobStore.progress, item.hash));
-	// Until the first snapshot resolves the download state is unknown; showing
-	// the ring then would flash it on every already-local photo.
+	// Until the first snapshot resolves the download state is unknown: showing
+	// the ring then would flash it on every already-local photo, and mounting
+	// the <img> would send a not-yet-local blob through the 30s scheme handler.
 	const known = $derived($download !== undefined);
 	const downloading = $derived(known && $download?.complete !== true);
 	const stalled = $derived($download?.stalled === true);
@@ -140,17 +141,19 @@
 		</svg>
 	</span>
 {:else}
-	<img
-		{src}
-		{alt}
-		class={imgClass}
-		style={imgStyle}
-		loading={lazy ? 'lazy' : 'eager'}
-		data-testid="blob-image"
-		onload={() => (status = 'loaded')}
-		onerror={() => (status = 'error')}
-	/>
-	{#if status === 'loading'}
+	{#if known}
+		<img
+			{src}
+			{alt}
+			class={imgClass}
+			style={imgStyle}
+			loading={lazy ? 'lazy' : 'eager'}
+			data-testid="blob-image"
+			onload={() => (status = 'loaded')}
+			onerror={() => (status = 'error')}
+		/>
+	{/if}
+	{#if !known || status === 'loading'}
 		<div
 			class="pointer-events-none absolute inset-0 flex items-center justify-center"
 			aria-busy="true"

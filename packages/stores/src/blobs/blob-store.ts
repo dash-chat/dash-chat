@@ -55,7 +55,10 @@ export class BlobStore {
 								void this.client.fetchBlobNow(hash);
 							}
 						})
-						.catch(e => console.error('blob progress snapshot failed', e));
+						.catch(e => {
+							console.error('blob progress snapshot failed', e);
+							setStalledPolling?.(true);
+						});
 				};
 				const startPolling = (ms: number) => {
 					if (interval === undefined) interval = setInterval(fetchProgress, ms);
