@@ -22,6 +22,7 @@ export interface BlobState {
 export class BlobProgressTracker {
 	state: BlobState = { bytes: 0, complete: false, stalled: false };
 	#timer: ReturnType<typeof setTimeout> | undefined;
+	#observed = false;
 
 	constructor(
 		private onChange: (state: BlobState) => void,
@@ -41,8 +42,12 @@ export class BlobProgressTracker {
 		}
 		const advanced = progress.bytes > this.state.bytes;
 		if (advanced || this.#timer === undefined) this.#restartTimer();
-		if (advanced) {
-			this.#set({ bytes: progress.bytes, complete: false, stalled: false });
+		if (advanced || !this.#observed) {
+			this.#set({
+				bytes: Math.max(this.state.bytes, progress.bytes),
+				complete: false,
+				stalled: false,
+			});
 		}
 	}
 
@@ -69,14 +74,18 @@ export class BlobProgressTracker {
 		this.#timer = undefined;
 	}
 
+	// The first observation always notifies, so a listener can tell "seen at
+	// 0 bytes" apart from "not observed yet".
 	#set(next: BlobState): void {
 		const s = this.state;
 		if (
+			this.#observed &&
 			s.bytes === next.bytes &&
 			s.complete === next.complete &&
 			s.stalled === next.stalled
 		)
 			return;
+		this.#observed = true;
 		this.state = next;
 		this.onChange(next);
 	}

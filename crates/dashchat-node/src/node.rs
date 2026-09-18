@@ -218,6 +218,11 @@ pub struct Node {
     /// `redb` metadata store — whose exclusive single-process lock the always-on
     /// main app holds, which would otherwise deadlock the extension's node build.
     blob_sync: Option<BlobSync>,
+    /// The handle to the background fetch loop.
+    /// It's optional because it's taken during node shutdown.
+    /// Also, during testing we use [`Self::set_blob_fetch_paused`] to clear this,
+    /// which is then interpreted as a hard pause on the fetch loop, allowing us
+    /// to inspect fetch state at a moment in time.
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     endpoint: p2panda::Endpoint,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -2087,10 +2092,7 @@ impl Node {
             // Kick the download in the background so the poll below can still
             // observe the blob arriving via any path (this fetch, the
             // background loop, or a mailbox relay) rather than blocking on one.
-            let blob_sync = blob_sync.clone();
-            tokio::spawn(async move {
-                blob_sync.fetch_now(hash, timeout).await;
-            });
+            self.spawn_fetch_now(hash, timeout).await;
         }
 
         let deadline = std::time::Instant::now() + timeout;
@@ -2121,16 +2123,37 @@ impl Node {
     /// background loop's attempt timeout. Returns as soon as it is spawned.
     pub async fn fetch_blob_now(&self, hash: String) -> anyhow::Result<()> {
         let hash: iroh_blobs::Hash = hash.parse()?;
-        let blob_sync = self.require_blob_sync()?.clone();
-        let timeout = self.config.blob_fetch.attempt_timeout;
-        tokio::spawn(async move {
-            blob_sync.fetch_now(hash, timeout).await;
-        });
+        self.require_blob_sync()?;
+        self.spawn_fetch_now(hash, self.config.blob_fetch.attempt_timeout)
+            .await;
         Ok(())
     }
 
-    /// Stop or restart the background blob fetch loop. Test-only: lets an e2e
-    /// spec hold a blob in its "downloading" state long enough to observe it.
+    /// Run an on-demand fetch of `hash` in the background. Under `testing`,
+    /// a paused fetch loop (see [`Self::set_blob_fetch_paused`]) also
+    /// suppresses on-demand fetches.
+    async fn spawn_fetch_now(&self, hash: iroh_blobs::Hash, timeout: std::time::Duration) {
+        let Some(blob_sync) = self.blob_sync.clone() else {
+            return;
+        };
+
+        // During testing, we use [`Self::set_blob_fetch_paused`] to clear this handle.
+        // This line is what actually gives meaning to that action, effectively pausing the fetch loop.
+        // We only do this check in testing because in production it's only ever None during node shutdown,
+        // and there is no harm in proceeding in that case, so we can save an unnecessary mutex acquisition.
+        #[cfg(feature = "testing")]
+        if self.blob_fetch_handle.lock().await.is_none() {
+            return;
+        }
+
+        tokio::spawn(async move {
+            blob_sync.fetch_now(hash, timeout).await;
+        });
+    }
+
+    /// Stop or restart the background blob fetch loop. While stopped,
+    /// [`Self::fetch_blob_now`] is a no-op too. Test-only: lets an e2e spec
+    /// hold a blob in its "downloading" state long enough to observe it.
     #[cfg(feature = "testing")]
     pub async fn set_blob_fetch_paused(&self, paused: bool) {
         let mut handle = self.blob_fetch_handle.lock().await;

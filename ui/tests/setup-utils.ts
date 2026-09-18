@@ -171,8 +171,8 @@ function disableP2p(): Promise<void> {
 	return invokeAfterSetup('set_p2p_enabled', { enabled: false });
 }
 
-/** Pause or resume this agent's background blob fetch loop, so a spec can
- * observe an attachment's downloading state. Backed by the
+/** Pause or resume this agent's blob fetching (background loop and
+ * on-demand), so a spec can observe an attachment's downloading state. Backed by the
  * `set_blob_fetch_paused` command (only registered under `e2e-tests`). */
 function setBlobFetchPaused(paused: boolean): Promise<void> {
 	return invokeAfterSetup('set_blob_fetch_paused', { paused });

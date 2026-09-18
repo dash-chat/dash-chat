@@ -7,6 +7,9 @@ import { BlobProgressTracker, type BlobState } from './blob-progress-tracker';
 
 const POLL_INTERVAL_MS = 1_000;
 const POLLING_ENABLED = pollingRequired();
+/** While stalled, re-read the snapshot on a timer: a completion event that
+ * landed while no listener was attached is never replayed. */
+const STALLED_POLL_INTERVAL_MS = 5_000;
 
 export class BlobStore {
 	#trackers = new Map<Hash, BlobProgressTracker>();
@@ -15,15 +18,17 @@ export class BlobStore {
 
 	/** Download state of one blob: bytes present locally, whether it is
 	 * complete, and whether the download has stalled. The total size comes
-	 * from the attachment's own metadata, not from here. */
+	 * from the attachment's own metadata, not from here. Pending until the
+	 * first snapshot arrives, so a caller can tell "unknown" from "0 bytes". */
 	progress = reactive(
 		(hash: Hash): ReactivePromise<BlobState> =>
 			relay(state => {
 				let interval: ReturnType<typeof setInterval> | undefined;
+				let kicked = false;
 				// Signalium's build transform evaluates a closure's captured
 				// bindings where the closure is defined, so nothing declared
 				// before `tracker` may name it directly.
-				let onStall: (() => void) | undefined;
+				let setStalledPolling: ((stalled: boolean) => void) | undefined;
 
 				const stopPolling = () => {
 					clearInterval(interval);
@@ -33,26 +38,33 @@ export class BlobStore {
 				const tracker = new BlobProgressTracker(s => {
 					state.value = s;
 					if (s.complete) stopPolling();
-					// A completion that landed while no listener was attached is never
-					// replayed, so a stall re-reads the snapshot to self-heal.
-					else if (s.stalled) onStall?.();
+					else if (!POLLING_ENABLED) setStalledPolling?.(s.stalled);
 				});
 				this.#trackers.set(hash, tracker);
-				state.value = tracker.state;
 
 				const fetchProgress = () => {
 					this.client
 						.getBlobProgress([hash])
 						.then(([progress]) => {
-							if (progress) tracker.apply(progress);
+							if (!progress) return;
+							tracker.apply(progress);
+							// Seeing an incomplete blob is what starts its download, as
+							// mounting the <img> did before the ring replaced it.
+							if (!progress.complete && !kicked) {
+								kicked = true;
+								void this.client.fetchBlobNow(hash);
+							}
 						})
 						.catch(e => console.error('blob progress snapshot failed', e));
 				};
-				onStall = fetchProgress;
+				const startPolling = (ms: number) => {
+					if (interval === undefined) interval = setInterval(fetchProgress, ms);
+				};
+				setStalledPolling = stalled =>
+					stalled ? startPolling(STALLED_POLL_INTERVAL_MS) : stopPolling();
 
 				fetchProgress();
-				if (POLLING_ENABLED)
-					interval = setInterval(fetchProgress, POLL_INTERVAL_MS);
+				if (POLLING_ENABLED) startPolling(POLL_INTERVAL_MS);
 				const unsub = this.client.onBlobProgress(hash, p => tracker.apply(p));
 
 				return () => {

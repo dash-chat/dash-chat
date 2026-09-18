@@ -81,11 +81,17 @@ describe('BlobProgressTracker', () => {
 		assert.equal(tracker.state.stalled, true);
 	});
 
-	it('notifies only on change', () => {
+	it('notifies on the first observation, then only on change', () => {
 		tracker.apply({ bytes: 0, complete: false });
+		assert.deepEqual(states, [{ bytes: 0, complete: false, stalled: false }]);
 		tracker.apply({ bytes: 0, complete: false });
-		assert.equal(states.length, 0);
-		tracker.apply({ bytes: 1, complete: false });
 		assert.equal(states.length, 1);
+		tracker.apply({ bytes: 1, complete: false });
+		assert.equal(states.length, 2);
+	});
+
+	it('notifies a first observation that is already complete', () => {
+		tracker.apply({ bytes: 800, complete: true });
+		assert.deepEqual(states, [{ bytes: 800, complete: true, stalled: false }]);
 	});
 });

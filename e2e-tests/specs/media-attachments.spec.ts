@@ -82,6 +82,7 @@ describe('Media attachments', () => {
 	});
 
 	it('recovers a stalled photo download when the cell is tapped', async () => {
+		const messages = agent2.directChatPage.messages;
 		await agent2.setBlobFetchPaused(true);
 		try {
 			await agent1.directChatPage.composer.attachNoisePhoto(
@@ -92,7 +93,6 @@ describe('Media attachments', () => {
 			await agent1.directChatPage.composer.send();
 			await agent1.directChatPage.messages.waitForPhotoMessage('stalled');
 
-			const messages = agent2.directChatPage.messages;
 			await messages
 				.photoProgressRing('stalled')
 				.waitForDisplayed({ timeout: SYNC_TIMEOUT });
@@ -101,18 +101,24 @@ describe('Media attachments', () => {
 				timeoutMsg: 'Progress ring never entered its stalled state',
 			});
 
-			// Tap while the background loop is still paused: the moment it resumes
-			// it fetches the blob itself, and a tap landing after that opens the
-			// lightbox instead of routing through BlobImage.retryIfErrored.
+			// Tap while fetching is still paused: the moment it resumes the loop
+			// fetches the blob itself, and a tap landing after that opens the
+			// lightbox instead of routing through BlobImage.retryIfErrored. The
+			// pause also swallows the tap's on-demand fetch, so what the tap
+			// observably does here is clear the stalled state.
 			await messages.photoCell('stalled').click();
-			await messages.waitForPhotoMessage('stalled');
-			await messages
-				.photoProgressRing('stalled')
-				.waitForDisplayed({ reverse: true });
+			await agent2.waitUntil(
+				async () => !(await messages.photoProgressStalled('stalled')),
+				{ timeoutMsg: 'Tapping the stalled ring did not clear its stall' },
+			);
 			expect(await messages.lightbox.isOpen()).toBe(false);
 		} finally {
 			await agent2.setBlobFetchPaused(false);
 		}
+		await messages.waitForPhotoMessage('stalled');
+		await messages
+			.photoProgressRing('stalled')
+			.waitForDisplayed({ reverse: true });
 	});
 
 	it('sizes a lone photo from its sender-measured dimensions', async () => {

@@ -14,7 +14,12 @@ export interface IBlobClient {
 	): UnsubscribeFunction;
 }
 
+type ProgressHandler = (progress: BlobProgress) => void;
+
 export class BlobClient implements IBlobClient {
+	#handlers = new Map<Hash, Set<ProgressHandler>>();
+	#listening = false;
+
 	getBlobProgress(hashes: Hash[]): Promise<BlobProgress[]> {
 		return invokeAfterSetup('get_blob_progress', { hashes });
 	}
@@ -23,23 +28,29 @@ export class BlobClient implements IBlobClient {
 		return invokeAfterSetup('fetch_blob_now', { hash });
 	}
 
-	onBlobProgress(
-		hash: Hash,
-		handler: (progress: BlobProgress) => void,
-	): UnsubscribeFunction {
-		let unsub: (() => void) | undefined;
-		let cancelled = false;
-		listen('blob://progress', e => {
-			const progress = e.payload as BlobProgress;
-			if (progress.hash !== hash) return;
-			handler(progress);
-		}).then(u => {
-			if (cancelled) u();
-			else unsub = u;
-		});
+	/** One Tauri listener for every blob, demultiplexed by hash, rather than
+	 * one per attachment on screen. */
+	onBlobProgress(hash: Hash, handler: ProgressHandler): UnsubscribeFunction {
+		this.#ensureListening();
+		let handlers = this.#handlers.get(hash);
+		if (!handlers) {
+			handlers = new Set();
+			this.#handlers.set(hash, handlers);
+		}
+		handlers.add(handler);
 		return () => {
-			cancelled = true;
-			if (unsub) unsub();
+			handlers.delete(handler);
+			if (handlers.size === 0) this.#handlers.delete(hash);
 		};
+	}
+
+	#ensureListening(): void {
+		if (this.#listening) return;
+		this.#listening = true;
+		void listen<BlobProgress>('blob://progress', e => {
+			const handlers = this.#handlers.get(e.payload.hash);
+			if (!handlers) return;
+			for (const handler of handlers) handler(e.payload);
+		});
 	}
 }

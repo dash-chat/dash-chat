@@ -156,7 +156,8 @@ export type Agent = WebdriverIO.Browser & {
 	 *  peer-to-peer connectivity, so it syncs through mailboxes only. A spec's
 	 *  setup step: call it right after `setupAgents`, before the agents meet. */
 	disableP2p(): Promise<void>;
-	/** Pause or resume this agent's blob fetch loop (e2e-only command). */
+	/** Pause or resume this agent's blob fetching, background loop and
+	 *  on-demand alike (e2e-only command). */
 	setBlobFetchPaused(paused: boolean): Promise<void>;
 	/** The urls this agent asked the OS to open, once at least `count` have
 	 *  arrived. Recorded by the harness's `xdg-open` stub, so desktop only. */

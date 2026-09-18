@@ -109,7 +109,13 @@ impl BlobSync {
             config,
             move |(topic, hash), attempt_timeout| {
                 let this = this.clone();
-                async move { this.try_fetch(topic, hash, attempt_timeout).await }
+                async move {
+                    let fetched = this.try_fetch(topic, hash, attempt_timeout).await;
+                    if !fetched {
+                        this.progress.stop(hash).await;
+                    }
+                    fetched
+                }
             },
         ))
     }
@@ -247,6 +253,14 @@ impl BlobSync {
     /// downloads of the same hash are coalesced by the iroh-blobs downloader,
     /// so racing the background loop is safe.
     pub async fn fetch_now(&self, hash: iroh_blobs::Hash, timeout: Duration) -> bool {
+        let fetched = self.fetch_now_until(hash, timeout).await;
+        if !fetched {
+            self.progress.stop(hash).await;
+        }
+        fetched
+    }
+
+    async fn fetch_now_until(&self, hash: iroh_blobs::Hash, timeout: Duration) -> bool {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if self.blobs.has(hash).await.unwrap_or(false) {

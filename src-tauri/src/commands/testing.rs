@@ -3,7 +3,7 @@ use crate::node::AppNodeManager;
 #[cfg(feature = "e2e-tests")]
 use tauri::State;
 
-/// Pause or resume the background blob fetch loop, so a spec can observe an
+/// Pause or resume blob fetching (background loop and on-demand), so a spec can observe an
 /// attachment in its downloading state. Only registered under `e2e-tests`.
 #[tauri::command]
 #[cfg(feature = "e2e-tests")]
