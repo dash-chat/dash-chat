@@ -196,6 +196,18 @@ mod tests {
         }
     }
 
+    // With p2p and blob sync both off, nothing needs the iroh endpoint and
+    // p2panda is spawned without one. The iOS push extension must not open a
+    // second endpoint under the app's key: it takes over the app's relay
+    // session and kills the running app's networking actors.
+    #[test]
+    fn the_push_extension_needs_no_iroh_endpoint() {
+        let config = NodeContext::for_push_notifications().node_config();
+        assert!(!config.enable_p2p);
+        assert!(!config.enable_blob_sync);
+        assert!(app_context().node_config().enable_blob_sync);
+    }
+
     #[test]
     fn p2p_follows_the_role() {
         assert!(app_context().node_config().enable_p2p);

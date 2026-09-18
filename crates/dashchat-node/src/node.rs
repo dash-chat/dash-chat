@@ -218,7 +218,9 @@ pub struct Node {
     /// main app holds, which would otherwise deadlock the extension's node build.
     blob_sync: Option<BlobSync>,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    endpoint: p2panda::Endpoint,
+    /// `None` when p2panda was spawned with no networking layer, which happens
+    /// once nothing needs the endpoint (see [`Self::init`]).
+    endpoint: Option<p2panda::Endpoint>,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     unfetched_blob_trigger: Arc<tokio::sync::Notify>,
     unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -288,44 +290,53 @@ impl Node {
         // === p2panda node === //
 
         let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
+        // Nothing needs the iroh endpoint once p2p and blob sync are both off, so
+        // p2panda is spawned with no networking layer at all. `no_p2p` alone is not
+        // enough: mailbox media exchange dials the mailbox over iroh.
+        let no_networking = !config.enable_p2p && !config.enable_blob_sync;
+
         let mut builder = P2PandaNode::builder()
             .network_id(config.network_id)
             .signing_key(node_keys.private_key.clone())
             .database_url(&url)
-            .mdns_mode(config.mdns_mode.clone())
             // Acknowledge operations explicitly, only once application-layer
             // processing has finished (see `spawn_application_processor_task`).
             .ack_policy(p2panda::node::AckPolicy::Explicit);
 
-        if config.use_relay {
-            builder = builder.relay_url(RELAY_URL.clone());
-        }
+        if no_networking {
+            builder = builder.offline();
+        } else {
+            builder = builder.mdns_mode(config.mdns_mode.clone());
 
-        // Phones change network under a running node; the connections from before
-        // the change must die quickly so peers stop being dialled at the old address.
-        #[cfg(any(target_os = "android", target_os = "ios"))]
-        {
-            builder = builder
-                .keep_alive_interval(std::time::Duration::from_secs(1))
-                .max_idle_timeout(std::time::Duration::from_secs(3));
-        }
+            if config.use_relay {
+                builder = builder.relay_url(RELAY_URL.clone());
+            }
 
-        // With p2p disabled, run zero random-walk discovery walkers so the node
-        // never initiates discovery sessions. Otherwise, inserting a mailbox's
-        // address (a full p2panda node when run in-process) would let discovery
-        // gossip our transport info through it, leaking a direct path to peers.
-        if !config.enable_p2p {
-            builder = builder.discovery_config(DiscoveryConfig {
-                random_walkers_count: 0,
-                ..Default::default()
-            });
+            // Phones change network under a running node; the connections from before
+            // the change must die quickly so peers stop being dialled at the old address.
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                builder = builder
+                    .keep_alive_interval(std::time::Duration::from_secs(1))
+                    .max_idle_timeout(std::time::Duration::from_secs(3));
+            }
+
+            if !config.enable_p2p {
+                builder = builder.discovery_config(DiscoveryConfig {
+                    random_walkers_count: 0,
+                    ..Default::default()
+                });
+            }
         }
 
         let p2panda_node = builder.spawn().await?;
         // @TODO: the store() method is behind the "test_utils" feature flag, if we actually do
         // need access to the store then we should make this method public.
         let store = p2panda_node.store();
-        let endpoint = p2panda_node.endpoint();
+        let endpoint = match no_networking {
+            true => None,
+            false => Some(p2panda_node.endpoint()?),
+        };
 
         // Spawn node actor.
         let (node_actor, events_rx) = Actor::new(p2panda_node);
@@ -363,6 +374,9 @@ impl Node {
         // deadlock this build. It reads the operation and builds a notification
         // from its payload only, so blob sync is skipped entirely.
         let blob_sync = if config.enable_blob_sync {
+            let endpoint = endpoint
+                .clone()
+                .context("blob sync needs an iroh endpoint")?;
             let self_endpoint = iroh::EndpointId::from_bytes(node_keys.device_id().as_bytes())?;
             let source_lookup = crate::blob_sync::MixedSourceLookup::new(
                 op_store.clone(),
@@ -383,7 +397,7 @@ impl Node {
             .await?;
             Some(
                 BlobSync::new(
-                    endpoint.clone(),
+                    endpoint,
                     filesystem.blobs_store_path(),
                     blob_fetch,
                     source_lookup,
@@ -573,9 +587,14 @@ impl Node {
     }
 
     /// The underlying iroh endpoint. An in-process mailbox shares this so its
-    /// `/health` response advertises the node's dialing address.
+    /// `/health` response advertises the node's dialing address. Errors on a
+    /// node spawned with no networking layer.
     pub async fn iroh_endpoint(&self) -> Result<iroh::Endpoint> {
-        Ok(self.endpoint.endpoint().await?)
+        let endpoint = self
+            .endpoint
+            .as_ref()
+            .context("this node has no networking layer and so no iroh endpoint")?;
+        Ok(endpoint.endpoint().await?)
     }
 
     /// Add (or refresh) a peer's dialing address (relay + direct addresses) in
@@ -585,6 +604,13 @@ impl Node {
     /// any existing entry so a stale one (refused by `AddressBookDiscovery`) is
     /// refreshed and becomes dialable again.
     pub async fn insert_peer_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
+        // A node with no networking layer dials nobody, so it keeps no address
+        // book. Callers register a mailbox's address on every poll; erroring
+        // here would take the mailbox registration down with it.
+        if self.endpoint.is_none() {
+            return Ok(());
+        }
+
         let (reply_tx, reply_rx) = oneshot::channel();
         self.actor_tx
             .send(Command::RegisterPeerAddr { addr, reply_tx })
@@ -1506,8 +1532,12 @@ impl Node {
         self.op_store.close().await;
 
         // Holds only sockets (no file lock), so it goes last. The node keeps its
-        // own endpoint clone, so the actor drop above doesn't release it.
-        match self.endpoint.endpoint().await {
+        // own endpoint clone, so the actor drop above doesn't release it. A node
+        // with no networking layer never opened one.
+        let Some(endpoint) = &self.endpoint else {
+            return Ok(());
+        };
+        match endpoint.endpoint().await {
             Ok(endpoint) => {
                 if tokio::time::timeout(std::time::Duration::from_secs(3), endpoint.close())
                     .await
