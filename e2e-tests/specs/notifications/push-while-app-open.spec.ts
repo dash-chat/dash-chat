@@ -23,7 +23,13 @@ const BURST = 20;
  * traffic at it — one iPhone is enough to reproduce. Only runs when
  * `E2E_PUSH=1`.
  */
-describe('Traffic landing while the app is open', () => {
+// wdio arms its per-test abort timer from the mocha timeout at invocation
+// time, so `this.timeout()` inside the test body comes too late — it must be
+// set suite-wide. `ROUNDS * BURST * 2` sends on a phone take well past the
+// 300s default, and each one gets slower as the chat grows.
+describe('Traffic landing while the app is open', function () {
+	this.timeout(1_800_000);
+
 	let iphone: Agent;
 	let mac: Agent;
 
@@ -60,8 +66,8 @@ describe('Traffic landing while the app is open', () => {
 			(_, i) => `sam ${round}.${i + 1}`,
 		);
 		for (let i = 0; i < BURST; i++) {
-			await iphone.directChatPage.composer.sendMessageOnce(fromRex[i]);
-			await mac.directChatPage.composer.sendMessageOnce(fromSam[i]);
+			await iphone.directChatPage.composer.sendMessage(fromRex[i]);
+			await mac.directChatPage.composer.sendMessage(fromSam[i]);
 		}
 		for (const message of [...fromRex, ...fromSam]) {
 			await iphone.directChatPage.messages.waitForMessage(message);

@@ -77,8 +77,8 @@ export type Agent = WebdriverIO.Browser & {
 	platform: AgentPlatformName;
 	/** The launch slot, which names the agent's data dir and log file. */
 	slot: number;
-	/** Whether the app was launched with peer-to-peer connectivity; false
-	 *  means it reaches peers through a mailbox only. */
+	/** Whether the app runs with peer-to-peer connectivity; false once
+	 *  `disableP2p` ran, after which it reaches peers through a mailbox only. */
 	p2p: boolean;
 
 	accountPage: AccountPage;
@@ -428,6 +428,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await iosWifiInfo(b)
 			: androidWifiInfo(androidUdid(b));
+	agent.killPushExtension = async () => {
+		if (agent.platform !== 'ios') {
+			throw new Error(`only iOS runs a push extension, got ${agent.platform}`);
+		}
+		killIosPushExtension(androidUdid(b));
+	};
 	agent.killPushExtension = async () => {
 		if (agent.platform !== 'ios') {
 			throw new Error(`only iOS runs a push extension, got ${agent.platform}`);

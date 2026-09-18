@@ -280,23 +280,6 @@ export class Composer extends TestHelper {
 		}
 	}
 
-	/** Type `text` and send it exactly once: the composer must clear on that
-	 * send alone. A send the app fails (it keeps the text and shows an error
-	 * toast) is the failure, not something to retry past. */
-	async sendMessageOnce(text: string): Promise<void> {
-		await this.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
-		await this.typeInto(tid('message-input-textarea'), text);
-		await this.agent.pause(50);
-		await this.send();
-		await this.agent.waitUntil(
-			async () => (await this.textareaValue()) === '',
-			{
-				timeout: 10_000,
-				timeoutMsg: `Composer did not clear after sending "${text}": the send failed`,
-			},
-		);
-	}
-
 	/** Press Enter in the composer. Sends on desktop; on mobile the app leaves
 	 * the key to the soft keyboard, which types a line break. */
 	async pressEnter(): Promise<void> {
