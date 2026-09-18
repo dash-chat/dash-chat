@@ -157,6 +157,11 @@ impl BlobSync {
         )
         .await;
         tracing::debug!(%hash, source_count, fetched, "blob fetch attempt");
+        // Not left to the observer: a concurrent attempt that gave up may have
+        // stopped it while this download was still in flight.
+        if fetched {
+            self.progress.notify_complete(hash).await;
+        }
         fetched
     }
 

@@ -40,7 +40,9 @@ export class BlobClient implements IBlobClient {
 		handlers.add(handler);
 		return () => {
 			handlers.delete(handler);
-			if (handlers.size === 0) this.#handlers.delete(hash);
+			if (handlers.size === 0 && this.#handlers.get(hash) === handlers) {
+				this.#handlers.delete(hash);
+			}
 		};
 	}
 

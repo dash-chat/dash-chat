@@ -53,11 +53,13 @@ impl BlobProgress {
         tasks.insert(hash, tokio::spawn(async move { this.observe(hash).await }));
     }
 
+    /// Abort the observer for `hash`. The byte count it recorded is kept so a
+    /// snapshot still reports the partial download until the next observer
+    /// runs.
     pub async fn stop(&self, hash: iroh_blobs::Hash) {
         if let Some(task) = self.tasks.lock().await.remove(&hash) {
             task.abort();
         }
-        self.bytes.lock().await.remove(&hash);
     }
 
     pub async fn is_watching(&self, hash: iroh_blobs::Hash) -> bool {
@@ -232,6 +234,30 @@ mod tests {
         );
         assert!(!progress.is_watching(tag.hash).await);
         assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stop_keeps_the_partial_byte_count_for_snapshots() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = iroh_blobs::store::fs::FsStore::load(dir.path())
+            .await
+            .unwrap();
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        let progress = BlobProgress::new(blobs, None);
+        let hash = iroh_blobs::Hash::new(b"partially downloaded");
+        progress.bytes.lock().await.insert(hash, 4096);
+
+        progress.stop(hash).await;
+
+        let snap = progress.snapshot(vec![hash]).await;
+        assert_eq!(
+            snap,
+            vec![BlobProgressEvent {
+                hash,
+                bytes: 4096,
+                complete: false
+            }]
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
