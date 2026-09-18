@@ -199,9 +199,10 @@ export class Fuzzer {
 
 	/**
 	 * The property "any sequence drawn from `sequences` keeps the real system
-	 * matching the model", every move checking it. A sequence starts where the
-	 * last one left the agents — the model carries that, and every move's
-	 * `check` gates on it — and whatever the run raised is torn down after it.
+	 * matching the model", every move checking it. A sequence starts with every
+	 * app on screen, carrying whatever else the last one left — the model holds
+	 * that, and every move's `check` gates on it — and whatever the run raised
+	 * is torn down after it.
 	 * A failure throws the report plus the sequence — shrunk, where
 	 * `params` allow it — as `move` builders.
 	 */
@@ -219,7 +220,10 @@ export class Fuzzer {
 				fc.asyncProperty(sequences, moves => {
 					sequence++;
 					log(`sequence ${sequence}: ${[...moves].length} moves drawn`);
-					return fc.asyncModelRun(() => ({ model, real }), moves);
+					return fc.asyncModelRun(async () => {
+						await resetSequence(model, real);
+						return { model, real };
+					}, moves);
 				}),
 				// Unbiased: the bias draws early runs' sequences short and their
 				// arguments small, and a run of one is all "early".
@@ -479,6 +483,43 @@ async function teardown(real: Real): Promise<void> {
 			}
 		}),
 	);
+}
+
+/**
+ * Put the cloud link and every app back to a known state before a sequence.
+ * Chats and messages are left alone: they carry over as they do on the
+ * devices, and so does what the model says each agent knows. What cannot
+ * carry over is a state no move is guaranteed to undo — an agent backgrounded
+ * in one sequence would stay away for the rest of the run while its device
+ * piles up notifications nothing reads, and a degradation left in force would
+ * outlive the sequence that raised it, so the heal that follows is checked
+ * against a chip budget written for a short outage.
+ */
+async function resetSequence(model: ExpectedModel, real: Real): Promise<void> {
+	if (real.cloud !== null) {
+		await real.cloud.heal();
+		model.setCloudUsable(true);
+	}
+	// Each agent's reset touches nothing but its own session.
+	await Promise.all(real.agents.map(sa => resetAgent(model, sa)));
+}
+
+async function resetAgent(
+	model: ExpectedModel,
+	sa: StressAgent,
+): Promise<void> {
+	if (model.isStopped(sa.name)) {
+		await sa.agent.startApp();
+		model.startApp(sa.name);
+	} else if (!model.isActive(sa.name)) {
+		// Resumes onto the route it was taken away from, clearing what it was
+		// showing for it.
+		await sa.agent.startApp();
+		model.foreground(sa.name);
+	}
+	if (!model.hasNetworks()) return;
+	await sa.agent.disableWifi();
+	model.agentLeave(sa.name);
 }
 
 /** A reported sequence, as the `move` builders that replay it. */

@@ -383,6 +383,10 @@ export class ExpectedModel {
 		return !this.backgrounded.has(name) && !this.stopped.has(name);
 	}
 
+	isStopped(name: string): boolean {
+		return this.stopped.has(name);
+	}
+
 	background(name: string): void {
 		this.backgrounded.add(name);
 	}
