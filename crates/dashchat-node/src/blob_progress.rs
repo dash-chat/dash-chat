@@ -62,6 +62,13 @@ impl BlobProgress {
         }
     }
 
+    /// Abort the observer for `hash` and drop its byte count, for a blob that
+    /// is no longer wanted.
+    pub async fn forget(&self, hash: iroh_blobs::Hash) {
+        self.stop(hash).await;
+        self.bytes.lock().await.remove(&hash);
+    }
+
     pub async fn is_watching(&self, hash: iroh_blobs::Hash) -> bool {
         self.tasks
             .lock()
@@ -255,6 +262,30 @@ mod tests {
             vec![BlobProgressEvent {
                 hash,
                 bytes: 4096,
+                complete: false
+            }]
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn forget_drops_the_partial_byte_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = iroh_blobs::store::fs::FsStore::load(dir.path())
+            .await
+            .unwrap();
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        let progress = BlobProgress::new(blobs, None);
+        let hash = iroh_blobs::Hash::new(b"deleted mid-download");
+        progress.bytes.lock().await.insert(hash, 4096);
+
+        progress.forget(hash).await;
+
+        let snap = progress.snapshot(vec![hash]).await;
+        assert_eq!(
+            snap,
+            vec![BlobProgressEvent {
+                hash,
+                bytes: 0,
                 complete: false
             }]
         );

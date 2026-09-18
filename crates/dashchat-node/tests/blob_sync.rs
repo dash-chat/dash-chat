@@ -254,7 +254,7 @@ async fn blob_progress_notifications_reach_completion() {
 }
 
 /// An on-demand attempt that gives up while another attempt is still
-/// transferring the same blob must not swallow the completion notification:
+/// transferring the same blob must leave the progress observer running, and
 /// once the blob lands, bobbi's channel still carries `complete = true`.
 #[tokio::test(flavor = "multi_thread")]
 async fn completion_is_notified_when_a_concurrent_attempt_gives_up_mid_download() {
@@ -358,7 +358,10 @@ async fn completion_is_notified_when_a_concurrent_attempt_gives_up_mid_download(
             .await,
         "transfer finished before the second attempt gave up; use a larger blob"
     );
-    assert!(!bobbi.blob_sync().progress.is_watching(hash).await);
+    assert!(
+        bobbi.blob_sync().progress.is_watching(hash).await,
+        "the observer stays up while the first attempt is still transferring"
+    );
 
     assert!(
         background.await.unwrap(),

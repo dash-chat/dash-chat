@@ -23,6 +23,7 @@ export class BlobProgressTracker {
 	state: BlobState = { bytes: 0, complete: false, stalled: false };
 	#timer: ReturnType<typeof setTimeout> | undefined;
 	#observed = false;
+	#disposed = false;
 
 	constructor(
 		private onChange: (state: BlobState) => void,
@@ -30,7 +31,7 @@ export class BlobProgressTracker {
 	) {}
 
 	apply(progress: { bytes: number; complete: boolean }): void {
-		if (this.state.complete) return;
+		if (this.#disposed || this.state.complete) return;
 		if (progress.complete) {
 			this.#clearTimer();
 			this.#set({
@@ -52,12 +53,15 @@ export class BlobProgressTracker {
 	}
 
 	retry(): void {
-		if (this.state.complete) return;
+		if (this.#disposed || this.state.complete) return;
 		this.#restartTimer();
 		this.#set({ ...this.state, stalled: false });
 	}
 
+	/** Stop tracking: later snapshots and events are ignored, so a snapshot
+	 * that resolves after teardown can't start a stall timer. */
 	dispose(): void {
+		this.#disposed = true;
 		this.#clearTimer();
 	}
 

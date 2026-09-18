@@ -90,6 +90,14 @@ describe('BlobProgressTracker', () => {
 		assert.equal(states.length, 2);
 	});
 
+	it('ignores a snapshot that lands after dispose', () => {
+		tracker.dispose();
+		tracker.apply({ bytes: 0, complete: false });
+		mock.timers.tick(BLOB_STALL_INTERVAL_MS);
+		assert.equal(states.length, 0);
+		assert.equal(tracker.state.stalled, false);
+	});
+
 	it('notifies a first observation that is already complete', () => {
 		tracker.apply({ bytes: 800, complete: true });
 		assert.deepEqual(states, [{ bytes: 800, complete: true, stalled: false }]);
