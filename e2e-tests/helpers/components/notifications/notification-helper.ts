@@ -3,7 +3,34 @@
  * and Android read notifications differently (SpringBoard cells vs the
  * notification shade), so a factory picks the implementation by platform.
  */
+/** One notification the OS is holding, as its content shows it. */
+export interface DeliveredNotification {
+	/** Its title — for a chat message, the sender's name. */
+	title: string;
+	/** Every string it shows, title and body included. */
+	texts: string[];
+}
+
 export interface NotificationHelper {
+	/** Every notification of this app the OS currently holds. */
+	delivered(): Promise<DeliveredNotification[]>;
+	/** Read what the OS holds, repeatedly, for as long as `fn` runs. Android
+	 * reads the notification service directly, so a read disturbs nothing;
+	 * iOS has to open Notification Center, which takes the app off screen and
+	 * clears the route it resumes onto — so it opens once here and closes at
+	 * the end, and a poll loop costs one resume rather than one per read. */
+	readingDelivered<T>(
+		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
+	): Promise<T>;
+	/** Take every notification this app has posted off the device. The OS
+	 * keeps them across an app data reset, so a run that reads notifications
+	 * starts from nothing rather than from what an earlier run left. */
+	clear(): Promise<void>;
+	/** Whether reading resumes a foregrounded app, which the app answers by
+	 * clearing what it was showing for the route it resumes onto. True where
+	 * reading has to go through the notification UI; a caller that tracks
+	 * what the device is showing has to fold that clearing in. */
+	readonly readingResumesApp: boolean;
 	/** Wait for a delivered notification whose text contains `textIncludes`;
 	 * returns its full text (title + body). */
 	waitForNotification(textIncludes: string, timeout?: number): Promise<string>;
@@ -73,15 +100,22 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 	 * `activateApp` is idempotent: it launches a stopped app and merely
 	 * foregrounds a running one. */
 	private async foregroundApp(): Promise<void> {
+		const appId = this.appId();
+		if (appId === undefined) return;
+		await this.agent.activateApp(appId);
+	}
+
+	/** The app's package (Android) or bundle id (iOS), as the session was
+	 * started with. */
+	protected appId(): string | undefined {
 		const caps = this.agent.requestedCapabilities as Record<string, unknown>;
 		const appId = caps['appium:appPackage'] ?? caps['appium:bundleId'];
-		if (typeof appId !== 'string') return;
-		await this.agent.activateApp(appId);
+		return typeof appId === 'string' ? appId : undefined;
 	}
 
 	/** Close the notification UI, resume the app and return to its webview, so
 	 * the session is driveable again for whatever runs next. */
-	private async restoreWebview(): Promise<void> {
+	protected async restoreWebview(): Promise<void> {
 		await this.dismissNotificationUi();
 		await this.foregroundApp();
 		await this.switchToWebview();
@@ -104,8 +138,20 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 		}
 	}
 
+	readonly readingResumesApp: boolean = false;
+
+	/** Reading disturbs nothing, so `fn` gets [`delivered`] as it stands.
+	 * Overridden where a read has to open the notification UI. */
+	readingDelivered<T>(
+		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
+	): Promise<T> {
+		return fn(() => this.delivered());
+	}
+
 	/** Close the platform's notification UI (shade / Notification Center). */
 	protected abstract dismissNotificationUi(): Promise<void>;
+
+	abstract clear(): Promise<void>;
 
 	/** Run `fn` (which works in the native context); when it fails, close the
 	 * notification UI and restore the webview context before rethrowing, so a
@@ -131,6 +177,7 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 		}
 	}
 
+	abstract delivered(): Promise<DeliveredNotification[]>;
 	abstract waitForNotification(
 		textIncludes: string,
 		timeout?: number,

@@ -1,3 +1,4 @@
+import { createProfiles } from '../../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -11,10 +12,7 @@ describe('Double contact request', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await Promise.all([
-			alice.createProfilePage.createProfile('Alice', 'Test'),
-			bob.createProfilePage.createProfile('Bob', 'Test'),
-		]);
+		await createProfiles({ Alice: alice, Bob: bob });
 		await navigateToAddContact(bob);
 		bobCode = await bob.addContactPage.getAddContactLink();
 	});

@@ -1,3 +1,4 @@
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
@@ -13,8 +14,7 @@ describe('Full messaging flow', () => {
 	});
 
 	it('creates profiles on both agents', async () => {
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
+		await createProfiles({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('sends a contact request from Alice to Bob', async () => {
@@ -35,7 +35,7 @@ describe('Full messaging flow', () => {
 	it('hides Alice’s messages from Bob behind a disclosure until he reveals them', async () => {
 		await agent2.addContactPage.back.click();
 		await agent2.newMessagePage.back.click();
-		await agent2.homePage.openChat('Alice Test');
+		await agent2.homePage.openChat('Alice');
 		// The request is still unanswered: the accept bar is showing while the
 		// pre-accept message stays hidden behind the request-messages disclosure.
 		await agent2.directChatPage.acceptButton.waitForExist();
@@ -65,10 +65,10 @@ describe('Full messaging flow', () => {
 	it('summarizes the chat as a message request while it is pending', async () => {
 		await agent2.directChatPage.back.click();
 		await agent2.homePage.ready();
-		const rowText = await agent2.homePage.chatRowText('Alice Test');
+		const rowText = await agent2.homePage.chatRowText('Alice');
 		expect(rowText).toContain(await agent2.tr('messageRequest'));
 		expect(rowText).not.toContain('Hello before accept!');
-		await agent2.homePage.openChat('Alice Test');
+		await agent2.homePage.openChat('Alice');
 		await agent2.directChatPage.acceptButton.waitForExist();
 	});
 

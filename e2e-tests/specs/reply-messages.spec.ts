@@ -1,4 +1,4 @@
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Replying to messages', () => {
@@ -10,9 +10,7 @@ describe('Replying to messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('replies to a peer message and renders the quote on both sides', async () => {
@@ -133,7 +131,7 @@ describe('Replying to messages', () => {
 		// The deleted content never shows anywhere — including inside quotes.
 		const deletedByMe = await agent1.tr('youDeletedThisMessage');
 		const deletedByAlice = await agent2.tr('someoneDeletedThisMessage', {
-			name: 'Alice Test',
+			name: 'Alice',
 		});
 		await agent1.directChatPage.messages.waitForMessageGone('Secret plans');
 		await agent2.directChatPage.messages.waitForDeleted(

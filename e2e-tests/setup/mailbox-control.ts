@@ -30,6 +30,11 @@ const MAILBOX_INFO_PATH = path.join(
 	'mailbox-info.json',
 );
 
+/** What a suspended mailbox gets to answer before it counts as not serving:
+ * a SIGSTOPped process never answers, and a healthy local one answers at
+ * once. */
+const HEALTH_TIMEOUT_MS = 2_000;
+
 interface MailboxInfo {
 	url: string;
 	pid: number;
@@ -59,6 +64,26 @@ function localInfo(): MailboxInfo {
 		);
 	}
 	return readInfo();
+}
+
+/**
+ * Whether an operation reaching the mailbox wakes a phone: it forwards
+ * arrivals to a push-notifications server, and is answering. A spec that
+ * suspends or kills the mailbox leaves nothing to forward them, so nothing
+ * reaches a device whose app is away.
+ */
+export async function mailboxWakesPhones(): Promise<boolean> {
+	if (isRemoteMailbox()) return false;
+	const info = readInfo();
+	if (info.pushNotificationsUrl === undefined) return false;
+	try {
+		const res = await fetch(`${info.url}/health`, {
+			signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+		});
+		return res.ok;
+	} catch {
+		return false;
+	}
 }
 
 /** The link every agent reaches the mailbox through, to degrade and heal. */

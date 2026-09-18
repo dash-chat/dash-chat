@@ -17,10 +17,16 @@
  * (default random; the run logs it — re-run with the same seed to reproduce
  * a failure).
  */
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
+import { blockMoves } from '../helpers/fuzz/moves/block';
 import { cloudMoves } from '../helpers/fuzz/moves/cloud';
+import { exchangeContactMoves } from '../helpers/fuzz/moves/contacts';
 import { deviceMoves } from '../helpers/fuzz/moves/device';
-import { userMoves } from '../helpers/fuzz/moves/user';
+import { groupMoves } from '../helpers/fuzz/moves/groups';
+import { mediaMoves } from '../helpers/fuzz/moves/media';
+import { profileMoves } from '../helpers/fuzz/moves/profile';
+import { textMessageMoves } from '../helpers/fuzz/moves/text-messages';
 import { envInt } from '../helpers/utils';
 import { isRemoteMailbox, mailboxLink } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
@@ -42,15 +48,9 @@ describe('Spotty cloud stress', () => {
 		// Without p2p every op has to travel through the cloud mailbox, so
 		// its link is the only thing the checks measure.
 		await Promise.all([agent1.disableP2p(), agent2.disableP2p()]);
-		await agent1.createProfilePage.createProfile('Alice', 'Stress');
-		await agent2.createProfilePage.createProfile('Bob', 'Stress');
-		fuzzer = await Fuzzer.prepare(this, {
-			agents: [
-				{ agent: agent1, name: 'Alice' },
-				{ agent: agent2, name: 'Bob' },
-			],
-			cloud: mailboxLink(),
-		});
+		const agents = { Alice: agent1, Bob: agent2 };
+		await createProfiles(agents);
+		fuzzer = await Fuzzer.prepare(this, { agents, cloud: mailboxLink() });
 	});
 
 	it('agents behave normally for the whole run while the cloud link flaps', async () => {
@@ -58,7 +58,16 @@ describe('Spotty cloud stress', () => {
 		const length = envInt('E2E_STRESS_COMMANDS', 40);
 		const seed = envInt('E2E_STRESS_SEED', Math.floor(Math.random() * 2 ** 31));
 		await fuzzer.search({
-			moves: [...userMoves, ...deviceMoves, ...cloudMoves],
+			moves: [
+				...exchangeContactMoves,
+				...blockMoves,
+				...textMessageMoves,
+				...mediaMoves,
+				...groupMoves,
+				...profileMoves,
+				...deviceMoves,
+				...cloudMoves,
+			],
 			attempts,
 			length,
 			seed,

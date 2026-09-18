@@ -10,6 +10,7 @@ use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
 use iroh_blobs::provider::events::{EventMask, EventSender, ProviderMessage, ThrottleMode};
+use p2panda_net::NetworkId;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
@@ -269,11 +270,13 @@ impl BlobSync {
     /// blob store. When `relay_url` is set the endpoint registers with that
     /// relay so it is reachable behind NAT and its advertised [`EndpointAddr`]
     /// includes the relay; the call waits (bounded) for the relay connection so
-    /// the first `/health` response carries a complete address.
+    /// the first `/health` response carries a complete address. Only peers on
+    /// `network_id` can transfer blobs with it.
     pub async fn new(
         secret_key: iroh::SecretKey,
         root: PathBuf,
         relay_url: Option<iroh::RelayUrl>,
+        network_id: NetworkId,
     ) -> anyhow::Result<Self> {
         let peer_addr_lookup = MemoryLookup::new();
         let mut builder = iroh::Endpoint::builder(presets::Minimal)
@@ -574,9 +577,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
         let expected = key.public();
-        let bs = BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
+        let bs = BlobSync::new(
+            key,
+            dir.path().to_path_buf(),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
         assert_eq!(bs.endpoint_id(), expected);
     }
 

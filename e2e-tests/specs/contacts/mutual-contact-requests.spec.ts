@@ -1,3 +1,4 @@
+import { createProfiles } from '../../helpers/flows/create-profiles';
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { tid } from '../../helpers/selectors';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
@@ -25,18 +26,15 @@ describe('Mutual contact requests', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await Promise.all([
-			alice.createProfilePage.createProfile('Alice', 'Test'),
-			bob.createProfilePage.createProfile('Bob', 'Test'),
-		]);
+		await createProfiles({ Alice: alice, Bob: bob });
 	});
 
 	it('establishes contact when both peers send requests to each other', async () => {
-		await exchangeContacts(alice, bob);
+		await exchangeContacts([alice, bob]);
 
 		// Both should land on the direct chat without needing to press Accept.
-		await waitForTextContent(alice, tid('direct-chat-peer-header'), 'Bob Test');
-		await waitForTextContent(bob, tid('direct-chat-peer-header'), 'Alice Test');
+		await waitForTextContent(alice, tid('direct-chat-peer-header'), 'Bob');
+		await waitForTextContent(bob, tid('direct-chat-peer-header'), 'Alice');
 
 		// The accept banner should not be present for either side: mutual
 		// requests are implicitly accepted.

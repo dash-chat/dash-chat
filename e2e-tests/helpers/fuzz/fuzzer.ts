@@ -11,24 +11,32 @@
 import fc from 'fast-check';
 
 import { assertInRange, leaveWifi, wifiDevice } from '../../setup/host-wifi';
+import { mailboxWakesPhones } from '../../setup/mailbox-control';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
 import type { Link } from '../../setup/toxiproxy';
-import { navigateToAddContact } from '../flows/exchange-contacts';
+import type { RenderedMessage } from '../components/messages';
+import { contactLinkOf } from '../flows/exchange-contacts';
 import { createGroup } from '../flows/exchange-contacts-and-create-group';
 import {
 	type Real,
 	type StressAgent,
-	addContact,
 	ensureHome,
-	goHome,
 	labNetworks,
 	log,
 	newReal,
+	openChatByTitle,
 	openChatPage,
 	parkHub,
+	readNotificationTexts,
 } from './agents';
-import { type ExpectedModel, newModel } from './model';
+import { expectNotifications } from './checks';
+import {
+	type ExpectedChat,
+	type ExpectedModel,
+	type MessageKind,
+	newModel,
+} from './model';
 import { type Move, type Moves, steps } from './moves/move';
 
 export type { Move, Moves } from './moves/move';
@@ -80,22 +88,31 @@ export class Fuzzer {
 	) {}
 
 	/**
-	 * A fuzzer over `agents`, driven to where moves expect them: preview
-	 * features on, each one's contact link collected, and — given networks
-	 * to walk phones and hubs through, and a Wi-Fi card on the host for the
-	 * hubs, or the `cloud` mailbox's link to degrade — a members-less group
-	 * chat each, to read the connection chip in. The network the phones are
-	 * on to begin with is the run's home network: phones may walk onto it,
-	 * and the hubs are on it whenever the card is. Every agent is left on
-	 * its home page. Preparation is not repeatable, so a spec prepares once,
-	 * from its `before` hook — whose context `ctx` is, so that the suite's
-	 * tests can be freed of their timeout before any of them starts — and
-	 * runs as often as it likes.
+	 * A fuzzer over `agents` — the ones a spec has already set up and given
+	 * profiles, by name, as `createProfiles` takes them — driven to where
+	 * moves expect them: preview features on, each
+	 * one's contact link collected, and — given networks to walk phones and
+	 * hubs through, and a Wi-Fi card on the host for the hubs, or the `cloud`
+	 * mailbox's link to degrade — a members-less group chat each, to read the
+	 * connection chip in. It makes no contacts and seeds nothing: it reads
+	 * whatever the agents already have — who they are contacts of, the groups
+	 * they are in, the messages in each chat — and starts the model from
+	 * that, so a spec can exchange contacts itself beforehand, or hand over
+	 * agents another run left behind, and a run's own `addContact` moves are
+	 * checked like any other move. The network the phones are on to begin with is
+	 * the run's home network: phones may walk onto it, and the hubs are on it
+	 * whenever the card is. Preparation is not repeatable, so a spec prepares
+	 * once, from its `before` hook — whose context `ctx` is, so that the
+	 * suite's tests can be freed of their timeout before any of them starts —
+	 * and runs as often as it likes.
 	 */
 	static async prepare(
 		ctx: Mocha.Context,
 		init: {
-			agents: { agent: Agent; name: string }[];
+			/** The agents the run drives, by the profile name each goes by:
+			 *  unique, and none a substring of another, since a name is how a
+			 *  chat row, a notification and a move report name its agent. */
+			agents: Record<string, Agent>;
 			networks?: WifiNetwork[];
 			cloud?: Link;
 		},
@@ -114,6 +131,7 @@ export class Fuzzer {
 		const real = newReal({
 			...init,
 			hubsDevice: networked ? wifiDevice() : null,
+			push: await mailboxWakesPhones(),
 		});
 		if (networked) {
 			if (real.hubsDevice === null) {
@@ -127,8 +145,17 @@ export class Fuzzer {
 				labNetworks(real).map(n => n.ssid),
 			);
 		}
+		for (const sa of real.agents) {
+			sa.notificationTexts = await readNotificationTexts(sa);
+		}
 		const model = newModel(real);
 		await prepareAgents(model, real);
+		await recordExistingState(model, real);
+		// The devices start where the model says they do — nothing showing,
+		// the clear above having taken. Asserting it here makes a clear that
+		// did not work say so, instead of surfacing as the first move being
+		// blamed for a notification an earlier run left behind.
+		await expectNotifications(model, real);
 		return new Fuzzer(model, real);
 	}
 
@@ -172,8 +199,10 @@ export class Fuzzer {
 
 	/**
 	 * The property "any sequence drawn from `sequences` keeps the real system
-	 * matching the model", every move checking it: the network side is reset
-	 * before each sequence and whatever it raised is torn down after the run.
+	 * matching the model", every move checking it. A sequence starts with every
+	 * app on screen, carrying whatever else the last one left — the model holds
+	 * that, and every move's `check` gates on it — and whatever the run raised
+	 * is torn down after it.
 	 * A failure throws the report plus the sequence — shrunk, where
 	 * `params` allow it — as `move` builders.
 	 */
@@ -192,7 +221,7 @@ export class Fuzzer {
 					sequence++;
 					log(`sequence ${sequence}: ${[...moves].length} moves drawn`);
 					return fc.asyncModelRun(async () => {
-						await resetNetworks(model, real);
+						await resetSequence(model, real);
 						return { model, real };
 					}, moves);
 				}),
@@ -233,8 +262,8 @@ async function restorePhone(
  *  Read before anything is left or forgotten, so the run cannot take the
  *  network everyone sits on for a lab one. */
 async function inferHomeNetwork(real: Real): Promise<void> {
-	const ssids = new Set<string>();
-	for (const sa of real.agents) ssids.add((await sa.agent.wifiInfo()).ssid);
+	const infos = await Promise.all(real.agents.map(sa => sa.agent.wifiInfo()));
+	const ssids = new Set(infos.map(info => info.ssid));
 	if (ssids.size !== 1) {
 		throw new Error(
 			`the phones are on different networks to begin with (${[...ssids].join(', ')}); put them on the host's network`,
@@ -253,47 +282,180 @@ async function inferHomeNetwork(real: Real): Promise<void> {
 
 /** The host's card and every phone back on their usual networks. */
 async function restoreNetworks(real: Real): Promise<void> {
-	for (const sa of real.agents) await sa.agent.enableWifi();
+	// Per phone and independent, so every phone does it at once; only the
+	// host's own card has to be taken off the lab networks in turn.
+	await Promise.all(real.agents.map(sa => sa.agent.enableWifi()));
 	await inferHomeNetwork(real);
 	for (const network of labNetworks(real)) await leaveWifi(network.ssid);
-	for (const sa of real.agents) await restorePhone(sa, labNetworks(real));
+	await Promise.all(real.agents.map(sa => restorePhone(sa, labNetworks(real))));
 }
 
+/** Drive every agent to where moves expect it. Each drives its own session
+ *  and reads nothing of another's, so they are prepared at once: with a
+ *  handful of agents this is the difference between one wait and n of them.
+ *  The group names are drawn before, and recorded after, so the shared model
+ *  is only ever touched from here. */
 async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {
-	for (const sa of real.agents) {
-		await sa.agent.enablePreviewFeatures();
-		await sa.agent.homePage.ready();
-		await navigateToAddContact(sa.agent);
-		sa.link = await sa.agent.addContactPage.getAddContactLink();
-		await sa.agent.addContactPage.back.click();
-		await sa.agent.newMessagePage.back.click();
-		await sa.agent.homePage.ready();
-		if (!model.watchesChip()) continue;
-		const chatName = model.nextGroupName();
-		await createGroup(sa.agent, chatName, []);
-		await ensureHome(sa);
-		model.addGroup(sa.name, [], chatName);
+	const chipChats = new Map<StressAgent, string>();
+	if (model.watchesChip()) {
+		for (const sa of real.agents) chipChats.set(sa, model.nextGroupName());
 	}
-	if (!model.hasNetworks()) return;
-	// The peer checks probe every direct chat, so every pair are contacts
-	// before the first sequence — established, profiles included, while the
-	// phones still share their usual LAN.
-	for (const sa of real.agents) {
-		for (const peer of real.agents) {
-			if (peer === sa) continue;
-			await addContact(sa, peer);
-			model.recordAdded(sa.name, peer.name);
+	await Promise.all(
+		real.agents.map(sa => prepareAgent(model, sa, chipChats.get(sa) ?? null)),
+	);
+	for (const [sa, chatName] of chipChats) {
+		model.setChipChat(sa.name, model.addGroup(sa.name, [], chatName));
+		model.wentHome(sa.name);
+	}
+}
+
+/** What one agent's screen says it already has: the chats in its list, and
+ *  what is in each of them. */
+interface FoundState {
+	sa: StressAgent;
+	titles: string[];
+	chats: Map<string, RenderedMessage[]>;
+}
+
+/**
+ * Build the model from what the agents already have, so a spec can set them
+ * up however it likes — exchange contacts, seed chats, or hand over agents a
+ * previous run left behind — and the run carries on from there.
+ *
+ * Chats are read from the lists: a row titled with another agent's name is
+ * that pair's direct chat, and any other row is a group whose members are
+ * exactly the agents whose lists hold it.
+ */
+async function recordExistingState(
+	model: ExpectedModel,
+	real: Real,
+): Promise<void> {
+	const found = await Promise.all(real.agents.map(readState));
+	const names = new Set(real.agents.map(sa => sa.name));
+	for (const { sa, titles } of found) {
+		for (const title of titles) {
+			if (names.has(title)) model.recordExistingContacts(sa.name, title);
 		}
 	}
-	for (const sa of real.agents) {
-		for (const peer of real.agents) {
-			if (peer === sa) continue;
-			await openChatPage(sa, model.directChat(sa.name, peer.name), model);
-			await sa.agent.directChatPage.waitForPeerProfile();
-			await goHome(sa, sa.agent.directChatPage);
+	for (const title of new Set(found.flatMap(f => f.titles))) {
+		if (names.has(title)) continue;
+		const members = found.filter(f => f.titles.includes(title)).map(f => f.sa);
+		model.recordExistingGroup(
+			title,
+			members.map(member => member.name),
+		);
+	}
+	recordExistingMessages(model, found);
+	if (found.some(f => f.titles.length > 0)) {
+		log(`started from ${describeFound(found)}`);
+	}
+}
+
+/** Read one agent's chat list and every chat in it. */
+async function readState(sa: StressAgent): Promise<FoundState> {
+	await sa.agent.homePage.ready();
+	const titles = await sa.agent.homePage.chatTitles();
+	const chats = new Map<string, RenderedMessage[]>();
+	for (const title of titles) {
+		const page = await openChatByTitle(sa, title);
+		chats.set(title, await page.messages.renderedMessages());
+		await page.back.click();
+		await sa.agent.homePage.ready();
+	}
+	return { sa, titles, chats };
+}
+
+/** Put every message the agents were already showing into the model, each
+ *  known by exactly the agents whose screen had it. */
+function recordExistingMessages(
+	model: ExpectedModel,
+	found: FoundState[],
+): void {
+	for (const { sa, chats } of found) {
+		for (const [title, rendered] of chats) {
+			const chat = model.chatByName(title, sa.name);
+			if (chat === null) continue;
+			let previous: string | null = null;
+			for (const message of rendered) {
+				const sender = senderOf(message, chat, sa.name, previous);
+				previous = sender;
+				const label = labelOf(message);
+				if (label === null) continue;
+				model.recordExistingMessage(
+					chat,
+					sender,
+					kindOf(message),
+					label,
+					[sa.name],
+					{ deleted: message.deleted, reactions: message.reactions },
+				);
+			}
 		}
 	}
-	model.propagateShared();
+}
+
+/** What identifies a rendered message in the model: its text, or the media
+ *  name or duration its bubble shows. */
+function labelOf(message: RenderedMessage): string | null {
+	if (message.deleted) return null;
+	if (message.photoAlts.length > 0) return message.photoAlts[0];
+	if (message.fileName !== null) return message.fileName.trim();
+	if (message.voiceDuration !== null) return message.voiceDuration;
+	const text = message.text?.trim() ?? '';
+	return text === '' ? null : text;
+}
+
+function kindOf(message: RenderedMessage): MessageKind {
+	if (message.photoAlts.length > 0) return 'photo';
+	if (message.fileName !== null) return 'file';
+	if (message.voiceDuration !== null) return 'voice';
+	return 'text';
+}
+
+/** Who sent a message the screen is showing: its reader when the bubble is
+ *  its own, the name a group attributes it to, the sender of the bubble above
+ *  it, or the peer of a direct chat. */
+function senderOf(
+	message: RenderedMessage,
+	chat: ExpectedChat,
+	reader: string,
+	previous: string | null,
+): string {
+	if (message.mine) return reader;
+	if (message.sender !== null) return message.sender;
+	// A group renders the name on the first bubble of a run of consecutive
+	// messages, so a bubble without one was sent by whoever sent the last.
+	if (previous !== null) return previous;
+	return chat.members.find(member => member !== reader) ?? reader;
+}
+
+function describeFound(found: FoundState[]): string {
+	return found
+		.filter(f => f.titles.length > 0)
+		.map(f => `${f.sa.name} in ${f.titles.join(', ')}`)
+		.join('; ');
+}
+
+/** One agent: preview features on, its device's notifications cleared, its
+ *  add-contact link collected, and the members-less group a run that watches
+ *  the connection chip reads it in. */
+async function prepareAgent(
+	model: ExpectedModel,
+	sa: StressAgent,
+	chipChat: string | null,
+): Promise<void> {
+	await sa.agent.enablePreviewFeatures();
+	// The device keeps what earlier runs posted across the session's app data
+	// reset, and the model starts with nothing on it.
+	await sa.notifications?.clear();
+	// A spec hands its agents over wherever its own setup left them, which for
+	// `exchangeContacts` is their direct chat.
+	await ensureHome(sa, model);
+	sa.link = await contactLinkOf(sa.agent);
+	if (chipChat === null) return;
+	await createGroup(sa.agent, chipChat, []);
+	await sa.agent.groupChatPage.back.click();
+	await sa.agent.homePage.ready();
 }
 
 /** Park every hub and take the host's card off the test networks. */
@@ -301,35 +463,6 @@ async function parkHubs(real: Real): Promise<void> {
 	for (const hub of real.hubs) await parkHub(hub);
 	if (real.hubsNetwork !== null) await leaveWifi(real.hubsNetwork);
 	real.hubsNetwork = null;
-}
-
-/**
- * Put the network side back to its starting state — the cloud link healthy,
- * every hub parked and on no LAN, every phone foregrounded, at home and off
- * the air — so that every sequence, drawn or shrunk, begins from the same
- * place. Chats and messages are left alone: they carry over as they do on
- * the devices, and so does what the model says each agent knows.
- */
-async function resetNetworks(model: ExpectedModel, real: Real): Promise<void> {
-	if (real.cloud !== null) {
-		await real.cloud.heal();
-		model.setCloudUsable(true);
-	}
-	if (model.hasNetworks()) {
-		await parkHubs(real);
-		for (const hub of model.hubs) {
-			hub.network = null;
-			hub.running = false;
-		}
-	}
-	for (const sa of real.agents) {
-		await sa.agent.startApp();
-		model.foreground(sa.name);
-		await ensureHome(sa);
-		if (!model.hasNetworks()) continue;
-		await sa.agent.disableWifi();
-		model.agentLeave(sa.name);
-	}
 }
 
 /** Leave nothing of a run behind: the cloud link healthy, hubs down, the
@@ -341,13 +474,52 @@ async function teardown(real: Real): Promise<void> {
 	await parkHubs(real);
 	if (real.networks.length === 0) return;
 	for (const network of labNetworks(real)) await leaveWifi(network.ssid);
-	for (const sa of real.agents) {
-		try {
-			await restorePhone(sa, labNetworks(real));
-		} catch {
-			/* no saved network in range; nothing to restore */
-		}
+	await Promise.all(
+		real.agents.map(async sa => {
+			try {
+				await restorePhone(sa, labNetworks(real));
+			} catch {
+				/* no saved network in range; nothing to restore */
+			}
+		}),
+	);
+}
+
+/**
+ * Put the cloud link and every app back to a known state before a sequence.
+ * Chats and messages are left alone: they carry over as they do on the
+ * devices, and so does what the model says each agent knows. What cannot
+ * carry over is a state no move is guaranteed to undo — an agent backgrounded
+ * in one sequence would stay away for the rest of the run while its device
+ * piles up notifications nothing reads, and a degradation left in force would
+ * outlive the sequence that raised it, so the heal that follows is checked
+ * against a chip budget written for a short outage.
+ */
+async function resetSequence(model: ExpectedModel, real: Real): Promise<void> {
+	if (real.cloud !== null) {
+		await real.cloud.heal();
+		model.setCloudUsable(true);
 	}
+	// Each agent's reset touches nothing but its own session.
+	await Promise.all(real.agents.map(sa => resetAgent(model, sa)));
+}
+
+async function resetAgent(
+	model: ExpectedModel,
+	sa: StressAgent,
+): Promise<void> {
+	if (model.isStopped(sa.name)) {
+		await sa.agent.startApp();
+		model.startApp(sa.name);
+	} else if (!model.isActive(sa.name)) {
+		// Resumes onto the route it was taken away from, clearing what it was
+		// showing for it.
+		await sa.agent.startApp();
+		model.foreground(sa.name);
+	}
+	if (!model.hasNetworks()) return;
+	await sa.agent.disableWifi();
+	model.agentLeave(sa.name);
 }
 
 /** A reported sequence, as the `move` builders that replay it. */

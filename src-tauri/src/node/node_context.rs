@@ -49,6 +49,19 @@ impl NodeRole {
     }
 }
 
+/// The p2p network e2e agents live on. An e2e build is given the run's
+/// `E2E_NETWORK_ID` (64 hex characters), so test runs sharing a LAN, each
+/// built with its own id, refuse each other's peers; a build without one gets
+/// the id every such build shares.
+fn e2e_network_id() -> [u8; 32] {
+    match option_env!("E2E_NETWORK_ID") {
+        Some(id) => {
+            <[u8; 32] as hex::FromHex>::from_hex(id).expect("E2E_NETWORK_ID is 64 hex characters")
+        }
+        None => *b"dashchat end-to-end test network",
+    }
+}
+
 /// The capabilities and wiring with which a Node is built.
 ///
 /// A `NodeContext` describes what a Node is allowed to do and which external

@@ -13,9 +13,15 @@
  * E2E_STRESS_SEED (default random; the run logs it — re-run with the same
  * seed to reproduce a failure).
  */
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
+import { blockMoves } from '../helpers/fuzz/moves/block';
+import { exchangeContactMoves } from '../helpers/fuzz/moves/contacts';
 import { deviceMoves } from '../helpers/fuzz/moves/device';
-import { userMoves } from '../helpers/fuzz/moves/user';
+import { groupMoves } from '../helpers/fuzz/moves/groups';
+import { mediaMoves } from '../helpers/fuzz/moves/media';
+import { profileMoves } from '../helpers/fuzz/moves/profile';
+import { textMessageMoves } from '../helpers/fuzz/moves/text-messages';
 import { envInt } from '../helpers/utils';
 import {
 	isRemoteMailbox,
@@ -42,14 +48,9 @@ describe('P2P offline stress', () => {
 		// it must travel over a direct p2p connection.
 		suspendMailbox();
 		mailboxSuspended = true;
-		await agent1.createProfilePage.createProfile('Alice', 'Stress');
-		await agent2.createProfilePage.createProfile('Bob', 'Stress');
-		fuzzer = await Fuzzer.prepare(this, {
-			agents: [
-				{ agent: agent1, name: 'Alice' },
-				{ agent: agent2, name: 'Bob' },
-			],
-		});
+		const agents = { Alice: agent1, Bob: agent2 };
+		await createProfiles(agents);
+		fuzzer = await Fuzzer.prepare(this, { agents });
 	});
 
 	after(() => {
@@ -65,7 +66,15 @@ describe('P2P offline stress', () => {
 		const commands = envInt('E2E_STRESS_COMMANDS', 80);
 		const seed = envInt('E2E_STRESS_SEED', Math.floor(Math.random() * 2 ** 31));
 		await fuzzer.soak({
-			moves: [...userMoves, ...deviceMoves],
+			moves: [
+				...exchangeContactMoves,
+				...blockMoves,
+				...textMessageMoves,
+				...mediaMoves,
+				...groupMoves,
+				...profileMoves,
+				...deviceMoves,
+			],
 			length: commands,
 			seed,
 		});

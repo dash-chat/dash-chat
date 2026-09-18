@@ -43,7 +43,8 @@ pub fn mailbox_network_id() -> [u8; 32] {
 
 #[cfg(feature = "iroh")]
 pub static RELAY_URL: std::sync::LazyLock<iroh::RelayUrl> = std::sync::LazyLock::new(|| {
-    "https://euc1-1.relay.guillemcordoba.dash-chat.iroh.link/"
+    option_env!("E2E_RELAY_URL")
+        .unwrap_or("https://euc1-1.relay.guillemcordoba.dash-chat.iroh.link/")
         .parse()
         .expect("valid relay URL")
 });

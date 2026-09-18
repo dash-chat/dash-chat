@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use p2panda_net::NetworkId;
 use push_notifications_client::client::PushNotificationsClient;
 use redb::Database;
 use serde::{Deserialize, Serialize};
@@ -99,12 +100,20 @@ fn db_path_blobs_dir(db_path: &std::path::Path) -> std::path::PathBuf {
         .join("mailbox_blobs")
 }
 
+/// Parse a p2p network id given as 64 hex characters.
+pub fn parse_network_id(hex: &str) -> Result<NetworkId, hex::FromHexError> {
+    hex::FromHex::from_hex(hex)
+}
+
+/// Run the mailbox server until `signal` resolves. `relay_url` and `network_id`
+/// configure the standalone [`BlobSync`] built when `blob_sync` is `None`.
 pub async fn spawn_server(
     db_path: PathBuf,
     addr: String,
     push_notifications_url: Option<String>,
     blob_sync: Option<BlobSync>,
     relay_url: Option<iroh::RelayUrl>,
+    network_id: NetworkId,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path.clone())?;
@@ -120,7 +129,7 @@ pub async fn spawn_server(
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root, relay_url).await?
+            BlobSync::new(secret_key, blobs_root, relay_url, network_id).await?
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());

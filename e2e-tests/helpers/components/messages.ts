@@ -26,6 +26,11 @@ export type SystemMessageKind =
 /** What identifies one rendered message: its body text, its media names or
  * voice duration, or that it is the deleted placeholder. */
 export interface RenderedMessage {
+	/** Whether the agent reading the chat is the one who sent it. */
+	mine: boolean;
+	/** The name the bubble is attributed to, which only group chats render;
+	 * null in a direct chat, where the sender is the viewer or the peer. */
+	sender: string | null;
 	text: string | null;
 	photoAlts: string[];
 	photosLoaded: boolean;
@@ -505,6 +510,7 @@ export class Messages extends TestHelper {
 				voiceSel: string,
 				deletedSel: string,
 				quoteSel: string,
+				senderSel: string,
 				chipPrefix: string,
 			) => {
 				const wrappers = document.querySelectorAll<HTMLElement>(
@@ -526,6 +532,10 @@ export class Messages extends TestHelper {
 						`[data-testid^="${chipPrefix}"]`,
 					);
 					return {
+						mine: w.querySelector('.outgoing-message') !== null,
+						sender:
+							w.querySelector<HTMLElement>(senderSel)?.textContent?.trim() ??
+							null,
 						text: body?.textContent ?? null,
 						photoAlts: imgs.map(img => img.alt),
 						photosLoaded: imgs.every(loaded),
@@ -545,6 +555,7 @@ export class Messages extends TestHelper {
 			tid('voice-duration'),
 			tid('message-deleted-placeholder'),
 			tid('reply-quote'),
+			tid('group-message-sender-name'),
 			'reaction-chip-',
 		);
 	}

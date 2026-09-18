@@ -2,7 +2,7 @@ import {
 	type NotificationHelper,
 	notificationHelperFor,
 } from '../../helpers/components/notifications';
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 /**
@@ -35,9 +35,7 @@ describe.skip('Offline notifications on Android (background sync)', () => {
 	});
 
 	it('creates profiles and exchanges contacts', async () => {
-		await receiver.createProfilePage.createProfile('Rex', 'Test');
-		await sender.createProfilePage.createProfile('Sam', 'Test');
-		await exchangeContacts(receiver, sender);
+		await createProfilesAndExchangeContacts({ Rex: receiver, Sam: sender });
 	});
 
 	it('delivers a notification while the app is backgrounded in emergency mode', async () => {

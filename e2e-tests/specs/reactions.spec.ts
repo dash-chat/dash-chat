@@ -1,4 +1,5 @@
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { backToHome } from '../helpers/flows/back-to-home';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
@@ -12,11 +13,7 @@ describe('Message reactions', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.enablePreviewFeatures();
-		await agent2.enablePreviewFeatures();
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('adds and removes a reaction in a direct chat', async () => {
@@ -57,10 +54,7 @@ describe('Message reactions', () => {
 	});
 
 	it('adds a reaction in a group chat', async () => {
-		await agent1.directChatPage.back.click();
-		await agent2.directChatPage.back.click();
-		await agent1.homePage.ready();
-		await agent2.homePage.ready();
+		await backToHome([agent1, agent2]);
 
 		await createGroup(agent1, 'mygroup', ['Bob']);
 

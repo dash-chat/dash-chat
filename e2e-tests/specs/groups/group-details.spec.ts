@@ -17,7 +17,7 @@ describe('Group details spec', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await exchangeContactsAndCreateGroup(agent1, agent2);
+		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('Shows a new name to all members if the admin changes it', async () => {
