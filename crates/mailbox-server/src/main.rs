@@ -24,6 +24,11 @@ struct Args {
     /// P2P network id, as 64 hex characters (defaults to the production network)
     #[arg(long, value_parser = mailbox_server::parse_network_id)]
     network_id: Option<NetworkId>,
+
+    /// Serve blob bytes no faster than this many bytes per second, to watch a
+    /// slow download from a dev client
+    #[arg(long, value_name = "BYTES_PER_SEC", value_parser = clap::value_parser!(u64).range(1..))]
+    blob_throttle: Option<u64>,
 }
 
 #[tokio::main]
@@ -47,6 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         Some(RELAY_URL.clone()),
         args.network_id.unwrap_or(*NETWORK_ID),
+        args.blob_throttle,
         signal,
     )
     .await?;

@@ -82,6 +82,7 @@ impl TestMailbox {
                 None,
                 None,
                 *dashchat_utils::NETWORK_ID,
+                None,
                 signal,
             )
             .await

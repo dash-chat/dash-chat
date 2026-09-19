@@ -1,42 +1,142 @@
 /**
- * FOLLOW-UP, not yet runnable: a large attachment arriving over a slow cloud
- * link. The mailbox serves blob bytes no faster than a budget, so the
- * receiver's progress ring fills a little at every poll, and a mailbox that
- * stops answering mid-download leaves the progress where it was until it
- * answers again, after which it climbs on.
+ * A large attachment arriving over a slow cloud link: the mailbox serves blob
+ * bytes no faster than a budget, so the receiver's progress ring climbs poll
+ * after poll, and a mailbox that stops answering mid-download leaves the
+ * progress where it was until it answers again, after which it climbs on.
  *
- * What this needs, and what the follow-up PR to the pull-based progress work
- * brings:
- *
- * 1. A test-only throttle on the mailbox's blob provider (behind the
- *    mailbox-server `test_utils` feature, so production mailboxes never
- *    intercept a chunk), exposed as `POST /testing/blob-throttle` and driven
- *    from the harness by `setMailboxBlobThrottle()` in
- *    `e2e-tests/setup/mailbox-control.ts`. The run's toxiproxy link cannot
- *    stand in for the slow link: blobs travel over iroh's QUIC (UDP)
- *    connection, not the mailbox's HTTP port.
- * 2. The e2e mailbox serving blobs to e2e apps at all: the app's e2e network
- *    id and the mailbox's `--network-id` have to derive the same blob ALPN.
- *
- * Until then the suite is skipped, and each case fails on purpose if run.
+ * The run's toxiproxy link cannot stand in for the slow link: blobs travel
+ * over iroh's QUIC (UDP) connection, not the mailbox's HTTP port. The mailbox
+ * throttles its own blob provider instead, and suspending its process stands
+ * in for the link going away. Both agents run without p2p, so the mailbox is
+ * the only place the blob can come from.
  */
-const FOLLOW_UP =
-	'Needs the mailbox blob throttle from the follow-up PR; see the header of this spec.';
+import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../helpers/timeouts';
+import {
+	isRemoteMailbox,
+	resumeMailbox,
+	setMailboxBlobThrottle,
+	suspendMailbox,
+} from '../setup/mailbox-control';
+import { type Agent, setupAgents } from '../setup/setup-agents';
 
-describe.skip('Blob download over a slow cloud link', function () {
+/** iroh-blobs releases 16 KiB per throttle decision, so at this budget one
+ * lands about every 256ms: a few per reading. */
+const THROTTLE_BYTES_PER_SEC = 64 * 1024;
+const READING_INTERVAL_MS = 500;
+/** Readings to watch the progress climb over; well short of the transfer. */
+const CLIMBING_READINGS = 6;
+/** Long enough for the bytes already in flight to land before a reading. */
+const IN_FLIGHT_SETTLE_MS = 1_000;
+/** Long enough for chunks to have landed had the mailbox still been serving. */
+const AWAY_MS = 2_000;
+
+describe('Blob download over a slow cloud link', function () {
 	this.timeout(300_000);
 
-	it('fills the progress ring at every poll while the mailbox serves slowly', async () => {
-		// send('slow.bin', 640 KiB); wait for the first byte; expect the ring's
-		// aria-valuenow to be non-decreasing across polls with a net increase;
-		// expect the ring to go away once complete.
-		throw new Error(FOLLOW_UP);
+	let agent1: Agent;
+	let agent2: Agent;
+
+	const messages = () => agent2.directChatPage.messages;
+
+	/** Bytes of `name` the receiver holds, read off its progress ring; 0 while
+	 * the ring is still indeterminate. */
+	async function receivedBytes(name: string): Promise<number> {
+		const value = await messages()
+			.fileProgressRing(name)
+			.getAttribute('aria-valuenow');
+		return value === null ? 0 : Number(value);
+	}
+
+	/** The sender streams the bytes to the mailbox after publishing the
+	 * message, so the receiver's first attempt can find the mailbox without
+	 * them and its next comes a fetch pass later. */
+	async function waitForDownloadStarted(name: string): Promise<void> {
+		await messages()
+			.fileProgressRing(name)
+			.waitForDisplayed({ timeout: SYNC_TIMEOUT });
+		await agent2.waitUntil(async () => (await receivedBytes(name)) > 0, {
+			timeout: MEDIA_SYNC_TIMEOUT,
+			timeoutMsg: `no byte of ${name} arrived`,
+		});
+	}
+
+	/** No reading may show fewer bytes than the one before it, and the last
+	 * must show more than the first. */
+	async function expectClimbing(name: string, readings: number): Promise<void> {
+		const first = await receivedBytes(name);
+		let last = first;
+		for (let i = 0; i < readings; i++) {
+			await agent2.pause(READING_INTERVAL_MS);
+			const now = await receivedBytes(name);
+			if (now < last) {
+				throw new Error(
+					`reading ${i + 1}: ${name} fell to ${now} bytes (was ${last})`,
+				);
+			}
+			last = now;
+		}
+		if (last <= first) {
+			throw new Error(
+				`${name} stayed at ${first} bytes over ${readings} readings`,
+			);
+		}
+	}
+
+	async function expectComplete(name: string): Promise<void> {
+		await messages()
+			.fileProgressRing(name)
+			.waitForDisplayed({ reverse: true, timeout: MEDIA_SYNC_TIMEOUT });
+	}
+
+	async function send(name: string, size: number): Promise<void> {
+		await agent1.directChatPage.composer.attachFileOfSize(size, name);
+		await agent1.directChatPage.composer.send();
+		await agent1.directChatPage.messages.waitForFileMessage(name);
+	}
+
+	before(async function () {
+		if (isRemoteMailbox()) this.skip();
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'any' },
+			{ platform: 'any' },
+		]);
+		await Promise.all([agent1.disableP2p(), agent2.disableP2p()]);
+		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await setMailboxBlobThrottle(THROTTLE_BYTES_PER_SEC);
+	});
+
+	after(async () => {
+		await setMailboxBlobThrottle(null);
+	});
+
+	it('climbs the progress ring while the mailbox serves slowly', async () => {
+		// Attachments are zero-filled, so each case needs its own size to be
+		// its own blob.
+		await send('slow.bin', 640 * 1024);
+		await waitForDownloadStarted('slow.bin');
+		await expectClimbing('slow.bin', CLIMBING_READINGS);
+		await expectComplete('slow.bin');
 	});
 
 	it('holds the progress while the mailbox is away and climbs again once it is back', async () => {
-		// send('flaky.bin', 768 KiB); wait for the first byte; suspendMailbox();
-		// expect the reading unchanged after a settle; resumeMailbox(); expect it
-		// to climb again and complete.
-		throw new Error(FOLLOW_UP);
+		await send('flaky.bin', 768 * 1024);
+		await waitForDownloadStarted('flaky.bin');
+		await expectClimbing('flaky.bin', 2);
+
+		// Nothing fabricates progress locally: with the only source stopped,
+		// the reading is the bytes on disk and stays put.
+		suspendMailbox();
+		try {
+			await agent2.pause(IN_FLIGHT_SETTLE_MS);
+			const held = await receivedBytes('flaky.bin');
+			await agent2.pause(AWAY_MS);
+			expect(await receivedBytes('flaky.bin')).toBe(held);
+		} finally {
+			resumeMailbox();
+		}
+
+		await expectClimbing('flaky.bin', CLIMBING_READINGS);
+		await expectComplete('flaky.bin');
 	});
 });

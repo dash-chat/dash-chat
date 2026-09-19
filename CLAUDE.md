@@ -368,6 +368,8 @@ Run tests from workspace root. Tests use tokio async runtime.
 
 Use `pnpm start` to run two instances locally that can communicate with each other over the p2panda network.
 
+To watch a slow attachment download, cap how fast the dev mailbox serves blob bytes: `MAILBOX_BLOB_THROTTLE=65536 just dev` (bytes per second; it becomes the mailbox's `--blob-throttle` flag). Blobs travel over iroh's QUIC link, so nothing on the HTTP side can slow them.
+
 ### E2E Tests (WebdriverIO)
 
 The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (the built binary, driven through the WebDriver server the e2e build embeds), `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
@@ -393,7 +395,7 @@ PLATFORMS=ios just e2e run settings-pages
 ```
 
 **Key details:**
-- Desktop runs need `toxiproxy-server` on the PATH; the nix dev shell provides it. Without nix: the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when it is missing.
+- Desktop runs need `toxiproxy-server` on the PATH; the nix dev shell provides it. Without nix: the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when it is missing. The proxy only carries the mailbox's HTTP traffic: blobs travel over iroh's QUIC (UDP) connection, so a spec that needs a slow blob download caps the mailbox's own provider with `setMailboxBlobThrottle()` (`e2e-tests/setup/mailbox-control.ts`) instead.
 - Tests use page objects from `e2e-tests/helpers/pages/`. `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` returns one `Agent` per requirement with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
 - Platform-specific setup (desktop app launches, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
