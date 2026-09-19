@@ -9,6 +9,7 @@ use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use iroh_blobs::provider::events::{EventMask, EventSender, ProviderMessage, ThrottleMode};
 use p2panda_net::NetworkId;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
@@ -226,6 +227,61 @@ pub struct BlobSync {
     /// node keeps the router and blob store alive.
     _router: Option<Router>,
     peer_addr_registry: PeerAddrRegistry,
+    /// `Some` only when this server's provider was built to intercept its
+    /// chunks: a standalone server started with a throttle, or any server of
+    /// a `test_utils` build. A shared (in-process) provider is the node's and
+    /// is never throttled.
+    throttle: Option<BlobThrottle>,
+}
+
+/// Bytes per second a server's blob provider releases to a downloader, or
+/// `None` for no cap. For watching a slow download: `mailbox-server
+/// --blob-throttle` sets it for a dev run, and an e2e spec sets it over the
+/// `test_utils`-only `/testing/blob-throttle` route.
+#[derive(Clone, Default)]
+pub struct BlobThrottle(Arc<std::sync::Mutex<Option<u64>>>);
+
+impl BlobThrottle {
+    pub fn new(bytes_per_sec: Option<u64>) -> Self {
+        let throttle = Self::default();
+        throttle.set(bytes_per_sec);
+        throttle
+    }
+
+    pub fn bytes_per_sec(&self) -> Option<u64> {
+        *self.0.lock().unwrap()
+    }
+
+    /// A budget below one byte per second would hold a chunk forever, so it
+    /// is raised to one.
+    pub fn set(&self, bytes_per_sec: Option<u64>) {
+        *self.0.lock().unwrap() = bytes_per_sec.map(|b| b.max(1));
+    }
+
+    /// The provider events sender whose throttle decisions this budget
+    /// answers: each chunk is held back for as long as the budget says, in
+    /// order per request, so a request's transfer runs at about the budget.
+    fn provider_events(&self) -> EventSender {
+        let mask = EventMask {
+            throttle: ThrottleMode::Intercept,
+            ..EventMask::DEFAULT
+        };
+        let (events, mut rx) = EventSender::channel(256, mask);
+        let this = self.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                let ProviderMessage::Throttle(msg) = msg else {
+                    continue;
+                };
+                if let Some(bytes_per_sec) = this.bytes_per_sec() {
+                    let secs = msg.inner.size as f64 / bytes_per_sec as f64;
+                    tokio::time::sleep(Duration::from_secs_f64(secs)).await;
+                }
+                msg.tx.send(Ok(())).await.ok();
+            }
+        });
+        events
+    }
 }
 
 impl BlobSync {
@@ -240,6 +296,19 @@ impl BlobSync {
         root: PathBuf,
         relay_url: Option<iroh::RelayUrl>,
         network_id: NetworkId,
+    ) -> anyhow::Result<Self> {
+        Self::new_with_throttle(secret_key, root, relay_url, network_id, None).await
+    }
+
+    /// [`Self::new`], with a provider that answers to `throttle` when one is
+    /// given. Intercepting costs an async hop per chunk served, so a server
+    /// that will never be throttled is built without one.
+    pub async fn new_with_throttle(
+        secret_key: iroh::SecretKey,
+        root: PathBuf,
+        relay_url: Option<iroh::RelayUrl>,
+        network_id: NetworkId,
+        throttle: Option<BlobThrottle>,
     ) -> anyhow::Result<Self> {
         let peer_addr_lookup = MemoryLookup::new();
         let mut builder = iroh::Endpoint::builder(presets::Minimal)
@@ -274,7 +343,8 @@ impl BlobSync {
         let mixed_alpn =
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, network_id);
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
-        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        let events = throttle.as_ref().map(BlobThrottle::provider_events);
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, events);
         let downloader =
             Downloader::new_with_opts(&store, &endpoint, mixed_alpn.as_slice(), Default::default());
         let router = Router::builder(endpoint.clone())
@@ -291,6 +361,7 @@ impl BlobSync {
             enable_gc: true,
             _router: Some(router),
             peer_addr_registry: PeerAddrRegistry::Memory(peer_addr_lookup),
+            throttle,
         })
     }
 
@@ -315,7 +386,23 @@ impl BlobSync {
             enable_gc: false,
             _router: None,
             peer_addr_registry: PeerAddrRegistry::Channel(peer_addr_tx),
+            throttle: None,
         }
+    }
+
+    /// Cap how fast this server serves blob bytes, or lift the cap with
+    /// `None`. Fails on a server whose provider was built without a throttle.
+    pub fn set_blob_throttle(&self, bytes_per_sec: Option<u64>) -> anyhow::Result<()> {
+        let throttle = self
+            .throttle
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("this server's blob provider is not throttleable"))?;
+        throttle.set(bytes_per_sec);
+        Ok(())
+    }
+
+    pub fn blob_throttle(&self) -> Option<u64> {
+        self.throttle.as_ref().and_then(BlobThrottle::bytes_per_sec)
     }
 
     /// Override the fetch loop's cadence (concurrency, attempt timeout, retry
@@ -517,15 +604,72 @@ fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
 mod tests {
     use super::*;
 
-    /// Follow-up to the pull-based blob download progress work: a test-only
-    /// cap on how fast this server's blob provider releases bytes, so the
-    /// throttled e2e spec (`e2e-tests/specs/blob-download-throttled.spec.ts`)
-    /// can watch a download climb. It must live behind `test_utils` so a
-    /// production mailbox never intercepts a chunk, and reject a zero budget.
-    #[tokio::test]
-    #[ignore = "follow-up: mailbox blob throttle for the throttled e2e spec"]
+    /// A throttled provider releases one 16 KiB chunk per budget interval, so
+    /// a 64 KiB blob at 32 KiB/s cannot land in much under two seconds.
+    #[tokio::test(flavor = "multi_thread")]
     async fn throttled_provider_serves_a_blob_no_faster_than_its_budget() {
-        unimplemented!("set_blob_throttle(Some(32 KiB/s)); fetch 64 KiB; expect >= 1.5s");
+        let provider = crate::test_utils::test_blob_sync().await;
+        let fetcher = crate::test_utils::test_blob_sync().await;
+        let hash = provider
+            .store_pushed_blob(vec![1u8; 64 * 1024].into())
+            .await
+            .unwrap();
+        provider.set_blob_throttle(Some(32 * 1024)).unwrap();
+        fetcher.add_peer_addr(provider.endpoint_addr());
+
+        let started = tokio::time::Instant::now();
+        let fetched = fetcher
+            .try_fetch(hash, vec![provider.endpoint_id()], Duration::from_secs(30))
+            .await;
+        let elapsed = started.elapsed();
+
+        assert!(fetched, "blob was not fetched");
+        assert!(
+            elapsed >= Duration::from_millis(1500),
+            "fetched in {elapsed:?}, faster than the budget allows"
+        );
+    }
+
+    /// Lifting the throttle lets the next transfer run at full speed.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn lifting_the_throttle_restores_full_speed() {
+        let provider = crate::test_utils::test_blob_sync().await;
+        let fetcher = crate::test_utils::test_blob_sync().await;
+        let hash = provider
+            .store_pushed_blob(vec![2u8; 64 * 1024].into())
+            .await
+            .unwrap();
+        provider.set_blob_throttle(Some(1024)).unwrap();
+        provider.set_blob_throttle(None).unwrap();
+        fetcher.add_peer_addr(provider.endpoint_addr());
+
+        let started = tokio::time::Instant::now();
+        let fetched = fetcher
+            .try_fetch(hash, vec![provider.endpoint_id()], Duration::from_secs(30))
+            .await;
+
+        assert!(fetched, "blob was not fetched");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_zero_budget_is_raised_to_one_byte_per_second() {
+        let throttle = BlobThrottle::new(Some(0));
+        assert_eq!(throttle.bytes_per_sec(), Some(1));
+    }
+
+    #[tokio::test]
+    async fn a_shared_provider_cannot_be_throttled() {
+        let provider = crate::test_utils::test_blob_sync().await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let shared = BlobSync::shared(
+            provider.blobs.clone(),
+            provider.downloader.clone(),
+            provider.endpoint.clone(),
+            tx,
+        );
+        assert!(shared.set_blob_throttle(Some(1024)).is_err());
+        assert_eq!(shared.blob_throttle(), None);
     }
 
     #[tokio::test]

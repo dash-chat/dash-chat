@@ -33,9 +33,16 @@ export function mailboxLogFile(dbPath: string): string {
 
 /** Run `cargo build -p <package>...`, resolving when the binaries are built.
  *  The hub binary bakes the run's network id in, and the mailbox the e2e
- *  relay, like the app does. */
+ *  relay, like the app does. The mailbox's testing routes (see
+ *  mailbox-control.ts) only exist behind its `test_utils` feature, so the e2e
+ *  build turns it on. */
 export function buildCargoPackages(packages: string[]): Promise<void> {
-	const args = ['build', ...packages.flatMap(name => ['-p', name])];
+	const args = [
+		'build',
+		...packages.flatMap(name => ['-p', name]),
+		'--features',
+		'mailbox-server/test_utils',
+	];
 	return new Promise<void>((resolve, reject) => {
 		const proc = spawn('cargo', args, {
 			cwd: ROOT,

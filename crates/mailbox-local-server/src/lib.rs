@@ -82,6 +82,7 @@ pub async fn spawn_local_mailbox_server(
             Some(blob_sync),
             None,
             *dashchat_utils::NETWORK_ID,
+            None,
             signal,
         )
         .await

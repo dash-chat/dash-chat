@@ -92,6 +92,27 @@ export function mailboxLink(): Link {
 	return new Link(MAILBOX_LINK);
 }
 
+/**
+ * Cap the bytes per second the mailbox serves blobs at, or lift the cap with
+ * `null`. Blobs travel over iroh's QUIC link rather than the mailbox's HTTP
+ * port, so the toxiproxy link cannot slow them; the mailbox throttles its own
+ * blob provider instead (its `/testing/blob-throttle` route, which only an
+ * e2e mailbox has, built with `test_utils`).
+ */
+export async function setMailboxBlobThrottle(
+	bytesPerSec: number | null,
+): Promise<void> {
+	const { url } = localInfo();
+	const res = await fetch(`${url}/testing/blob-throttle`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ bytes_per_sec: bytesPerSec }),
+	});
+	if (!res.ok) {
+		throw new Error(`mailbox blob throttle request failed: ${res.status}`);
+	}
+}
+
 function mailboxBlobsDir(): string {
 	const { dbPath } = localInfo();
 	return path.join(path.dirname(dbPath), 'mailbox_blobs', 'data');
