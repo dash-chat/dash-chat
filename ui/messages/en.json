@@ -224,6 +224,8 @@
 	"nextPhoto": "Next photo",
 	"closeLightbox": "Close",
 	"imageLoadFailedRetry": "Image failed to load. Tap to retry.",
+	"blobDownloadStalledRetry": "Download stalled. Tap to retry.",
+	"fileStillDownloading": "Still downloading…",
 
 	"nameThisGroup": "Name this group",
 	"newGroup": "New group",

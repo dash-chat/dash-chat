@@ -34,6 +34,9 @@
 		MessageAckClient,
 		MessageAckStore,
 		MockMessageAckClient,
+		BlobStore,
+		BlobClient,
+		MockBlobClient,
 		seedDemoData,
 		DEMO_IDS,
 		DEMO_CONTACT_DEVICES,
@@ -111,6 +114,7 @@
 	let messageAckStore: MessageAckStore;
 	let chatsStore: ChatsStore;
 	let mailboxTrackerStore: IMailboxTrackerStore;
+	let blobStore: BlobStore;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -157,6 +161,7 @@
 			mockLogsClient,
 			DEMO_IDS.DEVICE_GROUP_TOPIC,
 		);
+		blobStore = new BlobStore(new MockBlobClient());
 	} else {
 		const logsClient = new TauriLogsClient<Payload>();
 		logsStore = new LogsStore<Payload>(logsClient);
@@ -183,6 +188,7 @@
 			messageAckStore,
 			chatsClient,
 		);
+		blobStore = new BlobStore(new BlobClient());
 
 		invokeAfterSetup('log_webview_info', {
 			userAgent: navigator.userAgent,
@@ -194,6 +200,7 @@
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
 	setContext('mailbox-tracker-store', mailboxTrackerStore);
+	setContext('blob-store', blobStore);
 
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page

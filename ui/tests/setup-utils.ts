@@ -9,7 +9,7 @@
  */
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
-import { invokeAfterSetup } from 'dash-chat-stores';
+import { BLOB_STALL_INTERVAL_MS, invokeAfterSetup } from 'dash-chat-stores';
 
 import type { m } from '../src/lib/paraglide/messages.js';
 
@@ -169,6 +169,13 @@ function photoDownloadMs(label: string): number | null {
  * the rebuilt node is live. */
 function disableP2p(): Promise<void> {
 	return invokeAfterSetup('set_p2p_enabled', { enabled: false });
+}
+
+/** Pause or resume this agent's blob fetching, background loop and on-demand
+ * alike, so a spec can observe an attachment's downloading state. Backed by the
+ * `set_blob_fetch_paused` command (only registered under `e2e-tests`). */
+function setBlobFetchPaused(paused: boolean): Promise<void> {
+	return invokeAfterSetup('set_blob_fetch_paused', { paused });
 }
 
 /** Reset the app to first-launch state: clear web storage, then run the real
@@ -524,6 +531,10 @@ export const testUtils = {
 	simulateUpdate,
 	hasText,
 	disableP2p,
+	setBlobFetchPaused,
+	/** How long a download must sit without progress before its ring reports
+	 * a stall; a spec waits this long before expecting the retry affordance. */
+	blobStallIntervalMs: BLOB_STALL_INTERVAL_MS,
 	resetToFirstLaunch,
 	showKeyboard,
 	pasteFiles,

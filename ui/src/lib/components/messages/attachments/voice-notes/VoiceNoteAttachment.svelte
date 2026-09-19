@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
-	import type { VoiceNote } from 'dash-chat-stores';
+	import { getContext, untrack, type Snippet } from 'svelte';
+	import type { BlobStore, VoiceNote } from 'dash-chat-stores';
 	import { formatDuration } from '$lib/utils/time';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { VoicePlayer } from './voice-player.svelte';
 	import VoicePlayButton from './VoicePlayButton.svelte';
 	import Waveform from './Waveform.svelte';
@@ -16,7 +17,23 @@
 
 	let { voice, metadata }: Props = $props();
 
+	const blobStore: BlobStore = getContext('blob-store');
+	const download = $derived(useReactiveValue(blobStore.progress, voice.hash));
+
 	const peaks = $derived(Array.from(voice.waveform, v => v / 255));
+
+	// Playing fetches the blob through the scheme handler, which asks the node
+	// for it right away, so a tap on a stalled note is also its retry.
+	function onPlayClick() {
+		if ($download !== undefined && !$download.complete) {
+			if (!$download.stalled) {
+				showToast(m.fileStillDownloading());
+				return;
+			}
+			blobStore.retry(voice.hash);
+		}
+		void player.toggle();
+	}
 
 	const player = untrack(
 		() => new VoicePlayer(voice, () => showToast(m.voicePlayFailed(), 'error')),
@@ -39,7 +56,9 @@
 		<VoicePlayButton
 			paused={player.paused}
 			loading={player.loading}
-			onclick={() => void player.toggle()}
+			onclick={onPlayClick}
+			download={$download}
+			totalBytes={voice.size}
 		/>
 
 		<Waveform {peaks} {player} />

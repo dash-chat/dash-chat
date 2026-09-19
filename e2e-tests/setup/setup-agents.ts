@@ -156,6 +156,12 @@ export type Agent = WebdriverIO.Browser & {
 	 *  peer-to-peer connectivity, so it syncs through mailboxes only. A spec's
 	 *  setup step: call it right after `setupAgents`, before the agents meet. */
 	disableP2p(): Promise<void>;
+	/** Pause or resume this agent's blob fetching, background loop and
+	 *  on-demand alike (e2e-only command). */
+	setBlobFetchPaused(paused: boolean): Promise<void>;
+	/** How long a download must sit without progress before its ring reports
+	 *  a stall, read from the app so a spec never mirrors the constant. */
+	blobStallIntervalMs(): Promise<number>;
 	/** The urls this agent asked the OS to open, once at least `count` have
 	 *  arrived. Recorded by the harness's `xdg-open` stub, so desktop only. */
 	waitForOpenedUrls(count?: number): Promise<string[]>;
@@ -329,6 +335,15 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		);
 		agent.p2p = false;
 	};
+	agent.setBlobFetchPaused = async (paused: boolean) => {
+		await b.executeAsync(
+			(p: boolean, done: () => void) =>
+				window.__test.setBlobFetchPaused(p).then(done, done),
+			paused,
+		);
+	};
+	agent.blobStallIntervalMs = () =>
+		b.execute(() => window.__test.blobStallIntervalMs);
 	agent.restart = async () => {
 		await agent.stopApp();
 		await agent.startApp();

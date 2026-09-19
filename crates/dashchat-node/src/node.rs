@@ -186,6 +186,15 @@ impl Default for NodeConfig {
 
 pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
 
+/// Download state of one blob, as `get_blob_progress` reports it to the
+/// webview. `hash` echoes the requested string so the caller can key on it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BlobProgress {
+    pub hash: String,
+    pub bytes: u64,
+    pub complete: bool,
+}
+
 #[derive(Clone)]
 pub struct Node {
     pub op_store: OpStore,
@@ -2101,6 +2110,39 @@ impl Node {
                 anyhow::bail!("blob {hash} not available after {timeout:?}");
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    }
+
+    /// How much of each blob is local right now. A hash that does not parse
+    /// is skipped, so one bad reference never hides the progress of the rest.
+    pub async fn blob_progress(&self, hashes: Vec<String>) -> anyhow::Result<Vec<BlobProgress>> {
+        let blob_sync = self.require_blob_sync()?;
+        let mut out = Vec::with_capacity(hashes.len());
+        for hash in hashes {
+            let parsed: iroh_blobs::Hash = match hash.parse() {
+                Ok(parsed) => parsed,
+                Err(err) => {
+                    tracing::warn!(%hash, ?err, "skipping unparseable blob hash");
+                    continue;
+                }
+            };
+            let (bytes, complete) = blob_sync.local_progress(parsed).await;
+            out.push(BlobProgress {
+                hash,
+                bytes,
+                complete,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Test-only: make every blob fetch attempt, background and on-demand
+    /// alike, give up at once, so a spec can observe an attachment while it
+    /// is still downloading.
+    #[cfg(feature = "testing")]
+    pub fn set_blob_fetch_paused(&self, paused: bool) {
+        if let Some(blob_sync) = &self.blob_sync {
+            blob_sync.set_fetch_paused(paused);
         }
     }
 

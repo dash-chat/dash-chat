@@ -1,13 +1,19 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
-	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
-	import { mediaSrc } from '$lib/utils/media';
+	import { getContext, untrack } from 'svelte';
+	import type {
+		BlobStore,
+		FileAttachment,
+		PhotoAttachment,
+	} from 'dash-chat-stores';
+	import { formatFileSize, mediaSrc } from '$lib/utils/media';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		acquireBlob,
 		blobToken,
 		releaseBlob,
 		retryBlob,
 	} from '$lib/stores/blob-load-store.svelte';
+	import BlobProgressRing from '$lib/components/BlobProgressRing.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Preloader } from 'konsta/svelte';
 	import { mdiReload } from '@mdi/js';
@@ -21,6 +27,8 @@
 		imgStyle?: string;
 		/** Defer loading until near the viewport (grid cells); the lightbox loads eagerly. */
 		lazy?: boolean;
+		/** Small surfaces (filmstrip thumbs, reply quotes): a 20px ring and no byte pill. */
+		compact?: boolean;
 	}
 
 	let {
@@ -29,6 +37,7 @@
 		imgClass = '',
 		imgStyle = '',
 		lazy = false,
+		compact = false,
 	}: Props = $props();
 
 	// Load status is this element's own — each <img> fetches independently, so a
@@ -40,6 +49,15 @@
 	const src = $derived(
 		token === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${token}`,
 	);
+
+	const blobStore: BlobStore = getContext('blob-store');
+	const download = $derived(useReactiveValue(blobStore.progress, item.hash));
+	// Unknown until the first snapshot resolves, and a loaded image is never
+	// covered: the ring only ever overlays a photo known to still be downloading.
+	const downloading = $derived(
+		$download !== undefined && !$download.complete && status !== 'loaded',
+	);
+	const stalled = $derived(downloading && $download?.stalled === true);
 
 	// A fresh mount or a new blob re-attempts from scratch, which also self-heals
 	// a blob that failed only because it hadn't synced yet. A retry (token bump)
@@ -57,10 +75,29 @@
 		});
 	});
 
-	/** If this image is showing its reload placeholder, re-fetch the blob on every
-	 * surface and report that the click was handled. Lets a parent decide a click
-	 * means "retry" vs. its normal action without tracking load state itself. */
+	// The scheme handler gives up on an <img> after 30s, which a slow download
+	// can outlast; once the blob lands, load the image again without a tap.
+	let reloadOnComplete = false;
+	$effect(() => {
+		if (status === 'error' && $download?.complete !== true)
+			reloadOnComplete = true;
+	});
+	$effect(() => {
+		if ($download?.complete !== true || !reloadOnComplete) return;
+		reloadOnComplete = false;
+		untrack(() => retryBlob(item.hash));
+	});
+
+	/** If this image is stalled or showing its reload placeholder, re-fetch the
+	 * blob on every surface and report that the click was handled. Lets a parent
+	 * decide a click means "retry" vs. its normal action without tracking load
+	 * state itself. */
 	export function retryIfErrored(): boolean {
+		if (stalled) {
+			blobStore.retry(item.hash);
+			retryBlob(item.hash);
+			return true;
+		}
 		if (status !== 'error') return false;
 		retryBlob(item.hash);
 		return true;
@@ -87,18 +124,9 @@
 	});
 </script>
 
-{#if status === 'error'}
-	<span
-		class="absolute inset-0 flex cursor-pointer items-center justify-center border-none p-0 text-black/50 dark:text-white/60 {imgClass}"
-		style={imgStyle}
-		title={m.imageLoadFailedRetry()}
-		data-testid="blob-image-retry"
-	>
-		<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
-			<path fill="currentColor" d={mdiReload} />
-		</svg>
-	</span>
-{:else}
+{#if status !== 'error'}
+	<!-- Mounted while downloading too: its request is what asks the node to
+	     fetch the blob now rather than on the background loop's next pass. -->
 	<img
 		{src}
 		{alt}
@@ -109,13 +137,46 @@
 		onload={() => (status = 'loaded')}
 		onerror={() => (status = 'error')}
 	/>
-	{#if status === 'loading'}
-		<div
-			class="pointer-events-none absolute inset-0 flex items-center justify-center"
-			aria-busy="true"
-			data-testid="blob-image-loading"
-		>
-			<Preloader class="w-6 h-6" />
-		</div>
-	{/if}
+{/if}
+{#if downloading}
+	<div
+		class="pointer-events-none absolute inset-0 flex items-center justify-center text-black/60 dark:text-white/70 {imgClass}"
+		style={imgStyle}
+		data-testid="blob-image-downloading"
+	>
+		<BlobProgressRing
+			bytes={$download?.bytes ?? 0}
+			total={item.size}
+			{stalled}
+			size={compact ? 20 : 40}
+		/>
+		{#if !compact}
+			<span
+				class="absolute start-1 top-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] leading-tight text-white"
+				data-testid="blob-progress-bytes"
+				>{formatFileSize($download?.bytes ?? 0)} / {formatFileSize(
+					item.size,
+				)}</span
+			>
+		{/if}
+	</div>
+{:else if status === 'error'}
+	<span
+		class="absolute inset-0 flex cursor-pointer items-center justify-center border-none p-0 text-black/50 dark:text-white/60 {imgClass}"
+		style={imgStyle}
+		title={m.imageLoadFailedRetry()}
+		data-testid="blob-image-retry"
+	>
+		<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+			<path fill="currentColor" d={mdiReload} />
+		</svg>
+	</span>
+{:else if status === 'loading'}
+	<div
+		class="pointer-events-none absolute inset-0 flex items-center justify-center"
+		aria-busy="true"
+		data-testid="blob-image-loading"
+	>
+		<Preloader class="w-6 h-6" />
+	</div>
 {/if}

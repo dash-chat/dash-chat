@@ -49,6 +49,10 @@ pub struct BlobSync {
     pub fetch_pool: BlobFetchPool,
     pub sources: MixedSourceLookup,
     downloader: Downloader,
+    /// Test-only: while set, every fetch attempt gives up at once, so a spec
+    /// can hold an attachment in its downloading state long enough to look at.
+    #[cfg(feature = "testing")]
+    fetch_paused: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl BlobSync {
@@ -85,7 +89,21 @@ impl BlobSync {
             fetch_pool: blob_fetch,
             sources,
             downloader,
+            #[cfg(feature = "testing")]
+            fetch_paused: Default::default(),
         })
+    }
+
+    /// How much of `hash` is in the local store right now: the bytes present
+    /// and whether the blob is complete.
+    pub async fn local_progress(&self, hash: iroh_blobs::Hash) -> (u64, bool) {
+        local_progress(&self.blobs, hash).await
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn set_fetch_paused(&self, paused: bool) {
+        self.fetch_paused
+            .store(paused, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Clone the downloader so an in-process mailbox can fetch blobs into this
@@ -119,6 +137,10 @@ impl BlobSync {
     ) -> bool {
         if self.blobs.has(hash).await.unwrap_or(false) {
             return true;
+        }
+        #[cfg(feature = "testing")]
+        if self.fetch_paused.load(std::sync::atomic::Ordering::Relaxed) {
+            return false;
         }
 
         let sources = match self.sources.sources(topic).await {
@@ -307,6 +329,22 @@ fn spawn_download_event_listener(
             }
         }
     });
+}
+
+/// The bytes of `hash` present in `blobs` and whether it is complete, read
+/// off the store's bitfield: a download in flight reports its partial size and
+/// a hash the store has never seen reports zero.
+pub async fn local_progress(
+    blobs: &iroh_blobs::BlobsProtocol,
+    hash: iroh_blobs::Hash,
+) -> (u64, bool) {
+    match blobs.observe(hash).await {
+        Ok(bitfield) => (bitfield.total_bytes(), bitfield.is_complete()),
+        Err(err) => {
+            tracing::warn!(%hash, ?err, "failed to read blob bitfield");
+            (0, false)
+        }
+    }
 }
 
 fn blob_tag_name(
@@ -636,6 +674,28 @@ mod tests {
             assert_eq!(tag_count_for_hash(&alice.blobs(), hash).await, 0);
             assert_eq!(tag_count_for_hash(&bobbi.blobs(), hash).await, 0);
         }
+    }
+
+    async fn temp_blobs() -> (tempfile::TempDir, iroh_blobs::BlobsProtocol) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = iroh_blobs::store::fs::FsStore::load(dir.path())
+            .await
+            .unwrap();
+        (dir, iroh_blobs::BlobsProtocol::new(&store, None))
+    }
+
+    #[tokio::test]
+    async fn local_progress_of_an_unknown_hash_is_zero_and_incomplete() {
+        let (_dir, blobs) = temp_blobs().await;
+        let hash = iroh_blobs::Hash::new(b"never stored");
+        assert_eq!(local_progress(&blobs, hash).await, (0, false));
+    }
+
+    #[tokio::test]
+    async fn local_progress_of_a_stored_blob_is_its_size_and_complete() {
+        let (_dir, blobs) = temp_blobs().await;
+        let tag = blobs.add_bytes(vec![7u8; 5000]).await.unwrap();
+        assert_eq!(local_progress(&blobs, tag.hash).await, (5000, true));
     }
 
     #[tokio::test]
