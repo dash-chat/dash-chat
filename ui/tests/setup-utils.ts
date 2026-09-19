@@ -578,6 +578,12 @@ export const testUtils = {
 			'handleDeepLink called before registerTestUtils provided the callback',
 		);
 	},
+	/** The blob hashes the store's latest progress poll asked about. */
+	blobPolledHashes: (): string[] => {
+		throw new Error(
+			'blobPolledHashes called before registerTestUtils provided the callback',
+		);
+	},
 };
 
 declare global {
@@ -592,6 +598,7 @@ export function registerTestUtils(
 	messages?: Messages,
 	enablePreviewFeatures?: () => void,
 	handleDeepLink?: (url: string) => void,
+	blobPolledHashes?: () => string[],
 ) {
 	window.__test = testUtils;
 	if (enablePreviewFeatures) {
@@ -599,6 +606,9 @@ export function registerTestUtils(
 	}
 	if (handleDeepLink) {
 		testUtils.handleDeepLink = handleDeepLink;
+	}
+	if (blobPolledHashes) {
+		testUtils.blobPolledHashes = blobPolledHashes;
 	}
 	if (goto) {
 		testUtils.goto = goto;

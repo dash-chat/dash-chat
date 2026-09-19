@@ -16,6 +16,9 @@ interface Entry {
  * `progress` subscription are polled, all of them in one request per tick, and
  * a blob leaves the poll once it is complete. */
 export class BlobStore {
+	/** The hashes the latest poll asked about; what a test reads to check
+	 * that only the blobs on screen are polled. */
+	lastPolled: Hash[] = [];
 	private entries = new Map<Hash, Entry>();
 	private timer: ReturnType<typeof setTimeout> | undefined;
 	private polling = false;
@@ -82,6 +85,7 @@ export class BlobStore {
 		const hashes = this.incompleteHashes();
 		if (hashes.length === 0) return;
 		this.polling = true;
+		this.lastPolled = hashes;
 		try {
 			const snapshots = await this.client.getBlobProgress(hashes);
 			for (const snapshot of snapshots) {

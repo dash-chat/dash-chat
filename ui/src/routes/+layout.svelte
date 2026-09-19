@@ -91,6 +91,7 @@
 			m,
 			() => previewFeatures.enable(),
 			url => handleUrls([url], contactsStore),
+			() => blobStore.lastPolled,
 		),
 	);
 

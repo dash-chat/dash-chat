@@ -6,6 +6,7 @@
 		PhotoAttachment,
 	} from 'dash-chat-stores';
 	import { formatFileSize, mediaSrc } from '$lib/utils/media';
+	import { onScreen } from '$lib/utils/on-screen';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		acquireBlob,
@@ -51,7 +52,12 @@
 	);
 
 	const blobStore: BlobStore = getContext('blob-store');
-	const download = $derived(useReactiveValue(blobStore.progress, item.hash));
+	// Only a surface in the viewport asks about its blob, so a long chat polls
+	// for the attachments on screen and no others.
+	let visible = $state(false);
+	const download = $derived(
+		visible ? useReactiveValue(blobStore.progress, item.hash) : undefined,
+	);
 	// Unknown until the first snapshot resolves, and a loaded image is never
 	// covered: the ring only ever overlays a photo known to still be downloading.
 	const downloading = $derived(
@@ -136,6 +142,7 @@
 		data-testid="blob-image"
 		onload={() => (status = 'loaded')}
 		onerror={() => (status = 'error')}
+		{@attach onScreen(v => (visible = v))}
 	/>
 {/if}
 {#if downloading}
@@ -143,6 +150,7 @@
 		class="pointer-events-none absolute inset-0 flex items-center justify-center text-black/60 dark:text-white/70 {imgClass}"
 		style={imgStyle}
 		data-testid="blob-image-downloading"
+		{@attach onScreen(v => (visible = v))}
 	>
 		<BlobProgressRing
 			bytes={$download?.bytes ?? 0}
@@ -166,6 +174,7 @@
 		style={imgStyle}
 		title={m.imageLoadFailedRetry()}
 		data-testid="blob-image-retry"
+		{@attach onScreen(v => (visible = v))}
 	>
 		<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
 			<path fill="currentColor" d={mdiReload} />

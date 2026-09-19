@@ -5,6 +5,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
 	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { onScreen } from '$lib/utils/on-screen';
 	import { VoicePlayer } from './voice-player.svelte';
 	import VoicePlayButton from './VoicePlayButton.svelte';
 	import Waveform from './Waveform.svelte';
@@ -18,7 +19,10 @@
 	let { voice, metadata }: Props = $props();
 
 	const blobStore: BlobStore = getContext('blob-store');
-	const download = $derived(useReactiveValue(blobStore.progress, voice.hash));
+	let visible = $state(false);
+	const download = $derived(
+		visible ? useReactiveValue(blobStore.progress, voice.hash) : undefined,
+	);
 
 	const peaks = $derived(Array.from(voice.waveform, v => v / 255));
 
@@ -49,6 +53,7 @@
 <div
 	class="flex w-60 max-w-full flex-col gap-1 px-1 py-0.5"
 	data-testid="message-attachment-voice"
+	{@attach onScreen(v => (visible = v))}
 >
 	<audio {@attach (el: HTMLAudioElement) => player.attach(el)}></audio>
 

@@ -87,6 +87,7 @@ describe('BlobStore.progress', () => {
 		unsubs.push(subscribe(store, 'h1', []), subscribe(store, 'h2', []));
 		await until(() => client.polls.length >= 2, 'two polls');
 		assert.deepEqual(client.polls[1], ['h1', 'h2']);
+		assert.deepEqual(store.lastPolled, ['h1', 'h2']);
 	});
 
 	it('stops polling a blob once it is complete', async () => {

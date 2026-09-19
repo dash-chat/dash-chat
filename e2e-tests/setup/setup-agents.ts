@@ -162,6 +162,9 @@ export type Agent = WebdriverIO.Browser & {
 	/** How long a download must sit without progress before its ring reports
 	 *  a stall, read from the app so a spec never mirrors the constant. */
 	blobStallIntervalMs(): Promise<number>;
+	/** The blob hashes this agent's latest progress poll asked about: the
+	 *  attachments on screen whose blob is still downloading. */
+	blobPolledHashes(): Promise<string[]>;
 	/** The urls this agent asked the OS to open, once at least `count` have
 	 *  arrived. Recorded by the harness's `xdg-open` stub, so desktop only. */
 	waitForOpenedUrls(count?: number): Promise<string[]>;
@@ -344,6 +347,8 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	};
 	agent.blobStallIntervalMs = () =>
 		b.execute(() => window.__test.blobStallIntervalMs);
+	agent.blobPolledHashes = () =>
+		b.execute(() => window.__test.blobPolledHashes());
 	agent.restart = async () => {
 		await agent.stopApp();
 		await agent.startApp();

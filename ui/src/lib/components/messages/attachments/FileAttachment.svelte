@@ -10,6 +10,7 @@
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import BlobProgressRing from '$lib/components/BlobProgressRing.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { onScreen } from '$lib/utils/on-screen';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
 	import { Preloader } from 'konsta/svelte';
@@ -24,7 +25,10 @@
 	let { file, metadata }: Props = $props();
 
 	const blobStore: BlobStore = getContext('blob-store');
-	const download = $derived(useReactiveValue(blobStore.progress, file.hash));
+	let visible = $state(false);
+	const download = $derived(
+		visible ? useReactiveValue(blobStore.progress, file.hash) : undefined,
+	);
 	const downloadingBlob = $derived(
 		$download !== undefined && !$download.complete,
 	);
@@ -60,6 +64,7 @@
 	class="flex w-full cursor-pointer items-center border-none bg-transparent px-1 py-0.5 text-start text-inherit"
 	data-testid="message-attachment-file"
 	onclick={handleSave}
+	{@attach onScreen(v => (visible = v))}
 >
 	<div
 		class="me-2.5 flex h-10 w-8 shrink-0 items-center justify-center"
