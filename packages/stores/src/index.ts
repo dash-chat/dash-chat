@@ -34,6 +34,10 @@ export * from './tombstones/tombstone-client.js';
 export * from './message-acks/message-ack-store.js';
 export * from './message-acks/message-ack-client.js';
 
+export * from './blobs/blob-store.js';
+export * from './blobs/blob-client.js';
+export * from './blobs/blob-progress-tracker.js';
+
 export * from './mailbox-tracker/mailbox-tracker-store.js';
 export * from './mailbox-tracker/types.js';
 

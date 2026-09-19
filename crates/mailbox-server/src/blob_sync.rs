@@ -517,6 +517,17 @@ fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
 mod tests {
     use super::*;
 
+    /// Follow-up to the pull-based blob download progress work: a test-only
+    /// cap on how fast this server's blob provider releases bytes, so the
+    /// throttled e2e spec (`e2e-tests/specs/blob-download-throttled.spec.ts`)
+    /// can watch a download climb. It must live behind `test_utils` so a
+    /// production mailbox never intercepts a chunk, and reject a zero budget.
+    #[tokio::test]
+    #[ignore = "follow-up: mailbox blob throttle for the throttled e2e spec"]
+    async fn throttled_provider_serves_a_blob_no_faster_than_its_budget() {
+        unimplemented!("set_blob_throttle(Some(32 KiB/s)); fetch 64 KiB; expect >= 1.5s");
+    }
+
     #[tokio::test]
     async fn endpoint_id_matches_secret_key() {
         let dir = tempfile::tempdir().unwrap();

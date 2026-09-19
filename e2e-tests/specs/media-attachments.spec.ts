@@ -55,6 +55,70 @@ describe('Media attachments', () => {
 		await agent2.directChatPage.messages.waitForPhotoMessage('single');
 	});
 
+	it('shows download progress on the receiver until the photo blob arrives', async () => {
+		const messages = agent2.directChatPage.messages;
+		await agent2.setBlobFetchPaused(true);
+		try {
+			await agent1.directChatPage.composer.attachNoisePhoto('held', 800, 600);
+			await agent1.directChatPage.composer.send();
+			await agent1.directChatPage.messages.waitForPhotoMessage('held');
+
+			await messages
+				.photoProgressRing('held')
+				.waitForDisplayed({ timeout: SYNC_TIMEOUT });
+			const bytes = messages.photoProgressBytes('held');
+			await bytes.waitForDisplayed();
+			expect(await bytes.getText()).toMatch(/^0 B \/ /);
+		} finally {
+			await agent2.setBlobFetchPaused(false);
+		}
+		await messages.waitForPhotoMessage('held');
+		await messages
+			.photoProgressRing('held')
+			.waitForDisplayed({ reverse: true });
+	});
+
+	it('recovers a stalled photo download when the cell is tapped', async () => {
+		const messages = agent2.directChatPage.messages;
+		const stallMs = await agent2.blobStallIntervalMs();
+		await agent2.setBlobFetchPaused(true);
+		try {
+			await agent1.directChatPage.composer.attachNoisePhoto(
+				'stalled',
+				800,
+				600,
+			);
+			await agent1.directChatPage.composer.send();
+			await agent1.directChatPage.messages.waitForPhotoMessage('stalled');
+
+			await messages
+				.photoProgressRing('stalled')
+				.waitForDisplayed({ timeout: SYNC_TIMEOUT });
+			await agent2.waitUntil(() => messages.photoProgressStalled('stalled'), {
+				timeout: stallMs + 5000,
+				timeoutMsg: 'Progress ring never entered its stalled state',
+			});
+
+			// Tap while fetching is still paused: the moment it resumes the loop
+			// fetches the blob itself, and a tap landing after that opens the
+			// lightbox instead of routing through BlobImage.retryIfErrored. The
+			// pause also swallows the tap's on-demand fetch, so what the tap
+			// observably does here is clear the stalled state.
+			await messages.photoCell('stalled').click();
+			await agent2.waitUntil(
+				async () => !(await messages.photoProgressStalled('stalled')),
+				{ timeoutMsg: 'Tapping the stalled ring did not clear its stall' },
+			);
+			expect(await messages.lightbox.isOpen()).toBe(false);
+		} finally {
+			await agent2.setBlobFetchPaused(false);
+		}
+		await messages.waitForPhotoMessage('stalled');
+		await messages
+			.photoProgressRing('stalled')
+			.waitForDisplayed({ reverse: true });
+	});
+
 	it('sizes a lone photo from its sender-measured dimensions', async () => {
 		await agent1.directChatPage.composer.attachNoisePhoto(
 			'measured',
@@ -103,6 +167,37 @@ describe('Media attachments', () => {
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForFileMessage('e2e-notes.txt');
 		await agent2.directChatPage.messages.waitForFileMessage('e2e-notes.txt');
+	});
+
+	it('shows download progress on the receiver until the file blob arrives', async () => {
+		const messages = agent2.directChatPage.messages;
+		await agent2.setBlobFetchPaused(true);
+		try {
+			await agent1.directChatPage.composer.attachFile(
+				'held-notes.txt',
+				'hello again from e2e',
+				'text/plain',
+			);
+			await agent1.directChatPage.composer.send();
+			await agent1.directChatPage.messages.waitForFileMessage('held-notes.txt');
+
+			await messages
+				.fileProgressRing('held-notes.txt')
+				.waitForDisplayed({ timeout: SYNC_TIMEOUT });
+			// The tap of a file still downloading is answered with a toast, and
+			// leaves the row as it was.
+			await messages.fileRow('held-notes.txt').click();
+			await agent2.toast.expectMessageContaining(
+				await agent2.tr('fileStillDownloading'),
+			);
+			await messages.fileProgressRing('held-notes.txt').waitForDisplayed();
+		} finally {
+			await agent2.setBlobFetchPaused(false);
+		}
+		await messages.waitForFileMessage('held-notes.txt');
+		await messages
+			.fileProgressRing('held-notes.txt')
+			.waitForDisplayed({ reverse: true });
 	});
 
 	it('rejects an attachment that exceeds the 16 MiB cap', async () => {

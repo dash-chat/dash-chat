@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
-	import type { FileAttachment } from 'dash-chat-stores';
+	import { getContext, type Snippet } from 'svelte';
+	import type { BlobStore, FileAttachment } from 'dash-chat-stores';
 	import {
 		formatFileSize,
 		mediaSize,
@@ -8,6 +8,9 @@
 		BlobLoadError,
 	} from '$lib/utils/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
+	import BlobProgressRing from '$lib/components/BlobProgressRing.svelte';
+	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { onScreen } from '$lib/utils/on-screen';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
 	import { Preloader } from 'konsta/svelte';
@@ -21,10 +24,27 @@
 
 	let { file, metadata }: Props = $props();
 
+	const blobStore: BlobStore = getContext('blob-store');
+	let visible = $state(false);
+	const download = $derived(
+		visible ? useReactiveValue(blobStore.progress, file.hash) : undefined,
+	);
+	const downloadingBlob = $derived(
+		$download !== undefined && !$download.complete,
+	);
+	const stalled = $derived(downloadingBlob && $download?.stalled === true);
+
 	let downloading = $state(false);
 
+	// Saving fetches the blob through the scheme handler, which asks the node
+	// for it right away, so a tap on a stalled file is also its retry.
 	async function handleSave() {
 		if (downloading) return;
+		if (downloadingBlob && !stalled) {
+			showToast(m.fileStillDownloading());
+			return;
+		}
+		if (stalled) blobStore.retry(file.hash);
 		downloading = true;
 		try {
 			if (await saveFileAttachment(file)) showToast(m.fileSaved());
@@ -44,12 +64,20 @@
 	class="flex w-full cursor-pointer items-center border-none bg-transparent px-1 py-0.5 text-start text-inherit"
 	data-testid="message-attachment-file"
 	onclick={handleSave}
+	{@attach onScreen(v => (visible = v))}
 >
 	<div
 		class="me-2.5 flex h-10 w-8 shrink-0 items-center justify-center"
 		data-testid="message-attachment-file-icon"
 	>
-		{#if downloading}
+		{#if downloadingBlob}
+			<BlobProgressRing
+				bytes={$download?.bytes ?? 0}
+				total={mediaSize(file)}
+				{stalled}
+				size={32}
+			/>
+		{:else if downloading}
 			<Preloader class="h-6 w-6" />
 		{:else}
 			<ExtensionSheet name={file.name} />
@@ -60,7 +88,15 @@
 			class="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap"
 			>{file.name}</span
 		>
-		<span class="text-xs opacity-70">{formatFileSize(mediaSize(file))}</span>
+		<span class="text-xs opacity-70" data-testid="message-attachment-file-size">
+			{#if downloadingBlob}
+				{formatFileSize($download?.bytes ?? 0)} / {formatFileSize(
+					mediaSize(file),
+				)}
+			{:else}
+				{formatFileSize(mediaSize(file))}
+			{/if}
+		</span>
 	</div>
 	{#if metadata}
 		<div

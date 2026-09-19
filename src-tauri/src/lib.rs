@@ -187,7 +187,10 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::media::save_blob_to_cache,
+            commands::media::get_blob_progress,
             commands::voice::transcode_voice_message,
+            #[cfg(feature = "e2e-tests")]
+            commands::testing::set_blob_fetch_paused,
         ])
         .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
