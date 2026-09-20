@@ -468,6 +468,17 @@ export class Messages extends TestHelper {
 		);
 	}
 
+	/** Scroll the photo cell to the middle of the chat. WDIO's own
+	 * `scrollIntoView` scrolls a desktop agent with a wheel action aimed at the
+	 * element, which a cell already out of view never receives, so the DOM
+	 * call it falls back to on error is made directly. */
+	async scrollPhotoIntoView(label: string): Promise<void> {
+		await this.agent.execute(
+			(el: HTMLElement) => el.scrollIntoView({ block: 'center' }),
+			await this.photoCell(label),
+		);
+	}
+
 	photoProgressRing(label: string) {
 		return this.photoCell(label).$(tid('blob-progress-ring'));
 	}

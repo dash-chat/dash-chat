@@ -48,7 +48,7 @@ describe('Blob progress polls only the attachments on screen', () => {
 			.photoProgressRing('bottom')
 			.waitForDisplayed({ timeout: SYNC_TIMEOUT });
 
-		await messages.photoCell('bottom').scrollIntoView({ block: 'center' });
+		await messages.scrollPhotoIntoView('bottom');
 		expect(
 			await messages.photoCell('top').isDisplayed({ withinViewport: true }),
 		).toBe(false);
@@ -58,7 +58,7 @@ describe('Blob progress polls only the attachments on screen', () => {
 		);
 		const [bottomHash] = await agent2.blobPolledHashes();
 
-		await messages.photoCell('top').scrollIntoView({ block: 'center' });
+		await messages.scrollPhotoIntoView('top');
 		expect(
 			await messages.photoCell('bottom').isDisplayed({ withinViewport: true }),
 		).toBe(false);

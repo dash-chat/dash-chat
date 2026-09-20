@@ -19,8 +19,10 @@
 
 	let { paused, loading, onclick, download, totalBytes = 0 }: Props = $props();
 
-	const downloading = $derived(download !== undefined && !download.complete);
-	const stalled = $derived(downloading && download?.stalled === true);
+	const downloading = $derived(
+		download !== undefined && !download.complete ? download : undefined,
+	);
+	const stalled = $derived(downloading?.stalled === true);
 </script>
 
 <div class="relative inline-flex shrink-0">
@@ -29,7 +31,7 @@
 		rounded
 		inline
 		onClick={onclick}
-		class="!h-9 !w-9 !p-0 !text-inherit {downloading && !stalled
+		class="!h-9 !w-9 !p-0 !text-inherit {downloading !== undefined && !stalled
 			? 'opacity-50'
 			: ''}"
 		style="background: color-mix(in srgb, currentColor 15%, transparent)"
@@ -48,12 +50,12 @@
 			></wa-icon>
 		{/if}
 	</Button>
-	{#if download !== undefined && downloading}
+	{#if downloading !== undefined}
 		<div
 			class="pointer-events-none absolute inset-0 flex items-center justify-center"
 		>
 			<BlobProgressRing
-				bytes={download.bytes}
+				bytes={downloading.bytes}
 				total={totalBytes}
 				{stalled}
 				size={36}

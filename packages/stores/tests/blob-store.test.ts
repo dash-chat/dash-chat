@@ -13,6 +13,7 @@ const POLL_MS = 5;
  * about; a hash with no snapshot is left out of the answer. */
 class FakeBlobClient implements IBlobClient {
 	polls: Hash[][] = [];
+	fetches: Hash[] = [];
 	snapshots = new Map<Hash, BlobProgress>();
 	failNext = false;
 
@@ -23,6 +24,10 @@ class FakeBlobClient implements IBlobClient {
 			throw new Error('node not ready');
 		}
 		return hashes.flatMap(hash => this.snapshots.get(hash) ?? []);
+	}
+
+	async fetchBlobNow(hash: Hash): Promise<void> {
+		this.fetches.push(hash);
 	}
 
 	set(hash: Hash, bytes: number, complete = false): void {
@@ -65,7 +70,11 @@ describe('BlobStore.progress', () => {
 
 	beforeEach(() => {
 		client = new FakeBlobClient();
-		store = new BlobStore(client, POLL_MS);
+		store = new BlobStore(client, {
+			pollMs: POLL_MS,
+			stalledPollMs: POLL_MS * 20,
+			stallMs: POLL_MS * 4,
+		});
 	});
 
 	afterEach(() => {
@@ -145,12 +154,30 @@ describe('BlobStore.progress', () => {
 		assert.deepEqual(seen, [{ bytes: 0, complete: false, stalled: false }]);
 	});
 
-	it('retry clears a stalled flag', async () => {
+	it('drops a blob the poll returned no row for', async () => {
+		client.set('h2', 0);
+		const seen: BlobState[] = [];
+		unsubs.push(subscribe(store, 'h1', seen), subscribe(store, 'h2', []));
+		await until(() => client.polls.length >= 3, 'later polls');
+		assert.deepEqual(client.polls[0], ['h1', 'h2']);
+		assert.deepEqual(client.polls.at(-1), ['h2']);
+		assert.deepEqual(seen, []);
+	});
+
+	it('flags a stall, then polls slowly until a retry', async () => {
 		client.set('h1', 0);
 		const seen: BlobState[] = [];
 		unsubs.push(subscribe(store, 'h1', seen));
-		await until(() => seen.length > 0, 'the first snapshot');
+		await until(() => seen.at(-1)?.stalled === true, 'the stall');
+		const before = client.polls.length;
+		await sleep(POLL_MS * 8);
+		assert.ok(
+			client.polls.length <= before + 1,
+			`polled ${client.polls.length - before} times while stalled`,
+		);
 		store.retry('h1');
-		assert.equal(seen.at(-1)?.stalled, false);
+		assert.deepEqual(client.fetches, ['h1']);
+		await until(() => seen.at(-1)?.stalled === false, 'the cleared stall');
+		await until(() => client.polls.length > before + 1, 'the poll after retry');
 	});
 });

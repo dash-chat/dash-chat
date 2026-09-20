@@ -55,15 +55,18 @@
 	// Only a surface in the viewport asks about its blob, so a long chat polls
 	// for the attachments on screen and no others.
 	let visible = $state(false);
-	const download = $derived(
-		visible ? useReactiveValue(blobStore.progress, item.hash) : undefined,
+	const hash = $derived(item.hash);
+	const progress = $derived(
+		visible ? useReactiveValue(blobStore.progress, hash) : undefined,
 	);
 	// Unknown until the first snapshot resolves, and a loaded image is never
 	// covered: the ring only ever overlays a photo known to still be downloading.
 	const downloading = $derived(
-		$download !== undefined && !$download.complete && status !== 'loaded',
+		$progress !== undefined && !$progress.complete && status !== 'loaded'
+			? $progress
+			: undefined,
 	);
-	const stalled = $derived(downloading && $download?.stalled === true);
+	const stalled = $derived(downloading?.stalled === true);
 
 	// A fresh mount or a new blob re-attempts from scratch, which also self-heals
 	// a blob that failed only because it hadn't synced yet. A retry (token bump)
@@ -82,30 +85,27 @@
 	});
 
 	// The scheme handler gives up on an <img> after 30s, which a slow download
-	// can outlast; once the blob lands, load the image again without a tap.
+	// can outlast: an error while the blob is known to be still downloading is
+	// not final, and the image loads again once the blob lands.
 	let reloadOnComplete = false;
 	$effect(() => {
-		if (status === 'error' && $download?.complete !== true)
+		if (status === 'error' && $progress?.complete === false) {
 			reloadOnComplete = true;
-	});
-	$effect(() => {
-		if ($download?.complete !== true || !reloadOnComplete) return;
-		reloadOnComplete = false;
-		untrack(() => retryBlob(item.hash));
+		} else if (reloadOnComplete && $progress?.complete === true) {
+			reloadOnComplete = false;
+			untrack(() => retryBlob(hash));
+		}
 	});
 
-	/** If this image is stalled or showing its reload placeholder, re-fetch the
-	 * blob on every surface and report that the click was handled. Lets a parent
-	 * decide a click means "retry" vs. its normal action without tracking load
+	/** A click on a blob still downloading asks the node for it now. If this
+	 * image is stalled or showing its reload placeholder, it also re-fetches
+	 * the blob on every surface and reports that the click was handled, so a
+	 * parent can tell "retry" from its normal action without tracking load
 	 * state itself. */
 	export function retryIfErrored(): boolean {
-		if (stalled) {
-			blobStore.retry(item.hash);
-			retryBlob(item.hash);
-			return true;
-		}
-		if (status !== 'error') return false;
-		retryBlob(item.hash);
+		if (downloading !== undefined) blobStore.retry(hash);
+		if (!stalled && status !== 'error') return false;
+		retryBlob(hash);
 		return true;
 	}
 
@@ -145,26 +145,27 @@
 		{@attach onScreen(v => (visible = v))}
 	/>
 {/if}
-{#if downloading}
+{#if downloading !== undefined}
+	<!-- Not sized or transformed like the image: a ring the lightbox's zoom
+	     would scale is no use, and the scrim keeps it legible over any photo. -->
 	<div
-		class="pointer-events-none absolute inset-0 flex items-center justify-center text-black/60 dark:text-white/70 {imgClass}"
-		style={imgStyle}
+		class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-white"
 		data-testid="blob-image-downloading"
 		{@attach onScreen(v => (visible = v))}
 	>
-		<BlobProgressRing
-			bytes={$download?.bytes ?? 0}
-			total={item.size}
-			{stalled}
-			size={compact ? 20 : 40}
-		/>
+		<div class="rounded-full bg-black/50 {compact ? 'p-0.5' : 'p-1.5'}">
+			<BlobProgressRing
+				bytes={downloading.bytes}
+				total={item.size}
+				{stalled}
+				size={compact ? 20 : 40}
+			/>
+		</div>
 		{#if !compact}
 			<span
-				class="absolute start-1 top-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] leading-tight text-white"
+				class="rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] leading-tight"
 				data-testid="blob-progress-bytes"
-				>{formatFileSize($download?.bytes ?? 0)} / {formatFileSize(
-					item.size,
-				)}</span
+				>{formatFileSize(downloading.bytes)} / {formatFileSize(item.size)}</span
 			>
 		{/if}
 	</div>
