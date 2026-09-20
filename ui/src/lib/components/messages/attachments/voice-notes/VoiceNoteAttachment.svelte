@@ -4,7 +4,7 @@
 	import { formatDuration } from '$lib/utils/time';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
-	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { useBlobProgress } from '$lib/stores/use-blob-progress.svelte';
 	import { onScreen } from '$lib/utils/on-screen';
 	import { VoicePlayer } from './voice-player.svelte';
 	import VoicePlayButton from './VoicePlayButton.svelte';
@@ -21,8 +21,10 @@
 	const blobStore: BlobStore = getContext('blob-store');
 	let visible = $state(false);
 	const hash = $derived(voice.hash);
-	const progress = $derived(
-		visible ? useReactiveValue(blobStore.progress, hash) : undefined,
+	const progress = useBlobProgress(
+		blobStore,
+		() => hash,
+		() => visible,
 	);
 
 	const peaks = $derived(Array.from(voice.waveform, v => v / 255));
@@ -30,7 +32,7 @@
 	// A tap on a note still downloading asks the node for it now and says so;
 	// playback waits for a tap once the blob has landed.
 	function onPlayClick() {
-		if ($progress !== undefined && !$progress.complete) {
+		if (progress.current !== undefined && !progress.current.complete) {
 			blobStore.retry(hash);
 			showToast(m.fileStillDownloading());
 			return;
@@ -61,7 +63,7 @@
 			paused={player.paused}
 			loading={player.loading}
 			onclick={onPlayClick}
-			download={$progress}
+			download={progress.current}
 			totalBytes={voice.size}
 		/>
 

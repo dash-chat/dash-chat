@@ -7,7 +7,7 @@
 	} from 'dash-chat-stores';
 	import { formatFileSize, mediaSrc } from '$lib/utils/media';
 	import { onScreen } from '$lib/utils/on-screen';
-	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { useBlobProgress } from '$lib/stores/use-blob-progress.svelte';
 	import {
 		acquireBlob,
 		blobToken,
@@ -56,14 +56,18 @@
 	// for the attachments on screen and no others.
 	let visible = $state(false);
 	const hash = $derived(item.hash);
-	const progress = $derived(
-		visible ? useReactiveValue(blobStore.progress, hash) : undefined,
+	const progress = useBlobProgress(
+		blobStore,
+		() => hash,
+		() => visible,
 	);
 	// Unknown until the first snapshot resolves, and a loaded image is never
 	// covered: the ring only ever overlays a photo known to still be downloading.
 	const downloading = $derived(
-		$progress !== undefined && !$progress.complete && status !== 'loaded'
-			? $progress
+		progress.current !== undefined &&
+			!progress.current.complete &&
+			status !== 'loaded'
+			? progress.current
 			: undefined,
 	);
 	const stalled = $derived(downloading?.stalled === true);
@@ -89,9 +93,9 @@
 	// not final, and the image loads again once the blob lands.
 	let reloadOnComplete = false;
 	$effect(() => {
-		if (status === 'error' && $progress?.complete === false) {
+		if (status === 'error' && progress.current?.complete === false) {
 			reloadOnComplete = true;
-		} else if (reloadOnComplete && $progress?.complete === true) {
+		} else if (reloadOnComplete && progress.current?.complete === true) {
 			reloadOnComplete = false;
 			untrack(() => retryBlob(hash));
 		}
@@ -101,7 +105,8 @@
 	 * image is stalled or showing its reload placeholder, it also re-fetches
 	 * the blob on every surface and reports that the click was handled, so a
 	 * parent can tell "retry" from its normal action without tracking load
-	 * state itself. */
+	 * state itself. A photo merely downloading is not handled here: it opens
+	 * as usual, and the lightbox shows the same ring. */
 	export function retryIfErrored(): boolean {
 		if (downloading !== undefined) blobStore.retry(hash);
 		if (!stalled && status !== 'error') return false;
@@ -182,6 +187,9 @@
 		</svg>
 	</span>
 {:else if status === 'loading'}
+	<!-- No onScreen here: the <img> above is mounted alongside and reports for
+	     this box. Should it ever unmount while loading, `visible` would freeze
+	     and the blob would stop being polled. -->
 	<div
 		class="pointer-events-none absolute inset-0 flex items-center justify-center"
 		aria-busy="true"

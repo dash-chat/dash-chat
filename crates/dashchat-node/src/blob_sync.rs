@@ -49,6 +49,9 @@ pub struct BlobSync {
     pub fetch_pool: BlobFetchPool,
     pub sources: MixedSourceLookup,
     downloader: Downloader,
+    /// Hashes with an on-demand fetch running, so a tap and the image request
+    /// it triggers share one attempt instead of racing two.
+    in_flight: Arc<std::sync::Mutex<std::collections::HashSet<iroh_blobs::Hash>>>,
     /// Test-only: while set, every fetch attempt gives up at once, so a spec
     /// can hold an attachment in its downloading state long enough to look at.
     #[cfg(feature = "testing")]
@@ -89,6 +92,7 @@ impl BlobSync {
             fetch_pool: blob_fetch,
             sources,
             downloader,
+            in_flight: Default::default(),
             #[cfg(feature = "testing")]
             fetch_paused: Default::default(),
         })
@@ -259,8 +263,13 @@ impl BlobSync {
     /// another chance instead of leaving the caller to wait out the window.
     /// Tries every topic the pool associates with the hash; concurrent
     /// downloads of the same hash are coalesced by the iroh-blobs downloader,
-    /// so racing the background loop is safe.
+    /// so racing the background loop is safe. A second call for a hash whose
+    /// attempt is still running returns `false` at once rather than starting
+    /// another; its caller watches the store for the blob anyway.
     pub async fn fetch_now(&self, hash: iroh_blobs::Hash, timeout: Duration) -> bool {
+        let Some(_in_flight) = InFlight::claim(&self.in_flight, hash) else {
+            return false;
+        };
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if self.blobs.has(hash).await.unwrap_or(false) {
@@ -283,6 +292,30 @@ impl BlobSync {
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
+    }
+}
+
+/// Membership of a hash in an in-flight set for as long as the guard lives.
+struct InFlight {
+    set: Arc<std::sync::Mutex<std::collections::HashSet<iroh_blobs::Hash>>>,
+    hash: iroh_blobs::Hash,
+}
+
+impl InFlight {
+    fn claim(
+        set: &Arc<std::sync::Mutex<std::collections::HashSet<iroh_blobs::Hash>>>,
+        hash: iroh_blobs::Hash,
+    ) -> Option<Self> {
+        set.lock().unwrap().insert(hash).then(|| Self {
+            set: set.clone(),
+            hash,
+        })
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        self.set.lock().unwrap().remove(&self.hash);
     }
 }
 
@@ -682,6 +715,17 @@ mod tests {
             .await
             .unwrap();
         (dir, iroh_blobs::BlobsProtocol::new(&store, None))
+    }
+
+    #[test]
+    fn a_hash_is_in_flight_only_while_its_guard_lives() {
+        let set = Default::default();
+        let hash = iroh_blobs::Hash::new(b"fetching");
+        let guard = InFlight::claim(&set, hash).unwrap();
+        assert!(InFlight::claim(&set, hash).is_none());
+        assert!(InFlight::claim(&set, iroh_blobs::Hash::new(b"other")).is_some());
+        drop(guard);
+        assert!(InFlight::claim(&set, hash).is_some());
     }
 
     #[tokio::test]

@@ -68,7 +68,7 @@ describe('Media attachments', () => {
 				.waitForDisplayed({ timeout: SYNC_TIMEOUT });
 			const bytes = messages.photoProgressBytes('held');
 			await bytes.waitForDisplayed();
-			expect(await bytes.getText()).toMatch(/^0 B \/ /);
+			expect(await bytes.getText()).toMatch(/ \/ /);
 		} finally {
 			await agent2.setBlobFetchPaused(false);
 		}

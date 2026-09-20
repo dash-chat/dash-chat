@@ -21,10 +21,7 @@ export interface BlobStoreTiming {
 	stallMs: number;
 }
 
-interface Entry {
-	tracker: BlobProgressTracker;
-	publish: (state: BlobState) => void;
-}
+type Publish = (state: BlobState) => void;
 
 /** Download state of the blobs currently on screen. Only blobs with a live
  * `progress` subscription are polled, all of them in one request per tick, and
@@ -33,7 +30,11 @@ export class BlobStore {
 	/** The hashes the latest poll asked about; what a test reads to check
 	 * that only the blobs on screen are polled. */
 	lastPolled: Hash[] = [];
-	private entries = new Map<Hash, Entry>();
+	/** One tracker per blob asked about, outliving its subscription so a blob
+	 * scrolled away and back keeps its stall clock and last state; pruned once
+	 * the blob is complete and nothing shows it. */
+	private trackers = new Map<Hash, BlobProgressTracker>();
+	private subscribers = new Map<Hash, Publish>();
 	private timer: ReturnType<typeof setTimeout> | undefined;
 	private polling = false;
 	private pollAgainSoon = false;
@@ -56,16 +57,18 @@ export class BlobStore {
 	progress = reactive(
 		(hash: Hash): ReactivePromise<BlobState> =>
 			relay(state => {
-				const entry: Entry = {
-					tracker: new BlobProgressTracker(this.timing.stallMs),
-					publish: next => {
-						if (!sameState(state.value, next)) state.value = next;
-					},
+				const known = this.trackers.get(hash)?.state;
+				if (known !== undefined) state.value = known;
+				const publish: Publish = next => {
+					if (!sameState(state.value, next)) state.value = next;
 				};
-				this.entries.set(hash, entry);
+				this.subscribers.set(hash, publish);
 				this.schedule(0);
 				return () => {
-					if (this.entries.get(hash) === entry) this.entries.delete(hash);
+					if (this.subscribers.get(hash) === publish)
+						this.subscribers.delete(hash);
+					if (this.trackers.get(hash)?.state?.complete === true)
+						this.trackers.delete(hash);
 				};
 			}),
 	);
@@ -76,24 +79,34 @@ export class BlobStore {
 		this.client
 			.fetchBlobNow(hash)
 			.catch(e => console.error('blob fetch request failed', e));
-		const entry = this.entries.get(hash);
-		const next = entry?.tracker.retry();
-		if (entry !== undefined && next !== undefined) entry.publish(next);
+		const next = this.trackers.get(hash)?.retry();
+		if (next !== undefined) this.subscribers.get(hash)?.(next);
 		this.schedule(0);
 	}
 
-	private incompleteEntries(): Map<Hash, Entry> {
-		const incomplete = new Map<Hash, Entry>();
-		this.entries.forEach((entry, hash) => {
-			if (entry.tracker.state?.complete !== true) incomplete.set(hash, entry);
+	private trackerFor(hash: Hash): BlobProgressTracker {
+		let tracker = this.trackers.get(hash);
+		if (tracker === undefined) {
+			tracker = new BlobProgressTracker(this.timing.stallMs);
+			this.trackers.set(hash, tracker);
+		}
+		return tracker;
+	}
+
+	private incompleteSubscribers(): Map<Hash, Publish> {
+		const incomplete = new Map<Hash, Publish>();
+		this.subscribers.forEach((publish, hash) => {
+			if (this.trackers.get(hash)?.state?.complete !== true)
+				incomplete.set(hash, publish);
 		});
 		return incomplete;
 	}
 
 	private everyDownloadStalled(): boolean {
-		let stalled = true;
-		this.incompleteEntries().forEach(entry => {
-			if (entry.tracker.state?.stalled !== true) stalled = false;
+		const incomplete = this.incompleteSubscribers();
+		let stalled = incomplete.size > 0;
+		incomplete.forEach((_, hash) => {
+			if (this.trackers.get(hash)?.state?.stalled !== true) stalled = false;
 		});
 		return stalled;
 	}
@@ -114,19 +127,20 @@ export class BlobStore {
 	}
 
 	private async poll(): Promise<void> {
-		const polled = this.incompleteEntries();
+		const polled = this.incompleteSubscribers();
 		if (polled.size === 0) return;
 		this.polling = true;
 		this.lastPolled = Array.from(polled.keys());
 		try {
 			const snapshots = await this.client.getBlobProgress(this.lastPolled);
 			for (const snapshot of snapshots) {
-				const entry = this.entries.get(snapshot.hash);
-				if (entry !== undefined) entry.publish(entry.tracker.apply(snapshot));
+				const state = this.trackerFor(snapshot.hash).apply(snapshot);
+				this.subscribers.get(snapshot.hash)?.(state);
 				polled.delete(snapshot.hash);
 			}
-			polled.forEach((entry, hash) => {
-				if (this.entries.get(hash) === entry) this.entries.delete(hash);
+			polled.forEach((publish, hash) => {
+				if (this.subscribers.get(hash) === publish)
+					this.subscribers.delete(hash);
 			});
 		} catch (e) {
 			console.error('blob progress poll failed', e);

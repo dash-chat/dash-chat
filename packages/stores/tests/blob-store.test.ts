@@ -164,6 +164,48 @@ describe('BlobStore.progress', () => {
 		assert.deepEqual(seen, []);
 	});
 
+	it('reports the last known state at once when subscribed to again', async () => {
+		client.set('h1', 10);
+		const first: BlobState[] = [];
+		const unsub = subscribe(store, 'h1', first);
+		await until(() => first.length > 0, 'the first snapshot');
+		unsub();
+		await sleep(POLL_MS * 3);
+		client.set('h1', 20);
+		const again: BlobState[] = [];
+		unsubs.push(subscribe(store, 'h1', again));
+		assert.deepEqual(again, [{ bytes: 10, complete: false, stalled: false }]);
+		await until(() => again.at(-1)?.bytes === 20, 'the next snapshot');
+	});
+
+	it('keeps the stall clock running while nothing shows the blob', async () => {
+		client.set('h1', 0);
+		const unsub = subscribe(store, 'h1', []);
+		await until(() => client.polls.length > 0, 'the first poll');
+		unsub();
+		await sleep(POLL_MS * 6);
+		const before = client.polls.length;
+		const seen: BlobState[] = [];
+		unsubs.push(subscribe(store, 'h1', seen));
+		await until(() => seen.at(-1)?.stalled === true, 'the stall');
+		assert.ok(
+			client.polls.length - before <= 1,
+			`took ${client.polls.length - before} polls to notice the stall`,
+		);
+	});
+
+	it('reports a complete blob as complete at once when subscribed to again', async () => {
+		client.set('h1', 800, true);
+		const first: BlobState[] = [];
+		const unsub = subscribe(store, 'h1', first);
+		await until(() => first.length > 0, 'the first snapshot');
+		unsub();
+		await sleep(POLL_MS * 3);
+		const again: BlobState[] = [];
+		unsubs.push(subscribe(store, 'h1', again));
+		assert.deepEqual(again, [{ bytes: 800, complete: true, stalled: false }]);
+	});
+
 	it('flags a stall, then polls slowly until a retry', async () => {
 		client.set('h1', 0);
 		const seen: BlobState[] = [];

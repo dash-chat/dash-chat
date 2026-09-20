@@ -14,12 +14,17 @@
 	let { bytes, total, stalled, size = 40 }: Props = $props();
 
 	const STROKE = 3;
+	const MIN_DETERMINATE_FRACTION = 0.05;
 	const radius = $derived(size / 2 - STROKE);
 	const circumference = $derived(2 * Math.PI * radius);
 	const fraction = $derived(
 		total > 0 ? Math.min(1, Math.max(0, bytes / total)) : 0,
 	);
-	const indeterminate = $derived(bytes === 0 && !stalled);
+	// Spinning until the arc has something to show: an unknown total, or the
+	// first bytes, would otherwise snap the spinner to a near-empty ring.
+	const indeterminate = $derived(
+		!stalled && (total <= 0 || fraction < MIN_DETERMINATE_FRACTION),
+	);
 	const dashOffset = $derived(
 		indeterminate ? circumference * 0.75 : circumference * (1 - fraction),
 	);

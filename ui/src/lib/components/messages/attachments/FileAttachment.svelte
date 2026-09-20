@@ -9,7 +9,7 @@
 	} from '$lib/utils/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import BlobProgressRing from '$lib/components/BlobProgressRing.svelte';
-	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { useBlobProgress } from '$lib/stores/use-blob-progress.svelte';
 	import { onScreen } from '$lib/utils/on-screen';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
@@ -27,11 +27,15 @@
 	const blobStore: BlobStore = getContext('blob-store');
 	let visible = $state(false);
 	const hash = $derived(file.hash);
-	const progress = $derived(
-		visible ? useReactiveValue(blobStore.progress, hash) : undefined,
+	const progress = useBlobProgress(
+		blobStore,
+		() => hash,
+		() => visible,
 	);
 	const downloading = $derived(
-		$progress !== undefined && !$progress.complete ? $progress : undefined,
+		progress.current !== undefined && !progress.current.complete
+			? progress.current
+			: undefined,
 	);
 
 	let saving = $state(false);

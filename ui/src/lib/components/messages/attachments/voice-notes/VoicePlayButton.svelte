@@ -53,6 +53,7 @@
 	{#if downloading !== undefined}
 		<div
 			class="pointer-events-none absolute inset-0 flex items-center justify-center"
+			aria-hidden={stalled}
 		>
 			<BlobProgressRing
 				bytes={downloading.bytes}
