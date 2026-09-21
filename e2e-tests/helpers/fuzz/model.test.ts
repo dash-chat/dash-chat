@@ -41,13 +41,13 @@ function contacts(m: ExpectedModel, a: string, b: string): void {
 }
 
 function sameLan(...names: string[]): ExpectedModel {
-	return new ExpectedModel(names.map(phone));
+	return new ExpectedModel(names.map(phone), [], false);
 }
 
 /** Phones with a cloud mailbox and its pushes, which is what reaches one that
  *  is away from the foreground. */
 function withCloud(...names: string[]): ExpectedModel {
-	return new ExpectedModel(names.map(phone), [], true, true);
+	return new ExpectedModel(names.map(phone), [], true, true, true);
 }
 
 const N1 = 'lab-a';
@@ -58,16 +58,21 @@ function lans(networks: string[], ...names: string[]): ExpectedModel {
 	return new ExpectedModel(
 		names.map(phone),
 		networks.map(name => ({ name, home: false })),
+		false,
 	);
 }
 
 /** `networks` plus the home LAN the hubs are on while the card is on none
  *  of them. */
 function lansWithHome(networks: string[], ...names: string[]): ExpectedModel {
-	return new ExpectedModel(names.map(phone), [
-		...networks.map(name => ({ name, home: false })),
-		{ name: HOME, home: true },
-	]);
+	return new ExpectedModel(
+		names.map(phone),
+		[
+			...networks.map(name => ({ name, home: false })),
+			{ name: HOME, home: true },
+		],
+		false,
+	);
 }
 
 test('a text reaches a contact on the same LAN', () => {
@@ -322,6 +327,7 @@ function lansWithCloud(networks: string[], ...names: string[]): ExpectedModel {
 		networks.map(name => ({ name, home: false })),
 		true,
 		true,
+		true,
 	);
 }
 
@@ -382,7 +388,7 @@ test('the cloud carries what a phone missed while its link was down', () => {
 });
 
 test('a push reaches a phone that is away, and is read when it is back', () => {
-	const m = new ExpectedModel([desktop(A), phone(B)], [], true, true);
+	const m = new ExpectedModel([desktop(A), phone(B)], [], true, true, true);
 	contacts(m, A, B);
 	m.propagate();
 	const chat = m.directChat(A, B);
@@ -400,6 +406,7 @@ test('a push wakes a stopped phone, and nothing wakes a stopped desktop', () => 
 	const m = new ExpectedModel(
 		[desktop(A), phone(B), desktop(C)],
 		[],
+		true,
 		true,
 		true,
 	);
@@ -430,6 +437,14 @@ test('a contact request notifies the agent it was sent to', () => {
 	m.propagate();
 	assert.deepEqual(showing(m, B), [A]);
 	assert.deepEqual(showing(m, A), []);
+});
+
+test('a contact request reaches a phone that is away', () => {
+	const m = new ExpectedModel([desktop(A), phone(B)], [], true, true, true);
+	m.background(B);
+	m.recordAdded(A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), [A]);
 });
 
 test('opening the chat clears the request it was sent in', () => {

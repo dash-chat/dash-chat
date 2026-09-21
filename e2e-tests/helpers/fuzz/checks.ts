@@ -72,13 +72,15 @@ async function expectShade(m: ExpectedModel, sa: StressAgent): Promise<void> {
 	const generic = sa.notificationTexts?.generic ?? null;
 	let missing: NotificationView[] = [];
 	let extra: DeliveredNotification[] = [];
+	let delivered: DeliveredNotification[] = [];
 	try {
 		await helper.readingDelivered(read =>
 			sa.agent.waitUntil(
 				async () => {
+					delivered = await read();
 					({ missing, extra } = matchNotifications(
 						expected,
-						besidesGeneric(await read(), generic),
+						besidesGeneric(delivered, generic),
 					));
 					return missing.length === 0 && extra.length === 0;
 				},
@@ -97,7 +99,24 @@ async function expectShade(m: ExpectedModel, sa: StressAgent): Promise<void> {
 				`${sa.name}'s notifications could not be read: ${String(err)}`,
 			);
 		}
-		throw new Error(`${sa.name}'s notifications: ${problems.join('; ')}`);
+		// Everything the device holds, generic ones included: matching drops
+		// those, so without them a shade that showed the wrong thing and one
+		// that showed nothing read identically here.
+		const shade =
+			delivered.length === 0
+				? 'nothing'
+				: delivered.map(d => `"${d.title}: ${d.texts.join(' | ')}"`).join(', ');
+		// What the model was waiting for, even when that is nothing: an empty
+		// list says it credited this agent with no operation at all, which is a
+		// different fault from one whose wording failed to match.
+		const wanted =
+			expected.length === 0
+				? 'nothing'
+				: expected.map(n => `"${describeExpected(n)}"`).join(', ');
+		throw new Error(
+			`${sa.name}'s notifications: ${problems.join('; ')}; ` +
+				`it holds ${shade}, and the model wants ${wanted}`,
+		);
 	}
 	if (helper.readingResumesApp && m.isActive(sa.name)) m.foreground(sa.name);
 	if (expected.length > 0) {

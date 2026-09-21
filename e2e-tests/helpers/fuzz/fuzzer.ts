@@ -11,10 +11,14 @@
 import fc from 'fast-check';
 
 import { assertInRange, leaveWifi, wifiDevice } from '../../setup/host-wifi';
-import { mailboxWakesPhones } from '../../setup/mailbox-control';
+import {
+	healMailboxLink,
+	mailboxDegradable,
+	mailboxServing,
+	mailboxWakesPhones,
+} from '../../setup/mailbox-control';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
-import type { Link } from '../../setup/toxiproxy';
 import type { RenderedMessage } from '../components/messages';
 import { contactLinkOf } from '../flows/exchange-contacts';
 import { createGroup } from '../flows/exchange-contacts-and-create-group';
@@ -114,7 +118,6 @@ export class Fuzzer {
 			 *  chat row, a notification and a move report name its agent. */
 			agents: Record<string, Agent>;
 			networks?: WifiNetwork[];
-			cloud?: Link;
 		},
 	): Promise<Fuzzer> {
 		const suite = ctx.test?.parent;
@@ -131,6 +134,9 @@ export class Fuzzer {
 		const real = newReal({
 			...init,
 			hubsDevice: networked ? wifiDevice() : null,
+			// A spec that took the mailbox down before preparing gets a model
+			// whose cloud is already unreachable, without having to say so.
+			cloudUsable: await mailboxServing(),
 			push: await mailboxWakesPhones(),
 		});
 		if (networked) {
@@ -470,7 +476,7 @@ async function parkHubs(real: Real): Promise<void> {
  *  networks stay on the air, so the phones forget them or the supplicant
  *  may pick one again. */
 async function teardown(real: Real): Promise<void> {
-	if (real.cloud !== null) await real.cloud.heal();
+	if (mailboxDegradable()) await healMailboxLink();
 	await parkHubs(real);
 	if (real.networks.length === 0) return;
 	for (const network of labNetworks(real)) await leaveWifi(network.ssid);
@@ -496,9 +502,9 @@ async function teardown(real: Real): Promise<void> {
  * against a chip budget written for a short outage.
  */
 async function resetSequence(model: ExpectedModel, real: Real): Promise<void> {
-	if (real.cloud !== null) {
-		await real.cloud.heal();
-		model.setCloudUsable(true);
+	if (mailboxDegradable()) {
+		await healMailboxLink();
+		model.setCloudUsable(await mailboxServing());
 	}
 	// Each agent's reset touches nothing but its own session.
 	await Promise.all(real.agents.map(sa => resetAgent(model, sa)));

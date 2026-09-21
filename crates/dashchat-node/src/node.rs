@@ -1846,7 +1846,7 @@ impl Node {
 
     /// Returns true if we have an outgoing contact request recorded for
     /// `device_pubkey` (i.e. we scanned their code and are awaiting their ack).
-    pub(crate) async fn has_outgoing_pending_request(
+    pub async fn has_outgoing_pending_request(
         &self,
         device_id: DeviceId,
     ) -> anyhow::Result<bool> {
