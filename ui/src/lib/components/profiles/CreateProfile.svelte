@@ -1,7 +1,12 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { getContext } from 'svelte';
-	import type { ContactsStore, Error, SettingsStore } from 'dash-chat-stores';
+	import {
+		type ContactsStore,
+		type Error,
+		type SettingsStore,
+		invokeAfterSetup,
+	} from 'dash-chat-stores';
 	import AvatarPicker from './AvatarPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
@@ -22,6 +27,12 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
 	import Avatar from './Avatar.svelte';
+
+	type PermissionState =
+		| 'granted'
+		| 'denied'
+		| 'prompt'
+		| 'promptWithRationale';
 
 	let { onBack }: { onBack?: () => void } = $props();
 
@@ -45,6 +56,20 @@
 	function selectAvatar() {
 		avatar = pickerAvatar;
 		showPicker = false;
+	}
+
+	async function requestLocalNetworkPermission() {
+		if (!isMobile) return;
+		try {
+			const { localNetwork } = await invokeAfterSetup<{
+				localNetwork: PermissionState;
+			}>('plugin:network-interfaces|check_permissions');
+			if (localNetwork !== 'granted') {
+				await invokeAfterSetup('plugin:network-interfaces|request_permissions');
+			}
+		} catch (e) {
+			console.error('Failed to request local network permission:', e);
+		}
 	}
 
 	async function requestNotificationPermission() {
@@ -74,6 +99,7 @@
 				avatar,
 				about: undefined,
 			});
+			await requestLocalNetworkPermission();
 			await requestNotificationPermission();
 		} catch (e) {
 			console.error(e);

@@ -11040,7 +11040,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-network-interfaces"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=05a06951ae93f4b3197cb45366520fdffb84611c#05a06951ae93f4b3197cb45366520fdffb84611c"
+source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=90f383f32c74ab28b79be51bf5e6088644b2226c#90f383f32c74ab28b79be51bf5e6088644b2226c"
 dependencies = [
  "serde",
  "tauri",
