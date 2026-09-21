@@ -1,11 +1,16 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { networkInterfaces } from 'node:os';
+import { readFileSync, rmSync } from 'node:fs';
+import { networkInterfaces, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
 import { echoLinesWithPrefix } from '../agent-logger';
-import { allocatePinnedPort } from '../allocate-port';
+import {
+	SLOT_PORT_STRIDE,
+	allocatePinnedPort,
+	allocatePinnedPortFrom,
+} from '../allocate-port';
 import {
 	type Want,
 	claimAllWhenFreeSync,
@@ -204,6 +209,34 @@ export const APP_STATE_NOT_RUNNING = 1;
 /** `mobile: queryAppState` value for "the app is on screen". */
 export const APP_STATE_FOREGROUND = 4;
 
+/** SIGKILL the phone's push extension process, so the next push starts a
+ *  fresh one — with a node built from the app's current data — instead of
+ *  waking an old process still holding a node from before. */
+export function killIosPushExtension(udid: string): void {
+	const listing = path.join(
+		tmpdir(),
+		`dashchat-processes-${udid}-${process.pid}.json`,
+	);
+	execSync(
+		`xcrun devicectl device info processes --device ${udid} --json-output "${listing}"`,
+		{ stdio: 'ignore' },
+	);
+	const { result } = JSON.parse(readFileSync(listing, 'utf8')) as {
+		result: {
+			runningProcesses: { executable?: string; processIdentifier: number }[];
+		};
+	};
+	rmSync(listing, { force: true });
+	for (const p of result.runningProcesses) {
+		if (p.executable?.endsWith('/PushNotificationsExtension') !== true)
+			continue;
+		execSync(
+			`xcrun devicectl device process signal --device ${udid} --pid ${p.processIdentifier} --signal SIGKILL`,
+			{ stdio: 'ignore' },
+		);
+	}
+}
+
 /** Reset an iOS agent to first-launch state without reinstalling the app.
  *
  *  iOS has no adb-style data clear, and reinstalling the ~135MB .ipa per spec
@@ -364,8 +397,14 @@ export class IosPlatform implements AgentPlatform {
 				// (WDA "xcodebuild failed with code 65"). Same reason as the per-slot
 				// ports above.
 				'appium:derivedDataPath': path.join(E2E_DIR, '.appium', `wda-${slot}`),
-				'appium:wdaLocalPort': allocatePinnedPort(`_WDIO_WDA_PORT${slot}`),
-				'appium:mjpegServerPort': allocatePinnedPort(`_WDIO_MJPEG_PORT${slot}`),
+				'appium:wdaLocalPort': allocatePinnedPortFrom(
+					`_WDIO_WDA_PORT${slot}`,
+					8100 + slot * SLOT_PORT_STRIDE,
+				),
+				'appium:mjpegServerPort': allocatePinnedPortFrom(
+					`_WDIO_MJPEG_PORT${slot}`,
+					9100 + slot * SLOT_PORT_STRIDE,
+				),
 				'appium:wdaLaunchTimeout': 120_000,
 				// 0 disables idle expiry: specs like review-checks park one agent
 				// for the whole spec after setup, far beyond any sane timeout.

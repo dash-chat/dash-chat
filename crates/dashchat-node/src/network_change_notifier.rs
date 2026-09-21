@@ -32,8 +32,9 @@ use crate::mailbox::MailboxOperation;
 use crate::stores::OpStore;
 
 /// Spawn the network-change notifier for the given endpoint and mailboxes.
+/// An offline node has no endpoint; it still wants its mailboxes probed.
 pub(crate) fn spawn(
-    endpoint: p2panda::Endpoint,
+    endpoint: Option<p2panda::Endpoint>,
     mailboxes: Mailboxes<MailboxOperation, OpStore>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
@@ -50,7 +51,9 @@ pub(crate) fn spawn(
             }
             tracing::info!("network-change notifier: probing mailboxes");
             mailboxes.probe_all().await;
-            notify_iroh(&endpoint).await;
+            if let Some(endpoint) = &endpoint {
+                notify_iroh(endpoint).await;
+            }
         }
     })
 }
