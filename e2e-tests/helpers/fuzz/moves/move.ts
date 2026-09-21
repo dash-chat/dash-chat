@@ -6,8 +6,8 @@ import {
 	failuresDir,
 	saveFailureScreenshot,
 } from '../../../setup/failure-screenshots';
-import { type Real, at, log } from '../agents';
-import { settle } from '../checks';
+import { type Real, type StressAgent, at, byName, log } from '../agents';
+import { expectNotifications, settle } from '../checks';
 import type { ExpectedModel } from '../model';
 
 /**
@@ -29,6 +29,7 @@ export abstract class Move implements fc.AsyncCommand<ExpectedModel, Real> {
 		try {
 			await this.perform(m, real);
 			await settle(m, real);
+			await expectNotifications(m, real);
 		} catch (err) {
 			log(
 				`${this.toString()} failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
@@ -114,4 +115,29 @@ export function steps(kinds: Moves): fc.Arbitrary<Step> {
 	return fc
 		.tuple(index(), index(), index(), index())
 		.map(([k, a, b, c]) => new Step(kinds, k, a, b, c));
+}
+
+/**
+ * A move one agent makes. It carries an abstract `agentIdx` rather than a
+ * name: `actors` says who could make it in the state it finds, and the index
+ * resolves against them, so a drawn sequence stays valid however the world
+ * changed and shrinking can lower indices freely. Saying who can act is also
+ * what makes the move applicable at all, so `check` follows from it.
+ */
+export abstract class ActorMove extends Move {
+	constructor(readonly agentIdx: number) {
+		super();
+	}
+
+	/** The agents that can make this move right now. */
+	abstract actors(m: Readonly<ExpectedModel>): string[];
+
+	check(m: Readonly<ExpectedModel>): boolean {
+		return this.actors(m).length > 0;
+	}
+
+	/** The one `agentIdx` picks among them. */
+	protected actor(m: Readonly<ExpectedModel>, real: Real): StressAgent {
+		return byName(real, at(this.actors(m), this.agentIdx));
+	}
 }

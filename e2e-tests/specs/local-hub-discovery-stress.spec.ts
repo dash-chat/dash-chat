@@ -16,10 +16,12 @@
  * a failure).
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
 import { deviceMoves } from '../helpers/fuzz/moves/device';
 import { hubMoves } from '../helpers/fuzz/moves/hub';
-import { networkMoves } from '../helpers/fuzz/moves/network';
+import { MDNS_RECORD_TTL_S, networkMoves } from '../helpers/fuzz/moves/network';
+import { sleepMove } from '../helpers/fuzz/moves/sleep';
 import { envInt } from '../helpers/utils';
 import {
 	isRemoteMailbox,
@@ -49,28 +51,26 @@ describe('Local hub stress', function () {
 		if (wifiNetworks().length === 0) this.skip();
 		// The mailbox must be killable, which a remote environment's is not.
 		if (isRemoteMailbox()) this.skip();
-		// Only a physical phone can change network without losing its driver
-		// session.
-		[agent1, agent2] = await setupAgents(this, [
-			{ platform: 'mobile' },
-			{ platform: 'mobile' },
-		]);
-		// An emulator is NAT'd off the host, so no test network can reach it.
-		if ([agent1, agent2].some(a => a.platform === 'android-emulator')) {
-			this.skip();
-		}
 		// Down before anything syncs, and for the chip to be on screen at all.
 		// Killed, not suspended: a network change wakes every mailbox poller,
 		// and a suspended cloud then counts as connected until its polls time
 		// out again, hiding the chip for any hub found meanwhile.
 		await killMailbox();
 		mailboxKilled = true;
-		await createProfiles({ Alice: agent1, Bob: agent2 });
+		// Only a physical phone can change network without losing its driver
+		// session, and an emulator is NAT'd off the host besides.
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'phone' },
+			{ platform: 'phone' },
+		]);
+		const agents = { Alice: agent1, Bob: agent2 };
+		await createProfiles(agents);
+		// The phones must meet before the first sequence walks them onto
+		// networks that cannot reach each other; `prepare` reads the contacts
+		// they end up with.
+		await exchangeContacts([agent1, agent2]);
 		fuzzer = await Fuzzer.prepare(this, {
-			agents: [
-				{ agent: agent1, name: 'Alice' },
-				{ agent: agent2, name: 'Bob' },
-			],
+			agents,
 			networks: wifiNetworks(),
 		});
 	});
@@ -84,7 +84,14 @@ describe('Local hub stress', function () {
 		const length = envInt('E2E_STRESS_COMMANDS', 15);
 		const seed = envInt('E2E_STRESS_SEED', Math.floor(Math.random() * 2 ** 31));
 		await fuzzer.search({
-			moves: [...hubMoves, ...networkMoves, ...deviceMoves],
+			moves: [
+				...hubMoves,
+				...networkMoves,
+				...deviceMoves,
+				// Past the record TTL, so a hub whose records stop being refreshed
+				// drops off the chip while nothing else is happening.
+				sleepMove(1, MDNS_RECORD_TTL_S + 10),
+			],
 			attempts,
 			length,
 			seed,

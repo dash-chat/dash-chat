@@ -1,19 +1,53 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { ExpectedModel } from './model.ts';
+import { ExpectedModel, type NotificationTexts } from './model.ts';
+
+/** The wording the app puts in a notification it cannot fully name, as the
+ *  English catalogue has it. */
+const TEXTS: NotificationTexts = {
+	generic: 'You have a new message',
+	unnamedSender: 'New message',
+	photos: { 1: 'Photo', 2: '2 photos', 3: '3 photos' },
+	voice: 'Voice message',
+};
+
+/** A phone, whose notifications a run reads. */
+function phone(name: string) {
+	return { name, mobile: true, notifications: TEXTS };
+}
+
+/** A desktop, which posts none this way and so is read for none. */
+function desktop(name: string) {
+	return { name, mobile: false, notifications: null };
+}
 
 const A = 'Alice';
 const B = 'Bob';
 const C = 'Carol';
 
+/** Both sides enter the other's link, which is what `addContact` does: each
+ *  add lands on the pair's chat, where the app clears what it posted for it.
+ *  Both end up back on the chat list, as a user who carries on does. */
 function contacts(m: ExpectedModel, a: string, b: string): void {
 	m.recordAdded(a, b);
+	m.openedDirectChat(a, b);
+	m.propagate();
 	m.recordAdded(b, a);
+	m.openedDirectChat(b, a);
+	m.propagate();
+	m.wentHome(a);
+	m.wentHome(b);
 }
 
 function sameLan(...names: string[]): ExpectedModel {
-	return new ExpectedModel(names.map(name => ({ name, mobile: true })));
+	return new ExpectedModel(names.map(phone));
+}
+
+/** Phones with a cloud mailbox and its pushes, which is what reaches one that
+ *  is away from the foreground. */
+function withCloud(...names: string[]): ExpectedModel {
+	return new ExpectedModel(names.map(phone), [], true, true);
 }
 
 const N1 = 'lab-a';
@@ -22,7 +56,7 @@ const HOME = 'office';
 
 function lans(networks: string[], ...names: string[]): ExpectedModel {
 	return new ExpectedModel(
-		names.map(name => ({ name, mobile: true })),
+		names.map(phone),
 		networks.map(name => ({ name, home: false })),
 	);
 }
@@ -30,13 +64,10 @@ function lans(networks: string[], ...names: string[]): ExpectedModel {
 /** `networks` plus the home LAN the hubs are on while the card is on none
  *  of them. */
 function lansWithHome(networks: string[], ...names: string[]): ExpectedModel {
-	return new ExpectedModel(
-		names.map(name => ({ name, mobile: true })),
-		[
-			...networks.map(name => ({ name, home: false })),
-			{ name: HOME, home: true },
-		],
-	);
+	return new ExpectedModel(names.map(phone), [
+		...networks.map(name => ({ name, home: false })),
+		{ name: HOME, home: true },
+	]);
 }
 
 test('a text reaches a contact on the same LAN', () => {
@@ -54,7 +85,8 @@ test('a text reaches a contact on the same LAN', () => {
 
 test('a direct chat is pending until the peer profile arrives', () => {
 	const m = sameLan(A, B);
-	contacts(m, A, B);
+	m.recordAdded(A, B);
+	m.recordAdded(B, A);
 	const chat = m.directChat(A, B);
 	assert.equal(m.view(A, chat).pending, true);
 	m.propagate();
@@ -209,7 +241,7 @@ test('a view folds only the revisions the viewer knows', () => {
 	const chat = m.directChat(A, B);
 	const msg = m.addMessage(chat, A, 'text', 'sm-1');
 	m.propagate();
-	m.background(B);
+	m.stopApp(B);
 	m.recordEdit(msg);
 	m.recordReaction(msg, A, '👍');
 	m.recordReaction(msg, A, '❤️');
@@ -217,7 +249,7 @@ test('a view folds only the revisions the viewer knows', () => {
 	const stale = m.view(B, chat).messages[0];
 	assert.equal(stale.text, 'sm-1');
 	assert.equal(stale.reactions.size, 0);
-	m.foreground(B);
+	m.startApp(B);
 	m.propagate();
 	const fresh = m.view(B, chat).messages[0];
 	assert.equal(fresh.text, 'sm-1 v1');
@@ -286,8 +318,9 @@ test('a running hub carries what it learnt at home onto the LAN it moves to', ()
  * its link is usable. */
 function lansWithCloud(networks: string[], ...names: string[]): ExpectedModel {
 	return new ExpectedModel(
-		names.map(name => ({ name, mobile: true })),
+		names.map(phone),
 		networks.map(name => ({ name, home: false })),
+		true,
 		true,
 	);
 }
@@ -312,7 +345,7 @@ test('the cloud relays between LANs only while its link is usable', () => {
 
 test('agents without p2p sync through the cloud alone', () => {
 	const m = new ExpectedModel(
-		[A, B].map(name => ({ name, mobile: false, p2p: false })),
+		[A, B].map(name => ({ ...desktop(name), p2p: false })),
 		[],
 		true,
 	);
@@ -330,7 +363,7 @@ test('agents without p2p sync through the cloud alone', () => {
 	assert.equal(m.knows(B).has('message:sm-2'), true);
 });
 
-test('the cloud holds a message for a backgrounded phone through a cut', () => {
+test('the cloud carries what a phone missed while its link was down', () => {
 	const m = lansWithCloud([N1, N2], A, B);
 	contacts(m, A, B);
 	m.agentJoin(A, N1);
@@ -338,12 +371,499 @@ test('the cloud holds a message for a backgrounded phone through a cut', () => {
 	m.propagate();
 	const chat = m.directChat(A, B);
 	m.background(B);
+	m.setCloudUsable(false);
 	m.addMessage(chat, A, 'text', 'sm-1');
 	m.propagate();
-	m.setCloudUsable(false);
-	m.foreground(B);
-	assert.equal(m.propagate().has(B), false);
+	assert.equal(m.knows(B).has('message:sm-1'), false);
 	m.setCloudUsable(true);
+	m.foreground(B);
 	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
 	assert.equal(m.knows(B).has('message:sm-1'), true);
+});
+
+test('a push reaches a phone that is away, and is read when it is back', () => {
+	const m = new ExpectedModel([desktop(A), phone(B)], [], true, true);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.background(B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	// The push wakes its app, which fetches the message and announces it —
+	// there is just no screen to read it on until it comes back.
+	assert.equal(m.propagate().has(B), false);
+	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	m.foreground(B);
+	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
+});
+
+test('a push wakes a stopped phone, and nothing wakes a stopped desktop', () => {
+	const m = new ExpectedModel(
+		[desktop(A), phone(B), desktop(C)],
+		[],
+		true,
+		true,
+	);
+	contacts(m, A, B);
+	contacts(m, A, C);
+	m.propagate();
+	m.stopApp(B);
+	m.stopApp(C);
+	m.addMessage(m.directChat(A, B), A, 'text', 'sm-1');
+	m.addMessage(m.directChat(A, C), A, 'text', 'sm-2');
+	m.propagate();
+	assert.equal(m.knows(B).has('message:sm-1'), true);
+	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.equal(m.knows(C).has('message:sm-2'), false);
+});
+
+/** What the device shows for each notification, joined the way a failure
+ *  prints them. */
+function showing(m: ExpectedModel, name: string): string[] {
+	return m
+		.expectedNotifications(name)
+		.map(n => [...n.shows, ...n.oneOf].join(': '));
+}
+
+test('a contact request notifies the agent it was sent to', () => {
+	const m = sameLan(A, B);
+	m.recordAdded(A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), [A]);
+	assert.deepEqual(showing(m, A), []);
+});
+
+test('opening the chat clears the request it was sent in', () => {
+	const m = sameLan(A, B);
+	m.recordAdded(A, B);
+	m.propagate();
+	m.openedDirectChat(B, A);
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('a group invite notifies the member it names, after whoever added them', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	// "<A> added you to the group": the title is the group's name only once
+	// the op naming it has arrived too, so only the adder is asserted.
+	assert.deepEqual(showing(m, B), [A]);
+	m.openedChat(B, group);
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('a message notifies everyone in its chat but its sender', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.deepEqual(showing(m, A), []);
+});
+
+test('a message notifies nobody until it reaches them', () => {
+	const m = lansWithCloud([N1, N2], A, B);
+	contacts(m, A, B);
+	m.agentJoin(A, N1);
+	m.agentJoin(B, N2);
+	m.propagate();
+	m.setCloudUsable(false);
+	m.addMessage(m.directChat(A, B), A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), []);
+	m.setCloudUsable(true);
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+});
+
+test('a photo says who sent it, a file what it is called', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'photo', 'sm-1');
+	m.propagate();
+	// A caption-less photo is announced by the placeholder the app shows for
+	// it, which names the kind of message rather than the message.
+	assert.deepEqual(showing(m, B), [`${A}: ${TEXTS.photos[1]}`]);
+	m.addMessage(chat, A, 'file', 'sm-2');
+	m.propagate();
+	// Both arrived unread into the one entry the chat has, so it reads
+	// whichever of them the app ended up showing.
+	assert.deepEqual(showing(m, B), [`${A}: ${TEXTS.photos[1]}: sm-2`]);
+});
+
+test('several photos in one message are announced as several', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'photo', 'ph-3', undefined, 3);
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: ${TEXTS.photos[3]}`]);
+});
+
+test('accepting a request tells the agent that sent it nothing', () => {
+	const m = sameLan(A, B);
+	m.recordAdded(A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), [A]);
+	m.recordAdded(B, A);
+	m.propagate();
+	// A learns it has a chat by having one, not by being interrupted.
+	assert.deepEqual(showing(m, A), []);
+	assert.deepEqual(m.chatsFor(A), [m.directChat(A, B)]);
+});
+
+test('being removed from a group takes the chat away without a word', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	m.openedChat(B, group);
+	m.wentHome(B);
+	m.removeGroupMember(group, A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), []);
+	assert.deepEqual(m.chatsFor(B), [m.directChat(A, B)]);
+});
+
+test('a chat collapses into one notification, carrying one of its messages', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.addMessage(chat, A, 'text', 'sm-2');
+	m.propagate();
+	// One entry, and what it reads is whichever of them the device wrote
+	// into it last.
+	assert.deepEqual(showing(m, B), [`${A}: sm-1: sm-2`]);
+	m.openedChat(B, chat);
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('a message into the chat an agent is looking at notifies nothing', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.openedChat(B, chat);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('an app away from the foreground is notified for the chat it was left on', () => {
+	const m = withCloud(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.openedChat(B, chat);
+	m.background(B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+});
+
+test('coming back to the front clears the chat the app returns to', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.openedChat(B, chat);
+	m.background(B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	m.foreground(B);
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('a stopped app comes back on the chat list, not on what it was showing', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.openedChat(B, chat);
+	m.stopApp(B);
+	m.startApp(B);
+	assert.equal(m.viewingChat(B), null);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+});
+
+test('a message in a chat an agent is not in notifies it of nothing', () => {
+	const m = sameLan(A, B, C);
+	contacts(m, A, B);
+	contacts(m, A, C);
+	m.propagate();
+	m.addMessage(m.directChat(A, B), A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, C), []);
+});
+
+test('only agents whose device is read hold notifications', () => {
+	const m = new ExpectedModel([desktop(A), desktop(B)]);
+	contacts(m, A, B);
+	m.propagate();
+	m.addMessage(m.directChat(A, B), A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(m.expectedNotifications(B), []);
+	assert.deepEqual(m.notifiedNames(), []);
+});
+
+test('contacts an agent already had need no request to have happened', () => {
+	const m = sameLan(A, B);
+	m.recordExistingContacts(A, B);
+	const chat = m.directChat(A, B);
+	assert.equal(m.view(A, chat).pending, false);
+	assert.equal(m.view(B, chat).pending, false);
+	// The request that made them contacts was sent before the run began, so
+	// nothing of it may be expected on a device.
+	assert.deepEqual(showing(m, B), []);
+	assert.deepEqual(showing(m, A), []);
+});
+
+test('a group an agent was already in is one it can open', () => {
+	const m = sameLan(A, B, C);
+	const group = m.recordExistingGroup('group-001', [A, B]);
+	assert.deepEqual(m.chatsFor(A), [group]);
+	assert.deepEqual(m.chatsFor(C), []);
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('a message an agent already had is one it knows and nobody is notified of', () => {
+	const m = sameLan(A, B);
+	m.recordExistingContacts(A, B);
+	const chat = m.directChat(A, B);
+	m.recordExistingMessage(chat, A, 'text', 'hello', [A, B], {
+		deleted: false,
+		reactions: [],
+	});
+	assert.deepEqual(
+		m.view(B, chat).messages.map(v => v.text),
+		['hello'],
+	);
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('a message only one agent had is known only to it', () => {
+	const m = sameLan(A, B);
+	m.recordExistingContacts(A, B);
+	const chat = m.directChat(A, B);
+	m.recordExistingMessage(chat, A, 'text', 'only-here', [A], {
+		deleted: false,
+		reactions: [],
+	});
+	assert.deepEqual(m.view(B, chat).messages, []);
+	assert.deepEqual(
+		m.view(A, chat).messages.map(v => v.text),
+		['only-here'],
+	);
+	// It reaches the other once they sync, as any message does.
+	m.propagate();
+	assert.deepEqual(
+		m.view(B, chat).messages.map(v => v.text),
+		['only-here'],
+	);
+});
+
+test('a message already carrying reactions keeps them without naming who', () => {
+	const m = sameLan(A, B);
+	m.recordExistingContacts(A, B);
+	const chat = m.directChat(A, B);
+	m.recordExistingMessage(chat, A, 'text', 'reacted', [A, B], {
+		deleted: false,
+		reactions: ['👍', '❤️'],
+	});
+	const [view] = m.view(B, chat).messages;
+	assert.deepEqual([...view.reactions.values()].sort(), ['❤️', '👍'].sort());
+});
+
+test('the run carries on from what it found, notifying for its own messages', () => {
+	const m = withCloud(A, B);
+	m.recordExistingContacts(A, B);
+	const chat = m.directChat(A, B);
+	m.recordExistingMessage(chat, A, 'text', 'from-before', [A, B], {
+		deleted: false,
+		reactions: [],
+	});
+	m.background(B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	m.foreground(B);
+	m.propagate();
+	assert.deepEqual(
+		m.view(B, chat).messages.map(v => v.text),
+		['from-before', 'sm-1'],
+	);
+});
+
+test('an agent syncing a peer inbox does not join the groups invited there', () => {
+	const m = sameLan(A, B, C);
+	contacts(m, A, B);
+	contacts(m, B, C);
+	m.propagate();
+	// B invites C; A syncs B's and C's inboxes because it added B, so it
+	// learns of the invite without being in the group.
+	const group = m.addGroup(B, [C], 'group-001');
+	const growth = m.propagate();
+	assert.deepEqual([...(growth.get(C) ?? [])], [group]);
+	assert.equal(growth.has(A), false);
+	assert.equal(m.chatsFor(A).includes(group), false);
+});
+
+test('a member may leave a group, and a last admin with company may not', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	// A created it and B is still in it.
+	assert.deepEqual(m.leavableGroups(A), []);
+	assert.deepEqual(m.leavableGroups(B), [group]);
+	// Leaving starts by opening the group, which clears the invite it was
+	// announced with.
+	m.openedChat(B, group);
+	m.leaveGroup(group, B);
+	m.wentHome(B);
+	assert.deepEqual(m.chatsFor(B), [m.directChat(A, B)]);
+	// A still counts B until the departure reaches it.
+	assert.deepEqual(m.leavableGroups(A), []);
+	m.propagate();
+	assert.deepEqual(m.leavableGroups(A), [group]);
+	// Leaving is its own doing, so nothing is announced for it.
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('a group stays on a device that was away until the removal reaches it', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	m.openedChat(B, group);
+	m.wentHome(B);
+	m.stopApp(B);
+	m.removeGroupMember(group, A, B);
+	m.propagate();
+	// B heard nothing of it, so the group is still one of its chats — and
+	// the members A has are already down to itself.
+	assert.equal(m.chatsFor(B).includes(group), true);
+	assert.deepEqual(m.membersFor(group, A), [A]);
+	assert.deepEqual(m.membersFor(group, B), [A, B]);
+	m.startApp(B);
+	m.propagate();
+	assert.equal(m.chatsFor(B).includes(group), false);
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('a blocked contact is offered by no picker and writes to nobody', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.blockContact(A, B);
+	assert.deepEqual(m.contactsOf(A), []);
+	assert.deepEqual(m.blockedPeers(A), [B]);
+	assert.equal(m.view(A, chat).blocked, true);
+	assert.deepEqual(m.sendableChatsFor(A), []);
+	// B knows nothing of it and writes on; A's node throws it away.
+	assert.deepEqual(m.sendableChatsFor(B), [chat]);
+	m.addMessage(chat, B, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(m.view(A, chat).messages, []);
+	assert.deepEqual(showing(m, A), []);
+});
+
+test('unblocking brings back what comes after, never what was thrown away', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.blockContact(A, B);
+	m.addMessage(chat, B, 'text', 'sm-1');
+	m.propagate();
+	m.unblockContact(A, B);
+	m.addMessage(chat, B, 'text', 'sm-2');
+	m.propagate();
+	assert.deepEqual(
+		m.view(A, chat).messages.map(v => v.text),
+		['sm-2'],
+	);
+	assert.deepEqual(m.contactsOf(A), [B]);
+});
+
+test('a renamed group keeps its identity and reaches members one by one', () => {
+	const m = sameLan(A, B, C);
+	contacts(m, A, B);
+	contacts(m, A, C);
+	m.propagate();
+	const group = m.addGroup(A, [B, C], 'group-001');
+	m.propagate();
+	const { name, description } = m.nextGroupInfo();
+	m.stopApp(C);
+	m.setGroupInfo(group, name, description);
+	m.propagate();
+	assert.equal(m.chatListName(group, A), name);
+	assert.equal(m.chatListName(group, B), name);
+	assert.deepEqual(m.groupInfo(group, B), { name, description });
+	// C was away for it, so its list still says what the group was called.
+	assert.equal(m.chatListName(group, C), 'group-001');
+	m.startApp(C);
+	m.propagate();
+	assert.equal(m.chatListName(group, C), name);
+	// Messages sent before and after the rename are in the same chat.
+	assert.equal(m.chatsFor(C).length, 2);
+});
+
+test('a new name reaches the devices that have heard it, and only those', () => {
+	// No cloud, so nothing wakes an app that is not running.
+	const m = sameLan(A, B, C);
+	contacts(m, A, B);
+	contacts(m, A, C);
+	m.propagate();
+	const withB = m.directChat(A, B);
+	const withC = m.directChat(A, C);
+	const named = m.nextProfileName();
+	m.stopApp(C);
+	m.updateProfile(A, named);
+	m.propagate();
+	assert.equal(m.chatListName(withB, B), named);
+	assert.equal(m.displayName(B, A), named);
+	// C was away for it, so its list still says what it was told before.
+	assert.equal(m.chatListName(withC, C), A);
+	m.startApp(C);
+	m.propagate();
+	assert.equal(m.chatListName(withC, C), named);
+});
+
+test('a notification names its sender the way the device knows them', () => {
+	const m = withCloud(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	const named = m.nextProfileName();
+	m.updateProfile(A, named);
+	m.propagate();
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${named}: sm-1`]);
+});
+
+test('a renamed peer is still a peer whose profile has arrived', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.updateProfile(B, m.nextProfileName());
+	m.propagate();
+	assert.equal(m.view(A, chat).pending, false);
+	assert.deepEqual(m.sendableChatsFor(A), [chat]);
 });
