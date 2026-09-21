@@ -52,14 +52,13 @@ describe('Traffic landing while the app is open', function () {
 	/** Both sides send `BURST` messages, turn and turn about, then each
 	 *  must show every message of both. */
 	async function crossfire(round: number): Promise<void> {
-		const fromRex = Array.from(
-			{ length: BURST },
-			(_, i) => `rex ${round}.${i + 1}`,
-		);
-		const fromSam = Array.from(
-			{ length: BURST },
-			(_, i) => `sam ${round}.${i + 1}`,
-		);
+		// Padded: `waitForMessage` matches on a substring, so an unpadded
+		// "rex 1.1" would be satisfied by the bubble holding "rex 1.10" — and a
+		// dropped first message of a round is exactly what this spec looks for.
+		const label = (who: string, i: number) =>
+			`${who} ${round}.${String(i + 1).padStart(String(BURST).length, '0')}`;
+		const fromRex = Array.from({ length: BURST }, (_, i) => label('rex', i));
+		const fromSam = Array.from({ length: BURST }, (_, i) => label('sam', i));
 		for (let i = 0; i < BURST; i++) {
 			await iphone.directChatPage.composer.sendMessage(fromRex[i]);
 			await mac.directChatPage.composer.sendMessage(fromSam[i]);

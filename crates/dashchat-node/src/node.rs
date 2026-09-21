@@ -82,8 +82,9 @@ pub struct NodeConfig {
     /// The Node's initialization will reject any config with `enable_p2p` set to false
     /// and either `mdns_mode` or `use_relay` set to active/true.
     ///
-    /// The iroh endpoint itself
-    /// always stays up — mailbox blob/media exchange rides it and is unaffected.
+    /// On its own this keeps the iroh endpoint up — mailbox blob/media exchange
+    /// rides it. Together with [`Self::enable_blob_sync`] off, nothing needs the
+    /// endpoint and the node is spawned with no networking layer at all.
     /// (The blob fetcher does still *attempt* a direct dial to a blob's author
     /// as a fallback source, but with every discovery surface off it has no
     /// address to dial, so those attempts cannot connect.)
@@ -94,6 +95,11 @@ pub struct NodeConfig {
     /// endpoint. Only the iOS push extension disables this — it never touches
     /// media, and opening the iroh-blobs `redb` metadata store would deadlock on
     /// the exclusive single-process lock the always-on main app already holds.
+    ///
+    /// Off together with [`Self::enable_p2p`], it also drops the whole
+    /// networking layer: [`Node::iroh_endpoint`] then errors, and every surface
+    /// that dials — cloud-mailbox self-registration, the in-process mailbox
+    /// server — is unavailable.
     pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
     /// How often the followup task re-announces still-unfetched blob hashes to
@@ -609,6 +615,10 @@ impl Node {
         // book. Callers register a mailbox's address on every poll; erroring
         // here would take the mailbox registration down with it.
         if self.endpoint.is_none() {
+            tracing::debug!(
+                peer = %addr.id,
+                "skipping peer address: this node has no networking layer"
+            );
             return Ok(());
         }
 
@@ -1547,19 +1557,18 @@ impl Node {
         // Holds only sockets (no file lock), so it goes last. The node keeps its
         // own endpoint clone, so the actor drop above doesn't release it. A node
         // with no networking layer never opened one.
-        let Some(endpoint) = &self.endpoint else {
-            return Ok(());
-        };
-        match endpoint.endpoint().await {
-            Ok(endpoint) => {
-                if tokio::time::timeout(std::time::Duration::from_secs(3), endpoint.close())
-                    .await
-                    .is_err()
-                {
-                    tracing::warn!("timed out closing iroh endpoint");
+        if let Some(endpoint) = &self.endpoint {
+            match endpoint.endpoint().await {
+                Ok(endpoint) => {
+                    if tokio::time::timeout(std::time::Duration::from_secs(3), endpoint.close())
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("timed out closing iroh endpoint");
+                    }
                 }
+                Err(err) => tracing::warn!("failed to resolve iroh endpoint for close: {err:?}"),
             }
-            Err(err) => tracing::warn!("failed to resolve iroh endpoint for close: {err:?}"),
         }
 
         Ok(())

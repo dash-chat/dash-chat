@@ -66,17 +66,32 @@ function isFree(port: number): boolean {
 	}
 }
 
+/** How far apart per-slot bases sit, and so how far [`allocatePinnedPortFrom`]
+ *  may walk before it would reach the next slot's ports. */
+export const SLOT_PORT_STRIDE = 10;
+
 /**
  * Like [`allocatePinnedPort`], but the port is the first free one from
  * `base` up rather than any free one. For a port a phone binds as well as
  * the host: any-free lands in the range iOS also hands its own outgoing
  * connections (49152 and up), where the phone's bind then fails with
  * "Address already in use" as soon as the app has a few sockets open.
+ *
+ * The scan stops before the next slot's base: `isFree` releases the port
+ * again right away, so a slot walking into its neighbour's range would hand
+ * both slots the same port long before either one actually binds it.
  */
 export function allocatePinnedPortFrom(envName: string, base: number): number {
 	if (process.env[envName] === undefined) {
+		const limit = base + SLOT_PORT_STRIDE;
 		let port = base;
-		while (!isFree(port)) port += 1;
+		while (!isFree(port)) {
+			port += 1;
+			if (port >= limit)
+				throw new Error(
+					`No free port for ${envName} in ${base}..${limit - 1} — a previous run's processes are probably still holding them`,
+				);
+		}
 		process.env[envName] = String(port);
 	}
 	return Number(process.env[envName]);

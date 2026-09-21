@@ -10,9 +10,9 @@ async fn nodes_without_networking_exchange_messages_through_a_mailbox() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
     let poll = PollConfig::default();
-    // A mem mailbox on purpose rather than `TestMailbox::from_env`: a served
-    // one registers the node's own dialing address back, which a node with no
-    // networking layer has none of.
+    // A mem mailbox on purpose rather than `TestMailbox::from_env`: it keeps
+    // the test on one transport whatever `MAILBOX_URL` says, and what is under
+    // test is the operation exchange, not the HTTP hop.
     let mailbox = MemMailbox::<MailboxOperation>::new();
 
     let alice = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "alice")
@@ -58,4 +58,5 @@ async fn a_no_p2p_node_keeps_its_endpoint_for_media() {
     node.iroh_endpoint()
         .await
         .expect("a no_p2p node still has an iroh endpoint");
+    node.shutdown().await.unwrap();
 }
