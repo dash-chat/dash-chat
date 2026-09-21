@@ -18,7 +18,9 @@ use swarm_discovery::DropGuard;
 use tokio::sync::broadcast;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::{base_discoverer, label_to_mailbox_id, multicast_interfaces_v4, service_name};
+use crate::{
+    base_discoverer, label_to_mailbox_id, local_subnets_v4, multicast_interfaces_v4, service_name,
+};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// How many sightings are probed at once; the rest wait their turn.
@@ -206,16 +208,41 @@ impl FoundHubs {
     }
 }
 
-/// TCP-probe a hub's advertised addresses
+/// TCP-probe a hub's advertised addresses, nearest first.
 async fn probe_reachable(addrs: &BTreeSet<(IpAddr, u16)>) -> Option<String> {
-    let (loopback, routable): (Vec<_>, Vec<_>) =
-        addrs.iter().copied().partition(|(ip, _)| ip.is_loopback());
-    for group in [routable, loopback] {
+    let subnets = local_subnets_v4();
+    for group in probe_order(addrs, &subnets) {
         if let Some(addr) = race_connect(&group).await {
             return Some(format!("http://{addr}"));
         }
     }
     None
+}
+
+/// The addresses to try, nearest first: those on a subnet this host is on,
+/// then any other, then loopback — which a browser elsewhere on the LAN would
+/// take to mean its own host.
+fn probe_order(
+    addrs: &BTreeSet<(IpAddr, u16)>,
+    subnets: &[(Ipv4Addr, u8)],
+) -> [Vec<(IpAddr, u16)>; 3] {
+    let mut order: [Vec<(IpAddr, u16)>; 3] = Default::default();
+    for &(ip, port) in addrs {
+        let group = match ip {
+            _ if ip.is_loopback() => 2,
+            IpAddr::V4(v4) if on_a_local_subnet(v4, subnets) => 0,
+            _ => 1,
+        };
+        order[group].push((ip, port));
+    }
+    order
+}
+
+fn on_a_local_subnet(ip: Ipv4Addr, subnets: &[(Ipv4Addr, u8)]) -> bool {
+    subnets.iter().any(|&(local, prefix)| {
+        (1..=32).contains(&prefix)
+            && u32::from(ip) >> (32 - prefix) == u32::from(local) >> (32 - prefix)
+    })
 }
 
 /// The first of `addrs` to accept a connection, all raced together
@@ -336,6 +363,18 @@ mod tests {
     fn sorted(mut events: Vec<LocalHubEvent>) -> Vec<LocalHubEvent> {
         events.sort_by_key(|event| format!("{event:?}"));
         events
+    }
+
+    #[test]
+    fn an_address_on_a_subnet_of_ours_is_probed_before_one_that_is_not() {
+        let subnets = [(Ipv4Addr::new(192, 168, 0, 105), 24)];
+        let bridge = (IpAddr::V4(Ipv4Addr::new(172, 17, 0, 1)), 80);
+        let lan = (IpAddr::V4(Ipv4Addr::new(192, 168, 0, 7)), 80);
+        let loopback = (IpAddr::V4(Ipv4Addr::LOCALHOST), 80);
+
+        let order = probe_order(&BTreeSet::from([bridge, lan, loopback]), &subnets);
+
+        assert_eq!(order, [vec![lan], vec![bridge], vec![loopback]]);
     }
 
     #[tokio::test]

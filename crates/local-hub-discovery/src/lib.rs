@@ -4,6 +4,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::LazyLock;
 
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
+use if_addrs::Interface;
 use swarm_discovery::{Discoverer, IpClass};
 
 mod announce;
@@ -51,27 +52,117 @@ pub(crate) fn label_to_mailbox_id(label: &str) -> anyhow::Result<String> {
     Ok(BASE64URL_NOPAD.encode(&BASE32_NOPAD.decode(label.as_bytes())?))
 }
 
-/// The local IPv4 interfaces to pin mDNS multicast egress to. Link-local
-/// (169.254/16) is skipped: it can't route multicast reliably. Loopback is
-/// kept: on a host with no other interface it is where its own hub is announced
-/// and the only way to hear it.
+/// The local IPv4 interfaces to pin mDNS multicast egress to, and the pool the
+/// announce side advertises from.
 pub(crate) fn multicast_interfaces_v4() -> Vec<Ipv4Addr> {
     if_addrs::get_if_addrs()
-        .map(|interfaces| {
-            interfaces
-                .into_iter()
-                .filter_map(|interface| match interface.ip() {
-                    IpAddr::V4(v4) if !v4.is_link_local() => Some(v4),
-                    _ => None,
-                })
-                .collect()
-        })
+        .map(|interfaces| interfaces.iter().filter_map(mdns_address_v4).collect())
         .unwrap_or_default()
+}
+
+/// The address to pin multicast to and advertise for `interface`, if it can
+/// carry mDNS at all
+fn mdns_address_v4(interface: &Interface) -> Option<Ipv4Addr> {
+    if interface.is_p2p() {
+        return None;
+    }
+    match interface.ip() {
+        IpAddr::V4(v4) if !v4.is_link_local() => Some(v4),
+        _ => None,
+    }
+}
+
+/// The IPv4 subnets this host is on, as `(address, prefix length)`. Loopback
+/// is left out: a hub reached over it is on this host, not on a LAN.
+pub(crate) fn local_subnets_v4() -> Vec<(Ipv4Addr, u8)> {
+    if_addrs::get_if_addrs()
+        .map(|interfaces| interfaces.iter().filter_map(subnet_v4).collect())
+        .unwrap_or_default()
+}
+
+fn subnet_v4(interface: &Interface) -> Option<(Ipv4Addr, u8)> {
+    match &interface.addr {
+        if_addrs::IfAddr::V4(v4) if !v4.ip.is_loopback() && !v4.ip.is_link_local() => {
+            Some((v4.ip, v4.prefixlen))
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use if_addrs::{IfAddr, IfOperStatus, Ifv4Addr};
+
     use super::*;
+
+    fn interface(name: &str, ip: Ipv4Addr, prefixlen: u8, is_p2p: bool) -> Interface {
+        Interface {
+            name: name.to_string(),
+            addr: IfAddr::V4(Ifv4Addr {
+                ip,
+                netmask: Ipv4Addr::from(u32::MAX << (32 - prefixlen)),
+                prefixlen,
+                broadcast: None,
+            }),
+            index: None,
+            oper_status: IfOperStatus::Up,
+            is_p2p,
+            #[cfg(windows)]
+            adapter_name: String::new(),
+        }
+    }
+
+    #[test]
+    fn an_interfaces_address_is_where_a_peer_on_the_lan_reaches_us() {
+        let wifi = interface("wlo1", Ipv4Addr::new(192, 168, 0, 105), 24, false);
+
+        assert_eq!(
+            mdns_address_v4(&wifi),
+            Some(Ipv4Addr::new(192, 168, 0, 105))
+        );
+    }
+
+    #[test]
+    fn a_point_to_point_interface_is_not_announced() {
+        let tunnel = interface("wg0", Ipv4Addr::new(10, 8, 0, 2), 32, true);
+
+        assert_eq!(mdns_address_v4(&tunnel), None);
+    }
+
+    #[test]
+    fn a_link_local_address_is_not_announced() {
+        let unconfigured = interface("wlo1", Ipv4Addr::new(169, 254, 3, 4), 16, false);
+
+        assert_eq!(mdns_address_v4(&unconfigured), None);
+    }
+
+    #[test]
+    fn loopback_is_kept_for_the_host_that_has_nothing_else() {
+        let loopback = interface("lo", Ipv4Addr::LOCALHOST, 8, false);
+
+        assert_eq!(mdns_address_v4(&loopback), Some(Ipv4Addr::LOCALHOST));
+    }
+
+    #[test]
+    fn loopback_and_link_local_are_not_subnets_a_hub_can_be_on() {
+        assert_eq!(
+            subnet_v4(&interface("lo", Ipv4Addr::LOCALHOST, 8, false)),
+            None
+        );
+        assert_eq!(
+            subnet_v4(&interface("wlo1", Ipv4Addr::new(169, 254, 3, 4), 16, false)),
+            None
+        );
+        assert_eq!(
+            subnet_v4(&interface(
+                "wlo1",
+                Ipv4Addr::new(192, 168, 0, 105),
+                24,
+                false
+            )),
+            Some((Ipv4Addr::new(192, 168, 0, 105), 24))
+        );
+    }
 
     #[test]
     fn a_mailbox_id_starting_with_a_hyphen_round_trips_through_a_valid_label() {
