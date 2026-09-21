@@ -27,7 +27,7 @@ pub use error::{
     RemoveGroupMemberError, SendMessageError,
 };
 pub use id::*;
-pub use node::{Node, NodeConfig, Notification, OpNotification, SystemNotification};
+pub use node::{BlobProgress, Node, NodeConfig, Notification, OpNotification, SystemNotification};
 pub use p2panda::SigningKey;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;

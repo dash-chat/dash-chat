@@ -192,6 +192,21 @@ impl Default for NodeConfig {
 
 pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
 
+/// The most blobs one `blob_progress` call reads at once.
+pub const MAX_BLOB_PROGRESS_HASHES: usize = 128;
+
+/// How long an on-demand blob fetch keeps trying before giving up.
+pub const ON_DEMAND_BLOB_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Download state of one blob, as `get_blob_progress` reports it to the
+/// webview. `hash` echoes the requested string so the caller can key on it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BlobProgress {
+    pub hash: String,
+    pub bytes: u64,
+    pub complete: bool,
+}
+
 #[derive(Clone)]
 pub struct Node {
     pub op_store: OpStore,
@@ -2140,6 +2155,60 @@ impl Node {
                 anyhow::bail!("blob {hash} not available after {timeout:?}");
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    }
+
+    /// How much of each blob is local right now, read concurrently. A hash
+    /// that does not parse gets no row, so one bad reference never hides the
+    /// progress of the rest, and more than [`MAX_BLOB_PROGRESS_HASHES`] at
+    /// once is refused: the webview asks about the attachments on screen.
+    pub async fn blob_progress(&self, hashes: Vec<String>) -> anyhow::Result<Vec<BlobProgress>> {
+        anyhow::ensure!(
+            hashes.len() <= MAX_BLOB_PROGRESS_HASHES,
+            "asked for the progress of {} blobs, more than the {MAX_BLOB_PROGRESS_HASHES} allowed",
+            hashes.len()
+        );
+        let blob_sync = self.require_blob_sync()?;
+        let parsed = hashes.into_iter().filter_map(|hash| match hash.parse() {
+            Ok(parsed) => Some((hash, parsed)),
+            Err(err) => {
+                tracing::warn!(%hash, ?err, "skipping unparseable blob hash");
+                None
+            }
+        });
+        let rows = parsed.map(|(hash, parsed): (String, iroh_blobs::Hash)| async move {
+            let (bytes, complete) = blob_sync.local_progress(parsed).await;
+            BlobProgress {
+                hash,
+                bytes,
+                complete,
+            }
+        });
+        Ok(futures::future::join_all(rows).await)
+    }
+
+    /// Ask for `hash` to be fetched now rather than on the background loop's
+    /// next pass, the way a tap on an attachment does. Returns at once; the
+    /// attempt runs for up to [`ON_DEMAND_BLOB_FETCH_TIMEOUT`] in the
+    /// background.
+    pub fn fetch_blob_now(&self, hash: &str) -> anyhow::Result<()> {
+        let hash: iroh_blobs::Hash = hash.parse()?;
+        let blob_sync = self.require_blob_sync()?.clone();
+        tokio::spawn(async move {
+            blob_sync
+                .fetch_now(hash, ON_DEMAND_BLOB_FETCH_TIMEOUT)
+                .await;
+        });
+        Ok(())
+    }
+
+    /// Test-only: make every blob fetch attempt, background and on-demand
+    /// alike, give up at once, so a spec can observe an attachment while it
+    /// is still downloading.
+    #[cfg(feature = "testing")]
+    pub fn set_blob_fetch_paused(&self, paused: bool) {
+        if let Some(blob_sync) = &self.blob_sync {
+            blob_sync.set_fetch_paused(paused);
         }
     }
 
