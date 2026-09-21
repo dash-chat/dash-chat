@@ -24,7 +24,7 @@
 
 <!-- Viewport-fixed, so a padded ancestor can't lift it above the keyboard. -->
 <div
-	class="fixed end-4 bottom-[calc(var(--keyboard-safe-bottom,0px)+1rem)]"
+	class="fixed end-4 bottom-[calc(var(--keyboard-safe-bottom,0px)+1rem)] z-30"
 	use:renderAboveKeyboard
 >
 	<Button

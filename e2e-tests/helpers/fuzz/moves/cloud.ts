@@ -3,7 +3,12 @@
  *  cloud; elsewhere their `check` is false and they are skipped. Each ends
  *  by asserting what every driveable agent's chip shows, so a sequence
  *  fails at the exact move the chip stopped telling the truth. */
-import type { Link } from '../../../setup/toxiproxy';
+import {
+	cutMailboxLink,
+	hangMailboxLink,
+	healMailboxLink,
+	slowMailboxLink,
+} from '../../../setup/mailbox-control';
 import {
 	MAILBOX_HEALED_MS,
 	MAILBOX_HUNG_MS,
@@ -13,11 +18,6 @@ import { type Real, byName, log } from '../agents';
 import { checkCloud } from '../checks';
 import type { ExpectedModel } from '../model';
 import { Move, type Moves } from './move';
-
-function cloudLink(real: Real): Link {
-	if (real.cloud === null) throw new Error('the run has no cloud mailbox');
-	return real.cloud;
-}
 
 /** Every driveable agent checks its chip. */
 async function checkCloudAll(
@@ -34,12 +34,12 @@ async function checkCloudAll(
 /** Slow the link down. The cloud stays usable, so the chip stays hidden. */
 class CloudSlowMove extends Move {
 	check(m: Readonly<ExpectedModel>): boolean {
-		return m.cloudUsable();
+		return m.hasCloud() && m.cloudUsable();
 	}
 
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
 		log(this.toString());
-		await cloudLink(real).slow();
+		await slowMailboxLink();
 		await checkCloudAll(
 			m,
 			real,
@@ -61,14 +61,13 @@ class CloudDropMove extends Move {
 	}
 
 	check(m: Readonly<ExpectedModel>): boolean {
-		return m.cloudUsable();
+		return m.hasCloud() && m.cloudUsable();
 	}
 
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
 		log(this.toString());
-		const link = cloudLink(real);
-		if (this.how === 'hang') await link.hang();
-		else await link.cut();
+		if (this.how === 'hang') await hangMailboxLink();
+		else await cutMailboxLink();
 		m.setCloudUsable(false);
 		await checkCloudAll(
 			m,
@@ -92,7 +91,7 @@ class CloudHealMove extends Move {
 
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
 		log(this.toString());
-		await cloudLink(real).heal();
+		await healMailboxLink();
 		m.setCloudUsable(true);
 		await checkCloudAll(m, real, 'the cloud link healed', MAILBOX_HEALED_MS);
 	}

@@ -171,7 +171,13 @@ function disableP2p(): Promise<void> {
 	return invokeAfterSetup('set_p2p_enabled', { enabled: false });
 }
 
-/** Reset the app to first-launch state: clear web storage, then run the real
+/** Take every notification this app has posted off the device. */
+function clearNotifications(): Promise<void> {
+	return invokeAfterSetup('plugin:notification|remove_active');
+}
+
+/** Reset the app to first-launch state: clear web storage and the app's
+ * notifications, which the OS would otherwise keep, then run the real
  * `delete_account` command — the same code path as Settings → Account →
  * Delete account — which shuts the node down, deletes the data dir, and (on
  * mobile) exits the app. The iOS e2e harness calls this before each spec
@@ -181,7 +187,7 @@ function disableP2p(): Promise<void> {
 function resetToFirstLaunch(): void {
 	localStorage.clear();
 	sessionStorage.clear();
-	void invokeAfterSetup('delete_account');
+	void clearNotifications().finally(() => invokeAfterSetup('delete_account'));
 }
 
 /** Summon the Android soft keyboard for the currently focused input. A
@@ -524,6 +530,7 @@ export const testUtils = {
 	simulateUpdate,
 	hasText,
 	disableP2p,
+	clearNotifications,
 	resetToFirstLaunch,
 	showKeyboard,
 	pasteFiles,

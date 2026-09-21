@@ -22,7 +22,7 @@ import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { E2E_RELAY_URL } from '../relay';
 import { runTurboBuild } from '../turbo-build';
-import { switchToWebview, waitForTestUtils } from '../webview';
+import { deviceUdid, switchToWebview, waitForTestUtils } from '../webview';
 import {
 	type AgentPlatform,
 	type PrepareContext,
@@ -245,6 +245,25 @@ export function killIosPushExtension(udid: string): void {
  *  wipes the data dir and exits the process. Relaunch, and the spec starts
  *  from the same state a fresh install would. */
 export async function resetIosAppState(b: WebdriverIO.Browser): Promise<void> {
+	await wipeIosAppData(b);
+	await attachToIosApp(b);
+}
+
+/** Leave the app with no data once a spec file is done. The next spec's reset
+ *  runs only after the app is up with the old data, and in a new run that app
+ *  uploads its whole history to the fresh mailbox, which pushes every message
+ *  back to this phone: banners over the navbar the spec is about to tap. */
+export async function wipeIosAppAfterSpec(
+	b: WebdriverIO.Browser,
+): Promise<void> {
+	await attachToIosApp(b);
+	await wipeIosAppData(b);
+}
+
+/** Run the app's own delete_account, which wipes the data dir and exits, and
+ *  end the push extension, whose node would otherwise outlive the data it was
+ *  built from and serve the next account's pushes from the old one. */
+async function wipeIosAppData(b: WebdriverIO.Browser): Promise<void> {
 	await b.execute(() => window.__test.resetToFirstLaunch());
 	// The command exits the app; leave the webview before it dies under us.
 	await b.switchContext('NATIVE_APP');
@@ -255,6 +274,11 @@ export async function resetIosAppState(b: WebdriverIO.Browser): Promise<void> {
 			) <= APP_STATE_NOT_RUNNING,
 		{ timeoutMsg: 'the app never exited after delete_account' },
 	);
+	killIosPushExtension(deviceUdid(b));
+}
+
+/** Bring the app to the foreground and attach to its webview. */
+async function attachToIosApp(b: WebdriverIO.Browser): Promise<void> {
 	await b.activateApp(APP_BUNDLE_ID);
 	await switchToWebview(b, 'ios');
 	await waitForTestUtils(b);
