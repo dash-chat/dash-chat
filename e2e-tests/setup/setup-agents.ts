@@ -70,7 +70,7 @@ import {
 	iosWifiInfo,
 } from './platforms/ios-wifi';
 import { type AgentPlatformName, isMobile, platformNames } from './test-env';
-import { switchToWebview, waitForTestUtils } from './webview';
+import { deviceUdid, switchToWebview, waitForTestUtils } from './webview';
 import type { WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
@@ -206,15 +206,6 @@ export type Agent = WebdriverIO.Browser & {
 	 *  fresh one. iOS only. */
 	killPushExtension(): Promise<void>;
 };
-
-/** The device serial this Appium session was launched against. */
-function deviceUdid(b: WebdriverIO.Browser): string {
-	const udid = b.requestedCapabilities['appium:udid'];
-	if (udid === undefined) {
-		throw new Error('Appium session is missing its appium:udid capability');
-	}
-	return udid;
-}
 
 /** (Re)build every page object against `b`. Called on first setup and again
  *  after a restart so the new session never reuses stale element ids. */
