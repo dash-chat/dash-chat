@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 use derive_more::{Deref, DerefMut, From};
 use p2panda::Hash;
+use p2panda_core::SeqNum;
 
 use crate::DeviceId;
 
@@ -42,7 +43,7 @@ pub struct ChatOp {
     /// Microseconds since the UNIX epoch (the operation header timestamp).
     pub timestamp: u64,
     /// Position in the author's append-only log; monotonic in publish order.
-    pub seq_num: u64,
+    pub seq_num: SeqNum,
     pub kind: ChatOpKind,
 }
 

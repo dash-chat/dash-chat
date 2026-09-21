@@ -1,15 +1,18 @@
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::GroupCrdtState;
-use p2panda_auth::processor::GroupsOperation;
+use p2panda_spaces::manager::GLOBAL_GROUPS_CONTEXT_ID;
 use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
+use p2panda_stream::groups::GroupsOperation;
 
 use crate::{ChatId, ChatMember, Topic, TopicId};
 
 type GroupState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
 
 /// Singleton groups state id.
-pub(crate) const GROUPS_STATE_ID: u32 = 0;
+pub(crate) fn groups_state_id() -> Hash {
+    Hash::digest(GLOBAL_GROUPS_CONTEXT_ID)
+}
 
 #[derive(Clone)]
 pub struct GroupStore {
@@ -24,7 +27,7 @@ impl GroupStore {
     pub async fn heads(&self, topic_id: TopicId) -> anyhow::Result<Vec<Hash>> {
         let group_id = Topic::from_topic_id(topic_id)?.to_group_pubkey()?;
         let auth = self.auth_state().await?;
-        Ok(auth.heads_filtered(&[group_id]))
+        Ok(auth.heads(&[group_id]))
     }
 
     pub async fn members(&self, topic: ChatId) -> anyhow::Result<Vec<(ChatMember, Access)>> {
@@ -44,7 +47,7 @@ impl GroupStore {
         let _txn = self.db.begin().await?;
         Ok(self
             .db
-            .get_groups_state(&GROUPS_STATE_ID)
+            .get_groups_state_tx(groups_state_id())
             .await?
             .unwrap_or_default())
     }

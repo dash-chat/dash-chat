@@ -11,6 +11,7 @@ pub struct MailboxOperation {
     // @TODO: topic is only represented on an operation in it's hashed form. We can't derive it
     // from the header so we add it here as an own field on mailbox operation.
     pub topic: TopicId,
+    #[serde(with = "crate::header_serde")]
     pub header: Header,
     pub body: Option<Body>,
 }
@@ -29,7 +30,7 @@ impl MailboxItem for MailboxOperation {
     }
 
     fn seq_num(&self) -> u64 {
-        self.header.seq_num
+        self.header.seq_num.into()
     }
 
     fn topic(&self) -> TopicId {
@@ -112,25 +113,12 @@ mod tests {
     use mailbox_client::MailboxItem as _;
 
     fn make_header(topic: TopicId) -> p2panda::operation::Header {
-        use p2panda::operation::{Extensions, LogId};
-        use p2panda_core::PruneFlag;
+        use p2panda::operation::{Extensions, Header, LogId};
         let signing_key = p2panda::SigningKey::from_bytes(&[0u8; 32]);
-        p2panda::operation::Header {
-            version: 1,
-            verifying_key: signing_key.verifying_key(),
-            signature: None,
-            payload_size: 0,
-            payload_hash: None,
-            timestamp: p2panda_core::Timestamp::new(0),
-            seq_num: 0,
-            backlink: None,
-            extensions: Extensions {
-                log_id: LogId::from_topic(topic),
-                prune_flag: PruneFlag::default(),
-                groups_args: None,
-                version: 1,
-            },
-        }
+        Header::builder().build(
+            &signing_key,
+            Extensions::builder(LogId::from_topic(topic)).build(),
+        )
     }
 
     #[test]

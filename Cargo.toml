@@ -36,18 +36,23 @@ reporting = { path = "crates/reporting" }
 # `dashchat-offline-node` plus one commit: SQLite transactions begin with
 # BEGIN IMMEDIATE, so the app and the iOS push extension sharing one database
 # file stop refusing each other's writes with "database is locked".
-p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx", features = [
-  "processor",
+p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-offline-node-immediate-tx" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-offline-node-immediate-tx", features = [
+  "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-offline-node-immediate-tx" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-offline-node-immediate-tx" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-offline-node-immediate-tx", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-offline-node-immediate-tx", features = [
-  "test_utils",
-] }
+# Do NOT enable `test_utils` here: it chains through p2panda-auth to
+# p2panda-core, whose `test_utils` swaps `Timestamp::now()` for a frozen
+# mock_instant clock — in normal builds, not just tests. Every operation then
+# carries the same timestamp and timestamp-ordered validation (replies, edits,
+# deletes) collapses.
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-offline-node-immediate-tx" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-offline-node-immediate-tx" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-offline-node-immediate-tx" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [
@@ -85,3 +90,14 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 # p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+
+# local p2panda patches
+# [patch."https://github.com/dash-chat/p2panda"]
+# p2panda = { path = "/home/michael/work/p2panda/p2panda" }
+# p2panda-auth = { path = "/home/michael/work/p2panda/p2panda-auth" }
+# p2panda-core = { path = "/home/michael/work/p2panda/p2panda-core" }
+# p2panda-net = { path = "/home/michael/work/p2panda/p2panda-net" }
+# p2panda-store = { path = "/home/michael/work/p2panda/p2panda-store" }
+# p2panda-spaces = { path = "/home/michael/work/p2panda/p2panda-spaces" }
+# p2panda-encryption = { path = "/home/michael/work/p2panda/p2panda-encryption" }
+# p2panda-stream = { path = "/home/michael/work/p2panda/p2panda-stream" }

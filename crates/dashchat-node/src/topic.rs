@@ -38,7 +38,7 @@ use p2panda::operation::LogId;
 use p2panda::{SigningKey, VerifyingKey};
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
+use sqlx::{Sqlite, encode::IsNull, error::BoxDynError};
 
 pub trait TopicKind:
     Default
@@ -126,7 +126,10 @@ impl<K: TopicKind> sqlx::Type<Sqlite> for Topic<K> {
 }
 
 impl<K: TopicKind> sqlx::Encode<'_, Sqlite> for Topic<K> {
-    fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <Sqlite as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<IsNull, BoxDynError> {
         <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.to_vec(), buf)
     }
 }
@@ -167,8 +170,6 @@ pub struct Topic<K: TopicKind> {
 
     kind: PhantomData<K>,
 }
-
-impl<K: TopicKind> p2panda_spaces::traits::SpaceId for Topic<K> {}
 
 impl<K: TopicKind> Topic<K> {
     pub(crate) fn new(id: [u8; 32]) -> Self {

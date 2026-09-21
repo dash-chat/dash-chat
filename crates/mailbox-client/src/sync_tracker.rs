@@ -164,7 +164,7 @@ where
                         seq_num = MAX(excluded.seq_num, mailbox_sync_state.seq_num),
                         updated_at = excluded.updated_at"
                 );
-                let mut query = sqlx::query(&sql);
+                let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
                 for (topic_bytes, author_bytes, seq) in &encoded {
                     query = query
                         .bind(mailbox)

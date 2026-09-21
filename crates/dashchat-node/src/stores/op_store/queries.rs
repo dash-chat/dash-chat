@@ -48,7 +48,7 @@ pub async fn dump_logs(db: &SqliteStore) -> Result<Vec<(DeviceId, LogId, SeqNum)
         let verifying_key =
             VerifyingKey::from_bytes(&hex::decode(&row.verifying_key)?.try_into().unwrap())?;
         let log_id: LogId = p2panda_core::cbor::decode_cbor(&*row.log_id)?;
-        let seq_num = row.seq_num.parse::<u64>()?;
+        let seq_num = row.seq_num.parse::<SeqNum>()?;
         result.push((DeviceId::from(verifying_key), log_id, seq_num));
     }
 
@@ -70,7 +70,7 @@ impl TryFrom<OperationRow> for Operation {
     fn try_from(row: OperationRow) -> Result<Self, Self::Error> {
         Ok(Operation {
             hash: row.hash.parse()?,
-            header: p2panda_core::cbor::decode_cbor(&*row.header)?,
+            header: p2panda::operation::Header::decode(&row.header)?,
             body: row.body.map(Into::into),
         })
     }
@@ -117,7 +117,7 @@ pub(super) async fn get_log_heights_by_author(
 
     let rows = db
         .execute(async move |tx| {
-            let query = sqlx::query_as::<_, LogHeightRow>(&query_str).bind(log_id_encoded);
+            let query = sqlx::query_as::<_, LogHeightRow>(query_str).bind(log_id_encoded);
             Ok(query.fetch_all(tx).await?)
         })
         .await?;
@@ -132,7 +132,7 @@ pub(super) async fn get_log_heights_by_author(
 
         let verifying_key =
             VerifyingKey::from_bytes(&hex::decode(&verifying_key)?.try_into().unwrap())?;
-        log_heights.insert(DeviceId::from(verifying_key), seq_num.parse::<u64>()?);
+        log_heights.insert(DeviceId::from(verifying_key), seq_num.parse::<SeqNum>()?);
     }
 
     Ok(log_heights)

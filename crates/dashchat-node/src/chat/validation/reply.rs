@@ -1,4 +1,5 @@
 use p2panda::Hash;
+use p2panda_core::SeqNum;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -132,7 +133,7 @@ mod tests {
         Hash::from_bytes([n; 32])
     }
 
-    fn message(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
+    fn message(author: DeviceId, timestamp: u64, seq_num: SeqNum) -> ChatOp {
         ChatOp {
             author,
             timestamp,
@@ -141,7 +142,7 @@ mod tests {
         }
     }
 
-    fn edit(author: DeviceId, timestamp: u64, seq_num: u64, target: Hash) -> ChatOp {
+    fn edit(author: DeviceId, timestamp: u64, seq_num: SeqNum, target: Hash) -> ChatOp {
         ChatOp {
             author,
             timestamp,
@@ -150,7 +151,7 @@ mod tests {
         }
     }
 
-    fn delete(author: DeviceId, timestamp: u64, seq_num: u64, hashes: BTreeSet<Hash>) -> ChatOp {
+    fn delete(author: DeviceId, timestamp: u64, seq_num: SeqNum, hashes: BTreeSet<Hash>) -> ChatOp {
         ChatOp {
             author,
             timestamp,
@@ -159,7 +160,7 @@ mod tests {
         }
     }
 
-    fn other(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
+    fn other(author: DeviceId, timestamp: u64, seq_num: SeqNum) -> ChatOp {
         ChatOp {
             author,
             timestamp,

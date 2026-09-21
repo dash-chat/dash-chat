@@ -427,12 +427,17 @@ impl BlobFetchPool {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     if let Some(media) = m.media() {
                         let Some(topic) = topic_store
-                            .resolve_topic(&op.header.verifying_key, &op.header.extensions.log_id)
+                            .resolve_topics(
+                                &op.header.verifying_key,
+                                &op.header.extensions.log_id(),
+                            )
                             .await?
+                            .into_iter()
+                            .next()
                         else {
                             tracing::error!(
                                 author = ?op.header.verifying_key.aliased(),
-                                log_id = ?op.header.extensions.log_id.aliased(),
+                                log_id = ?op.header.extensions.log_id().aliased(),
                                 "failed to resolve topic for operation",
                             );
                             continue;

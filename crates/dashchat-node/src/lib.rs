@@ -3,6 +3,7 @@ mod chat;
 mod contact;
 mod error;
 mod filesystem;
+mod header_serde;
 mod network_change_notifier;
 pub mod node;
 mod payload;
@@ -49,7 +50,7 @@ pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
 pub trait AsBody: Cbor {
     fn try_into_body(&self) -> Result<p2panda_core::Body, p2panda_core::cbor::EncodeError> {
         let bytes = self.as_bytes()?;
-        Ok(p2panda_core::Body::new(bytes.as_slice()))
+        Ok(p2panda_core::Body::from_bytes(bytes.as_slice()))
     }
 
     fn try_from_body(body: &p2panda_core::Body) -> Result<Self, p2panda_core::cbor::DecodeError> {
