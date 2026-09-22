@@ -369,7 +369,10 @@ impl Actor {
             .await
             .map_err(|(_, err)| ProcessorError::Groups(err.to_string()))?;
 
-        // The processor queues every processed input; drain ours so the queue doesn't grow.
+        // A successful `process` always enqueues exactly one item, no-ops included, and this is
+        // the only caller (the actor's single event loop), so `next` returns our own item without
+        // blocking. It carries only the input back plus a processed/no-op flag, so dropping it
+        // loses nothing; we drain it so the queue doesn't grow unboundedly.
         self.groups_processor
             .next()
             .await
@@ -454,7 +457,7 @@ mod tests {
     use tokio::sync::oneshot;
 
     use crate::node::actor::ProcessorEvent;
-    use crate::stores::groups_state_id;
+    use crate::stores::GROUPS_STATE_ID;
     use crate::testing::setup_tracing;
     use crate::{ChatMessageContent, ChatPayload, Payload};
 
@@ -471,11 +474,10 @@ mod tests {
         group_id: VerifyingKey,
         action: GroupAction<VerifyingKey>,
     ) -> Payload {
-        let groups_y: GroupsState = tx_unwrap!(store, {
-            store.get_groups_state_tx(groups_state_id()).await
-        })
-        .unwrap()
-        .unwrap_or_default();
+        let groups_y: GroupsState =
+            tx_unwrap!(store, { store.get_groups_state_tx(*GROUPS_STATE_ID).await })
+                .unwrap()
+                .unwrap_or_default();
 
         let dependencies = groups_y.heads(&[group_id]);
         Payload::GroupControl(GroupsArgs {
@@ -662,11 +664,10 @@ mod tests {
 
         // And they have also processed the groups control message.
         for store in [alice_store, bobbi_store] {
-            let groups_y: GroupsState = tx_unwrap!(store, {
-                store.get_groups_state_tx(groups_state_id()).await
-            })
-            .unwrap()
-            .unwrap();
+            let groups_y: GroupsState =
+                tx_unwrap!(store, { store.get_groups_state_tx(*GROUPS_STATE_ID).await })
+                    .unwrap()
+                    .unwrap();
             let members = groups_y.members(group_id);
             assert!(members.contains(&(alice_id, Access::manage())));
             assert!(members.contains(&(bobbi_id, Access::manage())));

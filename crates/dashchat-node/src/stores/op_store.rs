@@ -104,7 +104,8 @@ impl OpStore {
         from: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
         let log = self.log_operations(author, log_id, from).await?;
-        if log.is_empty() {
+        // With a `from` cursor an empty tail just means "nothing new", not a missing log.
+        if log.is_empty() && from.is_none() {
             tracing::warn!(
                 "No log found for log_id {} and author {}",
                 Hash::from_bytes(*log_id.as_bytes()),

@@ -3,8 +3,7 @@ use p2panda::groups::GroupsArgs;
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
 use p2panda_core::cbor::decode_cbor;
-use p2panda_core::SeqNum;
-use p2panda_core::Timestamp;
+use p2panda_core::{SeqNum, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
 

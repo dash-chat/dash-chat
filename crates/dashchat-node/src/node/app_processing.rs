@@ -439,19 +439,21 @@ impl Node {
         if Self::is_tombstoneable(&payload) {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
-                    use p2panda_store::topics::TopicStore;
                     let author = operation.header.verifying_key;
                     let log_id = operation.header.extensions.log_id();
-                    let topic = self
-                        .op_store
-                        .store
-                        .resolve_topics(&author, &log_id)
-                        .await?
-                        .into_iter()
-                        .next()
-                        .ok_or_else(|| {
-                            anyhow!(format!("failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}", author.aliased(), log_id.aliased()))
-                        })?;
+                    let topic = crate::topic::resolve_application_topic(
+                        &self.op_store.store,
+                        &author,
+                        &log_id,
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}",
+                            author.aliased(),
+                            log_id.aliased()
+                        )
+                    })?;
 
                     if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash()).collect();

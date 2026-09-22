@@ -351,12 +351,12 @@ where
             let log_id = Self::log_id_from_string(&topic_id_str)?;
 
             // Deserialize blips to operations
-            let mut items = Vec::new();
-            for (_author_str, seq_blips) in topic_response.blips {
-                for (_seq, blip) in seq_blips {
-                    items.push(Self::deserialize_operation(&blip)?);
-                }
-            }
+            let items: Vec<Item> = topic_response
+                .blips
+                .into_values()
+                .flat_map(|seq_blips| seq_blips.into_values())
+                .filter_map(|blip| Self::decode_or_skip(&blip))
+                .collect();
 
             // Convert missing map
             let mut missing: HashMap<Item::Author, Vec<u64>> = HashMap::new();
@@ -402,6 +402,18 @@ where
 
     fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
         Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
+    }
+
+    /// The mailbox is shared with peers on other builds, so a blob we cannot decode must be
+    /// skipped rather than fail the whole exchange and wedge sync until retention expires it.
+    fn decode_or_skip(blip: &Blip) -> Option<Item> {
+        match Self::deserialize_operation(blip) {
+            Ok(item) => Some(item),
+            Err(err) => {
+                tracing::warn!(?err, "skipping undecodable mailbox blob");
+                None
+            }
+        }
     }
 }
 

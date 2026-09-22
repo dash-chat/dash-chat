@@ -1,5 +1,4 @@
 use p2panda::Hash;
-use p2panda_core::SeqNum;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -120,6 +119,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use maplit::btreeset;
+    use p2panda_core::SeqNum;
 
     use super::super::ChatOp;
     use super::*;

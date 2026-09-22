@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::GroupCrdtState;
@@ -10,9 +12,8 @@ use crate::{ChatId, ChatMember, Topic, TopicId};
 type GroupState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
 
 /// Singleton groups state id.
-pub(crate) fn groups_state_id() -> Hash {
-    Hash::digest(GLOBAL_GROUPS_CONTEXT_ID)
-}
+pub(crate) static GROUPS_STATE_ID: LazyLock<Hash> =
+    LazyLock::new(|| Hash::digest(GLOBAL_GROUPS_CONTEXT_ID));
 
 #[derive(Clone)]
 pub struct GroupStore {
@@ -47,7 +48,7 @@ impl GroupStore {
         let _txn = self.db.begin().await?;
         Ok(self
             .db
-            .get_groups_state_tx(groups_state_id())
+            .get_groups_state_tx(*GROUPS_STATE_ID)
             .await?
             .unwrap_or_default())
     }
