@@ -113,6 +113,9 @@ pub struct NodeConfig {
     /// disables this — its short-lived background node must not author
     /// operations.
     pub enable_message_acks: bool,
+    /// A prefix for each topic's stream ack cursor name. When `None`, the node
+    /// uses p2panda's default cursor, keyed by the topic.
+    pub stream_cursor_prefix: Option<String>,
 }
 
 impl NodeConfig {
@@ -161,6 +164,7 @@ impl NodeConfig {
             unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
+            stream_cursor_prefix: None,
         }
     }
 
@@ -186,6 +190,7 @@ impl Default for NodeConfig {
             unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
+            stream_cursor_prefix: None,
         }
     }
 }
@@ -346,7 +351,7 @@ impl Node {
         };
 
         // Spawn node actor.
-        let (node_actor, events_rx) = Actor::new(p2panda_node);
+        let (node_actor, events_rx) = Actor::new(p2panda_node, config.stream_cursor_prefix.clone());
         let actor_tx = node_actor.spawn().await?;
 
         // === stores === //
@@ -1846,10 +1851,7 @@ impl Node {
 
     /// Returns true if we have an outgoing contact request recorded for
     /// `device_pubkey` (i.e. we scanned their code and are awaiting their ack).
-    pub async fn has_outgoing_pending_request(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<bool> {
+    pub async fn has_outgoing_pending_request(&self, device_id: DeviceId) -> anyhow::Result<bool> {
         self.local_store
             .has_pending_reply_inbox_for(device_id)
             .await

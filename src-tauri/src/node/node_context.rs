@@ -173,6 +173,17 @@ impl NodeContext {
         // operations to build notifications; it must not author any.
         config.enable_message_acks = self.role == NodeRole::App;
 
+        // The push extension shares the app's database. On p2panda's default
+        // per-topic cursor, whichever process fetches an operation first stops
+        // the other from ever seeing it, so an invite processed by the extension
+        // never subscribes the running app to the new topic. A private cursor
+        // prefix keeps the extension's cursors per-topic yet distinct from the
+        // app's default cursors, so the app independently processes every
+        // operation.
+        if self.role == NodeRole::PushNotification {
+            config.stream_cursor_prefix = Some("nse".to_string());
+        }
+
         if !self.p2p_enabled() {
             config = config.no_p2p();
         }
