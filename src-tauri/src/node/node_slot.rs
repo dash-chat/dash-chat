@@ -60,8 +60,7 @@ pub struct AcquiredNode {
     /// The acquired Node.
     pub node: Node,
     /// Whether the Node was newly built for this request (as opposed to reused
-    /// from the slot). Only read by the android background service.
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    /// from the slot).
     pub is_new: bool,
 }
 
@@ -78,6 +77,16 @@ pub async fn get_node_for_push_notification(
     context: NodeContext,
 ) -> anyhow::Result<AcquiredNode> {
     let acquired = get_or_build_node(data_path, context).await?;
+
+    // A reused node read the stored topics when it was built, hours ago: topics
+    // subscribed since then are absent from its mailbox subscriptions, so their
+    // operations are never polled and their pushes degrade to the generic
+    // notification. A freshly built node has just read them.
+    if !acquired.is_new {
+        if let Err(err) = acquired.node.resync().await {
+            log::warn!("failed to resync stored topics in push extension: {err:?}");
+        }
+    }
 
     // Best-effort: resolve and track the cloud mailbox so the sync below can
     // fetch. On every push, not once per node: the node is cached across pushes
