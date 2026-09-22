@@ -411,7 +411,8 @@ async fn auth_control_op_notification(
 ) -> Option<NotificationData> {
     type GroupAction = p2panda_auth::group::GroupAction<p2panda_core::VerifyingKey>;
 
-    let action = &header.extensions.groups_args.as_ref()?.action;
+    let args = header.extensions.group_args()?;
+    let action = &args.action;
 
     let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::VerifyingKey>| {
         matches!(
