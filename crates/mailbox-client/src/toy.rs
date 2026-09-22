@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use mailbox_server::{
-    Blip, GetBlipsRequest, GetBlipsResponse, SequenceNumber, StoreBlipsRequest, StoreBlipsResponse,
+    Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest, StoreBlipsResponse,
 };
 
 use super::*;
@@ -237,8 +237,7 @@ where
         }
 
         // Group operations by topic -> author -> seq_num
-        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<SequenceNumber, Blip>>> =
-            BTreeMap::new();
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, Blip>>> = BTreeMap::new();
 
         let blob_hashes: Vec<iroh_blobs::Hash> =
             ops.iter().flat_map(|op| op.blob_hashes()).collect();
@@ -254,7 +253,7 @@ where
                 .or_default()
                 .entry(log_id)
                 .or_default()
-                .insert(seq_num.into(), blip);
+                .insert(seq_num, blip);
         }
 
         let request = StoreBlipsRequest {
@@ -277,7 +276,6 @@ where
                 let topic = Self::log_id_from_string(&topic_str)?;
                 for (author_str, watermark) in authors {
                     let author = Self::device_id_from_string(&author_str)?;
-                    let watermark = watermark.map(SeqNum::try_from).transpose()?;
                     result.0.entry(topic).or_default().insert(author, watermark);
                 }
             }
@@ -313,15 +311,15 @@ where
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error> {
         // Convert FetchRequest to GetBlipsRequest
-        let mut topics: BTreeMap<String, BTreeMap<String, SequenceNumber>> = BTreeMap::new();
+        let mut topics: BTreeMap<String, BTreeMap<String, SeqNum>> = BTreeMap::new();
 
         for (log_id, authors) in request.0.iter() {
             let topic_id = Self::encode_topic_id(log_id);
-            let mut log_map: BTreeMap<String, SequenceNumber> = BTreeMap::new();
+            let mut log_map: BTreeMap<String, SeqNum> = BTreeMap::new();
 
             for (device_id, height) in authors.iter() {
                 let server_log_id = Self::device_id_to_log_id(device_id);
-                log_map.insert(server_log_id, (*height).into());
+                log_map.insert(server_log_id, *height);
             }
 
             topics.insert(topic_id, log_map);
@@ -363,10 +361,6 @@ where
             let mut missing: HashMap<Item::Author, Vec<SeqNum>> = HashMap::new();
             for (author_str, seq_nums) in topic_response.missing {
                 let device_id = Self::device_id_from_string(&author_str)?;
-                let seq_nums = seq_nums
-                    .into_iter()
-                    .map(SeqNum::try_from)
-                    .collect::<Result<Vec<_>, _>>()?;
                 missing.insert(device_id, seq_nums);
             }
 
@@ -416,7 +410,7 @@ where
     /// fail the whole exchange and wedge sync until retention expires it. Truncating rather
     /// than skipping leaves the author's log short instead of ingesting operations whose
     /// backlink can never arrive; every other author and topic in the exchange is unaffected.
-    fn decode_log(seq_blips: BTreeMap<SequenceNumber, Blip>) -> Vec<Item> {
+    fn decode_log(seq_blips: BTreeMap<SeqNum, Blip>) -> Vec<Item> {
         let mut items = Vec::with_capacity(seq_blips.len());
         for (seq_num, blip) in seq_blips {
             match Self::deserialize_operation(&blip) {
