@@ -1,7 +1,7 @@
 //! Local message hub discovery over mDNS (swarm-discovery), both halves:
 
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use if_addrs::Interface;
@@ -19,19 +19,24 @@ pub use discovery::{DiscoveredHub, LocalHubDiscoveryService};
 /// name so that test runs sharing a LAN, each built with its own id, never see
 /// each other's hubs. The whole id would overflow the 63-octet DNS label.
 pub fn service_name() -> &'static str {
-    static NAME: LazyLock<String> = LazyLock::new(|| {
-        // A test announces under a namespace of its own: the production name is
-        // browsed by real clients on whatever LAN the machine running it is on,
-        // and they would discover, probe and poll the hub it spawns.
-        if let Ok(id) = std::env::var("LOCAL_HUB_SERVICE_ID") {
-            return format!("dashchat-{id}");
-        }
-        match option_env!("E2E_NETWORK_ID") {
-            Some(id) => format!("dashchat-{}", &id[..8]),
-            None => "dashchat".to_string(),
-        }
+    if let Some(name) = SERVICE_NAME_OVERRIDE.get() {
+        return name;
+    }
+    static NAME: LazyLock<String> = LazyLock::new(|| match option_env!("E2E_NETWORK_ID") {
+        Some(id) => format!("dashchat-{}", &id[..8]),
+        None => "dashchat".to_string(),
     });
     &NAME
+}
+
+static SERVICE_NAME_OVERRIDE: OnceLock<String> = OnceLock::new();
+
+/// Announce and browse under a name of this test's own. The production name is
+/// browsed by real clients on whatever LAN the machine is on, and they would
+/// discover, probe and poll a hub a test spawns.
+#[doc(hidden)]
+pub fn set_service_name_for_test(id: &str) {
+    let _ = SERVICE_NAME_OVERRIDE.set(format!("dashchat-{id}"));
 }
 
 /// The TXT attribute a hub sets on its way out, so browsers retire it at once

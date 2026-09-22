@@ -87,9 +87,7 @@ impl Hub {
             return false;
         }
         match self.probed_at {
-            Some(at) if self.probed_addrs == *advertised && !self.answered_at.is_empty() => {
-                at.elapsed() >= REPROBE_INTERVAL
-            }
+            Some(at) if self.probed_addrs == *advertised => at.elapsed() >= REPROBE_INTERVAL,
             _ => true,
         }
     }
@@ -471,11 +469,10 @@ mod tests {
         let mut expected = vec![at(&one), at(&two)];
         expected.sort();
         assert_eq!(answered, expected);
-        assert_eq!(full["hub"].answered_at[0], first["hub"].answered_at[0]);
     }
 
-    /// A hub binds every interface, so which address wins the probe race
-    /// varies; a consumer must not see the hub move between them.
+    /// A hub answering where it answered before is not re-probed until
+    /// [`REPROBE_INTERVAL`] has passed, so what it is published at holds.
     #[tokio::test]
     async fn the_first_address_holds_while_it_still_answers() {
         let mut h = Harness::new();

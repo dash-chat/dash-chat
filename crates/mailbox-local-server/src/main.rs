@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use futures::FutureExt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -47,9 +46,18 @@ async fn main() -> anyhow::Result<()> {
     // Bound before anything is announced, so a port that cannot be served is
     // never advertised.
     let listener = tokio::net::TcpListener::bind(format!("[::]:{}", args.port)).await?;
-    let announcement = mailbox_local_server::spawn_local_hub_announcement(endpoint_id, args.port)?;
+    let port = listener.local_addr()?.port();
+    let announcement = mailbox_local_server::spawn_local_hub_announcement(endpoint_id, port)?;
 
-    let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
+    // The goodbye goes out while the server is still serving: a browser that
+    // hears it retires the hub at once, where the refused probes it would get
+    // from a stopped one deliberately mean nothing.
+    let signal = async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to listen for event");
+        announcement.shutdown().await;
+    };
     // No relay — the server stays fully local.
     let served = mailbox_server::spawn_server(
         args.db_path,
@@ -62,6 +70,5 @@ async fn main() -> anyhow::Result<()> {
     )
     .await;
 
-    announcement.shutdown().await;
     served.map_err(|e| anyhow::anyhow!("server failed: {e}"))
 }
