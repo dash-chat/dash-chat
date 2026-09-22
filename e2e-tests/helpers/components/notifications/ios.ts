@@ -13,6 +13,13 @@ const SPRINGBOARD = 'com.apple.springboard';
  * the app name too, so matching on the name alone finds those as well. */
 const OUR_CELLS = 'name == "ListCell" AND label BEGINSWITH[c] "Dash Chat,"';
 
+/** A collapsed stack of several of our notifications, which says so after the
+ * app name and exposes only the newest. */
+const STACK = `${OUR_CELLS} AND label CONTAINS ", Grouped, "`;
+
+/** Stacks to expand before giving up on the rest. */
+const MAX_STACKS = 10;
+
 /** What Notification Center gets to open, or to render a cell, after a
  * gesture. */
 const RENDER_TIMEOUT = 5_000;
@@ -34,8 +41,6 @@ const PULL_ATTEMPTS = 3;
  * its own may contain commas, so it is whatever follows them. */
 function parseCell(label: string): DeliveredNotification | null {
 	const parts = label.split(', ');
-	// A stack of several notifications says so between the app name and the
-	// time, and shows the newest.
 	if (parts[1] === 'Grouped') parts.splice(1, 1);
 	if (parts.length < 3) return null;
 	const title = parts[2];
@@ -131,6 +136,29 @@ export class IosNotifications extends AppiumNotificationHelper {
 		);
 	}
 
+	/** Expand every stack, so each notification in it is a cell of its own. A
+	 * tap expands a stack, where on a single notification it only nudges it
+	 * aside. */
+	private async expandStacks(): Promise<void> {
+		const stacks = async () =>
+			(await this.agent.$$(`-ios predicate string:${STACK}`)).length;
+		for (let expanded = 0; expanded < MAX_STACKS; expanded++) {
+			const before = await stacks();
+			if (before === 0) return;
+			const stack = this.agent.$(`-ios predicate string:${STACK}`);
+			const { x, y } = await stack.getLocation();
+			const { width, height } = await stack.getSize();
+			await this.agent.execute('mobile: tap', {
+				x: Math.round(x + width / 2),
+				y: Math.round(y + height / 2),
+			});
+			await this.agent.waitUntil(async () => (await stacks()) < before, {
+				timeout: RENDER_TIMEOUT,
+				timeoutMsg: 'A stack of notifications did not expand',
+			});
+		}
+	}
+
 	/** The cells Notification Center is showing. Expects it open and the
 	 * driver in the native context, which [`readingDelivered`] arranges. */
 	private async readCells(): Promise<DeliveredNotification[]> {
@@ -140,10 +168,29 @@ export class IosNotifications extends AppiumNotificationHelper {
 			.filter((n): n is DeliveredNotification => n !== null);
 	}
 
-	private cellLabels(): Promise<string[]> {
+	private async cellLabels(): Promise<string[]> {
+		await this.expandStacks();
 		return this.agent
 			.$$(`-ios predicate string:${OUR_CELLS}`)
 			.map(async cell => (await cell.getAttribute('label')) ?? '');
+	}
+
+	/** Wait for our cell containing `textIncludes`, expanding whatever stack it
+	 * may have landed in. */
+	private async waitForCell(
+		textIncludes: string,
+		timeout: number,
+		timeoutMsg: string,
+	) {
+		const cell = this.cellFor(textIncludes);
+		await this.agent.waitUntil(
+			async () => {
+				await this.expandStacks();
+				return await cell.isExisting();
+			},
+			{ timeout, timeoutMsg },
+		);
+		return cell;
 	}
 
 	/** Whether the app owns the screen, so that a read knows whether to put it
@@ -190,11 +237,11 @@ export class IosNotifications extends AppiumNotificationHelper {
 		return this.restoringWebviewOnFailure(async () => {
 			await this.switchToNative();
 			await this.openNotificationCenter();
-			const cell = this.cellFor(textIncludes);
-			await cell.waitForExist({
+			const cell = await this.waitForCell(
+				textIncludes,
 				timeout,
-				timeoutMsg: `No notification containing "${textIncludes}" arrived within ${timeout}ms`,
-			});
+				`No notification containing "${textIncludes}" arrived within ${timeout}ms`,
+			);
 			return (await cell.getAttribute('label')) ?? '';
 		});
 	}
@@ -217,11 +264,11 @@ export class IosNotifications extends AppiumNotificationHelper {
 		return this.restoringWebviewOnFailure(async () => {
 			await this.switchToNative();
 			await this.openNotificationCenter();
-			const cell = this.cellFor(textIncludes);
-			await cell.waitForExist({
-				timeout: RENDER_TIMEOUT,
-				timeoutMsg: `No notification containing "${textIncludes}" to open`,
-			});
+			const cell = await this.waitForCell(
+				textIncludes,
+				RENDER_TIMEOUT,
+				`No notification containing "${textIncludes}" to open`,
+			);
 			const { x, y } = await cell.getLocation();
 			const { width, height } = await cell.getSize();
 			const rowY = Math.round(y + height / 2);
