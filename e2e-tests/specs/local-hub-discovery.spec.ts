@@ -14,7 +14,7 @@
  * real access points.
  */
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
-import { DEPARTURE_MS, DISCOVERY_MS } from '../helpers/fuzz/checks';
+import { DEPARTURE_MS, DISCOVERY_MS, GOODBYE_MS } from '../helpers/fuzz/checks';
 import { MDNS_RECORD_TTL_S } from '../helpers/fuzz/moves/network';
 import { UI_TIMEOUT } from '../helpers/timeouts';
 import {
@@ -64,10 +64,13 @@ describe('Local hub discovery', function () {
 		);
 	}
 
-	async function expectNoHub(after: string): Promise<void> {
+	async function expectNoHub(
+		after: string,
+		within = DEPARTURE_MS,
+	): Promise<void> {
 		await chip().waitForNotLocal(
-			DEPARTURE_MS,
-			`the chip still showed the hub ${DEPARTURE_MS / 1_000}s after ${after}`,
+			within,
+			`the chip still showed the hub ${within / 1_000}s after ${after}`,
 		);
 	}
 
@@ -111,7 +114,7 @@ describe('Local hub discovery', function () {
 
 	it('drops the hub when it stops and shows it again when it starts', async () => {
 		await stopLocalHub(hub);
-		await expectNoHub('the hub stopped');
+		await expectNoHub('the hub stopped', GOODBYE_MS);
 		hub = await restartLocalHub(hub);
 		await expectLocal('the hub started');
 	});
@@ -126,7 +129,7 @@ describe('Local hub discovery', function () {
 	it('shows the hub again after each of several restarts', async () => {
 		for (let restart = 1; restart <= RESTARTS; restart++) {
 			await stopLocalHub(hub);
-			await expectNoHub(`restart ${restart}: the hub stopped`);
+			await expectNoHub(`restart ${restart}: the hub stopped`, GOODBYE_MS);
 			hub = await restartLocalHub(hub);
 			await expectLocal(`restart ${restart}: the hub started`);
 		}

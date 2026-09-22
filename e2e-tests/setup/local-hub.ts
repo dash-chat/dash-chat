@@ -109,10 +109,10 @@ function signalHub(hub: LocalHub, signal: NodeJS.Signals): void {
 
 /**
  * Stop a hub and wait for it to exit. SIGINT by default, so the hub gets to run
- * its shutdown; SIGKILL is for a spec that wants it to vanish mid-flight. Either
- * way nothing goes out on the wire to retire the announcement — a phone only
- * notices once the hub ages out of its swarm — so the two look alike to
- * discovery.
+ * its shutdown, which announces a goodbye a phone acts on at once; SIGKILL is
+ * for a spec that wants it to vanish mid-flight, leaving the phone to wait for
+ * the announcement to age out of its swarm. The two are no longer alike to
+ * discovery, and that difference is what those specs are for.
  */
 export function stopLocalHub(
 	hub: LocalHub,

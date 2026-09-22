@@ -2,16 +2,23 @@
 //! on the same network can discover it.
 
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::Arc;
+use std::time::Duration;
 
 use swarm_discovery::DropGuard;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::{base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, service_name};
+use crate::{base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, GOODBYE_ATTRIBUTE};
+
+/// One announce round of swarm-discovery's interactive cadence (700ms plus
+/// jitter), charged to every shutdown: `set_txt_attribute` only queues the
+/// goodbye, and dropping the announcement before that round would send nothing.
+const GOODBYE_LINGER: Duration = Duration::from_millis(1000);
 
 pub struct LocalHubAnnouncementService {
-    // Holds the live announcement and re-arms it on each network change; drop to stop.
-    _task: AbortOnDropHandle<()>,
+    announcement: Arc<Mutex<Option<DropGuard>>>,
+    _reannouncer: AbortOnDropHandle<()>,
 }
 
 impl LocalHubAnnouncementService {
@@ -20,15 +27,17 @@ impl LocalHubAnnouncementService {
     /// `port` is where the hub listens on every interface. Every routable local
     /// IPv4 is advertised (loopback only if there is none), re-enumerated on each
     /// network change. Must be called within a Tokio runtime.
-    pub fn spawn(instance_id: &str, port: u16) -> anyhow::Result<Self> {
+    pub fn spawn(service_name: &str, instance_id: &str, port: u16) -> anyhow::Result<Self> {
         let handle = tokio::runtime::Handle::current();
         // Eager first announce so a bad runtime or bind fails fast.
-        let initial = announce(instance_id, port, &handle)?;
+        let initial = announce(service_name, instance_id, port, &handle)?;
+        let announcement = Arc::new(Mutex::new(Some(initial)));
+        let service_name = service_name.to_string();
         let instance_id = instance_id.to_string();
+        let live = announcement.clone();
         // swarm-discovery pins its multicast socket and advertised addresses at
         // spawn, so re-announce on every network change — as the browser re-binds.
-        let task = AbortOnDropHandle::new(tokio::spawn(async move {
-            let mut _announcement = initial;
+        let reannouncer = AbortOnDropHandle::new(tokio::spawn(async move {
             let mut network = network_watch::network_change();
             loop {
                 match network.recv().await {
@@ -40,20 +49,45 @@ impl LocalHubAnnouncementService {
                         return;
                     }
                 }
-                match announce(&instance_id, port, &handle) {
-                    Ok(next) => _announcement = next,
+                // `announce` multicasts as soon as it returns, and one
+                // without the goodbye must not go out mid-shutdown.
+                let mut live = live.lock().await;
+                if live.is_none() {
+                    return;
+                }
+                match announce(&service_name, &instance_id, port, &handle) {
+                    Ok(next) => *live = Some(next),
                     Err(err) => log::warn!(
                         "Failed to re-announce local hub {instance_id} (keeping the previous announcement, retrying on next network change): {err}"
                     ),
                 }
             }
         }));
-        Ok(Self { _task: task })
+        Ok(Self {
+            announcement,
+            _reannouncer: reannouncer,
+        })
+    }
+
+    /// Announce that this hub is going away, then stop announcing
+    pub async fn shutdown(&self) {
+        let mut announcement = self.announcement.lock().await;
+        let Some(live) = announcement.as_ref() else {
+            return;
+        };
+        match live.set_txt_attribute(GOODBYE_ATTRIBUTE.to_string(), None) {
+            // swarm-discovery sends on its own schedule: this waits for a
+            // round, not for an acknowledgement.
+            Ok(()) => tokio::time::sleep(GOODBYE_LINGER).await,
+            Err(err) => log::warn!("Failed to announce local hub goodbye: {err}"),
+        }
+        announcement.take();
     }
 }
 
 /// Spawn a swarm-discovery announcer for a hub listening on `port`.
 fn announce(
+    service_name: &str,
     instance_id: &str,
     port: u16,
     handle: &tokio::runtime::Handle,
@@ -61,10 +95,9 @@ fn announce(
     let interfaces = multicast_interfaces_v4();
     let ips = announce_ips(&interfaces);
     log::info!(
-        "Announcing local hub {instance_id} on the LAN via swarm-discovery ({}) at {ips:?}:{port}",
-        service_name()
+        "Announcing local hub {instance_id} on the LAN via swarm-discovery ({service_name}) at {ips:?}:{port}"
     );
-    let guard = base_discoverer(&mailbox_id_to_label(instance_id)?, interfaces)
+    let guard = base_discoverer(service_name, &mailbox_id_to_label(instance_id)?, interfaces)
         .with_addrs(port, ips)
         .spawn(handle)?;
     Ok(guard)
