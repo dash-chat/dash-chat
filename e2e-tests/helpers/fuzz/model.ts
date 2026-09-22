@@ -1576,16 +1576,17 @@ export class ExpectedModel {
 		return changed;
 	}
 
-	/** Whether `holder`'s node throws `op` away rather than keeping it: what
+	/** Whether `holder`'s node turns `op` away rather than keeping it: what
 	 *  reaches a device while it is blocking the author is invalidated there,
-	 *  and unblocking never brings it back. A profile is the exception — a
-	 *  block stops what a peer says, not who they are, and the app goes on
-	 *  showing a blocked peer's current name. */
+	 *  and unblocking never brings it back. A profile is the exception — it is
+	 *  only held back. The node never persists an invalidated op, so the
+	 *  author's log height never advances and the source hands the rename back
+	 *  on every exchange, which is what lands it once the block is lifted. */
 	private rejects(holder: string, op: Op): boolean {
-		if (op.kind === 'profile') return false;
 		const dropped = this.discarded.get(holder);
 		if (dropped?.has(op.id) === true) return true;
 		if (!this.blocks(holder, authorOf(op))) return false;
+		if (op.kind === 'profile') return true;
 		if (dropped === undefined) this.discarded.set(holder, new Set([op.id]));
 		else dropped.add(op.id);
 		return true;

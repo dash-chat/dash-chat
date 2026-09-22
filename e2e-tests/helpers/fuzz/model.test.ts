@@ -797,7 +797,7 @@ test('a blocked contact is offered by no picker and writes to nobody', () => {
 	assert.deepEqual(showing(m, A), []);
 });
 
-test('a rename during a block is still what the blocker sees', () => {
+test('a rename a blocked peer makes waits for the unblock', () => {
 	const m = sameLan(A, B);
 	contacts(m, A, B);
 	m.propagate();
@@ -805,7 +805,7 @@ test('a rename during a block is still what the blocker sees', () => {
 	m.blockContact(A, B);
 	m.updateProfile(B, 'person-01');
 	m.propagate();
-	assert.equal(m.chatListName(chat, A), 'person-01');
+	assert.equal(m.chatListName(chat, A), B);
 	m.unblockContact(A, B);
 	m.propagate();
 	assert.equal(m.chatListName(chat, A), 'person-01');
