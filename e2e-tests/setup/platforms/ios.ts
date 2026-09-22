@@ -284,6 +284,34 @@ async function attachToIosApp(b: WebdriverIO.Browser): Promise<void> {
 	await waitForTestUtils(b);
 }
 
+/** Where the device says our app's bundle sits right now. Each install puts it
+ *  in a container of its own, so this changes whenever anything replaces the
+ *  build we installed — a release or TestFlight build carries the same version
+ *  and bundle id as ours, and pointed at the cloud mailbox instead of the
+ *  run's, it fails every cross-device wait in the suite. `undefined` when the
+ *  app is absent or the device can't be asked, which reinstalls. */
+function installedBundlePath(udid: string): string | undefined {
+	const listing = path.join(
+		tmpdir(),
+		`dashchat-apps-${udid}-${process.pid}.json`,
+	);
+	try {
+		execSync(
+			`xcrun devicectl device info apps --device ${udid} ` +
+				`--bundle-id ${APP_BUNDLE_ID} --json-output "${listing}"`,
+			{ stdio: 'ignore' },
+		);
+		const { result } = JSON.parse(readFileSync(listing, 'utf8')) as {
+			result: { apps: { url?: string }[] };
+		};
+		return result.apps[0]?.url;
+	} catch {
+		return undefined;
+	} finally {
+		rmSync(listing, { force: true });
+	}
+}
+
 /** Put a device back to a freshly-installed app, retrying the install: CoreDevice
  * intermittently fails with a transient "unable to create bookmark data" /
  * "No such file" error even though the .ipa exists. Best-effort — a device left
@@ -493,14 +521,14 @@ export class IosPlatform implements AgentPlatform {
 		// app's own delete_account instead), and only on devices that don't
 		// already hold this exact build from a previous run.
 		for (const udid of this.udids.values()) {
-			if (deviceHasBuild(udid, SESSION_IPA)) {
+			if (deviceHasBuild(udid, SESSION_IPA, installedBundlePath(udid))) {
 				console.log(
 					`[ios] ${udid} already has the current e2e build — skipping install`,
 				);
 				continue;
 			}
 			if (await reinstallApp(udid)) {
-				recordInstalled(udid, SESSION_IPA);
+				recordInstalled(udid, SESSION_IPA, installedBundlePath(udid));
 			}
 		}
 	}
