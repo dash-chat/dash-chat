@@ -16,7 +16,7 @@ use tokio::sync::{broadcast, watch};
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::{
-    base_discoverer, label_to_mailbox_id, local_subnets_v4, multicast_interfaces_v4, service_name,
+    base_discoverer, label_to_mailbox_id, local_subnets_v4, multicast_interfaces_v4,
     GOODBYE_ATTRIBUTE,
 };
 
@@ -38,12 +38,9 @@ pub struct LocalHubDiscoveryService {
 
 impl LocalHubDiscoveryService {
     /// Browse for local hubs until the returned service is dropped.
-    pub fn spawn() -> Self {
-        log::info!(
-            "Started local hub discovery (swarm-discovery, {})",
-            service_name()
-        );
-        let browser = DiscoveryBrowser::new();
+    pub fn spawn(service_name: &str) -> Self {
+        log::info!("Started local hub discovery (swarm-discovery, {service_name})");
+        let browser = DiscoveryBrowser::new(service_name);
         Self {
             _rejoining: AbortOnDropHandle::new(tokio::spawn(Self::rejoin_on_network_changes(
                 browser.clone(),
@@ -99,6 +96,9 @@ struct Browsing {
 }
 
 struct DiscoveryBrowser {
+    /// The swarm both halves meet on; a test gives itself one of its own so it
+    /// cannot be discovered by real clients on the LAN it runs on.
+    service_name: String,
     hubs: Mutex<BTreeMap<String, Hub>>,
     published: watch::Sender<BTreeMap<String, DiscoveredHub>>,
     /// One for the whole run, so its view of the swarm (and so its expiry)
@@ -107,8 +107,9 @@ struct DiscoveryBrowser {
 }
 
 impl DiscoveryBrowser {
-    fn new() -> Arc<Self> {
+    fn new(service_name: &str) -> Arc<Self> {
         Arc::new(Self {
+            service_name: service_name.to_string(),
             hubs: Mutex::default(),
             published: watch::channel(BTreeMap::new()).0,
             browsing: Mutex::default(),
@@ -159,6 +160,7 @@ impl DiscoveryBrowser {
             .values_mut()
         {
             hub.awaiting_probe = None;
+            hub.probed_at = None;
         }
     }
 
@@ -167,23 +169,27 @@ impl DiscoveryBrowser {
         interfaces: BTreeSet<Ipv4Addr>,
     ) -> anyhow::Result<Browsing> {
         let browser = Arc::downgrade(self);
-        let discoverer = base_discoverer(&browse_id(), interfaces.iter().copied().collect())
-            // Runs on a swarm-discovery actor, which is spawned on the handle
-            // passed to `Discoverer::spawn` below — so this is on our runtime
-            // and may spawn, but must not block: it only takes the sighting in.
-            .with_callback(move |id, peer| {
-                let Ok(id) = label_to_mailbox_id(id) else {
-                    return;
-                };
-                let Some(browser) = browser.upgrade() else {
-                    return;
-                };
-                browser.sighted(
-                    id,
-                    peer.addrs().iter().map(|&a| SocketAddr::from(a)).collect(),
-                    peer.txt_attribute(GOODBYE_ATTRIBUTE).is_some(),
-                );
-            });
+        let discoverer = base_discoverer(
+            &self.service_name,
+            &browse_id(),
+            interfaces.iter().copied().collect(),
+        )
+        // Runs on a swarm-discovery actor, which is spawned on the handle
+        // passed to `Discoverer::spawn` below — so this is on our runtime
+        // and may spawn, but must not block: it only takes the sighting in.
+        .with_callback(move |id, peer| {
+            let Ok(id) = label_to_mailbox_id(id) else {
+                return;
+            };
+            let Some(browser) = browser.upgrade() else {
+                return;
+            };
+            browser.sighted(
+                id,
+                peer.addrs().iter().map(|&a| SocketAddr::from(a)).collect(),
+                peer.txt_attribute(GOODBYE_ATTRIBUTE).is_some(),
+            );
+        });
         let guard = discoverer.spawn(&tokio::runtime::Handle::current())?;
         Ok(Browsing {
             guard,
@@ -368,7 +374,7 @@ mod tests {
     impl Harness {
         /// The browser fed sightings by hand, with no discoverer behind it.
         fn new() -> Self {
-            let browser = DiscoveryBrowser::new();
+            let browser = DiscoveryBrowser::new("dashchat-unit-test");
             let hubs = browser.published.subscribe();
             Self { browser, hubs }
         }
@@ -506,21 +512,27 @@ mod tests {
         assert_eq!(answered, [lan, bridge, loopback]);
     }
 
-    /// A phone that rejoins its LAN sights the hub before the interface is
-    /// usable, and that probe is still on the blackhole when the sighting that
-    /// could be answered arrives.
+    /// A phone that rejoins its LAN sights the hub at the addresses it always
+    /// advertised, and the probe from before the interface came up answered
+    /// nowhere. Nothing about the sighting changed, so only the network change
+    /// can be what lets it be probed again.
     #[tokio::test]
-    async fn a_network_change_lets_the_next_sighting_probe_at_once() {
+    async fn a_network_change_reprobes_a_hub_at_the_same_addresses() {
         let mut h = Harness::new();
-        let hub = listen().await;
-        h.sighted("hub", vec![DEAD_ADDR]);
+        // The address the hub is on either way; it only answers on it later.
+        let addr = at(&listen().await);
+        h.seen("hub", addr);
+        // Well inside `REPROBE_INTERVAL`, so only the network change can be
+        // what lets the second sighting through.
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
+        let _hub = TcpListener::bind(addr).await.unwrap();
         h.browser.forget_probes_in_flight();
-        h.sighted("hub", vec![at(&hub)]);
+        h.seen("hub", addr);
 
         let started = Instant::now();
-        assert_eq!(h.next().await, hubs(&[("hub", at(&hub))]));
-        assert!(started.elapsed() < PROBE_TIMEOUT);
+        assert_eq!(h.next().await, hubs(&[("hub", addr)]));
+        assert!(started.elapsed() < REPROBE_INTERVAL);
     }
 
     #[tokio::test]

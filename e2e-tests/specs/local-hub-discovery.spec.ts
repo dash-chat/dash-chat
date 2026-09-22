@@ -70,7 +70,7 @@ describe('Local hub discovery', function () {
 	): Promise<void> {
 		await chip().waitForNotLocal(
 			within,
-			`the chip still showed the hub -es after `,
+			`the chip still showed the hub ${within / 1_000}s after ${after}`,
 		);
 	}
 

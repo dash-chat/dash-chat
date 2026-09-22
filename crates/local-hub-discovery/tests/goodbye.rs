@@ -73,18 +73,16 @@ async fn a_hub_that_says_goodbye_leaves_the_set_before_its_announcements_lapse()
         eprintln!("skipped: no multicast-capable IPv4 interface on this host");
         return;
     }
-    // Keeps the announcement off the name real clients browse. Set before
-    // anything resolves `service_name`, which caches on first use.
-    std::env::set_var(
-        "LOCAL_HUB_SERVICE_ID",
-        format!("test{}", std::process::id()),
-    );
+    // A swarm of this test's own: under the production name, real clients on
+    // whatever LAN this machine is on would discover, probe and poll the hub
+    // spawned below.
+    let service_name = format!("dashchat-test{}", std::process::id());
     let id = hub_id();
     let port = listening_port().await;
 
-    let discovery = LocalHubDiscoveryService::spawn();
+    let discovery = LocalHubDiscoveryService::spawn(&service_name);
     let mut hubs = discovery.hubs();
-    let announcement = LocalHubAnnouncementService::spawn(&id, port).unwrap();
+    let announcement = LocalHubAnnouncementService::spawn(&service_name, &id, port).unwrap();
 
     wait_until(
         &mut hubs,

@@ -76,7 +76,7 @@ pub(crate) async fn probe_cloud_mailbox(node: &dashchat_node::Node) {
 pub fn spawn_local_mailbox_mdns_discovery(
     node: dashchat_node::Node,
 ) -> anyhow::Result<AbortOnDropHandle<()>> {
-    let discovery = LocalHubDiscoveryService::spawn();
+    let discovery = LocalHubDiscoveryService::spawn(local_hub_discovery::service_name());
     let hubs = discovery.hubs();
 
     let handler_task = tokio::spawn(async move {
@@ -123,9 +123,9 @@ async fn register_local_hubs(
     }
 }
 
-/// A hub the node already holds at an address it still answers on is left
-/// alone, so the other addresses it answers at coming and going cannot churn a
-/// working registration.
+/// A hub the node already holds at the nearest address it answers on is left
+/// alone; anywhere else it is registered again, so the sort decides where a hub
+/// is polled rather than whichever address won the probe race.
 async fn reconcile(node: &dashchat_node::Node, current: &BTreeMap<String, DiscoveredHub>) {
     for hub in current.values() {
         let Some(&addr) = hub.answered_at.first() else {

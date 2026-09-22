@@ -162,7 +162,11 @@ pub fn spawn_local_hub_announcement(
     endpoint_id: EndpointId,
     port: u16,
 ) -> anyhow::Result<LocalHubAnnouncementService> {
-    LocalHubAnnouncementService::spawn(&encode_mailbox_id(endpoint_id), port)
+    LocalHubAnnouncementService::spawn(
+        local_hub_discovery::service_name(),
+        &encode_mailbox_id(endpoint_id),
+        port,
+    )
 }
 
 #[cfg(test)]
