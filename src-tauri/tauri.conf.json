@@ -1,6 +1,6 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.20.1",
+	"version": "0.20.2",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
