@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 
 use local_hub_discovery::{DiscoveredHub, LocalHubDiscoveryService};
@@ -99,7 +99,7 @@ async fn register_local_hubs(
     mut hubs: watch::Receiver<BTreeMap<String, DiscoveredHub>>,
 ) {
     let mut tracked = node.mailboxes.active_mailbox_ids();
-    let mut ours: BTreeSet<String> = BTreeSet::new();
+    let mut ours: BTreeMap<String, SocketAddr> = BTreeMap::new();
     loop {
         let current = hubs.borrow_and_update().clone();
         reconcile(&node, &mut ours, &current).await;
@@ -126,26 +126,37 @@ async fn register_local_hubs(
 /// is polled rather than whichever address won the probe race.
 async fn reconcile(
     node: &dashchat_node::Node,
-    ours: &mut BTreeSet<String>,
+    ours: &mut BTreeMap<String, SocketAddr>,
     current: &BTreeMap<String, DiscoveredHub>,
 ) {
     for hub in current.values() {
         let Some(&addr) = hub.answered_at.first() else {
             continue;
         };
-        ours.insert(hub.mailbox_id.clone());
-        if registered_url(node, hub).await.as_deref() == Some(hub_url(addr).as_str()) {
+        let id = &hub.mailbox_id;
+        let registered = registered_url(node, hub).await;
+        if registered.as_deref() == Some(hub_url(addr).as_str()) {
             // Ours already, but a mailbox that backed off while it was away
             // reads as disconnected until its next poll.
-            node.mailboxes.probe(hub.mailbox_id.clone()).await;
+            ours.insert(id.clone(), addr);
+            node.mailboxes.probe(id.clone()).await;
             continue;
         }
+        // The node judged this hub stopped where we last put it, and a hub
+        // that answers TCP while failing HTTP goes on answering probes
+        // forever — so registering it again here on the very change that
+        // dropped it would loop. Only a new address or a re-announcement
+        // (which drops it from `current`, clearing this) earns another.
+        if registered.is_none() && ours.get(id) == Some(&addr) {
+            continue;
+        }
+        ours.insert(id.clone(), addr);
         register_local_hub(node, hub, addr).await;
     }
     // Only what this loop put there: inferring it from the node's mailboxes
     // would tear down anything else that ever registers one.
     let gone: Vec<String> = ours
-        .iter()
+        .keys()
         .filter(|id| !current.contains_key(*id))
         .cloned()
         .collect();

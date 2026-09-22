@@ -117,7 +117,7 @@ impl DiscoveryBrowser {
     }
 
     fn rejoin(self: &Arc<Self>) {
-        self.forget_probes_in_flight();
+        self.forget_probes_that_cannot_answer();
         let current: BTreeSet<Ipv4Addr> = multicast_interfaces_v4().into_iter().collect();
         let mut browsing = self
             .browsing
@@ -148,18 +148,26 @@ impl DiscoveryBrowser {
         *joined = current;
     }
 
-    /// A probe still running was dialling the network we had before, where the
-    /// addresses it waits on may be unreachable — and while it waits, no
-    /// sighting of that hub is probed at all. What it answers cannot speak for
-    /// the network we have now.
-    fn forget_probes_in_flight(&self) {
+    /// A probe dialling addresses none of our networks can reach now cannot
+    /// answer, and while it waits no sighting of that hub is probed at all.
+    /// One still dialling an address we can reach is left to finish: sightings
+    /// routinely arrive before we notice the network changed, and that probe
+    /// is the fastest answer we are going to get.
+    fn forget_probes_that_cannot_answer(&self) {
+        let subnets = local_subnets_v4();
         for hub in self
             .hubs
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .values_mut()
         {
-            hub.awaiting_probe = None;
+            if !hub
+                .probed_addrs
+                .iter()
+                .any(|addr| reachable_from_here(*addr, &subnets))
+            {
+                hub.awaiting_probe = None;
+            }
             hub.probed_at = None;
         }
     }
@@ -221,6 +229,7 @@ impl DiscoveryBrowser {
         if !hub.needs_probe(&advertised) {
             return;
         }
+        log::debug!("Local hub sighted at {advertised:?}, probing: mailbox={id}");
         // One probe in flight per hub, however often it is sighted, and a LAN
         // carries a handful of hubs: the fan-out needs no bound of its own.
         let probe_id = next_probe_id();
@@ -309,6 +318,15 @@ impl DiscoveryBrowser {
 
 /// How far an address is from us: on a subnet we are on, elsewhere, or
 /// loopback — which a hub on another host would have meant its own by.
+/// Whether a probe to this address could still be answered from where we are
+/// now: our own host, or a subnet we hold an address on.
+fn reachable_from_here(addr: SocketAddr, subnets: &[(Ipv4Addr, u8)]) -> bool {
+    match addr.ip() {
+        IpAddr::V4(v4) => v4.is_loopback() || on_a_local_subnet(v4, subnets),
+        IpAddr::V6(v6) => v6.is_loopback(),
+    }
+}
+
 fn hops_away(addr: SocketAddr, subnets: &[(Ipv4Addr, u8)]) -> u8 {
     match addr.ip() {
         ip if ip.is_loopback() => 2,
@@ -531,12 +549,44 @@ mod tests {
         let Ok(_hub) = TcpListener::bind(addr).await else {
             return;
         };
-        h.browser.forget_probes_in_flight();
+        h.browser.forget_probes_that_cannot_answer();
         h.seen("hub", addr);
 
         let started = Instant::now();
         assert_eq!(h.next().await, hubs(&[("hub", addr)]));
         assert!(started.elapsed() < REPROBE_INTERVAL);
+    }
+
+    /// A sighting routinely arrives before the network change behind it is
+    /// noticed, so the probe it started is dialling the network we are on and
+    /// is the fastest answer there is; only one dialling elsewhere is a probe
+    /// the rejoin has to take the gate back from.
+    #[tokio::test]
+    async fn a_rejoin_forgets_only_the_probes_dialling_elsewhere() {
+        fn probing(addr: SocketAddr) -> Hub {
+            Hub {
+                probed_addrs: [addr].into_iter().collect(),
+                awaiting_probe: Some(1),
+                probed_at: Some(Instant::now()),
+                ..Default::default()
+            }
+        }
+
+        let h = Harness::new();
+        let here = at(&listen().await);
+        {
+            let mut hubs = h.browser.hubs.lock().unwrap();
+            hubs.insert("here".to_string(), probing(here));
+            hubs.insert("elsewhere".to_string(), probing(DEAD_ADDR));
+        }
+
+        h.browser.forget_probes_that_cannot_answer();
+
+        let hubs = h.browser.hubs.lock().unwrap();
+        assert_eq!(hubs["here"].awaiting_probe, Some(1));
+        assert_eq!(hubs["elsewhere"].awaiting_probe, None);
+        assert!(hubs["here"].probed_at.is_none());
+        assert!(hubs["elsewhere"].probed_at.is_none());
     }
 
     #[tokio::test]
