@@ -1846,10 +1846,7 @@ impl Node {
 
     /// Returns true if we have an outgoing contact request recorded for
     /// `device_pubkey` (i.e. we scanned their code and are awaiting their ack).
-    pub async fn has_outgoing_pending_request(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<bool> {
+    pub async fn has_outgoing_pending_request(&self, device_id: DeviceId) -> anyhow::Result<bool> {
         self.local_store
             .has_pending_reply_inbox_for(device_id)
             .await
