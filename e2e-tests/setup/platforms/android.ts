@@ -585,7 +585,7 @@ function deviceShellQuote(value: string): string {
 }
 
 /** The SSID the device is associated with, or '' while it is on none. */
-function androidWifiSsid(udid: string): string {
+export function androidWifiSsid(udid: string): string {
 	try {
 		return (
 			adbShell(udid, 'cmd wifi status').match(

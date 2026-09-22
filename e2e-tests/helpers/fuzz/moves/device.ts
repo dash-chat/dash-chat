@@ -4,15 +4,11 @@
  *  the chat list, which is where the moves that kill it leave it — checking
  *  the list on the way out is what makes sure the app has written the reads
  *  the model credits it with before its process goes. */
+import { BACKGROUND_NETWORK_CUTOFF_MS } from '../../timeouts';
 import { type Real, at, byName, log, waitForApp } from '../agents';
 import { checkChatList, checkHubs } from '../checks';
 import type { ExpectedModel } from '../model';
 import { Move, type Moves } from './move';
-
-/** Android keeps syncing a backgrounded app for a few seconds before it cuts
- *  it off the network (measured ~5.5 s on the Xiaomi, ~10 s on the vivo), and
- *  the model counts a backgrounded agent as off the network. */
-const BACKGROUND_NETWORK_CUTOFF_MS = 15_000;
 
 /** Backgrounds an agent and leaves it backgrounded: later moves keep acting
  * through the other agents (including sending to this one), and a
