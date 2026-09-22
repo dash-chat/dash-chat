@@ -120,7 +120,10 @@ impl DiscoveryBrowser {
     fn rejoin(self: &Arc<Self>) {
         self.forget_probes_in_flight();
         let current: BTreeSet<Ipv4Addr> = multicast_interfaces_v4().into_iter().collect();
-        let mut browsing = self.browsing.lock().unwrap();
+        let mut browsing = self
+            .browsing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(Browsing { guard, joined }) = browsing.as_mut() else {
             log::debug!("Browsing for local hubs on {current:?}");
             *browsing = self
@@ -151,7 +154,12 @@ impl DiscoveryBrowser {
     /// sighting of that hub is probed at all. What it answers cannot speak for
     /// the network we have now.
     fn forget_probes_in_flight(&self) {
-        for hub in self.hubs.lock().unwrap().values_mut() {
+        for hub in self
+            .hubs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values_mut()
+        {
             hub.awaiting_probe = None;
         }
     }
@@ -186,7 +194,10 @@ impl DiscoveryBrowser {
     }
 
     fn sighted(self: &Arc<Self>, id: String, advertised: BTreeSet<SocketAddr>, goodbye: bool) {
-        let mut hubs = self.hubs.lock().unwrap();
+        let mut hubs = self
+            .hubs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         // An unanswered probe is deliberately not a third way to be gone: it
         // looks exactly like our own network being down.
         if goodbye || advertised.is_empty() {
@@ -241,7 +252,10 @@ impl DiscoveryBrowser {
     /// A hub only takes the results of the probe it is waiting on, so one
     /// outlived by a newer sighting cannot speak for it.
     fn answered(&self, id: &str, probe_id: u64, answered_at: Vec<SocketAddr>, swept: bool) {
-        let mut hubs = self.hubs.lock().unwrap();
+        let mut hubs = self
+            .hubs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(hub) = hubs.get_mut(id) else {
             return;
         };

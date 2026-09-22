@@ -1,28 +1,33 @@
 //! Both halves of the goodbye in one process: what [`LocalHubAnnouncementService`]
 //! sets on its way out is what [`LocalHubDiscoveryService`] reads as a hub
 //! leaving, and it goes out while the service is still up to send it.
+//!
+//! Needs working IPv4 multicast on the host: the two halves meet over mDNS, so
+//! somewhere with only loopback (a container, Linux `lo` carries no MULTICAST
+//! flag) they never see each other and this fails as a discovery timeout.
 
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use data_encoding::BASE64URL_NOPAD;
 use local_hub_discovery::{DiscoveredHub, LocalHubAnnouncementService, LocalHubDiscoveryService};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
-/// Longer than one announce round, shorter than the ~2.4s a swarm-discovery
-/// peer takes to lapse at the interactive cadence: a hub gone within this left
-/// because of its goodbye, not because its announcements ran out.
-const GOODBYE_WITHIN: Duration = Duration::from_secs(2);
+/// Measured from when `shutdown` returns, by which point the goodbye has had
+/// its full round: a hub still published this long after cannot have been
+/// retired by one, and a lapse would take seconds more.
+const GOODBYE_WITHIN: Duration = Duration::from_millis(500);
 const DISCOVERY_WITHIN: Duration = Duration::from_secs(4);
 
 /// A hub id of the shape the announce side encodes: base64url, as a MailboxId
-/// is. Unique per process, so two test runs on one LAN cannot see each other's.
+/// is. Wall-clock nanos and the pid, so two runs of this test never collide.
 fn hub_id() -> String {
     let mut bytes = [0u8; 32];
     bytes[..4].copy_from_slice(&std::process::id().to_le_bytes());
-    bytes[4..12].copy_from_slice(&Instant::now().elapsed().as_nanos().to_le_bytes()[..8]);
+    let since_epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    bytes[4..12].copy_from_slice(&(since_epoch.as_nanos() as u64).to_le_bytes());
     BASE64URL_NOPAD.encode(&bytes)
 }
 
@@ -54,6 +59,12 @@ async fn wait_until(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_hub_that_says_goodbye_leaves_the_set_before_its_announcements_lapse() {
+    // Keeps the announcement off the name real clients browse. Set before
+    // anything resolves `service_name`, which caches on first use.
+    std::env::set_var(
+        "LOCAL_HUB_SERVICE_ID",
+        format!("test{}", std::process::id()),
+    );
     let id = hub_id();
     let port = listening_port().await;
 
@@ -69,8 +80,8 @@ async fn a_hub_that_says_goodbye_leaves_the_set_before_its_announcements_lapse()
     )
     .await;
 
-    let said_goodbye = Instant::now();
     announcement.shutdown().await;
+    let goodbye_sent = Instant::now();
 
     wait_until(
         &mut hubs,
@@ -79,5 +90,5 @@ async fn a_hub_that_says_goodbye_leaves_the_set_before_its_announcements_lapse()
         |published| !published.contains_key(&id),
     )
     .await;
-    assert!(said_goodbye.elapsed() < GOODBYE_WITHIN);
+    assert!(goodbye_sent.elapsed() < GOODBYE_WITHIN);
 }

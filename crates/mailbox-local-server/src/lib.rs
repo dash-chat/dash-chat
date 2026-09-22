@@ -31,8 +31,12 @@ impl LocalMailboxServer {
     /// Retires the announcement, so peers hear this hub leave instead of
     /// waiting out its silence.
     pub async fn stop(self) {
+        // Goodbye first, while the server is still serving: a browser that hears
+        // it retires the hub at once, where a refused probe deliberately means
+        // nothing.
+        self.announcement.shutdown().await;
         let _ = self.stop_signal.send(());
-        let (_, served) = tokio::join!(self.announcement.shutdown(), self.task);
+        let served = self.task.await;
         if let Err(err) = served {
             log::error!("Local mailbox server task ended unexpectedly: {err}");
         }

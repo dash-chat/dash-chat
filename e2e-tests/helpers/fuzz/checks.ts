@@ -40,10 +40,10 @@ import type {
  *  user reads the app as slow or broken. */
 export const DISCOVERY_MS = 2_000;
 
-/** What a hub that stopped gets before it has to be off the chip. Longer than
- *  [`DISCOVERY_MS`] because nothing goes on the wire when a hub goes away —
- *  swarm-discovery neither sends a goodbye nor reads one — so a phone only
- *  notices once the hub ages out of its swarm. */
+/** What a hub that stopped gets before it has to be off the chip. A clean stop
+ *  now announces a goodbye and is near-instant; this budget is sized for the
+ *  hub that cannot send one — killed, or carried off the LAN — where a phone
+ *  waits for the announcement to age out of its swarm. */
 export const DEPARTURE_MS = 4_000;
 
 /** What a notification gets to travel before it has to be on the device:

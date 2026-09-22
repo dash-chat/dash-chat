@@ -13,7 +13,7 @@ use crate::{
     base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, service_name, GOODBYE_ATTRIBUTE,
 };
 
-/// One announce round of swarm-discovery.s interactive cadence (700ms plus
+/// One announce round of swarm-discovery's interactive cadence (700ms plus
 /// jitter), charged to every shutdown: `set_txt_attribute` only queues the
 /// goodbye, and dropping the announcement before that round would send nothing.
 const GOODBYE_LINGER: Duration = Duration::from_millis(1000);
