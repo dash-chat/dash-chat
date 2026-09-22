@@ -1,4 +1,8 @@
-use local_hub_discovery::{LocalHubDiscoveryService, LocalHubEvent};
+use std::collections::BTreeMap;
+use std::net::SocketAddr;
+
+use local_hub_discovery::{DiscoveredHub, LocalHubDiscoveryService};
+use tokio::sync::broadcast;
 use tokio_util::task::AbortOnDropHandle;
 
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
@@ -71,16 +75,29 @@ pub(crate) async fn probe_cloud_mailbox(node: &dashchat_node::Node) {
 pub fn spawn_local_mailbox_mdns_discovery(
     node: dashchat_node::Node,
 ) -> anyhow::Result<AbortOnDropHandle<()>> {
-    let mut discovery = LocalHubDiscoveryService::spawn();
+    let discovery = LocalHubDiscoveryService::spawn();
+    let mut hubs = discovery.hubs();
+    let mut network = network_watch::network_change();
 
     let handler_task = tokio::spawn(async move {
-        while let Some(event) = discovery.recv().await {
-            match event {
-                LocalHubEvent::Found { id, url } => register_local_hub(&node, id, url).await,
-                LocalHubEvent::Lost { id } => {
-                    if node.mailboxes.unregister(&id).await {
-                        log::info!("*** Removed local mailbox client via mdns: {id} ***");
+        let _discovery = discovery;
+        let mut registered: BTreeMap<String, SocketAddr> = BTreeMap::new();
+        loop {
+            let current = hubs.borrow_and_update().clone();
+            reconcile(&node, &mut registered, &current).await;
+            tokio::select! {
+                stopped = hubs.changed() => {
+                    if stopped.is_err() {
+                        return;
                     }
+                }
+                // A hub cannot tell us our address changed, so re-register with
+                // every one of them to hand it over again.
+                changed = network.recv() => {
+                    if matches!(changed, Err(broadcast::error::RecvError::Closed)) {
+                        return;
+                    }
+                    registered.clear();
                 }
             }
         }
@@ -89,16 +106,51 @@ pub fn spawn_local_mailbox_mdns_discovery(
     Ok(AbortOnDropHandle::new(handler_task))
 }
 
-/// Point the node at a hub we just found: register it as a mailbox, learn its
-/// dialing address, and hand it ours.
-///
-/// Safe to re-run — `MailboxManager::register` swaps the client in place — which
-/// matters because a hub is reported found again whenever its addresses change
-/// or a network change comes between sightings.
-/// Registration ends on an mDNS goodbye or on the hub reaching Stopped.
+/// Register the hubs that appeared, register anew the ones whose address we
+/// hold stopped answering, and drop the ones that went. A hub that is still
+/// answering where we registered it is left alone, so the other addresses it
+/// answers at coming and going cannot churn a working registration.
+async fn reconcile(
+    node: &dashchat_node::Node,
+    registered: &mut BTreeMap<String, SocketAddr>,
+    current: &BTreeMap<String, DiscoveredHub>,
+) {
+    for (id, hub) in current {
+        if registered
+            .get(id)
+            .is_some_and(|at| hub.answered_at.contains(at))
+        {
+            continue;
+        }
+        let Some(&addr) = hub.answered_at.first() else {
+            continue;
+        };
+        register_local_hub(node, hub, addr).await;
+        registered.insert(id.clone(), addr);
+    }
+    let gone: Vec<String> = registered
+        .keys()
+        .filter(|id| !current.contains_key(*id))
+        .cloned()
+        .collect();
+    for id in gone {
+        if node.mailboxes.unregister(&id).await {
+            log::info!("*** Removed local mailbox client via mdns: {id} ***");
+        }
+        registered.remove(&id);
+    }
+}
 
-async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String) {
-    let newly_tracked = !node.mailboxes.is_tracked(&id).await;
+/// Point the node at a hub: register it as a mailbox, learn its dialing
+/// address, and hand it ours.
+///
+/// Safe to re-run — `MailboxManager::register` swaps the client in place —
+/// which matters because [`reconcile`] runs this again whenever the address we
+/// registered stops answering or the network changes.
+async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, addr: SocketAddr) {
+    let id = &hub.mailbox_id;
+    let url = format!("http://{addr}");
+    let newly_tracked = !node.mailboxes.is_tracked(id).await;
     node.mailboxes
         .register(
             mailbox_client::toy::ToyMailboxClient::new(
@@ -115,7 +167,7 @@ async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String)
     // it comes back. Only the first registration arms this, since a re-browse
     // re-registers every hub it still sees.
     if newly_tracked {
-        node.mailboxes.unregister_on_stopped(&id).await;
+        node.mailboxes.unregister_on_stopped(id).await;
     }
     // Add the hub's dialing address to the address book so the blob downloader
     // can reach it by EndpointId rather than relying solely on p2panda mDNS
@@ -130,10 +182,9 @@ async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String)
             log::warn!("Failed to fetch local mailbox {id} health for address book: {err}")
         }
     }
-    // Tell the hub our own dialing address so its blob fetch pool can reach us as
-    // a source. A hub is reported found again after every network change, so
-    // this also refreshes the EndpointAddr then. Cloud mailboxes have no such hook;
-    // refreshing there would need a network-change callback from the node layer.
+    // Tell the hub our own dialing address so its blob fetch pool can reach us
+    // as a source; the reconcile loop re-registers on every network change, so
+    // this refreshes the EndpointAddr then too.
     if let Err(err) = node.register_with_mailbox(&url).await {
         log::warn!("Failed to register our addr with local mailbox {id}: {err}");
     }

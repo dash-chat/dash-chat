@@ -2,16 +2,23 @@
 //! on the same network can discover it.
 
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::Arc;
+use std::time::Duration;
 
 use swarm_discovery::DropGuard;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::{base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, service_name};
+use crate::{
+    base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, service_name, GOODBYE_ATTRIBUTE,
+};
+
+/// One announce round, charged to every shutdown.
+const GOODBYE_LINGER: Duration = Duration::from_millis(1000);
 
 pub struct LocalHubAnnouncementService {
-    // Holds the live announcement and re-arms it on each network change; drop to stop.
-    _task: AbortOnDropHandle<()>,
+    announcement: Arc<Mutex<Option<DropGuard>>>,
+    _reannouncer: AbortOnDropHandle<()>,
 }
 
 impl LocalHubAnnouncementService {
@@ -24,11 +31,12 @@ impl LocalHubAnnouncementService {
         let handle = tokio::runtime::Handle::current();
         // Eager first announce so a bad runtime or bind fails fast.
         let initial = announce(instance_id, port, &handle)?;
+        let announcement = Arc::new(Mutex::new(Some(initial)));
         let instance_id = instance_id.to_string();
+        let live = announcement.clone();
         // swarm-discovery pins its multicast socket and advertised addresses at
         // spawn, so re-announce on every network change — as the browser re-binds.
-        let task = AbortOnDropHandle::new(tokio::spawn(async move {
-            let mut _announcement = initial;
+        let reannouncer = AbortOnDropHandle::new(tokio::spawn(async move {
             let mut network = network_watch::network_change();
             loop {
                 match network.recv().await {
@@ -40,15 +48,40 @@ impl LocalHubAnnouncementService {
                         return;
                     }
                 }
+                // `announce` multicasts as soon as it returns, and one
+                // without the goodbye must not go out mid-shutdown.
+                let mut live = live.lock().await;
+                if live.is_none() {
+                    return;
+                }
                 match announce(&instance_id, port, &handle) {
-                    Ok(next) => _announcement = next,
+                    Ok(next) => *live = Some(next),
                     Err(err) => log::warn!(
                         "Failed to re-announce local hub {instance_id} (keeping the previous announcement, retrying on next network change): {err}"
                     ),
                 }
             }
         }));
-        Ok(Self { _task: task })
+        Ok(Self {
+            announcement,
+            _reannouncer: reannouncer,
+        })
+    }
+
+    /// Announce that this hub is going away, then stop announcing.
+    pub async fn shutdown(self) {
+        let mut announcement = self.announcement.lock().await;
+        let Some(live) = announcement.as_ref() else {
+            return;
+        };
+        match live.set_txt_attribute(GOODBYE_ATTRIBUTE.to_string(), None) {
+            // swarm-discovery sends on its own schedule: this waits for a
+            // round, not for an acknowledgement.
+            Ok(()) if announces_off_host() => tokio::time::sleep(GOODBYE_LINGER).await,
+            Ok(()) => {}
+            Err(err) => log::warn!("Failed to announce local hub goodbye: {err}"),
+        }
+        announcement.take();
     }
 }
 
@@ -68,6 +101,10 @@ fn announce(
         .with_addrs(port, ips)
         .spawn(handle)?;
     Ok(guard)
+}
+
+fn announces_off_host() -> bool {
+    multicast_interfaces_v4().iter().any(|ip| !ip.is_loopback())
 }
 
 /// The IPv4 addresses to advertise: the interfaces multicast goes out on

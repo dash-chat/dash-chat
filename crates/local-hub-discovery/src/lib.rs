@@ -10,7 +10,7 @@ mod announce;
 mod discovery;
 
 pub use announce::LocalHubAnnouncementService;
-pub use discovery::{LocalHubDiscoveryService, LocalHubEvent};
+pub use discovery::{DiscoveredHub, LocalHubDiscoveryService};
 
 /// The swarm-discovery service name Dash Chat hubs announce and browse under
 /// (`_dashchat._tcp.local.` on the wire). Both halves must use the same name.
@@ -24,6 +24,10 @@ pub fn service_name() -> &'static str {
     });
     &NAME
 }
+
+/// The TXT attribute a hub sets on its way out, so browsers retire it at once
+/// instead of waiting for its announcements to lapse.
+pub(crate) const GOODBYE_ATTRIBUTE: &str = "bye";
 
 /// A `Discoverer` configured the way both halves need it: IPv4-only, with
 /// multicast egress pinned to `interfaces`.

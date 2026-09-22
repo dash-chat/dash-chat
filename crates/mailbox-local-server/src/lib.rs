@@ -2,7 +2,9 @@
 //! blob store, and announce it on the LAN via mDNS so peers can discover and
 //! sync against it without any cloud service.
 
-use std::path::PathBuf;
+use std::fs;
+use std::net::Ipv4Addr;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use iroh::EndpointId;
@@ -22,23 +24,28 @@ pub struct LocalMailboxServer {
     pub port: u16,
     stop_signal: tokio::sync::oneshot::Sender<()>,
     task: tokio::task::JoinHandle<()>,
-    // Held for its `Drop`, which retires the mDNS announcement.
-    _announcement: LocalHubAnnouncementService,
+    announcement: LocalHubAnnouncementService,
 }
 
 impl LocalMailboxServer {
+    /// Retires the announcement, so peers hear this hub leave instead of
+    /// waiting out its silence.
     pub async fn stop(self) {
         let _ = self.stop_signal.send(());
-        if let Err(err) = self.task.await {
+        let (_, served) = tokio::join!(self.announcement.shutdown(), self.task);
+        if let Err(err) = served {
             log::error!("Local mailbox server task ended unexpectedly: {err}");
         }
     }
 }
 
 /// Spawn an in-process mailbox server sharing the given iroh endpoint and blob
-/// store, so it serves blobs from the same store over the same endpoint. A free
-/// port is allocated automatically; the server is announced on the LAN over mDNS,
-/// owned by the returned server so stopping it retires the announcement.
+/// store, so it serves blobs from the same store over the same endpoint. The
+/// server is announced on the LAN over mDNS, owned by the returned server so
+/// stopping it retires the announcement.
+///
+/// The port is remembered beside `db_path` and reused across restarts, so
+/// peers that discovered this hub keep reaching it.
 ///
 /// `upload_grace` overrides how long the mailbox defers dialing a blob's source
 /// after an announce that expects an inline upload; `None` uses the production
@@ -52,7 +59,7 @@ pub async fn spawn_local_mailbox_server(
     upload_grace: Option<Duration>,
     peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
 ) -> anyhow::Result<LocalMailboxServer> {
-    let port = free_port()?;
+    let port = reserve_port(&db_path)?;
     // Captured before `endpoint` is moved into the blob sync.
     let endpoint_id = endpoint.id();
 
@@ -66,11 +73,7 @@ pub async fn spawn_local_mailbox_server(
 
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // Bind dual-stack so peers can reach us over both the IPv4 and IPv6
-    // addresses mDNS announces. A `::` socket accepts IPv4 connections as
-    // v4-mapped addresses on platforms where `IPV6_V6ONLY` defaults off
-    // (macOS, Linux).
-    let addr = format!("[::]:{port}");
+    let addr = serve_addr(port);
     let task = tokio::spawn(async move {
         let signal = async move {
             let _ = stop_signal_rx.await;
@@ -97,12 +100,48 @@ pub async fn spawn_local_mailbox_server(
         port,
         stop_signal,
         task,
-        _announcement: announcement,
+        announcement,
     })
 }
 
-fn free_port() -> anyhow::Result<u16> {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+/// Dual-stack, so peers reach us over both the IPv4 and IPv6 addresses mDNS
+/// announces: a `::` socket accepts IPv4 connections as v4-mapped addresses
+/// where `IPV6_V6ONLY` defaults off (macOS, Linux).
+fn serve_addr(port: u16) -> String {
+    format!("[::]:{port}")
+}
+
+fn port_path(db_path: &Path) -> PathBuf {
+    db_path.with_extension("port")
+}
+
+/// The port to serve on: the one this hub served on last, when it is still
+/// free, so a restart does not strand every peer that discovered it at the old
+/// one. Falls back to any free port, and remembers whichever it took.
+fn reserve_port(db_path: &Path) -> anyhow::Result<u16> {
+    let remembered = fs::read_to_string(port_path(db_path))
+        .ok()
+        .and_then(|port| port.trim().parse::<u16>().ok());
+    let port = match remembered {
+        Some(port) => match std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)) {
+            Ok(listener) => listener.local_addr()?.port(),
+            Err(err) => {
+                log::info!("Local mailbox port {port} is not free ({err}); taking another");
+                any_free_port()?
+            }
+        },
+        None => any_free_port()?,
+    };
+    if remembered != Some(port) {
+        if let Err(err) = fs::write(port_path(db_path), port.to_string()) {
+            log::warn!("Failed to remember local mailbox port {port}: {err}");
+        }
+    }
+    Ok(port)
+}
+
+fn any_free_port() -> anyhow::Result<u16> {
+    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
     Ok(listener.local_addr()?.port())
 }
 
@@ -114,4 +153,42 @@ pub fn spawn_local_hub_announcement(
     port: u16,
 ) -> anyhow::Result<LocalHubAnnouncementService> {
     LocalHubAnnouncementService::spawn(&encode_mailbox_id(endpoint_id), port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db_path(dir: &tempfile::TempDir) -> PathBuf {
+        dir.path().join("mailbox.redb")
+    }
+
+    #[test]
+    fn a_hub_serves_on_the_port_it_served_on_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = reserve_port(&db_path(&dir)).unwrap();
+        assert_eq!(reserve_port(&db_path(&dir)).unwrap(), first);
+    }
+
+    #[test]
+    fn a_remembered_port_that_is_no_longer_free_is_replaced_and_remembered() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = reserve_port(&db_path(&dir)).unwrap();
+
+        let taken = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, first)).unwrap();
+        let second = reserve_port(&db_path(&dir)).unwrap();
+        assert_ne!(second, first);
+
+        // The new port is the one remembered from here on, whether or not the
+        // old one comes free again.
+        drop(taken);
+        assert_eq!(reserve_port(&db_path(&dir)).unwrap(), second);
+    }
+
+    #[test]
+    fn a_hub_with_nothing_remembered_takes_any_free_port() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(reserve_port(&db_path(&dir)).is_ok());
+        assert!(port_path(&db_path(&dir)).exists());
+    }
 }
