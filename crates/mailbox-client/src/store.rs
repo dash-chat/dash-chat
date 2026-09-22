@@ -2,6 +2,10 @@ use crate::MailboxItem;
 
 #[async_trait::async_trait]
 pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
+    /// Get an author's log for a topic, starting at sequence number `from`.
+    ///
+    /// `None` means the log is absent; `Some(vec![])` means we hold nothing at
+    /// or above `from`.
     async fn get_log(
         &self,
         author: &Item::Author,

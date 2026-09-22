@@ -224,7 +224,8 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
             Some(SeqNum::try_from(from - 1)?)
         };
         let log = self.log_operations(author, &log_id, from).await?;
-        if log.is_empty() {
+        // With a `from` cursor an empty tail just means "nothing new", not a missing log.
+        if log.is_empty() && from.is_none() {
             return Ok(None);
         }
 
