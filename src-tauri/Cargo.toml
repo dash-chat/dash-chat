@@ -112,7 +112,7 @@ tauri-plugin-android-fs = { version = "=28.4.0" }
 tauri-plugin-medialibrary = "=0.13"
 tauri-plugin-background-service = "1.0"
 # Holds the MulticastLock mDNS discovery needs to hear hub announcements.
-tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "05a06951ae93f4b3197cb45366520fdffb84611c" }
+tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "90f383f32c74ab28b79be51bf5e6088644b2226c" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"

@@ -10,7 +10,7 @@ use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
     ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture, Source,
-    StreamEvent, StreamPublisher, StreamSubscription,
+    StreamEvent, StreamFrom, StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use thiserror::Error;
@@ -122,10 +122,17 @@ pub struct Actor {
 
     /// Channel for forwarding all received events on to the application layer processor.
     events_tx: mpsc::UnboundedSender<ProcessorEvent>,
+
+    /// Prefix for each topic stream's ack cursor name. `None` uses p2panda's
+    /// default per-topic cursor (`"{topic}"`);
+    stream_cursor_prefix: Option<String>,
 }
 
 impl Actor {
-    pub(crate) fn new(node: p2panda::Node) -> (Self, mpsc::UnboundedReceiver<ProcessorEvent>) {
+    pub(crate) fn new(
+        node: p2panda::Node,
+        stream_cursor_prefix: Option<String>,
+    ) -> (Self, mpsc::UnboundedReceiver<ProcessorEvent>) {
         let groups_processor = GroupsProcessor::new(node.store());
         // Unbounded so the actor never blocks here: the application processor
         // (the only consumer) itself sends commands to this actor and awaits the
@@ -142,6 +149,7 @@ impl Actor {
                 processed: Default::default(),
                 groups_processor,
                 events_tx,
+                stream_cursor_prefix,
             },
             events_rx,
         )
@@ -209,12 +217,30 @@ impl Actor {
         Ok(message_tx)
     }
 
+    /// Open a topic stream, tracking its ack cursor under a per-topic name. With
+    /// a cursor prefix set (the iOS push extension) the name is
+    /// `"{prefix}:{topic}"`, so each topic keeps its own cursor while staying
+    /// distinct from the app's default `"{topic}"` cursor: the two processes
+    /// share one database and must not advance each other's cursors.
+    async fn open_stream(
+        &self,
+        topic: Topic,
+    ) -> Result<(StreamPublisher<Payload>, StreamSubscription<Payload>), CreateStreamError> {
+        let cursor_name = self
+            .stream_cursor_prefix
+            .as_ref()
+            .map(|prefix| format!("{prefix}:{topic}"));
+        self.inner
+            .stream_from(topic, StreamFrom::Frontier, cursor_name)
+            .await
+    }
+
     async fn handle_subscribe(&mut self, topic: Topic) -> Result<bool, NodeActorError> {
         // If we're already subscribed to this topic then just return now.
         if self.tx_map.contains_key(&topic) {
             return Ok(false);
         }
-        let (tx, rx) = self.inner.stream(topic).await?;
+        let (tx, rx) = self.open_stream(topic).await?;
         self.tx_map.insert(topic, tx);
         self.streams.insert(topic, rx);
         Ok(true)
@@ -234,7 +260,7 @@ impl Actor {
         let tx = match self.tx_map.get(&topic) {
             Some(tx) => tx.clone(),
             None => {
-                let (tx, rx) = self.inner.stream(topic).await?;
+                let (tx, rx) = self.open_stream(topic).await?;
                 self.tx_map.insert(topic, tx.clone());
                 self.streams.insert(topic, rx);
                 tx
@@ -254,7 +280,7 @@ impl Actor {
         let tx = match self.tx_map.get(&topic) {
             Some(tx) => tx.clone(),
             None => {
-                let (tx, rx) = self.inner.stream(topic).await?;
+                let (tx, rx) = self.open_stream(topic).await?;
                 self.tx_map.insert(topic, tx.clone());
                 self.streams.insert(topic, rx);
                 tx
@@ -504,10 +530,10 @@ mod tests {
             .await
             .unwrap();
 
-        let (alice_actor, alice_events_rx) = Actor::new(alice);
+        let (alice_actor, alice_events_rx) = Actor::new(alice, None);
         let alice_actor_tx = alice_actor.spawn().await.unwrap();
 
-        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi);
+        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi, None);
         let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
 
         // Both alice and bobbi subscribe to topics a & b.
@@ -599,10 +625,10 @@ mod tests {
         let alice_id = alice.id();
         let bobbi_id = bobbi.id();
 
-        let (alice_actor, alice_events_rx) = Actor::new(alice);
+        let (alice_actor, alice_events_rx) = Actor::new(alice, None);
         let alice_actor_tx = alice_actor.spawn().await.unwrap();
 
-        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi);
+        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi, None);
         let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
 
         // Alice subscribes to topic.

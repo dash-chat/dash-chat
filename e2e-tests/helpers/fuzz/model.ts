@@ -264,9 +264,13 @@ export class ExpectedModel {
 	 * of the run. */
 	readonly networks: ExpectedNetwork[];
 	readonly hubs: ExpectedHub[] = [];
-	/** The cloud mailbox, when the run models one; null keeps every cloud
-	 * move out of the run. */
-	readonly cloud: { usable: boolean } | null;
+	/** The cloud mailbox. Every run has one — the harness spawns it and the
+	 *  phones reach it — so what varies is only whether agents can reach it
+	 *  right now. */
+	readonly cloud: { usable: boolean };
+	/** Whether the run can degrade the link to it, which keeps the cloud
+	 *  moves out of a run whose mailbox the proxy does not front. */
+	readonly cloudDegradable: boolean;
 	/** Whether the run delivers pushes, which is what reaches a phone whose
 	 * app has been killed. */
 	private readonly push: boolean;
@@ -333,14 +337,16 @@ export class ExpectedModel {
 	constructor(
 		agents: ExpectedAgent[],
 		networks: ExpectedNetwork[] = [],
-		cloud = false,
+		cloudUsable = true,
+		cloudDegradable = false,
 		push = false,
 	) {
 		this.agents = agents;
 		this.networks = networks;
-		this.cloud = cloud ? { usable: true } : null;
+		this.cloud = { usable: cloudUsable };
+		this.cloudDegradable = cloudDegradable;
 		this.push = push;
-		if (cloud) this.knowledge.set(CLOUD, new Set());
+		this.knowledge.set(CLOUD, new Set());
 		for (const { name, notifications } of agents) {
 			this.knowledge.set(name, new Set());
 			// Only an agent whose device the run reads keeps notifications: for
@@ -451,17 +457,17 @@ export class ExpectedModel {
 		return this.networks.length > 0;
 	}
 
+	/** Whether the run can take the cloud link down and bring it back. */
 	hasCloud(): boolean {
-		return this.cloud !== null;
+		return this.cloudDegradable;
 	}
 
 	/** Whether agents reach the cloud mailbox right now. */
 	cloudUsable(): boolean {
-		return this.cloud?.usable === true;
+		return this.cloud.usable;
 	}
 
 	setCloudUsable(usable: boolean): void {
-		if (this.cloud === null) throw new Error('the run has no cloud mailbox');
 		this.cloud.usable = usable;
 	}
 
@@ -1464,7 +1470,7 @@ export class ExpectedModel {
 	 *  about, which is any the run's mailbox holds. Only a run whose mailbox
 	 *  forwards pushes has them, and only while its link is usable. */
 	private pushed(): string[][] {
-		if (!this.push || this.cloud === null) return [];
+		if (!this.push) return [];
 		if (!this.cloudUsable()) return [];
 		const away = this.agents
 			.filter(
@@ -1527,8 +1533,11 @@ export class ExpectedModel {
 
 	/** Whether `holder`'s node throws `op` away rather than keeping it: what
 	 *  reaches a device while it is blocking the author is invalidated there,
-	 *  and unblocking never brings it back. */
+	 *  and unblocking never brings it back. A profile is the exception — a
+	 *  block stops what a peer says, not who they are, and the app goes on
+	 *  showing a blocked peer's current name. */
 	private rejects(holder: string, op: Op): boolean {
+		if (op.kind === 'profile') return false;
 		const dropped = this.discarded.get(holder);
 		if (dropped?.has(op.id) === true) return true;
 		if (!this.blocks(holder, authorOf(op))) return false;
@@ -1567,8 +1576,8 @@ export class ExpectedModel {
 }
 
 /** The model for `real`, before anything has happened: no chats, no
- * contacts, no hub anywhere, everyone foregrounded and off the air, the
- * cloud link (if the run has one) healthy. */
+ * contacts, no hub anywhere, everyone foregrounded and off the air, and the
+ * cloud as reachable as the run found it. */
 export function newModel(real: {
 	agents: {
 		agent: { platform: string; p2p: boolean };
@@ -1576,7 +1585,8 @@ export function newModel(real: {
 		notificationTexts: NotificationTexts | null;
 	}[];
 	networks: { ssid: string; home: boolean }[];
-	cloud: object | null;
+	cloudUsable: boolean;
+	cloudDegradable: boolean;
 	push: boolean;
 }): ExpectedModel {
 	return new ExpectedModel(
@@ -1587,7 +1597,8 @@ export function newModel(real: {
 			notifications: notificationTexts,
 		})),
 		real.networks.map(n => ({ name: n.ssid, home: n.home })),
-		real.cloud !== null,
+		real.cloudUsable,
+		real.cloudDegradable,
 		real.push,
 	);
 }

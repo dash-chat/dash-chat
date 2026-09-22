@@ -170,6 +170,19 @@ pub async fn build_notification_data(
                     return None;
                 }
             }
+            // Someone we already scanned, adding us back, is completing the
+            // exchange we started rather than asking for one: announcing it as
+            // a new request tells the user a stranger wrote to them. Matched on
+            // the device, since an exchange we started knows no agent id until
+            // their ack arrives.
+            match node.has_outgoing_pending_request(sender_device_id).await {
+                Ok(true) => return None,
+                Ok(false) => {}
+                Err(err) => {
+                    log::error!("Failed to load our outgoing contact requests: {err:?}");
+                    return None;
+                }
+            }
             let chat_topic =
                 Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]);
             Some(NotificationData {

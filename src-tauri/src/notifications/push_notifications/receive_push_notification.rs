@@ -156,6 +156,10 @@ async fn handle_push_notifications_with_fallback_messages(
                     "Successfully processed push notification, no actual notification needs to be shown.",
                 );
             }
+            // Nudge the main app to resync over the shared database (it may never
+            // see the operation this process just ingested).
+            #[cfg(target_os = "ios")]
+            super::nse_signal::post_nse_did_process();
             result
         }
         Err(err) => {

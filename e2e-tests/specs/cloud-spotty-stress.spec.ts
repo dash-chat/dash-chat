@@ -28,7 +28,7 @@ import { mediaMoves } from '../helpers/fuzz/moves/media';
 import { profileMoves } from '../helpers/fuzz/moves/profile';
 import { textMessageMoves } from '../helpers/fuzz/moves/text-messages';
 import { envInt } from '../helpers/utils';
-import { isRemoteMailbox, mailboxLink } from '../setup/mailbox-control';
+import { isRemoteMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Spotty cloud stress', () => {
@@ -50,7 +50,7 @@ describe('Spotty cloud stress', () => {
 		await Promise.all([agent1.disableP2p(), agent2.disableP2p()]);
 		const agents = { Alice: agent1, Bob: agent2 };
 		await createProfiles(agents);
-		fuzzer = await Fuzzer.prepare(this, { agents, cloud: mailboxLink() });
+		fuzzer = await Fuzzer.prepare(this, { agents });
 	});
 
 	it('agents behave normally for the whole run while the cloud link flaps', async () => {

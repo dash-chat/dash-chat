@@ -106,10 +106,9 @@ pub fn spawn_local_mailbox_mdns_discovery(
     Ok(AbortOnDropHandle::new(handler_task))
 }
 
-/// Register the hubs that appeared, register anew the ones whose address we
-/// hold stopped answering, and drop the ones that went. A hub that is still
-/// answering where we registered it is left alone, so the other addresses it
-/// answers at coming and going cannot churn a working registration.
+/// A hub still answering where we registered it is left alone, so the other
+/// addresses it answers at coming and going cannot churn a working
+/// registration.
 async fn reconcile(
     node: &dashchat_node::Node,
     registered: &mut BTreeMap<String, SocketAddr>,
@@ -141,9 +140,6 @@ async fn reconcile(
     }
 }
 
-/// Point the node at a hub: register it as a mailbox, learn its dialing
-/// address, and hand it ours.
-///
 /// Safe to re-run — `MailboxManager::register` swaps the client in place —
 /// which matters because [`reconcile`] runs this again whenever the address we
 /// registered stops answering or the network changes.
@@ -169,9 +165,16 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, add
     if newly_tracked {
         node.mailboxes.unregister_on_stopped(id).await;
     }
-    // Add the hub's dialing address to the address book so the blob downloader
-    // can reach it by EndpointId rather than relying solely on p2panda mDNS
-    // resolution timing.
+    log::info!("*** Registered local mailbox client via mdns: {id} ({url}) ***");
+    tokio::spawn(exchange_addrs(node.clone(), id.clone(), url));
+}
+
+/// Learn the hub's dialing address for the address book and hand it ours, so
+/// blobs can move either way without waiting on p2panda mDNS resolution.
+///
+/// Off the reconcile loop on purpose: a hub that has just left the LAN takes
+/// seconds to fail, and hubs that went with it have to be dropped meanwhile.
+async fn exchange_addrs(node: dashchat_node::Node, id: String, url: String) {
     match dashchat_node::mailbox::fetch_mailbox_health(&url).await {
         Ok(health) => {
             if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
@@ -182,11 +185,7 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, add
             log::warn!("Failed to fetch local mailbox {id} health for address book: {err}")
         }
     }
-    // Tell the hub our own dialing address so its blob fetch pool can reach us
-    // as a source; the reconcile loop re-registers on every network change, so
-    // this refreshes the EndpointAddr then too.
     if let Err(err) = node.register_with_mailbox(&url).await {
         log::warn!("Failed to register our addr with local mailbox {id}: {err}");
     }
-    log::info!("*** Registered local mailbox client via mdns: {id} ({url}) ***");
 }

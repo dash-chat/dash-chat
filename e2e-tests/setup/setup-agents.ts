@@ -57,7 +57,11 @@ import {
 	macWindowRect,
 	readOpenedUrls,
 } from './platforms/desktop';
-import { APP_STATE_NOT_RUNNING, resetIosAppState } from './platforms/ios';
+import {
+	APP_STATE_NOT_RUNNING,
+	killIosPushExtension,
+	resetIosAppState,
+} from './platforms/ios';
 import {
 	connectIosWifi,
 	disableIosWifi,
@@ -66,7 +70,7 @@ import {
 	iosWifiInfo,
 } from './platforms/ios-wifi';
 import { type AgentPlatformName, isMobile, platformNames } from './test-env';
-import { switchToWebview, waitForTestUtils } from './webview';
+import { deviceUdid, switchToWebview, waitForTestUtils } from './webview';
 import type { WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
@@ -198,16 +202,10 @@ export type Agent = WebdriverIO.Browser & {
 	 *  granted again as a new session's fast reset leaves them. Android only;
 	 *  call between [`stopApp`] and [`startApp`]. */
 	clearAppData(): Promise<void>;
+	/** Kill the phone's push extension process, so the next push starts a
+	 *  fresh one. iOS only. */
+	killPushExtension(): Promise<void>;
 };
-
-/** The device serial this Appium session was launched against. */
-function androidUdid(b: WebdriverIO.Browser): string {
-	const udid = b.requestedCapabilities['appium:udid'];
-	if (udid === undefined) {
-		throw new Error('Android session is missing its appium:udid capability');
-	}
-	return udid;
-}
 
 /** (Re)build every page object against `b`. Called on first setup and again
  *  after a restart so the new session never reuses stale element ids. */
@@ -266,7 +264,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			// verified App Links association, not just the intent filter. No
 			// waitForLaunch: `am start -W` can block forever on a cold launch;
 			// callers already wait for the app via page ready()/startApp().
-			await waitForAppLinksVerified(androidUdid(b));
+			await waitForAppLinksVerified(deviceUdid(b));
 			await b.execute('mobile: deepLink', { url, waitForLaunch: false });
 		}
 	};
@@ -352,7 +350,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await b.terminateApp(APP_PACKAGE);
 			return;
 		}
-		stopAndroidApp(androidUdid(b));
+		stopAndroidApp(deviceUdid(b));
 	};
 	agent.backgroundApp = async () => {
 		if (agent.platform === 'desktop') {
@@ -364,7 +362,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await b.execute('mobile: backgroundApp');
 			return;
 		}
-		pressAndroidHome(androidUdid(b));
+		pressAndroidHome(deviceUdid(b));
 		// ProcessLifecycleOwner — which the lifecycle plugin observes — posts its
 		// ON_PAUSE/ON_STOP dispatch on a 700ms delay and cancels it outright if an
 		// activity resumes first, so it can tell a real backgrounding apart from a
@@ -425,7 +423,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	agent.wifiInfo = async () =>
 		agent.platform === 'ios'
 			? await iosWifiInfo(b)
-			: androidWifiInfo(androidUdid(b));
+			: androidWifiInfo(deviceUdid(b));
 	agent.hasInternet = async () => androidHasInternet(wifiUdid(agent, b));
 	agent.clearAppData = async () => {
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
@@ -437,6 +435,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			appPackage: APP_PACKAGE,
 			action: 'grant',
 		});
+	};
+	agent.killPushExtension = async () => {
+		if (agent.platform !== 'ios') {
+			throw new Error(`only iOS runs a push extension, got ${agent.platform}`);
+		}
+		killIosPushExtension(deviceUdid(b));
 	};
 
 	return agent;
@@ -451,7 +455,7 @@ function wifiUdid(agent: Agent, b: WebdriverIO.Browser): string {
 			`Wi-Fi control needs a physical phone, got ${agent.platform}`,
 		);
 	}
-	return androidUdid(b);
+	return deviceUdid(b);
 }
 
 /** Comfortably past ProcessLifecycleOwner's 700ms background-dispatch delay, so
@@ -734,7 +738,7 @@ async function setupAgent(
 		}
 		await b.switchContext('NATIVE_APP');
 		if (platform === 'android') {
-			const udid = androidUdid(b);
+			const udid = deviceUdid(b);
 			await b.waitUntil(async () => !isAndroidAppRunning(udid), {
 				timeoutMsg: 'the app never shut itself down',
 			});

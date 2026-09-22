@@ -5,7 +5,7 @@
 //! view of the swarm (and so its expiry) carries across them.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -16,7 +16,8 @@ use tokio::sync::{broadcast, watch};
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::{
-    base_discoverer, label_to_mailbox_id, multicast_interfaces_v4, service_name, GOODBYE_ATTRIBUTE,
+    base_discoverer, label_to_mailbox_id, local_subnets_v4, multicast_interfaces_v4, service_name,
+    GOODBYE_ATTRIBUTE,
 };
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -196,19 +197,14 @@ impl DiscoveryBrowser {
         hub.awaiting_probe = Some(probe_id);
         hub.probed_at = Some(Instant::now());
         hub.probed_addrs = advertised.clone();
-        let prefer = hub.answered_at.first().copied();
-        tokio::spawn(self.clone().probe_hub(id, probe_id, advertised, prefer));
+        tokio::spawn(self.clone().probe_hub(id, probe_id, advertised));
     }
 
-    /// `prefer` is where the hub last answered; it goes first when it answers
-    /// again, so a hub that binds every interface is not published at a
-    /// different address each time one wins the race.
     async fn probe_hub(
         self: Arc<Self>,
         id: String,
         probe_id: u64,
         advertised: BTreeSet<SocketAddr>,
-        prefer: Option<SocketAddr>,
     ) {
         let mut probes: FuturesUnordered<_> = advertised
             .into_iter()
@@ -222,9 +218,8 @@ impl DiscoveryBrowser {
                 self.answered(&id, probe_id, answered.clone(), false);
             }
         }
-        if let Some(at) = prefer.and_then(|prefer| answered.iter().position(|a| *a == prefer)) {
-            answered.swap(0, at);
-        }
+        let subnets = local_subnets_v4();
+        answered.sort_by_key(|addr| (hops_away(*addr, &subnets), *addr));
         self.answered(&id, probe_id, answered, true);
     }
 
@@ -277,6 +272,23 @@ impl DiscoveryBrowser {
             changed
         });
     }
+}
+
+/// How far an address is from us: on a subnet we are on, elsewhere, or
+/// loopback — which a hub on another host would have meant its own by.
+fn hops_away(addr: SocketAddr, subnets: &[(Ipv4Addr, u8)]) -> u8 {
+    match addr.ip() {
+        ip if ip.is_loopback() => 2,
+        IpAddr::V4(v4) if on_a_local_subnet(v4, subnets) => 0,
+        _ => 1,
+    }
+}
+
+fn on_a_local_subnet(ip: Ipv4Addr, subnets: &[(Ipv4Addr, u8)]) -> bool {
+    subnets.iter().any(|&(local, prefix)| {
+        (1..=32).contains(&prefix)
+            && u32::from(ip) >> (32 - prefix) == u32::from(local) >> (32 - prefix)
+    })
 }
 
 async fn answers(addr: SocketAddr) -> bool {
@@ -453,6 +465,19 @@ mod tests {
         }
         h.unchanged().await;
         assert_eq!(h.hubs.borrow()["hub"].answered_at[0], first);
+    }
+
+    #[test]
+    fn an_address_on_a_subnet_of_ours_is_published_before_one_that_is_not() {
+        let subnets = [(Ipv4Addr::new(192, 168, 0, 105), 24)];
+        let bridge = SocketAddr::from((Ipv4Addr::new(172, 17, 0, 1), 80));
+        let lan = SocketAddr::from((Ipv4Addr::new(192, 168, 0, 7), 80));
+        let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 80));
+
+        let mut answered = vec![loopback, bridge, lan];
+        answered.sort_by_key(|addr| (hops_away(*addr, &subnets), *addr));
+
+        assert_eq!(answered, [lan, bridge, loopback]);
     }
 
     #[tokio::test]

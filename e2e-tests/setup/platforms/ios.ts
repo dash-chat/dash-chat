@@ -1,11 +1,16 @@
 import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { networkInterfaces } from 'node:os';
+import { readFileSync, rmSync } from 'node:fs';
+import { networkInterfaces, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
 import { echoLinesWithPrefix } from '../agent-logger';
-import { allocatePinnedPort } from '../allocate-port';
+import {
+	SLOT_PORT_STRIDE,
+	allocatePinnedPort,
+	allocatePinnedPortFrom,
+} from '../allocate-port';
 import {
 	type Want,
 	claimAllWhenFreeSync,
@@ -17,7 +22,7 @@ import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { E2E_RELAY_URL } from '../relay';
 import { runTurboBuild } from '../turbo-build';
-import { switchToWebview, waitForTestUtils } from '../webview';
+import { deviceUdid, switchToWebview, waitForTestUtils } from '../webview';
 import {
 	type AgentPlatform,
 	type PrepareContext,
@@ -204,6 +209,34 @@ export const APP_STATE_NOT_RUNNING = 1;
 /** `mobile: queryAppState` value for "the app is on screen". */
 export const APP_STATE_FOREGROUND = 4;
 
+/** SIGKILL the phone's push extension process, so the next push starts a
+ *  fresh one — with a node built from the app's current data — instead of
+ *  waking an old process still holding a node from before. */
+export function killIosPushExtension(udid: string): void {
+	const listing = path.join(
+		tmpdir(),
+		`dashchat-processes-${udid}-${process.pid}.json`,
+	);
+	execSync(
+		`xcrun devicectl device info processes --device ${udid} --json-output "${listing}"`,
+		{ stdio: 'ignore' },
+	);
+	const { result } = JSON.parse(readFileSync(listing, 'utf8')) as {
+		result: {
+			runningProcesses: { executable?: string; processIdentifier: number }[];
+		};
+	};
+	rmSync(listing, { force: true });
+	for (const p of result.runningProcesses) {
+		if (p.executable?.endsWith('/PushNotificationsExtension') !== true)
+			continue;
+		execSync(
+			`xcrun devicectl device process signal --device ${udid} --pid ${p.processIdentifier} --signal SIGKILL`,
+			{ stdio: 'ignore' },
+		);
+	}
+}
+
 /** Reset an iOS agent to first-launch state without reinstalling the app.
  *
  *  iOS has no adb-style data clear, and reinstalling the ~135MB .ipa per spec
@@ -212,6 +245,25 @@ export const APP_STATE_FOREGROUND = 4;
  *  wipes the data dir and exits the process. Relaunch, and the spec starts
  *  from the same state a fresh install would. */
 export async function resetIosAppState(b: WebdriverIO.Browser): Promise<void> {
+	await wipeIosAppData(b);
+	await attachToIosApp(b);
+}
+
+/** Leave the app with no data once a spec file is done. The next spec's reset
+ *  runs only after the app is up with the old data, and in a new run that app
+ *  uploads its whole history to the fresh mailbox, which pushes every message
+ *  back to this phone: banners over the navbar the spec is about to tap. */
+export async function wipeIosAppAfterSpec(
+	b: WebdriverIO.Browser,
+): Promise<void> {
+	await attachToIosApp(b);
+	await wipeIosAppData(b);
+}
+
+/** Run the app's own delete_account, which wipes the data dir and exits, and
+ *  end the push extension, whose node would otherwise outlive the data it was
+ *  built from and serve the next account's pushes from the old one. */
+async function wipeIosAppData(b: WebdriverIO.Browser): Promise<void> {
 	await b.execute(() => window.__test.resetToFirstLaunch());
 	// The command exits the app; leave the webview before it dies under us.
 	await b.switchContext('NATIVE_APP');
@@ -222,6 +274,11 @@ export async function resetIosAppState(b: WebdriverIO.Browser): Promise<void> {
 			) <= APP_STATE_NOT_RUNNING,
 		{ timeoutMsg: 'the app never exited after delete_account' },
 	);
+	killIosPushExtension(deviceUdid(b));
+}
+
+/** Bring the app to the foreground and attach to its webview. */
+async function attachToIosApp(b: WebdriverIO.Browser): Promise<void> {
 	await b.activateApp(APP_BUNDLE_ID);
 	await switchToWebview(b, 'ios');
 	await waitForTestUtils(b);
@@ -364,8 +421,14 @@ export class IosPlatform implements AgentPlatform {
 				// (WDA "xcodebuild failed with code 65"). Same reason as the per-slot
 				// ports above.
 				'appium:derivedDataPath': path.join(E2E_DIR, '.appium', `wda-${slot}`),
-				'appium:wdaLocalPort': allocatePinnedPort(`_WDIO_WDA_PORT${slot}`),
-				'appium:mjpegServerPort': allocatePinnedPort(`_WDIO_MJPEG_PORT${slot}`),
+				'appium:wdaLocalPort': allocatePinnedPortFrom(
+					`_WDIO_WDA_PORT${slot}`,
+					8100 + slot * SLOT_PORT_STRIDE,
+				),
+				'appium:mjpegServerPort': allocatePinnedPortFrom(
+					`_WDIO_MJPEG_PORT${slot}`,
+					9100 + slot * SLOT_PORT_STRIDE,
+				),
 				'appium:wdaLaunchTimeout': 120_000,
 				// 0 disables idle expiry: specs like review-checks park one agent
 				// for the whole spec after setup, far beyond any sane timeout.
