@@ -496,35 +496,6 @@ where
         self.publish_active_ids().await;
     }
 
-    /// Unregister `id` once it reaches Stopped. For mailboxes whose registration
-    /// only proves they were reachable at the time (LAN hubs found over mDNS),
-    /// Stopped is as good a sign they are gone as their announcement lapsing.
-    /// The initial state is ignored: it may be seeded Stopped from a previous
-    /// session's history, and only a poll observed after arming gets to confirm
-    /// the mailbox is really gone. The task ends when the mailbox is
-    /// unregistered by any route.
-    pub async fn unregister_on_stopped(&self, id: &MailboxId) {
-        let Some(tracked_mailbox) = self.tracked_mailbox(id).await else {
-            return;
-        };
-        let mut state = tracked_mailbox.connection_state();
-        drop(tracked_mailbox);
-        let manager = self.clone();
-        let id = id.clone();
-        tokio::spawn(async move {
-            loop {
-                if state.changed().await.is_err() {
-                    return;
-                }
-                if state.borrow_and_update().status == SyncStatus::Stopped {
-                    tracing::info!(mailbox = %id, "mailbox stopped, unregistering");
-                    manager.unregister(&id).await;
-                    return;
-                }
-            }
-        });
-    }
-
     async fn publish_active_ids(&self) {
         let ids: BTreeSet<MailboxId> = self.mailboxes.lock().await.keys().cloned().collect();
         self.active_mailbox_ids_tx.send_replace(ids);
@@ -2086,28 +2057,6 @@ mod tests {
         );
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn unregister_on_stopped_removes_mailbox_after_stopped_threshold() {
-        let config = MailboxesConfig {
-            between_polls_delay: Duration::from_millis(0),
-            ..test_config()
-        };
-        let mgr = spawn_test_mailboxes(config.clone()).await;
-        let _rx = mgr.subscribe(0u8).await.unwrap();
-
-        let (client, poll_count) = TrackingClient::new(true);
-        let id = client.id.clone();
-        mgr.register(client).await;
-        mgr.unregister_on_stopped(&id).await;
-
-        tokio::time::sleep(config.degraded_interval).await;
-        assert!(mgr.is_tracked(&id).await);
-
-        tokio::time::sleep(config.degraded_interval * 4).await;
-        assert!(!mgr.is_tracked(&id).await);
-        assert_eq!(poll_count.load(Ordering::Relaxed), config.stopped_threshold);
-    }
-
     // -- persisted status seeding tests --
 
     #[tokio::test(start_paused = true)]
@@ -2238,38 +2187,6 @@ mod tests {
         let state = state.borrow();
         assert_eq!(state.status, SyncStatus::Active);
         assert_eq!(state.consecutive_errors, 0);
-    }
-
-    /// A status seeded Stopped from history must not unregister the mailbox
-    /// before a poll observed after arming confirms it.
-    #[tokio::test(start_paused = true)]
-    async fn unregister_on_stopped_waits_for_a_poll_to_confirm_seeded_status() {
-        let config = test_config();
-        let mgr = test_mailboxes(config.clone());
-
-        let mb = MemMailbox::<Msg>::new();
-        let id = mb.client().id();
-        mgr.sync_tracker()
-            .record_status(&id, SyncStatus::Stopped)
-            .await
-            .unwrap();
-        mgr.register(mb.client()).await;
-        mgr.unregister_on_stopped(&id).await;
-
-        for _ in 0..10 {
-            tokio::task::yield_now().await;
-        }
-        assert!(mgr.is_tracked(&id).await);
-
-        // A failed poll confirms the mailbox really is gone.
-        mgr.tracked_mailbox(&id)
-            .await
-            .unwrap()
-            .record_error("x".into());
-        for _ in 0..10 {
-            tokio::task::yield_now().await;
-        }
-        assert!(!mgr.is_tracked(&id).await);
     }
 
     // -- Fairness test with full spawn loop --

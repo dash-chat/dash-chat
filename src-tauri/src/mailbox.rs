@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
 
 use local_hub_discovery::{DiscoveredHub, LocalHubDiscoveryService};
@@ -92,31 +92,21 @@ pub fn spawn_local_mailbox_mdns_discovery(
     Ok(AbortOnDropHandle::new(handler_task))
 }
 
-/// Register the hubs discovery publishes and drop the ones it stops publishing,
-/// for as long as either the hubs or the node's own mailboxes change.
+/// Register the hubs discovery publishes and drop the ones it stops publishing.
+///
+/// Discovery is the only authority on which hubs are there: letting how a
+/// mailbox is faring decide what stays registered made a hub that answers TCP
+/// while failing HTTP churn through register and unregister.
 async fn register_local_hubs(
     node: dashchat_node::Node,
     mut hubs: watch::Receiver<BTreeMap<String, DiscoveredHub>>,
 ) {
-    let mut tracked = node.mailboxes.active_mailbox_ids();
-    let mut ours: BTreeMap<String, SocketAddr> = BTreeMap::new();
+    let mut ours: BTreeSet<String> = BTreeSet::new();
     loop {
         let current = hubs.borrow_and_update().clone();
         reconcile(&node, &mut ours, &current).await;
-        tokio::select! {
-            stopped = hubs.changed() => {
-                if stopped.is_err() {
-                    return;
-                }
-            }
-            // The node drops a hub's mailbox on its own once it stops answering
-            // (`unregister_on_stopped`), and putting one back is this loop's
-            // job — so it watches what the node holds, not what it last did.
-            stopped = tracked.changed() => {
-                if stopped.is_err() {
-                    return;
-                }
-            }
+        if hubs.changed().await.is_err() {
+            return;
         }
     }
 }
@@ -126,37 +116,22 @@ async fn register_local_hubs(
 /// is polled rather than whichever address won the probe race.
 async fn reconcile(
     node: &dashchat_node::Node,
-    ours: &mut BTreeMap<String, SocketAddr>,
+    ours: &mut BTreeSet<String>,
     current: &BTreeMap<String, DiscoveredHub>,
 ) {
     for hub in current.values() {
         let Some(&addr) = hub.answered_at.first() else {
             continue;
         };
-        let id = &hub.mailbox_id;
-        let registered = registered_url(node, hub).await;
-        if registered.as_deref() == Some(hub_url(addr).as_str()) {
-            // Ours already, but a mailbox that backed off while it was away
-            // reads as disconnected until its next poll.
-            ours.insert(id.clone(), addr);
-            node.mailboxes.probe(id.clone()).await;
-            continue;
+        ours.insert(hub.mailbox_id.clone());
+        if registered_url(node, hub).await.as_deref() != Some(hub_url(addr).as_str()) {
+            register_local_hub(node, hub, addr).await;
         }
-        // The node judged this hub stopped where we last put it, and a hub
-        // that answers TCP while failing HTTP goes on answering probes
-        // forever — so registering it again here on the very change that
-        // dropped it would loop. Only a new address or a re-announcement
-        // (which drops it from `current`, clearing this) earns another.
-        if registered.is_none() && ours.get(id) == Some(&addr) {
-            continue;
-        }
-        ours.insert(id.clone(), addr);
-        register_local_hub(node, hub, addr).await;
     }
     // Only what this loop put there: inferring it from the node's mailboxes
     // would tear down anything else that ever registers one.
     let gone: Vec<String> = ours
-        .keys()
+        .iter()
         .filter(|id| !current.contains_key(*id))
         .cloned()
         .collect();
@@ -181,7 +156,7 @@ fn hub_url(addr: SocketAddr) -> String {
 
 /// Safe to re-run — `MailboxManager::register` swaps the client in place —
 /// which matters because [`reconcile`] runs this again whenever the address the
-/// node holds stops answering, or the node drops the mailbox.
+/// node holds is no longer the nearest one the hub answers on.
 async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, addr: SocketAddr) {
     let id = &hub.mailbox_id;
     let url = hub_url(addr);
@@ -196,12 +171,6 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, add
             .with_blob_reader(node.blob_reader()),
         )
         .await;
-    // A hub that stops answering is gone as far as we are concerned, whether or
-    // not its mDNS records have expired yet; the re-browse re-registers it if
-    // it comes back. Armed every time: reading whether it is already armed and
-    // then registering leaves a window where the watcher fires in between and
-    // the fresh mailbox is left with none.
-    node.mailboxes.unregister_on_stopped(id).await;
     log::info!("*** Registered local mailbox client via mdns: {id} ({url}) ***");
 }
 
@@ -219,32 +188,23 @@ async fn hand_over_our_addr(
     let mut handed_over: BTreeMap<String, SocketAddr> = BTreeMap::new();
     loop {
         let current = hubs.borrow_and_update().clone();
-        let due: Vec<(String, SocketAddr)> = current
-            .values()
-            .filter_map(|hub| {
-                let &addr = hub.answered_at.first()?;
-                (handed_over.get(&hub.mailbox_id) != Some(&addr))
-                    .then(|| (hub.mailbox_id.clone(), addr))
-            })
-            .collect();
+        // A hub that left forgot our address, so it has to be told again if it
+        // comes back at the address it left from.
+        handed_over.retain(|id, _| current.contains_key(id));
         // Together, not in turn: a hub that answers a probe but stalls on HTTP
         // would otherwise hold up every hub behind it for two 10s timeouts.
-        let done = futures::future::join_all(due.into_iter().map(|(id, addr)| {
-            let node = &node;
-            async move { exchange_addrs(node, &id, addr).await.then_some((id, addr)) }
-        }))
-        .await;
+        let done =
+            futures::future::join_all(still_to_tell(&current, &handed_over).into_iter().map(
+                |(id, addr)| {
+                    let node = &node;
+                    async move { exchange_addrs(node, &id, addr).await.then_some((id, addr)) }
+                },
+            ))
+            .await;
         // Only what succeeded: a hub wrongly recorded as told would never be
         // told again.
         handed_over.extend(done.into_iter().flatten());
-        handed_over.retain(|id, _| current.contains_key(id));
-        // A hub that keeps answering where it always did publishes no change, so
-        // without this the loop would never wake to try a failed one again.
-        let outstanding = current.values().any(|hub| {
-            hub.answered_at
-                .first()
-                .is_some_and(|addr| handed_over.get(&hub.mailbox_id) != Some(addr))
-        });
+        let outstanding = !still_to_tell(&current, &handed_over).is_empty();
         tokio::select! {
             stopped = hubs.changed() => {
                 if stopped.is_err() {
@@ -257,9 +217,27 @@ async fn hand_over_our_addr(
                 }
                 handed_over.clear();
             }
+            // A hub that keeps answering where it always did publishes no
+            // change, so without this the loop would never wake to try a
+            // failed one again.
             _ = tokio::time::sleep(HAND_OVER_RETRY), if outstanding => {}
         }
     }
+}
+
+/// The hubs that do not hold our address at the place they now answer.
+fn still_to_tell(
+    current: &BTreeMap<String, DiscoveredHub>,
+    handed_over: &BTreeMap<String, SocketAddr>,
+) -> Vec<(String, SocketAddr)> {
+    current
+        .values()
+        .filter_map(|hub| {
+            let &addr = hub.answered_at.first()?;
+            (handed_over.get(&hub.mailbox_id) != Some(&addr))
+                .then(|| (hub.mailbox_id.clone(), addr))
+        })
+        .collect()
 }
 
 /// Learn the hub's dialing address for the address book and hand it ours, so

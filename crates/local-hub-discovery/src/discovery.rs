@@ -148,11 +148,9 @@ impl DiscoveryBrowser {
         *joined = current;
     }
 
-    /// A probe dialling addresses none of our networks can reach now cannot
-    /// answer, and while it waits no sighting of that hub is probed at all.
-    /// One still dialling an address we can reach is left to finish: sightings
-    /// routinely arrive before we notice the network changed, and that probe
-    /// is the fastest answer we are going to get.
+    /// A probe that cannot answer blocks every later sighting of that hub until
+    /// it times out. One still dialling an address we can reach is left alone:
+    /// sightings routinely arrive before we notice the network changed.
     fn forget_probes_that_cannot_answer(&self) {
         let subnets = local_subnets_v4();
         for hub in self
@@ -230,8 +228,6 @@ impl DiscoveryBrowser {
             return;
         }
         log::debug!("Local hub sighted at {advertised:?}, probing: mailbox={id}");
-        // One probe in flight per hub, however often it is sighted, and a LAN
-        // carries a handful of hubs: the fan-out needs no bound of its own.
         let probe_id = next_probe_id();
         hub.awaiting_probe = Some(probe_id);
         hub.probed_at = Some(Instant::now());
@@ -316,10 +312,6 @@ impl DiscoveryBrowser {
     }
 }
 
-/// How far an address is from us: on a subnet we are on, elsewhere, or
-/// loopback — which a hub on another host would have meant its own by.
-/// Whether a probe to this address could still be answered from where we are
-/// now: our own host, or a subnet we hold an address on.
 fn reachable_from_here(addr: SocketAddr, subnets: &[(Ipv4Addr, u8)]) -> bool {
     match addr.ip() {
         IpAddr::V4(v4) => v4.is_loopback() || on_a_local_subnet(v4, subnets),
@@ -327,6 +319,8 @@ fn reachable_from_here(addr: SocketAddr, subnets: &[(Ipv4Addr, u8)]) -> bool {
     }
 }
 
+/// How far an address is from us: on a subnet we are on, elsewhere, or
+/// loopback — which a hub on another host would have meant its own by.
 fn hops_away(addr: SocketAddr, subnets: &[(Ipv4Addr, u8)]) -> u8 {
     match addr.ip() {
         ip if ip.is_loopback() => 2,
