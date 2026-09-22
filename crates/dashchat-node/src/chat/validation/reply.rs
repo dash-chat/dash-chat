@@ -118,8 +118,8 @@ impl ReplyCandidate {
 mod tests {
     use std::collections::BTreeSet;
 
+    use dashchat_utils::SeqNum;
     use maplit::btreeset;
-    use p2panda_core::SeqNum;
 
     use super::super::ChatOp;
     use super::*;

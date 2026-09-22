@@ -15,6 +15,7 @@ use sqlx::{
 use tokio::sync::{Mutex, watch};
 
 use crate::MailboxId;
+use crate::SeqNum;
 use crate::manager::SyncStatus;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
@@ -37,7 +38,7 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
     );";
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
-pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, u64>>;
+pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
 
 /// Persistent, watch-based tracker for what each mailbox has acknowledged syncing.
 /// SQLite-backed (or in-memory for tests), with watch channels layered on top so
@@ -60,7 +61,7 @@ enum SyncBackend {
 #[derive(Default)]
 struct MemRows {
     /// `(mailbox_id, topic_bytes, author_bytes) -> seq`
-    rows: BTreeMap<(MailboxId, Vec<u8>, Vec<u8>), u64>,
+    rows: BTreeMap<(MailboxId, Vec<u8>, Vec<u8>), SeqNum>,
     /// `mailbox_id -> base url`
     urls: BTreeMap<MailboxId, String>,
     /// `mailbox_id -> last known sync status`
@@ -137,12 +138,12 @@ where
     pub async fn record_synced(
         &self,
         mailbox: &MailboxId,
-        entries: &[(T, A, u64)],
+        entries: &[(T, A, SeqNum)],
     ) -> anyhow::Result<()> {
         if entries.is_empty() {
             return Ok(());
         }
-        let mut encoded: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::with_capacity(entries.len());
+        let mut encoded: Vec<(Vec<u8>, Vec<u8>, SeqNum)> = Vec::with_capacity(entries.len());
         for (t, a, s) in entries {
             encoded.push((
                 encode(t).context("encoding topic")?,
@@ -170,7 +171,7 @@ where
                         .bind(mailbox)
                         .bind(topic_bytes)
                         .bind(author_bytes)
-                        .bind(*seq as i64)
+                        .bind(i64::from(*seq))
                         .bind(now);
                 }
                 query.execute(pool).await?;
@@ -328,7 +329,7 @@ where
         mailbox: &MailboxId,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<Option<u64>> {
+    ) -> anyhow::Result<Option<SeqNum>> {
         let topic_bytes = encode(topic)?;
         let author_bytes = encode(author)?;
         match &self.inner {
@@ -342,7 +343,7 @@ where
                 .bind(&author_bytes)
                 .fetch_optional(pool)
                 .await?;
-                Ok(row.map(|(s,)| s as u64))
+                Ok(row.map(|(s,)| SeqNum::try_from(s)).transpose()?)
             }
             SyncBackend::Mem(rows) => {
                 let rows = rows.lock().await;
@@ -359,7 +360,7 @@ where
         &self,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<BTreeMap<MailboxId, u64>> {
+    ) -> anyhow::Result<BTreeMap<MailboxId, SeqNum>> {
         let topic_bytes = encode(topic)?;
         let author_bytes = encode(author)?;
         match &self.inner {
@@ -372,7 +373,9 @@ where
                 .bind(&author_bytes)
                 .fetch_all(pool)
                 .await?;
-                Ok(rows.into_iter().map(|(m, s)| (m, s as u64)).collect())
+                rows.into_iter()
+                    .map(|(m, s)| Ok((m, SeqNum::try_from(s)?)))
+                    .collect()
             }
             SyncBackend::Mem(rows) => {
                 let rows = rows.lock().await;
@@ -404,7 +407,9 @@ where
                 for (t_bytes, a_bytes, s) in rows {
                     let topic: T = decode(&t_bytes).context("decoding topic")?;
                     let author: A = decode(&a_bytes).context("decoding author")?;
-                    out.entry(topic).or_default().insert(author, s as u64);
+                    out.entry(topic)
+                        .or_default()
+                        .insert(author, SeqNum::try_from(s)?);
                 }
                 Ok(out)
             }

@@ -1,11 +1,11 @@
 use aliased::Aliasing;
+use dashchat_utils::SeqNum;
 use derive_more::derive::{Deref, From};
 use p2panda::Hash;
 use p2panda::groups::GroupsArgs;
 use p2panda::operation::Header;
 use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
-use p2panda_core::SeqNum;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -253,7 +253,7 @@ impl OpProjection {
         for (author, seq, hash) in rows {
             let acked = AckedOp {
                 hash: hash_from_db(hash)?,
-                seq: seq as SeqNum,
+                seq: SeqNum::try_from(seq)?,
             };
             match acks.entry(author) {
                 std::collections::btree_map::Entry::Vacant(e) => {
@@ -302,7 +302,7 @@ impl OpProjection {
                     author,
                     AckedOp {
                         hash: hash_from_db(hash)?,
-                        seq: seq as SeqNum,
+                        seq: SeqNum::try_from(seq)?,
                     },
                 ))
             })

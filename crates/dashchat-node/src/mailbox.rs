@@ -3,7 +3,7 @@ use p2panda::operation::{Header, Operation};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{AsBody, DeviceId, TopicId};
+use crate::{AsBody, DeviceId, SeqNum, TopicId};
 use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -29,8 +29,8 @@ impl MailboxItem for MailboxOperation {
         self.header.verifying_key.into()
     }
 
-    fn seq_num(&self) -> u64 {
-        self.header.seq_num.into()
+    fn seq_num(&self) -> SeqNum {
+        self.header.seq_num
     }
 
     fn topic(&self) -> TopicId {

@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
+use dashchat_utils::SeqNum;
 use futures::{Stream, StreamExt};
 use p2panda::VerifyingKey;
 use p2panda::operation::{LogId, Operation};
-use p2panda_core::SeqNum;
 use p2panda_store::SqliteStore;
 use sqlx::prelude::*;
 

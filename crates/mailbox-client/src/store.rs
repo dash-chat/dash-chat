@@ -1,4 +1,4 @@
-use crate::MailboxItem;
+use crate::{MailboxItem, SeqNum};
 
 #[async_trait::async_trait]
 pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
@@ -10,7 +10,7 @@ pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
         &self,
         author: &Item::Author,
         topic: &Item::Topic,
-        from: u64,
+        from: SeqNum,
     ) -> Result<Option<Vec<Item>>, anyhow::Error>;
 
     /// Get the last sequence number of each author's log.
@@ -22,5 +22,5 @@ pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
     async fn get_log_heights(
         &self,
         topic: &Item::Topic,
-    ) -> Result<Vec<(Item::Author, u64)>, anyhow::Error>;
+    ) -> Result<Vec<(Item::Author, SeqNum)>, anyhow::Error>;
 }

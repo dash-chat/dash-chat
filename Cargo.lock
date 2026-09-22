@@ -5784,6 +5784,7 @@ dependencies = [
  "bytes",
  "chrono",
  "ciborium",
+ "dashchat-utils",
  "derive_more 1.0.0",
  "hex",
  "iroh",

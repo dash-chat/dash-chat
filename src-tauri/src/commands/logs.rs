@@ -1,9 +1,9 @@
-use dashchat_node::{DeviceId, Payload, TopicId};
+use dashchat_node::{DeviceId, Payload, SeqNum, TopicId};
 use p2panda::groups::GroupsArgs;
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
 use p2panda_core::cbor::decode_cbor;
-use p2panda_core::{SeqNum, Timestamp};
+use p2panda_core::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
 

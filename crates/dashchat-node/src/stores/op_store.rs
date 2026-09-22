@@ -7,12 +7,12 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use dashchat_utils::SeqNum;
 use futures::TryStreamExt;
 use p2panda::Hash;
 #[cfg(any(test, feature = "testing"))]
 use p2panda::operation::Header;
 use p2panda::operation::{LogId, Operation};
-use p2panda_core::SeqNum;
 use p2panda_store::SqliteStore;
 use p2panda_store::logs::LogStore;
 
@@ -215,14 +215,10 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         &self,
         author: &DeviceId,
         topic: &TopicId,
-        from: u64,
+        from: SeqNum,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
         let log_id = LogId::from_topic(*topic);
-        let from = if from == 0 {
-            None
-        } else {
-            Some(SeqNum::try_from(from - 1)?)
-        };
+        let from = from.checked_sub(1);
         let log = self.log_operations(author, &log_id, from).await?;
         // With a `from` cursor an empty tail just means "nothing new", not a missing log.
         if log.is_empty() && from.is_none() {
@@ -252,11 +248,10 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         Ok(Some(ops))
     }
 
-    async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
+    async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, SeqNum)>> {
         Ok(OpStore::get_log_heights(self, &LogId::from_topic(*topic))
             .await?
             .into_iter()
-            .map(|(author, height)| (author, height.into()))
             .collect())
     }
 }

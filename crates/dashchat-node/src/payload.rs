@@ -1,9 +1,10 @@
+use dashchat_utils::SeqNum;
 use p2panda::groups::GroupsArgs;
 use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::group::GroupAction;
+use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, SeqNum};
 use serde::{Deserialize, Serialize};
 
 use std::collections::{BTreeMap, BTreeSet};

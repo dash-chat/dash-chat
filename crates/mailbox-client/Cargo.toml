@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 aliased = { workspace = true }
+dashchat-utils = { workspace = true }
 anyhow = "1"
 async-trait = "0.1.85"
 chrono = { version = "0.4.42", features = ["serde"] }

@@ -12,9 +12,9 @@ pub use reply::*;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
+use dashchat_utils::SeqNum;
 use derive_more::{Deref, DerefMut, From};
 use p2panda::Hash;
-use p2panda_core::SeqNum;
 
 use crate::DeviceId;
 

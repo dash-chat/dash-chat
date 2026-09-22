@@ -237,7 +237,8 @@ where
         }
 
         // Group operations by topic -> author -> seq_num
-        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<SequenceNumber, Blip>>> =
+            BTreeMap::new();
 
         let blob_hashes: Vec<iroh_blobs::Hash> =
             ops.iter().flat_map(|op| op.blob_hashes()).collect();
@@ -253,7 +254,7 @@ where
                 .or_default()
                 .entry(log_id)
                 .or_default()
-                .insert(seq_num, blip);
+                .insert(seq_num.into(), blip);
         }
 
         let request = StoreBlipsRequest {
@@ -276,6 +277,7 @@ where
                 let topic = Self::log_id_from_string(&topic_str)?;
                 for (author_str, watermark) in authors {
                     let author = Self::device_id_from_string(&author_str)?;
+                    let watermark = watermark.map(SeqNum::try_from).transpose()?;
                     result.0.entry(topic).or_default().insert(author, watermark);
                 }
             }
@@ -311,15 +313,15 @@ where
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error> {
         // Convert FetchRequest to GetBlipsRequest
-        let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+        let mut topics: BTreeMap<String, BTreeMap<String, SequenceNumber>> = BTreeMap::new();
 
         for (log_id, authors) in request.0.iter() {
             let topic_id = Self::encode_topic_id(log_id);
-            let mut log_map: BTreeMap<String, u64> = BTreeMap::new();
+            let mut log_map: BTreeMap<String, SequenceNumber> = BTreeMap::new();
 
             for (device_id, height) in authors.iter() {
                 let server_log_id = Self::device_id_to_log_id(device_id);
-                log_map.insert(server_log_id, *height);
+                log_map.insert(server_log_id, (*height).into());
             }
 
             topics.insert(topic_id, log_map);
@@ -358,9 +360,13 @@ where
                 .collect();
 
             // Convert missing map
-            let mut missing: HashMap<Item::Author, Vec<u64>> = HashMap::new();
+            let mut missing: HashMap<Item::Author, Vec<SeqNum>> = HashMap::new();
             for (author_str, seq_nums) in topic_response.missing {
                 let device_id = Self::device_id_from_string(&author_str)?;
+                let seq_nums = seq_nums
+                    .into_iter()
+                    .map(SeqNum::try_from)
+                    .collect::<Result<Vec<_>, _>>()?;
                 missing.insert(device_id, seq_nums);
             }
 

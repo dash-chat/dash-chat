@@ -17,8 +17,8 @@ pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Header,
 
 #[cfg(test)]
 mod tests {
+    use dashchat_utils::SeqNum;
     use p2panda::operation::{Extensions, Header, LogId};
-    use p2panda_core::SeqNum;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
     use serde::{Deserialize, Serialize};
 
