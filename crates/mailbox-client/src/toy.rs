@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use mailbox_server::{
-    Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest, StoreBlipsResponse,
+    Blip, GetBlipsRequest, GetBlipsResponse, SequenceNumber, StoreBlipsRequest, StoreBlipsResponse,
 };
 
 use super::*;
@@ -354,8 +354,7 @@ where
             let items: Vec<Item> = topic_response
                 .blips
                 .into_values()
-                .flat_map(|seq_blips| seq_blips.into_values())
-                .filter_map(|blip| Self::decode_or_skip(&blip))
+                .flat_map(Self::decode_log)
                 .collect();
 
             // Convert missing map
@@ -404,16 +403,25 @@ where
         Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
     }
 
-    /// The mailbox is shared with peers on other builds, so a blob we cannot decode must be
-    /// skipped rather than fail the whole exchange and wedge sync until retention expires it.
-    fn decode_or_skip(blip: &Blip) -> Option<Item> {
-        match Self::deserialize_operation(blip) {
-            Ok(item) => Some(item),
-            Err(err) => {
-                tracing::warn!(?err, "skipping undecodable mailbox blob");
-                None
+    /// Decode one author's blobs in sequence order, stopping at the first one this build
+    /// cannot decode.
+    ///
+    /// The mailbox is shared with peers on other builds, so a blob we cannot decode must not
+    /// fail the whole exchange and wedge sync until retention expires it. Truncating rather
+    /// than skipping leaves the author's log short instead of ingesting operations whose
+    /// backlink can never arrive; every other author and topic in the exchange is unaffected.
+    fn decode_log(seq_blips: BTreeMap<SequenceNumber, Blip>) -> Vec<Item> {
+        let mut items = Vec::with_capacity(seq_blips.len());
+        for (seq_num, blip) in seq_blips {
+            match Self::deserialize_operation(&blip) {
+                Ok(item) => items.push(item),
+                Err(err) => {
+                    tracing::warn!(?err, seq_num, "undecodable mailbox blob; truncating log");
+                    break;
+                }
             }
         }
+        items
     }
 }
 
