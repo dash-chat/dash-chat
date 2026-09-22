@@ -1533,8 +1533,11 @@ export class ExpectedModel {
 
 	/** Whether `holder`'s node throws `op` away rather than keeping it: what
 	 *  reaches a device while it is blocking the author is invalidated there,
-	 *  and unblocking never brings it back. */
+	 *  and unblocking never brings it back. A profile is the exception — a
+	 *  block stops what a peer says, not who they are, and the app goes on
+	 *  showing a blocked peer's current name. */
 	private rejects(holder: string, op: Op): boolean {
+		if (op.kind === 'profile') return false;
 		const dropped = this.discarded.get(holder);
 		if (dropped?.has(op.id) === true) return true;
 		if (!this.blocks(holder, authorOf(op))) return false;
