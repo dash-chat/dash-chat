@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.20.1"
+version = "0.20.2"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -43,6 +43,7 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
+network-watch = { workspace = true }
 # Discovery runs on every platform; only the hub server itself is desktop-only.
 local-hub-discovery = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }

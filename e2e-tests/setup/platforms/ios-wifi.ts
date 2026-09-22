@@ -324,6 +324,14 @@ async function waitForAddressOn(
 	);
 }
 
+/** The SSID the device is associated with, or '' while it is on none. Reads
+ *  the Settings root row only, without descending into the Wi-Fi page, so it
+ *  costs one shallow Settings round trip rather than the several
+ *  [`iosWifiInfo`] needs for an address. */
+export function iosWifiSsid(b: WebdriverIO.Browser): Promise<string> {
+	return inSettings(b, settings => settings.ssid());
+}
+
 export function iosWifiInfo(b: WebdriverIO.Browser): Promise<WifiInfo> {
 	return inSettings(b, async settings => {
 		const ssid = await settings.ssid();

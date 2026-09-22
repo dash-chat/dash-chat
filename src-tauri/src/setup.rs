@@ -59,6 +59,11 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
 
+    // Observe the push extension's cross-process "did process" signal so the app
+    // can react to operations the NSE ingested into the shared database.
+    #[cfg(target_os = "ios")]
+    crate::notifications::push_notifications::nse_signal::observe_nse_did_process();
+
     let fs = FileSystem::new(&app_handle)?;
     let local_data_path = fs.app_data_dir().clone();
 
@@ -149,6 +154,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .level_for("mailbox_server", log::LevelFilter::Debug)
         .level_for("mailbox_local_server", log::LevelFilter::Debug)
         .level_for("local_hub_discovery", log::LevelFilter::Debug)
+        .level_for("network_watch", log::LevelFilter::Debug)
         .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
         .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
         .format(|out, message, _record| out.finish(format_args!("{message}")))

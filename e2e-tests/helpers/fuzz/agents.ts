@@ -188,17 +188,16 @@ export async function parkHub(
 	hub.process = null;
 }
 
-/** Open `chat` from the home page, without checking it. Rows are matched on
- * their title element only — matching the whole row would collide with
- * message previews, which in groups quote sender names. The row appearing
- * (with its title, i.e. the peer profile synced) is itself a sync effect, so
- * it gets the cross-agent timeout. */
-export async function openChatPage(
+/** Open `chat` from the chat list the agent is already on, without checking
+ * it. Rows are matched on their title element only — matching the whole row
+ * would collide with message previews, which in groups quote sender names.
+ * The row appearing (with its title, i.e. the peer profile synced) is itself
+ * a sync effect, so it gets the cross-agent timeout. */
+export async function openChatRow(
 	sa: StressAgent,
 	chat: ExpectedChat,
 	model: ExpectedModel,
 ): Promise<ChatPage> {
-	await backToChatList(sa, model);
 	await clickChatRow(sa, model.chatListName(chat, sa.name));
 	const page =
 		chat.kind === 'direct' ? sa.agent.directChatPage : sa.agent.groupChatPage;
@@ -235,9 +234,9 @@ async function clickChatRow(sa: StressAgent, title: string): Promise<void> {
 		// fail identically here, so say which it was.
 		throw new Error(
 			`${err instanceof Error ? err.message : String(err)}\n` +
-				`${sa.name} derives its contact names from: ${JSON.stringify(
-					await sa.agent.profileState(),
-				)}`,
+				`${sa.name}'s list shows: ${(await sa.agent.homePage.chatTitles())
+					.map(shown => `"${shown}"`)
+					.join(', ')}`,
 		);
 	}
 }

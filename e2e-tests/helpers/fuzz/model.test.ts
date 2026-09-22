@@ -797,6 +797,20 @@ test('a blocked contact is offered by no picker and writes to nobody', () => {
 	assert.deepEqual(showing(m, A), []);
 });
 
+test('a rename a blocked peer makes waits for the unblock', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.blockContact(A, B);
+	m.updateProfile(B, 'person-01');
+	m.propagate();
+	assert.equal(m.chatListName(chat, A), B);
+	m.unblockContact(A, B);
+	m.propagate();
+	assert.equal(m.chatListName(chat, A), 'person-01');
+});
+
 test('unblocking brings back what comes after, never what was thrown away', () => {
 	const m = sameLan(A, B);
 	contacts(m, A, B);
@@ -881,4 +895,138 @@ test('a renamed peer is still a peer whose profile has arrived', () => {
 	m.propagate();
 	assert.equal(m.view(A, chat).pending, false);
 	assert.deepEqual(m.sendableChatsFor(A), [chat]);
+});
+
+test('a message that lands while the agent is elsewhere counts on the row', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.addMessage(chat, A, 'text', 'sm-2');
+	m.propagate();
+	assert.equal(m.unreadCount(B, chat), 2);
+	// Nothing of its own ever counts, however many it sent.
+	assert.equal(m.unreadCount(A, chat), 0);
+	m.openedChat(B, chat);
+	assert.equal(m.unreadCount(B, chat), 0);
+});
+
+test('a message into the chat an agent is looking at never counts', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.openedChat(B, chat);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.equal(m.unreadCount(B, chat), 0);
+	m.wentHome(B);
+	m.addMessage(chat, A, 'text', 'sm-2');
+	m.propagate();
+	assert.equal(m.unreadCount(B, chat), 1);
+});
+
+test('an app away from the foreground counts what lands in the chat it was left on', () => {
+	const m = withCloud(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.openedChat(B, chat);
+	m.background(B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.equal(m.unreadCount(B, chat), 1);
+	// It resumes onto that chat, which reads it.
+	m.foreground(B);
+	assert.equal(m.unreadCount(B, chat), 0);
+});
+
+test('an app that was killed comes back on the list, with the count still there', () => {
+	const m = withCloud(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.openedChat(B, chat);
+	m.stopApp(B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	m.startApp(B);
+	assert.equal(m.unreadCount(B, chat), 1);
+});
+
+test('a row counts only what has reached the device', () => {
+	const m = lansWithCloud([N1, N2], A, B);
+	contacts(m, A, B);
+	m.agentJoin(A, N1);
+	m.agentJoin(B, N2);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.setCloudUsable(false);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.equal(m.unreadCount(B, chat), 0);
+	m.setCloudUsable(true);
+	m.propagate();
+	assert.equal(m.unreadCount(B, chat), 1);
+});
+
+test('each chat counts its own, and reading one leaves the other alone', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const direct = m.directChat(A, B);
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	m.addMessage(direct, A, 'text', 'sm-1');
+	m.addMessage(group, A, 'text', 'sm-2');
+	m.addMessage(group, A, 'text', 'sm-3');
+	m.propagate();
+	assert.equal(m.unreadCount(B, direct), 1);
+	assert.equal(m.unreadCount(B, group), 2);
+	m.openedChat(B, group);
+	assert.equal(m.unreadCount(B, direct), 1);
+	assert.equal(m.unreadCount(B, group), 0);
+});
+
+test('what a blocker never took never counts', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.blockContact(B, A);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.equal(m.unreadCount(B, chat), 0);
+});
+
+test('an edit, a delete and a reaction leave the count where it was', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	const message = m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.equal(m.unreadCount(B, chat), 1);
+	m.recordEdit(message);
+	m.recordReaction(message, A, '❤️');
+	m.recordDelete(message);
+	m.propagate();
+	assert.equal(m.unreadCount(B, chat), 1);
+});
+
+test('entering a chat by a peer link reads it', () => {
+	const m = sameLan(A, B);
+	m.recordAdded(A, B);
+	m.propagate();
+	m.recordAdded(B, A);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.wentHome(A);
+	m.wentHome(B);
+	m.addMessage(chat, B, 'text', 'sm-1');
+	m.propagate();
+	assert.equal(m.unreadCount(A, chat), 1);
+	m.openedDirectChat(A, B);
+	assert.equal(m.unreadCount(A, chat), 0);
 });

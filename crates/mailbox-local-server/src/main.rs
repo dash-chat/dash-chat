@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use futures::FutureExt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -44,21 +43,41 @@ async fn main() -> anyhow::Result<()> {
             .public()
     };
 
-    // Held until the process exits, when its `Drop` stops the announcement.
-    // Nothing goes on the wire to say so — browsers notice once it ages out.
-    let _announcement = mailbox_local_server::spawn_local_hub_announcement(endpoint_id, args.port)?;
+    // Bound before anything is announced, so a port that cannot be served is
+    // never advertised.
+    let listener = tokio::net::TcpListener::bind(format!("[::]:{}", args.port)).await?;
+    let port = listener.local_addr()?.port();
+    let announcement = std::sync::Arc::new(mailbox_local_server::spawn_local_hub_announcement(
+        endpoint_id,
+        port,
+    )?);
 
-    let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
+    // The goodbye goes out while the server is still serving: a browser that
+    // hears it retires the hub at once, where the refused probes it would get
+    // from a stopped one deliberately mean nothing.
+    let signal = {
+        let announcement = announcement.clone();
+        async move {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to listen for event");
+            announcement.shutdown().await;
+        }
+    };
     // No relay — the server stays fully local.
-    mailbox_server::spawn_server(
+    let served = mailbox_server::spawn_server(
         args.db_path,
-        format!("[::]:{}", args.port),
+        listener,
         None,
         None,
         None,
         args.network_id.unwrap_or(*dashchat_utils::NETWORK_ID),
         signal,
     )
-    .await
-    .map_err(|e| anyhow::anyhow!("server failed: {e}"))
+    .await;
+
+    // However the server stopped: on ctrl-c this already said it, on any other
+    // exit it is late but still better than leaving peers to the lapse.
+    announcement.shutdown().await;
+    served.map_err(|e| anyhow::anyhow!("server failed: {e}"))
 }

@@ -285,6 +285,10 @@ export class ExpectedModel {
 	 * replaces the entry, while each request and each group invite gets its
 	 * own. */
 	private readonly posted = new Map<string, Map<string, NotificationView>>();
+	/** Agent name → chat route → the messages that landed there while its app
+	 * was not showing that chat: what the row's unread badge counts. Opening
+	 * the chat reads every one of them, as entering it does on the device. */
+	private readonly unread = new Map<string, Map<Topic, Set<OpId>>>();
 	/** Agent name → the route it has open and, when the model has one, the
 	 * chat there; absent while it is on the chat list. Kept by route because
 	 * an agent can be looking at a chat the model cannot name yet — the one a
@@ -397,12 +401,15 @@ export class ExpectedModel {
 		this.backgrounded.add(name);
 	}
 
-	/** Coming back to the front clears what the device was showing for the
-	 *  route the app returns to, which is the one it was taken away from. */
+	/** Coming back to the front reads the route the app returns to, which is
+	 *  the one it was taken away from: what the device was showing for it and
+	 *  what its row had counted are both gone. */
 	foreground(name: string): void {
 		this.backgrounded.delete(name);
 		const route = this.viewing.get(name)?.route;
-		if (route !== undefined) this.clearPosted(name, route);
+		if (route === undefined) return;
+		this.clearPosted(name, route);
+		this.clearUnread(name, route);
 	}
 
 	stopApp(name: string): void {
@@ -1149,10 +1156,13 @@ export class ExpectedModel {
 	}
 
 	/** Record that `name` opened `chat`: it is now looking at it, and its app
-	 *  clears whatever it had posted for that route. */
+	 *  clears whatever it had posted for that route and reads everything that
+	 *  had piled up unread in it. */
 	openedChat(name: string, chat: ExpectedChat): void {
-		this.viewing.set(name, { route: chatTopic(chat), chat });
-		this.clearPosted(name, chatTopic(chat));
+		const route = chatTopic(chat);
+		this.viewing.set(name, { route, chat });
+		this.clearPosted(name, route);
+		this.clearUnread(name, route);
 	}
 
 	/** Record that `name` is back on the chat list. */
@@ -1168,6 +1178,12 @@ export class ExpectedModel {
 		const route = directTopic(name, peer);
 		this.viewing.set(name, { route, chat: this.directChatOrNull(name, peer) });
 		this.clearPosted(name, route);
+		this.clearUnread(name, route);
+	}
+
+	/** How many unread messages `name`'s chat list must show on `chat`'s row. */
+	unreadCount(name: string, chat: ExpectedChat): number {
+		return this.unread.get(name)?.get(chatTopic(chat))?.size ?? 0;
 	}
 
 	/**
@@ -1300,6 +1316,34 @@ export class ExpectedModel {
 			...notification,
 			oneOf: [...(shown?.oneOf ?? []), ...notification.oneOf],
 		});
+	}
+
+	/** Count `op` towards `chat`'s badge on `holder`'s list, now that it has
+	 *  arrived there: a message someone else sent to a chat it is in and whose
+	 *  page its app is not showing. An app away from the foreground is showing
+	 *  nothing, so what lands there counts even for the chat it was left on.
+	 *  Unlike a notification, this does not wait on the sender having been
+	 *  added back — a row counts every message in its chat. */
+	private noteUnread(holder: string, op: Op): void {
+		if (op.kind !== 'message' || this.silent.has(op.id)) return;
+		const { chat, sender } = op.message;
+		if (sender === holder) return;
+		if (!this.membersFor(chat, holder).includes(holder)) return;
+		const route = chatTopic(chat);
+		if (this.isActive(holder) && this.viewing.get(holder)?.route === route) {
+			return;
+		}
+		const byRoute = this.unread.get(holder) ?? new Map<Topic, Set<OpId>>();
+		this.unread.set(holder, byRoute);
+		const counted = byRoute.get(route) ?? new Set<OpId>();
+		byRoute.set(route, counted);
+		counted.add(op.id);
+	}
+
+	/** Drop what `name`'s row for a route had counted, as its app does when
+	 *  the chat is entered and everything in it is marked read. */
+	private clearUnread(name: string, route: Topic): void {
+		this.unread.get(name)?.delete(route);
 	}
 
 	/** Whether `op` is one `holder`'s app announces. A group's messages reach
@@ -1525,19 +1569,24 @@ export class ExpectedModel {
 				if (known.has(op.id) || this.rejects(holder, op)) continue;
 				known.add(op.id);
 				this.noteNotified(holder, op);
+				this.noteUnread(holder, op);
 				changed = true;
 			}
 		}
 		return changed;
 	}
 
-	/** Whether `holder`'s node throws `op` away rather than keeping it: what
+	/** Whether `holder`'s node turns `op` away rather than keeping it: what
 	 *  reaches a device while it is blocking the author is invalidated there,
-	 *  and unblocking never brings it back. */
+	 *  and unblocking never brings it back. A profile is the exception — it is
+	 *  only held back. The node never persists an invalidated op, so the
+	 *  author's log height never advances and the source hands the rename back
+	 *  on every exchange, which is what lands it once the block is lifted. */
 	private rejects(holder: string, op: Op): boolean {
 		const dropped = this.discarded.get(holder);
 		if (dropped?.has(op.id) === true) return true;
 		if (!this.blocks(holder, authorOf(op))) return false;
+		if (op.kind === 'profile') return true;
 		if (dropped === undefined) this.discarded.set(holder, new Set([op.id]));
 		else dropped.add(op.id);
 		return true;

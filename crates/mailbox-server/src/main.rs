@@ -40,9 +40,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
+    let listener = tokio::net::TcpListener::bind(&args.addr).await?;
     spawn_server(
         args.db_path.into(),
-        args.addr,
+        listener,
         args.push_notifications_url,
         None,
         Some(RELAY_URL.clone()),

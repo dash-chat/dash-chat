@@ -1,5 +1,12 @@
-use local_hub_discovery::{LocalHubDiscoveryService, LocalHubEvent};
+use std::collections::{BTreeMap, BTreeSet};
+use std::net::SocketAddr;
+
+use local_hub_discovery::{DiscoveredHub, LocalHubDiscoveryService};
+use tokio::sync::{broadcast, watch};
 use tokio_util::task::AbortOnDropHandle;
+
+/// How long a hub that did not take our address waits before we try again.
+const HAND_OVER_RETRY: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
 
@@ -67,38 +74,92 @@ pub(crate) async fn probe_cloud_mailbox(node: &dashchat_node::Node) {
     }
 }
 
-/// Keep the node's mailbox manager in step with the local hubs on the LAN.
+/// Keep the node's mailbox manager in step with the local hubs on the LAN, and
+/// keep those hubs holding our dialing address.
 pub fn spawn_local_mailbox_mdns_discovery(
     node: dashchat_node::Node,
 ) -> anyhow::Result<AbortOnDropHandle<()>> {
-    let mut discovery = LocalHubDiscoveryService::spawn();
+    let discovery = LocalHubDiscoveryService::spawn(local_hub_discovery::service_name());
+    let hubs = discovery.hubs();
 
     let handler_task = tokio::spawn(async move {
-        while let Some(event) = discovery.recv().await {
-            match event {
-                LocalHubEvent::Found { id, url } => register_local_hub(&node, id, url).await,
-                LocalHubEvent::Lost { id } => {
-                    if node.mailboxes.unregister(&id).await {
-                        log::info!("*** Removed local mailbox client via mdns: {id} ***");
-                    }
-                }
-            }
-        }
+        let _discovery = discovery;
+        let _handing_over =
+            AbortOnDropHandle::new(tokio::spawn(hand_over_our_addr(node.clone(), hubs.clone())));
+        register_local_hubs(node, hubs).await;
     });
 
     Ok(AbortOnDropHandle::new(handler_task))
 }
 
-/// Point the node at a hub we just found: register it as a mailbox, learn its
-/// dialing address, and hand it ours.
+/// Register the hubs discovery publishes and drop the ones it stops publishing.
 ///
-/// Safe to re-run — `MailboxManager::register` swaps the client in place — which
-/// matters because a hub is reported found again whenever its addresses change
-/// or a network change comes between sightings.
-/// Registration ends on an mDNS goodbye or on the hub reaching Stopped.
+/// Discovery is the only authority on which hubs are there: letting how a
+/// mailbox is faring decide what stays registered made a hub that answers TCP
+/// while failing HTTP churn through register and unregister.
+async fn register_local_hubs(
+    node: dashchat_node::Node,
+    mut hubs: watch::Receiver<BTreeMap<String, DiscoveredHub>>,
+) {
+    let mut ours: BTreeSet<String> = BTreeSet::new();
+    loop {
+        let current = hubs.borrow_and_update().clone();
+        reconcile(&node, &mut ours, &current).await;
+        if hubs.changed().await.is_err() {
+            return;
+        }
+    }
+}
 
-async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String) {
-    let newly_tracked = !node.mailboxes.is_tracked(&id).await;
+/// A hub the node already holds at the nearest address it answers on is left
+/// alone; anywhere else it is registered again, so the sort decides where a hub
+/// is polled rather than whichever address won the probe race.
+async fn reconcile(
+    node: &dashchat_node::Node,
+    ours: &mut BTreeSet<String>,
+    current: &BTreeMap<String, DiscoveredHub>,
+) {
+    for hub in current.values() {
+        let Some(&addr) = hub.answered_at.first() else {
+            continue;
+        };
+        ours.insert(hub.mailbox_id.clone());
+        if registered_url(node, hub).await.as_deref() != Some(hub_url(addr).as_str()) {
+            register_local_hub(node, hub, addr).await;
+        }
+    }
+    // Only what this loop put there: inferring it from the node's mailboxes
+    // would tear down anything else that ever registers one.
+    let gone: Vec<String> = ours
+        .iter()
+        .filter(|id| !current.contains_key(*id))
+        .cloned()
+        .collect();
+    for id in gone {
+        if node.mailboxes.unregister(&id).await {
+            log::info!("*** Removed local mailbox client via mdns: {id} ***");
+        }
+        ours.remove(&id);
+    }
+}
+
+/// Where the node holds this hub's mailbox, if it holds one at all. A url, not
+/// an address, so this and [`hub_url`] cannot drift apart silently.
+async fn registered_url(node: &dashchat_node::Node, hub: &DiscoveredHub) -> Option<String> {
+    let tracked = node.mailboxes.tracked_mailbox(&hub.mailbox_id).await?;
+    tracked.client().await.url()
+}
+
+fn hub_url(addr: SocketAddr) -> String {
+    format!("http://{addr}")
+}
+
+/// Safe to re-run — `MailboxManager::register` swaps the client in place —
+/// which matters because [`reconcile`] runs this again whenever the address the
+/// node holds is no longer the nearest one the hub answers on.
+async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, addr: SocketAddr) {
+    let id = &hub.mailbox_id;
+    let url = hub_url(addr);
     node.mailboxes
         .register(
             mailbox_client::toy::ToyMailboxClient::new(
@@ -110,32 +171,102 @@ async fn register_local_hub(node: &dashchat_node::Node, id: String, url: String)
             .with_blob_reader(node.blob_reader()),
         )
         .await;
-    // A hub that stops answering is gone as far as we are concerned, whether or
-    // not its mDNS records have expired yet; the re-browse re-registers it if
-    // it comes back. Only the first registration arms this, since a re-browse
-    // re-registers every hub it still sees.
-    if newly_tracked {
-        node.mailboxes.unregister_on_stopped(&id).await;
-    }
-    // Add the hub's dialing address to the address book so the blob downloader
-    // can reach it by EndpointId rather than relying solely on p2panda mDNS
-    // resolution timing.
-    match dashchat_node::mailbox::fetch_mailbox_health(&url).await {
-        Ok(health) => {
-            if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
-                log::warn!("Failed to add local mailbox {id} addr to address book: {err}");
-            }
-        }
-        Err(err) => {
-            log::warn!("Failed to fetch local mailbox {id} health for address book: {err}")
-        }
-    }
-    // Tell the hub our own dialing address so its blob fetch pool can reach us as
-    // a source. A hub is reported found again after every network change, so
-    // this also refreshes the EndpointAddr then. Cloud mailboxes have no such hook;
-    // refreshing there would need a network-change callback from the node layer.
-    if let Err(err) = node.register_with_mailbox(&url).await {
-        log::warn!("Failed to register our addr with local mailbox {id}: {err}");
-    }
     log::info!("*** Registered local mailbox client via mdns: {id} ({url}) ***");
+}
+
+/// Hand each hub our dialing address, and hand it over again whenever ours
+/// changes: a hub cannot tell us that it moved, and it needs the new one to
+/// reach us as a blob source.
+///
+/// Off the registering loop, which must not wait on a hub that has just left
+/// the LAN and takes seconds to fail.
+async fn hand_over_our_addr(
+    node: dashchat_node::Node,
+    mut hubs: watch::Receiver<BTreeMap<String, DiscoveredHub>>,
+) {
+    let mut network = network_watch::network_change();
+    let mut handed_over: BTreeMap<String, SocketAddr> = BTreeMap::new();
+    loop {
+        let current = hubs.borrow_and_update().clone();
+        // A hub that left forgot our address, so it has to be told again if it
+        // comes back at the address it left from.
+        handed_over.retain(|id, _| current.contains_key(id));
+        // Together, not in turn: a hub that answers a probe but stalls on HTTP
+        // would otherwise hold up every hub behind it for two 10s timeouts.
+        let done = futures::future::join_all(
+            hubs_missing_our_addr(&current, &handed_over)
+                .into_iter()
+                .map(|(id, addr)| {
+                    let node = &node;
+                    async move { exchange_addrs(node, &id, addr).await.then_some((id, addr)) }
+                }),
+        )
+        .await;
+        // Only what succeeded: a hub wrongly recorded as told would never be
+        // told again.
+        handed_over.extend(done.into_iter().flatten());
+        let outstanding = !hubs_missing_our_addr(&current, &handed_over).is_empty();
+        tokio::select! {
+            stopped = hubs.changed() => {
+                if stopped.is_err() {
+                    return;
+                }
+            }
+            changed = network.recv() => {
+                if matches!(changed, Err(broadcast::error::RecvError::Closed)) {
+                    return;
+                }
+                handed_over.clear();
+            }
+            // A hub that keeps answering where it always did publishes no
+            // change, so without this the loop would never wake to try a
+            // failed one again.
+            _ = tokio::time::sleep(HAND_OVER_RETRY), if outstanding => {}
+        }
+    }
+}
+
+/// The hubs that do not hold our address at the place they now answer.
+fn hubs_missing_our_addr(
+    current: &BTreeMap<String, DiscoveredHub>,
+    handed_over: &BTreeMap<String, SocketAddr>,
+) -> Vec<(String, SocketAddr)> {
+    current
+        .values()
+        .filter_map(|hub| {
+            let &addr = hub.answered_at.first()?;
+            (handed_over.get(&hub.mailbox_id) != Some(&addr))
+                .then(|| (hub.mailbox_id.clone(), addr))
+        })
+        .collect()
+}
+
+/// Learn the hub's dialing address for the address book and hand it ours, so
+/// blobs can move either way without waiting on p2panda mDNS resolution.
+///
+/// Reports whether the hub now holds our address, so a failed exchange is tried
+/// again rather than recorded as done.
+async fn exchange_addrs(node: &dashchat_node::Node, id: &str, addr: SocketAddr) -> bool {
+    let url = hub_url(addr);
+    let learnt = match dashchat_node::mailbox::fetch_mailbox_health(&url).await {
+        Ok(health) => match node.insert_peer_addr(health.endpoint_addr).await {
+            Ok(()) => true,
+            Err(err) => {
+                log::warn!("Failed to add local mailbox {id} addr to address book: {err}");
+                false
+            }
+        },
+        Err(err) => {
+            log::warn!("Failed to fetch local mailbox {id} health for address book: {err}");
+            false
+        }
+    };
+    let handed_over = match node.register_with_mailbox(&url).await {
+        Ok(()) => true,
+        Err(err) => {
+            log::warn!("Failed to register our addr with local mailbox {id}: {err}");
+            false
+        }
+    };
+    learnt && handed_over
 }
