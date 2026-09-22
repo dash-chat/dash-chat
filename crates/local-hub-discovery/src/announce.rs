@@ -69,8 +69,8 @@ impl LocalHubAnnouncementService {
         })
     }
 
-    /// Announce that this hub is going away, then stop announcing.
-    pub async fn shutdown(self) {
+    /// Announce that this hub is going away, then stop announcing
+    pub async fn shutdown(&self) {
         let mut announcement = self.announcement.lock().await;
         let Some(live) = announcement.as_ref() else {
             return;

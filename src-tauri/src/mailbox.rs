@@ -1,9 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
 
 use local_hub_discovery::{DiscoveredHub, LocalHubDiscoveryService};
 use tokio::sync::{broadcast, watch};
 use tokio_util::task::AbortOnDropHandle;
+
+/// How long a hub that did not take our address waits before we try again.
+const HAND_OVER_RETRY: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub(crate) const PRODUCTION_MAILBOX_URL: &str = "https://mailbox.production.darksoil.studio";
 
@@ -91,20 +94,15 @@ pub fn spawn_local_mailbox_mdns_discovery(
 
 /// Register the hubs discovery publishes and drop the ones it stops publishing,
 /// for as long as either the hubs or the node's own mailboxes change.
-///
-/// A hub the node drops on its own (`unregister_on_stopped`) is registered
-/// again while discovery still publishes it, so `Stopped` never sticks for a
-/// hub that keeps announcing and keeps answering a probe: on a LAN we would
-/// rather keep trying than give up on one that is plainly there. The manager's
-/// `stopped_interval` backoff therefore does not bound this loop.
 async fn register_local_hubs(
     node: dashchat_node::Node,
     mut hubs: watch::Receiver<BTreeMap<String, DiscoveredHub>>,
 ) {
     let mut tracked = node.mailboxes.active_mailbox_ids();
+    let mut ours: BTreeSet<String> = BTreeSet::new();
     loop {
         let current = hubs.borrow_and_update().clone();
-        reconcile(&node, &current).await;
+        reconcile(&node, &mut ours, &current).await;
         tokio::select! {
             stopped = hubs.changed() => {
                 if stopped.is_err() {
@@ -126,28 +124,36 @@ async fn register_local_hubs(
 /// A hub the node already holds at the nearest address it answers on is left
 /// alone; anywhere else it is registered again, so the sort decides where a hub
 /// is polled rather than whichever address won the probe race.
-async fn reconcile(node: &dashchat_node::Node, current: &BTreeMap<String, DiscoveredHub>) {
+async fn reconcile(
+    node: &dashchat_node::Node,
+    ours: &mut BTreeSet<String>,
+    current: &BTreeMap<String, DiscoveredHub>,
+) {
     for hub in current.values() {
         let Some(&addr) = hub.answered_at.first() else {
             continue;
         };
+        ours.insert(hub.mailbox_id.clone());
         if registered_url(node, hub).await.as_deref() == Some(hub_url(addr).as_str()) {
-            // Ours already, but it may have backed off while the hub — or our
-            // own network — was away, and a mailbox in backoff reads as
-            // disconnected. A hub answering again is worth a poll now rather
-            // than at the end of that backoff.
+            // Ours already, but a mailbox that backed off while it was away
+            // reads as disconnected until its next poll.
             node.mailboxes.probe(hub.mailbox_id.clone()).await;
             continue;
         }
         register_local_hub(node, hub, addr).await;
     }
-    for id in discovered_mailboxes(node).await {
-        if current.contains_key(&id) {
-            continue;
-        }
+    // Only what this loop put there: inferring it from the node's mailboxes
+    // would tear down anything else that ever registers one.
+    let gone: Vec<String> = ours
+        .iter()
+        .filter(|id| !current.contains_key(*id))
+        .cloned()
+        .collect();
+    for id in gone {
         if node.mailboxes.unregister(&id).await {
             log::info!("*** Removed local mailbox client via mdns: {id} ***");
         }
+        ours.remove(&id);
     }
 }
 
@@ -160,16 +166,6 @@ async fn registered_url(node: &dashchat_node::Node, hub: &DiscoveredHub) -> Opti
 
 fn hub_url(addr: SocketAddr) -> String {
     format!("http://{addr}")
-}
-
-/// The mailboxes discovery put there: every one the node holds but the cloud's.
-async fn discovered_mailboxes(node: &dashchat_node::Node) -> Vec<mailbox_client::MailboxId> {
-    let cloud = cloud_mailbox_id(node).await;
-    let tracked = node.mailboxes.active_mailbox_ids().borrow().clone();
-    tracked
-        .into_iter()
-        .filter(|id| Some(id) != cloud.as_ref())
-        .collect()
 }
 
 /// Safe to re-run — `MailboxManager::register` swaps the client in place —
@@ -227,11 +223,17 @@ async fn hand_over_our_addr(
             async move { exchange_addrs(node, &id, addr).await.then_some((id, addr)) }
         }))
         .await;
-        // Only what succeeded: a hub recorded as handed to that has not had our
-        // address would never be told again, and its fetch pool could not reach
-        // us as a blob source.
+        // Only what succeeded: a hub wrongly recorded as told would never be
+        // told again.
         handed_over.extend(done.into_iter().flatten());
         handed_over.retain(|id, _| current.contains_key(id));
+        // A hub that keeps answering where it always did publishes no change, so
+        // without this the loop would never wake to try a failed one again.
+        let outstanding = current.values().any(|hub| {
+            hub.answered_at
+                .first()
+                .is_some_and(|addr| handed_over.get(&hub.mailbox_id) != Some(addr))
+        });
         tokio::select! {
             stopped = hubs.changed() => {
                 if stopped.is_err() {
@@ -244,6 +246,7 @@ async fn hand_over_our_addr(
                 }
                 handed_over.clear();
             }
+            _ = tokio::time::sleep(HAND_OVER_RETRY), if outstanding => {}
         }
     }
 }
@@ -255,19 +258,25 @@ async fn hand_over_our_addr(
 /// again rather than recorded as done.
 async fn exchange_addrs(node: &dashchat_node::Node, id: &str, addr: SocketAddr) -> bool {
     let url = hub_url(addr);
-    match dashchat_node::mailbox::fetch_mailbox_health(&url).await {
-        Ok(health) => {
-            if let Err(err) = node.insert_peer_addr(health.endpoint_addr).await {
+    let learnt = match dashchat_node::mailbox::fetch_mailbox_health(&url).await {
+        Ok(health) => match node.insert_peer_addr(health.endpoint_addr).await {
+            Ok(()) => true,
+            Err(err) => {
                 log::warn!("Failed to add local mailbox {id} addr to address book: {err}");
+                false
             }
-        }
+        },
         Err(err) => {
-            log::warn!("Failed to fetch local mailbox {id} health for address book: {err}")
+            log::warn!("Failed to fetch local mailbox {id} health for address book: {err}");
+            false
         }
-    }
-    if let Err(err) = node.register_with_mailbox(&url).await {
-        log::warn!("Failed to register our addr with local mailbox {id}: {err}");
-        return false;
-    }
-    true
+    };
+    let handed_over = match node.register_with_mailbox(&url).await {
+        Ok(()) => true,
+        Err(err) => {
+            log::warn!("Failed to register our addr with local mailbox {id}: {err}");
+            false
+        }
+    };
+    learnt && handed_over
 }

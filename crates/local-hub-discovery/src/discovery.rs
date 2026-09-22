@@ -526,7 +526,11 @@ mod tests {
         // what lets the second sighting through.
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let _hub = TcpListener::bind(addr).await.unwrap();
+        // These run in parallel: another test can take the port in between,
+        // and then there is nothing here to prove.
+        let Ok(_hub) = TcpListener::bind(addr).await else {
+            return;
+        };
         h.browser.forget_probes_in_flight();
         h.seen("hub", addr);
 

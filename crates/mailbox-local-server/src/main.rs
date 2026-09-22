@@ -47,16 +47,22 @@ async fn main() -> anyhow::Result<()> {
     // never advertised.
     let listener = tokio::net::TcpListener::bind(format!("[::]:{}", args.port)).await?;
     let port = listener.local_addr()?.port();
-    let announcement = mailbox_local_server::spawn_local_hub_announcement(endpoint_id, port)?;
+    let announcement = std::sync::Arc::new(mailbox_local_server::spawn_local_hub_announcement(
+        endpoint_id,
+        port,
+    )?);
 
     // The goodbye goes out while the server is still serving: a browser that
     // hears it retires the hub at once, where the refused probes it would get
     // from a stopped one deliberately mean nothing.
-    let signal = async move {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to listen for event");
-        announcement.shutdown().await;
+    let signal = {
+        let announcement = announcement.clone();
+        async move {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to listen for event");
+            announcement.shutdown().await;
+        }
     };
     // No relay — the server stays fully local.
     let served = mailbox_server::spawn_server(
@@ -70,5 +76,8 @@ async fn main() -> anyhow::Result<()> {
     )
     .await;
 
+    // However the server stopped: on ctrl-c this already said it, on any other
+    // exit it is late but still better than leaving peers to the lapse.
+    announcement.shutdown().await;
     served.map_err(|e| anyhow::anyhow!("server failed: {e}"))
 }
