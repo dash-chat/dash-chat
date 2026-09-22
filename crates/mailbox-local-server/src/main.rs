@@ -44,13 +44,16 @@ async fn main() -> anyhow::Result<()> {
             .public()
     };
 
+    // Bound before anything is announced, so a port that cannot be served is
+    // never advertised.
+    let listener = tokio::net::TcpListener::bind(format!("[::]:{}", args.port)).await?;
     let announcement = mailbox_local_server::spawn_local_hub_announcement(endpoint_id, args.port)?;
 
     let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
     // No relay — the server stays fully local.
     let served = mailbox_server::spawn_server(
         args.db_path,
-        format!("[::]:{}", args.port),
+        listener,
         None,
         None,
         None,

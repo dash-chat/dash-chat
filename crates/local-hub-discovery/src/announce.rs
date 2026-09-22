@@ -13,7 +13,9 @@ use crate::{
     base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, service_name, GOODBYE_ATTRIBUTE,
 };
 
-/// One announce round, charged to every shutdown.
+/// One announce round of swarm-discovery.s interactive cadence (700ms plus
+/// jitter), charged to every shutdown: `set_txt_attribute` only queues the
+/// goodbye, and dropping the announcement before that round would send nothing.
 const GOODBYE_LINGER: Duration = Duration::from_millis(1000);
 
 pub struct LocalHubAnnouncementService {
@@ -77,8 +79,7 @@ impl LocalHubAnnouncementService {
         match live.set_txt_attribute(GOODBYE_ATTRIBUTE.to_string(), None) {
             // swarm-discovery sends on its own schedule: this waits for a
             // round, not for an acknowledgement.
-            Ok(()) if announces_off_host() => tokio::time::sleep(GOODBYE_LINGER).await,
-            Ok(()) => {}
+            Ok(()) => tokio::time::sleep(GOODBYE_LINGER).await,
             Err(err) => log::warn!("Failed to announce local hub goodbye: {err}"),
         }
         announcement.take();
@@ -101,10 +102,6 @@ fn announce(
         .with_addrs(port, ips)
         .spawn(handle)?;
     Ok(guard)
-}
-
-fn announces_off_host() -> bool {
-    multicast_interfaces_v4().iter().any(|ip| !ip.is_loopback())
 }
 
 /// The IPv4 addresses to advertise: the interfaces multicast goes out on

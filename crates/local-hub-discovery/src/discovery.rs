@@ -21,7 +21,9 @@ use crate::{
 };
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
-const REPROBE_INTERVAL: Duration = Duration::from_secs(3);
+/// Longer than [`PROBE_TIMEOUT`], so a hub with an address that hangs is not
+/// re-probed before the sweep that is still waiting on it gives up.
+const REPROBE_INTERVAL: Duration = Duration::from_secs(PROBE_TIMEOUT.as_secs() + 1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredHub {
@@ -116,6 +118,7 @@ impl DiscoveryBrowser {
     }
 
     fn rejoin(self: &Arc<Self>) {
+        self.forget_probes_in_flight();
         let current: BTreeSet<Ipv4Addr> = multicast_interfaces_v4().into_iter().collect();
         let mut browsing = self.browsing.lock().unwrap();
         let Some(Browsing { guard, joined }) = browsing.as_mut() else {
@@ -143,15 +146,25 @@ impl DiscoveryBrowser {
         *joined = current;
     }
 
+    /// A probe still running was dialling the network we had before, where the
+    /// addresses it waits on may be unreachable — and while it waits, no
+    /// sighting of that hub is probed at all. What it answers cannot speak for
+    /// the network we have now.
+    fn forget_probes_in_flight(&self) {
+        for hub in self.hubs.lock().unwrap().values_mut() {
+            hub.awaiting_probe = None;
+        }
+    }
+
     fn start_browsing(
         self: &Arc<Self>,
         interfaces: BTreeSet<Ipv4Addr>,
     ) -> anyhow::Result<Browsing> {
         let browser = Arc::downgrade(self);
         let discoverer = base_discoverer(&browse_id(), interfaces.iter().copied().collect())
-            // Runs on swarm-discovery's thread and must not block, so it only
-            // takes the sighting in; the probe it may start runs on a task of
-            // its own.
+            // Runs on a swarm-discovery actor, which is spawned on the handle
+            // passed to `Discoverer::spawn` below — so this is on our runtime
+            // and may spawn, but must not block: it only takes the sighting in.
             .with_callback(move |id, peer| {
                 let Ok(id) = label_to_mailbox_id(id) else {
                     return;
@@ -193,6 +206,8 @@ impl DiscoveryBrowser {
         if !hub.needs_probe(&advertised) {
             return;
         }
+        // One probe in flight per hub, however often it is sighted, and a LAN
+        // carries a handful of hubs: the fan-out needs no bound of its own.
         let probe_id = next_probe_id();
         hub.awaiting_probe = Some(probe_id);
         hub.probed_at = Some(Instant::now());
@@ -478,6 +493,23 @@ mod tests {
         answered.sort_by_key(|addr| (hops_away(*addr, &subnets), *addr));
 
         assert_eq!(answered, [lan, bridge, loopback]);
+    }
+
+    /// A phone that rejoins its LAN sights the hub before the interface is
+    /// usable, and that probe is still on the blackhole when the sighting that
+    /// could be answered arrives.
+    #[tokio::test]
+    async fn a_network_change_lets_the_next_sighting_probe_at_once() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        h.sighted("hub", vec![DEAD_ADDR]);
+
+        h.browser.forget_probes_in_flight();
+        h.sighted("hub", vec![at(&hub)]);
+
+        let started = Instant::now();
+        assert_eq!(h.next().await, hubs(&[("hub", at(&hub))]));
+        assert!(started.elapsed() < PROBE_TIMEOUT);
     }
 
     #[tokio::test]
