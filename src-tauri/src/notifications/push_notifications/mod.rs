@@ -13,6 +13,9 @@ use crate::notifications::are_notifications_enabled;
 
 mod receive_push_notification;
 
+#[cfg(target_os = "ios")]
+pub mod nse_signal;
+
 #[cfg(target_os = "android")]
 mod android;
 
