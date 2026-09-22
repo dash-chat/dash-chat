@@ -8,9 +8,22 @@
 
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
+use std::sync::{Arc, LazyLock};
+use std::time::Duration;
+
+use tokio::sync::Notify;
+
+use crate::node::{node_slot, NodeRole};
 
 /// Darwin notification name shared by the poster (NSE) and observer (app).
 const NSE_DID_PROCESS_NAME: &str = "studio.darksoil.dashchat.nse-did-process";
+
+/// How long to wait after a nudge before resyncing, so a burst of pushes (each
+/// posting the notification) collapses into a single resync pass.
+const RESYNC_DEBOUNCE: Duration = Duration::from_millis(500);
+
+/// Signalled by the Darwin-notification callback; awaited by the debounce worker.
+static RESYNC_SIGNAL: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
 
 #[repr(C)]
 struct CFNotificationCenter(c_void);
@@ -83,12 +96,34 @@ extern "C" fn on_nse_did_process(
     _user_info: CFDictionaryRef,
 ) {
     log::info!("Received nse-did-process Darwin notification from the push extension");
+    // Runs on the main run loop; only wake the worker, never block here.
+    RESYNC_SIGNAL.notify_one();
+}
+
+/// Resync the live app node after the NSE nudges us, debounced so a push burst
+/// triggers at most one extra pass. Runs for the app's lifetime, re-resolving
+/// the node each time since it is swapped on iOS background/foreground.
+async fn resync_worker() {
+    loop {
+        RESYNC_SIGNAL.notified().await;
+        tokio::time::sleep(RESYNC_DEBOUNCE).await;
+        let Some(node) = node_slot::current_node_for_role(NodeRole::App).await else {
+            log::debug!("nse-did-process nudge with no live app node; skipping resync");
+            continue;
+        };
+        match node.resync().await {
+            Ok(()) => log::info!("Resynced stored topics after nse-did-process nudge"),
+            Err(err) => log::warn!("Resync after nse-did-process nudge failed: {err:?}"),
+        }
+    }
 }
 
 /// Register the app-process observer for the "NSE did process" Darwin
 /// notification. Registered once for the app's lifetime; the name `CFString` is
 /// intentionally leaked because the observer lives as long as the process.
 pub fn observe_nse_did_process() {
+    tauri::async_runtime::spawn(resync_worker());
+
     let name = cf_string(NSE_DID_PROCESS_NAME);
     unsafe {
         let center = CFNotificationCenterGetDarwinNotifyCenter();

@@ -1999,6 +1999,14 @@ impl Node {
         Ok(())
     }
 
+    /// Re-run stored-topic initialization so the app catches up on operations
+    /// another process (the iOS push extension) wrote into the shared store
+    /// while the app was running: it subscribes to any newly-stored topics,
+    /// replaying their operations from the app's own un-advanced cursor.
+    pub async fn resync(&self) -> anyhow::Result<()> {
+        self.initialize_stored_topics().await
+    }
+
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         self.initialize_topic(
             *Topic::announcements(self.agent_id())
