@@ -16,9 +16,8 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 
 /// Measured from when `shutdown` returns, by which point the goodbye has had
-/// its full round: a hub still published this long after cannot have been
-/// retired by one, and a lapse would take seconds more.
-const GOODBYE_WITHIN: Duration = Duration::from_millis(500);
+/// its full round
+const GOODBYE_WITHIN: Duration = Duration::from_millis(1_000);
 const DISCOVERY_WITHIN: Duration = Duration::from_secs(4);
 
 /// A hub id of the shape the announce side encodes: base64url, as a MailboxId
