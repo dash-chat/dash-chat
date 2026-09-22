@@ -37,10 +37,12 @@ import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
+import { ensurePhonesShareALan } from './phone-lan';
 import {
 	APP_PACKAGE,
 	androidHasInternet,
 	androidWifiInfo,
+	androidWifiSsid,
 	connectAndroidWifi,
 	disableAndroidWifi,
 	enableAndroidWifi,
@@ -68,6 +70,7 @@ import {
 	enableIosWifi,
 	forgetIosWifi,
 	iosWifiInfo,
+	iosWifiSsid,
 } from './platforms/ios-wifi';
 import { type AgentPlatformName, isMobile, platformNames } from './test-env';
 import { deviceUdid, switchToWebview, waitForTestUtils } from './webview';
@@ -195,6 +198,10 @@ export type Agent = WebdriverIO.Browser & {
 	/** The network this device is on: its SSID and IPv4 address, each ''
 	 *  while it has none. */
 	wifiInfo(): Promise<WifiInfo>;
+	/** The SSID the device is associated with, or '' while it is on none.
+	 *  Cheaper than [`wifiInfo`], which on iOS walks into the Wi-Fi page for an
+	 *  address; this reads only what the platform says for free. */
+	wifiSsid(): Promise<string>;
 	/** Whether the device reaches the internet over its current network.
 	 *  Physical Android phones only; throws elsewhere. */
 	hasInternet(): Promise<boolean>;
@@ -424,6 +431,10 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await iosWifiInfo(b)
 			: androidWifiInfo(deviceUdid(b));
+	agent.wifiSsid = async () =>
+		agent.platform === 'ios'
+			? await iosWifiSsid(b)
+			: androidWifiSsid(deviceUdid(b));
 	agent.hasInternet = async () => androidHasInternet(wifiUdid(agent, b));
 	agent.clearAppData = async () => {
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
@@ -851,6 +862,7 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 	const agents = await Promise.all(
 		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1], slot)),
 	);
+	await ensurePhonesShareALan(agents);
 	return agents as { [K in keyof T]: Agent };
 }
 
