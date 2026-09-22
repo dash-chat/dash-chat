@@ -228,21 +228,6 @@ export async function openChatByTitle(
 
 /** Click the row the chat list shows under `title`. */
 async function clickChatRow(sa: StressAgent, title: string): Promise<void> {
-	try {
-		await waitForChatRow(sa, title);
-	} catch (err) {
-		// A row that never took a new name and one whose operation never arrived
-		// fail identically here, so say which it was.
-		throw new Error(
-			`${err instanceof Error ? err.message : String(err)}\n` +
-				`${sa.name} derives its contact names from: ${JSON.stringify(
-					await sa.agent.profileState(),
-				)}`,
-		);
-	}
-}
-
-async function waitForChatRow(sa: StressAgent, title: string): Promise<void> {
 	await sa.agent.waitUntil(
 		() =>
 			sa.agent.execute(
