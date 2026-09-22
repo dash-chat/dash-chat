@@ -1,15 +1,17 @@
 /**
  * The only code that compares a screen with the model. `expectView` asserts
  * one chat on one agent is exactly what the model says that agent knows;
- * `settle` runs after every move and asserts every agent that learnt
- * something; `expectNotifications` asserts every device whose notifications
- * a run reads; `expectHubs` and `expectCloud` assert the connection chip.
+ * `expectChatList` asserts the unread badges on the way in to it; `settle`
+ * runs after every move and asserts every agent that learnt something;
+ * `expectNotifications` asserts every device whose notifications a run reads;
+ * `expectHubs` and `expectCloud` assert the connection chip.
  */
 import type { RenderedMessage } from '../components/messages';
 import type {
 	DeliveredNotification,
 	NotificationHelper,
 } from '../components/notifications';
+import type { ChatRow } from '../pages/home-page';
 import {
 	MAILBOX_HEALED_MS,
 	MEDIA_SYNC_TIMEOUT,
@@ -19,10 +21,11 @@ import {
 	type ChatPage,
 	type Real,
 	type StressAgent,
+	backToChatList,
 	byName,
 	log,
 	notificationsOf,
-	openChatPage,
+	openChatRow,
 } from './agents';
 import type {
 	ChatView,
@@ -175,15 +178,125 @@ function describeExpected(notification: NotificationView): string {
 	return `${shows}: one of ${notification.oneOf.join(', ')}`;
 }
 
-/** Open `chat` on `sa` and check it against the model before returning. */
+/** Get `sa` to its chat list, check every badge there, then open `chat` and
+ *  check it, all against the model. */
 export async function openChat(
 	sa: StressAgent,
 	chat: ExpectedChat,
 	model: ExpectedModel,
 ): Promise<ChatPage> {
-	const page = await openChatPage(sa, chat, model);
+	await checkChatList(model, sa);
+	const page = await openChatRow(sa, chat, model);
 	await expectView(sa, chat, model, page);
 	return page;
+}
+
+/** Get `sa` to its chat list, by way of checking whatever chat it is sitting
+ *  in, and check every badge there. Also what a move does before it kills the
+ *  app: a badge that reads right is a read the app has written, so nothing the
+ *  model credits the agent with is still pending when the process goes. */
+export async function checkChatList(
+	m: ExpectedModel,
+	sa: StressAgent,
+): Promise<void> {
+	await expectCaughtUp(sa, m);
+	await backToChatList(sa, m);
+	await expectChatList(m, sa);
+}
+
+/**
+ * Check the chat `sa` is sitting in before it walks away from it. The model
+ * hands an agent everything a move produced at once, and counts what lands in
+ * the chat on screen as read; the real ops arrive when they arrive, and one
+ * still on the wire when the app leaves lands on a chat it is no longer
+ * showing, where the row counts it unread. Waiting for the view here is what
+ * makes "the chat it is in is a chat it has read" true of both.
+ */
+async function expectCaughtUp(
+	sa: StressAgent,
+	model: ExpectedModel,
+): Promise<void> {
+	const chat = model.viewingChat(sa.name);
+	if (chat === null) return;
+	const page =
+		chat.kind === 'direct' ? sa.agent.directChatPage : sa.agent.groupChatPage;
+	if (!(await page.page.isExisting())) return;
+	await expectView(sa, chat, model, page);
+}
+
+/**
+ * Wait until every chat `sa` knows carries the unread badge the model says:
+ * the messages that landed in it while its app was elsewhere, and no badge at
+ * all on one it has caught up on. Rows the model cannot name — a contact
+ * request nobody has accepted yet — are left alone, since they belong to no
+ * chat it holds. Assumes the agent is on the chat list.
+ */
+export async function expectChatList(
+	m: ExpectedModel,
+	sa: StressAgent,
+): Promise<void> {
+	const chats = m.chatsFor(sa.name);
+	const expected = new Map<string, number>();
+	for (const chat of chats) {
+		expected.set(m.chatListName(chat, sa.name), m.unreadCount(sa.name, chat));
+	}
+	let rows: ChatRow[] = [];
+	try {
+		await sa.agent.waitUntil(
+			async () => {
+				rows = await sa.agent.homePage.chatRows();
+				return wrongBadges(expected, rows).length === 0;
+			},
+			// A badge counts operations, not the bytes behind them, but they
+			// travel the same way: anything less than what the views themselves
+			// get would make this the first thing a slow link fails, and report a
+			// wrong number for what is only a sync still in flight.
+			{ timeout: syncTimeoutFor(chats.map(chat => m.view(sa.name, chat))) },
+		);
+	} catch (err) {
+		const problems = wrongBadges(expected, rows);
+		if (problems.length === 0) {
+			throw new Error(
+				`${sa.name}'s chat list could not be read: ${String(err)}`,
+			);
+		}
+		throw new Error(`${sa.name}'s chat list: ${problems.join('; ')}`);
+	}
+}
+
+/** What `views` get to arrive: longer as soon as one of them holds media,
+ *  whose bytes travel behind the operations that announce them. */
+function syncTimeoutFor(views: ChatView[]): number {
+	return views.some(view => view.messages.some(v => v.kind !== 'text'))
+		? MEDIA_SYNC_TIMEOUT
+		: SYNC_TIMEOUT;
+}
+
+/** What `rows` gets wrong about the badges `expected` wants, spelled out for
+ *  a report, each with what it is most likely to be: a row short of what the
+ *  model wants is as often an operation that never arrived as a badge that
+ *  never appeared, and one over it is counting something already read. A chat
+ *  with nothing unread and no row yet is nothing to say: the row is the
+ *  business of whoever goes looking for it. */
+function wrongBadges(expected: Map<string, number>, rows: ChatRow[]): string[] {
+	const wrong: string[] = [];
+	for (const [title, unread] of expected) {
+		const row = rows.find(r => r.title === title);
+		if (row === undefined) {
+			if (unread > 0) {
+				wrong.push(`"${title}" has no row to show its ${unread} unread on`);
+			}
+			continue;
+		}
+		if (row.unread === unread) continue;
+		const reads = `"${title}" reads ${row.unread} unread, not ${unread}`;
+		wrong.push(
+			row.unread < unread
+				? `${reads} — ${unread - row.unread} of them either never arrived or were read unopened`
+				: `${reads} — it counts ${row.unread - unread} it has read already`,
+		);
+	}
+	return wrong;
 }
 
 /**
@@ -204,9 +317,7 @@ export async function expectView(
 	await expectComposer(page, view, where);
 	let missing: MessageView[] = [];
 	let extra: RenderedMessage[] = [];
-	const timeout = view.messages.some(v => v.kind !== 'text')
-		? MEDIA_SYNC_TIMEOUT
-		: SYNC_TIMEOUT;
+	const timeout = syncTimeoutFor([view]);
 	try {
 		await sa.agent.waitUntil(
 			async () => {
@@ -229,6 +340,10 @@ export async function expectView(
 				extra.map(describeRendered).join(', '),
 		);
 	}
+	// Reading the chat can have scrolled away from the bottom — `renderedMessages`
+	// pulls a photo into view to load it — and a message landing above the fold
+	// is never marked read, while the model counts a chat on screen as read.
+	if (!(await page.scroll.isAtBottom())) await page.scroll.scrollToBottom();
 }
 
 /** Propagate the last move's effects through the model and check every

@@ -1,8 +1,11 @@
 /** Moves a device makes on its own: leaving and returning to the foreground,
  *  and stopping, starting and restarting the app. A backgrounded app keeps
- *  whatever it was showing, so it resumes there. */
+ *  whatever it was showing, so it resumes there; a killed one comes back on
+ *  the chat list, which is where the moves that kill it leave it — checking
+ *  the list on the way out is what makes sure the app has written the reads
+ *  the model credits it with before its process goes. */
 import { type Real, at, byName, log, waitForApp } from '../agents';
-import { checkHubs } from '../checks';
+import { checkChatList, checkHubs } from '../checks';
 import type { ExpectedModel } from '../model';
 import { Move, type Moves } from './move';
 
@@ -80,6 +83,7 @@ class StopAppMove extends Move {
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
 		const actor = byName(real, at(m.runningNames(), this.agentIdx));
 		log(`${actor.name}: ${this.toString()}`);
+		if (m.isActive(actor.name)) await checkChatList(m, actor);
 		await actor.agent.stopApp();
 		m.stopApp(actor.name);
 	}
@@ -126,6 +130,7 @@ class RestartMove extends Move {
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
 		const actor = byName(real, at(m.activeNames(), this.agentIdx));
 		log(`${actor.name}: ${this.toString()}`);
+		await checkChatList(m, actor);
 		if (actor.agent.platform === 'desktop') {
 			await actor.agent.restart();
 		} else {

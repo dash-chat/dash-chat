@@ -30,7 +30,6 @@ import {
 	log,
 	newReal,
 	openChatByTitle,
-	openChatPage,
 	parkHub,
 	readNotificationTexts,
 } from './agents';

@@ -10,6 +10,13 @@ const GET_STARTED_CARD_IDS = [
 
 type GetStartedCardId = (typeof GET_STARTED_CARD_IDS)[number];
 
+/** One row of the chat list: what it is titled and what its unread badge
+ *  reads. */
+export interface ChatRow {
+	title: string;
+	unread: number;
+}
+
 /** How many times [`HomePage.openChat`] clicks the row before giving up. Each
  *  attempt costs a full `waitforTimeout`, so this stays small. */
 const OPEN_CHAT_ATTEMPTS = 2;
@@ -55,16 +62,30 @@ export class HomePage extends TestHelper {
 	 * the group's name for a group. Read from the title element alone, since a
 	 * row's summary quotes message text and sender names. */
 	async chatTitles(): Promise<string[]> {
-		return this.agent.execute((sel: string) => {
-			const rows = document.querySelectorAll<HTMLElement>(sel);
-			return Array.from(rows).map(row =>
-				(
-					row.querySelector<HTMLElement>(
-						'.title-truncated-wrap > div:first-child',
-					)?.textContent ?? ''
-				).trim(),
-			);
-		}, tid('all-chats-row'));
+		return (await this.chatRows()).map(row => row.title);
+	}
+
+	/** Every chat in the list by its title, with the number its unread badge
+	 * reads — 0 for a row showing none. */
+	async chatRows(): Promise<ChatRow[]> {
+		return this.agent.execute(
+			(rowSel: string, badgeSel: string) => {
+				const rows = document.querySelectorAll<HTMLElement>(rowSel);
+				return Array.from(rows).map(row => ({
+					title: (
+						row.querySelector<HTMLElement>(
+							'.title-truncated-wrap > div:first-child',
+						)?.textContent ?? ''
+					).trim(),
+					unread: Number(
+						row.querySelector<HTMLElement>(badgeSel)?.textContent?.trim() ??
+							'0',
+					),
+				}));
+			},
+			tid('all-chats-row'),
+			tid('chat-row-unread-badge'),
+		);
 	}
 
 	/** Full visible text of the first chat-list row containing `name`. */
