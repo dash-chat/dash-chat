@@ -193,18 +193,19 @@ async fn hand_over_our_addr(
         handed_over.retain(|id, _| current.contains_key(id));
         // Together, not in turn: a hub that answers a probe but stalls on HTTP
         // would otherwise hold up every hub behind it for two 10s timeouts.
-        let done =
-            futures::future::join_all(still_to_tell(&current, &handed_over).into_iter().map(
-                |(id, addr)| {
+        let done = futures::future::join_all(
+            hubs_missing_our_addr(&current, &handed_over)
+                .into_iter()
+                .map(|(id, addr)| {
                     let node = &node;
                     async move { exchange_addrs(node, &id, addr).await.then_some((id, addr)) }
-                },
-            ))
-            .await;
+                }),
+        )
+        .await;
         // Only what succeeded: a hub wrongly recorded as told would never be
         // told again.
         handed_over.extend(done.into_iter().flatten());
-        let outstanding = !still_to_tell(&current, &handed_over).is_empty();
+        let outstanding = !hubs_missing_our_addr(&current, &handed_over).is_empty();
         tokio::select! {
             stopped = hubs.changed() => {
                 if stopped.is_err() {
@@ -226,7 +227,7 @@ async fn hand_over_our_addr(
 }
 
 /// The hubs that do not hold our address at the place they now answer.
-fn still_to_tell(
+fn hubs_missing_our_addr(
     current: &BTreeMap<String, DiscoveredHub>,
     handed_over: &BTreeMap<String, SocketAddr>,
 ) -> Vec<(String, SocketAddr)> {
