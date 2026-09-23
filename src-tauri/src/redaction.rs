@@ -21,12 +21,19 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // topic ones — `topic=…`, `gossip_topic="…"`, `sync_topic="…"`, which
         // name the conversation a device is in. Any prefix, an `_id` suffix or
         // a plural, and either separator; the quotes are consumed so nothing
-        // survives as `""`. A bracketed list (`node_ids=[a, b]`) is not one of
-        // these forms — nothing logs one, and a full-length id inside one is
-        // caught by the generic hex rule above. `alpn=`/`protocol_id=` are
-        // left: they are the same constant for every user of a build, and say
-        // nothing about who is using it.
+        // survives as `""`. `alpn=`/`protocol_id=` are left: they are the same
+        // constant for every user of a build, and say nothing about who is
+        // using it.
         r#"\b[a-z_]*(node_id|endpoint_id|topic(_id)?)s?["\s]*[=:]\s*"?[0-9a-fA-F]{8,}"?"#,
+        // The peers a gossip overlay joins, which the rule above misses on both
+        // counts — the label is `nodes`, not `node_id`, and the ids sit inside
+        // brackets. Sampling one run's os_log output found this shape 856 times
+        // (`(re-) join gossip overlay topic=… nodes=[…]`, `joined topic …`),
+        // naming who a device is gossiping with. The list is taken whole, so a
+        // second id cannot survive by being unlabelled. An empty `nodes=[]`
+        // stays readable: it says nobody was found, which is what a discovery
+        // failure looks like, and it names no one.
+        r"\b[a-z_]*nodes?=\[[0-9a-fA-F][0-9a-fA-F,\s]*\]",
         // Socket addresses of peers and of this device, as the address book
         // prints them: `Ip(188.84.6.11:49882)`, and bracketed for v6,
         // `Ip([2a02:…:1]:41234)` / `Ip([fe80::…%en0]:…)`. A peer's address says
@@ -146,6 +153,26 @@ mod tests {
         // something starts to.
         let input = "subscribing topic_id=371ac34c42";
         assert_eq!(redact(input), "subscribing [REDACTED]");
+    }
+
+    /// The exact lines one run's os_log produced, as the gossip and discovery
+    /// modules write them at Debug.
+    #[test]
+    fn redacts_the_peers_a_gossip_overlay_names() {
+        let input = "(re-) join gossip overlay topic=d63c2396b0 nodes=[9b26ccaba4]";
+        assert_eq!(
+            redact(input),
+            "(re-) join gossip overlay [REDACTED] [REDACTED]"
+        );
+        let input = "joined topic topic=0083bbda68 nodes=[a64c9c1b7f, 7dd414f859]";
+        assert_eq!(redact(input), "joined topic [REDACTED] [REDACTED]");
+        // Finding nobody is not private, and it is what a discovery failure
+        // looks like.
+        let input = "(re-) join gossip overlay topic=d63c2396b0 nodes=[]";
+        assert_eq!(
+            redact(input),
+            "(re-) join gossip overlay [REDACTED] nodes=[]"
+        );
     }
 
     #[test]

@@ -37,6 +37,7 @@ import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
+import { ASYNC_SCRIPT_TIMEOUT } from '../helpers/timeouts';
 import { ensurePhonesShareALan } from './phone-lan';
 import {
 	APP_PACKAGE,
@@ -332,10 +333,9 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.execute(() => window.__test.enablePreviewFeatures());
 	};
 	agent.disableP2p = async () => {
-		// `set_p2p_enabled` rebuilds the node (pause + resume), a few seconds;
-		// XCUITest defaults the async-script timeout to ~0, so raise it first or
-		// `executeAsync` times out at once (desktop's driver tolerates the default).
-		await b.setTimeout({ script: 60_000 });
+		// `set_p2p_enabled` rebuilds the node (pause + resume), a few seconds,
+		// which the driver's default async-script timeout does not allow for.
+		await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
 		await b.executeAsync((done: () => void) =>
 			window.__test.disableP2p().then(done, done),
 		);

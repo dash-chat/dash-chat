@@ -1,17 +1,10 @@
+import type { RecordedVoiceMessage } from '../../../ui/tests/setup-utils';
 import type { Agent } from '../../setup/setup-agents';
 import { TINY_PNG_BYTES } from '../images';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-import { SYNC_TIMEOUT } from '../timeouts';
+import { ASYNC_SCRIPT_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
 import { RecentPhotosStrip } from './recent-photos-strip';
-
-/** What a real transcode says about itself, for a spec to assert on. */
-export interface VoiceTranscode {
-	isOgg: boolean;
-	opusBytes: number;
-	wavBytes: number;
-	durationMs: number;
-}
 
 /** The shared message composer (text area + attachments) used by both
  * direct and group chats. */
@@ -218,19 +211,20 @@ export class Composer extends TestHelper {
 
 	/** Injects a WAV through the real `transcode_voice_message` command, so the
 	 * draft is genuine Ogg/Opus. Returns facts about the transcode to assert on. */
-	async recordRealVoiceMessage(durationMs = 1000): Promise<VoiceTranscode> {
+	async recordRealVoiceMessage(
+		durationMs = 1000,
+	): Promise<RecordedVoiceMessage> {
 		await this.messageInput.waitForExist();
 		// XCUITest does not await a promise returned from `execute`, so the
 		// transcode's facts come back with every field undefined while the
 		// injection itself still happens. Hand them to `executeAsync`'s callback
-		// instead — and raise its script timeout, which XCUITest defaults to ~0
-		// (same pitfall as `agent.disableP2p`).
-		await this.agent.setTimeout({ script: 60_000 });
+		// instead, with a script timeout the transcode fits in.
+		await this.agent.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
 		// Both paths settle: a rejection is exactly what this helper exists to
 		// report, and left unsettled it surfaces a minute later as a script
 		// timeout naming nothing.
 		const result = await this.agent.executeAsync<
-			VoiceTranscode | { failed: string },
+			RecordedVoiceMessage | { failed: string },
 			[number]
 		>(
 			(ms, done) =>

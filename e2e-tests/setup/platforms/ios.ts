@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
+import { ASYNC_SCRIPT_TIMEOUT } from '../../helpers/timeouts';
 import { echoLinesWithPrefix } from '../agent-logger';
 import {
 	SLOT_PORT_STRIDE,
@@ -59,10 +60,6 @@ const INTERNET_PROBE_ROUNDS = 2;
 
 /** Between probes, so a retry outlasts whatever made the last one fail. */
 const INTERNET_PROBE_GAP = 2_000;
-
-/** What `agent.disableP2p` raises the async-script timeout to; matched so a
- *  probe never lowers it under another caller. */
-const SCRIPT_TIMEOUT = 60_000;
 
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
 // Fixed home for the .ipa the sessions install, copied here by the
@@ -311,13 +308,11 @@ export async function clearIosAppData(b: WebdriverIO.Browser): Promise<void> {
  *
  *  Brings the app to the foreground to ask, and leaves it there — every caller
  *  wipes and relaunches it next, so what it comes up on does not matter. The
- *  script timeout is raised to match `agent.disableP2p` and left raised:
- *  XCUITest's default is ~0, which is no state worth restoring, and lowering
- *  what another caller raised would be worse. */
+ *  script timeout is raised and left raised: the driver's default is no state
+ *  worth restoring, and lowering what another caller raised would be worse. */
 export async function iosHasInternet(b: WebdriverIO.Browser): Promise<boolean> {
 	await attachToIosApp(b);
-	// XCUITest defaults the async-script timeout to ~0 (see `agent.disableP2p`).
-	await b.setTimeout({ script: SCRIPT_TIMEOUT });
+	await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
 	const probes = Array.from(
 		{ length: INTERNET_PROBE_ROUNDS },
 		() => INTERNET_PROBES,
@@ -574,8 +569,6 @@ export class IosPlatform implements AgentPlatform {
 		// host still holds before each session.
 		process.env._WDIO_IOS_HOST_IP = hostIp;
 		const bakedEnv: Record<string, string> = {
-			E2E_NETWORK_ID,
-			E2E_RELAY_URL,
 			MAILBOX_URL: `http://${hostIp}:${mailboxPort}`,
 		};
 		if (pushPort !== null) {
@@ -592,10 +585,17 @@ export class IosPlatform implements AgentPlatform {
 		// remote deployment it is that deployment's own mailbox and push server —
 		// they must match, since the mailbox notifies its own push server and the
 		// device registers its token with the one it was built for.
-		const bakedEnv =
-			ctx.mailboxPort === null
+		// The network id and relay are the run's whichever mailbox it is, as on
+		// android and desktop: they decide who the app can find, not where the
+		// mailbox is. Both are `MANAGED` in sync-xcode-env, so leaving them out
+		// of the remote branch would also strip what a local run wrote.
+		const bakedEnv = {
+			E2E_NETWORK_ID,
+			E2E_RELAY_URL,
+			...(ctx.mailboxPort === null
 				? remoteBakedEnv()
-				: this.localBakedEnv(ctx.mailboxPort, ctx.pushPort);
+				: this.localBakedEnv(ctx.mailboxPort, ctx.pushPort)),
+		};
 		syncXcodeEnv(bakedEnv);
 		// The task's last step (scripts/export-session-ipa.ts) copies the built
 		// .ipa to SESSION_IPA, so turbo snapshots and restores the final artifact.
