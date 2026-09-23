@@ -1,5 +1,6 @@
-//! The LAN router's wiring into `Node`. The gossip-level tests below need
-//! real mDNS and are ignored; the flag-off test runs everywhere.
+//! The LAN router's wiring into `Node`, and the localhost proof that it
+//! replicates on its own (see `mod localhost`). Only `mod mdns` needs real
+//! multicast and is ignored.
 #![cfg(feature = "lan-router")]
 
 use dashchat_node::{NodeConfig, testing::TestNode};
@@ -57,19 +58,16 @@ fn no_p2p_turns_the_router_off() {
     assert!(!config.no_p2p().enable_lan_router);
 }
 
-/// Two real nodes on this host's LAN over mDNS, no mailbox, no relay
-/// (spec §6). Ignored: they bind real sockets and multicast.
-mod lan {
-    use std::time::{Duration, Instant};
+/// Router-only replication on localhost (dash-router spec
+/// 2026-09-23-lan-router-e2e-proof.md). No mDNS, no relay, no mailbox:
+/// nodes reach only the peers a test introduces, and p2panda's native sync
+/// is taken away with the testing switches, so convergence here is the
+/// router's doing.
+mod localhost {
+    use std::time::Duration;
 
-    use dashchat_node::testing::{PollConfig, TestNode};
-    use dashchat_node::{AddContactResult, NodeConfig};
-    use p2panda::network::MdnsDiscoveryMode;
-
-    /// Held for the whole of each LAN test. Run concurrently, native sync
-    /// was observed to win every op and leave the router's delivered
-    /// count at zero.
-    static LAN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    use dashchat_node::testing::{PollConfig, TestNode, introduce_peers, teach_peers};
+    use dashchat_node::{AddContactResult, NodeConfig, TopicId};
 
     /// `RUST_LOG` directives, if any, go to the test's tracing output.
     fn tracing() {
@@ -77,21 +75,12 @@ mod lan {
         dashchat_node::testing::setup_tracing(&[&filter], true);
     }
 
-    fn lan_config(router: bool) -> NodeConfig {
+    /// Router on; mDNS off, no relay, no mailbox. One random network id per
+    /// test, shared by cloning, so nothing outside the test is ever a peer.
+    fn router_config() -> NodeConfig {
         let mut c = NodeConfig::testing().random_network_id();
-        c.mdns_mode = MdnsDiscoveryMode::Active;
-        c.enable_lan_router = router;
+        c.enable_lan_router = true;
         c
-    }
-
-    /// Two nodes share one random network id so they only ever see each
-    /// other, find each other over mDNS, and have neither mailbox nor
-    /// relay. Cloning one config value keeps the network id equal.
-    async fn pair(router: bool) -> (TestNode, TestNode) {
-        let config = lan_config(router);
-        let a = TestNode::new(config.clone(), "a").await;
-        let b = TestNode::new(config, "b").await;
-        (a, b)
     }
 
     fn poll() -> PollConfig {
@@ -101,22 +90,215 @@ mod lan {
         }
     }
 
-    /// Spec §6: a contact request from an author the owner has never met
-    /// (the advertised inbox) and the subsequent direct-chat message both
-    /// arrive with no mailbox in the picture, with the router on. Asserts
-    /// convergence and prints each node's router delivered count.
+    async fn inbox_topics(node: &TestNode) -> Vec<TopicId> {
+        node.get_active_inbox_topics()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|t| *t.topic)
+            .collect()
+    }
+
+    /// Spec test 2: with native sync blocked both ways, the contact
+    /// request, the accept and a direct-chat message still converge, so
+    /// the router carried them.
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "binds real sockets and mDNS; run manually with --ignored --nocapture to see the router's delivered counts: cargo test -p dashchat-node --features lan-router --test lan_router -- --ignored --nocapture; the two LAN tests serialise on a mutex"]
-    async fn contact_request_and_message_replicate_over_lan() {
-        let _serial = LAN.lock().await;
+    async fn pair_replicates_over_the_router_with_native_sync_off() {
         tracing();
-        let start = Instant::now();
-        let (a, b) = pair(true).await;
+        let config = router_config();
+        let a = TestNode::new(config.clone(), "a").await;
+        let b = TestNode::new(config, "b").await;
+        a.block_native_sync_with(*b.device_id()).await.unwrap();
+        b.block_native_sync_with(*a.device_id()).await.unwrap();
+        introduce_peers([&a, &b]).await.unwrap();
+
         let qr = a.create_add_contact_qr_code().await.unwrap();
         let AddContactResult::NewRequest(direct_chat) = b.add_contact(qr).await.unwrap() else {
             panic!("expected a fresh request");
         };
-        // The request lands in A's advertised inbox: A learns B's device id.
+        let topics = inbox_topics(&a).await;
+        poll()
+            .consistency([&a, &b], topics.iter())
+            .await
+            .expect("the inbox converges through the router");
+        a.accept_contact(b.agent_id()).await.unwrap();
+        b.send_message(direct_chat, "hello over the router", None, None)
+            .await
+            .unwrap();
+        poll()
+            .consistency([&a, &b], [&*direct_chat])
+            .await
+            .expect("the direct chat converges through the router");
+
+        assert!(
+            a.lan_router_delivered().unwrap() > 0,
+            "a received via the router"
+        );
+        assert!(
+            b.lan_router_delivered().unwrap() > 0,
+            "b received via the router"
+        );
+        a.shutdown().await;
+        b.shutdown().await;
+    }
+
+    /// Spec test 3: a and c can never connect (global block both ways) and
+    /// only b knows both. b never subscribes to their topics, delivers
+    /// nothing to its own p2panda store, and holds their chat in its relay.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_through_a_node_that_never_subscribes() {
+        tracing();
+        let config = router_config();
+        let a = TestNode::new(config.clone(), "a").await;
+        let b = TestNode::new(config.clone(), "b").await;
+        let c = TestNode::new(config, "c").await;
+        a.block_peer(*c.device_id()).await.unwrap();
+        c.block_peer(*a.device_id()).await.unwrap();
+        teach_peers(&a, [&b]).await.unwrap();
+        teach_peers(&b, [&a, &c]).await.unwrap();
+        teach_peers(&c, [&b]).await.unwrap();
+
+        let qr = a.create_add_contact_qr_code().await.unwrap();
+        let AddContactResult::NewRequest(direct_chat) = c.add_contact(qr).await.unwrap() else {
+            panic!("expected a fresh request");
+        };
+        let topics = inbox_topics(&a).await;
+        poll()
+            .consistency([&a, &c], topics.iter())
+            .await
+            .expect("the inbox converges through b");
+        a.accept_contact(c.agent_id()).await.unwrap();
+        c.send_message(direct_chat, "hello via b", None, None)
+            .await
+            .unwrap();
+        poll()
+            .consistency([&a, &c], [&*direct_chat])
+            .await
+            .expect("the direct chat converges through b");
+
+        assert!(
+            b.get_contacts().await.unwrap().is_empty(),
+            "b never took part"
+        );
+        assert_eq!(
+            b.lan_router_delivered(),
+            Some(0),
+            "b relayed without delivering"
+        );
+        assert_eq!(
+            b.lan_router_relay_holds(*direct_chat).await.unwrap(),
+            Some(true),
+            "b's relay holds the chat"
+        );
+        assert!(a.lan_router_delivered().unwrap() > 0);
+        assert!(c.lan_router_delivered().unwrap() > 0);
+        a.shutdown().await;
+        b.shutdown().await;
+        c.shutdown().await;
+    }
+
+    /// Spec test 4: a relay serves an owner who was off the LAN when the op
+    /// was sent. a never meets c; c is gone before a returns; b never
+    /// subscribes to a's inbox. What a receives can only have come from
+    /// b's relay store (dash-router spec 2026-09-22 §1, "a relay that holds
+    /// it can serve it even if the owner was off the LAN").
+    #[tokio::test(flavor = "multi_thread")]
+    async fn store_and_forward_for_an_owner_who_was_away() {
+        tracing();
+        let config = router_config();
+        let a = TestNode::new(config.clone(), "a").await;
+        let qr = a.create_add_contact_qr_code().await.unwrap();
+        let topics = inbox_topics(&a).await;
+        // a leaves before anyone else exists.
+        let a_dir = a.shutdown().await;
+
+        let b = TestNode::new(config.clone(), "b").await;
+        let c = TestNode::new(config.clone(), "c").await;
+        introduce_peers([&b, &c]).await.unwrap();
+        let c_agent = c.agent_id();
+        let AddContactResult::NewRequest(_) = c.add_contact(qr).await.unwrap() else {
+            panic!("expected a fresh request");
+        };
+        // Review focus 5: wait on the relay, not on a sleep.
+        poll()
+            .wait_for(|| async {
+                for topic in &topics {
+                    if b.lan_router_relay_holds(*topic).await? == Some(true) {
+                        return Ok(());
+                    }
+                }
+                Err(anyhow::anyhow!(
+                    "b's relay holds nothing on a's inbox topics yet"
+                ))
+            })
+            .await
+            .expect("b's relay holds the request for an owner it never met");
+        c.shutdown().await;
+        assert!(
+            b.get_contacts().await.unwrap().is_empty(),
+            "b never took part"
+        );
+        assert_eq!(
+            b.lan_router_delivered(),
+            Some(0),
+            "b holds it in the relay only"
+        );
+
+        // a returns, knowing only b.
+        let a = TestNode::new_at_path(config, "a", a_dir).await;
+        introduce_peers([&a, &b]).await.unwrap();
+        let requester = a
+            .behavior()
+            .accept_next_contact()
+            .await
+            .expect("c's request reaches a from b's relay");
+        assert_eq!(requester, c_agent);
+        assert!(
+            a.lan_router_delivered().unwrap() > 0,
+            "a received via the router"
+        );
+        assert_eq!(b.lan_router_delivered(), Some(0));
+        a.shutdown().await;
+        b.shutdown().await;
+    }
+}
+
+/// Spec test 5: the one test that exercises real multicast. Ignored: it
+/// binds real sockets and mDNS. Native sync races the router here, so it
+/// reports the delivered counts; the localhost tests above assert them.
+mod mdns {
+    use std::time::{Duration, Instant};
+
+    use dashchat_node::testing::{PollConfig, TestNode};
+    use dashchat_node::{AddContactResult, NodeConfig};
+    use p2panda::network::MdnsDiscoveryMode;
+
+    fn tracing() {
+        let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "error".into());
+        dashchat_node::testing::setup_tracing(&[&filter], true);
+    }
+
+    fn poll() -> PollConfig {
+        PollConfig {
+            poll_interval: Duration::from_millis(500),
+            poll_timeout: Duration::from_secs(60),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "binds real sockets and mDNS; run manually: cargo test -p dashchat-node --features lan-router --test lan_router -- --ignored --nocapture"]
+    async fn contact_request_and_message_replicate_over_lan() {
+        tracing();
+        let start = Instant::now();
+        let mut config = NodeConfig::testing().random_network_id();
+        config.mdns_mode = MdnsDiscoveryMode::Active;
+        config.enable_lan_router = true;
+        let a = TestNode::new(config.clone(), "a").await;
+        let b = TestNode::new(config, "b").await;
+        let qr = a.create_add_contact_qr_code().await.unwrap();
+        let AddContactResult::NewRequest(direct_chat) = b.add_contact(qr).await.unwrap() else {
+            panic!("expected a fresh request");
+        };
         let inbox_topics: Vec<_> = a
             .get_active_inbox_topics()
             .await
@@ -129,7 +311,6 @@ mod lan {
             .await
             .expect("inbox converges over LAN");
         println!("### {:.1?} inbox converged", start.elapsed());
-        // A accepts; B's message on the direct chat reaches A.
         a.accept_contact(b.agent_id()).await.unwrap();
         b.send_message(direct_chat, "hello over the LAN", None, None)
             .await
@@ -139,50 +320,10 @@ mod lan {
             .await
             .expect("direct chat converges over LAN");
         println!("### {:.1?} direct chat converged", start.elapsed());
-        // The router and p2panda's native sync race for every op; the
-        // router's delivered count is reported, not asserted. Proving
-        // router-only delivery needs a test-only switch that disables native
-        // log sync, which is a production change deferred to the maintainers.
         println!(
             "### router delivered (a, b) = ({:?}, {:?})",
             a.lan_router_delivered(),
             b.lan_router_delivered()
-        );
-        a.shutdown().await;
-        b.shutdown().await;
-    }
-
-    /// Control, router off. p2panda's native log sync over mDNS already
-    /// converges the contact request on its own (observed: ~2 s), so a
-    /// "must not converge" control is false on this stack. The control is
-    /// instead that the same flow converges with no router at all, which
-    /// is why the test above reports the router's delivered count rather
-    /// than reading convergence as proof the router carried anything.
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "binds real sockets and mDNS; see above; the two LAN tests serialise on a mutex"]
-    async fn without_the_router_native_sync_still_converges() {
-        let _serial = LAN.lock().await;
-        tracing();
-        let start = Instant::now();
-        let (a, b) = pair(false).await;
-        assert_eq!(a.lan_router_delivered(), None, "no router on a");
-        assert_eq!(b.lan_router_delivered(), None, "no router on b");
-        let qr = a.create_add_contact_qr_code().await.unwrap();
-        let _ = b.add_contact(qr).await.unwrap();
-        let inbox_topics: Vec<_> = a
-            .get_active_inbox_topics()
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|t| *t.topic)
-            .collect();
-        poll()
-            .consistency([&a, &b], inbox_topics.iter())
-            .await
-            .expect("native sync converges the inbox");
-        println!(
-            "### {:.1?} inbox converged without the router",
-            start.elapsed()
         );
         a.shutdown().await;
         b.shutdown().await;
