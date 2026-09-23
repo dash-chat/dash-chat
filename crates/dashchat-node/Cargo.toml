@@ -14,6 +14,7 @@ serde_repr = "0.1"
 mailbox-client = { workspace = true }
 mailbox-server = { workspace = true }
 reporting = { workspace = true }
+dash-router = { workspace = true, optional = true }
 
 p2panda = { workspace = true, features = ["test_utils"] }
 p2panda-auth = { workspace = true }
@@ -69,3 +70,4 @@ default = ["instrument"]
 instrument = []
 testing = ["tempfile", "nanoid", "p2panda-store/test_utils"]
 p2p = []
+lan-router = ["dep:dash-router"]

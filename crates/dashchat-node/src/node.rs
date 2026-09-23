@@ -116,6 +116,10 @@ pub struct NodeConfig {
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
+    /// Whether to run the Dash Router LAN gossip shell alongside p2panda
+    /// sync (see `lan_router.rs`). Requires the `lan-router` cargo feature;
+    /// without it this flag is ignored with a warning. Off by default.
+    pub enable_lan_router: bool,
 }
 
 impl NodeConfig {
@@ -165,6 +169,7 @@ impl NodeConfig {
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
+            enable_lan_router: false,
         }
     }
 
@@ -191,6 +196,7 @@ impl Default for NodeConfig {
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
+            enable_lan_router: false,
         }
     }
 }

@@ -13,6 +13,7 @@ mod unfetched_blobs;
 pub mod util;
 
 mod id;
+pub mod lan_router;
 pub mod mailbox;
 
 pub mod compat;

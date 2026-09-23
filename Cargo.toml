@@ -54,6 +54,12 @@ p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashc
 p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
 p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
 
+# Dash Router LAN gossip shell. Its p2panda-core/p2panda-net come from
+# crates.io and are patched below onto the same fork the rest of the
+# workspace uses, so there is exactly one VerifyingKey type.
+# Dev-time path (the lan-router worktree); switched to a git rev before merge.
+dash-router = { path = "../dash-router-lan-router/crates/dash-router", features = ["p2panda"] }
+
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [
   "tls-ring",
@@ -61,6 +67,9 @@ iroh = { version = "1.0.0", default-features = false, features = [
 iroh-blobs = "0.103.0"
 
 [patch.crates-io]
+# dash-router depends on registry p2panda-core/p2panda-net 0.7; route them to the fork.
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
 iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
 # Fork of iroh main (1.2.0 + PR #4512, the relay-backpressure fix) carrying the
 # iroh#4390 pending_open_paths fix (dash-chat/iroh branch dashchat)
@@ -90,3 +99,8 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 # p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+
+# Dev-time: dash-router pins polestar to git, but the APIs it needs are only
+# in the local checkout so far. Remove once polestar is pushed and pinned.
+[patch."https://github.com/maackle/polestar-rs.git"]
+polestar = { path = "/home/michael/proj/polestar-rs/polestar" }
