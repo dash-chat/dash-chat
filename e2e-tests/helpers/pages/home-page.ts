@@ -44,9 +44,14 @@ export class HomePage extends TestHelper {
 		);
 	}
 
-	/** Chat-list entry whose link text contains `contactName`. */
+	/** Chat-list entry whose link text contains `contactName`. Queried from the
+	 * document rather than off the list element: the list is absent until the
+	 * store hydrates, and a child query on a missing parent throws where every
+	 * caller here is waiting for the row to turn up. */
 	chatListItem(contactName: string) {
-		return this.chatList.$(`a*=${contactName}`);
+		return this.agent.$(
+			`//*[@data-testid="all-chats-list"]//a[contains(., "${contactName}")]`,
+		);
 	}
 
 	hasChatListItem(contactName: string) {

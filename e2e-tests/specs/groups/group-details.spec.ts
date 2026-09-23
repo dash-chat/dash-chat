@@ -63,7 +63,7 @@ describe('Group details spec', () => {
 
 		await agent1.groupInfoEditPage.editPhotoButton.click();
 		await agent1.editPhotoPage.ready();
-		await agent1.editPhotoPage.pickPhoto(PHOTO);
+		await agent1.editPhotoPage.setPhoto(PHOTO);
 		const savedPhoto = await agent1.editPhotoPage.avatar.imageSrc();
 		await agent1.editPhotoPage.save();
 		await agent1.groupInfoEditPage.ready();

@@ -217,8 +217,22 @@ export class Composer extends TestHelper {
 		durationMs: number;
 	}> {
 		await this.messageInput.waitForExist();
-		return this.agent.execute(
-			(ms: number) => window.__test.injectRecordedVoiceMessage(ms),
+		// XCUITest does not await a promise returned from `execute`, so the
+		// transcode's facts come back with every field undefined while the
+		// injection itself still happens. Hand them to `executeAsync`'s callback
+		// instead — and raise its script timeout, which XCUITest defaults to ~0
+		// (same pitfall as `agent.disableP2p`).
+		await this.agent.setTimeout({ script: 60_000 });
+		return this.agent.executeAsync(
+			(
+				ms: number,
+				done: (result: {
+					isOgg: boolean;
+					opusBytes: number;
+					wavBytes: number;
+					durationMs: number;
+				}) => void,
+			) => void window.__test.injectRecordedVoiceMessage(ms).then(done),
 			durationMs,
 		);
 	}

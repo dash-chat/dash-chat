@@ -9,6 +9,10 @@ import {
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
+/** Long-presses to try before letting the menu's own wait report the failure.
+ *  Each costs a settle window, so this stays small. */
+const OPEN_ACTIONS_ATTEMPTS = 3;
+
 export type MessageStatus = 'unsent' | 'sending' | 'mailbox' | 'delivered';
 
 export type SystemMessageKind =
@@ -675,10 +679,24 @@ export class Message extends TestHelper {
 	 * at the very top opens past the viewport's edge. */
 	async openActions() {
 		await this.wrapper.scrollIntoView({ block: 'center' });
-		if (await this.isMobileBuild()) {
-			await this.longPressBubble();
-		} else {
+		if (!(await this.isMobileBuild())) {
 			await this.clickHoverButton('message-hover-menu');
+			await this.actionsMenu.waitForDisplayed();
+			return;
+		}
+		// The app arms the long-press on touchstart and loses it if the bubble's
+		// node is replaced before the hold is up, which any message arriving
+		// meanwhile does. Repeat the gesture rather than spend the whole wait on
+		// one that was cancelled.
+		for (let attempt = 1; attempt <= OPEN_ACTIONS_ATTEMPTS; attempt++) {
+			await this.longPressBubble();
+			const opened = await this.actionsMenu
+				.waitForDisplayed({ timeout: RENDER_SETTLE_WINDOW })
+				.then(
+					() => true,
+					() => false,
+				);
+			if (opened) return;
 		}
 		await this.actionsMenu.waitForDisplayed();
 	}
