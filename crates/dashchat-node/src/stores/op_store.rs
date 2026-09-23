@@ -147,6 +147,15 @@ impl OpStore {
             .map_err(|err| anyhow::anyhow!("failed to get operation for {hash:?}: {err}"))
     }
 
+    /// Whether an operation is stored, with or without its body.
+    #[cfg(feature = "lan-router")]
+    pub(crate) async fn has_operation(&self, hash: &Hash) -> anyhow::Result<bool> {
+        use p2panda_store::operations::OperationStore;
+        OperationStore::<Operation, Hash>::has_operation(&self.store, hash)
+            .await
+            .map_err(|err| anyhow::anyhow!("failed to look up operation {hash:?}: {err}"))
+    }
+
     #[deprecated = "will be replace by proper use of p2panda-streams"]
     pub fn get_all_operations_not_fully_sorted(
         &self,

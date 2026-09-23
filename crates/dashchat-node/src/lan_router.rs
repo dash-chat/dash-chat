@@ -159,6 +159,7 @@ mod imp {
         topics: Arc<RwLock<HashMap<LogId, (TopicId, mpsc::Sender<Operation>)>>>,
         hints: broadcast::Sender<BTreeSet<RouterLog>>,
         rejected: Arc<AtomicU64>,
+        forwarded: Arc<AtomicU64>,
     }
 
     impl OpStoreExt {
@@ -168,6 +169,7 @@ mod imp {
                 topics: Default::default(),
                 hints: broadcast::channel(64).0,
                 rejected: Default::default(),
+                forwarded: Default::default(),
             }
         }
 
@@ -207,6 +209,11 @@ mod imp {
         #[cfg(test)]
         pub(crate) fn rejected(&self) -> u64 {
             self.rejected.load(Ordering::Relaxed)
+        }
+
+        /// Ops ingested that were not in the op store yet, handed to p2panda.
+        pub(crate) fn forwarded(&self) -> u64 {
+            self.forwarded.load(Ordering::Relaxed)
         }
 
         fn topic_of(&self, log_id: &LogId) -> Option<TopicId> {
@@ -335,11 +342,17 @@ mod imp {
                     header.extensions.log_id() == log.log_id(),
                     "header log id != log"
                 );
+                let hash = header.hash();
+                // Held state is acked-only, so the router treats ops p2panda
+                // stored but has not acked yet as novel and ingests them again.
+                if self.store.has_operation(&hash).await? {
+                    return Ok(());
+                }
                 let tx = self
                     .import_tx_of(&log.log_id())
                     .ok_or_else(|| anyhow!("no topic for log {log}"))?;
                 let operation = Operation {
-                    hash: header.hash(),
+                    hash,
                     header,
                     body: op.payload.as_deref().map(Body::from_bytes),
                 };
@@ -350,6 +363,7 @@ mod imp {
                 tx.send(operation)
                     .await
                     .map_err(|_| anyhow!("import channel closed"))?;
+                self.forwarded.fetch_add(1, Ordering::Relaxed);
                 Ok(())
             }
             .await;
@@ -420,7 +434,11 @@ mod imp {
     /// a LAN in under a minute. Revisit with an estimator for `n`.
     const WANT_TTL: Duration = Duration::from_secs(2);
     const HAVE_TTL: Duration = Duration::from_secs(2);
-    const RELAY_CAP: Units = 1 << 20; // ~512k payload-bearing ops
+    /// A relay cache sized for a phone: a payload-bearing op costs two
+    /// units, so at worst ~16k ops × ~4 KB ≈ 64 MB of unvalidated peer
+    /// bytes. `lan_router.redb` never shrinks and persists after the flag
+    /// is turned off.
+    const RELAY_CAP: Units = 1 << 15;
     const EVICT_AT: f64 = 0.75;
     const MAINTAIN_EVERY: Duration = Duration::from_secs(30);
     const NETWORK_SIZE_ESTIMATE: usize = 16;
@@ -433,7 +451,6 @@ mod imp {
         actor_tx: mpsc::Sender<Command>,
         node_task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
         events_task: Mutex<Option<JoinHandle<()>>>,
-        delivered: Arc<AtomicU64>,
     }
 
     impl LanRouter {
@@ -481,13 +498,10 @@ mod imp {
                 transport,
                 intervals,
             );
-            let delivered = Arc::new(AtomicU64::new(0));
-            let delivered_in_task = delivered.clone();
             let events_task = tokio::spawn(async move {
                 while let Some(event) = events.recv().await {
                     match event {
                         RouterEvent::Delivered(log, seq) => {
-                            delivered_in_task.fetch_add(1, Ordering::Relaxed);
                             tracing::debug!(%log, seq, "lan router delivered an op")
                         }
                         RouterEvent::StorageError(e) => {
@@ -504,7 +518,6 @@ mod imp {
                 actor_tx: params.actor_tx,
                 node_task: Mutex::new(Some(node_task)),
                 events_task: Mutex::new(Some(events_task)),
-                delivered,
             })))
         }
 
@@ -544,11 +557,13 @@ mod imp {
             self.handle.subscribe(LogId::from_topic(topic)).await
         }
 
-        /// How many ops the router has delivered into the op store: novel
-        /// subscribed data that landed (`RouterEvent::Delivered`). Ops that
-        /// p2panda's own sync brought first are not counted.
+        /// How many ops the router ingested that were not already in the
+        /// op store, handed to p2panda's import. Not the count of
+        /// `RouterEvent::Delivered`, which also fires for ops native sync
+        /// stored but has not acked. An op native sync stores at the same
+        /// moment can still be counted.
         pub fn delivered_count(&self) -> u64 {
-            self.delivered.load(Ordering::Relaxed)
+            self.ext.forwarded()
         }
 
         pub async fn unsubscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
@@ -839,6 +854,25 @@ mod imp {
             let got = f.import_rx.recv().await.unwrap();
             assert_eq!(got.hash, op.hash);
             assert_eq!(got.body, op.body);
+            assert_eq!(f.ext.forwarded(), 1);
+        }
+
+        /// An op p2panda has stored but not yet acked is novel to the
+        /// router; ingesting it again is neither a forward nor a rejection.
+        #[tokio::test]
+        async fn ingest_skips_ops_already_stored() {
+            let mut f = fixture(None).await;
+            let author = DeviceId::from(f.key.verifying_key());
+            let stored = f.ext.store.get_log(&author, &f.log_id, None).await.unwrap();
+            let log = RouterLog::new(f.log_id, f.key.verifying_key());
+            let wire = dash_router::core::Op {
+                header: stored[1].header.encode(),
+                payload: stored[1].body.as_ref().map(|b| b.to_bytes()),
+            };
+            f.ext.ingest(log, 1, wire).await.unwrap();
+            assert!(f.import_rx.try_recv().is_err(), "nothing forwarded");
+            assert_eq!(f.ext.rejected(), 0);
+            assert_eq!(f.ext.forwarded(), 0);
         }
 
         /// Review focus 2.

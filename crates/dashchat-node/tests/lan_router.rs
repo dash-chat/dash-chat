@@ -67,7 +67,7 @@ mod lan {
     use p2panda::network::MdnsDiscoveryMode;
 
     /// Held for the whole of each LAN test. Run concurrently, native sync
-    /// was observed to win every op and leave the router's `Delivered`
+    /// was observed to win every op and leave the router's delivered
     /// count at zero; serial runs did not show that.
     static LAN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -140,7 +140,9 @@ mod lan {
         println!("### {:.1?} direct chat converged", start.elapsed());
         // p2panda's own log sync runs over the same mDNS link (see the
         // control below), so convergence alone does not prove the router
-        // carried anything: its `Delivered` count does.
+        // carried anything. Its delivered count does: ops it handed to
+        // p2panda that the store did not have yet (barring a same-instant
+        // race with native sync storing that op).
         println!(
             "### router delivered (a, b) = ({:?}, {:?})",
             a.lan_router_delivered(),
@@ -156,7 +158,7 @@ mod lan {
     /// converges the contact request on its own (observed: ~2 s), so a
     /// "must not converge" control is false on this stack. The control is
     /// instead that the same flow converges with no router at all, which
-    /// is why the test above checks the router's `Delivered` count rather
+    /// is why the test above checks the router's delivered count rather
     /// than convergence alone.
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "binds real sockets and mDNS; see above; the two LAN tests serialise on a mutex"]
