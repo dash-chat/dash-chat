@@ -33,6 +33,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..', '..');
 
 export const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
+/** What a reachability probe gets before the network counts as having no
+ *  upstream. A captive portal answers fast or not at all. */
+const INTERNET_PROBE_TIMEOUT = 5_000;
+
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
 // Fixed home for the .ipa the sessions install, copied here by the
 // e2e:build:ios task's export-session-ipa.ts step. The capabilities
@@ -256,8 +260,41 @@ export async function resetIosAppState(b: WebdriverIO.Browser): Promise<void> {
 export async function wipeIosAppAfterSpec(
 	b: WebdriverIO.Browser,
 ): Promise<void> {
+	await clearIosAppData(b);
+}
+
+/** Leave the app installed with no data and not running: the iOS answer to
+ *  android's `mobile: clearApp`. The wipe is the app's own delete_account, so
+ *  the app is brought up to run it and exits on its own afterwards. */
+export async function clearIosAppData(b: WebdriverIO.Browser): Promise<void> {
 	await attachToIosApp(b);
 	await wipeIosAppData(b);
+}
+
+/** Whether the phone can reach the internet, asked of the app's own webview:
+ *  iOS has no adb-style shell to run a probe in, and the answer has to come
+ *  from the phone, not from the host, which is on a different network. Brings
+ *  the app up to ask — the callers wipe and relaunch it straight after. */
+export async function iosHasInternet(b: WebdriverIO.Browser): Promise<boolean> {
+	await attachToIosApp(b);
+	// XCUITest defaults the async-script timeout to ~0 (see `agent.disableP2p`).
+	await b.setTimeout({ script: INTERNET_PROBE_TIMEOUT + 10_000 });
+	return b.executeAsync((ms: number, done: (reachable: boolean) => void) => {
+		const timer = setTimeout(() => done(false), ms);
+		const settle = (reachable: boolean) => {
+			clearTimeout(timer);
+			done(reachable);
+		};
+		// `no-cors`: the probe only asks whether the request got out, and an
+		// opaque response answers that without the host having to allow us.
+		fetch('https://captive.apple.com/hotspot-detect.html', {
+			mode: 'no-cors',
+			cache: 'no-store',
+		}).then(
+			() => settle(true),
+			() => settle(false),
+		);
+	}, INTERNET_PROBE_TIMEOUT);
 }
 
 /** Run the app's own delete_account, which wipes the data dir and exits, and

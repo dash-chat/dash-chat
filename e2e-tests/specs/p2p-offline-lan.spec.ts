@@ -5,9 +5,10 @@
  * mailbox can carry anything. Contact exchange, text messages and media can
  * only cross over a direct connection to a peer discovered over mDNS.
  *
- * Needs two physical Android phones without mobile data, and a network in
+ * Needs two physical phones without mobile data, and a network in
  * E2E_WIFI_NETWORKS other than the one the phones are on; skips otherwise:
  *   PLATFORMS=android,android just e2e run p2p-offline-lan
+ *   PLATFORMS=ios,ios just e2e run p2p-offline-lan
  */
 import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import {
@@ -42,9 +43,10 @@ describe('P2P sync on a LAN with no internet', () => {
 	before(async function () {
 		if (isRemoteMailbox()) this.skip();
 		[alice, bob] = await setupAgents(this, [
-			{ platform: 'android' },
-			{ platform: 'android' },
+			{ platform: 'any' },
+			{ platform: 'any' },
 		]);
+		if (alice.platform === 'desktop' || bob.platform === 'desktop') this.skip();
 		if (alice.platform === 'android-emulator') this.skip();
 		const home = (await alice.wifiInfo()).ssid;
 		const network = wifiNetworks().find(n => n.ssid !== home);

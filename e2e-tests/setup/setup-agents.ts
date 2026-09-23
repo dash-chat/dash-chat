@@ -61,6 +61,8 @@ import {
 } from './platforms/desktop';
 import {
 	APP_STATE_NOT_RUNNING,
+	clearIosAppData,
+	iosHasInternet,
 	killIosPushExtension,
 	resetIosAppState,
 } from './platforms/ios';
@@ -435,10 +437,17 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await iosWifiSsid(b)
 			: androidWifiSsid(deviceUdid(b));
-	agent.hasInternet = async () => androidHasInternet(wifiUdid(agent, b));
+	agent.hasInternet = async () =>
+		agent.platform === 'ios'
+			? await iosHasInternet(b)
+			: androidHasInternet(wifiUdid(agent, b));
 	agent.clearAppData = async () => {
+		if (agent.platform === 'ios') {
+			await clearIosAppData(b);
+			return;
+		}
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
-			throw new Error(`clearAppData needs Android, got ${agent.platform}`);
+			throw new Error(`clearAppData needs a phone, got ${agent.platform}`);
 		}
 		await b.execute('mobile: clearApp', { appId: APP_PACKAGE });
 		await b.execute('mobile: changePermissions', {
