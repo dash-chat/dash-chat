@@ -58,13 +58,27 @@
 		}
 	}
 
+	let heightAnimation: Animation | undefined;
+
 	// Follow every value change, not just typing: the composer also writes it
 	// programmatically (starting/cancelling an edit, sending, picking an emoji),
 	// and a stale inline height leaves the pill stuck at its previous size.
 	$effect(() => {
 		value;
+		const before = textarea.getBoundingClientRect().height;
 		textarea.style.height = 'auto';
 		textarea.style.height = textarea.scrollHeight + 'px';
+		if (theme !== 'ios') return;
+		const after = textarea.getBoundingClientRect().height;
+		if (before === after) return;
+		// A CSS transition can't do this: resetting to `auto` to measure lands the
+		// element on the new height before the final write, so there is nothing
+		// left to interpolate. Replay it from the old height instead.
+		heightAnimation?.cancel();
+		heightAnimation = textarea.animate(
+			[{ height: `${before}px` }, { height: `${after}px` }],
+			{ duration: 250, easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)' },
+		);
 	});
 </script>
 
@@ -77,7 +91,7 @@
 >
 	{@render banner?.()}
 
-	<div class="flex w-full items-end" class:pe-1={after}>
+	<div class="relative flex w-full items-end" class:pe-1={after}>
 		{@render before?.()}
 
 		<textarea

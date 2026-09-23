@@ -38,7 +38,7 @@
 	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import StandaloneAttachButton from '$lib/components/messages/composer/StandaloneAttachButton.svelte';
-	import InlineAttachButton from '$lib/components/messages/composer/InlineAttachButton.svelte';
+	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
 	import CameraButton from '$lib/components/messages/composer/CameraButton.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
@@ -337,23 +337,31 @@
 
 {#snippet composerActions()}
 	{#if !editing}
-		{#if drafting && theme === 'material'}
-			<InlineAttachButton
-				expanded={showMediaPanel}
-				onClick={toggleMediaPanel}
-			/>
+		{#if theme === 'material'}
+			<!-- Signal gives the inline plus its own HidingLinearLayout, pinned to
+			     the same end as the quick toggle, so neither shifts the other. -->
+			<div
+				class="composer-toggle composer-toggle-end-pivot absolute bottom-0 end-1 flex items-center"
+				class:composer-toggle-hidden={!drafting}
+				style="--toggle-width: 2.5rem; --toggle-hidden-transform: scaleX(0.5)"
+				aria-hidden={!drafting}
+			>
+				<AttachButton expanded={showMediaPanel} onClick={toggleMediaPanel} />
+			</div>
 		{/if}
 		<div
-			class="flex shrink-0 items-center overflow-hidden transition-all duration-200 ease-out {drafting
-				? 'w-0 opacity-0'
-				: 'w-10 opacity-100'}"
+			class="composer-toggle flex shrink-0 items-center"
+			class:composer-toggle-smooth={theme === 'ios'}
+			class:composer-toggle-end-pivot={theme !== 'ios'}
+			class:composer-toggle-hidden={drafting}
+			style="--toggle-width: 5rem; {theme === 'ios'
+				? '--toggle-duration: 250ms; --toggle-ease: cubic-bezier(0.25, 0.1, 0.25, 1); --toggle-hidden-transform: scale(0.1)'
+				: '--toggle-hidden-width: 2.5rem; --toggle-hidden-transform: scaleX(0.5)'}"
 			aria-hidden={drafting}
 		>
 			<CameraButton onClick={captureFromCamera} />
+			<VoiceRecordButton {voice} />
 		</div>
-	{/if}
-	{#if showVoiceButton}
-		<VoiceRecordButton {voice} />
 	{/if}
 {/snippet}
 
@@ -436,26 +444,36 @@
 						</div>
 					{:else if isIos}
 						<div
-							class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {drafting
-								? 'ms-0 w-[42px] opacity-100'
-								: '-ms-2 w-0 opacity-0'}"
-							style="transform: scale({drafting ? 1 : 0})"
+							class="ios-send flex shrink-0 items-center justify-end {drafting
+								? 'ms-0 w-[42px]'
+								: '-ms-2 w-0'}"
+							class:ios-send-hidden={!drafting}
 							aria-hidden={!drafting}
 						>
 							<SendButton onSend={send} />
 						</div>
-					{:else if drafting}
-						<SendButton onSend={send} />
-					{:else if theme !== 'ios'}
-						<StandaloneAttachButton
-							expanded={showMediaPanel}
-							onClick={toggleMediaPanel}
-						/>
+					{:else}
+						<div class="toggle-slot shrink-0">
+							<div class="toggle-child" class:toggle-hidden={!drafting}>
+								<SendButton onSend={send} />
+							</div>
+							<div class="toggle-child" class:toggle-hidden={drafting}>
+								<StandaloneAttachButton
+									expanded={showMediaPanel}
+									onClick={toggleMediaPanel}
+								/>
+							</div>
+						</div>
 					{/if}
 				{:else}
-					{#if showVoiceButton}
+					<div
+						class="composer-toggle composer-toggle-smooth flex shrink-0 items-center"
+						class:composer-toggle-hidden={drafting}
+						style="--toggle-width: 2.5rem; --toggle-hidden-transform: scale(0.6)"
+						aria-hidden={drafting}
+					>
 						<VoiceRecordButton {voice} />
-					{/if}
+					</div>
 					<AttachMenuButton onFiles={stage} />
 				{/if}
 			</div>
@@ -529,6 +547,90 @@
 
 	.input-row.control-inset > :global(.input-container) {
 		margin-block-end: -2px;
+	}
+
+	/* `--toggle-width` has to be explicit for the collapse to interpolate at all.
+	   The slot is held for the whole fade and given back in one step, the way
+	   Signal's ViewUtil.animateOut only applies GONE once the animation ends. */
+	.composer-toggle {
+		--toggle-duration: 150ms;
+		--toggle-ease: cubic-bezier(0.4, 0, 0.2, 1);
+		width: var(--toggle-width);
+		overflow: hidden;
+		transition:
+			opacity var(--toggle-duration) var(--toggle-ease),
+			transform var(--toggle-duration) var(--toggle-ease),
+			width 0ms,
+			visibility 0ms;
+	}
+
+	/* Signal's HidingLinearLayout pivots the squeeze on its end edge
+	   (ScaleAnimation(1, 0.5f, 1, 1, RELATIVE_TO_SELF, 1f, RELATIVE_TO_SELF, 0.5f)),
+	   so the group collapses towards the pill's edge rather than its own middle. */
+	.composer-toggle.composer-toggle-end-pivot {
+		transform-origin: 100% 50%;
+	}
+
+	:global([dir='rtl']) .composer-toggle.composer-toggle-end-pivot {
+		transform-origin: 0% 50%;
+	}
+
+	.composer-toggle.composer-toggle-hidden {
+		width: var(--toggle-hidden-width, 0);
+		visibility: hidden;
+		opacity: 0;
+		transform: var(--toggle-hidden-transform);
+		transition-delay: 0ms, 0ms, var(--toggle-duration), var(--toggle-duration);
+	}
+
+	/* Releasing the slot in one step only goes unseen inside the pill, which is
+	   flex-1 and so keeps its width either way. Outside it the pill would snap
+	   wider, so collapse the slot on the same curve as the fade. */
+	.composer-toggle.composer-toggle-smooth {
+		transition:
+			opacity var(--toggle-duration) var(--toggle-ease),
+			transform var(--toggle-duration) var(--toggle-ease),
+			width var(--toggle-duration) var(--toggle-ease),
+			visibility 0ms;
+	}
+
+	.composer-toggle.composer-toggle-smooth.composer-toggle-hidden {
+		transition-delay: 0ms, 0ms, 0ms, var(--toggle-duration);
+	}
+
+	.toggle-slot {
+		position: relative;
+		width: 40px;
+		height: 40px;
+	}
+
+	.toggle-child {
+		position: absolute;
+		inset: 0;
+		transition:
+			opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+			transform 150ms cubic-bezier(0.4, 0, 0.2, 1),
+			visibility 0ms;
+	}
+
+	.toggle-child.toggle-hidden {
+		visibility: hidden;
+		opacity: 0;
+		transform: scale(0.6);
+		transition-delay: 0ms, 0ms, 150ms;
+	}
+
+	.ios-send {
+		transition:
+			opacity 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+			transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+			width 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+			margin-inline-start 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+	}
+
+	.ios-send-hidden {
+		opacity: 0;
+		transform: scale(0.1);
 	}
 
 	/* During keyboard glides the bar can lead the keyboard's edge by a few px;
