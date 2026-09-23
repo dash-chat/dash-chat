@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use dashchat_node::{testing::*, *};
+use p2panda_core::SeqNum;
 
 fn setup() {
     dashchat_node::testing::setup_tracing(
@@ -66,7 +67,7 @@ async fn wait_for_delivered(
     node: &TestNode,
     chat: ChatId,
     author: DeviceId,
-    seq: u64,
+    seq: SeqNum,
 ) {
     poll.wait_for(|| async {
         let acks = node.projection.delivered_acks(chat.into()).await.unwrap();
@@ -142,7 +143,7 @@ async fn acks_are_delta_encoded_and_never_cascade() {
     // than that author's entry in any earlier ack — nothing is repeated.
     let maps = ack_maps_authored_by(&alice, chat, bobbi.device_id()).await;
     assert!(maps.len() >= 2);
-    let mut folded: BTreeMap<DeviceId, u64> = BTreeMap::new();
+    let mut folded: BTreeMap<DeviceId, SeqNum> = BTreeMap::new();
     for map in &maps {
         assert!(!map.is_empty());
         for (author, acked) in map {

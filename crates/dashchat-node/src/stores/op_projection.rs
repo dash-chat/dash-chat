@@ -1,10 +1,11 @@
 use aliased::Aliasing;
+use dashchat_utils::SeqNum;
 use derive_more::derive::{Deref, From};
 use p2panda::Hash;
+use p2panda::groups::GroupsArgs;
 use p2panda::operation::Header;
 use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
-use p2panda_auth::processor::GroupsArgs;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -111,7 +112,7 @@ pub struct OpProjection {
 impl OpProjection {
     pub async fn new(pool: SqlitePool) -> anyhow::Result<Self> {
         for sql in MIGRATIONS {
-            sqlx::query(sql).execute(&pool).await?;
+            sqlx::query(*sql).execute(&pool).await?;
         }
 
         let projection = Self { pool };
@@ -185,7 +186,7 @@ impl OpProjection {
             .join(", ");
         let sql =
             format!("SELECT device_id, agent_id FROM devices WHERE device_id IN ({placeholders})");
-        let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(&sql);
+        let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(sqlx::AssertSqlSafe(sql));
         for id in device_ids {
             q = q.bind(*id);
         }
@@ -252,7 +253,7 @@ impl OpProjection {
         for (author, seq, hash) in rows {
             let acked = AckedOp {
                 hash: hash_from_db(hash)?,
-                seq: seq as u64,
+                seq: SeqNum::try_from(seq)?,
             };
             match acks.entry(author) {
                 std::collections::btree_map::Entry::Vacant(e) => {
@@ -301,7 +302,7 @@ impl OpProjection {
                     author,
                     AckedOp {
                         hash: hash_from_db(hash)?,
-                        seq: seq as u64,
+                        seq: SeqNum::try_from(seq)?,
                     },
                 ))
             })
@@ -422,7 +423,7 @@ impl OpProjection {
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
-                self.validate_delete(topic, operation.event.operation.header(), hashes, node)
+                self.validate_delete(topic, &operation.event.operation.header, hashes, node)
                     .await?;
                 for hash in hashes {
                     self.add_tombstone(topic.into(), *hash, TombstoneReason::DeletedForEveryone)
@@ -443,7 +444,7 @@ impl OpProjection {
                 // late edits from lingering too. Edits of live messages are
                 // validated later in `process_app`.
                 if let Some(reason) = self.tombstone_reason(topic.into(), *edit_hash).await? {
-                    let self_hash = operation.event.operation.header().hash();
+                    let self_hash = operation.event.operation.header.hash();
                     self.add_tombstone(topic.into(), self_hash, reason).await?;
                     Some(SystemNotification::Tombstones {
                         topic: topic.into(),
@@ -536,7 +537,7 @@ impl OpProjection {
 
         if let Payload::Chat(chat_payload) = &payload {
             if !matches!(chat_payload, ChatPayload::MessageAck { .. }) {
-                let header = operation.event.operation.header();
+                let header = &operation.event.operation.header;
                 self.record_chat_log_head(topic, author, header.seq_num, header.hash())
                     .await?;
             }
@@ -626,7 +627,7 @@ impl OpProjection {
 
         let chat_id = ChatId::from_topic_id(topic)?;
         let valid_ops = node.valid_chat_ops(chat_id).await?;
-        let delete_ts: u64 = header.timestamp.into();
+        let delete_ts: u64 = header.extensions.timestamp().into();
         if let Err(err) = (DeleteCandidate {
             hashes: payload.clone(),
             deleter: author,
@@ -731,7 +732,7 @@ impl OpProjection {
         &self,
         topic: TopicId,
         author: DeviceId,
-        seq_num: u64,
+        seq_num: SeqNum,
         op_hash: Hash,
     ) -> anyhow::Result<()> {
         sqlx::query(

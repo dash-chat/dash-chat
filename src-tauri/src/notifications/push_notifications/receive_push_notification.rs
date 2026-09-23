@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
-use dashchat_node::{AsBody, Payload, TopicId};
+use dashchat_node::{AsBody, Payload, SeqNum, TopicId};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
@@ -186,7 +186,7 @@ async fn handle_push_notification(
     let (author_hex, seq_str) = op_id
         .split_once(':')
         .context("op_id missing ':' separator")?;
-    let seq_num: u64 = seq_str.parse().context("failed to parse seq_num")?;
+    let seq_num: SeqNum = seq_str.parse().context("failed to parse seq_num")?;
 
     let author_bytes: [u8; 32] = hex::decode(author_hex)
         .context("failed to hex-decode author")?

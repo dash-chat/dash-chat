@@ -309,7 +309,7 @@ impl Node {
 
         let mut builder = P2PandaNode::builder()
             .network_id(config.network_id)
-            .signing_key(node_keys.private_key.clone())
+            .credentials(node_keys.credentials())
             .database_url(&url)
             // Acknowledge operations explicitly, only once application-layer
             // processing has finished (see `spawn_application_processor_task`).
@@ -1348,7 +1348,7 @@ impl Node {
                     op.header.hash(),
                     ChatOp {
                         author: DeviceId::from(op.header.verifying_key),
-                        timestamp: op.header.timestamp.into(),
+                        timestamp: op.header.extensions.timestamp().into(),
                         seq_num: op.header.seq_num,
                         kind,
                     },
@@ -1479,8 +1479,9 @@ impl Node {
                 let is_later = match &latest {
                     None => true,
                     Some((h, _)) => {
-                        op.header.timestamp > h.timestamp
-                            || (op.header.timestamp == h.timestamp && op.header.seq_num > h.seq_num)
+                        op.header.extensions.timestamp() > h.extensions.timestamp()
+                            || (op.header.extensions.timestamp() == h.extensions.timestamp()
+                                && op.header.seq_num > h.seq_num)
                     }
                 };
                 if is_later {
