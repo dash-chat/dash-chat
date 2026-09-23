@@ -490,17 +490,12 @@ async function expectComposer(
 	view: ChatView,
 	where: string,
 ): Promise<void> {
-	const readOnly = view.pending
-		? 'the peer profile has not arrived'
-		: view.blocked
-			? 'the peer is blocked'
-			: null;
-	if (readOnly === null) {
+	if (!view.blocked) {
 		await page.composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
 		return;
 	}
 	if (await page.composer.messageInput.isExisting()) {
-		throw new Error(`${where}: has a composer although ${readOnly}`);
+		throw new Error(`${where}: has a composer although the peer is blocked`);
 	}
 }
 

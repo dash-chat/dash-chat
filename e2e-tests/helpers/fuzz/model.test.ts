@@ -88,14 +88,17 @@ test('a text reaches a contact on the same LAN', () => {
 	);
 });
 
-test('a direct chat is pending until the peer profile arrives', () => {
+test('a mutual add is writable at once, before the peer profile arrives', () => {
 	const m = sameLan(A, B);
 	m.recordAdded(A, B);
 	m.recordAdded(B, A);
 	const chat = m.directChat(A, B);
-	assert.equal(m.view(A, chat).pending, true);
+	// Adding back accepts the pending request, so the chat is a contact's
+	// chat from that moment; the profile is a separate op still in flight.
+	assert.equal(m.knowsProfile(A, B), false);
+	assert.deepEqual(m.sendableChatsFor(A), [chat]);
 	m.propagate();
-	assert.equal(m.view(A, chat).pending, false);
+	assert.equal(m.knowsProfile(A, B), true);
 });
 
 test('a backgrounded agent gains nothing until it is back', () => {
@@ -271,7 +274,7 @@ test('propagateShared unions everyone as one LAN, whatever the topology', () => 
 	m.addMessage(chat, A, 'text', 'sm-1');
 	assert.equal(m.propagate().has(B), false);
 	assert.deepEqual([...(m.propagateShared().get(B) ?? [])], [chat]);
-	assert.equal(m.view(B, chat).pending, false);
+	assert.equal(m.knowsProfile(B, A), true);
 });
 
 test('running hubs follow the card, at home while it is on no lab LAN', () => {
@@ -636,8 +639,8 @@ test('contacts an agent already had need no request to have happened', () => {
 	const m = sameLan(A, B);
 	m.recordExistingContacts(A, B);
 	const chat = m.directChat(A, B);
-	assert.equal(m.view(A, chat).pending, false);
-	assert.equal(m.view(B, chat).pending, false);
+	assert.equal(m.knowsProfile(A, B), true);
+	assert.equal(m.knowsProfile(B, A), true);
 	// The request that made them contacts was sent before the run began, so
 	// nothing of it may be expected on a device.
 	assert.deepEqual(showing(m, B), []);
@@ -893,7 +896,7 @@ test('a renamed peer is still a peer whose profile has arrived', () => {
 	const chat = m.directChat(A, B);
 	m.updateProfile(B, m.nextProfileName());
 	m.propagate();
-	assert.equal(m.view(A, chat).pending, false);
+	assert.equal(m.knowsProfile(A, B), true);
 	assert.deepEqual(m.sendableChatsFor(A), [chat]);
 });
 

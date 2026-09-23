@@ -62,8 +62,6 @@ export interface MessageView {
 }
 
 export interface ChatView {
-	/** Direct chats only: the peer's profile has not arrived yet. */
-	pending: boolean;
 	/** Direct chats only: the viewer has blocked the peer, which turns the
 	 * chat read-only. */
 	blocked: boolean;
@@ -669,13 +667,12 @@ export class ExpectedModel {
 		return [...members];
 	}
 
-	/** Chats `name` can send in: the ones it can open whose composer is
-	 * there — neither waiting on a peer profile nor blocked. */
+	/** Chats `name` can send in: the ones it can open whose composer is there.
+	 * Only a block takes it away — a mutual add makes the pair contacts on the
+	 * spot, so the chat is writable from then on whether or not the peer's
+	 * profile has caught up. */
 	sendableChatsFor(name: string): ExpectedChat[] {
-		return this.chatsFor(name).filter(c => {
-			const view = this.view(name, c);
-			return !view.pending && !view.blocked;
-		});
+		return this.chatsFor(name).filter(c => !this.view(name, c).blocked);
 	}
 
 	/** Create a group: the creator knows it at once; each invited member
@@ -1001,7 +998,6 @@ export class ExpectedModel {
 				? (chat.members.find(member => member !== agent) ?? null)
 				: null;
 		return {
-			pending: peer !== null && !this.knowsProfile(agent, peer),
 			blocked: peer !== null && this.blocks(agent, peer),
 			messages: [...views.values()],
 		};
