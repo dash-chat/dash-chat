@@ -615,6 +615,30 @@ test('a stopped app comes back on the chat list, not on what it was showing', ()
 	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
 });
 
+test('what a stopped app missed is caught up quietly, not announced', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.stopApp(B);
+	// Nothing reaches a stopped device without a push, so this waits.
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), []);
+	// Starting up fetches it, which the app does without announcing it.
+	m.startApp(B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), []);
+	assert.deepEqual(
+		m.view(B, chat).messages.map(v => v.text),
+		['sm-1'],
+	);
+	// What arrives once it is back is announced as usual.
+	m.addMessage(chat, A, 'text', 'sm-2');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: sm-2`]);
+});
+
 test('a message in a chat an agent is not in notifies it of nothing', () => {
 	const m = sameLan(A, B, C);
 	contacts(m, A, B);

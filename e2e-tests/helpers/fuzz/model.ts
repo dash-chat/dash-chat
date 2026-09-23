@@ -321,6 +321,11 @@ export class ExpectedModel {
 	/** Ops the run did not produce: they were on the agents' devices before
 	 * it began, so whatever they once announced is not this run's to expect. */
 	private readonly silent = new Set<OpId>();
+	/** Agent name → the ops it had yet to hear when it came back to the
+	 * foreground. Its app fetches those itself on the sync that follows and
+	 * announces none of them; what arrives *while* a device is away is what
+	 * makes a notification, and reaching an away device takes a push. */
+	private readonly catchingUp = new Map<string, Set<OpId>>();
 	/** Blocks in force, as 'blocker>blocked'. Nothing of one leaves the
 	 * blocker's own devices. */
 	private readonly blocked = new Set<string>();
@@ -408,6 +413,7 @@ export class ExpectedModel {
 	 *  what its row had counted are both gone. */
 	foreground(name: string): void {
 		this.backgrounded.delete(name);
+		this.catchUp(name);
 		const route = this.viewing.get(name)?.route;
 		if (route === undefined) return;
 		this.clearPosted(name, route);
@@ -419,10 +425,22 @@ export class ExpectedModel {
 		this.stopped.add(name);
 	}
 
+	/** Everything `name` has yet to hear is now a catch-up rather than an
+	 *  announcement: what it missed while it was away, which its app fetches
+	 *  quietly on the next sync. Anything written after this notifies. */
+	private catchUp(name: string): void {
+		const known = this.knows(name);
+		this.catchingUp.set(
+			name,
+			new Set(this.ops.filter(op => !known.has(op.id)).map(op => op.id)),
+		);
+	}
+
 	/** An app that was stopped comes back on the chat list, not on whatever it
 	 *  was showing when it went away. */
 	startApp(name: string): void {
 		this.stopped.delete(name);
+		this.catchUp(name);
 		this.wentHome(name);
 	}
 
@@ -1217,6 +1235,9 @@ export class ExpectedModel {
 				if (this.unionComponent(component)) changed = true;
 			}
 		}
+		// Whatever was waiting has landed, silently; anything arriving from
+		// here on reaches an app that is up and announces itself.
+		this.catchingUp.clear();
 		for (const name of this.names()) {
 			const gained = this.chatsGained(name, before.get(name) ?? new Set());
 			if (gained.length === 0) continue;
@@ -1302,6 +1323,7 @@ export class ExpectedModel {
 	 *  route an agent is looking at right now: a backgrounded app is looking
 	 *  at nothing, so it is notified even for the chat it was left on. */
 	private noteNotified(holder: string, op: Op): void {
+		if (this.catchingUp.get(holder)?.has(op.id) === true) return;
 		if (this.silent.has(op.id) || !this.notifies(holder, op)) return;
 		const notification = this.notificationFor(holder, op);
 		if (notification === null) return;
