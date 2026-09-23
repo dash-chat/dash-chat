@@ -447,6 +447,14 @@ test('a contact request reaches a phone that is away', () => {
 	assert.deepEqual(showing(m, B), [A]);
 });
 
+test('a contact request is announced under the name it was sent with', () => {
+	const m = sameLan(A, B);
+	m.updateProfile(A, 'person-01');
+	m.recordAdded(A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), ['person-01']);
+});
+
 test('opening the chat clears the request it was sent in', () => {
 	const m = sameLan(A, B);
 	m.recordAdded(A, B);
@@ -466,6 +474,22 @@ test('a group invite notifies the member it names, after whoever added them', ()
 	assert.deepEqual(showing(m, B), [A]);
 	m.openedChat(B, group);
 	assert.deepEqual(showing(m, B), []);
+});
+
+test('being put back in a group notifies again, the removal having said nothing', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	m.openedChat(B, group);
+	m.wentHome(B);
+	m.removeGroupMember(group, A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), []);
+	m.addGroupMember(group, A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), [A]);
 });
 
 test('a message notifies everyone in its chat but its sender', () => {

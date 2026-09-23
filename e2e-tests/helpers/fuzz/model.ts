@@ -110,7 +110,16 @@ export interface InteractionTarget {
 
 type Op =
 	| { id: OpId; topic: Topic; kind: 'profile'; agent: string; name: string }
-	| { id: OpId; topic: Topic; kind: 'request'; from: string; to: string }
+	| {
+			id: OpId;
+			topic: Topic;
+			kind: 'request';
+			from: string;
+			to: string;
+			/** What `from` called itself when it sent this, which the request
+			 * carries to a device that has no profile of it yet. */
+			name: string;
+	  }
 	| {
 			id: OpId;
 			topic: Topic;
@@ -214,10 +223,6 @@ function authorOf(op: Op): string {
 	if (op.kind === 'groupInfo') return op.chat.creator;
 	if (op.kind === 'reaction') return op.reactor;
 	return op.message.sender;
-}
-
-function groupOp(chat: ExpectedChat, member: string): OpId {
-	return `group:${chat.id}>${member}`;
 }
 
 function chatTopic(chat: ExpectedChat): Topic {
@@ -562,6 +567,7 @@ export class ExpectedModel {
 				kind: 'request',
 				from,
 				to,
+				name: this.displayName(from, from) ?? from,
 			});
 			return;
 		}
@@ -690,14 +696,7 @@ export class ExpectedModel {
 		};
 		this.addChat(chat);
 		for (const member of members) {
-			this.record(creator, {
-				id: groupOp(chat, member),
-				topic: `inbox:${member}`,
-				kind: 'group',
-				chat,
-				member,
-				by: creator,
-			});
+			this.recordGroupAdd(creator, chat, member, creator);
 		}
 		return chat;
 	}
@@ -739,14 +738,7 @@ export class ExpectedModel {
 	/** Record that `by` added `member` to `chat`: the member learns of the
 	 *  group through their inbox, as an invited one does. */
 	addGroupMember(chat: ExpectedChat, by: string, member: string): void {
-		this.recordMembership(by, {
-			id: groupOp(chat, member),
-			topic: `inbox:${member}`,
-			kind: 'group',
-			chat,
-			member,
-			by,
-		});
+		this.recordGroupAdd(by, chat, member, by);
 	}
 
 	/** Groups `name` may leave: any it is in, except one it created that
@@ -1046,14 +1038,10 @@ export class ExpectedModel {
 		};
 		this.addChat(chat);
 		for (const member of members) {
-			this.store(member, {
-				id: groupOp(chat, member),
-				topic: `inbox:${member}`,
-				kind: 'group',
-				chat,
-				member,
-				by: chat.creator,
-			});
+			// The run neither produced these adds nor may expect a device to
+			// announce them, as `store` does for everything else it adopts.
+			const op = this.recordGroupAdd(member, chat, member, chat.creator);
+			this.silent.add(op.id);
 		}
 		return chat;
 	}
@@ -1241,7 +1229,11 @@ export class ExpectedModel {
 	}
 
 	private hasGroup(name: string, chat: ExpectedChat): boolean {
-		return chat.creator === name || this.knows(name).has(groupOp(chat, name));
+		if (chat.creator === name) return true;
+		const known = this.knows(name);
+		return (this.membership.get(chat.id) ?? []).some(
+			op => op.kind === 'group' && op.member === name && known.has(op.id),
+		);
 	}
 
 	private addChat(chat: ExpectedChat): void {
@@ -1267,6 +1259,27 @@ export class ExpectedModel {
 		versions.push(op);
 		this.profiles.set(agent, versions);
 		this.record(agent, op);
+	}
+
+	/** Record that `by` put `member` in `chat`, as its own op: a member taken
+	 *  out and put back is added by an op no device has seen before, which is
+	 *  what makes the second add news rather than something already known. */
+	private recordGroupAdd(
+		holder: string,
+		chat: ExpectedChat,
+		member: string,
+		by: string,
+	): MembershipOp {
+		const op: MembershipOp = {
+			id: `group:${chat.id}>${member}:${++this.membershipCounter}`,
+			topic: `inbox:${member}`,
+			kind: 'group',
+			chat,
+			member,
+			by,
+		};
+		this.recordMembership(holder, op);
+		return op;
 	}
 
 	/** Record a join or a departure, and keep it under its group in the order
@@ -1389,7 +1402,7 @@ export class ExpectedModel {
 				id: op.id,
 				route: directTopic(op.from, op.to),
 				opens: this.directChatOrNull(op.from, op.to),
-				shows: [op.from],
+				shows: [op.name],
 				oneOf: [],
 			};
 		}
