@@ -384,8 +384,15 @@ mod imp {
     /// `dash_router::GOSSIP_TOPIC` (not hashed as a local literal) so this
     /// side and dash-router's own `panda.rs` transport can never drift:
     /// dash-router ties that constant to `WIRE_VERSION` with a
-    /// compile-time assert. Peers on a different network id never connect
-    /// at all (every ALPN is hashed with it), so no further scoping.
+    /// compile-time assert.
+    ///
+    /// The router floods to every member of the node's gossip overlay on
+    /// this topic, which is not LAN-scoped by construction: production
+    /// nodes share one network id, and the overlay includes peers reached
+    /// through bootstrap nodes and the relay. Op bodies are not end-to-end
+    /// encrypted, so every overlay member reads them, and relays keep them
+    /// in `lan_router.redb`; this is why the flag defaults off and is not
+    /// exposed in the UI yet.
     pub(crate) fn router_topic() -> TopicId {
         p2panda::Hash::digest(dash_router::GOSSIP_TOPIC.as_bytes()).into()
     }
@@ -447,7 +454,7 @@ mod imp {
 
     pub struct LanRouter {
         handle: RouterHandle<RouterLog>,
-        pub(crate) ext: OpStoreExt,
+        ext: OpStoreExt,
         actor_tx: mpsc::Sender<Command>,
         node_task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
         events_task: Mutex<Option<JoinHandle<()>>>,
@@ -504,6 +511,11 @@ mod imp {
                         RouterEvent::Delivered(log, seq) => {
                             tracing::debug!(%log, seq, "lan router delivered an op")
                         }
+                        // Ingest failures are mostly peers' bad ops, so a hostile
+                        // peer could flood the log with them at warn.
+                        RouterEvent::StorageError(e) if e.context.ends_with("ext.ingest") => {
+                            tracing::debug!(context = e.context, message = %e.message, "lan router ingest rejected")
+                        }
                         RouterEvent::StorageError(e) => {
                             tracing::warn!(context = e.context, message = %e.message, "lan router storage error")
                         }
@@ -524,8 +536,9 @@ mod imp {
         /// One router prefix subscription per topic: every author's log on
         /// it, known or not yet. Idempotent. A failure unregisters the
         /// topic, so a later call retries instead of reporting success.
-        /// Not safe to call concurrently for the same topic (the node's
-        /// topic hook serialises calls).
+        /// Concurrent calls for the same topic may both return Ok while the
+        /// first is still in flight; callers must not rely on the second
+        /// call observing the first's failure.
         pub async fn subscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
             let (tx, rx) = mpsc::channel(IMPORT_CHANNEL);
             if !self.ext.register_topic(topic, tx) {
@@ -638,7 +651,7 @@ mod imp {
             assert!(!dir.path().join("lan_router.redb").exists());
         }
 
-        /// Review focus 1.
+        /// Subscribing twice is a no-op; unsubscribing drops the topic.
         #[tokio::test(flavor = "multi_thread")]
         async fn subscribe_topic_is_idempotent() {
             let (p, dir) = params(true).await;
@@ -673,7 +686,7 @@ mod imp {
             r.shutdown().await;
         }
 
-        /// Review focus 5.
+        /// Shutdown stops the router task promptly.
         #[tokio::test(flavor = "multi_thread")]
         async fn shutdown_is_clean() {
             let (p, _dir) = params(true).await;
@@ -692,12 +705,7 @@ mod imp {
 
         #[test]
         fn prefix_is_the_log_id_and_order_is_prefix_first() {
-            // Seeds swapped from the brief's [1;32]/[2;32] assignment: the
-            // derived verifying-key bytes for seed [1;32] are lexically
-            // greater than for [2;32], the opposite of what the ordering
-            // assertion below needs. Swapping which seed produces key_a vs
-            // key_b keeps the assertion meaningful without relying on
-            // ed25519 key-derivation internals.
+            // Key bytes do not sort like their seeds: seed [2; 32] gives the smaller key.
             let key_a = p2panda::SigningKey::from_bytes(&[2; 32]).verifying_key();
             let key_b = p2panda::SigningKey::from_bytes(&[1; 32]).verifying_key();
             let t1 = TopicId::from([1u8; 32]);
@@ -797,7 +805,7 @@ mod imp {
             }
         }
 
-        /// Review focus 3.
+        /// Only acked seqs are held: stored ops above the ack cursor are not.
         #[tokio::test]
         async fn held_stops_at_acked_height() {
             let f = fixture(Some(1)).await;
@@ -875,7 +883,8 @@ mod imp {
             assert_eq!(f.ext.forwarded(), 0);
         }
 
-        /// Review focus 2.
+        /// An op whose header disagrees with the claimed log or seq is
+        /// rejected and not forwarded.
         #[tokio::test]
         async fn ingest_rejects_mismatched_header() {
             let mut f = fixture(Some(3)).await;
@@ -935,7 +944,7 @@ mod imp {
             assert!(f.import_rx.try_recv().is_err(), "nothing forwarded");
         }
 
-        /// Review focus 4.
+        /// An op on a log under no registered topic is rejected.
         #[tokio::test]
         async fn ingest_without_topic_mapping_is_an_error() {
             let mut f = fixture(Some(3)).await;

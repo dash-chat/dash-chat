@@ -121,6 +121,12 @@ pub struct NodeConfig {
     /// without it this flag is ignored with a warning. Off by default, and
     /// [`Self::no_p2p`] turns it off. A router that fails to start, or to
     /// follow a topic, is logged and skipped: the p2panda path never depends on it.
+    ///
+    /// The router floods to every member of the node's gossip overlay on its
+    /// topic, which is not LAN-scoped by construction. Op bodies are not
+    /// end-to-end encrypted, so every overlay member reads them, and relays
+    /// keep them in `lan_router.redb`; this is why the flag defaults off and
+    /// is not exposed in the UI yet.
     pub enable_lan_router: bool,
 }
 
