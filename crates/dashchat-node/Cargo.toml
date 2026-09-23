@@ -64,6 +64,7 @@ maplit = "1.0"
 pretty_assertions = "1.4.1"
 tempfile = "3"
 p2panda-store = { workspace = true, features = ["test_utils"] }
+postcard = "1"
 
 [features]
 default = ["instrument"]

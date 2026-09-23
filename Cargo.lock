@@ -2254,6 +2254,7 @@ dependencies = [
  "p2panda-spaces",
  "p2panda-store",
  "p2panda-stream",
+ "postcard",
  "pretty_assertions",
  "rand 0.9.5",
  "reporting",
