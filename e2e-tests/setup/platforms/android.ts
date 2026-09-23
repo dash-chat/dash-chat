@@ -3,6 +3,7 @@ import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
+	readdirSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
@@ -35,6 +36,17 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const E2E_DIR = path.resolve(__dirname, '..', '..');
 
 const APK_DIR = path.join(ROOT, 'src-tauri/gen/android/app/build/outputs/apk');
+const GRADLE_INTERMEDIATES = path.join(
+	ROOT,
+	'src-tauri/gen/android/app/build/intermediates',
+);
+// Where gradle keeps the native libs it packages, each a copy of what the
+// jniLibs symlinks point at when the task last ran.
+const NATIVE_LIB_INTERMEDIATES = [
+	'merged_jni_libs',
+	'merged_native_libs',
+	'stripped_native_libs',
+].map(name => path.join(GRADLE_INTERMEDIATES, name));
 export const APP_PACKAGE = 'studio.darksoil.dashchat';
 
 // ABIs the e2e APK build covers (--split-per-abi): the gradle flavor that
@@ -464,6 +476,37 @@ function keepScreenAwake(udid: string): void {
 	}
 }
 
+/** The root-layout chunk of the frontend in `ui/build`, whose name SvelteKit
+ *  hashes from its content — the identity of the frontend this run built. */
+function builtLayoutChunk(): string {
+	const dir = path.join(ROOT, 'ui', 'build', '_app', 'immutable', 'nodes');
+	const chunk = readdirSync(dir).find(name => /^0\.[\w-]+\.js$/.test(name));
+	if (chunk === undefined) {
+		throw new Error(`no root-layout chunk under ${dir}`);
+	}
+	return chunk;
+}
+
+/** Fail when `apk` carries a frontend other than the one just built, which a
+ *  stale native lib packaged into it is. Tauri embeds the frontend in the rust
+ *  lib under its own asset paths and the APK stores the lib uncompressed, so
+ *  the chunk name reads straight out of the file. */
+function assertApkFrontendIsCurrent(apk: string, udid: string): void {
+	const expected = `nodes/${builtLayoutChunk()}`;
+	const found = execSync(
+		`grep -ao 'nodes/0\\.[A-Za-z0-9_-]*\\.js' "${apk}" | sort -u || true`,
+		{ encoding: 'utf8' },
+	)
+		.trim()
+		.split('\n')
+		.filter(line => line.length > 0);
+	if (found.length === 1 && found[0] === expected) return;
+	throw new Error(
+		`${apk} (for device ${udid}) carries ${found.join(', ') || 'no frontend'}, ` +
+			`not the ${expected} this run built — gradle packaged a stale native lib`,
+	);
+}
+
 /** Install the e2e APK on `udid` unless it already has this exact build.
  *  Sessions carry no `appium:app`, so this per-run install is the only one —
  *  each session then just fast-resets (`pm clear`) instead of reinstalling. */
@@ -474,6 +517,7 @@ function ensureApkInstalled(udid: string): void {
 			`e2e APK not found at ${apk} (for device ${udid}) after the tauri android build`,
 		);
 	}
+	assertApkFrontendIsCurrent(apk, udid);
 	if (installedApkMd5(udid) === hashFile(apk, 'md5')) {
 		console.log(
 			`[android] ${udid} already has the current e2e APK — skipping install`,
@@ -774,6 +818,14 @@ export class AndroidPlatform implements AgentPlatform {
 		// build measured 853MB for 129MB of content. With no APK to patch it
 		// packages from scratch (a cache hit restores the clean one).
 		rmSync(APK_DIR, { recursive: true, force: true });
+		// Gradle decides its native-lib tasks are up to date from the jniLibs
+		// symlinks, whose paths do not change when cargo rebuilds what they
+		// point at — so it packages the copy it took on some earlier run, and
+		// the phone gets an app older than the one this run built. Dropping
+		// those copies is what makes it package the libs it was just given.
+		for (const dir of NATIVE_LIB_INTERMEDIATES) {
+			rmSync(dir, { recursive: true, force: true });
+		}
 		runTurboBuild(
 			'e2e:build:android',
 			envWithoutWdioLoader(bakedEnv, androidEnv),
