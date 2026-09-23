@@ -2,13 +2,15 @@ const DRAG_THRESHOLD_PX = 8;
 const CLOSE_DISTANCE_FRACTION = 0.3;
 
 /** Whether the touch landed on scrolled content, where a drag belongs to the
- * scroller (back up, or back across a carousel) rather than to the sheet. */
+ * scroller (back up, or back across a carousel) rather than to the sheet.
+ * `scrollLeft` goes negative in an RTL scroller, so only its sign-free
+ * distance from the start counts. */
 function isOnScrolledContent(event: TouchEvent, sheet: HTMLElement) {
 	for (const target of event.composedPath()) {
 		if (target === sheet) return false;
 		if (
 			target instanceof HTMLElement &&
-			(target.scrollTop > 0 || target.scrollLeft > 0)
+			(target.scrollTop > 0 || target.scrollLeft !== 0)
 		)
 			return true;
 	}
