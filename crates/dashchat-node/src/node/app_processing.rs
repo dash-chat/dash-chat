@@ -96,12 +96,15 @@ impl Node {
         topic.alias_numbered();
 
         self.subscribe_to_topic(topic).await?;
-        if let Some(router) = &self.lan_router {
-            router.subscribe_topic(topic).await?;
-        }
         // Not gated on the subscription being new: publishing into a topic
         // subscribes it too, without importing its mailbox stream.
         self.import_mailbox_stream(topic).await?;
+        // The router only accelerates what p2panda and mailboxes already do.
+        if let Some(router) = &self.lan_router {
+            if let Err(e) = router.subscribe_topic(topic).await {
+                warn!(topic = ?topic.aliased(), error = %e, "lan router topic subscription failed");
+            }
+        }
         Ok(())
     }
 

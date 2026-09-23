@@ -24,6 +24,39 @@ async fn flag_on_runs_the_router_and_shuts_down() {
         .expect("shutdown does not hang");
 }
 
+/// A relay file that cannot be opened (here: a directory in its place)
+/// disables the router; it does not fail init.
+#[tokio::test(flavor = "multi_thread")]
+async fn router_spawn_failure_does_not_fail_init() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("lan_router.redb")).unwrap();
+    let mut config = NodeConfig::testing();
+    config.enable_lan_router = true;
+    let node = TestNode::new_at_path(config, "broken", std::sync::Arc::new(dir)).await;
+    assert_eq!(node.lan_router_delivered(), None);
+    tokio::time::timeout(std::time::Duration::from_secs(10), node.shutdown())
+        .await
+        .expect("shutdown does not hang");
+}
+
+/// With no networking layer the router cannot open its gossip stream, so
+/// it stays off and the node still starts (the push extension's config).
+#[tokio::test(flavor = "multi_thread")]
+async fn offline_node_with_the_flag_on_still_starts() {
+    let mut config = NodeConfig::testing().no_p2p().no_blob_sync();
+    config.enable_lan_router = true;
+    let node = TestNode::new(config, "offline").await;
+    assert_eq!(node.lan_router_delivered(), None);
+    node.shutdown().await;
+}
+
+#[test]
+fn no_p2p_turns_the_router_off() {
+    let mut config = NodeConfig::testing();
+    config.enable_lan_router = true;
+    assert!(!config.no_p2p().enable_lan_router);
+}
+
 /// Two real nodes on this host's LAN over mDNS, no mailbox, no relay
 /// (spec §6). Ignored: they bind real sockets and multicast.
 mod lan {

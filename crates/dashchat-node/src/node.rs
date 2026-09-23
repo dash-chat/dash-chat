@@ -118,7 +118,9 @@ pub struct NodeConfig {
     pub stream_cursor_prefix: Option<String>,
     /// Whether to run the Dash Router LAN gossip shell alongside p2panda
     /// sync (see `lan_router.rs`). Requires the `lan-router` cargo feature;
-    /// without it this flag is ignored with a warning. Off by default.
+    /// without it this flag is ignored with a warning. Off by default, and
+    /// [`Self::no_p2p`] turns it off. A router that fails to start, or to
+    /// follow a topic, is logged and skipped: the p2panda path never depends on it.
     pub enable_lan_router: bool,
 }
 
@@ -128,6 +130,7 @@ impl NodeConfig {
         self.mdns_mode = MdnsDiscoveryMode::Disabled;
         self.use_relay = false;
         self.enable_p2p = false;
+        self.enable_lan_router = false;
         self
     }
 
@@ -389,6 +392,8 @@ impl Node {
 
         // === lan router === //
 
+        // The router is an optional accelerator: failing to start it must not
+        // take the p2panda path down with it.
         let lan_router = crate::lan_router::LanRouter::spawn(crate::lan_router::LanRouterParams {
             enabled: config.enable_lan_router,
             data_path: filesystem.data_path().clone(),
@@ -396,7 +401,11 @@ impl Node {
             op_store: op_store.clone(),
             actor_tx: actor_tx.clone(),
         })
-        .await?;
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "lan router disabled: failed to start");
+            None
+        });
 
         // === blob sync === //
 
@@ -2305,6 +2314,27 @@ mod config_validation_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn init_accepts_consistent_no_p2p_config() {
         assert!(init_result(NodeConfig::testing().no_p2p()).await.is_ok());
+    }
+}
+
+#[cfg(all(test, feature = "lan-router"))]
+mod lan_router_tests {
+    use crate::NodeConfig;
+    use crate::testing::TestNode;
+    use crate::topic::TopicId;
+
+    /// A router whose task has ended fails every `subscribe_topic`; topic
+    /// setup must still succeed on the p2panda path.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn initialize_topic_survives_a_dead_router() {
+        let mut config = NodeConfig::testing();
+        config.enable_lan_router = true;
+        let node = TestNode::new(config, "alice").await;
+        let router = node.lan_router.clone().expect("router on");
+        router.shutdown().await;
+        assert!(router.subscribe_topic(TopicId::random()).await.is_err());
+        node.initialize_topic(TopicId::random()).await.unwrap();
+        node.shutdown().await;
     }
 }
 
