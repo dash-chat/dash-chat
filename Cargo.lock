@@ -11834,7 +11834,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-system-theme"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-system-theme?rev=1145bd4c3ccf4c09c667f3c54afa4e72d53988cb#1145bd4c3ccf4c09c667f3c54afa4e72d53988cb"
+source = "git+https://github.com/dash-chat/tauri-plugin-system-theme?rev=d8225e5b4694c132eef3c1531246d8ea1715251f#d8225e5b4694c132eef3c1531246d8ea1715251f"
 dependencies = [
  "log",
  "serde",
@@ -11892,7 +11892,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-virtual-keyboard"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard?rev=a86d8cf2ea998eba7f93dc6b53674fdb77d3def5#a86d8cf2ea998eba7f93dc6b53674fdb77d3def5"
+source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard?rev=37235f56a9552f390634a892e3f2fe475644d3e8#37235f56a9552f390634a892e3f2fe475644d3e8"
 dependencies = [
  "serde",
  "tauri",
