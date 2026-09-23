@@ -149,6 +149,9 @@ impl Node {
         tracing::info!(topic = ?topic.aliased(), "initialize topic");
 
         self.subscribe_to_stream(topic).await?;
+        if let Some(router) = &self.lan_router {
+            router.subscribe_topic(topic).await?;
+        }
         self.import_mailbox_stream(topic).await?;
         Ok(())
     }
@@ -361,6 +364,10 @@ impl Node {
                 ?err,
                 "failed to forget an operation the push extension recorded"
             );
+        }
+
+        if let Some(router) = &self.lan_router {
+            router.hint_changed(operation.author(), operation.topic());
         }
 
         if DeviceId::from(operation.author()) == self.device_id() {

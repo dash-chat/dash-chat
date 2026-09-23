@@ -299,6 +299,9 @@ pub struct Node {
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
+    /// `None` unless `NodeConfig::enable_lan_router` and the `lan-router`
+    /// feature are both on (see `lan_router.rs`).
+    lan_router: Option<Arc<crate::lan_router::LanRouter>>,
 }
 
 /// How long a send waits for the chat space's encryption secrets to become established
@@ -439,6 +442,17 @@ impl Node {
         )
         .await?;
 
+        // === lan router === //
+
+        let lan_router = crate::lan_router::LanRouter::spawn(crate::lan_router::LanRouterParams {
+            enabled: config.enable_lan_router,
+            data_path: filesystem.data_path().clone(),
+            device_id: *node_keys.device_id(),
+            op_store: op_store.clone(),
+            actor_tx: actor_tx.clone(),
+        })
+        .await?;
+
         // === blob sync === //
 
         // The push extension never touches media and must not open the
@@ -515,6 +529,7 @@ impl Node {
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
             dirty_ack_topics: Default::default(),
+            lan_router,
         };
 
         // === application processor task === //
@@ -1809,6 +1824,10 @@ impl Node {
 
         // While the network is still up, so peers see us leave instead of timing us out.
         self.online_peers.leave_all().await;
+
+        if let Some(router) = &self.lan_router {
+            router.shutdown().await;
+        }
 
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
