@@ -138,12 +138,13 @@ mod imp {
     #[derive(Clone)]
     pub(crate) struct OpStoreExt {
         store: OpStore,
-        /// `LogId → TopicId`, the inverse of `LogId::from_topic` for the
-        /// topics this node follows. Read on every held/fetch; written on
+        /// `LogId → (TopicId, import channel)`: the inverse of
+        /// `LogId::from_topic` for the topics this node follows, paired with
+        /// the channel that topic's imported ops go down (consumed by the
+        /// actor's `Command::Import`). One map so (un)registration is a
+        /// single lock. Read on every held/fetch/ingest; written on
         /// (un)subscribe. Never held across an await.
-        topics: Arc<RwLock<HashMap<LogId, TopicId>>>,
-        /// Per-topic import channel, handed to the actor's `Command::Import`.
-        imports: Arc<RwLock<HashMap<TopicId, mpsc::Sender<Operation>>>>,
+        topics: Arc<RwLock<HashMap<LogId, (TopicId, mpsc::Sender<Operation>)>>>,
         hints: broadcast::Sender<BTreeSet<RouterLog>>,
         rejected: Arc<AtomicU64>,
     }
@@ -154,7 +155,6 @@ mod imp {
             Self {
                 store,
                 topics: Default::default(),
-                imports: Default::default(),
                 hints: broadcast::channel(64).0,
                 rejected: Default::default(),
             }
@@ -167,14 +167,14 @@ mod imp {
             topic: TopicId,
             import_tx: mpsc::Sender<Operation>,
         ) -> bool {
-            let log_id = LogId::from_topic(topic);
-            let mut topics = self.topics.write().unwrap();
-            if topics.contains_key(&log_id) {
-                return false;
+            use std::collections::hash_map::Entry;
+            match self.topics.write().unwrap().entry(LogId::from_topic(topic)) {
+                Entry::Occupied(_) => false,
+                Entry::Vacant(e) => {
+                    e.insert((topic, import_tx));
+                    true
+                }
             }
-            topics.insert(log_id, topic);
-            self.imports.write().unwrap().insert(topic, import_tx);
-            true
         }
 
         pub(crate) fn unregister_topic(&self, topic: TopicId) {
@@ -182,7 +182,6 @@ mod imp {
                 .write()
                 .unwrap()
                 .remove(&LogId::from_topic(topic));
-            self.imports.write().unwrap().remove(&topic);
         }
 
         pub(crate) fn has_topic(&self, log_id: &LogId) -> bool {
@@ -198,16 +197,28 @@ mod imp {
         }
 
         fn topic_of(&self, log_id: &LogId) -> Option<TopicId> {
-            self.topics.read().unwrap().get(log_id).copied()
+            self.topics.read().unwrap().get(log_id).map(|(t, _)| *t)
+        }
+
+        fn import_tx_of(&self, log_id: &LogId) -> Option<mpsc::Sender<Operation>> {
+            self.topics
+                .read()
+                .unwrap()
+                .get(log_id)
+                .map(|(_, tx)| tx.clone())
         }
 
         /// Acked seqs present for one log, as ranges; empty when nothing is
-        /// acked or the topic is unknown.
+        /// acked, the topic is unknown, or the author bytes are not a valid
+        /// key (a peer can name such a log; it is unknown, not an error).
         async fn held_one(&self, log: &RouterLog) -> anyhow::Result<Ranges> {
             let Some(topic) = self.topic_of(&log.log_id()) else {
                 return Ok(Ranges::empty());
             };
-            let author = DeviceId::from(log.author()?);
+            let Ok(author) = log.author() else {
+                return Ok(Ranges::empty());
+            };
+            let author = DeviceId::from(author);
             let log_id = log.log_id();
             let Some(acked) = self
                 .store
@@ -234,15 +245,9 @@ mod imp {
         }
 
         async fn held_all(&self) -> anyhow::Result<LogRanges<RouterLog>> {
-            let topics: Vec<(LogId, TopicId)> = self
-                .topics
-                .read()
-                .unwrap()
-                .iter()
-                .map(|(l, t)| (*l, *t))
-                .collect();
+            let log_ids: Vec<LogId> = self.topics.read().unwrap().keys().copied().collect();
             let mut out = LogRanges::empty();
-            for (log_id, _) in topics {
+            for log_id in log_ids {
                 for (author, _height) in self.store.get_log_heights(&log_id).await? {
                     let log = RouterLog::new(log_id, *author);
                     let r = self.held_one(&log).await?;
@@ -260,10 +265,18 @@ mod imp {
         ) -> anyhow::Result<Vec<(RouterLog, Seq, Op)>> {
             let mut out = Vec::new();
             for (log, r) in ranges.iter() {
+                // Nothing wanted: don't read the log (or warn about it).
+                if r.is_empty() {
+                    continue;
+                }
                 let Some(topic) = self.topic_of(&log.log_id()) else {
                     continue;
                 };
-                let author = DeviceId::from(log.author()?);
+                // A bogus author is an unknown log, not a batch failure.
+                let Ok(author) = log.author() else {
+                    continue;
+                };
+                let author = DeviceId::from(author);
                 let log_id = log.log_id();
                 let Some(acked) = self
                     .store
@@ -309,16 +322,9 @@ mod imp {
                     header.extensions.log_id() == log.log_id(),
                     "header log id != log"
                 );
-                let topic = self
-                    .topic_of(&log.log_id())
-                    .ok_or_else(|| anyhow!("no topic for log {log}"))?;
                 let tx = self
-                    .imports
-                    .read()
-                    .unwrap()
-                    .get(&topic)
-                    .cloned()
-                    .ok_or_else(|| anyhow!("no import channel for topic"))?;
+                    .import_tx_of(&log.log_id())
+                    .ok_or_else(|| anyhow!("no topic for log {log}"))?;
                 let operation = Operation {
                     hash: header.hash(),
                     header,
@@ -438,6 +444,11 @@ mod imp {
 
         /// One topic registered, one author with seqs 0..=3 stored, acked up to `acked`.
         async fn fixture(acked: Option<SeqNum>) -> Fixture {
+            fixture_n(4, acked).await
+        }
+
+        /// As `fixture`, with seqs `0..n` stored.
+        async fn fixture_n(n: SeqNum, acked: Option<SeqNum>) -> Fixture {
             let store = OpStore::temporary_sqlite().await.unwrap();
             let ext = OpStoreExt::new(store.clone());
             let topic = TopicId::random();
@@ -446,7 +457,7 @@ mod imp {
             assert!(ext.register_topic(topic, tx));
             let key = p2panda::SigningKey::generate();
             let mut backlink = None;
-            for seq in 0..4u32 {
+            for seq in 0..n {
                 let op = signed_op(&key, log_id, seq, backlink, &[seq as u8]);
                 insert(&store, &op, &log_id).await;
                 backlink = Some(op.hash);
@@ -545,7 +556,15 @@ mod imp {
             // Right author, wrong seq.
             let right = RouterLog::new(f.log_id, other.verifying_key());
             assert!(f.ext.ingest(right, 5, wire.clone()).await.is_err());
-            assert_eq!(f.ext.rejected(), 2);
+            // Right author and seq, but signed under another log id.
+            let elsewhere = LogId::from_topic(TopicId::random());
+            let op = signed_op(&other, elsewhere, 0, None, b"hello");
+            let wire = dash_router::core::Op {
+                header: op.header.encode(),
+                payload: None,
+            };
+            assert!(f.ext.ingest(right, 0, wire).await.is_err());
+            assert_eq!(f.ext.rejected(), 3);
             assert!(f.import_rx.try_recv().is_err(), "nothing forwarded");
         }
 
@@ -563,6 +582,56 @@ mod imp {
             let log = RouterLog::new(stray_log_id, other.verifying_key());
             assert!(f.ext.ingest(log, 0, wire).await.is_err());
             assert_eq!(f.ext.rejected(), 1);
+        }
+
+        /// `get_log`'s cursor is exclusive: a non-zero start must still
+        /// include its first seq, and gaps in the request are respected.
+        #[tokio::test]
+        async fn fetch_honours_nonzero_start_and_gaps() {
+            let f = fixture_n(6, Some(5)).await;
+            let log = RouterLog::new(f.log_id, f.key.verifying_key());
+            let seqs =
+                |ops: Vec<(RouterLog, Seq, Op)>| ops.iter().map(|(_, q, _)| *q).collect::<Vec<_>>();
+            let want = LogRanges::from_pairs([(log, Ranges::range(2, 4))]);
+            assert_eq!(seqs(f.ext.fetch(&want).await.unwrap()), vec![2, 3]);
+            let gapped = LogRanges::from_pairs([(log, Ranges::from_seqs([2, 3, 5]))]);
+            assert_eq!(seqs(f.ext.fetch(&gapped).await.unwrap()), vec![2, 3, 5]);
+            let empty = LogRanges::from_pairs([(log, Ranges::empty())]);
+            assert!(f.ext.fetch(&empty).await.unwrap().is_empty());
+        }
+
+        /// A peer-named log whose author bytes are not a valid key is an
+        /// unknown log: it must not fail the batch it arrives in.
+        #[tokio::test]
+        async fn bogus_author_is_unknown_not_an_error() {
+            let f = fixture(Some(1)).await;
+            // Not every 32-byte string is a curve point (`[0xFF; 32]` is, as
+            // a non-canonical encoding); take the first `[b; 32]` that isn't.
+            let author = (0u8..=255)
+                .map(|b| [b; 32])
+                .find(|k| VerifyingKey::from_bytes(k).is_err())
+                .expect("some byte pattern is not a valid key");
+            let bogus = RouterLog {
+                log_id: *f.log_id.as_bytes(),
+                author,
+            };
+            assert!(bogus.author().is_err(), "fixture needs an invalid key");
+            let valid = RouterLog::new(f.log_id, f.key.verifying_key());
+
+            let held = f
+                .ext
+                .held_of(&BTreeSet::from([bogus, valid]))
+                .await
+                .unwrap();
+            assert_eq!(held.get(&bogus), Some(&Ranges::empty()));
+            assert_eq!(held.get(&valid), Some(&Ranges::range(0, 2)));
+
+            let want = LogRanges::from_pairs([(bogus, Ranges::full()), (valid, Ranges::full())]);
+            let ops = f.ext.fetch(&want).await.unwrap();
+            assert_eq!(
+                ops.iter().map(|(l, q, _)| (*l, *q)).collect::<Vec<_>>(),
+                vec![(valid, 0), (valid, 1)]
+            );
         }
 
         #[tokio::test]
