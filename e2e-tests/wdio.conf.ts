@@ -34,7 +34,7 @@ import {
 import { CHECKOUT_CLAIM } from './setup/network-id';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
 import { DesktopPlatform } from './setup/platforms/desktop';
-import { IosPlatform, wipeIosAppAfterSpec } from './setup/platforms/ios';
+import { IosPlatform, clearIosAppData } from './setup/platforms/ios';
 import type { AgentPlatform } from './setup/platforms/platform';
 import {
 	buildPushServer,
@@ -311,7 +311,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 	async after() {
 		for (const slot of iosSlots) {
-			await wipeIosAppAfterSpec(browser.getInstance(`agent${slot}`));
+			await clearIosAppData(browser.getInstance(`agent${slot}`));
 		}
 	},
 

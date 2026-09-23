@@ -15,6 +15,17 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // catch. Anchored on the `me=`/`peer=` label so ordinary short hex
         // (contact codes) stays readable.
         r"\b(me|peer)=[0-9a-fA-F]{8,}\b",
+        // The same ids as p2panda-net's discovery and address book label them
+        // (`node_id="3026d92c8c"`, `remote_node_id=…`, `endpoint_id=…`), which
+        // the rule above does not cover: those labels reach the log from
+        // `p2panda_net` at Debug. Anchored the same way, and the optional
+        // quotes are consumed so the value cannot survive as `""`.
+        r#"\b(remote_node_id|node_id|endpoint_id)="?[0-9a-fA-F]{8,}"?"#,
+        // Socket addresses of peers and of this device, as the address book
+        // prints them (`Ip(188.84.6.11:49882)`, `addresses=[iroh] {…}`). A
+        // peer's address says who a user is talking to and the public one says
+        // where they are, and neither is anything a report needs.
+        r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{1,5}\b",
         // Base64 blobs (40+ chars)
         r"[A-Za-z0-9+/]{40,}={0,2}",
         // Mailbox id (base64url inbox address) as logged by the mailbox
@@ -110,6 +121,39 @@ mod tests {
     fn preserves_short_hex() {
         let input = "code=abcdef12";
         assert_eq!(redact(input), "code=abcdef12");
+    }
+
+    #[test]
+    fn redacts_discovery_node_ids() {
+        let input = "mark node as stale remote_node_id=3026d92c8c";
+        assert_eq!(redact(input), "mark node as stale [REDACTED]");
+        let input = "successful discovery session node_id=\"5299f918f8\" topics=5";
+        assert_eq!(
+            redact(input),
+            "successful discovery session [REDACTED] topics=5"
+        );
+        let input = "discovered new transport info endpoint_id=fa09a0a99a";
+        assert_eq!(redact(input), "discovered new transport info [REDACTED]");
+    }
+
+    #[test]
+    fn redacts_peer_socket_addresses() {
+        let input = "addresses=[iroh] {Ip(188.84.6.11:49882), Ip(192.168.0.106:65133)}";
+        assert_eq!(
+            redact(input),
+            "addresses=[iroh] {Ip([REDACTED]), Ip([REDACTED])}"
+        );
+    }
+
+    #[test]
+    fn preserves_a_bare_address_without_a_port() {
+        // The mailbox url a build is pointed at is not a peer's address, and
+        // reading it back is how a wrong one gets spotted.
+        let input = "Using compile-time MAILBOX_URL: http://192.168.0.104";
+        assert_eq!(
+            redact(input),
+            "Using compile-time MAILBOX_URL: http://192.168.0.104"
+        );
     }
 
     #[test]

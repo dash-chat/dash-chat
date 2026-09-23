@@ -5,6 +5,14 @@ import { tid } from '../selectors';
 import { SYNC_TIMEOUT } from '../timeouts';
 import { RecentPhotosStrip } from './recent-photos-strip';
 
+/** What a real transcode says about itself, for a spec to assert on. */
+export interface VoiceTranscode {
+	isOgg: boolean;
+	opusBytes: number;
+	wavBytes: number;
+	durationMs: number;
+}
+
 /** The shared message composer (text area + attachments) used by both
  * direct and group chats. */
 export class Composer extends TestHelper {
@@ -210,12 +218,7 @@ export class Composer extends TestHelper {
 
 	/** Injects a WAV through the real `transcode_voice_message` command, so the
 	 * draft is genuine Ogg/Opus. Returns facts about the transcode to assert on. */
-	async recordRealVoiceMessage(durationMs = 1000): Promise<{
-		isOgg: boolean;
-		opusBytes: number;
-		wavBytes: number;
-		durationMs: number;
-	}> {
+	async recordRealVoiceMessage(durationMs = 1000): Promise<VoiceTranscode> {
 		await this.messageInput.waitForExist();
 		// XCUITest does not await a promise returned from `execute`, so the
 		// transcode's facts come back with every field undefined while the
@@ -223,18 +226,21 @@ export class Composer extends TestHelper {
 		// instead — and raise its script timeout, which XCUITest defaults to ~0
 		// (same pitfall as `agent.disableP2p`).
 		await this.agent.setTimeout({ script: 60_000 });
-		return this.agent.executeAsync(
-			(
-				ms: number,
-				done: (result: {
-					isOgg: boolean;
-					opusBytes: number;
-					wavBytes: number;
-					durationMs: number;
-				}) => void,
-			) => void window.__test.injectRecordedVoiceMessage(ms).then(done),
+		// Both paths settle: a rejection is exactly what this helper exists to
+		// report, and left unsettled it surfaces a minute later as a script
+		// timeout naming nothing.
+		const result = await this.agent.executeAsync<
+			VoiceTranscode | { failed: string },
+			[number]
+		>(
+			(ms, done) =>
+				void window.__test
+					.injectRecordedVoiceMessage(ms)
+					.then(done, err => done({ failed: String(err) })),
 			durationMs,
 		);
+		if ('failed' in result) throw new Error(result.failed);
+		return result;
 	}
 
 	/** Paste a single synthesized PNG named `${label}.png` into the composer. */

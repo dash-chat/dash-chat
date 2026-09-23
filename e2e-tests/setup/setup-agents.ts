@@ -206,6 +206,10 @@ export type Agent = WebdriverIO.Browser & {
 	wifiSsid(): Promise<string>;
 	/** Whether the device reaches the internet over its current network.
 	 *  Physical Android phones only; throws elsewhere. */
+	/** Whether the phone can reach the internet. On android this is a pure adb
+	 *  probe; on iOS the answer has to come from the app's own webview, so it
+	 *  brings the app to the foreground — call it where that is harmless, or
+	 *  where what follows resets the app anyway. */
 	hasInternet(): Promise<boolean>;
 	/** Wipe the stopped app back to first launch, with its runtime permissions
 	 *  granted again as a new session's fast reset leaves them. Android only;

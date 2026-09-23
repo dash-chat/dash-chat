@@ -65,9 +65,10 @@ export interface ChatView {
 	/** Direct chats only: the viewer has blocked the peer, which turns the
 	 * chat read-only. */
 	blocked: boolean;
-	/** Groups only: the viewer has left or been removed. The group goes on
-	 * syncing, so the chat stays open and readable, with the app saying why
-	 * there is no composer instead of showing one. */
+	/** Groups only: the viewer has left or been removed. `chatsFor` drops such
+	 * a group, so no row is expected for it — this is only ever read of the
+	 * chat an agent is still sitting in when the departure reaches it, where
+	 * the app replaces the composer with why there is none. */
 	departed: boolean;
 	messages: MessageView[];
 }

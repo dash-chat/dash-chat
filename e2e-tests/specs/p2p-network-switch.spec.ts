@@ -63,10 +63,9 @@ describe('Pure p2p sync across a network switch', function () {
 		await killMailbox();
 		mailboxKilled = true;
 		[alice, bob] = await setupAgents(this, [
-			{ platform: 'any' },
-			{ platform: 'any' },
+			{ platform: 'phone' },
+			{ platform: 'phone' },
 		]);
-		if (alice.platform === 'android-emulator') this.skip();
 		// An earlier run that died mid-case leaves a phone off the air.
 		await alice.enableWifi();
 		await bob.enableWifi();

@@ -24,13 +24,12 @@ export function hashFile(file: string, algo = 'sha256'): string {
 	return createHash(algo).update(readFileSync(file)).digest('hex');
 }
 
-/** Device udid -> what was last installed on it: the archive's sha256, plus an
- *  optional `marker` the caller reads back off the device (iOS passes the
- *  bundle container path, which a new install changes). The marker is what
- *  catches an app someone else installed over ours — a TestFlight or release
- *  build whose bytes we never saw, which the archive hash alone cannot rule
- *  out. */
-type InstallStamp = { archive: string; marker?: string };
+/** Device udid -> what was last installed on it: the archive's sha256 and a
+ *  `marker` the caller reads back off the device (iOS passes the bundle
+ *  container path, which a new install changes). The marker is what catches an
+ *  app someone else installed over ours — a TestFlight or release build whose
+ *  bytes we never saw, which the archive hash alone cannot rule out. */
+type InstallStamp = { archive: string; marker: string };
 type InstallStamps = Record<string, InstallStamp>;
 
 function readStamps(): InstallStamps {
@@ -56,8 +55,11 @@ function readStamps(): InstallStamps {
 export function deviceHasBuild(
 	udid: string,
 	archive: string,
-	marker?: string,
+	marker: string | undefined,
 ): boolean {
+	// No reading of what is installed is no answer: reinstall rather than
+	// match one absent marker against another and skip the install.
+	if (marker === undefined) return false;
 	const stamp = readStamps()[udid];
 	if (stamp === undefined || !existsSync(archive)) return false;
 	return stamp.archive === hashFile(archive) && stamp.marker === marker;
@@ -68,8 +70,10 @@ export function deviceHasBuild(
 export function recordInstalled(
 	udid: string,
 	archive: string,
-	marker?: string,
+	marker: string | undefined,
 ): void {
+	// Nothing to compare against next run, so record nothing and reinstall.
+	if (marker === undefined) return;
 	const stamps: InstallStamps = {
 		...readStamps(),
 		[udid]: { archive: hashFile(archive), marker },

@@ -253,19 +253,14 @@ export async function resetIosAppState(b: WebdriverIO.Browser): Promise<void> {
 	await attachToIosApp(b);
 }
 
-/** Leave the app with no data once a spec file is done. The next spec's reset
+/** Leave the app installed with no data and not running: the iOS answer to
+ *  android's `mobile: clearApp`. The wipe is the app's own delete_account, so
+ *  the app is brought up to run it and exits on its own afterwards.
+ *
+ *  Also what a spec file is left in once it is done. The next spec's reset
  *  runs only after the app is up with the old data, and in a new run that app
  *  uploads its whole history to the fresh mailbox, which pushes every message
  *  back to this phone: banners over the navbar the spec is about to tap. */
-export async function wipeIosAppAfterSpec(
-	b: WebdriverIO.Browser,
-): Promise<void> {
-	await clearIosAppData(b);
-}
-
-/** Leave the app installed with no data and not running: the iOS answer to
- *  android's `mobile: clearApp`. The wipe is the app's own delete_account, so
- *  the app is brought up to run it and exits on its own afterwards. */
 export async function clearIosAppData(b: WebdriverIO.Browser): Promise<void> {
 	await attachToIosApp(b);
 	await wipeIosAppData(b);

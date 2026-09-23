@@ -43,11 +43,9 @@ describe('P2P sync on a LAN with no internet', () => {
 	before(async function () {
 		if (isRemoteMailbox()) this.skip();
 		[alice, bob] = await setupAgents(this, [
-			{ platform: 'any' },
-			{ platform: 'any' },
+			{ platform: 'phone' },
+			{ platform: 'phone' },
 		]);
-		if (alice.platform === 'desktop' || bob.platform === 'desktop') this.skip();
-		if (alice.platform === 'android-emulator') this.skip();
 		const home = (await alice.wifiInfo()).ssid;
 		const network = wifiNetworks().find(n => n.ssid !== home);
 		if (network === undefined) this.skip();

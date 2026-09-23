@@ -21,6 +21,14 @@ export interface ChatRow {
  *  attempt costs a full `waitforTimeout`, so this stays small. */
 const OPEN_CHAT_ATTEMPTS = 2;
 
+/** `text` as an XPath string literal. XPath 1.0 has no escape, so a value
+ *  containing a quote has to be assembled with `concat`. */
+function xpathLiteral(text: string): string {
+	if (!text.includes('"')) return `"${text}"`;
+	const parts = text.split('"').map(part => `"${part}"`);
+	return `concat(${parts.join(", '\"', ")})`;
+}
+
 export class HomePage extends TestHelper {
 	settingsLink = this.el(tid('home-settings-link'));
 	newMessageButton = this.el(tid('home-new-message-btn'));
@@ -50,7 +58,7 @@ export class HomePage extends TestHelper {
 	 * caller here is waiting for the row to turn up. */
 	chatListItem(contactName: string) {
 		return this.agent.$(
-			`//*[@data-testid="all-chats-list"]//a[contains(., "${contactName}")]`,
+			`//*[@data-testid="all-chats-list"]//a[contains(., ${xpathLiteral(contactName)})]`,
 		);
 	}
 

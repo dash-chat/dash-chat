@@ -12,10 +12,10 @@ const ENV_LOCAL = path.join(
 );
 
 /**
- * Build inputs the "Build Rust Code" phase must see. The `*_URL` vars and
- * `E2E_NETWORK_ID` are read by `option_env!`; the `*_PORT` vars `just dev`
- * allocates are read by `build.rs`, which synthesizes a LAN-reachable URL from
- * them.
+ * Build inputs the "Build Rust Code" phase must see. The `*_URL` vars,
+ * `E2E_NETWORK_ID` and `E2E_RELAY_URL` are read by `option_env!`; the `*_PORT`
+ * vars `just dev` allocates are read by `build.rs`, which synthesizes a
+ * LAN-reachable URL from them.
  *
  * `E2E_NETWORK_ID` decides the p2panda network id, the iroh relay and the mDNS
  * service name a build uses, so leaving it out does not fail loudly: the app
