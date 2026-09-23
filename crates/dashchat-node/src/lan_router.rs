@@ -56,25 +56,37 @@ pub use imp::LanRouter;
 mod imp {
     use super::*;
 
-    use p2panda::operation::LogId;
+    use std::collections::{BTreeSet, HashMap};
+    use std::sync::RwLock;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use anyhow::{Context as _, anyhow, ensure};
+    use dash_router::core::{LogRanges, Op, Ranges, Seq};
+    use dash_router::{AsyncStorage, WatchableStorage};
+    use p2panda::operation::{Header, LogId, Operation};
+    use p2panda_core::Body;
     use serde::{Deserialize, Serialize};
+    use tokio::sync::broadcast;
+
+    use crate::DeviceId;
 
     /// The router's log identity: `(LogId, author)`, prefix first so the
     /// relay store's ordered scans keep one topic's logs contiguous. The
     /// prefix (`LogId = blake3(topic)`) is what a subscription names.
-    ///
-    /// Unused outside tests until Task 6 wires it into `LanRouter::spawn`.
-    #[allow(dead_code)]
-    #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug)]
+    #[derive(
+        Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug,
+    )]
     pub(crate) struct RouterLog {
         log_id: [u8; 32],
         author: [u8; 32],
     }
 
-    #[allow(dead_code)]
     impl RouterLog {
         pub(crate) fn new(log_id: LogId, author: VerifyingKey) -> Self {
-            Self { log_id: *log_id.as_bytes(), author: *author.as_bytes() }
+            Self {
+                log_id: *log_id.as_bytes(),
+                author: *author.as_bytes(),
+            }
         }
 
         pub(crate) fn log_id(&self) -> LogId {
@@ -88,7 +100,12 @@ mod imp {
 
     impl std::fmt::Display for RouterLog {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}/{}", hex::encode(&self.log_id[..4]), hex::encode(&self.author[..4]))
+            write!(
+                f,
+                "{}/{}",
+                hex::encode(&self.log_id[..4]),
+                hex::encode(&self.author[..4])
+            )
         }
     }
 
@@ -111,6 +128,218 @@ mod imp {
                 log_id: all[..32].try_into().ok()?,
                 author: all[32..].try_into().ok()?,
             })
+        }
+    }
+
+    /// The router's ext store: Dash Chat's own `OpStore`, seen as
+    /// `(LogId, author)` logs. Only logs under a registered topic exist for
+    /// the router, and only acked seqs are held or served (spec §4.2).
+    #[allow(dead_code)] // until Task 6
+    #[derive(Clone)]
+    pub(crate) struct OpStoreExt {
+        store: OpStore,
+        /// `LogId → TopicId`, the inverse of `LogId::from_topic` for the
+        /// topics this node follows. Read on every held/fetch; written on
+        /// (un)subscribe. Never held across an await.
+        topics: Arc<RwLock<HashMap<LogId, TopicId>>>,
+        /// Per-topic import channel, handed to the actor's `Command::Import`.
+        imports: Arc<RwLock<HashMap<TopicId, mpsc::Sender<Operation>>>>,
+        hints: broadcast::Sender<BTreeSet<RouterLog>>,
+        rejected: Arc<AtomicU64>,
+    }
+
+    #[allow(dead_code)] // until Task 6
+    impl OpStoreExt {
+        pub(crate) fn new(store: OpStore) -> Self {
+            Self {
+                store,
+                topics: Default::default(),
+                imports: Default::default(),
+                hints: broadcast::channel(64).0,
+                rejected: Default::default(),
+            }
+        }
+
+        /// Register a topic and the channel its imported ops go down.
+        /// Returns false if already registered.
+        pub(crate) fn register_topic(
+            &self,
+            topic: TopicId,
+            import_tx: mpsc::Sender<Operation>,
+        ) -> bool {
+            let log_id = LogId::from_topic(topic);
+            let mut topics = self.topics.write().unwrap();
+            if topics.contains_key(&log_id) {
+                return false;
+            }
+            topics.insert(log_id, topic);
+            self.imports.write().unwrap().insert(topic, import_tx);
+            true
+        }
+
+        pub(crate) fn unregister_topic(&self, topic: TopicId) {
+            self.topics
+                .write()
+                .unwrap()
+                .remove(&LogId::from_topic(topic));
+            self.imports.write().unwrap().remove(&topic);
+        }
+
+        pub(crate) fn has_topic(&self, log_id: &LogId) -> bool {
+            self.topics.read().unwrap().contains_key(log_id)
+        }
+
+        pub(crate) fn hint(&self, log: RouterLog) {
+            let _ = self.hints.send(BTreeSet::from([log])); // no receivers is fine
+        }
+
+        pub(crate) fn rejected(&self) -> u64 {
+            self.rejected.load(Ordering::Relaxed)
+        }
+
+        fn topic_of(&self, log_id: &LogId) -> Option<TopicId> {
+            self.topics.read().unwrap().get(log_id).copied()
+        }
+
+        /// Acked seqs present for one log, as ranges; empty when nothing is
+        /// acked or the topic is unknown.
+        async fn held_one(&self, log: &RouterLog) -> anyhow::Result<Ranges> {
+            let Some(topic) = self.topic_of(&log.log_id()) else {
+                return Ok(Ranges::empty());
+            };
+            let author = DeviceId::from(log.author()?);
+            let log_id = log.log_id();
+            let Some(acked) = self
+                .store
+                .acked_log_height(&topic, &author, &log_id)
+                .await?
+            else {
+                return Ok(Ranges::empty());
+            };
+            let seqs = self.store.get_log_seqs(&author, &log_id).await?;
+            Ok(Ranges::from_seqs(seqs.into_iter().filter(|q| *q <= acked)))
+        }
+    }
+
+    impl AsyncStorage<RouterLog> for OpStoreExt {
+        async fn held_of(
+            &self,
+            logs: &BTreeSet<RouterLog>,
+        ) -> anyhow::Result<LogRanges<RouterLog>> {
+            let mut out = LogRanges::empty();
+            for log in logs {
+                out.insert(*log, self.held_one(log).await?);
+            }
+            Ok(out)
+        }
+
+        async fn held_all(&self) -> anyhow::Result<LogRanges<RouterLog>> {
+            let topics: Vec<(LogId, TopicId)> = self
+                .topics
+                .read()
+                .unwrap()
+                .iter()
+                .map(|(l, t)| (*l, *t))
+                .collect();
+            let mut out = LogRanges::empty();
+            for (log_id, _) in topics {
+                for (author, _height) in self.store.get_log_heights(&log_id).await? {
+                    let log = RouterLog::new(log_id, *author);
+                    let r = self.held_one(&log).await?;
+                    if !r.is_empty() {
+                        out.insert(log, r);
+                    }
+                }
+            }
+            Ok(out)
+        }
+
+        async fn fetch(
+            &self,
+            ranges: &LogRanges<RouterLog>,
+        ) -> anyhow::Result<Vec<(RouterLog, Seq, Op)>> {
+            let mut out = Vec::new();
+            for (log, r) in ranges.iter() {
+                let Some(topic) = self.topic_of(&log.log_id()) else {
+                    continue;
+                };
+                let author = DeviceId::from(log.author()?);
+                let log_id = log.log_id();
+                let Some(acked) = self
+                    .store
+                    .acked_log_height(&topic, &author, &log_id)
+                    .await?
+                else {
+                    continue;
+                };
+                // `get_log`'s cursor is exclusive ("after"): start one below
+                // the first wanted seq, or from the beginning when that is 0.
+                let after = r.boundaries().first().and_then(|s| s.checked_sub(1));
+                for op in self.store.get_log(&author, &log_id, after).await? {
+                    let seq = op.header.seq_num;
+                    if seq > acked || !r.contains(seq) {
+                        continue;
+                    }
+                    out.push((
+                        *log,
+                        seq,
+                        Op {
+                            header: op.header.encode(),
+                            payload: op.body.as_ref().map(|b| b.to_bytes()),
+                        },
+                    ));
+                }
+            }
+            Ok(out)
+        }
+
+        async fn ingest(&mut self, log: RouterLog, seq: Seq, op: Op) -> anyhow::Result<()> {
+            let result: anyhow::Result<()> = async {
+                let header = Header::decode(&op.header).context("decoding header")?;
+                ensure!(
+                    header.seq_num == seq,
+                    "header seq {} != {seq}",
+                    header.seq_num
+                );
+                ensure!(
+                    header.verifying_key == log.author()?,
+                    "header author != log author"
+                );
+                ensure!(
+                    header.extensions.log_id() == log.log_id(),
+                    "header log id != log"
+                );
+                let topic = self
+                    .topic_of(&log.log_id())
+                    .ok_or_else(|| anyhow!("no topic for log {log}"))?;
+                let tx = self
+                    .imports
+                    .read()
+                    .unwrap()
+                    .get(&topic)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("no import channel for topic"))?;
+                let operation = Operation {
+                    hash: header.hash(),
+                    header,
+                    body: op.payload.as_deref().map(Body::from_bytes),
+                };
+                tx.send(operation)
+                    .await
+                    .map_err(|_| anyhow!("import channel closed"))?;
+                Ok(())
+            }
+            .await;
+            if result.is_err() {
+                self.rejected.fetch_add(1, Ordering::Relaxed);
+            }
+            result
+        }
+    }
+
+    impl WatchableStorage<RouterLog> for OpStoreExt {
+        fn changed(&self) -> broadcast::Receiver<BTreeSet<RouterLog>> {
+            self.hints.subscribe()
         }
     }
 
@@ -184,6 +413,174 @@ mod imp {
             assert_eq!(bytes.len(), 64, "two fixed arrays, no length prefixes");
             let back: RouterLog = postcard::from_bytes(&bytes).unwrap();
             assert_eq!(back, l);
+        }
+    }
+
+    #[cfg(test)]
+    mod ext_tests {
+        use std::collections::BTreeSet;
+
+        use dash_router::core::{LogRanges, Ranges};
+        use dash_router::{AsyncStorage, WatchableStorage};
+        use p2panda::operation::Operation;
+
+        use super::*;
+        use crate::stores::test_support::{ack_up_to, insert, signed_op};
+        use crate::{DeviceId, SeqNum};
+
+        struct Fixture {
+            ext: OpStoreExt,
+            topic: TopicId,
+            log_id: LogId,
+            key: p2panda::SigningKey,
+            import_rx: mpsc::Receiver<Operation>,
+        }
+
+        /// One topic registered, one author with seqs 0..=3 stored, acked up to `acked`.
+        async fn fixture(acked: Option<SeqNum>) -> Fixture {
+            let store = OpStore::temporary_sqlite().await.unwrap();
+            let ext = OpStoreExt::new(store.clone());
+            let topic = TopicId::random();
+            let log_id = LogId::from_topic(topic);
+            let (tx, import_rx) = mpsc::channel(8);
+            assert!(ext.register_topic(topic, tx));
+            let key = p2panda::SigningKey::generate();
+            let mut backlink = None;
+            for seq in 0..4u32 {
+                let op = signed_op(&key, log_id, seq, backlink, &[seq as u8]);
+                insert(&store, &op, &log_id).await;
+                backlink = Some(op.hash);
+            }
+            if let Some(h) = acked {
+                ack_up_to(
+                    &store,
+                    &topic,
+                    &DeviceId::from(key.verifying_key()),
+                    log_id,
+                    h,
+                )
+                .await;
+            }
+            Fixture {
+                ext,
+                topic,
+                log_id,
+                key,
+                import_rx,
+            }
+        }
+
+        /// Review focus 3.
+        #[tokio::test]
+        async fn held_stops_at_acked_height() {
+            let f = fixture(Some(1)).await;
+            let log = RouterLog::new(f.log_id, f.key.verifying_key());
+            let all = f.ext.held_all().await.unwrap();
+            assert_eq!(
+                all.get(&log),
+                Some(&Ranges::range(0, 2)),
+                "seqs 0 and 1 only"
+            );
+            let of = f.ext.held_of(&BTreeSet::from([log])).await.unwrap();
+            assert_eq!(of.get(&log), Some(&Ranges::range(0, 2)));
+        }
+
+        #[tokio::test]
+        async fn unacked_log_is_not_held() {
+            let f = fixture(None).await;
+            let log = RouterLog::new(f.log_id, f.key.verifying_key());
+            assert!(f.ext.held_all().await.unwrap().is_empty());
+            let of = f.ext.held_of(&BTreeSet::from([log])).await.unwrap();
+            assert_eq!(
+                of.get(&log),
+                Some(&Ranges::empty()),
+                "requested-but-empty mirrors the request"
+            );
+        }
+
+        #[tokio::test]
+        async fn fetch_serves_acked_ops_with_encoded_headers() {
+            let f = fixture(Some(2)).await;
+            let log = RouterLog::new(f.log_id, f.key.verifying_key());
+            let want = LogRanges::from_pairs([(log, Ranges::full())]);
+            let ops = f.ext.fetch(&want).await.unwrap();
+            assert_eq!(
+                ops.iter().map(|(_, q, _)| *q).collect::<Vec<_>>(),
+                vec![0, 1, 2]
+            );
+            let header = p2panda::operation::Header::decode(&ops[1].2.header).unwrap();
+            assert_eq!(header.seq_num, 1);
+            assert_eq!(ops[1].2.payload.as_deref(), Some(&[1u8][..]));
+        }
+
+        #[tokio::test]
+        async fn ingest_forwards_a_valid_op_to_the_topic_channel() {
+            let mut f = fixture(Some(3)).await;
+            let other = p2panda::SigningKey::generate();
+            let op = signed_op(&other, f.log_id, 0, None, b"hello");
+            let log = RouterLog::new(f.log_id, other.verifying_key());
+            let wire = dash_router::core::Op {
+                header: op.header.encode(),
+                payload: op.body.as_ref().map(|b| b.to_bytes()),
+            };
+            f.ext.ingest(log, 0, wire).await.unwrap();
+            let got = f.import_rx.recv().await.unwrap();
+            assert_eq!(got.hash, op.hash);
+            assert_eq!(got.body, op.body);
+        }
+
+        /// Review focus 2.
+        #[tokio::test]
+        async fn ingest_rejects_mismatched_header() {
+            let mut f = fixture(Some(3)).await;
+            let other = p2panda::SigningKey::generate();
+            let op = signed_op(&other, f.log_id, 0, None, b"hello");
+            let wire = dash_router::core::Op {
+                header: op.header.encode(),
+                payload: None,
+            };
+            // Claimed under the fixture's author, but signed by `other`.
+            let wrong_author = RouterLog::new(f.log_id, f.key.verifying_key());
+            assert!(f.ext.ingest(wrong_author, 0, wire.clone()).await.is_err());
+            // Right author, wrong seq.
+            let right = RouterLog::new(f.log_id, other.verifying_key());
+            assert!(f.ext.ingest(right, 5, wire.clone()).await.is_err());
+            assert_eq!(f.ext.rejected(), 2);
+            assert!(f.import_rx.try_recv().is_err(), "nothing forwarded");
+        }
+
+        /// Review focus 4.
+        #[tokio::test]
+        async fn ingest_without_topic_mapping_is_an_error() {
+            let mut f = fixture(Some(3)).await;
+            let stray_log_id = LogId::from_topic(TopicId::random());
+            let other = p2panda::SigningKey::generate();
+            let op = signed_op(&other, stray_log_id, 0, None, b"x");
+            let wire = dash_router::core::Op {
+                header: op.header.encode(),
+                payload: None,
+            };
+            let log = RouterLog::new(stray_log_id, other.verifying_key());
+            assert!(f.ext.ingest(log, 0, wire).await.is_err());
+            assert_eq!(f.ext.rejected(), 1);
+        }
+
+        #[tokio::test]
+        async fn hint_reaches_changed_subscribers() {
+            let f = fixture(Some(3)).await;
+            let mut rx = f.ext.changed();
+            let log = RouterLog::new(f.log_id, f.key.verifying_key());
+            f.ext.hint(log);
+            assert_eq!(rx.recv().await.unwrap(), BTreeSet::from([log]));
+        }
+
+        #[tokio::test]
+        async fn unregistered_topic_disappears_from_held_all() {
+            let f = fixture(Some(3)).await;
+            assert!(!f.ext.held_all().await.unwrap().is_empty());
+            f.ext.unregister_topic(f.topic);
+            assert!(f.ext.held_all().await.unwrap().is_empty());
+            assert!(!f.ext.has_topic(&f.log_id));
         }
     }
 }
