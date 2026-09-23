@@ -33,9 +33,12 @@ mailbox-local-server = { path = "crates/mailbox-local-server" }
 local-hub-discovery = { path = "crates/local-hub-discovery" }
 reporting = { path = "crates/reporting" }
 
-# `dashchat-offline-node` plus one commit: SQLite transactions begin with
-# BEGIN IMMEDIATE, so the app and the iOS push extension sharing one database
-# file stop refusing each other's writes with "database is locked".
+# p2panda 0.7.1 with the offline-node backport and the groups extension API,
+# merged with `dashchat-named-stream-cursors`, which adds:
+# - SQLite transactions begin with BEGIN IMMEDIATE, so the app and the iOS push
+#   extension sharing one database file stop refusing each other's writes with
+#   "database is locked".
+# - The `custom_cursor_name` param to `stream_from` (p2panda#1408).
 p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
 p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge", features = [
   "serde",
