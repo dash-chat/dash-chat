@@ -5,25 +5,47 @@
 
 	interface Props {
 		onEmojiSelected: (emoji: string) => void;
+		onSearchFocus?: () => void;
 	}
-	let { onEmojiSelected }: Props = $props();
+	let { onEmojiSelected, onSearchFocus }: Props = $props();
 
 	let content: Element;
+	let pickerComponent: HTMLElement | undefined;
+
+	/** Empty the search and take focus off it, which also drops its keyboard. */
+	export function clearSearch() {
+		const input =
+			pickerComponent?.shadowRoot?.querySelector<HTMLInputElement>('#search');
+		if (!input) return;
+		input.blur();
+		if (input.value === '') return;
+		input.value = '';
+		input.dispatchEvent(new Event('input', { bubbles: true }));
+	}
 
 	onMount(() => {
-		let pickerComponent = new Picker({
+		const picker = new Picker({
 			// if not set the library will try and fetch online
 			// i18n requires having one of these per language
 			// from https://cdn.jsdelivr.net/npm/emoji-picker-element-data@^1/en/emojibase/data.json
 			dataSource: '/emoji.en.json',
 		});
-		pickerComponent.addEventListener('emoji-click', event => {
+		picker.addEventListener('emoji-click', event => {
 			if (event.detail.unicode) {
 				onEmojiSelected(event.detail.unicode);
 			}
 		});
-		content.appendChild(pickerComponent);
+		// On the shadow root: focus inside it is retargeted to the host outside.
+		picker.shadowRoot!.addEventListener('focusin', (event: Event) => {
+			if (
+				event.target instanceof HTMLInputElement &&
+				event.target.id === 'search'
+			)
+				onSearchFocus?.();
+		});
+		content.appendChild(picker);
+		pickerComponent = picker;
 	});
 </script>
 
-<div bind:this={content} class="w-full"></div>
+<div bind:this={content} class="h-full w-full"></div>

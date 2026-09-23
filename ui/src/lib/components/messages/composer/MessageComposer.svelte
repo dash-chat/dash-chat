@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Block, useTheme } from 'konsta/svelte';
+	import { useTheme } from 'konsta/svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
@@ -31,8 +31,7 @@
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import BelowKeyboardSurface from '$lib/components/BelowKeyboardSurface.svelte';
 	import { showToast } from '$lib/utils/toasts';
-	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
-	import SheetHandle from '$lib/components/SheetHandle.svelte';
+	import EmojiPickerSheet from '$lib/components/messages/EmojiPickerSheet.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
@@ -495,23 +494,14 @@
 
 <DiscardDraftDialog bind:this={discardDialog} onConfirm={discardDraftAndEdit} />
 
-<Sheet
-	class="pb-safe text-lg"
+<EmojiPickerSheet
 	opened={showEmojiPicker}
-	onBackdropClick={() => (showEmojiPicker = false)}
->
-	<div class="flex flex-col items-center">
-		<SheetHandle />
-	</div>
-	<Block>
-		<EmojiPickerWrapper
-			onEmojiSelected={emoji => {
-				value += emoji;
-				showEmojiPicker = false;
-			}}
-		></EmojiPickerWrapper>
-	</Block>
-</Sheet>
+	onClose={() => (showEmojiPicker = false)}
+	onEmojiSelected={emoji => {
+		value += emoji;
+		showEmojiPicker = false;
+	}}
+/>
 
 <style>
 	.input-row.covered {

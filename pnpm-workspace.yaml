@@ -22,5 +22,6 @@ allowBuilds:
   '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9': set this to true or false
 
 patchedDependencies:
+  emoji-picker-element@1.29.0: patches/emoji-picker-element@1.29.0.patch
   konsta@5.0.6: patches/konsta@5.0.6.patch
   signalium@3.0.1: patches/signalium@3.0.1.patch
