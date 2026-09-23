@@ -69,19 +69,22 @@ function readStamps(): InstallStamps {
 }
 
 /** Whether `udid` already has this exact `archive` installed (per the stamp).
- *  `marker` is the caller's current reading of what is installed there now; it
- *  has to match the one recorded alongside the archive. */
+ *  `readMarker` reads what is installed on the device right now; it has to
+ *  match the one recorded alongside the archive. Taken as a thunk because
+ *  reading it is a round trip to the device, and a udid with no stamp — or one
+ *  stamped with different bytes — reinstalls without ever needing it. */
 export function deviceHasBuild(
 	udid: string,
 	archive: string,
-	marker: string | undefined,
+	readMarker: () => string | undefined,
 ): boolean {
-	// No reading of what is installed is no answer: reinstall rather than
-	// match one absent marker against another and skip the install.
-	if (marker === undefined) return false;
 	const stamp = readStamps()[udid];
 	if (stamp === undefined || !existsSync(archive)) return false;
 	if (stamp.archive !== hashFile(archive)) return false;
+	const marker = readMarker();
+	// No reading of what is installed is no answer: reinstall rather than
+	// match one absent marker against another and skip the install.
+	if (marker === undefined) return false;
 	if (stamp.marker !== marker) {
 		// The same bytes, found somewhere else. Named because the marker rests on
 		// undocumented behaviour — that iOS only moves an app's container when

@@ -676,11 +676,11 @@ export class Message extends TestHelper {
 	/** Open this message's actions menu with the gesture its platform uses — a
 	 * long-press on mobile, which opens the spotlight overlay, or the hover
 	 * toolbar's ⋯ button on desktop — and wait for it to actually open. The
-	 * message is scrolled to the middle first: a menu anchored to a message
-	 * at the very top opens past the viewport's edge. */
+	 * message is scrolled to the middle before each attempt: a menu anchored to
+	 * a message at the very top opens past the viewport's edge. */
 	async openActions() {
-		await this.wrapper.scrollIntoView({ block: 'center' });
 		if (!(await this.isMobileBuild())) {
+			await this.wrapper.scrollIntoView({ block: 'center' });
 			await this.clickHoverButton('message-hover-menu');
 			await this.actionsMenu.waitForDisplayed();
 			return;
@@ -693,9 +693,21 @@ export class Message extends TestHelper {
 			// A press on an open overlay dismisses it, so a menu that opened
 			// just past the settle window must not be pressed again.
 			if (await this.actionsMenu.isDisplayed()) return;
-			await this.longPressBubble();
-			const opened = await this.actionsMenu
-				.waitForDisplayed({ timeout: RENDER_SETTLE_WINDOW })
+			// Re-centred every attempt: the burst of arriving messages this loop
+			// exists for also scrolls the list, and a menu anchored to a message
+			// back at the viewport's edge opens past it and reads as not open.
+			await this.wrapper.scrollIntoView({ block: 'center' });
+			// The gesture itself can fail, not just the wait: it dispatches
+			// `touchend` against the selector it pressed 700ms earlier, and the
+			// re-render that cancels the press is free to have taken that node
+			// away. That is this loop's own case, so it costs an attempt rather
+			// than the run.
+			const opened = await this.longPressBubble()
+				.then(() =>
+					this.actionsMenu.waitForDisplayed({
+						timeout: RENDER_SETTLE_WINDOW,
+					}),
+				)
 				.then(
 					() => true,
 					() => false,

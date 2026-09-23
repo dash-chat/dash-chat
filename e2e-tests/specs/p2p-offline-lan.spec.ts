@@ -49,6 +49,19 @@ describe('P2P sync on a LAN with no internet', () => {
 			{ platform: 'phone' },
 		]);
 		const home = (await alice.wifiInfo()).ssid;
+		// A positive control for the probe `relaunchOn` leans on. It only throws
+		// on a `true`, so a probe that can never say yes — a retired endpoint, a
+		// CORS policy change, a webview that runs the script but cannot fetch —
+		// would let this whole spec pass on a network with full internet,
+		// proving nothing about mDNS. The phones start on the lab's network,
+		// which has upstream, so the probe has to say so here.
+		if (!(await alice.hasInternet())) {
+			throw new Error(
+				`the internet probe says "${home}" has no upstream, so it cannot ` +
+					'tell an offline network from a broken probe. This spec needs to ' +
+					'start on a network with internet.',
+			);
+		}
 		const network = wifiNetworks().find(n => n.ssid !== home);
 		if (network === undefined) this.skip();
 		offline = network;

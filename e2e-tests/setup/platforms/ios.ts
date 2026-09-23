@@ -617,7 +617,7 @@ export class IosPlatform implements AgentPlatform {
 		// app's own delete_account instead), and only on devices that don't
 		// already hold this exact build from a previous run.
 		for (const udid of this.udids.values()) {
-			if (deviceHasBuild(udid, SESSION_IPA, installedBundlePath(udid))) {
+			if (deviceHasBuild(udid, SESSION_IPA, () => installedBundlePath(udid))) {
 				console.log(
 					`[ios] ${udid} already has the current e2e build — skipping install`,
 				);

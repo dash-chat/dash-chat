@@ -30,27 +30,39 @@ function freshUdid(): string {
 test('a device keeps the build it was given', () => {
 	const udid = freshUdid();
 	recordInstalled(udid, archive, 'bundle-a');
-	assert.equal(deviceHasBuild(udid, archive, 'bundle-a'), true);
+	assert.equal(
+		deviceHasBuild(udid, archive, () => 'bundle-a'),
+		true,
+	);
 });
 
 test('a build someone else installed over ours is reinstalled', () => {
 	const udid = freshUdid();
 	recordInstalled(udid, archive, 'bundle-a');
 	// Another install moved the app to a container of its own.
-	assert.equal(deviceHasBuild(udid, archive, 'bundle-b'), false);
+	assert.equal(
+		deviceHasBuild(udid, archive, () => 'bundle-b'),
+		false,
+	);
 });
 
 test('a marker that could not be read is reinstalled', () => {
 	const udid = freshUdid();
 	recordInstalled(udid, archive, 'bundle-a');
 	// The device could not be asked. Two unknowns must not match.
-	assert.equal(deviceHasBuild(udid, archive, undefined), false);
+	assert.equal(
+		deviceHasBuild(udid, archive, () => undefined),
+		false,
+	);
 });
 
 test('an unreadable marker records nothing to match next time', () => {
 	const udid = freshUdid();
 	recordInstalled(udid, archive, undefined);
-	assert.equal(deviceHasBuild(udid, archive, 'bundle-a'), false);
+	assert.equal(
+		deviceHasBuild(udid, archive, () => 'bundle-a'),
+		false,
+	);
 });
 
 test('a stamp from before the marker existed is reinstalled', () => {
@@ -62,9 +74,15 @@ test('a stamp from before the marker existed is reinstalled', () => {
 	// The old format: the archive hash alone, as a bare string.
 	stamps[udid] = 'a'.repeat(64);
 	writeFileSync(STAMP_FILE, JSON.stringify(stamps));
-	assert.equal(deviceHasBuild(udid, archive, 'bundle-a'), false);
+	assert.equal(
+		deviceHasBuild(udid, archive, () => 'bundle-a'),
+		false,
+	);
 });
 
 test('a device nobody recorded is reinstalled', () => {
-	assert.equal(deviceHasBuild(freshUdid(), archive, 'bundle-a'), false);
+	assert.equal(
+		deviceHasBuild(freshUdid(), archive, () => 'bundle-a'),
+		false,
+	);
 });

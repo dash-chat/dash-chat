@@ -30,10 +30,13 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // brackets. Sampling one run's os_log output found this shape 856 times
         // (`(re-) join gossip overlay topic=… nodes=[…]`, `joined topic …`),
         // naming who a device is gossiping with. The list is taken whole, so a
-        // second id cannot survive by being unlabelled. An empty `nodes=[]`
-        // stays readable: it says nobody was found, which is what a discovery
-        // failure looks like, and it names no one.
-        r"\b[a-z_]*nodes?=\[[0-9a-fA-F][0-9a-fA-F,\s]*\]",
+        // second id cannot survive by being unlabelled. The `_id` and endpoint
+        // spellings are covered too, for a version that labels the same list
+        // differently: what the sample shows is the 10-character short form, so
+        // the 40-char hex rule above is no backstop for any of them. An empty
+        // `nodes=[]` stays readable: it says nobody was found, which is what a
+        // discovery failure looks like, and it names no one.
+        r"\b[a-z_]*(node|endpoint)(_id)?s?=\[[0-9a-fA-F][0-9a-fA-F,\s]*\]",
         // Socket addresses of peers and of this device, as the address book
         // prints them: `Ip(188.84.6.11:49882)`, and bracketed for v6,
         // `Ip([2a02:…:1]:41234)` / `Ip([fe80::…%en0]:…)`. A peer's address says
@@ -173,6 +176,10 @@ mod tests {
             redact(input),
             "(re-) join gossip overlay [REDACTED] nodes=[]"
         );
+        // The spellings the sample did not happen to show. What p2panda logs is
+        // the 10-character short form, so nothing else would catch these.
+        let input = "peers node_ids=[a64c9c1b7f, 7dd414f859] endpoint_ids=[9b26ccaba4]";
+        assert_eq!(redact(input), "peers [REDACTED] [REDACTED]");
     }
 
     #[test]
