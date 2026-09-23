@@ -17,7 +17,6 @@
  * (default random; the run logs it — re-run with the same seed to reproduce
  * a failure).
  */
-import { createProfiles } from '../helpers/flows/create-profiles';
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
 import { blockMoves } from '../helpers/fuzz/moves/block';
 import { cloudMoves } from '../helpers/fuzz/moves/cloud';
@@ -49,7 +48,6 @@ describe('Spotty cloud stress', () => {
 		// its link is the only thing the checks measure.
 		await Promise.all([agent1.disableP2p(), agent2.disableP2p()]);
 		const agents = { Alice: agent1, Bob: agent2 };
-		await createProfiles(agents);
 		fuzzer = await Fuzzer.prepare(this, { agents });
 	});
 

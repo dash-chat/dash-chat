@@ -113,6 +113,7 @@ export interface InteractionTarget {
 
 type Op =
 	| { id: OpId; topic: Topic; kind: 'profile'; agent: string; name: string }
+	| { id: OpId; topic: Topic; kind: 'accept'; from: string; to: string }
 	| {
 			id: OpId;
 			topic: Topic;
@@ -184,6 +185,27 @@ type MembershipOp = Extract<Op, { kind: 'group' | 'groupRemoved' }>;
  * enough to still be rendered near the bottom without scrolling. */
 const RECENT_WINDOW = 8;
 
+/** The op kinds a viewer's chat filters by authorship time when it had their
+ * author blocked. A group's info is not among them: it stays visible. */
+const CHAT_KINDS: Op['kind'][] = [
+	'message',
+	'bytes',
+	'edit',
+	'delete',
+	'reaction',
+];
+
+function requestOp(from: string, to: string): OpId {
+	return `request:${from}>${to}`;
+}
+
+/** What `accepter` publishes when a request from someone it had already
+ *  entered the link of arrives: the node marks the pair a contact on its own
+ *  device group and replies, which is what lets the requester do the same. */
+function acceptOp(accepter: string, requester: string): OpId {
+	return `accept:${accepter}>${requester}`;
+}
+
 function profileOp(agent: string, version: number): OpId {
 	return `profile:${agent}:${version}`;
 }
@@ -221,7 +243,7 @@ function durationSeconds(label: string): number {
  * writes is thrown away as it arrives. */
 function authorOf(op: Op): string {
 	if (op.kind === 'profile') return op.agent;
-	if (op.kind === 'request') return op.from;
+	if (op.kind === 'request' || op.kind === 'accept') return op.from;
 	if (op.kind === 'group' || op.kind === 'groupRemoved') return op.by;
 	if (op.kind === 'groupInfo') return op.chat.creator;
 	if (op.kind === 'reaction') return op.reactor;
@@ -318,6 +340,8 @@ export class ExpectedModel {
 	/** Agent name → the profiles it has published, oldest first: what a
 	 * device calls them is the last of these it has heard. */
 	private readonly profiles = new Map<string, Op[]>();
+	/** The name each contact request carries, by the op that carries it. */
+	private readonly requestNames = new Map<OpId, string>();
 	/** Agent name → the group preparation made for it to read its connection
 	 * chip in. */
 	private readonly chipChats = new Map<string, ExpectedChat>();
@@ -332,12 +356,20 @@ export class ExpectedModel {
 	 * announces none of them; what arrives *while* a device is away is what
 	 * makes a notification, and reaching an away device takes a push. */
 	private readonly catchingUp = new Map<string, Set<OpId>>();
+	/** Answers a request's arrival has called for, waiting to be written: they
+	 * are made while knowledge is being spread, and adding to the ops being
+	 * walked there would disturb the walk. */
+	private pendingAccepts: Extract<Op, { kind: 'accept' }>[] = [];
 	/** Blocks in force, as 'blocker>blocked'. Nothing of one leaves the
 	 * blocker's own devices. */
 	private readonly blocked = new Set<string>();
-	/** Holder name → ops its node threw away because they arrived while it
-	 * was blocking their author. Unblocking never brings one back. */
+	/** Ops a device threw away as they arrived while it was blocking their
+	 *  author — a profile, an invitation to a group: never offered again, so
+	 *  never seen. */
 	private readonly discarded = new Map<string, Set<OpId>>();
+	/** Chat ops a device will not show because their author was blocked when
+	 *  they were written — see [`hide`]. */
+	private readonly hidden = new Map<string, Set<OpId>>();
 	/** Agent name → chats whose view grew since a run last looked at its
 	 * screen. An agent that was away gains while it is away; the chats it
 	 * gained are checked when it can be driven again. */
@@ -364,14 +396,16 @@ export class ExpectedModel {
 		this.cloudDegradable = cloudDegradable;
 		this.push = push;
 		this.knowledge.set(CLOUD, new Set());
+		// Every holder exists before the first op is recorded: recording
+		// converges, and converging reads the knowledge of all of them.
 		for (const { name, notifications } of agents) {
 			this.knowledge.set(name, new Set());
 			// Only an agent whose device the run reads keeps notifications: for
 			// the rest there is nothing to compare an expectation against, and
 			// [`noteNotified`] leaves them alone by finding none of this.
 			if (notifications !== null) this.posted.set(name, new Map());
-			this.recordProfile(name, name);
 		}
+		for (const { name } of agents) this.recordProfile(name, name);
 	}
 
 	names(): string[] {
@@ -412,6 +446,7 @@ export class ExpectedModel {
 
 	background(name: string): void {
 		this.backgrounded.add(name);
+		this.converge();
 	}
 
 	/** Coming back to the front reads the route the app returns to, which is
@@ -422,6 +457,7 @@ export class ExpectedModel {
 		// foregrounds an app already on screen must not silence it.
 		if (this.backgrounded.delete(name)) this.catchUp(name);
 		const route = this.viewing.get(name)?.route;
+		this.converge();
 		if (route === undefined) return;
 		this.clearPosted(name, route);
 		this.clearUnread(name, route);
@@ -430,6 +466,7 @@ export class ExpectedModel {
 	stopApp(name: string): void {
 		this.backgrounded.delete(name);
 		this.stopped.add(name);
+		this.converge();
 	}
 
 	/** Everything `name` has yet to hear is now a catch-up rather than an
@@ -454,6 +491,7 @@ export class ExpectedModel {
 	startApp(name: string): void {
 		if (this.stopped.delete(name)) this.catchUp(name);
 		this.wentHome(name);
+		this.converge();
 	}
 
 	/** The LAN `name` is on, or null while it is on none. */
@@ -468,10 +506,12 @@ export class ExpectedModel {
 
 	agentJoin(name: string, network: string): void {
 		this.network.set(name, network);
+		this.converge();
 	}
 
 	agentLeave(name: string): void {
 		this.network.delete(name);
+		this.converge();
 	}
 
 	/** Agents whose UI can be driven right now, on `network`. */
@@ -508,6 +548,7 @@ export class ExpectedModel {
 
 	setCloudUsable(usable: boolean): void {
 		this.cloud.usable = usable;
+		this.converge();
 	}
 
 	/** Whether every agent has a members-less group to read its connection
@@ -537,18 +578,22 @@ export class ExpectedModel {
 
 	hubJoin(name: string, network: string): void {
 		this.hub(name).network = network;
+		this.converge();
 	}
 
 	hubLeave(name: string): void {
 		this.hub(name).network = null;
+		this.converge();
 	}
 
 	startHub(name: string): void {
 		this.hub(name).running = true;
+		this.converge();
 	}
 
 	stopHub(name: string): void {
 		this.hub(name).running = false;
+		this.converge();
 	}
 
 	/** The running hubs on `network`. A hub is wherever the host's card is:
@@ -567,6 +612,9 @@ export class ExpectedModel {
 		return this.hubsOn(network).length;
 	}
 
+	/** Whether the pair have each entered the other's link. A fact about the
+	 *  two of them, which neither device need know yet: for what one of them
+	 *  can act on, see [`contactsOf`]. */
 	areContacts(a: string, b: string): boolean {
 		return this.added.has(`${a}>${b}`) && this.added.has(`${b}>${a}`);
 	}
@@ -586,24 +634,58 @@ export class ExpectedModel {
 	 * one completes the pair and adds their chat to the model, and is an
 	 * acceptance its sender is never told about. */
 	recordAdded(from: string, to: string): void {
+		const completes = this.added.has(`${to}>${from}`);
 		this.added.add(`${from}>${to}`);
-		if (!this.added.has(`${to}>${from}`)) {
-			this.record(from, {
-				id: `request:${from}>${to}`,
-				topic: `inbox:${to}`,
-				kind: 'request',
-				from,
-				to,
-				name: this.displayName(from, from) ?? from,
-			});
-			return;
-		}
+		// Both adds announce themselves the same way — entering a link is a
+		// local act, and what tells the other side it happened is an op on
+		// their inbox. The add that completes a pair is no exception: until
+		// its op lands, the peer has only its own outgoing request, and shows
+		// the pair as one.
+		const id = requestOp(from, to);
+		const name = this.displayName(from, from) ?? from;
+		this.requestNames.set(id, name);
+		this.record(from, {
+			id,
+			topic: `inbox:${to}`,
+			kind: 'request',
+			from,
+			to,
+			name,
+		});
+		if (!completes) return;
 		this.addChat({
 			kind: 'direct',
 			id: '',
 			name: '',
 			creator: '',
 			members: [from, to],
+		});
+	}
+
+	/**
+	 * Accept a request `accepter` is holding, as tapping accept does: the node
+	 * writes the contact marker on its own device there and then — no round
+	 * trip, unlike entering a link — and replies, which is what lets the
+	 * requester write theirs. `accept_contact` in
+	 * crates/dashchat-node/src/node.rs, reached both by the tap and, for a
+	 * mutual add, by [`noteAccepted`] when the second request arrives.
+	 */
+	recordAccepted(accepter: string, requester: string): void {
+		this.added.add(`${accepter}>${requester}`);
+		this.record(accepter, {
+			id: acceptOp(accepter, requester),
+			topic: `inbox:${requester}`,
+			kind: 'accept',
+			from: accepter,
+			to: requester,
+		});
+		if (this.directChatOrNull(accepter, requester) !== null) return;
+		this.addChat({
+			kind: 'direct',
+			id: '',
+			name: '',
+			creator: '',
+			members: [accepter, requester],
 		});
 	}
 
@@ -627,12 +709,14 @@ export class ExpectedModel {
 	 *  picker offers them. */
 	blockContact(name: string, peer: string): void {
 		this.blocked.add(`${name}>${peer}`);
+		this.converge();
 	}
 
 	/** Record that `name` unblocked `peer`. What arrived while the block was
-	 *  on stays thrown away: only what comes after is kept. */
+	 *  on stays thrown away: only what comes after is kept — see [`rejects`]. */
 	unblockContact(name: string, peer: string): void {
 		this.blocked.delete(`${name}>${peer}`);
+		this.converge();
 	}
 
 	/** Requests `name` can accept: someone added them, their request has
@@ -642,7 +726,7 @@ export class ExpectedModel {
 			other =>
 				other !== name &&
 				!this.added.has(`${name}>${other}`) &&
-				this.knows(name).has(`request:${other}>${name}`),
+				this.knows(name).has(requestOp(other, name)),
 		);
 	}
 
@@ -661,7 +745,7 @@ export class ExpectedModel {
 		return this.names().filter(
 			other =>
 				other !== name &&
-				this.areContacts(name, other) &&
+				this.hasAccepted(name, other) &&
 				!this.blocks(name, other) &&
 				this.knowsProfile(name, other),
 		);
@@ -682,7 +766,22 @@ export class ExpectedModel {
 		return this.chats.filter(
 			c =>
 				this.membersFor(c, name).includes(name) &&
-				(c.kind === 'direct' || this.hasGroup(name, c)),
+				(c.kind === 'direct'
+					? this.hasDirectChat(name, c)
+					: this.hasGroup(name, c)),
+		);
+	}
+
+	/** Whether `name` has a row for a direct chat: it entered the peer's link,
+	 *  which leaves a placeholder of its own, or the peer's request reached it.
+	 *  A chat the pair will share once an answer crosses is on neither screen
+	 *  before that. */
+	private hasDirectChat(name: string, chat: ExpectedChat): boolean {
+		const peer = chat.members.find(member => member !== name);
+		if (peer === undefined) return true;
+		return (
+			this.added.has(`${name}>${peer}`) ||
+			this.knows(name).has(requestOp(peer, name))
 		);
 	}
 
@@ -703,9 +802,8 @@ export class ExpectedModel {
 	}
 
 	/** Chats `name` can send in: the ones it can open whose composer is there.
-	 * Only a block takes it away — a mutual add makes the pair contacts on the
-	 * spot, so the chat is writable from then on whether or not the peer's
-	 * profile has caught up. */
+	 * Only a block takes it away — a group it has left is not among the chats
+	 * it can open at all. */
 	sendableChatsFor(name: string): ExpectedChat[] {
 		return this.chatsFor(name).filter(c => !this.view(name, c).blocked);
 	}
@@ -722,7 +820,7 @@ export class ExpectedModel {
 		};
 		this.addChat(chat);
 		for (const member of members) {
-			this.recordGroupAdd(creator, chat, member, creator);
+			this.recordMembership(creator, this.groupAddOp(chat, member, creator));
 		}
 		return chat;
 	}
@@ -764,7 +862,7 @@ export class ExpectedModel {
 	/** Record that `by` added `member` to `chat`: the member learns of the
 	 *  group through their inbox, as an invited one does. */
 	addGroupMember(chat: ExpectedChat, by: string, member: string): void {
-		this.recordGroupAdd(by, chat, member, by);
+		this.recordMembership(by, this.groupAddOp(chat, member, by));
 	}
 
 	/** Groups `name` may leave: any it is in, except one it created that
@@ -914,14 +1012,18 @@ export class ExpectedModel {
 	}
 
 	/** What `viewer` calls `who`: the last profile of theirs to reach it, or
-	 *  null while it has none and has only their key to go on. */
+	 *  the one their contact request carried while that is all it has, or null
+	 *  while it has neither and only their key to go on. */
 	displayName(viewer: string, who: string): string | null {
 		const known = this.knows(viewer);
 		let name: string | null = null;
 		for (const op of this.profiles.get(who) ?? []) {
 			if (op.kind === 'profile' && known.has(op.id)) name = op.name;
 		}
-		return name;
+		if (name !== null) return name;
+		const request = requestOp(who, viewer);
+		if (!known.has(request)) return null;
+		return this.requestNames.get(request) ?? null;
 	}
 
 	/** Whether `viewer` has any profile of `who`. */
@@ -1009,7 +1111,7 @@ export class ExpectedModel {
 		const known = this.knows(agent);
 		const views = new Map<string, MessageView>();
 		for (const op of this.opsByTopic.get(chatTopic(chat)) ?? []) {
-			if (!known.has(op.id)) continue;
+			if (!known.has(op.id) || this.isHidden(agent, op)) continue;
 			this.fold(views, op);
 		}
 		// Who the peer is, not what this device calls them: a rename changes
@@ -1034,6 +1136,14 @@ export class ExpectedModel {
 	recordExistingContacts(a: string, b: string): void {
 		this.added.add(`${a}>${b}`);
 		this.added.add(`${b}>${a}`);
+		// A pair read off the devices are contacts there already, marker and
+		// all, so both hold the answer that made them one. Without it nothing
+		// the run adopts would count as a contact and every move that needs
+		// one — a group, a block — would quietly have nobody to make it with.
+		const accepted = acceptOp(a, b);
+		this.silent.add(accepted);
+		this.knowledge.get(a)?.add(accepted);
+		this.knowledge.get(b)?.add(accepted);
 		if (this.directChatOrNull(a, b) !== null) return;
 		this.addChat({
 			kind: 'direct',
@@ -1067,8 +1177,10 @@ export class ExpectedModel {
 		for (const member of members) {
 			// The run neither produced these adds nor may expect a device to
 			// announce them, as `store` does for everything else it adopts.
-			const op = this.recordGroupAdd(member, chat, member, chat.creator);
+			// Silencing comes first: recording is what delivers an op.
+			const op = this.groupAddOp(chat, member, chat.creator);
 			this.silent.add(op.id);
+			this.recordMembership(member, op);
 		}
 		return chat;
 	}
@@ -1205,30 +1317,83 @@ export class ExpectedModel {
 	 * Spread knowledge as the app does: within each LAN, for each topic, the
 	 * holders subscribed to it end up with the union of their ops of it. A hub
 	 * subscribes to everything. Iterated until nothing changes, since learning
-	 * a group subscribes to its chat. Returns the chats whose view changed,
-	 * per agent a run can look at: one that was away kept gaining while it
-	 * was, and what it gained is returned once its screen is back.
+	 * a group subscribes to its chat.
+	 *
+	 * Every recording and every change of who can reach whom ends in this, so
+	 * an op is in the model's hands the moment it is deliverable — as it is in
+	 * the app's. A check that read a model still holding one back would be
+	 * waiting for a device to un-receive it.
 	 */
-	propagate(): Map<string, ExpectedChat[]> {
+	private converge(): boolean {
 		return this.spread(() => this.components());
+	}
+
+	/** Converge and hand over what grew, which is what a move's settle does. */
+	propagate(): Map<string, ExpectedChat[]> {
+		this.converge();
+		return this.takeGrowth();
 	}
 
 	/** Spread knowledge as if every agent shared one LAN: where they are
 	 * after being together on their usual network, as during preparation. */
 	propagateShared(): Map<string, ExpectedChat[]> {
-		return this.spread(() => [this.activeNames()]);
+		this.spread(() => [this.activeNames()]);
+		return this.takeGrowth();
 	}
 
-	private spread(components: () => string[][]): Map<string, ExpectedChat[]> {
+	/**
+	 * Throw when the model was holding ops back that the devices may already
+	 * have: `where` asserted against a state they had left behind. Always true
+	 * while every mutator converges — a failure here names the one that does
+	 * not, rather than leaving it to surface as a phantom product bug.
+	 */
+	assertConverged(where: string): void {
+		if (this.converge()) {
+			throw new Error(
+				`${where} ran with the model behind the devices: ops became ` +
+					'deliverable without the model converging on them',
+			);
+		}
+	}
+
+	/**
+	 * Hand out the chats whose view grew since they were last taken, per agent
+	 * a run can look at: one that was away kept gaining while it was, and what
+	 * it gained is handed over once its screen is back.
+	 */
+	takeGrowth(): Map<string, ExpectedChat[]> {
+		const growth = new Map<string, ExpectedChat[]>();
+		for (const name of this.activeNames()) {
+			const waiting = this.unchecked.get(name);
+			if (waiting === undefined) continue;
+			this.unchecked.delete(name);
+			const open = this.chatsFor(name);
+			const chats = this.chats.filter(c => waiting.has(c) && open.includes(c));
+			if (chats.length > 0) growth.set(name, chats);
+		}
+		return growth;
+	}
+
+	/**
+	 * Bring knowledge up to date with everything deliverable so far, keeping
+	 * what each agent gained for [`takeGrowth`]. Returns whether anything
+	 * moved, which is how a check tells it was about to assert against a state
+	 * the devices had already left behind.
+	 */
+	private spread(components: () => string[][]): boolean {
 		const before = new Map(
 			this.names().map(name => [name, new Set(this.knows(name))]),
 		);
+		let moved = false;
 		let changed = true;
 		while (changed) {
 			changed = false;
 			for (const component of components()) {
-				if (this.unionComponent(component)) changed = true;
+				if (this.unionComponent(component)) changed = moved = true;
 			}
+			// An answer written here is itself something to deliver, so the
+			// loop goes round again for it.
+			if (this.writeAccepts()) changed = moved = true;
 		}
 		// Whatever was waiting has landed, silently; anything arriving from
 		// here on reaches an app that is up and announces itself.
@@ -1240,16 +1405,7 @@ export class ExpectedModel {
 			for (const chat of gained) waiting.add(chat);
 			this.unchecked.set(name, waiting);
 		}
-		const growth = new Map<string, ExpectedChat[]>();
-		for (const name of this.activeNames()) {
-			const waiting = this.unchecked.get(name);
-			if (waiting === undefined) continue;
-			this.unchecked.delete(name);
-			const open = this.chatsFor(name);
-			const chats = this.chats.filter(c => waiting.has(c) && open.includes(c));
-			if (chats.length > 0) growth.set(name, chats);
-		}
-		return growth;
+		return moved;
 	}
 
 	private message(label: string): ExpectedMessage {
@@ -1266,9 +1422,12 @@ export class ExpectedModel {
 		);
 	}
 
+	/** A chat is a topic its members subscribe to from here on, so whatever
+	 *  was already written to it can travel the moment the chat exists. */
 	private addChat(chat: ExpectedChat): void {
 		this.chats.push(chat);
 		this.chatByTopic.set(chatTopic(chat), chat);
+		this.converge();
 	}
 
 	private record(holder: string, op: Op): void {
@@ -1294,13 +1453,12 @@ export class ExpectedModel {
 	/** Record that `by` put `member` in `chat`, as its own op: a member taken
 	 *  out and put back is added by an op no device has seen before, which is
 	 *  what makes the second add news rather than something already known. */
-	private recordGroupAdd(
-		holder: string,
+	private groupAddOp(
 		chat: ExpectedChat,
 		member: string,
 		by: string,
 	): MembershipOp {
-		const op: MembershipOp = {
+		return {
 			id: `group:${chat.id}>${member}:${++this.membershipCounter}`,
 			topic: `inbox:${member}`,
 			kind: 'group',
@@ -1308,8 +1466,6 @@ export class ExpectedModel {
 			member,
 			by,
 		};
-		this.recordMembership(holder, op);
-		return op;
 	}
 
 	/** Record a join or a departure, and keep it under its group in the order
@@ -1330,11 +1486,88 @@ export class ExpectedModel {
 	}
 
 	private put(holder: string, op: Op): void {
+		this.write(holder, op);
+		// An op is on its way to everyone it can reach the moment it exists —
+		// unless it is state the run adopted rather than produced, which is a
+		// fixture of who had what and stays where it was put.
+		if (!this.silent.has(op.id)) this.converge();
+	}
+
+	/** Write `op` down as `holder`'s, without spreading it: everything [`put`]
+	 *  does but the converge, for a caller already inside one. */
+	private write(holder: string, op: Op): void {
 		this.ops.push(op);
 		const ops = this.opsByTopic.get(op.topic);
 		if (ops === undefined) this.opsByTopic.set(op.topic, [op]);
 		else ops.push(op);
 		this.knowledge.get(holder)?.add(op.id);
+		this.hide(op);
+	}
+
+	/**
+	 * Answer `op` when it is a request from someone `holder` had already
+	 * entered the link of. Entering a link leaves only a placeholder on one's
+	 * own device (`PendingContactRequest`); the contact marker a chat list is
+	 * built from is written by whoever *receives* the second request, and the
+	 * reply that goes with it is what lets the other side write theirs. So a
+	 * pair are contacts on no device until a request has crossed and an answer
+	 * has come back — which is why entering a link into a dead network makes
+	 * no contact at all, on either side. See `add_contact` and `accept_contact`
+	 * in crates/dashchat-node/src/node.rs.
+	 */
+	private noteAccepted(holder: string, op: Op): void {
+		if (op.kind !== 'request' || op.to !== holder) return;
+		if (!this.added.has(`${holder}>${op.from}`)) return;
+		const id = acceptOp(holder, op.from);
+		if (this.knows(holder).has(id)) return;
+		this.pendingAccepts.push({
+			id,
+			topic: `inbox:${op.from}`,
+			kind: 'accept',
+			from: holder,
+			to: op.from,
+		});
+	}
+
+	/** Write the answers [`noteAccepted`] called for, on the device that
+	 *  answers; returns whether there were any. */
+	private writeAccepts(): boolean {
+		if (this.pendingAccepts.length === 0) return false;
+		const accepts = this.pendingAccepts;
+		this.pendingAccepts = [];
+		for (const op of accepts) this.write(op.from, op);
+		return true;
+	}
+
+	/** Whether `name`'s device holds the contact marker for `other`: the answer
+	 *  that made the pair, whichever of them wrote it, has reached it. */
+	private hasAccepted(name: string, other: string): boolean {
+		const known = this.knows(name);
+		return known.has(acceptOp(name, other)) || known.has(acceptOp(other, name));
+	}
+
+	/**
+	 * Note, as `op` is written, every agent that was blocking its author right
+	 * then: their screens filter a chat op out by the time it was authored, so
+	 * unblocking never brings it back and an op that arrives long afterwards is
+	 * filtered just the same (`dropOpsAuthoredWhileBlocked` in
+	 * packages/stores/src/chats/messages-store.ts). A group's info is exempt
+	 * there, as it is in the node's own blocklist.
+	 */
+	private hide(op: Op): void {
+		if (!CHAT_KINDS.includes(op.kind)) return;
+		const author = authorOf(op);
+		for (const name of this.names()) {
+			if (!this.blocks(name, author)) continue;
+			const set = this.hidden.get(name);
+			if (set === undefined) this.hidden.set(name, new Set([op.id]));
+			else set.add(op.id);
+		}
+	}
+
+	/** Whether `viewer`'s screen leaves `op` out although its device has it. */
+	private isHidden(viewer: string, op: Op): boolean {
+		return this.hidden.get(viewer)?.has(op.id) === true;
 	}
 
 	/** Post what `op` shows on `holder`'s device, now that it has arrived
@@ -1345,6 +1578,10 @@ export class ExpectedModel {
 	private noteNotified(holder: string, op: Op): void {
 		if (this.catchingUp.get(holder)?.has(op.id) === true) return;
 		if (this.silent.has(op.id) || !this.notifies(holder, op)) return;
+		// A notification is the node's doing, and the node turns away what
+		// arrives while the author is blocked — a different rule from the one
+		// the chat filters its own contents by (see [`hide`]).
+		if (this.blocks(holder, authorOf(op))) return;
 		const notification = this.notificationFor(holder, op);
 		if (notification === null) return;
 		const viewing = this.isActive(holder)
@@ -1370,6 +1607,7 @@ export class ExpectedModel {
 	 *  added back — a row counts every message in its chat. */
 	private noteUnread(holder: string, op: Op): void {
 		if (op.kind !== 'message' || this.silent.has(op.id)) return;
+		if (this.isHidden(holder, op)) return;
 		const { chat, sender } = op.message;
 		if (sender === holder) return;
 		if (!this.membersFor(chat, holder).includes(holder)) return;
@@ -1427,6 +1665,14 @@ export class ExpectedModel {
 			};
 		}
 		if (op.kind === 'request') {
+			// An agent syncs the inbox of every peer it has added, so requests
+			// other people send them arrive on its device too. Only the inbox's
+			// owner announces what is in it.
+			if (op.to !== holder) return null;
+			// The add that completes a pair reaches the other's inbox the same
+			// way, but it answers a request they already made rather than
+			// making one: they learn they have a chat by having one.
+			if (this.added.has(`${op.to}>${op.from}`)) return null;
 			// "New contact request / <name>", the name taken from the profile
 			// the request carries rather than from what the device knows.
 			return {
@@ -1492,7 +1738,8 @@ export class ExpectedModel {
 			op.kind === 'group' ||
 			op.kind === 'groupRemoved' ||
 			op.kind === 'groupInfo' ||
-			op.kind === 'request'
+			op.kind === 'request' ||
+			op.kind === 'accept'
 		) {
 			return;
 		}
@@ -1556,13 +1803,20 @@ export class ExpectedModel {
 	/** What a push carries to the phones that are away from the foreground:
 	 *  it wakes the app, backgrounded or killed, to fetch the operation it is
 	 *  about, which is any the run's mailbox holds. Only a run whose mailbox
-	 *  forwards pushes has them, and only while its link is usable. */
+	 *  forwards pushes has them, and only while its link is usable — and only
+	 *  for a phone the mailbox has something for, since a push is what the
+	 *  arrival of an operation sends. An app nothing wakes writes nothing out
+	 *  either: what it composed before it went stays on it. */
 	private pushed(): string[][] {
 		if (!this.push) return [];
 		if (!this.cloudUsable()) return [];
 		const away = this.agents
 			.filter(
-				a => a.mobile && !this.isActive(a.name) && this.hasInternet(a.name),
+				a =>
+					a.mobile &&
+					!this.isActive(a.name) &&
+					this.hasInternet(a.name) &&
+					this.cloudHasNewsFor(a.name),
 			)
 			.map(a => a.name);
 		if (away.length === 0) return [];
@@ -1570,6 +1824,21 @@ export class ExpectedModel {
 		// cloud component, so joining them here would put agents that share no
 		// LAN in one.
 		return [[CLOUD, ...away]];
+	}
+
+	/** Whether the mailbox holds an operation `name` subscribes to and has not
+	 *  seen: what there is to push, and so what there is to wake it for. */
+	private cloudHasNewsFor(name: string): boolean {
+		const topics = this.subscriptions(name);
+		if (topics === null) return false;
+		const known = this.knows(name);
+		const cloud = this.knows(CLOUD);
+		for (const topic of topics) {
+			for (const op of this.opsByTopic.get(topic) ?? []) {
+				if (cloud.has(op.id) && !known.has(op.id)) return true;
+			}
+		}
+		return false;
 	}
 
 	/** Whether `name`'s device has a way off its own LAN. A run that walks
@@ -1612,6 +1881,7 @@ export class ExpectedModel {
 			for (const op of union) {
 				if (known.has(op.id) || this.rejects(holder, op)) continue;
 				known.add(op.id);
+				this.noteAccepted(holder, op);
 				this.noteNotified(holder, op);
 				this.noteUnread(holder, op);
 				changed = true;
@@ -1620,17 +1890,54 @@ export class ExpectedModel {
 		return changed;
 	}
 
-	/** Whether `holder`'s node turns `op` away rather than keeping it: what
-	 *  reaches a device while it is blocking the author is invalidated there,
-	 *  and unblocking never brings it back. A profile is the exception — it is
-	 *  only held back. The node never persists an invalidated op, so the
-	 *  author's log height never advances and the source hands the rename back
-	 *  on every exchange, which is what lands it once the block is lifted. */
+	/**
+	 * Whether `holder`'s node turns `op` away rather than keeping it: what
+	 * reaches a device while it is blocking the author is invalidated there,
+	 * and unblocking never brings it back — not the messages, not a rename.
+	 * The blocker carries on from what it knew when the block went on, and
+	 * only what the author writes afterwards reaches it. An unblock that beats
+	 * an op's arrival is not this case at all: nothing was invalidated, and it
+	 * lands like any other.
+	 *
+	 * This is the app on a device, which is what the fuzz drives; the node
+	 * library on its own does hand a held-back message back, since an
+	 * invalidated op is never persisted and its author's log offers it again
+	 * (`test_unblocking_brings_back_what_was_written_during_the_block`). What
+	 * the app puts around it — its own stores, cursors and config — stops that
+	 * from reaching a screen, so `blocked-messages-after-unblock.spec.ts` is
+	 * the behaviour to model.
+	 *
+	 * TODO: this whole shape changes when the groups are properly encrypted.
+	 * Today a block and a removal are only what a device does *with*
+	 * operations it still receives: a blocked author's arrive and are thrown
+	 * away, and a member removed from a group goes on receiving everything
+	 * written in it while showing none of it. Every rule above is what the app
+	 * does today, verified in crates/dashchat-node/tests —
+	 * `test_blocked_contact_still_receives_the_blockers_messages`,
+	 * `test_unblocking_brings_back_what_was_written_during_the_block`,
+	 * `test_a_rename_made_during_a_block_never_lands_but_the_next_one_does`
+	 * and `test_removed_member_still_receives_what_is_written_after`. Once the
+	 * keys are rotated on removal and a block ends the exchange itself,
+	 * nothing of either reaches the device: this must then stop delivering to
+	 * a removed member (see [`subscriptions`]), and the difference between a
+	 * message and a rename disappears with the exchange that carried it.
+	 */
 	private rejects(holder: string, op: Op): boolean {
 		const dropped = this.discarded.get(holder);
 		if (dropped?.has(op.id) === true) return true;
-		if (!this.blocks(holder, authorOf(op))) return false;
-		if (op.kind === 'profile') return true;
+		// Sync writes everything to the raw store whatever the blocklist says,
+		// and the chat filters what it shows by [`hide`]. Two kinds are turned
+		// away as they arrive instead, and never offered again: a profile, so
+		// the blocker keeps the name it had, and an invitation to a group,
+		// which is an ordinary chat payload — `enforce_blocklist` admits only
+		// the control and info of a group from a blocked author, to keep one
+		// already joined working, and an invitation is neither.
+		if (
+			(op.kind !== 'profile' && op.kind !== 'group') ||
+			!this.blocks(holder, authorOf(op))
+		) {
+			return false;
+		}
 		if (dropped === undefined) this.discarded.set(holder, new Set([op.id]));
 		else dropped.add(op.id);
 		return true;

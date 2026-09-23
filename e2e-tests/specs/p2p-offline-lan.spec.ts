@@ -10,7 +10,8 @@
  *   PLATFORMS=android,android just e2e run p2p-offline-lan
  *   PLATFORMS=ios,ios just e2e run p2p-offline-lan
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import {
 	isRemoteMailbox,
 	killMailbox,
@@ -68,7 +69,8 @@ describe('P2P sync on a LAN with no internet', () => {
 		await killMailbox();
 		mailboxKilled = true;
 		await Promise.all([alice, bob].map(agent => relaunchOn(agent, network)));
-		await createProfilesAndExchangeContacts({ Alice: alice, Bob: bob });
+		await createProfiles({ Alice: alice, Bob: bob });
+		await exchangeContacts([alice, bob]);
 	});
 
 	after(async () => {

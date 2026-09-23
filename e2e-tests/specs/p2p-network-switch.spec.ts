@@ -14,7 +14,8 @@
  *   PLATFORMS=android,android E2E_STRESS=1 just e2e run p2p-network-switch
  *   PLATFORMS=ios,ios E2E_STRESS=1 just e2e run p2p-network-switch
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { stampedLog } from '../helpers/utils';
 import {
 	isRemoteMailbox,
@@ -69,7 +70,8 @@ describe('Pure p2p sync across a network switch', function () {
 		// An earlier run that died mid-case leaves a phone off the air.
 		await alice.enableWifi();
 		await bob.enableWifi();
-		await createProfilesAndExchangeContacts({ Alice: alice, Bob: bob });
+		await createProfiles({ Alice: alice, Bob: bob });
+		await exchangeContacts([alice, bob]);
 		// A round trip on the LAN before the move, so a later failure is about
 		// the return and not about p2p never having worked between these two.
 		await bob.directChatPage.composer.sendMessage('hello before leaving');

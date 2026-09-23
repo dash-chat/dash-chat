@@ -10,7 +10,8 @@
  *
  * Skips against a remote environment mailbox, whose lifecycle we can't control.
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import {
 	isRemoteMailbox,
 	resumeMailbox,
@@ -31,7 +32,8 @@ describe('Pure p2p sync (no mailbox)', () => {
 		// Take the mailbox down before any sync happens so contact exchange and
 		// every message below must travel over a direct p2p connection.
 		suspendMailbox();
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	after(() => {

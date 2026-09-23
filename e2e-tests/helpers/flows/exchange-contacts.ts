@@ -1,5 +1,11 @@
 import type { Agent } from '../../setup/setup-agents';
-import { createProfiles } from './create-profiles';
+
+/** Get `agent` back to its chat list if a chat is on screen. */
+async function leaveChat(agent: Agent): Promise<void> {
+	if (!(await agent.directChatPage.page.isExisting())) return;
+	await agent.directChatPage.back.click();
+	await agent.homePage.ready();
+}
 
 /** Walk from the home screen to the add-contact page. */
 export async function navigateToAddContact(agent: Agent): Promise<void> {
@@ -20,13 +26,25 @@ export async function contactLinkOf(agent: Agent): Promise<string> {
 }
 
 /**
- * Two-way contact exchange: both agents add each other's link and end up on
- * their respective direct-chat pages.
+ * Make every one of `agents` a contact of every other, a pair at a time: each
+ * of a pair adds the other's link and ends up on their direct chat. Two agents
+ * is one exchange; more is every pair of them.
  */
-export async function exchangeContacts(agents: [Agent, Agent]): Promise<void> {
-	const [agent1, agent2] = agents;
+export async function exchangeContacts(agents: Agent[]): Promise<void> {
+	for (let i = 0; i < agents.length; i++) {
+		for (let j = i + 1; j < agents.length; j++) {
+			await exchangePair(agents[i], agents[j]);
+		}
+	}
+}
+
+async function exchangePair(agent1: Agent, agent2: Agent): Promise<void> {
 	const [link1, link2] = await Promise.all(
-		agents.map(async agent => {
+		[agent1, agent2].map(async agent => {
+			// An exchange ends on the pair's direct chat, and the next one
+			// starts from the chat list: with three agents or more, the second
+			// pair begins where the first left off.
+			await leaveChat(agent);
 			await navigateToAddContact(agent);
 			return await agent.addContactPage.getAddContactLink();
 		}),
@@ -35,17 +53,4 @@ export async function exchangeContacts(agents: [Agent, Agent]): Promise<void> {
 	await agent1.directChatPage.ready();
 	await agent2.addContactPage.enterAddContactLink(link1);
 	await agent2.directChatPage.ready();
-}
-
-/** Bootstrap two fresh agents, each named after its key, into contacts, each
- *  left on its direct chat with the other. */
-export async function createProfilesAndExchangeContacts(
-	profiles: Record<string, Agent>,
-): Promise<void> {
-	const agents = Object.values(profiles);
-	if (agents.length !== 2) {
-		throw new Error(`expected two profiles, got ${agents.length}`);
-	}
-	await createProfiles(profiles);
-	await exchangeContacts([agents[0], agents[1]]);
 }
