@@ -99,5 +99,10 @@
 {/await}
 
 {#if opened}
-	<ExpandedReactionsSheet {message} opened={expanded} onReact={react} />
+	<ExpandedReactionsSheet
+		{message}
+		opened={expanded}
+		onReact={react}
+		onClose={close}
+	/>
 {/if}

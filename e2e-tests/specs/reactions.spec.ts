@@ -53,6 +53,18 @@ describe('Message reactions', () => {
 		await message1.waitForNoReaction('👍');
 	});
 
+	it('reacts with an emoji found by searching the full picker', async () => {
+		await agent1.directChatPage.composer.sendMessage('Search for me');
+		const message1 =
+			await agent1.directChatPage.messages.waitForMessage('Search for me');
+		const message2 =
+			await agent2.directChatPage.messages.waitForMessage('Search for me');
+
+		await message2.reactBySearching('poop', '💩');
+		await message2.waitForReaction('💩');
+		await message1.waitForReaction('💩');
+	});
+
 	it('adds a reaction in a group chat', async () => {
 		await backToHome([agent1, agent2]);
 
