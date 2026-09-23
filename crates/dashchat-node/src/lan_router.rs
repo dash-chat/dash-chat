@@ -343,6 +343,10 @@ mod imp {
                     header,
                     body: op.payload.as_deref().map(Body::from_bytes),
                 };
+                // Signature and payload hash/size, as p2panda's ingest checks:
+                // p2panda forwards imported ops to live-sync peers before its
+                // own pipeline validates them, so a forgery must stop here.
+                p2panda_core::validate_operation(&operation).context("invalid operation")?;
                 tx.send(operation)
                     .await
                     .map_err(|_| anyhow!("import channel closed"))?;
@@ -421,6 +425,7 @@ mod imp {
     const MAINTAIN_EVERY: Duration = Duration::from_secs(30);
     const NETWORK_SIZE_ESTIMATE: usize = 16;
     const IMPORT_CHANNEL: usize = 256;
+    const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 
     pub struct LanRouter {
         handle: RouterHandle<RouterLog>,
@@ -486,6 +491,7 @@ mod imp {
                         }
                     }
                 }
+                tracing::debug!("lan router events closed");
             });
             tracing::info!("lan router running");
             Ok(Some(Arc::new(Self {
@@ -500,6 +506,8 @@ mod imp {
         /// One router prefix subscription per topic: every author's log on
         /// it, known or not yet. Idempotent. A failure unregisters the
         /// topic, so a later call retries instead of reporting success.
+        /// Not safe to call concurrently for the same topic (the node's
+        /// topic hook serialises calls).
         pub async fn subscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
             let (tx, rx) = mpsc::channel(IMPORT_CHANNEL);
             if !self.ext.register_topic(topic, tx) {
@@ -545,11 +553,23 @@ mod imp {
 
         pub async fn shutdown(&self) {
             let _ = self.handle.clone().shutdown().await;
+            if let Some(mut t) = self.node_task.lock().await.take() {
+                match tokio::time::timeout(SHUTDOWN_WAIT, &mut t).await {
+                    Ok(Ok(Ok(()))) => {}
+                    Ok(Ok(Err(e))) => {
+                        tracing::warn!(error = %e, "lan router task ended with error")
+                    }
+                    Ok(Err(join)) => tracing::warn!(error = %join, "lan router task failed"),
+                    Err(_) => {
+                        t.abort();
+                        tracing::warn!("lan router task did not stop in time; aborted");
+                    }
+                }
+            }
+            // The node task's end closes the events channel, so this task
+            // has normally finished already; abort covers the timeout case.
             if let Some(t) = self.events_task.lock().await.take() {
                 t.abort();
-            }
-            if let Some(t) = self.node_task.lock().await.take() {
-                let _ = t.await;
             }
         }
     }
@@ -834,6 +854,38 @@ mod imp {
             };
             assert!(f.ext.ingest(right, 0, wire).await.is_err());
             assert_eq!(f.ext.rejected(), 3);
+            assert!(f.import_rx.try_recv().is_err(), "nothing forwarded");
+        }
+
+        /// A forged signature or a swapped body is rejected before the op
+        /// reaches the import channel (and so p2panda's live-sync forward).
+        #[tokio::test]
+        async fn ingest_rejects_bad_signature_and_body() {
+            let mut f = fixture(Some(3)).await;
+            let other = p2panda::SigningKey::generate();
+            let log = RouterLog::new(f.log_id, other.verifying_key());
+            let op = signed_op(&other, f.log_id, 0, None, b"hello");
+
+            // (a) Tampered signature bytes.
+            let mut forged = op.header.clone();
+            let mut sig = forged.signature.to_bytes();
+            sig[0] ^= 0x01;
+            forged.signature = p2panda_core::Signature::from_bytes(&sig);
+            let wire = dash_router::core::Op {
+                header: forged.encode(),
+                payload: op.body.as_ref().map(|b| b.to_bytes()),
+            };
+            assert!(f.ext.ingest(log, 0, wire).await.is_err());
+            assert_eq!(f.ext.rejected(), 1);
+
+            // (b) Valid header, body replaced by different bytes.
+            let wire = dash_router::core::Op {
+                header: op.header.encode(),
+                payload: Some(b"jello".to_vec()),
+            };
+            assert!(f.ext.ingest(log, 0, wire).await.is_err());
+            assert_eq!(f.ext.rejected(), 2);
+
             assert!(f.import_rx.try_recv().is_err(), "nothing forwarded");
         }
 
