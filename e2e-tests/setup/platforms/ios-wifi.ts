@@ -275,15 +275,42 @@ async function walkBackToRoot(
 	return false;
 }
 
+/** Take whatever system alert is sitting over Settings — a captive portal
+ *  asking to sign in, a network that could not be joined — off the screen.
+ *  It covers the navigation bar, so no amount of walking back gets past it. */
+async function dismissSystemAlert(b: WebdriverIO.Browser): Promise<void> {
+	try {
+		await b.acceptAlert();
+	} catch {
+		/* nothing was there */
+	}
+}
+
+/** What Settings is showing, for a failure that can be acted on rather than
+ *  guessed at. */
+async function describeScreen(b: WebdriverIO.Browser): Promise<string> {
+	try {
+		const bar = await b
+			.$(classChain('**/XCUIElementTypeNavigationBar'))
+			.getAttribute('name');
+		return bar ? `"${bar}"` : 'no navigation bar';
+	} catch {
+		return 'nothing readable';
+	}
+}
+
 /** Launch Settings on its root screen, relaunching if walking back does
  *  not get there. */
 async function openSettingsAtRoot(b: WebdriverIO.Browser): Promise<void> {
 	for (let launch = 1; launch <= 3; launch++) {
 		await b.terminateApp(SETTINGS_BUNDLE_ID);
 		await b.activateApp(SETTINGS_BUNDLE_ID);
+		await dismissSystemAlert(b);
 		if (await walkBackToRoot(b)) return;
 	}
-	throw new Error('Settings never showed its root screen');
+	throw new Error(
+		`Settings never showed its root screen; it was showing ${await describeScreen(b)}`,
+	);
 }
 
 /** Run `body` against a freshly opened Settings app and put things back:

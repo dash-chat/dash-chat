@@ -145,6 +145,11 @@ export class Fuzzer {
 				);
 			}
 			await restoreNetworks(real);
+			// However the run ends: a search that fails partway leaves every
+			// phone wherever `resetAgent` last put it, which is off Wi-Fi, and
+			// the host's card on a lab network. Nothing else puts them back,
+			// so every later run on these devices starts off the air.
+			suite.afterAll('restore networks', () => restoreNetworks(real));
 			assertInRange(
 				real.hubsDevice,
 				labNetworks(real).map(n => n.ssid),
