@@ -255,7 +255,7 @@ impl Default for NodeConfig {
             import_recorded_operations: false,
             sqlite_gate: Default::default(),
             local_hub_registry: Default::default(),
-            enable_lan_router: false,
+            enable_lan_router: true,
         }
     }
 }

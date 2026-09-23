@@ -2287,6 +2287,7 @@ dependencies = [
  "redb 4.3.0",
  "serde",
  "tokio",
+ "tracing",
  "trait-variant",
 ]
 

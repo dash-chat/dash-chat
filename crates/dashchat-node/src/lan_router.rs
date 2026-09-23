@@ -63,6 +63,7 @@ mod imp {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
+    use aliased::Aliasing as _;
     use anyhow::{Context as _, anyhow, ensure};
     use dash_router::core::{LogRanges, Op, Ranges, RouterConfig, Seq, Units};
     use dash_router::policy::{IntervalPolicy, PushDebouncePolicy};
@@ -346,6 +347,7 @@ mod imp {
                 // Held state is acked-only, so the router treats ops p2panda
                 // stored but has not acked yet as novel and ingests them again.
                 if self.store.has_operation(&hash).await? {
+                    tracing::trace!(%log, seq, "lan router ingest: op already stored");
                     return Ok(());
                 }
                 let tx = self
@@ -364,6 +366,7 @@ mod imp {
                     .await
                     .map_err(|_| anyhow!("import channel closed"))?;
                 self.forwarded.fetch_add(1, Ordering::Relaxed);
+                tracing::debug!(%log, seq, "lan router forwarded a new op to p2panda");
                 Ok(())
             }
             .await;
@@ -463,6 +466,7 @@ mod imp {
     impl LanRouter {
         pub async fn spawn(params: LanRouterParams) -> anyhow::Result<Option<Arc<Self>>> {
             if !params.enabled {
+                tracing::info!("lan router off: NodeConfig::enable_lan_router is false");
                 return Ok(None);
             }
             let relay =
@@ -523,7 +527,11 @@ mod imp {
                 }
                 tracing::debug!("lan router events closed");
             });
-            tracing::info!("lan router running");
+            tracing::info!(
+                device_id = %params.device_id,
+                router_topic = ?router_topic().aliased(),
+                "lan router running"
+            );
             Ok(Some(Arc::new(Self {
                 handle,
                 ext,
@@ -545,8 +553,9 @@ mod imp {
                 return Ok(());
             }
             let result = self.import_and_subscribe(topic, rx).await;
-            if result.is_err() {
-                self.ext.unregister_topic(topic);
+            match &result {
+                Ok(()) => tracing::debug!(topic = ?topic.aliased(), "lan router following topic"),
+                Err(_) => self.ext.unregister_topic(topic),
             }
             result
         }
