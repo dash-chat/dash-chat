@@ -9,7 +9,8 @@
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { derived } from 'svelte/store';
+	import { settled, useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		Page,
@@ -96,7 +97,17 @@
 		);
 	}
 
-	const qrColor = useReactivePromise(settingsStore.qrColor);
+	// Only rejects with StalledStoreError, which useReactivePromise already logs.
+	const qrColorOrDefault = derived(
+		useReactivePromise(settingsStore.qrColor),
+		savedColor =>
+			settled(savedColor)
+				? (savedColor ?? defaultQrColor())
+				: savedColor.then(
+						color => color ?? defaultQrColor(),
+						() => defaultQrColor(),
+					),
+	);
 	let colorPickerOpen = $state(false);
 	let colorForPicker = $state(defaultQrColor());
 	let linkSheetOpen = $state(false);
@@ -244,10 +255,85 @@
 					<Preloader />
 				</div>
 			{:then [deepLink, name]}
-				{#await $qrColor then savedColor}
-					{@render myCodeView(deepLink, name, savedColor ?? defaultQrColor())}
-				{:catch}
-					{@render myCodeView(deepLink, name, defaultQrColor())}
+				{#await $qrColorOrDefault then color}
+					<div class="column" style="flex:1">
+						<div class="column center-in-desktop gap-4 mx-4 mt-4">
+							<QrCodeCard
+								value={deepLink}
+								label={name}
+								{color}
+								copyButtonTestId="add-contact-copy-btn"
+							/>
+
+							<QrActionButtons
+								onLink={() => {
+									linkSheetOpen = true;
+								}}
+								onShare={() => shareCode(deepLink)}
+								onSave={() => saveCode(deepLink, color)}
+								onUpload={() => uploaderRef?.trigger()}
+								onOpenColorPicker={openColorPicker}
+							/>
+
+							<QrLinkSheet
+								opened={linkSheetOpen}
+								link={deepLink}
+								onClose={() => (linkSheetOpen = false)}
+							/>
+
+							{#if !isMobile}
+								<BorderedBox
+									class="row w-full items-center gap-3"
+									data-testid="add-contact-copy-link-box"
+								>
+									<IconButton
+										icon={mdiContentCopy}
+										label={m.copy()}
+										testid="add-contact-copy-link-btn"
+										onClick={() => void copyLinkToClipboard(deepLink)}
+										class="shrink-0"
+									/>
+									<span class="break-all text-start text-sm">{deepLink}</span>
+								</BorderedBox>
+							{/if}
+
+							<span class="mx-6 mb-2 text-center quiet" style="font-size: 13px"
+								>{m.shareCodeWarning()}</span
+							>
+
+							{#if import.meta.env.DEV}
+								<div class="column w-full gap-2">
+									<List
+										nested
+										strongIos
+										inset={isWideScreen.value || theme === 'ios'}
+									>
+										<ListInput
+											floatingLabel
+											label="Paste code (dev only)"
+											type="text"
+											outline
+											data-testid="add-contact-code-input"
+											value={pastedCode}
+											onInput={(e: Event) =>
+												(pastedCode = (e.target as HTMLInputElement).value)}
+										/>
+									</List>
+									<Button
+										rounded
+										disabled={pastedCode.trim() === ''}
+										data-testid="add-contact-code-submit"
+										onClick={() => void submitPastedCode()}
+										>{m.addContact()}</Button
+									>
+								</div>
+							{/if}
+						</div>
+					</div>
+					<QrCodeUploader
+						bind:this={uploaderRef}
+						onSelectImage={receiveDeepLink}
+					/>
 				{/await}
 			{:catch error}
 				<ErrorPlaceholder
@@ -261,76 +347,3 @@
 		{/if}
 	</Page>
 {/if}
-
-{#snippet myCodeView(deepLink: string, name: string, color: string)}
-	<div class="column" style="flex:1">
-		<div class="column center-in-desktop gap-4 mx-4 mt-4">
-			<QrCodeCard
-				value={deepLink}
-				label={name}
-				{color}
-				copyButtonTestId="add-contact-copy-btn"
-			/>
-
-			<QrActionButtons
-				onLink={() => {
-					linkSheetOpen = true;
-				}}
-				onShare={() => shareCode(deepLink)}
-				onSave={() => saveCode(deepLink, color)}
-				onUpload={() => uploaderRef?.trigger()}
-				onOpenColorPicker={openColorPicker}
-			/>
-
-			<QrLinkSheet
-				opened={linkSheetOpen}
-				link={deepLink}
-				onClose={() => (linkSheetOpen = false)}
-			/>
-
-			{#if !isMobile}
-				<BorderedBox
-					class="row w-full items-center gap-3"
-					data-testid="add-contact-copy-link-box"
-				>
-					<IconButton
-						icon={mdiContentCopy}
-						label={m.copy()}
-						testid="add-contact-copy-link-btn"
-						onClick={() => void copyLinkToClipboard(deepLink)}
-						class="shrink-0"
-					/>
-					<span class="break-all text-start text-sm">{deepLink}</span>
-				</BorderedBox>
-			{/if}
-
-			<span class="mx-6 mb-2 text-center quiet" style="font-size: 13px"
-				>{m.shareCodeWarning()}</span
-			>
-
-			{#if import.meta.env.DEV}
-				<div class="column w-full gap-2">
-					<List nested strongIos inset={isWideScreen.value || theme === 'ios'}>
-						<ListInput
-							floatingLabel
-							label="Paste code (dev only)"
-							type="text"
-							outline
-							data-testid="add-contact-code-input"
-							value={pastedCode}
-							onInput={(e: Event) =>
-								(pastedCode = (e.target as HTMLInputElement).value)}
-						/>
-					</List>
-					<Button
-						rounded
-						disabled={pastedCode.trim() === ''}
-						data-testid="add-contact-code-submit"
-						onClick={() => void submitPastedCode()}>{m.addContact()}</Button
-					>
-				</div>
-			{/if}
-		</div>
-	</div>
-	<QrCodeUploader bind:this={uploaderRef} onSelectImage={receiveDeepLink} />
-{/snippet}
