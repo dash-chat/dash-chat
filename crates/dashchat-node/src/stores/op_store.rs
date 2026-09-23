@@ -94,6 +94,7 @@ impl OpStore {
 
     /// Every sequence number present for `author`'s log, ascending. The
     /// router's held-range input (see `lan_router.rs`).
+    #[cfg(any(test, feature = "lan-router"))]
     pub(crate) async fn get_log_seqs(
         &self,
         author: &DeviceId,

@@ -138,13 +138,15 @@ pub(super) async fn get_log_heights_by_author(
     Ok(log_heights)
 }
 
+#[cfg(any(test, feature = "lan-router"))]
 #[derive(FromRow)]
 struct SeqRow {
     seq_num: String,
 }
 
 /// Every sequence number present for one `(author, log)`, ascending.
-pub async fn get_log_seqs(
+#[cfg(any(test, feature = "lan-router"))]
+pub(super) async fn get_log_seqs(
     db: &SqliteStore,
     author: &DeviceId,
     log_id: &LogId,
