@@ -96,6 +96,9 @@ impl Node {
         topic.alias_numbered();
 
         self.subscribe_to_topic(topic).await?;
+        if let Some(router) = &self.lan_router {
+            router.subscribe_topic(topic).await?;
+        }
         // Not gated on the subscription being new: publishing into a topic
         // subscribes it too, without importing its mailbox stream.
         self.import_mailbox_stream(topic).await?;
@@ -297,6 +300,10 @@ impl Node {
         // operation eligible for mailbox transmission (see
         // `OpStore::acked_log_height`).
         operation.ack().await?;
+
+        if let Some(router) = &self.lan_router {
+            router.hint_changed(operation.author(), operation.topic());
+        }
 
         if DeviceId::from(operation.author()) == self.device_id() {
             self.mailboxes
