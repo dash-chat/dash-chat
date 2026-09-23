@@ -203,7 +203,7 @@ export class Composer extends TestHelper {
 		// composer empty, and `send()` then falls through to Enter — which types
 		// a newline on mobile rather than sending — so the spec would fail much
 		// later on a missing message instead of here on a missing draft.
-		await this.voiceRecordButton.waitForExist({
+		await this.voiceRecordButton.waitForDisplayed({
 			reverse: true,
 			timeoutMsg: 'Injected voice draft never landed in the composer',
 		});
