@@ -10,7 +10,6 @@
 		onClose: () => void;
 		onEmojiSelected: (emoji: string) => void;
 		backdrop?: boolean;
-		testid?: string;
 		children?: Snippet;
 	}
 
@@ -19,16 +18,15 @@
 		onClose,
 		onEmojiSelected,
 		backdrop = true,
-		testid,
 		children,
 	}: Props = $props();
 
-	let picker: EmojiPickerWrapper;
+	let picker: EmojiPickerWrapper | undefined;
 
 	// The sheet stays mounted while closed, so a search left open would
 	// otherwise come back on the next open.
 	$effect(() => {
-		if (!opened) picker.clearSearch();
+		if (!opened) picker?.clearSearch();
 	});
 </script>
 
@@ -47,7 +45,7 @@
 		<SheetHandle />
 	</div>
 	{@render children?.()}
-	<Block class="h-100 min-h-0 [&_emoji-picker]:h-full" data-testid={testid}>
+	<Block class="h-100 min-h-0 [&_emoji-picker]:h-full">
 		<EmojiPickerWrapper bind:this={picker} {onEmojiSelected} />
 	</Block>
 </SwipeableSheet>

@@ -24,13 +24,7 @@
 	);
 </script>
 
-<EmojiPickerSheet
-	{opened}
-	{onClose}
-	backdrop={false}
-	onEmojiSelected={onReact}
-	testid="expanded-reactions-picker"
->
+<EmojiPickerSheet {opened} {onClose} backdrop={false} onEmojiSelected={onReact}>
 	{#if condensed.length > 0}
 		<Block>
 			{#each condensed as reaction}

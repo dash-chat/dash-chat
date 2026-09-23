@@ -10,7 +10,7 @@
 		class?: string;
 		colors?: { bgIos?: string; bgMaterial?: string };
 		backdrop?: boolean;
-		/** Glide the sheet above the keyboard while it is open, for sheets that
+		/** Glide the sheet above the keyboard, for sheets that
 		 * hold a text input. */
 		aboveKeyboard?: boolean;
 		children: Snippet;
@@ -28,12 +28,17 @@
 
 	let anchor: HTMLElement;
 	let sheet = $state<HTMLElement>();
+	let dragging = $state(false);
 
 	onMount(() => {
 		const found = anchor.closest<HTMLElement>('.k-sheet');
 		if (!found) throw new Error('SwipeableSheet must render inside a .k-sheet');
 		sheet = found;
-		return swipeToClose(found, () => onClose());
+		return swipeToClose(
+			found,
+			() => onClose(),
+			d => (dragging = d),
+		);
 	});
 
 	// A swipe closes the sheet with its drag offset still applied; drop it
@@ -44,8 +49,13 @@
 		sheet.style.transform = '';
 	});
 
+	// Registered while mounted rather than only while open: closing drops focus
+	// and so the keyboard, and unregistering during that glide would strand the
+	// plugin's transform, leaving the closed sheet on screen. A drag takes the
+	// sheet out, since both write its transform; the drag clears its own on end.
 	$effect(() => {
-		if (aboveKeyboard && opened && sheet) return registerAboveKeyboard(sheet);
+		if (aboveKeyboard && sheet && !dragging)
+			return registerAboveKeyboard(sheet);
 	});
 </script>
 

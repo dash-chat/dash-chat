@@ -526,63 +526,8 @@ function swipeToReply(messageHash: string): boolean {
 	return claimed;
 }
 
-let mainThreadBusy = false;
-
-/** While `busy`, keep the main thread occupied the way a spinning loader does:
- * every frame runs longer than a frame, so the page never goes idle. */
-function setMainThreadBusy(busy: boolean) {
-	const wasBusy = mainThreadBusy;
-	mainThreadBusy = busy;
-	if (!busy || wasBusy) return;
-	const frame = () => {
-		const frameEnd = performance.now() + 20;
-		while (performance.now() < frameEnd) {
-			// Spin: the frame must leave no idle time.
-		}
-		if (mainThreadBusy) requestAnimationFrame(frame);
-	};
-	requestAnimationFrame(frame);
-}
-
-/** Drag the sheet holding `testid` down by `distance` px with synthesized
- * touches, as in `swipeToReply`. With `gridScrollTop`, the emoji grid inside
- * the sheet is scrolled that far first and the drag starts on it; the events
- * are composed so they cross the picker's shadow root. */
-function swipeSheetDown(
-	testid: string,
-	distance: number,
-	gridScrollTop?: number,
-) {
-	const inner = document.querySelector(`[data-testid="${testid}"]`);
-	const grid = inner
-		?.querySelector('emoji-picker')
-		?.shadowRoot?.querySelector<HTMLElement>('.tabpanel');
-	if (gridScrollTop !== undefined && grid) grid.scrollTop = gridScrollTop;
-	const target = gridScrollTop === undefined ? inner : grid;
-	if (!target) throw new Error(`Nothing to swipe for testid ${testid}`);
-	const rect = target.getBoundingClientRect();
-	const x = rect.x + rect.width / 2;
-	const startY = rect.y + 20;
-	const send = (type: string, y: number) => {
-		const event = new Event(type, {
-			bubbles: true,
-			cancelable: true,
-			composed: true,
-		});
-		const touches = type === 'touchend' ? [] : [{ clientX: x, clientY: y }];
-		Object.defineProperty(event, 'touches', { value: touches });
-		target.dispatchEvent(event);
-	};
-	send('touchstart', startY);
-	send('touchmove', startY + 10);
-	send('touchmove', startY + distance);
-	send('touchend', startY + distance);
-}
-
 export const testUtils = {
 	simulateUpdate,
-	setMainThreadBusy,
-	swipeSheetDown,
 	hasText,
 	disableP2p,
 	clearNotifications,

@@ -1,12 +1,16 @@
 const DRAG_THRESHOLD_PX = 8;
 const CLOSE_DISTANCE_FRACTION = 0.3;
 
-/** Whether the touch landed on content that is scrolled down, where a
- * downward drag must scroll it back up rather than move the sheet. */
+/** Whether the touch landed on scrolled content, where a drag belongs to the
+ * scroller (back up, or back across a carousel) rather than to the sheet. */
 function isOnScrolledContent(event: TouchEvent, sheet: HTMLElement) {
 	for (const target of event.composedPath()) {
 		if (target === sheet) return false;
-		if (target instanceof HTMLElement && target.scrollTop > 0) return true;
+		if (
+			target instanceof HTMLElement &&
+			(target.scrollTop > 0 || target.scrollLeft > 0)
+		)
+			return true;
 	}
 	return false;
 }
@@ -15,8 +19,14 @@ function isOnScrolledContent(event: TouchEvent, sheet: HTMLElement) {
  * past a third of its height; a cancelled drag snaps back. Moves the sheet
  * through `transform`, which composes with the `translate` Konsta opens it
  * with. Leaves the offset of a close in place for the caller to clear on the
- * next open. Returns a function that removes the gesture. */
-export function swipeToClose(sheet: HTMLElement, onClose: () => void) {
+ * next open. The keyboard glide also writes the sheet's `transform` and
+ * `transition`, so `onDrag` reports while a drag owns them. Returns a function
+ * that removes the gesture. */
+export function swipeToClose(
+	sheet: HTMLElement,
+	onClose: () => void,
+	onDrag?: (dragging: boolean) => void,
+) {
 	let startX = 0;
 	let startY: number | null = null;
 	let dragging = false;
@@ -27,9 +37,17 @@ export function swipeToClose(sheet: HTMLElement, onClose: () => void) {
 		sheet.style.transform = '';
 	}
 
-	function cancel() {
-		if (dragging) snapBack();
+	function endDrag() {
 		dragging = false;
+		startY = null;
+		onDrag?.(false);
+	}
+
+	function cancel() {
+		if (dragging) {
+			snapBack();
+			endDrag();
+		}
 		startY = null;
 	}
 
@@ -57,6 +75,7 @@ export function swipeToClose(sheet: HTMLElement, onClose: () => void) {
 			return;
 		}
 		dragging = true;
+		onDrag?.(true);
 		startY = event.touches[0].clientY;
 		sheet.style.transition = 'none';
 	}
@@ -75,8 +94,7 @@ export function swipeToClose(sheet: HTMLElement, onClose: () => void) {
 			startY = null;
 			return;
 		}
-		dragging = false;
-		startY = null;
+		endDrag();
 		if (offset > sheet.offsetHeight * CLOSE_DISTANCE_FRACTION) {
 			sheet.style.transition = '';
 			onClose();

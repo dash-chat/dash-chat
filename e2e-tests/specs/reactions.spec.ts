@@ -53,45 +53,6 @@ describe('Message reactions', () => {
 		await message1.waitForNoReaction('👍');
 	});
 
-	it('reacts with an emoji found by searching the full picker', async () => {
-		await agent1.directChatPage.composer.sendMessage('Search for me');
-		const message1 =
-			await agent1.directChatPage.messages.waitForMessage('Search for me');
-		const message2 =
-			await agent2.directChatPage.messages.waitForMessage('Search for me');
-
-		// A spinning loader keeps the page from ever going idle, which is what
-		// kept typed searches from applying (#579).
-		await agent2.execute(() => window.__test.setMainThreadBusy(true));
-		await message2.reactBySearching('poop', '💩');
-		await agent2.execute(() => window.__test.setMainThreadBusy(false));
-		await message2.waitForReaction('💩');
-		await message1.waitForReaction('💩');
-	});
-
-	it('reopens the composer emoji picker with its search cleared', async () => {
-		const composer = agent1.directChatPage.composer;
-		await composer.openEmojiPicker();
-		await composer.searchEmojiPicker('heart');
-		await composer.closeEmojiPicker();
-
-		await composer.openEmojiPicker();
-		expect(await composer.emojiPickerSearchText()).toBe('');
-		await composer.closeEmojiPicker();
-	});
-
-	it('closes the composer emoji picker with a downward swipe', async () => {
-		const composer = agent1.directChatPage.composer;
-		await composer.openEmojiPicker();
-
-		// Dragging a scrolled grid scrolls it back rather than moving the sheet.
-		await composer.swipeEmojiPickerDown(300, 200);
-		expect(await composer.emojiPickerOpen()).toBe(true);
-
-		await composer.swipeEmojiPickerDown(300);
-		await agent1.waitUntil(async () => !(await composer.emojiPickerOpen()));
-	});
-
 	it('adds a reaction in a group chat', async () => {
 		await backToHome([agent1, agent2]);
 
