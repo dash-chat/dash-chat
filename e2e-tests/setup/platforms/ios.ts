@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
+import { ASYNC_SCRIPT_TIMEOUT } from '../../helpers/timeouts';
 import { echoLinesWithPrefix } from '../agent-logger';
 import {
 	SLOT_PORT_STRIDE,
@@ -33,6 +34,33 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const E2E_DIR = path.resolve(__dirname, '..', '..');
 
 export const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
+/** What a reachability probe gets before the network counts as having no
+ *  upstream. A captive portal answers fast or not at all. */
+const INTERNET_PROBE_TIMEOUT = 5_000;
+
+type InternetProbe = { url: string; headers: Record<string, string> };
+
+/** Two origins, neither able to answer for the other: a network that blocks
+ *  DNS-over-HTTPS — which is what a policy-managed AP blocks first — fails the
+ *  resolver every time, and that failure is indistinguishable from having no
+ *  upstream at all. Both are served with `access-control-allow-origin: *`, so
+ *  a cross-origin read of either one succeeds. */
+const INTERNET_PROBES: InternetProbe[] = [
+	{
+		url: 'https://cloudflare-dns.com/dns-query?name=example.com&type=A',
+		headers: { accept: 'application/dns-json' },
+	},
+	{ url: 'https://api.github.com/zen', headers: {} },
+];
+
+/** Times round the list before a network counts as having no upstream. A
+ *  `false` is what lets a spec run, so it is the answer worth asking twice
+ *  for. */
+const INTERNET_PROBE_ROUNDS = 2;
+
+/** Between probes, so a retry outlasts whatever made the last one fail. */
+const INTERNET_PROBE_GAP = 2_000;
+
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
 // Fixed home for the .ipa the sessions install, copied here by the
 // e2e:build:ios task's export-session-ipa.ts step. The capabilities
@@ -249,15 +277,78 @@ export async function resetIosAppState(b: WebdriverIO.Browser): Promise<void> {
 	await attachToIosApp(b);
 }
 
-/** Leave the app with no data once a spec file is done. The next spec's reset
+/** Leave the app installed with no data and not running: the iOS answer to
+ *  android's `mobile: clearApp`. The wipe is the app's own delete_account, so
+ *  the app is brought up to run it and exits on its own afterwards.
+ *
+ *  Also what a spec file is left in once it is done. The next spec's reset
  *  runs only after the app is up with the old data, and in a new run that app
  *  uploads its whole history to the fresh mailbox, which pushes every message
  *  back to this phone: banners over the navbar the spec is about to tap. */
-export async function wipeIosAppAfterSpec(
-	b: WebdriverIO.Browser,
-): Promise<void> {
+export async function clearIosAppData(b: WebdriverIO.Browser): Promise<void> {
 	await attachToIosApp(b);
 	await wipeIosAppData(b);
+}
+
+/** Whether the phone can reach the internet, asked of the app's own webview:
+ *  iOS has no adb-style shell to run a probe in, and the answer has to come
+ *  from the phone, not from the host, which is on a different network.
+ *
+ *  The probe reads a cross-origin response rather than just seeing a request
+ *  leave, so a captive portal answering in the internet's place cannot pass
+ *  for it: over HTTPS a portal cannot produce a response for someone else's
+ *  origin at all, and its own page comes back without the CORS header the
+ *  browser needs to hand it to us.
+ *
+ *  Asked of both origins, twice each, before answering no. The callers turn a
+ *  `true` into a hard failure, so a false positive is loud, but a false
+ *  negative — a slow AP, a blocked endpoint, a webview that is not ready —
+ *  reads as "no upstream" and lets a spec run on a network that has one,
+ *  proving nothing.
+ *
+ *  Brings the app to the foreground to ask, and leaves it there — every caller
+ *  wipes and relaunches it next, so what it comes up on does not matter. The
+ *  script timeout is raised and left raised: the driver's default is no state
+ *  worth restoring, and lowering what another caller raised would be worse. */
+export async function iosHasInternet(b: WebdriverIO.Browser): Promise<boolean> {
+	await attachToIosApp(b);
+	await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
+	const probes = Array.from(
+		{ length: INTERNET_PROBE_ROUNDS },
+		() => INTERNET_PROBES,
+	).flat();
+	for (const [i, probe] of probes.entries()) {
+		// Spaced, or attempts that fail fast — a DNS error rather than a
+		// timeout — all land inside the same moment and say nothing new.
+		if (i > 0) await b.pause(INTERNET_PROBE_GAP);
+		if (await probeInternet(b, probe)) return true;
+	}
+	return false;
+}
+
+/** Whether the endpoint answered. Any answer counts, whatever its status: it
+ *  is an HTTPS response the browser was willing to read cross-origin, which
+ *  only the real origin can produce — a rate-limited 403 proves upstream as
+ *  well as a 200 does. */
+function probeInternet(
+	b: WebdriverIO.Browser,
+	probe: InternetProbe,
+): Promise<boolean> {
+	return b.executeAsync(
+		(target: InternetProbe, ms: number, done: (reachable: boolean) => void) => {
+			const timer = setTimeout(() => done(false), ms);
+			const settle = (reachable: boolean) => {
+				clearTimeout(timer);
+				done(reachable);
+			};
+			fetch(target.url, { headers: target.headers, cache: 'no-store' }).then(
+				() => settle(true),
+				() => settle(false),
+			);
+		},
+		probe,
+		INTERNET_PROBE_TIMEOUT,
+	);
 }
 
 /** Run the app's own delete_account, which wipes the data dir and exits, and
@@ -282,6 +373,34 @@ async function attachToIosApp(b: WebdriverIO.Browser): Promise<void> {
 	await b.activateApp(APP_BUNDLE_ID);
 	await switchToWebview(b, 'ios');
 	await waitForTestUtils(b);
+}
+
+/** Where the device says our app's bundle sits right now. Each install puts it
+ *  in a container of its own, so this changes whenever anything replaces the
+ *  build we installed — a release or TestFlight build carries the same version
+ *  and bundle id as ours, and pointed at the cloud mailbox instead of the
+ *  run's, it fails every cross-device wait in the suite. `undefined` when the
+ *  app is absent or the device can't be asked, which reinstalls. */
+function installedBundlePath(udid: string): string | undefined {
+	const listing = path.join(
+		tmpdir(),
+		`dashchat-apps-${udid}-${process.pid}.json`,
+	);
+	try {
+		execSync(
+			`xcrun devicectl device info apps --device ${udid} ` +
+				`--bundle-id ${APP_BUNDLE_ID} --json-output "${listing}"`,
+			{ stdio: 'ignore' },
+		);
+		const { result } = JSON.parse(readFileSync(listing, 'utf8')) as {
+			result: { apps: { url?: string }[] };
+		};
+		return result.apps[0]?.url;
+	} catch {
+		return undefined;
+	} finally {
+		rmSync(listing, { force: true });
+	}
 }
 
 /** Put a device back to a freshly-installed app, retrying the install: CoreDevice
@@ -450,8 +569,6 @@ export class IosPlatform implements AgentPlatform {
 		// host still holds before each session.
 		process.env._WDIO_IOS_HOST_IP = hostIp;
 		const bakedEnv: Record<string, string> = {
-			E2E_NETWORK_ID,
-			E2E_RELAY_URL,
 			MAILBOX_URL: `http://${hostIp}:${mailboxPort}`,
 		};
 		if (pushPort !== null) {
@@ -468,10 +585,17 @@ export class IosPlatform implements AgentPlatform {
 		// remote deployment it is that deployment's own mailbox and push server —
 		// they must match, since the mailbox notifies its own push server and the
 		// device registers its token with the one it was built for.
-		const bakedEnv =
-			ctx.mailboxPort === null
+		// The network id and relay are the run's whichever mailbox it is, as on
+		// android and desktop: they decide who the app can find, not where the
+		// mailbox is. Both are `MANAGED` in sync-xcode-env, so leaving them out
+		// of the remote branch would also strip what a local run wrote.
+		const bakedEnv = {
+			E2E_NETWORK_ID,
+			E2E_RELAY_URL,
+			...(ctx.mailboxPort === null
 				? remoteBakedEnv()
-				: this.localBakedEnv(ctx.mailboxPort, ctx.pushPort);
+				: this.localBakedEnv(ctx.mailboxPort, ctx.pushPort)),
+		};
 		syncXcodeEnv(bakedEnv);
 		// The task's last step (scripts/export-session-ipa.ts) copies the built
 		// .ipa to SESSION_IPA, so turbo snapshots and restores the final artifact.
@@ -493,14 +617,14 @@ export class IosPlatform implements AgentPlatform {
 		// app's own delete_account instead), and only on devices that don't
 		// already hold this exact build from a previous run.
 		for (const udid of this.udids.values()) {
-			if (deviceHasBuild(udid, SESSION_IPA)) {
+			if (deviceHasBuild(udid, SESSION_IPA, () => installedBundlePath(udid))) {
 				console.log(
 					`[ios] ${udid} already has the current e2e build — skipping install`,
 				);
 				continue;
 			}
 			if (await reinstallApp(udid)) {
-				recordInstalled(udid, SESSION_IPA);
+				recordInstalled(udid, SESSION_IPA, installedBundlePath(udid));
 			}
 		}
 	}

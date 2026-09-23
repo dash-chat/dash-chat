@@ -62,11 +62,14 @@ export interface MessageView {
 }
 
 export interface ChatView {
-	/** Direct chats only: the peer's profile has not arrived yet. */
-	pending: boolean;
 	/** Direct chats only: the viewer has blocked the peer, which turns the
 	 * chat read-only. */
 	blocked: boolean;
+	/** Groups only: the viewer has left or been removed. `chatsFor` drops such
+	 * a group, so no row is expected for it — this is only ever read of the
+	 * chat an agent is still sitting in when the departure reaches it, where
+	 * the app replaces the composer with why there is none. */
+	departed: boolean;
 	messages: MessageView[];
 }
 
@@ -319,6 +322,11 @@ export class ExpectedModel {
 	/** Ops the run did not produce: they were on the agents' devices before
 	 * it began, so whatever they once announced is not this run's to expect. */
 	private readonly silent = new Set<OpId>();
+	/** Agent name → the ops it had yet to hear when it came back to the
+	 * foreground. Its app fetches those itself on the sync that follows and
+	 * announces none of them; what arrives *while* a device is away is what
+	 * makes a notification, and reaching an away device takes a push. */
+	private readonly catchingUp = new Map<string, Set<OpId>>();
 	/** Blocks in force, as 'blocker>blocked'. Nothing of one leaves the
 	 * blocker's own devices. */
 	private readonly blocked = new Set<string>();
@@ -405,7 +413,9 @@ export class ExpectedModel {
 	 *  the one it was taken away from: what the device was showing for it and
 	 *  what its row had counted are both gone. */
 	foreground(name: string): void {
-		this.backgrounded.delete(name);
+		// Only what was away has anything to catch up on: a move that
+		// foregrounds an app already on screen must not silence it.
+		if (this.backgrounded.delete(name)) this.catchUp(name);
 		const route = this.viewing.get(name)?.route;
 		if (route === undefined) return;
 		this.clearPosted(name, route);
@@ -417,10 +427,27 @@ export class ExpectedModel {
 		this.stopped.add(name);
 	}
 
+	/** Everything `name` has yet to hear is now a catch-up rather than an
+	 *  announcement: what it missed while it was away, which its app fetches
+	 *  quietly on the next sync. Anything written after this notifies.
+	 *
+	 *  The set is dropped at the end of that one `spread`, whether or not it
+	 *  delivered anything — an agent that comes back onto no network and
+	 *  rejoins later announces what it then fetches. That is the modelled
+	 *  choice, not a measured one: if the app stays quiet through that second
+	 *  sync too, this reports a notification the device never posts. */
+	private catchUp(name: string): void {
+		const known = this.knows(name);
+		this.catchingUp.set(
+			name,
+			new Set(this.ops.filter(op => !known.has(op.id)).map(op => op.id)),
+		);
+	}
+
 	/** An app that was stopped comes back on the chat list, not on whatever it
 	 *  was showing when it went away. */
 	startApp(name: string): void {
-		this.stopped.delete(name);
+		if (this.stopped.delete(name)) this.catchUp(name);
 		this.wentHome(name);
 	}
 
@@ -669,13 +696,12 @@ export class ExpectedModel {
 		return [...members];
 	}
 
-	/** Chats `name` can send in: the ones it can open whose composer is
-	 * there — neither waiting on a peer profile nor blocked. */
+	/** Chats `name` can send in: the ones it can open whose composer is there.
+	 * Only a block takes it away — a mutual add makes the pair contacts on the
+	 * spot, so the chat is writable from then on whether or not the peer's
+	 * profile has caught up. */
 	sendableChatsFor(name: string): ExpectedChat[] {
-		return this.chatsFor(name).filter(c => {
-			const view = this.view(name, c);
-			return !view.pending && !view.blocked;
-		});
+		return this.chatsFor(name).filter(c => !this.view(name, c).blocked);
 	}
 
 	/** Create a group: the creator knows it at once; each invited member
@@ -1001,8 +1027,9 @@ export class ExpectedModel {
 				? (chat.members.find(member => member !== agent) ?? null)
 				: null;
 		return {
-			pending: peer !== null && !this.knowsProfile(agent, peer),
 			blocked: peer !== null && this.blocks(agent, peer),
+			departed:
+				chat.kind === 'group' && !this.membersFor(chat, agent).includes(agent),
 			messages: [...views.values()],
 		};
 	}
@@ -1215,6 +1242,9 @@ export class ExpectedModel {
 				if (this.unionComponent(component)) changed = true;
 			}
 		}
+		// Whatever was waiting has landed, silently; anything arriving from
+		// here on reaches an app that is up and announces itself.
+		this.catchingUp.clear();
 		for (const name of this.names()) {
 			const gained = this.chatsGained(name, before.get(name) ?? new Set());
 			if (gained.length === 0) continue;
@@ -1300,6 +1330,7 @@ export class ExpectedModel {
 	 *  route an agent is looking at right now: a backgrounded app is looking
 	 *  at nothing, so it is notified even for the chat it was left on. */
 	private noteNotified(holder: string, op: Op): void {
+		if (this.catchingUp.get(holder)?.has(op.id) === true) return;
 		if (this.silent.has(op.id) || !this.notifies(holder, op)) return;
 		const notification = this.notificationFor(holder, op);
 		if (notification === null) return;

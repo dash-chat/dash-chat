@@ -5,9 +5,10 @@
  * mailbox can carry anything. Contact exchange, text messages and media can
  * only cross over a direct connection to a peer discovered over mDNS.
  *
- * Needs two physical Android phones without mobile data, and a network in
+ * Needs two physical phones without mobile data, and a network in
  * E2E_WIFI_NETWORKS other than the one the phones are on; skips otherwise:
  *   PLATFORMS=android,android just e2e run p2p-offline-lan
+ *   PLATFORMS=ios,ios just e2e run p2p-offline-lan
  */
 import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
 import {
@@ -24,6 +25,8 @@ import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
 async function relaunchOn(agent: Agent, network: WifiNetwork): Promise<void> {
 	await agent.stopApp();
 	await agent.connectWifi(network.ssid, network.passphrase);
+	// On iOS this brings the app up on the old account to ask from its
+	// webview, so the wipe below is what actually leaves it at first launch.
 	if (await agent.hasInternet()) {
 		throw new Error(
 			`"${network.ssid}" reaches the internet; this spec needs a network with no upstream`,
@@ -42,11 +45,23 @@ describe('P2P sync on a LAN with no internet', () => {
 	before(async function () {
 		if (isRemoteMailbox()) this.skip();
 		[alice, bob] = await setupAgents(this, [
-			{ platform: 'android' },
-			{ platform: 'android' },
+			{ platform: 'phone' },
+			{ platform: 'phone' },
 		]);
-		if (alice.platform === 'android-emulator') this.skip();
 		const home = (await alice.wifiInfo()).ssid;
+		// A positive control for the probe `relaunchOn` leans on. It only throws
+		// on a `true`, so a probe that can never say yes — a retired endpoint, a
+		// CORS policy change, a webview that runs the script but cannot fetch —
+		// would let this whole spec pass on a network with full internet,
+		// proving nothing about mDNS. The phones start on the lab's network,
+		// which has upstream, so the probe has to say so here.
+		if (!(await alice.hasInternet())) {
+			throw new Error(
+				`the internet probe says "${home}" has no upstream, so it cannot ` +
+					'tell an offline network from a broken probe. This spec needs to ' +
+					'start on a network with internet.',
+			);
+		}
 		const network = wifiNetworks().find(n => n.ssid !== home);
 		if (network === undefined) this.skip();
 		offline = network;

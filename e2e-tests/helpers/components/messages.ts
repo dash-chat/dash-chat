@@ -5,9 +5,14 @@ import {
 	MEDIA_SYNC_TIMEOUT,
 	RENDER_SETTLE_WINDOW,
 	SYNC_TIMEOUT,
+	UI_TIMEOUT,
 } from '../timeouts';
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
+
+/** Long-presses to try before letting the menu's own wait report the failure.
+ *  Each costs a settle window, so this stays small. */
+const OPEN_ACTIONS_ATTEMPTS = 3;
 
 export type MessageStatus = 'unsent' | 'sending' | 'mailbox' | 'delivered';
 
@@ -671,16 +676,52 @@ export class Message extends TestHelper {
 	/** Open this message's actions menu with the gesture its platform uses — a
 	 * long-press on mobile, which opens the spotlight overlay, or the hover
 	 * toolbar's ⋯ button on desktop — and wait for it to actually open. The
-	 * message is scrolled to the middle first: a menu anchored to a message
-	 * at the very top opens past the viewport's edge. */
+	 * message is scrolled to the middle before each attempt: a menu anchored to
+	 * a message at the very top opens past the viewport's edge. */
 	async openActions() {
-		await this.wrapper.scrollIntoView({ block: 'center' });
-		if (await this.isMobileBuild()) {
-			await this.longPressBubble();
-		} else {
+		if (!(await this.isMobileBuild())) {
+			await this.wrapper.scrollIntoView({ block: 'center' });
 			await this.clickHoverButton('message-hover-menu');
+			await this.actionsMenu.waitForDisplayed();
+			return;
 		}
-		await this.actionsMenu.waitForDisplayed();
+		// The app arms the long-press on touchstart and loses it if the bubble's
+		// node is replaced before the hold is up, which any message arriving
+		// meanwhile does. Repeat the gesture rather than spend the whole wait on
+		// one that was cancelled.
+		for (let i = 0; i < OPEN_ACTIONS_ATTEMPTS; i++) {
+			// A press on an open overlay dismisses it, so a menu that opened
+			// just past the settle window must not be pressed again.
+			if (await this.actionsMenu.isDisplayed()) return;
+			// Re-centred every attempt: the burst of arriving messages this loop
+			// exists for also scrolls the list, and a menu anchored to a message
+			// back at the viewport's edge opens past it and reads as not open.
+			await this.wrapper.scrollIntoView({ block: 'center' });
+			// The gesture itself can fail, not just the wait: it dispatches
+			// `touchend` against the selector it pressed 700ms earlier, and the
+			// re-render that cancels the press is free to have taken that node
+			// away. That is this loop's own case, so it costs an attempt rather
+			// than the run.
+			const opened = await this.longPressBubble()
+				.then(() =>
+					this.actionsMenu.waitForDisplayed({
+						timeout: RENDER_SETTLE_WINDOW,
+					}),
+				)
+				.then(
+					() => true,
+					() => false,
+				);
+			if (opened) return;
+		}
+		// The full wait, not another settle window: the retries are there to
+		// cover a cancelled gesture, not to lower what a slow phone is allowed.
+		await this.actionsMenu.waitForDisplayed({
+			timeout: UI_TIMEOUT,
+			timeoutMsg:
+				`The actions menu did not open after ${OPEN_ACTIONS_ATTEMPTS} ` +
+				'long-presses — each one lost, most likely to a re-render',
+		});
 	}
 
 	/** Fail unless this message's actions menu is open now and still open
