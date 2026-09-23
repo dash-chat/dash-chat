@@ -67,6 +67,7 @@ pretty_assertions = "1.4.1"
 cap = { version = "0.1.2", features = ["stats"] }
 tempfile = "3"
 p2panda-store = { workspace = true, features = ["test_utils"] }
+postcard = "1"
 
 [features]
 default = ["instrument"]
