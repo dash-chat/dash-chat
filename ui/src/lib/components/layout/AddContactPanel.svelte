@@ -9,7 +9,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
 	import {
 		Page,
@@ -37,6 +37,7 @@
 		extractCodeFromDeepLink,
 	} from '$lib/deep-links/add-contact';
 	import { defaultQrColor } from '$lib/utils/qrcode';
+	import { withTimeout } from '$lib/utils/timeout';
 	import SelectColor from './SelectColor.svelte';
 	import QrCodeCard from '$lib/components/QrCodeCard.svelte';
 	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
@@ -54,12 +55,17 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const settingsStore: SettingsStore = getContext('settings-store');
 
+	const CREATE_CONTACT_CODE_TIMEOUT_MS = 5_000;
+
 	let myName = $state(getMyName());
 	let myDeepLink = $state(createMyDeepLink());
 
 	async function createMyDeepLink(): Promise<string> {
 		try {
-			const code = await contactsStore.client.createContactCode();
+			const code = await withTimeout(
+				contactsStore.client.createContactCode(),
+				CREATE_CONTACT_CODE_TIMEOUT_MS,
+			);
 			const link = toDeepLink(code);
 			if (link === null) {
 				throw new Error('toDeepLink returned null');
@@ -96,8 +102,7 @@
 		);
 	}
 
-	const qrColor = useReactiveValue(settingsStore.qrColor);
-	const color = $derived($qrColor ?? defaultQrColor());
+	const qrColor = useReactivePromise(settingsStore.qrColor);
 	let colorPickerOpen = $state(false);
 	let colorForPicker = $state(defaultQrColor());
 	let linkSheetOpen = $state(false);
@@ -237,14 +242,15 @@
 		</Navbar>
 
 		{#if tab === 'code'}
-			{#await Promise.all([myDeepLink, myName])}
+			{#await Promise.all([myDeepLink, myName, $qrColor])}
 				<div
 					class="column"
 					style="height: 100%; align-items: center; justify-content: center"
 				>
 					<Preloader />
 				</div>
-			{:then [deepLink, name]}
+			{:then [deepLink, name, savedColor]}
+				{@const color = savedColor ?? defaultQrColor()}
 				<div class="column" style="flex:1">
 					<div class="column center-in-desktop gap-4 mx-4 mt-4">
 						<QrCodeCard
