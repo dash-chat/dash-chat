@@ -275,6 +275,35 @@ async function walkBackToRoot(
 	return false;
 }
 
+/** Whatever system alert is sitting over Settings — a network that could not
+ *  be joined, a password that was wrong. Read only: the session's
+ *  `autoAcceptAlerts` capability runs WDA's alert monitor, which taps the
+ *  default button on these as they appear (see `forget()` above), so answering
+ *  one here would be a second policy on the same alert with no say in which
+ *  lands first. This exists to name what is on screen when Settings is stuck. */
+async function readSystemAlert(b: WebdriverIO.Browser): Promise<string | null> {
+	try {
+		return await b.getAlertText();
+	} catch {
+		return null;
+	}
+}
+
+/** What Settings is showing, for a failure that can be acted on rather than
+ *  guessed at. */
+async function describeScreen(b: WebdriverIO.Browser): Promise<string> {
+	const alert = await readSystemAlert(b);
+	if (alert !== null) return `the alert "${alert}"`;
+	try {
+		const bar = await b
+			.$(classChain('**/XCUIElementTypeNavigationBar'))
+			.getAttribute('name');
+		return bar ? `"${bar}"` : 'no navigation bar';
+	} catch {
+		return 'nothing readable';
+	}
+}
+
 /** Launch Settings on its root screen, relaunching if walking back does
  *  not get there. */
 async function openSettingsAtRoot(b: WebdriverIO.Browser): Promise<void> {
@@ -283,7 +312,10 @@ async function openSettingsAtRoot(b: WebdriverIO.Browser): Promise<void> {
 		await b.activateApp(SETTINGS_BUNDLE_ID);
 		if (await walkBackToRoot(b)) return;
 	}
-	throw new Error('Settings never showed its root screen');
+	throw new Error(
+		'Settings never showed its root screen; it was showing ' +
+			(await describeScreen(b)),
+	);
 }
 
 /** Run `body` against a freshly opened Settings app and put things back:

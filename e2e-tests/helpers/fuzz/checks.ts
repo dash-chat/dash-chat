@@ -309,7 +309,7 @@ function wrongBadges(expected: Map<string, number>, rows: ChatRow[]): string[] {
 /**
  * Wait until `page` shows exactly `sa`'s view of `chat`: every message it
  * knows, at the revision and with the reactions it knows, and the composer
- * iff the chat is not pending. Then fail on any rendered message the view
+ * unless the chat is read-only. Then fail on any rendered message the view
  * does not contain — read once, after the expected ones settled, so absence
  * never waits out a timeout.
  */
@@ -490,10 +490,10 @@ async function expectComposer(
 	view: ChatView,
 	where: string,
 ): Promise<void> {
-	const readOnly = view.pending
-		? 'the peer profile has not arrived'
-		: view.blocked
-			? 'the peer is blocked'
+	const readOnly = view.blocked
+		? 'the peer is blocked'
+		: view.departed
+			? 'the viewer is no longer in the group'
 			: null;
 	if (readOnly === null) {
 		await page.composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });

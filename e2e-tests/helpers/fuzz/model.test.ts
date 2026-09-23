@@ -88,14 +88,17 @@ test('a text reaches a contact on the same LAN', () => {
 	);
 });
 
-test('a direct chat is pending until the peer profile arrives', () => {
+test('a mutual add is writable at once, before the peer profile arrives', () => {
 	const m = sameLan(A, B);
 	m.recordAdded(A, B);
 	m.recordAdded(B, A);
 	const chat = m.directChat(A, B);
-	assert.equal(m.view(A, chat).pending, true);
+	// Adding back accepts the pending request, so the chat is a contact's
+	// chat from that moment; the profile is a separate op still in flight.
+	assert.equal(m.knowsProfile(A, B), false);
+	assert.deepEqual(m.sendableChatsFor(A), [chat]);
 	m.propagate();
-	assert.equal(m.view(A, chat).pending, false);
+	assert.equal(m.knowsProfile(A, B), true);
 });
 
 test('a backgrounded agent gains nothing until it is back', () => {
@@ -271,7 +274,7 @@ test('propagateShared unions everyone as one LAN, whatever the topology', () => 
 	m.addMessage(chat, A, 'text', 'sm-1');
 	assert.equal(m.propagate().has(B), false);
 	assert.deepEqual([...(m.propagateShared().get(B) ?? [])], [chat]);
-	assert.equal(m.view(B, chat).pending, false);
+	assert.equal(m.knowsProfile(B, A), true);
 });
 
 test('running hubs follow the card, at home while it is on no lab LAN', () => {
@@ -612,6 +615,45 @@ test('a stopped app comes back on the chat list, not on what it was showing', ()
 	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
 });
 
+test('what a stopped app missed is caught up quietly, not announced', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.stopApp(B);
+	// Nothing reaches a stopped device without a push, so this waits.
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), []);
+	// Starting up fetches it, which the app does without announcing it.
+	m.startApp(B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), []);
+	assert.deepEqual(
+		m.view(B, chat).messages.map(v => v.text),
+		['sm-1'],
+	);
+	// What arrives once it is back is announced as usual.
+	m.addMessage(chat, A, 'text', 'sm-2');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: sm-2`]);
+});
+
+test('foregrounding an app already on screen silences nothing', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	// B is active and looking at its chat list, not at the chat.
+	m.wentHome(B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	// A shade read resumes the app, which reports a foreground on an agent
+	// that never left (checks.ts). It must not swallow what is in flight.
+	m.foreground(B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+});
+
 test('a message in a chat an agent is not in notifies it of nothing', () => {
 	const m = sameLan(A, B, C);
 	contacts(m, A, B);
@@ -636,8 +678,8 @@ test('contacts an agent already had need no request to have happened', () => {
 	const m = sameLan(A, B);
 	m.recordExistingContacts(A, B);
 	const chat = m.directChat(A, B);
-	assert.equal(m.view(A, chat).pending, false);
-	assert.equal(m.view(B, chat).pending, false);
+	assert.equal(m.knowsProfile(A, B), true);
+	assert.equal(m.knowsProfile(B, A), true);
 	// The request that made them contacts was sent before the run began, so
 	// nothing of it may be expected on a device.
 	assert.deepEqual(showing(m, B), []);
@@ -755,6 +797,23 @@ test('a member may leave a group, and a last admin with company may not', () => 
 	assert.deepEqual(m.leavableGroups(A), [group]);
 	// Leaving is its own doing, so nothing is announced for it.
 	assert.deepEqual(showing(m, B), []);
+});
+
+test('a group is read-only once the removal has reached the one removed', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	assert.equal(m.view(B, group).departed, false);
+	m.removeGroupMember(group, A, B);
+	// The removal travels like anything else: B keeps the group, and its
+	// composer, until it arrives.
+	assert.equal(m.view(B, group).departed, false);
+	m.propagate();
+	assert.equal(m.view(B, group).departed, true);
+	// A is still in it, so nothing changed there.
+	assert.equal(m.view(A, group).departed, false);
 });
 
 test('a group stays on a device that was away until the removal reaches it', () => {
@@ -893,7 +952,7 @@ test('a renamed peer is still a peer whose profile has arrived', () => {
 	const chat = m.directChat(A, B);
 	m.updateProfile(B, m.nextProfileName());
 	m.propagate();
-	assert.equal(m.view(A, chat).pending, false);
+	assert.equal(m.knowsProfile(A, B), true);
 	assert.deepEqual(m.sendableChatsFor(A), [chat]);
 });
 

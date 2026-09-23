@@ -12,15 +12,24 @@ const ENV_LOCAL = path.join(
 );
 
 /**
- * Build inputs the "Build Rust Code" phase must see. The `*_URL` vars are read
- * by `option_env!`; the `*_PORT` vars `just dev` allocates are read by
- * `build.rs`, which synthesizes a LAN-reachable URL from them.
+ * Build inputs the "Build Rust Code" phase must see. The `*_URL` vars,
+ * `E2E_NETWORK_ID` and `E2E_RELAY_URL` are read by `option_env!`; the `*_PORT`
+ * vars `just dev` allocates are read by `build.rs`, which synthesizes a
+ * LAN-reachable URL from them.
+ *
+ * `E2E_NETWORK_ID` decides the p2panda network id, the iroh relay and the mDNS
+ * service name a build uses, so leaving it out does not fail loudly: the app
+ * silently joins the production network and browses the production hub name
+ * while the run's mailbox and hubs use the run's own, and every cross-device
+ * sync in the suite quietly finds nobody.
  */
 export const MANAGED = [
 	'MAILBOX_URL',
 	'PUSH_NOTIFICATIONS_SERVER_URL',
 	'MAILBOX_PORT',
 	'PUSH_NOTIFICATIONS_SERVER_PORT',
+	'E2E_NETWORK_ID',
+	'E2E_RELAY_URL',
 ] as const;
 export type ManagedKey = (typeof MANAGED)[number];
 

@@ -31,4 +31,14 @@ export class EditPhotoPage extends TestHelper {
 	pickPhoto(photo: TestFileSpec): Promise<FilePickerRequest> {
 		return this.answerFilePicker(this.galleryButton, [photo]);
 	}
+
+	/** Give the avatar `photo` through whichever source this platform offers:
+	 * the camera on mobile, since the gallery there opens the OS picker that no
+	 * driver can answer, and the gallery on desktop, which has no camera action.
+	 * For tests that need an avatar rather than a particular way of choosing one. */
+	async setPhoto(photo: TestFileSpec): Promise<FilePickerRequest> {
+		return (await this.isMobileBuild())
+			? this.takePhoto(photo)
+			: this.pickPhoto(photo);
+	}
 }
