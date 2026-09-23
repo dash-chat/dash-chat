@@ -530,6 +530,13 @@ impl Node {
         self.filesystem.data_path()
     }
 
+    /// Ops the LAN router has delivered so far; `None` when it is not
+    /// running (see [`crate::lan_router::LanRouter::delivered_count`]).
+    #[cfg(feature = "lan-router")]
+    pub fn lan_router_delivered(&self) -> Option<u64> {
+        self.lan_router.as_ref().map(|r| r.delivered_count())
+    }
+
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
         self.local_store
             .get_advertised_inbox_topics()

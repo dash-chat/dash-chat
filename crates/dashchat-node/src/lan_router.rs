@@ -433,6 +433,7 @@ mod imp {
         actor_tx: mpsc::Sender<Command>,
         node_task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
         events_task: Mutex<Option<JoinHandle<()>>>,
+        delivered: Arc<AtomicU64>,
     }
 
     impl LanRouter {
@@ -480,10 +481,13 @@ mod imp {
                 transport,
                 intervals,
             );
+            let delivered = Arc::new(AtomicU64::new(0));
+            let delivered_in_task = delivered.clone();
             let events_task = tokio::spawn(async move {
                 while let Some(event) = events.recv().await {
                     match event {
                         RouterEvent::Delivered(log, seq) => {
+                            delivered_in_task.fetch_add(1, Ordering::Relaxed);
                             tracing::debug!(%log, seq, "lan router delivered an op")
                         }
                         RouterEvent::StorageError(e) => {
@@ -500,6 +504,7 @@ mod imp {
                 actor_tx: params.actor_tx,
                 node_task: Mutex::new(Some(node_task)),
                 events_task: Mutex::new(Some(events_task)),
+                delivered,
             })))
         }
 
@@ -537,6 +542,13 @@ mod imp {
                 .map_err(|_| anyhow!("actor channel closed"))?;
             reply_rx.await?.map_err(|e| anyhow!("import: {e}"))?;
             self.handle.subscribe(LogId::from_topic(topic)).await
+        }
+
+        /// How many ops the router has delivered into the op store: novel
+        /// subscribed data that landed (`RouterEvent::Delivered`). Ops that
+        /// p2panda's own sync brought first are not counted.
+        pub fn delivered_count(&self) -> u64 {
+            self.delivered.load(Ordering::Relaxed)
         }
 
         pub async fn unsubscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
