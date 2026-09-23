@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { Sheet } from 'konsta/svelte';
-	import { registerAboveKeyboard } from 'tauri-plugin-virtual-keyboard';
+	import {
+		registerAboveKeyboard,
+		suppressKeyboardRestore,
+	} from 'tauri-plugin-virtual-keyboard';
 	import { swipeToClose } from '$lib/utils/swipe-to-close';
 	import { portalToModalHost } from '$lib/actions/portal-to-modal-host';
 
@@ -35,15 +38,26 @@
 		const found = anchor.closest<HTMLElement>('.k-sheet');
 		if (!found) throw new Error('SwipeableSheet must render inside a .k-sheet');
 		sheet = found;
-		return swipeToClose(found, () => onClose());
+		return swipeToClose(found, () => {
+			// Closing drops the keyboard, and the keyboard glide measures the sheet
+			// with whatever offset it carries: hand it back the plain position.
+			if (aboveKeyboard) found.style.transform = '';
+			onClose();
+		});
 	});
 
-	// A swipe closes the sheet with its drag offset still applied; drop it
+	// A swipe closes the other sheets with their drag offset still applied; drop it
 	// before the sheet slides back in.
 	$effect.pre(() => {
 		if (!opened || !sheet) return;
 		sheet.style.transition = '';
 		sheet.style.transform = '';
+	});
+
+	// A keyboard restore requested while the sheet is open (a spotlight releasing
+	// its slot hold) would pull focus behind it; it waits for the sheet to close.
+	$effect(() => {
+		if (opened) return suppressKeyboardRestore();
 	});
 
 	// Registered while mounted rather than only while open: closing drops focus
