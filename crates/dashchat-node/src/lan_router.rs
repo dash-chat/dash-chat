@@ -24,6 +24,8 @@ pub struct LanRouterParams {
     pub data_path: PathBuf,
     pub device_id: VerifyingKey,
     pub op_store: OpStore,
+    /// Read only by the feature-on router.
+    #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
     pub(crate) actor_tx: mpsc::Sender<Command>,
 }
 
@@ -59,20 +61,25 @@ mod imp {
     use std::collections::{BTreeSet, HashMap};
     use std::sync::RwLock;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
 
     use anyhow::{Context as _, anyhow, ensure};
-    use dash_router::core::{LogRanges, Op, Ranges, Seq};
+    use dash_router::core::{LogRanges, Op, Ranges, RouterConfig, Seq, Units};
+    use dash_router::policy::{IntervalPolicy, PushDebouncePolicy};
     use dash_router::{
-        AsyncStorage, GossipPublisher, GossipSubscription, GossipTransport, PeerKey,
-        WatchableStorage,
+        AsyncStorage, CoreConfig, DiskRelayStore, GossipPublisher, GossipSubscription,
+        GossipTransport, PeerKey, PolicyIntervals, RouterEvent, RouterHandle, WatchableStorage,
     };
     use futures::StreamExt as _;
     use p2panda::operation::{Header, LogId, Operation};
     use p2panda::streams::{EphemeralStreamPublisher, EphemeralStreamSubscription};
     use p2panda_core::Body;
+    use rand::SeedableRng as _;
     use serde::{Deserialize, Serialize};
     use serde_bytes::ByteBuf;
-    use tokio::sync::{broadcast, oneshot};
+    use tokio::sync::{Mutex, broadcast, oneshot};
+    use tokio::task::JoinHandle;
+    use tokio_stream::wrappers::ReceiverStream;
 
     use crate::DeviceId;
 
@@ -140,7 +147,6 @@ mod imp {
     /// The router's ext store: Dash Chat's own `OpStore`, seen as
     /// `(LogId, author)` logs. Only logs under a registered topic exist for
     /// the router, and only acked seqs are held or served (spec §4.2).
-    #[allow(dead_code)] // until Task 6
     #[derive(Clone)]
     pub(crate) struct OpStoreExt {
         store: OpStore,
@@ -155,7 +161,6 @@ mod imp {
         rejected: Arc<AtomicU64>,
     }
 
-    #[allow(dead_code)] // until Task 6
     impl OpStoreExt {
         pub(crate) fn new(store: OpStore) -> Self {
             Self {
@@ -190,6 +195,7 @@ mod imp {
                 .remove(&LogId::from_topic(topic));
         }
 
+        #[cfg(test)]
         pub(crate) fn has_topic(&self, log_id: &LogId) -> bool {
             self.topics.read().unwrap().contains_key(log_id)
         }
@@ -198,6 +204,7 @@ mod imp {
             let _ = self.hints.send(BTreeSet::from([log])); // no receivers is fine
         }
 
+        #[cfg(test)]
         pub(crate) fn rejected(&self) -> u64 {
             self.rejected.load(Ordering::Relaxed)
         }
@@ -361,12 +368,10 @@ mod imp {
     /// dash-router ties that constant to `WIRE_VERSION` with a
     /// compile-time assert. Peers on a different network id never connect
     /// at all (every ALPN is hashed with it), so no further scoping.
-    #[allow(dead_code)] // until Task 6
     pub(crate) fn router_topic() -> TopicId {
         p2panda::Hash::digest(dash_router::GOSSIP_TOPIC.as_bytes()).into()
     }
 
-    #[allow(dead_code)] // until Task 6
     pub(crate) struct Publisher(EphemeralStreamPublisher<ByteBuf>);
 
     impl GossipPublisher for Publisher {
@@ -378,7 +383,6 @@ mod imp {
         }
     }
 
-    #[allow(dead_code)] // until Task 6
     pub(crate) struct Subscription(EphemeralStreamSubscription<ByteBuf>);
 
     impl GossipSubscription for Subscription {
@@ -388,7 +392,6 @@ mod imp {
         }
     }
 
-    #[allow(dead_code)] // until Task 6
     pub(crate) async fn open_transport(
         actor_tx: &mpsc::Sender<Command>,
     ) -> anyhow::Result<GossipTransport<Publisher, Subscription>> {
@@ -409,23 +412,229 @@ mod imp {
         ))
     }
 
-    pub struct LanRouter;
+    /// Policy for v1: the swarm test's values, which converge fifty nodes on
+    /// a LAN in under a minute. Revisit with an estimator for `n`.
+    const WANT_TTL: Duration = Duration::from_secs(2);
+    const HAVE_TTL: Duration = Duration::from_secs(2);
+    const RELAY_CAP: Units = 1 << 20; // ~512k payload-bearing ops
+    const EVICT_AT: f64 = 0.75;
+    const MAINTAIN_EVERY: Duration = Duration::from_secs(30);
+    const NETWORK_SIZE_ESTIMATE: usize = 16;
+    const IMPORT_CHANNEL: usize = 256;
+
+    pub struct LanRouter {
+        handle: RouterHandle<RouterLog>,
+        pub(crate) ext: OpStoreExt,
+        actor_tx: mpsc::Sender<Command>,
+        node_task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
+        events_task: Mutex<Option<JoinHandle<()>>>,
+    }
 
     impl LanRouter {
-        /// Task 6 replaces this body with the real spawn; until then the
-        /// feature-on build behaves like the feature-off one.
         pub async fn spawn(params: LanRouterParams) -> anyhow::Result<Option<Arc<Self>>> {
-            let _ = params;
-            Ok(None)
+            if !params.enabled {
+                return Ok(None);
+            }
+            let relay =
+                DiskRelayStore::<RouterLog>::open(&params.data_path.join("lan_router.redb"))
+                    .context("opening lan_router.redb")?;
+            let ext = OpStoreExt::new(params.op_store);
+            let transport = open_transport(&params.actor_tx).await?;
+            let config = CoreConfig {
+                router: RouterConfig {
+                    want_ttl: WANT_TTL.into(),
+                    have_ttl: HAVE_TTL.into(),
+                },
+                relay_cap: RELAY_CAP,
+                evict_at: EVICT_AT,
+                debounce: PushDebouncePolicy {
+                    window_ms: 50,
+                    max_latency_ms: 200,
+                },
+                max_wire_bytes: dash_router::pack::DEFAULT_MAX_WIRE_BYTES,
+            };
+            let intervals = PolicyIntervals {
+                want: IntervalPolicy::Fixed {
+                    min_ms: 500.0,
+                    max_ms: 1500.0,
+                },
+                have: IntervalPolicy::Fixed {
+                    min_ms: 50.0,
+                    max_ms: 250.0,
+                },
+                n: NETWORK_SIZE_ESTIMATE,
+                rng: rand::rngs::StdRng::from_os_rng(),
+            };
+            let (handle, mut events, node_task) = dash_router::spawn(
+                params.device_id,
+                config,
+                MAINTAIN_EVERY,
+                BTreeSet::new(),
+                ext.clone(),
+                relay,
+                transport,
+                intervals,
+            );
+            let events_task = tokio::spawn(async move {
+                while let Some(event) = events.recv().await {
+                    match event {
+                        RouterEvent::Delivered(log, seq) => {
+                            tracing::debug!(%log, seq, "lan router delivered an op")
+                        }
+                        RouterEvent::StorageError(e) => {
+                            tracing::warn!(context = e.context, message = %e.message, "lan router storage error")
+                        }
+                    }
+                }
+            });
+            tracing::info!("lan router running");
+            Ok(Some(Arc::new(Self {
+                handle,
+                ext,
+                actor_tx: params.actor_tx,
+                node_task: Mutex::new(Some(node_task)),
+                events_task: Mutex::new(Some(events_task)),
+            })))
         }
-        pub async fn subscribe_topic(&self, _topic: TopicId) -> anyhow::Result<()> {
-            Ok(())
+
+        /// One router prefix subscription per topic: every author's log on
+        /// it, known or not yet. Idempotent. A failure unregisters the
+        /// topic, so a later call retries instead of reporting success.
+        pub async fn subscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+            let (tx, rx) = mpsc::channel(IMPORT_CHANNEL);
+            if !self.ext.register_topic(topic, tx) {
+                return Ok(());
+            }
+            let result = self.import_and_subscribe(topic, rx).await;
+            if result.is_err() {
+                self.ext.unregister_topic(topic);
+            }
+            result
         }
-        pub async fn unsubscribe_topic(&self, _topic: TopicId) -> anyhow::Result<()> {
-            Ok(())
+
+        async fn import_and_subscribe(
+            &self,
+            topic: TopicId,
+            rx: mpsc::Receiver<Operation>,
+        ) -> anyhow::Result<()> {
+            let stream = Box::pin(ReceiverStream::new(rx));
+            let (reply_tx, reply_rx) = oneshot::channel();
+            self.actor_tx
+                .send(Command::Import {
+                    topic,
+                    stream,
+                    reply_tx,
+                })
+                .await
+                .map_err(|_| anyhow!("actor channel closed"))?;
+            reply_rx.await?.map_err(|e| anyhow!("import: {e}"))?;
+            self.handle.subscribe(LogId::from_topic(topic)).await
         }
-        pub fn hint_changed(&self, _author: VerifyingKey, _topic: TopicId) {}
-        pub async fn shutdown(&self) {}
+
+        pub async fn unsubscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+            self.ext.unregister_topic(topic);
+            self.handle.unsubscribe(LogId::from_topic(topic)).await
+        }
+
+        /// An op on `topic` by `author` was acked: the router's held view
+        /// of that log may have grown. Lossy by design.
+        pub fn hint_changed(&self, author: VerifyingKey, topic: TopicId) {
+            self.ext
+                .hint(RouterLog::new(LogId::from_topic(topic), author));
+        }
+
+        pub async fn shutdown(&self) {
+            let _ = self.handle.clone().shutdown().await;
+            if let Some(t) = self.events_task.lock().await.take() {
+                t.abort();
+            }
+            if let Some(t) = self.node_task.lock().await.take() {
+                let _ = t.await;
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod lan_router_tests {
+        use super::*;
+
+        /// A real p2panda node + actor, offline is fine for these tests
+        /// (ephemeral streams need networking, so use the online builder
+        /// with no discovery and a random network id).
+        async fn params(enabled: bool) -> (LanRouterParams, tempfile::TempDir) {
+            let dir = tempfile::tempdir().unwrap();
+            let node = p2panda::Node::builder()
+                .network_id(p2panda::Topic::random().into())
+                .spawn()
+                .await
+                .unwrap();
+            let store = OpStore::from_sqlite(node.store());
+            let (actor, _events) = crate::node::actor::Actor::new(node, None);
+            let actor_tx = actor.spawn().await.unwrap();
+            let device_id = p2panda::SigningKey::generate().verifying_key();
+            (
+                LanRouterParams {
+                    enabled,
+                    data_path: dir.path().to_path_buf(),
+                    device_id,
+                    op_store: store,
+                    actor_tx,
+                },
+                dir,
+            )
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn disabled_spawns_nothing() {
+            let (p, dir) = params(false).await;
+            assert!(LanRouter::spawn(p).await.unwrap().is_none());
+            assert!(!dir.path().join("lan_router.redb").exists());
+        }
+
+        /// Review focus 1.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn subscribe_topic_is_idempotent() {
+            let (p, dir) = params(true).await;
+            let r = LanRouter::spawn(p).await.unwrap().expect("enabled");
+            assert!(dir.path().join("lan_router.redb").exists());
+            let topic = TopicId::random();
+            r.subscribe_topic(topic).await.unwrap();
+            r.subscribe_topic(topic).await.unwrap();
+            assert!(r.ext.has_topic(&LogId::from_topic(topic)));
+            r.unsubscribe_topic(topic).await.unwrap();
+            assert!(!r.ext.has_topic(&LogId::from_topic(topic)));
+            r.shutdown().await;
+        }
+
+        /// A failed subscribe leaves no registration behind, so a retry
+        /// really retries rather than returning early as "already done".
+        #[tokio::test(flavor = "multi_thread")]
+        async fn failed_subscribe_rolls_back() {
+            let (p, _dir) = params(true).await;
+            let actor_tx = p.actor_tx.clone();
+            let r = LanRouter::spawn(p).await.unwrap().expect("enabled");
+            let (reply_tx, reply_rx) = oneshot::channel();
+            actor_tx.send(Command::Shutdown { reply_tx }).await.unwrap();
+            reply_rx.await.unwrap();
+            let topic = TopicId::random();
+            assert!(r.subscribe_topic(topic).await.is_err());
+            assert!(!r.ext.has_topic(&LogId::from_topic(topic)));
+            assert!(
+                r.subscribe_topic(topic).await.is_err(),
+                "retried, not skipped"
+            );
+            r.shutdown().await;
+        }
+
+        /// Review focus 5.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn shutdown_is_clean() {
+            let (p, _dir) = params(true).await;
+            let r = LanRouter::spawn(p).await.unwrap().expect("enabled");
+            tokio::time::timeout(std::time::Duration::from_secs(5), r.shutdown())
+                .await
+                .expect("shutdown returns");
+        }
     }
 
     #[cfg(test)]
