@@ -77,7 +77,7 @@ impl OpStore {
     /// cursor is exactly the "processed" watermark that gates mailbox
     /// transmission — an operation whose payload might still be tombstoned by
     /// pending processing sits above the watermark and is never sent onward.
-    async fn acked_log_height(
+    pub(crate) async fn acked_log_height(
         &self,
         topic: &TopicId,
         author: &DeviceId,
@@ -90,6 +90,16 @@ impl OpStore {
             CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(&self.store, topic.to_string())
                 .await?;
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
+    }
+
+    /// Every sequence number present for `author`'s log, ascending. The
+    /// router's held-range input (see `lan_router.rs`).
+    pub(crate) async fn get_log_seqs(
+        &self,
+        author: &DeviceId,
+        log_id: &LogId,
+    ) -> anyhow::Result<Vec<SeqNum>> {
+        queries::get_log_seqs(&self.store, author, log_id).await
     }
 
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
@@ -257,7 +267,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod test_support {
     use p2panda::operation::{Extensions, Header};
     use p2panda_core::{Body, Timestamp};
     use p2panda_store::Transaction;
@@ -265,14 +275,7 @@ mod tests {
 
     use super::*;
 
-    async fn fetch(store: &OpStore, hash: &Hash) -> Operation {
-        OperationStore::<Operation, Hash>::get_operation(&store.store, hash)
-            .await
-            .unwrap()
-            .unwrap()
-    }
-
-    fn signed_op(
+    pub(crate) fn signed_op(
         signing_key: &p2panda::SigningKey,
         log_id: LogId,
         seq_num: SeqNum,
@@ -296,7 +299,7 @@ mod tests {
         }
     }
 
-    async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
+    pub(crate) async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
         let permit = store.store.begin().await.unwrap();
         OperationStore::<Operation, Hash>::insert_operation(&store.store, &op.hash, op, log_id)
             .await
@@ -307,7 +310,7 @@ mod tests {
     /// Advance p2panda's ack cursor for `author`'s log to `seq`, mimicking what
     /// `ProcessedOperation::ack` persists once application-layer processing has
     /// finished (see `OpStore::acked_log_height`).
-    async fn ack_up_to(
+    pub(crate) async fn ack_up_to(
         store: &OpStore,
         topic: &TopicId,
         author: &DeviceId,
@@ -331,6 +334,24 @@ mod tests {
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use p2panda::operation::{Extensions, Header};
+    use p2panda_core::Body;
+    use p2panda_store::Transaction;
+    use p2panda_store::operations::OperationStore;
+
+    use super::test_support::*;
+    use super::*;
+
+    async fn fetch(store: &OpStore, hash: &Hash) -> Operation {
+        OperationStore::<Operation, Hash>::get_operation(&store.store, hash)
+            .await
+            .unwrap()
+            .unwrap()
     }
 
     /// Mailbox sync must only see the contiguous prefix of a log whose
@@ -413,5 +434,28 @@ mod tests {
         assert!(stored.body.is_none());
         // The header is retained so log sync stays consistent.
         assert_eq!(stored.header.seq_num, 0);
+    }
+
+    #[tokio::test]
+    async fn get_log_seqs_lists_present_seqs_ascending() {
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let key = p2panda::SigningKey::generate();
+        let author = DeviceId::from(key.verifying_key());
+        let log_id = LogId::from_topic(TopicId::random());
+        let op0 = signed_op(&key, log_id, 0, None, b"a");
+        let op1 = signed_op(&key, log_id, 1, Some(op0.hash), b"b");
+        let op2 = signed_op(&key, log_id, 2, Some(op1.hash), b"c");
+        insert(&store, &op2, &log_id).await;
+        insert(&store, &op0, &log_id).await;
+        insert(&store, &op1, &log_id).await;
+        assert_eq!(
+            store.get_log_seqs(&author, &log_id).await.unwrap(),
+            vec![0, 1, 2]
+        );
+        let other = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
+        assert_eq!(
+            store.get_log_seqs(&other, &log_id).await.unwrap(),
+            Vec::<SeqNum>::new()
+        );
     }
 }

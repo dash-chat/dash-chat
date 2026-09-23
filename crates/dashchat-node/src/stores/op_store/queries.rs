@@ -138,6 +138,38 @@ pub(super) async fn get_log_heights_by_author(
     Ok(log_heights)
 }
 
+#[derive(FromRow)]
+struct SeqRow {
+    seq_num: String,
+}
+
+/// Every sequence number present for one `(author, log)`, ascending.
+pub async fn get_log_seqs(
+    db: &SqliteStore,
+    author: &DeviceId,
+    log_id: &LogId,
+) -> Result<Vec<SeqNum>, anyhow::Error> {
+    let query_str = "
+        SELECT CAST(seq_num AS TEXT) as seq_num
+        FROM operations_v1
+        WHERE verifying_key = ? AND log_id = ?
+        ORDER BY CAST(seq_num AS NUMERIC)
+        ";
+    let key = hex::encode(author.as_bytes());
+    let log_bytes = p2panda_core::cbor::encode_cbor(log_id)?;
+    let rows = db
+        .execute(async move |tx| {
+            let query = sqlx::query_as::<_, SeqRow>(query_str)
+                .bind(key)
+                .bind(log_bytes);
+            Ok(query.fetch_all(tx).await?)
+        })
+        .await?;
+    rows.into_iter()
+        .map(|r| Ok(r.seq_num.parse::<SeqNum>()?))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use maplit::btreemap;
