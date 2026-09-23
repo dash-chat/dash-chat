@@ -29,6 +29,25 @@ async fn inbox_topics(node: &TestNode) -> Vec<TopicId> {
         .collect()
 }
 
+/// Wait until `node` has processed at least one op on every topic, so a
+/// following `consistency` check cannot pass on empty sets.
+async fn wait_for_ops(node: &TestNode, topics: &[TopicId]) {
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let ops = node.op_store.processed_ops.read().unwrap();
+            if topics
+                .iter()
+                .all(|topic| ops.get(topic).is_some_and(|hashes| !hashes.is_empty()))
+            {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("not all topics have a processed op yet"))
+            }
+        })
+        .await
+        .expect("the author's own ops are processed")
+}
+
 /// Both sides block native sync with each other before they are introduced:
 /// the contact request never crosses.
 #[tokio::test(flavor = "multi_thread")]
@@ -42,6 +61,7 @@ async fn native_sync_block_stops_the_pair_converging() {
     let qr = a.create_add_contact_qr_code().await.unwrap();
     b.add_contact(qr).await.unwrap();
     let topics = inbox_topics(&a).await;
+    wait_for_ops(&b, &topics).await;
     assert!(
         bounded()
             .consistency([&a, &b], topics.iter())
@@ -53,29 +73,29 @@ async fn native_sync_block_stops_the_pair_converging() {
     b.shutdown().await;
 }
 
-/// Review focus 1: the block is set AFTER a's inbox topics are subscribed
-/// (they are, at init) and still covers them.
+/// Review focus 1: the block covers a topic already in `tx_map` — the
+/// branch in `Command::BlockNativeSync` that applies `topic_block` to
+/// topics subscribed before the block was set.
 #[tokio::test(flavor = "multi_thread")]
 async fn native_sync_block_covers_topics_subscribed_earlier() {
     let config = config();
     let a = TestNode::new(config.clone(), "a").await;
     let b = TestNode::new(config, "b").await;
-    // a's inbox topics exist and are subscribed before this call. Node
-    // startup advertises none on its own, so mint one to establish that.
-    a.create_add_contact_qr_code().await.unwrap();
-    assert!(!inbox_topics(&a).await.is_empty());
-    a.block_native_sync_with(*b.device_id()).await.unwrap();
-    // b blocks nothing: a's accept-side gate alone must hold.
-    introduce_peers([&a, &b]).await.unwrap();
+    // a's inbox topic is minted and subscribed BEFORE the block is set.
     let qr = a.create_add_contact_qr_code().await.unwrap();
-    b.add_contact(qr).await.unwrap();
     let topics = inbox_topics(&a).await;
+    assert!(!topics.is_empty());
+    a.block_native_sync_with(*b.device_id()).await.unwrap();
+    // b blocks nothing: a's accept-side gate on the already-open topic must hold.
+    introduce_peers([&a, &b]).await.unwrap();
+    b.add_contact(qr).await.unwrap();
+    wait_for_ops(&b, &topics).await;
     assert!(
         bounded()
             .consistency([&a, &b], topics.iter())
             .await
             .is_err(),
-        "a's one-sided block must hold"
+        "a's one-sided block on an already-subscribed topic must hold"
     );
     a.shutdown().await;
     b.shutdown().await;
@@ -93,6 +113,7 @@ async fn peer_block_stops_the_pair_converging() {
     let qr = a.create_add_contact_qr_code().await.unwrap();
     b.add_contact(qr).await.unwrap();
     let topics = inbox_topics(&a).await;
+    wait_for_ops(&b, &topics).await;
     assert!(
         bounded()
             .consistency([&a, &b], topics.iter())
@@ -127,8 +148,10 @@ async fn without_a_switch_the_pair_converges() {
 #[tokio::test(flavor = "multi_thread")]
 async fn switches_are_no_ops_without_networking() {
     let a = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "a").await;
-    let other = *TestNode::new(config(), "b").await.device_id();
+    let b = TestNode::new(config(), "b").await;
+    let other = *b.device_id();
     a.block_peer(other).await.unwrap();
     a.block_native_sync_with(other).await.unwrap();
     a.shutdown().await;
+    b.shutdown().await;
 }
