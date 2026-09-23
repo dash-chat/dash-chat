@@ -16,6 +16,13 @@ const BACKEND_NOT_READY = 'state not managed';
 // node is back.
 const NODE_NOT_READY = 'NodeNotReady';
 
+// The same pause/rebuild window as NODE_NOT_READY, entered one step later: a
+// command that got the node just before the teardown then runs its query
+// against that node's already-closed SQLite pool. Left to reject, it poisons
+// the reactive value it feeds — the chat list stops rendering for the rest of
+// the session — so it retries like the others.
+const POOL_CLOSED = 'closed pool';
+
 // ~15s: covers both the startup race and node rebuild on foreground (iroh/relay
 // bring-up). While backgrounded the webview is suspended, so no attempts burn.
 const MAX_ATTEMPTS = 150;
@@ -33,7 +40,9 @@ const isBackendNotReady = (error: unknown): boolean => {
 	const message =
 		typeof error === 'string' ? error : ((error as Error)?.message ?? '');
 	return (
-		message.includes(BACKEND_NOT_READY) || message.includes(NODE_NOT_READY)
+		message.includes(BACKEND_NOT_READY) ||
+		message.includes(NODE_NOT_READY) ||
+		message.includes(POOL_CLOSED)
 	);
 };
 
