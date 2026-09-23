@@ -639,6 +639,21 @@ test('what a stopped app missed is caught up quietly, not announced', () => {
 	assert.deepEqual(showing(m, B), [`${A}: sm-2`]);
 });
 
+test('foregrounding an app already on screen silences nothing', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	// B is active and looking at its chat list, not at the chat.
+	m.wentHome(B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	// A shade read resumes the app, which reports a foreground on an agent
+	// that never left (checks.ts). It must not swallow what is in flight.
+	m.foreground(B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+});
+
 test('a message in a chat an agent is not in notifies it of nothing', () => {
 	const m = sameLan(A, B, C);
 	contacts(m, A, B);

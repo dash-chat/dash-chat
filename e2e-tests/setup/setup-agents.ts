@@ -207,7 +207,8 @@ export type Agent = WebdriverIO.Browser & {
 	/** Whether the phone can reach the internet. On android this is a pure adb
 	 *  probe; on iOS the answer has to come from the app's own webview, so it
 	 *  brings the app to the foreground — call it where that is harmless, or
-	 *  where what follows resets the app anyway. */
+	 *  where what follows resets the app anyway. Physical phones only; throws
+	 *  for desktop and for an emulator, which is NAT'd off the host. */
 	hasInternet(): Promise<boolean>;
 	/** Wipe the app back to first launch and leave it not running, to be
 	 *  called between [`stopApp`] and [`startApp`]. On android a `clearApp`

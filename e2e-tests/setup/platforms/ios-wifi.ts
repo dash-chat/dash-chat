@@ -277,18 +277,33 @@ async function walkBackToRoot(
 
 /** Take whatever system alert is sitting over Settings — a captive portal
  *  asking to sign in, a network that could not be joined — off the screen.
- *  It covers the navigation bar, so no amount of walking back gets past it. */
-async function dismissSystemAlert(b: WebdriverIO.Browser): Promise<void> {
+ *  It covers the navigation bar, so no amount of walking back gets past it.
+ *  Dismissed rather than accepted: the default button on a portal's alert
+ *  joins it, which walks the phone into a sign-in the run never asked for. */
+async function dismissSystemAlert(
+	b: WebdriverIO.Browser,
+): Promise<string | null> {
+	let text: string;
 	try {
-		await b.acceptAlert();
+		text = await b.getAlertText();
 	} catch {
-		/* nothing was there */
+		return null;
 	}
+	try {
+		await b.dismissAlert();
+	} catch {
+		/* it went on its own */
+	}
+	return text;
 }
 
 /** What Settings is showing, for a failure that can be acted on rather than
  *  guessed at. */
-async function describeScreen(b: WebdriverIO.Browser): Promise<string> {
+async function describeScreen(
+	b: WebdriverIO.Browser,
+	alert: string | null,
+): Promise<string> {
+	if (alert !== null) return `the alert "${alert}"`;
 	try {
 		const bar = await b
 			.$(classChain('**/XCUIElementTypeNavigationBar'))
@@ -302,14 +317,16 @@ async function describeScreen(b: WebdriverIO.Browser): Promise<string> {
 /** Launch Settings on its root screen, relaunching if walking back does
  *  not get there. */
 async function openSettingsAtRoot(b: WebdriverIO.Browser): Promise<void> {
+	let alert: string | null = null;
 	for (let launch = 1; launch <= 3; launch++) {
 		await b.terminateApp(SETTINGS_BUNDLE_ID);
 		await b.activateApp(SETTINGS_BUNDLE_ID);
-		await dismissSystemAlert(b);
+		alert = (await dismissSystemAlert(b)) ?? alert;
 		if (await walkBackToRoot(b)) return;
 	}
 	throw new Error(
-		`Settings never showed its root screen; it was showing ${await describeScreen(b)}`,
+		'Settings never showed its root screen; it was showing ' +
+			(await describeScreen(b, alert)),
 	);
 }
 

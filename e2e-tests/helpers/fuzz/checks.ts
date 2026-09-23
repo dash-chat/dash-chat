@@ -309,7 +309,7 @@ function wrongBadges(expected: Map<string, number>, rows: ChatRow[]): string[] {
 /**
  * Wait until `page` shows exactly `sa`'s view of `chat`: every message it
  * knows, at the revision and with the reactions it knows, and the composer
- * iff the chat is not pending. Then fail on any rendered message the view
+ * unless the chat is read-only. Then fail on any rendered message the view
  * does not contain — read once, after the expected ones settled, so absence
  * never waits out a timeout.
  */

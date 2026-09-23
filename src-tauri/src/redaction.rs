@@ -15,12 +15,15 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // catch. Anchored on the `me=`/`peer=` label so ordinary short hex
         // (contact codes) stays readable.
         r"\b(me|peer)=[0-9a-fA-F]{8,}\b",
-        // The same ids as p2panda-net's discovery and address book label them
-        // (`node_id="3026d92c8c"`, `remote_node_id=…`, `endpoint_id=…`), which
-        // the rule above does not cover: those labels reach the log from
-        // `p2panda_net` at Debug. Anchored the same way, and the optional
-        // quotes are consumed so the value cannot survive as `""`.
-        r#"\b(remote_node_id|node_id|endpoint_id)="?[0-9a-fA-F]{8,}"?"#,
+        // The ids p2panda-net's discovery, gossip and address book label, which
+        // the rule above is too long to catch: sampling a run's Debug output
+        // shows `endpoint_id=…`, `node_id="…"`, `remote_node_id=…` and the
+        // topic ones — `topic=…`, `gossip_topic="…"`, `sync_topic="…"`, which
+        // name the conversation a device is in. Any `…_node_id` prefix and
+        // either separator, and the quotes are consumed so nothing survives as
+        // `""`. `alpn=`/`protocol_id=` are left: they are the same constant
+        // for every user of a build, and say nothing about who is using it.
+        r#"\b[a-z_]*(node_id|endpoint_id|topic)["\s]*[=:]\s*"?[0-9a-fA-F]{8,}"?"#,
         // Socket addresses of peers and of this device, as the address book
         // prints them: `Ip(188.84.6.11:49882)`, and bracketed for v6,
         // `Ip([2a02:…:1]:41234)` / `Ip([fe80::…%en0]:…)`. A peer's address says
@@ -125,6 +128,24 @@ mod tests {
     fn preserves_short_hex() {
         let input = "code=abcdef12";
         assert_eq!(redact(input), "code=abcdef12");
+    }
+
+    #[test]
+    fn redacts_discovery_topic_ids() {
+        let input = "(re-) join gossip overlay topic=371ac34c42 nodes=[]";
+        assert_eq!(
+            redact(input),
+            "(re-) join gossip overlay [REDACTED] nodes=[]"
+        );
+        let input = "register sync protocol sync_topic=\"02d9de2757\"";
+        assert_eq!(redact(input), "register sync protocol [REDACTED]");
+    }
+
+    #[test]
+    fn preserves_the_networks_own_constants() {
+        // The same for every user of a build, so they name nobody.
+        let input = "register protocol alpn=d129148097";
+        assert_eq!(redact(input), "register protocol alpn=d129148097");
     }
 
     #[test]

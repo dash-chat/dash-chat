@@ -91,12 +91,14 @@ export function recordInstalled(
 	archive: string,
 	marker: string | undefined,
 ): void {
-	// Nothing to compare against next run, so record nothing and reinstall.
-	if (marker === undefined) return;
-	const stamps: InstallStamps = {
-		...readStamps(),
-		[udid]: { archive: hashFile(archive), marker },
-	};
+	const stamps: InstallStamps = { ...readStamps() };
+	if (marker === undefined) {
+		// Nothing to compare against next run. Drop the entry rather than
+		// leave the old one describing something that is no longer installed.
+		delete stamps[udid];
+	} else {
+		stamps[udid] = { archive: hashFile(archive), marker };
+	}
 	mkdirSync(path.dirname(stampFile()), { recursive: true });
 	writeFileSync(stampFile(), JSON.stringify(stamps, null, '\t'));
 }

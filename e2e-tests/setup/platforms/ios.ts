@@ -37,6 +37,17 @@ export const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
  *  upstream. A captive portal answers fast or not at all. */
 const INTERNET_PROBE_TIMEOUT = 5_000;
 
+/** Probes before a network counts as having no upstream. A `false` is what
+ *  lets a spec run, so it is the answer worth asking twice for. */
+const INTERNET_PROBE_ATTEMPTS = 3;
+
+/** Between probes, so a retry outlasts whatever made the last one fail. */
+const INTERNET_PROBE_GAP = 2_000;
+
+/** What `agent.disableP2p` raises the async-script timeout to; matched so a
+ *  probe never lowers it under another caller. */
+const SCRIPT_TIMEOUT = 60_000;
+
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
 // Fixed home for the .ipa the sessions install, copied here by the
 // e2e:build:ios task's export-session-ipa.ts step. The capabilities
@@ -275,14 +286,30 @@ export async function clearIosAppData(b: WebdriverIO.Browser): Promise<void> {
  *  for it: a portal serves its own page from its own origin, which the browser
  *  refuses to hand back without the CORS header the real endpoint sends.
  *
+ *  Asked more than once before answering no. The callers turn a `true` into a
+ *  hard failure, so a false positive is loud, but a false negative — a slow
+ *  AP, a blocked endpoint, a webview that is not ready — reads as "no
+ *  upstream" and lets a spec run on a network that has one, proving nothing.
+ *
  *  Brings the app to the foreground to ask, and leaves it there — every caller
  *  wipes and relaunches it next, so what it comes up on does not matter. The
- *  raised script timeout is left raised too: XCUITest's default is ~0, which
- *  is no state worth restoring. */
+ *  script timeout is raised to match `agent.disableP2p` and left raised:
+ *  XCUITest's default is ~0, which is no state worth restoring, and lowering
+ *  what another caller raised would be worse. */
 export async function iosHasInternet(b: WebdriverIO.Browser): Promise<boolean> {
 	await attachToIosApp(b);
 	// XCUITest defaults the async-script timeout to ~0 (see `agent.disableP2p`).
-	await b.setTimeout({ script: INTERNET_PROBE_TIMEOUT + 10_000 });
+	await b.setTimeout({ script: SCRIPT_TIMEOUT });
+	for (let i = 0; i < INTERNET_PROBE_ATTEMPTS; i++) {
+		// Spaced, or three attempts that fail fast — a DNS error rather than a
+		// timeout — all land inside the same moment and say nothing new.
+		if (i > 0) await b.pause(INTERNET_PROBE_GAP);
+		if (await probeInternet(b)) return true;
+	}
+	return false;
+}
+
+function probeInternet(b: WebdriverIO.Browser): Promise<boolean> {
 	return b.executeAsync((ms: number, done: (reachable: boolean) => void) => {
 		const timer = setTimeout(() => done(false), ms);
 		const settle = (reachable: boolean) => {

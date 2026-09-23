@@ -240,9 +240,12 @@ export class Composer extends TestHelper {
 			durationMs,
 		);
 		// The driver handing back something other than what the script returned
-		// is the very quirk above; `in` on it would throw naming nothing.
-		if (result === null || result === undefined) {
-			throw new Error('the driver returned no transcode result');
+		// is the very quirk above, and `in` on a primitive throws naming
+		// nothing — which is the failure this is here to avoid.
+		if (typeof result !== 'object' || result === null) {
+			throw new Error(
+				`the driver returned no transcode result (${String(result)})`,
+			);
 		}
 		if ('failed' in result) throw new Error(result.failed);
 		return result;

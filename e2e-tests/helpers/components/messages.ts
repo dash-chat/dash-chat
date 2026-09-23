@@ -5,6 +5,7 @@ import {
 	MEDIA_SYNC_TIMEOUT,
 	RENDER_SETTLE_WINDOW,
 	SYNC_TIMEOUT,
+	UI_TIMEOUT,
 } from '../timeouts';
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
@@ -689,6 +690,9 @@ export class Message extends TestHelper {
 		// meanwhile does. Repeat the gesture rather than spend the whole wait on
 		// one that was cancelled.
 		for (let i = 0; i < OPEN_ACTIONS_ATTEMPTS; i++) {
+			// A press on an open overlay dismisses it, so a menu that opened
+			// just past the settle window must not be pressed again.
+			if (await this.actionsMenu.isDisplayed()) return;
 			await this.longPressBubble();
 			const opened = await this.actionsMenu
 				.waitForDisplayed({ timeout: RENDER_SETTLE_WINDOW })
@@ -698,8 +702,10 @@ export class Message extends TestHelper {
 				);
 			if (opened) return;
 		}
+		// The full wait, not another settle window: the retries are there to
+		// cover a cancelled gesture, not to lower what a slow phone is allowed.
 		await this.actionsMenu.waitForDisplayed({
-			timeout: RENDER_SETTLE_WINDOW,
+			timeout: UI_TIMEOUT,
 			timeoutMsg:
 				`The actions menu did not open after ${OPEN_ACTIONS_ATTEMPTS} ` +
 				'long-presses — each one lost, most likely to a re-render',

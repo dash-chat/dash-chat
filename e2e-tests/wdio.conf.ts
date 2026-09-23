@@ -213,6 +213,17 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		// A failed onPrepare must abort the run: wdio only logs hook errors and
 		// would carry on into sessions doomed to hang out their timeouts.
 		try {
+			// Before the wipe: anything still running holds handles under
+			// `.dbs/e2e` and goes on writing, which leaves the dir dirty behind
+			// the `rmSync`.
+			killLeftoverMailboxServers();
+			// A desktop run clears its own app processes, but a leftover agent
+			// outlives a phone-only run, where nothing used to clear it: it goes
+			// on announcing itself over mDNS under the run's own network id, and
+			// every agent that finds it spends a discovery session timing out on
+			// a node that will never answer.
+			killAllE2EProcesses();
+
 			// Clean up leftover databases from previous interrupted runs
 			const dataDir = path.join(ROOT, '.dbs', 'e2e');
 			try {
@@ -223,14 +234,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			// The appium service starts right after this hook and writes its log
 			// here, so the directory has to exist before the first server does.
 			mkdirSync(dataDir, { recursive: true });
-
-			killLeftoverMailboxServers();
-			// And this checkout's app processes. A desktop run does this itself,
-			// but a leftover agent outlives a phone-only run, where nothing used
-			// to clear it: it goes on announcing itself over mDNS under the run's
-			// own network id, and every agent that finds it spends a discovery
-			// session timing out on a node that will never answer.
-			killAllE2EProcesses();
 
 			// When MAILBOX_URL names a deployment environment, run against its
 			// cloud mailbox instead of spawning a local server. Specs that drive

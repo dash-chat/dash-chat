@@ -21,6 +21,10 @@ const NODE_NOT_READY = 'NodeNotReady';
 // against that node's already-closed SQLite pool. Left to reject, it poisons
 // the reactive value it feeds — the chat list stops rendering for the rest of
 // the session — so it retries like the others.
+//
+// This is sqlx's own wording for `Error::PoolClosed` ("attempted to acquire a
+// connection on a closed pool"), reaching us through the command's stringified
+// error, so an sqlx bump is what would change it.
 const POOL_CLOSED = 'closed pool';
 
 // ~15s: covers both the startup race and node rebuild on foreground (iroh/relay
