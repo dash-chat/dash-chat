@@ -81,7 +81,20 @@ export function deviceHasBuild(
 	if (marker === undefined) return false;
 	const stamp = readStamps()[udid];
 	if (stamp === undefined || !existsSync(archive)) return false;
-	return stamp.archive === hashFile(archive) && stamp.marker === marker;
+	if (stamp.archive !== hashFile(archive)) return false;
+	if (stamp.marker !== marker) {
+		// The same bytes, found somewhere else. Named because the marker rests on
+		// undocumented behaviour — that iOS only moves an app's container when
+		// something reinstalls it. A run that prints this with nothing having
+		// touched the device is one where markers churn on their own, and the
+		// guard is buying reinstalls rather than catching foreign builds.
+		console.log(
+			`[install] ${udid} has this build under a different marker ` +
+				`(recorded ${stamp.marker}, found ${marker}) — reinstalling`,
+		);
+		return false;
+	}
+	return true;
 }
 
 /** Record that `archive` was installed on `udid`, with the `marker` read back

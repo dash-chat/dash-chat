@@ -37,9 +37,25 @@ export const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
  *  upstream. A captive portal answers fast or not at all. */
 const INTERNET_PROBE_TIMEOUT = 5_000;
 
-/** Probes before a network counts as having no upstream. A `false` is what
- *  lets a spec run, so it is the answer worth asking twice for. */
-const INTERNET_PROBE_ATTEMPTS = 3;
+type InternetProbe = { url: string; headers: Record<string, string> };
+
+/** Two origins, neither able to answer for the other: a network that blocks
+ *  DNS-over-HTTPS — which is what a policy-managed AP blocks first — fails the
+ *  resolver every time, and that failure is indistinguishable from having no
+ *  upstream at all. Both are served with `access-control-allow-origin: *`, so
+ *  a cross-origin read of either one succeeds. */
+const INTERNET_PROBES: InternetProbe[] = [
+	{
+		url: 'https://cloudflare-dns.com/dns-query?name=example.com&type=A',
+		headers: { accept: 'application/dns-json' },
+	},
+	{ url: 'https://api.github.com/zen', headers: {} },
+];
+
+/** Times round the list before a network counts as having no upstream. A
+ *  `false` is what lets a spec run, so it is the answer worth asking twice
+ *  for. */
+const INTERNET_PROBE_ROUNDS = 2;
 
 /** Between probes, so a retry outlasts whatever made the last one fail. */
 const INTERNET_PROBE_GAP = 2_000;
@@ -283,13 +299,15 @@ export async function clearIosAppData(b: WebdriverIO.Browser): Promise<void> {
  *
  *  The probe reads a cross-origin response rather than just seeing a request
  *  leave, so a captive portal answering in the internet's place cannot pass
- *  for it: a portal serves its own page from its own origin, which the browser
- *  refuses to hand back without the CORS header the real endpoint sends.
+ *  for it: over HTTPS a portal cannot produce a response for someone else's
+ *  origin at all, and its own page comes back without the CORS header the
+ *  browser needs to hand it to us.
  *
- *  Asked more than once before answering no. The callers turn a `true` into a
- *  hard failure, so a false positive is loud, but a false negative — a slow
- *  AP, a blocked endpoint, a webview that is not ready — reads as "no
- *  upstream" and lets a spec run on a network that has one, proving nothing.
+ *  Asked of both origins, twice each, before answering no. The callers turn a
+ *  `true` into a hard failure, so a false positive is loud, but a false
+ *  negative — a slow AP, a blocked endpoint, a webview that is not ready —
+ *  reads as "no upstream" and lets a spec run on a network that has one,
+ *  proving nothing.
  *
  *  Brings the app to the foreground to ask, and leaves it there — every caller
  *  wipes and relaunches it next, so what it comes up on does not matter. The
@@ -300,32 +318,42 @@ export async function iosHasInternet(b: WebdriverIO.Browser): Promise<boolean> {
 	await attachToIosApp(b);
 	// XCUITest defaults the async-script timeout to ~0 (see `agent.disableP2p`).
 	await b.setTimeout({ script: SCRIPT_TIMEOUT });
-	for (let i = 0; i < INTERNET_PROBE_ATTEMPTS; i++) {
-		// Spaced, or three attempts that fail fast — a DNS error rather than a
+	const probes = Array.from(
+		{ length: INTERNET_PROBE_ROUNDS },
+		() => INTERNET_PROBES,
+	).flat();
+	for (const [i, probe] of probes.entries()) {
+		// Spaced, or attempts that fail fast — a DNS error rather than a
 		// timeout — all land inside the same moment and say nothing new.
 		if (i > 0) await b.pause(INTERNET_PROBE_GAP);
-		if (await probeInternet(b)) return true;
+		if (await probeInternet(b, probe)) return true;
 	}
 	return false;
 }
 
-function probeInternet(b: WebdriverIO.Browser): Promise<boolean> {
-	return b.executeAsync((ms: number, done: (reachable: boolean) => void) => {
-		const timer = setTimeout(() => done(false), ms);
-		const settle = (reachable: boolean) => {
-			clearTimeout(timer);
-			done(reachable);
-		};
-		// A DNS-over-HTTPS query: small, meant to be read programmatically, and
-		// served with `access-control-allow-origin: *`.
-		fetch('https://cloudflare-dns.com/dns-query?name=example.com&type=A', {
-			headers: { accept: 'application/dns-json' },
-			cache: 'no-store',
-		}).then(
-			response => settle(response.ok),
-			() => settle(false),
-		);
-	}, INTERNET_PROBE_TIMEOUT);
+/** Whether the endpoint answered. Any answer counts, whatever its status: it
+ *  is an HTTPS response the browser was willing to read cross-origin, which
+ *  only the real origin can produce — a rate-limited 403 proves upstream as
+ *  well as a 200 does. */
+function probeInternet(
+	b: WebdriverIO.Browser,
+	probe: InternetProbe,
+): Promise<boolean> {
+	return b.executeAsync(
+		(target: InternetProbe, ms: number, done: (reachable: boolean) => void) => {
+			const timer = setTimeout(() => done(false), ms);
+			const settle = (reachable: boolean) => {
+				clearTimeout(timer);
+				done(reachable);
+			};
+			fetch(target.url, { headers: target.headers, cache: 'no-store' }).then(
+				() => settle(true),
+				() => settle(false),
+			);
+		},
+		probe,
+		INTERNET_PROBE_TIMEOUT,
+	);
 }
 
 /** Run the app's own delete_account, which wipes the data dir and exits, and

@@ -11,7 +11,9 @@ import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Chat scroll behavior', () => {
 	/** The theme the app picked for itself, kept by the one test that overrides
-	 *  it so the override does not leak into whatever is appended after it.
+	 *  it and put back here — after the whole describe — so the override does
+	 *  not leak into the specs that share this agent later in the run. A test
+	 *  appended after that one inside this suite still runs under Material.
 	 *  Read from the app rather than assumed: a phone picks iOS or Material by
 	 *  platform, which is the whole reason that test overrides it. */
 	let themeBefore: 'ios' | 'material' | null = null;

@@ -275,34 +275,24 @@ async function walkBackToRoot(
 	return false;
 }
 
-/** Take whatever system alert is sitting over Settings — a captive portal
- *  asking to sign in, a network that could not be joined — off the screen.
- *  It covers the navigation bar, so no amount of walking back gets past it.
- *  Dismissed rather than accepted: the default button on a portal's alert
- *  joins it, which walks the phone into a sign-in the run never asked for. */
-async function dismissSystemAlert(
-	b: WebdriverIO.Browser,
-): Promise<string | null> {
-	let text: string;
+/** Whatever system alert is sitting over Settings — a network that could not
+ *  be joined, a password that was wrong. Read only: the session's
+ *  `autoAcceptAlerts` capability runs WDA's alert monitor, which taps the
+ *  default button on these as they appear (see `forget()` above), so answering
+ *  one here would be a second policy on the same alert with no say in which
+ *  lands first. This exists to name what is on screen when Settings is stuck. */
+async function readSystemAlert(b: WebdriverIO.Browser): Promise<string | null> {
 	try {
-		text = await b.getAlertText();
+		return await b.getAlertText();
 	} catch {
 		return null;
 	}
-	try {
-		await b.dismissAlert();
-	} catch {
-		/* it went on its own */
-	}
-	return text;
 }
 
 /** What Settings is showing, for a failure that can be acted on rather than
  *  guessed at. */
-async function describeScreen(
-	b: WebdriverIO.Browser,
-	alert: string | null,
-): Promise<string> {
+async function describeScreen(b: WebdriverIO.Browser): Promise<string> {
+	const alert = await readSystemAlert(b);
 	if (alert !== null) return `the alert "${alert}"`;
 	try {
 		const bar = await b
@@ -317,16 +307,14 @@ async function describeScreen(
 /** Launch Settings on its root screen, relaunching if walking back does
  *  not get there. */
 async function openSettingsAtRoot(b: WebdriverIO.Browser): Promise<void> {
-	let alert: string | null = null;
 	for (let launch = 1; launch <= 3; launch++) {
 		await b.terminateApp(SETTINGS_BUNDLE_ID);
 		await b.activateApp(SETTINGS_BUNDLE_ID);
-		alert = (await dismissSystemAlert(b)) ?? alert;
 		if (await walkBackToRoot(b)) return;
 	}
 	throw new Error(
 		'Settings never showed its root screen; it was showing ' +
-			(await describeScreen(b, alert)),
+			(await describeScreen(b)),
 	);
 }
 
