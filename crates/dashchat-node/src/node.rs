@@ -565,8 +565,9 @@ impl Node {
         self.lan_router.as_ref().map(|r| r.delivered_count())
     }
 
-    /// Testing: whether the LAN router's relay store holds an op on
-    /// `topic` for someone else; `None` when the router is not running.
+    /// Testing: ops the relay store holds for others on `topic` (our own
+    /// ops live in the ext store, never here); `None` when the router is
+    /// not running.
     #[cfg(all(feature = "lan-router", feature = "testing"))]
     pub async fn lan_router_relay_holds(&self, topic: TopicId) -> Result<Option<bool>> {
         match &self.lan_router {

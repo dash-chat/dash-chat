@@ -99,6 +99,25 @@ mod localhost {
             .collect()
     }
 
+    /// Wait until `node` has processed at least one op on every topic, so a
+    /// following `consistency` check cannot pass on empty sets.
+    async fn wait_for_ops(node: &TestNode, topics: &[TopicId]) {
+        PollConfig::seconds(30)
+            .wait_for(|| async {
+                let ops = node.op_store.processed_ops.read().unwrap();
+                if topics
+                    .iter()
+                    .all(|topic| ops.get(topic).is_some_and(|hashes| !hashes.is_empty()))
+                {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!("not all topics have a processed op yet"))
+                }
+            })
+            .await
+            .expect("the author's own ops are processed")
+    }
+
     /// Spec test 2: with native sync blocked both ways, the contact
     /// request, the accept and a direct-chat message still converge, so
     /// the router carried them.
@@ -117,6 +136,7 @@ mod localhost {
             panic!("expected a fresh request");
         };
         let topics = inbox_topics(&a).await;
+        wait_for_ops(&b, &topics).await;
         poll()
             .consistency([&a, &b], topics.iter())
             .await
@@ -125,6 +145,7 @@ mod localhost {
         b.send_message(direct_chat, "hello over the router", None, None)
             .await
             .unwrap();
+        wait_for_ops(&b, &[*direct_chat]).await;
         poll()
             .consistency([&a, &b], [&*direct_chat])
             .await
@@ -163,6 +184,7 @@ mod localhost {
             panic!("expected a fresh request");
         };
         let topics = inbox_topics(&a).await;
+        wait_for_ops(&c, &topics).await;
         poll()
             .consistency([&a, &c], topics.iter())
             .await
@@ -171,6 +193,7 @@ mod localhost {
         c.send_message(direct_chat, "hello via b", None, None)
             .await
             .unwrap();
+        wait_for_ops(&c, &[*direct_chat]).await;
         poll()
             .consistency([&a, &c], [&*direct_chat])
             .await

@@ -587,9 +587,8 @@ mod imp {
             self.ext.forwarded()
         }
 
-        /// Testing: whether the relay store holds at least one op on
-        /// `topic`, by any author. The ext store (ops p2panda already has)
-        /// is not consulted.
+        /// Testing: ops the relay store holds for others on `topic` (our
+        /// own ops live in the ext store, never here).
         #[cfg(feature = "testing")]
         pub async fn relay_holds_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
             let prefix = LogId::from_topic(topic);
@@ -618,6 +617,9 @@ mod imp {
         /// its neighbours (DESIGN.md: "authors emit a Have for newly
         /// authored ops"). Relays park it for peers who are away. The ext
         /// ingest inside `append` is a no-op for an op p2panda already has.
+        /// An op whose header and body cannot fit `max_wire_bytes` alone is
+        /// never pushed (it is counted in `StatsSnapshot::oversize_drops`)
+        /// and is served only on request, header-only.
         pub async fn authored(
             &self,
             operation: &ProcessedOperation<Payload>,

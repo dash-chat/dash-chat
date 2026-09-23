@@ -309,6 +309,7 @@ impl Node {
                 // Our own op: push it (append also refreshes the held view).
                 if let Err(e) = router.authored(operation).await {
                     warn!(error = %e, "lan router could not push an authored op");
+                    router.hint_changed(operation.author(), operation.topic());
                 }
             } else {
                 router.hint_changed(operation.author(), operation.topic());
