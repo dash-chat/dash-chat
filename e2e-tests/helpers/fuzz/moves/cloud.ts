@@ -1,5 +1,5 @@
-/** Moves the cloud mailbox's link makes: turning slow, hanging, refusing
- *  connections, and healing. They only apply to a run that models the
+/** Moves the cloud mailbox makes: its link turning slow, hanging, refusing
+ *  connections, the server itself stopping, and everything healing. They only apply to a run that models the
  *  cloud; elsewhere their `check` is false and they are skipped. Each ends
  *  by asserting what every driveable agent's chip shows, so a sequence
  *  fails at the exact move the chip stopped telling the truth. */
@@ -7,7 +7,9 @@ import {
 	cutMailboxLink,
 	hangMailboxLink,
 	healMailboxLink,
+	resumeMailbox,
 	slowMailboxLink,
+	suspendMailbox,
 } from '../../../setup/mailbox-control';
 import {
 	MAILBOX_HEALED_MS,
@@ -56,7 +58,7 @@ class CloudSlowMove extends Move {
 /** Make the link unusable, hanging every request or refusing every
  *  connection. Chips must read disconnected. */
 class CloudDropMove extends Move {
-	constructor(readonly how: 'hang' | 'cut') {
+	constructor(readonly how: 'hang' | 'cut' | 'suspend') {
 		super();
 	}
 
@@ -67,23 +69,34 @@ class CloudDropMove extends Move {
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
 		log(this.toString());
 		if (this.how === 'hang') await hangMailboxLink();
-		else await cutMailboxLink();
+		else if (this.how === 'cut') await cutMailboxLink();
+		else suspendMailbox();
 		m.setCloudUsable(false);
 		await checkCloudAll(
 			m,
 			real,
-			this.how === 'hang' ? 'the cloud link hung' : 'the cloud link was cut',
+			DROPPED[this.how].what,
 			this.how === 'hang' ? MAILBOX_HUNG_MS : MAILBOX_UNANSWERED_MS,
 		);
 	}
 
 	toString(): string {
-		return this.how === 'hang' ? 'cloudHang()' : 'cloudCut()';
+		return DROPPED[this.how].name;
 	}
 }
 
-/** Heal the link. Chips must hide again, and whatever the cloud held
- *  reaches everyone. */
+/** What each way of dropping the cloud is called, and how a report names it. */
+const DROPPED = {
+	hang: { name: 'cloudHang()', what: 'the cloud link hung' },
+	cut: { name: 'cloudCut()', what: 'the cloud link was cut' },
+	suspend: { name: 'cloudStop()', what: 'the cloud server stopped' },
+} as const;
+
+/** Bring the cloud back, whichever way it went.
+ *
+ * Healing the link and resuming the server are both unconditional because a
+ * move only records that the cloud is unusable, not which way it was made so —
+ * and either undone on a cloud that never had it done is a no-op. */
 class CloudHealMove extends Move {
 	check(m: Readonly<ExpectedModel>): boolean {
 		return m.hasCloud() && !m.cloudUsable();
@@ -91,6 +104,7 @@ class CloudHealMove extends Move {
 
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
 		log(this.toString());
+		resumeMailbox();
 		await healMailboxLink();
 		m.setCloudUsable(true);
 		await checkCloudAll(m, real, 'the cloud link healed', MAILBOX_HEALED_MS);
@@ -105,6 +119,10 @@ export const cloudMoves: Moves = [
 	{ build: () => new CloudSlowMove(), weight: 1 },
 	{ build: () => new CloudDropMove('hang'), weight: 2 },
 	{ build: () => new CloudDropMove('cut'), weight: 2 },
+	// Stopping the server withholds the blob bytes as well as the operations:
+	// media travels over the mailbox's iroh endpoint, which a link degraded in
+	// front of its HTTP port leaves running.
+	{ build: () => new CloudDropMove('suspend'), weight: 2 },
 	{ build: () => new CloudHealMove(), weight: 4 },
 ];
 
@@ -113,5 +131,6 @@ export const move = {
 	cloudSlow: (): Move => new CloudSlowMove(),
 	cloudHang: (): Move => new CloudDropMove('hang'),
 	cloudCut: (): Move => new CloudDropMove('cut'),
+	cloudStop: (): Move => new CloudDropMove('suspend'),
 	cloudHeal: (): Move => new CloudHealMove(),
 };

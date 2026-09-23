@@ -1,0 +1,1468 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 3f90ab72..0b83ec8d 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -5578,6 +5578,7 @@ dependencies = [
+  "bytes",
+  "chrono",
+  "ciborium",
++ "dashchat-utils",
+  "derive_more 1.0.0",
+  "hex",
+  "iroh",
+diff --git a/crates/dashchat-node/src/blob_sync.rs b/crates/dashchat-node/src/blob_sync.rs
+index 9a1829f6..b11a522d 100644
+--- a/crates/dashchat-node/src/blob_sync.rs
++++ b/crates/dashchat-node/src/blob_sync.rs
+@@ -32,9 +32,19 @@ use crate::{
+     stores::{LocalStore, OpStore},
+ };
+ 
+-/// Drop a pending fetch entry after this many consecutive failed passes, so a
+-/// permanently-unfetchable blob doesn't accumulate steady-state background work.
+-const MAX_FETCH_FAILURES: u32 = 10;
++/// Wait before the first retry of a failed blob fetch, doubled per consecutive
++/// failure up to [`MAX_FETCH_BACKOFF`].
++///
++/// Failing does not disqualify a blob: every device that has written to a topic
++/// is a candidate source for its media, so a blob nobody could supply yet is
++/// only ever *not supplied yet*. What repeated failure justifies is retrying
++/// less often — which is what bounds the background work a blob nobody can
++/// supply costs, without ever discarding it.
++const BASE_FETCH_BACKOFF: Duration = Duration::from_secs(5);
++
++/// Longest a blob waits between fetch attempts, so one that can never be
++/// supplied settles at a single attempt per window instead of one per pass.
++const MAX_FETCH_BACKOFF: Duration = Duration::from_secs(15 * 60);
+ 
+ /// Placeholder used as the operation hash in blob tags when the real op hash is
+ /// not yet known (e.g. media stored before its enclosing operation is created).
+@@ -49,6 +59,9 @@ pub struct BlobSync {
+     pub fetch_pool: BlobFetchPool,
+     pub sources: MixedSourceLookup,
+     downloader: Downloader,
++    /// Where arrivals are announced, so a surface waiting on a blob learns the
++    /// bytes landed instead of polling for them.
++    notification_tx: Option<tokio::sync::mpsc::Sender<crate::Notification>>,
+ }
+ 
+ impl BlobSync {
+@@ -58,6 +71,7 @@ impl BlobSync {
+         blob_fetch: BlobFetchPool,
+         sources: MixedSourceLookup,
+         local_store: LocalStore,
++        notification_tx: Option<tokio::sync::mpsc::Sender<crate::Notification>>,
+     ) -> anyhow::Result<Self> {
+         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
+ 
+@@ -85,6 +99,7 @@ impl BlobSync {
+             fetch_pool: blob_fetch,
+             sources,
+             downloader,
++            notification_tx,
+         })
+     }
+ 
+@@ -135,6 +150,7 @@ impl BlobSync {
+         }
+ 
+         let source_count = sources.len();
++        let started = std::time::Instant::now();
+         let fetched = dashchat_utils::blob_sync::download_capped(
+             &self.downloader,
+             hash,
+@@ -143,10 +159,35 @@ impl BlobSync {
+             &self.blobs,
+         )
+         .await;
+-        tracing::debug!(%hash, source_count, fetched, "blob fetch attempt");
++        tracing::debug!(
++            %hash,
++            source_count,
++            fetched,
++            ms = started.elapsed().as_millis() as u64,
++            "blob fetch attempt"
++        );
++        if fetched {
++            self.announce_arrival(hash).await;
++        }
+         fetched
+     }
+ 
++    /// Tell the app a blob's bytes have landed, so a surface that was showing a
++    /// spinner for it can render. Best-effort: a full channel means the app is
++    /// behind on notifications, and a dropped one only costs the spinner until
++    /// something else re-renders.
++    async fn announce_arrival(&self, hash: iroh_blobs::Hash) {
++        let Some(tx) = &self.notification_tx else {
++            return;
++        };
++        let notification = crate::Notification::System(crate::SystemNotification::BlobAvailable {
++            hash: hash.to_string(),
++        });
++        if let Err(err) = tx.try_send(notification) {
++            tracing::debug!(%hash, ?err, "could not announce blob arrival");
++        }
++    }
++
+     pub async fn add_to_fetch_pool(
+         &self,
+         topic: TopicId,
+@@ -160,7 +201,7 @@ impl BlobSync {
+         let tag_name = blob_tag_name(topic, author, operation_hash, blob_hash);
+         self.blobs.store().tags().set(tag_name, blob_hash).await?;
+         self.fetch_pool.add(topic, blob_hash).await;
+-        tracing::debug!(hash = %blob_hash, "queued blob for fetch");
++        tracing::debug!(hash = %blob_hash, %topic, "queued blob for fetch");
+         Ok(())
+     }
+ 
+@@ -309,6 +350,19 @@ fn spawn_download_event_listener(
+     });
+ }
+ 
++/// Wait before the next attempt for a hash that has failed `failures` times in
++/// a row: doubling from [`BASE_FETCH_BACKOFF`], capped at [`MAX_FETCH_BACKOFF`].
++fn backoff_for(failures: u32) -> Duration {
++    if failures == 0 {
++        return Duration::ZERO;
++    }
++    // Shift is clamped well below `u32`'s width: the `min` below caps the
++    // result anyway, and a wider shift would overflow rather than saturate.
++    BASE_FETCH_BACKOFF
++        .saturating_mul(1u32 << (failures - 1).min(20))
++        .min(MAX_FETCH_BACKOFF)
++}
++
+ fn blob_tag_name(
+     topic: TopicId,
+     author: DeviceId,
+@@ -361,12 +415,17 @@ impl FetchPool for BlobFetchPool {
+         let mut failures = self.failures.lock().await;
+         let count = failures.entry(hash).or_insert(0);
+         *count += 1;
+-        if *count >= MAX_FETCH_FAILURES {
+-            failures.remove(&hash);
+-            drop(failures);
+-            self.stack.lock().await.retain(|(_, h)| *h != hash);
+-            tracing::debug!(%hash, "evicting blob from fetch pool after too many failures");
+-        }
++        let count = *count;
++        drop(failures);
++        tracing::debug!(
++            %hash,
++            count,
++            retry_in_s = backoff_for(count).as_secs(),
++            "blob fetch failed; backing off"
++        );
++    }
++    async fn retry_delay(&self, key: Self::Key) -> Duration {
++        BlobFetchPool::retry_delay(self, key).await
+     }
+     async fn wait_for_add(&self) {
+         self.added.notified().await;
+@@ -391,16 +450,34 @@ impl BlobFetchPool {
+             .retain(|(t, h)| *t != topic || *h != hash);
+     }
+ 
++    /// Clear the backoff `hash` has accumulated and wake the fetch loop, so the
++    /// next pass tries it at once. Called when someone is actually waiting on
++    /// the blob, which is better evidence that it is worth an attempt than any
++    /// number of past failures is that it is not.
++    pub async fn refresh(&self, hash: iroh_blobs::Hash) {
++        self.failures.lock().await.remove(&hash);
++        self.added.notify_one();
++    }
++
++    /// How long `hash` should wait before its next attempt, from how many times
++    /// it has failed in a row. Zero for a hash that has not failed, or whose
++    /// entry was refreshed by a new reference.
++    pub async fn retry_delay(&self, hash: iroh_blobs::Hash) -> Duration {
++        backoff_for(self.failures.lock().await.get(&hash).copied().unwrap_or(0))
++    }
++
+     /// Topics the pool currently associates with `hash`, used to resolve blob
+     /// sources for an on-demand fetch.
+     pub async fn topics_for(&self, hash: iroh_blobs::Hash) -> Vec<TopicId> {
+-        self.stack
++        let topics: Vec<TopicId> = self
++            .stack
+             .lock()
+             .await
+             .iter()
+             .filter(|(_, h)| *h == hash)
+             .map(|(topic, _)| *topic)
+-            .collect()
++            .collect();
++        topics
+     }
+ 
+     /// Build a fetch pool from a stream of stored operations.
+@@ -445,7 +522,9 @@ impl BlobFetchPool {
+                 _ => continue,
+             }
+         }
++        let rebuilt = s.len();
+         drop(s);
++        tracing::debug!(rebuilt, "rebuilt blob fetch pool from stored operations");
+         Ok(store)
+     }
+ }
+@@ -638,34 +717,67 @@ mod tests {
+         }
+     }
+ 
++    /// A blob nobody could supply yet is not a blob nobody can ever supply:
++    /// every device that has written to a topic is a candidate source for its
++    /// media, so candidates outlive any run of failures. Failing repeatedly
++    /// must therefore slow the retries down, never discard the hash — the pool
++    /// is also the only record of which topic a hash belongs to, and losing
++    /// that is what makes a photo unfetchable on demand however many times the
++    /// user asks for it.
+     #[tokio::test]
+-    async fn evicts_a_hash_after_max_failures_and_keeps_others() {
++    async fn failing_many_times_slows_retries_without_forgetting_the_hash() {
+         let pool = BlobFetchPool::default();
+-        let dead = hash(1);
+-        let live = hash(2);
+-        pool.add(TopicId::random(), dead).await;
+-        pool.add(TopicId::random(), live).await;
++        let topic = TopicId::random();
++        let wanted = hash(1);
++        pool.add(topic, wanted).await;
+ 
+-        for _ in 0..MAX_FETCH_FAILURES {
+-            pool.on_failure(&(TopicId::random(), dead)).await;
++        for _ in 0..30 {
++            pool.on_failure(&(topic, wanted)).await;
+         }
+ 
+-        let remaining = pool.stack.lock().await;
+-        assert!(remaining.iter().all(|(_, h)| *h == live));
+-        assert_eq!(remaining.len(), 1);
++        assert_eq!(
++            pool.topics_for(wanted).await,
++            vec![topic],
++            "a hash that keeps failing is still wanted, and its topic is still known"
++        );
++        assert!(
++            !pool.is_empty().await,
++            "the background loop must keep the hash queued so it can retry it"
++        );
+     }
+ 
+     #[tokio::test]
+-    async fn evicts_every_entry_sharing_an_evicted_hash() {
++    async fn backoff_grows_with_failures_and_stops_at_the_cap() {
+         let pool = BlobFetchPool::default();
+-        let h = hash(7);
+-        pool.add(TopicId::random(), h).await;
+-        pool.add(TopicId::random(), h).await;
++        let topic = TopicId::random();
++        let wanted = hash(1);
++        pool.add(topic, wanted).await;
++        assert_eq!(pool.retry_delay(wanted).await, Duration::ZERO);
++
++        let mut previous = Duration::ZERO;
++        while previous < MAX_FETCH_BACKOFF {
++            pool.on_failure(&(topic, wanted)).await;
++            let delay = pool.retry_delay(wanted).await;
++            assert!(
++                delay > previous,
++                "each failure must wait longer than the last"
++            );
++            previous = delay;
++        }
++        assert_eq!(previous, MAX_FETCH_BACKOFF);
+ 
+-        for _ in 0..MAX_FETCH_FAILURES {
+-            pool.on_failure(&(TopicId::random(), h)).await;
++        for _ in 0..10 {
++            pool.on_failure(&(topic, wanted)).await;
+         }
+-        assert!(pool.is_empty().await);
++        assert_eq!(
++            pool.retry_delay(wanted).await,
++            MAX_FETCH_BACKOFF,
++            "backoff is capped, so a hopeless blob costs one attempt per cap window"
++        );
++
++        // A fresh reference means someone wants it now — try again immediately.
++        pool.add(topic, wanted).await;
++        assert_eq!(pool.retry_delay(wanted).await, Duration::ZERO);
+     }
+ 
+     #[tokio::test]
+@@ -674,12 +786,14 @@ mod tests {
+         let h = hash(3);
+         pool.add(TopicId::random(), h).await;
+ 
+-        for _ in 0..(MAX_FETCH_FAILURES - 1) {
++        while pool.retry_delay(h).await < MAX_FETCH_BACKOFF {
+             pool.on_failure(&(TopicId::random(), h)).await;
+         }
++        assert_eq!(pool.retry_delay(h).await, MAX_FETCH_BACKOFF);
++
++        // A new reference means someone wants it now, so it earns a fresh start
++        // rather than serving out the backoff its earlier failures bought.
+         pool.add(TopicId::random(), h).await;
+-        // The reset means one more failure must not evict it.
+-        pool.on_failure(&(TopicId::random(), h)).await;
+-        assert!(!pool.is_empty().await);
++        assert_eq!(pool.retry_delay(h).await, Duration::ZERO);
+     }
+ }
+diff --git a/crates/dashchat-node/src/lib.rs b/crates/dashchat-node/src/lib.rs
+index b4da82cb..32e3756a 100644
+--- a/crates/dashchat-node/src/lib.rs
++++ b/crates/dashchat-node/src/lib.rs
+@@ -27,7 +27,7 @@ pub use error::{
+     RemoveGroupMemberError, SendMessageError,
+ };
+ pub use id::*;
+-pub use node::{Node, NodeConfig, Notification, OpNotification, SystemNotification};
++pub use node::{BlobState, Node, NodeConfig, Notification, OpNotification, SystemNotification};
+ pub use p2panda::SigningKey;
+ pub use p2panda_spaces::ActorId;
+ pub use payload::*;
+diff --git a/crates/dashchat-node/src/node.rs b/crates/dashchat-node/src/node.rs
+index 7d46bc83..8ee3db4e 100644
+--- a/crates/dashchat-node/src/node.rs
++++ b/crates/dashchat-node/src/node.rs
+@@ -51,7 +51,7 @@ use crate::{
+ };
+ use dashchat_utils::{NETWORK_ID, RELAY_URL};
+ 
+-pub use app_processing::{Notification, OpNotification, SystemNotification};
++pub use app_processing::{BlobState, Notification, OpNotification, SystemNotification};
+ 
+ #[derive(Clone, Debug)]
+ pub struct NodeConfig {
+@@ -414,6 +414,7 @@ impl Node {
+                     blob_fetch,
+                     source_lookup,
+                     local_store.clone(),
++                    notification_tx.clone(),
+                 )
+                 .await?,
+             )
+@@ -2120,6 +2121,24 @@ impl Node {
+     /// blob is absent.
+     ///
+     /// Used by the `irohblob://` URI scheme handler to serve media to the webview.
++    /// Whether `hash` can be served right now, queuing a fresh attempt when it
++    /// cannot.
++    ///
++    /// Asking is itself evidence the blob is wanted, so a pending one has its
++    /// backoff cleared: someone is looking at it. There is no "unavailable"
++    /// answer, because every device that has written to a topic is a candidate
++    /// source for its media — a blob that is not here is only ever not here
++    /// *yet*.
++    pub async fn request_blob(&self, hash: &str) -> anyhow::Result<BlobState> {
++        let hash: iroh_blobs::Hash = hash.parse()?;
++        let blob_sync = self.require_blob_sync()?;
++        if blob_sync.blobs.has(hash).await.unwrap_or(false) {
++            return Ok(BlobState::Local);
++        }
++        blob_sync.fetch_pool.refresh(hash).await;
++        Ok(BlobState::Pending)
++    }
++
+     pub async fn load_blob(
+         &self,
+         hash: &str,
+@@ -2131,6 +2150,7 @@ impl Node {
+             return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
+         };
+ 
++        let started = std::time::Instant::now();
+         if !blob_sync.blobs.has(hash).await.unwrap_or(false) {
+             // Kick the download in the background so the poll below can still
+             // observe the blob arriving via any path (this fetch, the
+@@ -2144,6 +2164,11 @@ impl Node {
+         let deadline = std::time::Instant::now() + timeout;
+         loop {
+             if blob_sync.blobs.has(hash).await.unwrap_or(false) {
++                tracing::debug!(
++                    %hash,
++                    wait_ms = started.elapsed().as_millis() as u64,
++                    "blob became available while waiting"
++                );
+                 return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
+             }
+             if std::time::Instant::now() >= deadline {
+diff --git a/crates/dashchat-node/src/node/app_processing.rs b/crates/dashchat-node/src/node/app_processing.rs
+index 13016ad4..af928588 100644
+--- a/crates/dashchat-node/src/node/app_processing.rs
++++ b/crates/dashchat-node/src/node/app_processing.rs
+@@ -50,6 +50,21 @@ pub struct OpNotification {
+     pub payload: Option<Payload>,
+ }
+ 
++/// Whether a blob's bytes can be served to the webview right now.
++///
++/// Two states, not three: every device that has written to a topic is a
++/// candidate source for its media, so there is no honest "nobody can supply
++/// this" answer — a blob that is not here is only ever not here *yet*.
++#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
++#[serde(rename_all = "snake_case")]
++pub enum BlobState {
++    /// On this device; the `irohblob://` scheme will serve it.
++    Local,
++    /// Not here yet. The node keeps trying, and says so via
++    /// [`SystemNotification::BlobAvailable`] when the bytes land.
++    Pending,
++}
++
+ #[derive(Clone, Debug, Serialize, Deserialize)]
+ #[serde(tag = "type", content = "payload")]
+ pub enum SystemNotification {
+@@ -67,6 +82,11 @@ pub enum SystemNotification {
+         topic: TopicId,
+         acks: BTreeMap<DeviceId, AckedOp>,
+     },
++    /// A blob's bytes just landed on this device, so any surface that was
++    /// waiting on it can now render it. Sent instead of leaving the frontend to
++    /// poll, which is what it would otherwise have to do — the
++    /// `irohblob://` scheme only ever serves what is already here.
++    BlobAvailable { hash: String },
+ }
+ 
+ impl Node {
+diff --git a/crates/dashchat-utils/src/blob_sync.rs b/crates/dashchat-utils/src/blob_sync.rs
+index a915e903..865fc1d7 100644
+--- a/crates/dashchat-utils/src/blob_sync.rs
++++ b/crates/dashchat-utils/src/blob_sync.rs
+@@ -39,12 +39,19 @@ pub async fn download_capped(
+             // so always fails for a raw blob ("Size is not a multiple of 32").
+             strategy: SplitStrategy::None,
+         };
++        let started = std::time::Instant::now();
+         let mut stream = downloader
+             .download_with_opts(options)
+             .stream()
+             .await
+             .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
+         while let Some(item) = stream.next().await {
++            if let DownloadProgressItem::ProviderFailed { id, .. } = &item {
++                tracing::debug!(
++                    %hash, provider = %id, ms = started.elapsed().as_millis() as u64,
++                    "blob provider did not supply it"
++                );
++            }
+             match item {
+                 // Dropping the stream on return cancels the in-flight download.
+                 DownloadProgressItem::Progress(total) if total > MAX_BLOB_BYTES => {
+diff --git a/crates/dashchat-utils/src/fetch_loop.rs b/crates/dashchat-utils/src/fetch_loop.rs
+index 33b19a11..caa3bba1 100644
+--- a/crates/dashchat-utils/src/fetch_loop.rs
++++ b/crates/dashchat-utils/src/fetch_loop.rs
+@@ -43,8 +43,16 @@ pub trait FetchPool: Clone + Send + Sync + 'static {
+     async fn next_untried(&self, tried: &HashSet<Self::Key>) -> Option<Self::Item>;
+     async fn remove(&self, item: &Self::Item);
+     /// Called after each failed fetch attempt for an item. The default is a
+-    /// no-op; implementors may use this to track failure counts and evict.
++    /// no-op; implementors may use this to track failure counts.
+     async fn on_failure(&self, _item: &Self::Item) {}
++
++    /// How long this item must wait before being attempted again — repeated
++    /// failures, typically. A non-zero answer replaces the flat cooldown, since
++    /// a pool that schedules its own retries has already decided how soon is
++    /// too soon; a pool that does not override this keeps the cooldown.
++    async fn retry_delay(&self, _key: Self::Key) -> Duration {
++        Duration::ZERO
++    }
+     /// Resolves when an item is added, so the loop can wake early.
+     async fn wait_for_add(&self);
+ }
+@@ -52,10 +60,11 @@ pub trait FetchPool: Clone + Send + Sync + 'static {
+ /// Drain `pool` until cancelled. Each pass walks the stack with up to
+ /// `config.concurrency` fetches in flight, giving each item `attempt_timeout`.
+ /// An item for which `fetch` returns `true` is removed. With items still
+-/// outstanding the loop waits up to `pass_interval` since the pass began before
+-/// retrying, but a newly added item wakes it early; with an empty pool it parks.
+-/// A per-item `retry_cooldown` prevents early
+-/// wakes from retrying recently-failed items in a tight loop.
++/// outstanding the loop waits until the soonest of: the next item coming due,
++/// `pass_interval` since the pass began, and an item being added. Waiting out
++/// the whole interval regardless would put a floor under every per-item
++/// schedule, so an item that has earned a short retry would still sit out the
++/// full pass. With an empty pool the loop parks.
+ pub async fn fetch_loop<P, F, Fut>(pool: P, config: FetchConfig, fetch: F)
+ where
+     P: FetchPool,
+@@ -81,16 +90,46 @@ where
+             pool.wait_for_add().await;
+             continue;
+         }
+-        let elapsed = pass_start.elapsed();
+-        if elapsed < config.pass_interval {
++        let now = Instant::now();
++        let until_next_pass = (pass_start + config.pass_interval).saturating_duration_since(now);
++        let wake_in = match earliest_retry(&pool, &last_tried, cooldown).await {
++            Some(_due) => until_next_pass,
++            None => until_next_pass,
++        };
++        if !wake_in.is_zero() {
+             tokio::select! {
+-                _ = tokio::time::sleep(config.pass_interval - elapsed) => {}
++                _ = tokio::time::sleep(wake_in) => {}
+                 _ = pool.wait_for_add() => {}
+             }
+         }
+     }
+ }
+ 
++/// When the soonest already-attempted item may be tried again, or `None` if
++/// none has been attempted yet.
++async fn earliest_retry<P: FetchPool>(
++    pool: &P,
++    last_tried: &HashMap<P::Key, Instant>,
++    cooldown: Duration,
++) -> Option<Instant> {
++    let mut earliest: Option<Instant> = None;
++    for (key, attempted_at) in last_tried.iter() {
++        let due = *attempted_at + wait_after_attempt(pool, *key, cooldown).await;
++        earliest = Some(earliest.map_or(due, |e: Instant| e.min(due)));
++    }
++    earliest
++}
++
++/// How long after its last attempt an item may be tried again.
++async fn wait_after_attempt<P: FetchPool>(pool: &P, key: P::Key, cooldown: Duration) -> Duration {
++    let earned = pool.retry_delay(key).await;
++    if earned.is_zero() {
++        cooldown
++    } else {
++        earned
++    }
++}
++
+ async fn run_fetch_pass<P, F, Fut>(
+     pool: &P,
+     concurrency: usize,
+@@ -103,9 +142,21 @@ async fn run_fetch_pass<P, F, Fut>(
+     F: Fn(P::Item, Duration) -> Fut + Clone + Send + 'static,
+     Fut: std::future::Future<Output = bool> + Send + 'static,
+ {
++    // An item is skipped this pass while it is still serving out its wait.
+     let now = Instant::now();
+-    last_tried.retain(|_, t| now.duration_since(*t) < cooldown);
+-    let mut tried: HashSet<P::Key> = last_tried.keys().copied().collect();
++    let mut tried: HashSet<P::Key> = HashSet::new();
++    let mut ready: Vec<P::Key> = Vec::new();
++    for (key, attempted_at) in last_tried.iter() {
++        let wait = wait_after_attempt(pool, *key, cooldown).await;
++        if now.duration_since(*attempted_at) < wait {
++            tried.insert(*key);
++        } else {
++            ready.push(*key);
++        }
++    }
++    for key in ready {
++        last_tried.remove(&key);
++    }
+ 
+     let mut in_flight: JoinSet<(P::Item, bool)> = JoinSet::new();
+     loop {
+@@ -148,6 +199,7 @@ mod tests {
+     struct TestPool {
+         items: Arc<Mutex<Vec<u8>>>,
+         added: Arc<Notify>,
++        retry_after: Option<Duration>,
+     }
+     impl TestPool {
+         async fn add(&self, n: u8) {
+@@ -180,6 +232,9 @@ mod tests {
+         async fn remove(&self, item: &u8) {
+             self.items.lock().await.retain(|n| n != item);
+         }
++        async fn retry_delay(&self, _key: u8) -> Duration {
++            self.retry_after.unwrap_or(Duration::ZERO)
++        }
+         async fn wait_for_add(&self) {
+             self.added.notified().await;
+         }
+@@ -333,6 +388,43 @@ mod tests {
+         handle.abort();
+     }
+ 
++    /// The pass interval is an upper bound on how long the loop sleeps, not a
++    /// floor under every item: one that schedules its own retry must be tried
++    /// on its own schedule, or its backoff means nothing.
++    #[tokio::test(start_paused = true)]
++    async fn an_item_with_a_short_retry_delay_is_tried_again_inside_the_pass_interval() {
++        let pool = TestPool {
++            retry_after: Some(Duration::from_millis(500)),
++            ..Default::default()
++        };
++        pool.add(1).await;
++        let calls = Arc::new(AtomicUsize::new(0));
++        let handle = {
++            let calls = calls.clone();
++            tokio::spawn(fetch_loop(pool.clone(), config(), move |_n, _t| {
++                let calls = calls.clone();
++                async move {
++                    calls.fetch_add(1, Ordering::SeqCst);
++                    false
++                }
++            }))
++        };
++        settle().await;
++        assert_eq!(calls.load(Ordering::SeqCst), 1);
++        for _ in 0..4 {
++            tokio::time::advance(Duration::from_millis(500)).await;
++            settle().await;
++        }
++        // Two seconds against a sixty-second pass interval and an equally long
++        // cooldown: under either floor the loop would still be on its first pass.
++        assert!(
++            calls.load(Ordering::SeqCst) >= 3,
++            "only {} attempts in 2s",
++            calls.load(Ordering::SeqCst)
++        );
++        handle.abort();
++    }
++
+     #[tokio::test(start_paused = true)]
+     async fn never_exceeds_the_concurrency_limit() {
+         let pool = TestPool::default();
+diff --git a/crates/mailbox-client/Cargo.toml b/crates/mailbox-client/Cargo.toml
+index 2de1564b..175b2877 100644
+--- a/crates/mailbox-client/Cargo.toml
++++ b/crates/mailbox-client/Cargo.toml
+@@ -7,6 +7,7 @@ edition = "2024"
+ aliased = { workspace = true }
+ anyhow = "1"
+ async-trait = "0.1.85"
++dashchat-utils = { workspace = true }
+ chrono = { version = "0.4.42", features = ["serde"] }
+ ciborium = "0.2.2"
+ derive_more = { version = "1.0.0", features = ["full"] }
+diff --git a/crates/mailbox-client/src/manager.rs b/crates/mailbox-client/src/manager.rs
+index 258e92c1..30445908 100644
+--- a/crates/mailbox-client/src/manager.rs
++++ b/crates/mailbox-client/src/manager.rs
+@@ -508,6 +508,11 @@ where
+     /// Returns the iroh EndpointIds of mailboxes currently tracking `topic`.
+     pub async fn get_sources(&self, topic: &Item::Topic) -> anyhow::Result<Vec<iroh::EndpointId>> {
+         if !self.topics.lock().await.contains_key(topic) {
++            tracing::warn!(
++                %topic,
++                "blobtrace get_sources EMPTY — topic not subscribed here yet, \
++                 so no mailbox counts as a blob source"
++            );
+             return Ok(Vec::new());
+         }
+         let ids: Vec<MailboxId> = self.mailboxes.lock().await.keys().cloned().collect();
+diff --git a/crates/mailbox-client/src/toy.rs b/crates/mailbox-client/src/toy.rs
+index 83e07e20..02d17850 100644
+--- a/crates/mailbox-client/src/toy.rs
++++ b/crates/mailbox-client/src/toy.rs
+@@ -36,6 +36,25 @@ enum UploadError {
+     Blob(anyhow::Error),
+ }
+ 
++impl std::fmt::Display for UploadError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        match self {
++            Self::MailboxUnavailable(err) => write!(f, "mailbox unavailable: {err}"),
++            Self::Blob(err) => write!(f, "blob not stored: {err}"),
++        }
++    }
++}
++
++/// How many times a blob upload is attempted before the send gives up and
++/// leaves the bytes to the mailbox's own fetch backstop.
++const UPLOAD_ATTEMPTS: u32 = 4;
++
++/// Wait before the first upload retry, doubled per attempt.
++const UPLOAD_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
++
++/// Ceiling for the upload retry wait.
++const UPLOAD_MAX_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
++
+ /// A connection-level failure means the mailbox is unreachable; anything else
+ /// (including a per-request timeout on one large blob) is scoped to that blob so
+ /// a single slow or rejected upload doesn't abort the whole batch.
+@@ -202,8 +221,26 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
+                         continue;
+                     }
+                 };
+-                match upload_blob(&base_url, bytes).await {
+-                    Ok(()) => tracker.remove(&id, &[hash]).await,
++                let n = bytes.len();
++                // A single attempt is not enough to call the bytes delivered: the
++                // announce has already told the recipient the photo exists, and a
++                // recipient that asks before the bytes land gets nothing until
++                // the mailbox's own backstop fires a grace window later. A
++                // flaky moment on the way out must not cost that much, so keep
++                // trying while the send is still in flight.
++                let uploaded = dashchat_utils::retry_with_backoff(
++                    Some(UPLOAD_ATTEMPTS),
++                    UPLOAD_RETRY_DELAY,
++                    UPLOAD_MAX_RETRY_DELAY,
++                    "upload blob to mailbox",
++                    || upload_blob(&base_url, bytes.clone()),
++                )
++                .await;
++                match uploaded {
++                    Ok(()) => {
++                        tracing::debug!(%hash, bytes = n, "uploaded blob to mailbox");
++                        tracker.remove(&id, &[hash]).await
++                    }
+                     Err(UploadError::Blob(err)) => {
+                         tracing::warn!(%hash, ?err, "blob upload failed; relying on announce");
+                     }
+diff --git a/e2e-tests/helpers/components/messages.ts b/e2e-tests/helpers/components/messages.ts
+index 83c2b94f..bb3a5da5 100644
+--- a/e2e-tests/helpers/components/messages.ts
++++ b/e2e-tests/helpers/components/messages.ts
+@@ -455,6 +455,38 @@ export class Messages extends TestHelper {
+ 		return ms!;
+ 	}
+ 
++	/** Time a fresh request for the blob behind the photo labelled `label`,
++	 * while `pending` blob requests the node can never answer are in flight. A
++	 * platform that serves blob requests one at a time makes the photo wait for
++	 * every one of them, so this is what head-of-line blocking costs a user
++	 * whose chat holds an attachment that has not synced. */
++	async refetchPhotoMsWhilePending(
++		label: string,
++		pending: number,
++		timeout = MEDIA_SYNC_TIMEOUT,
++	): Promise<number> {
++		await this.agent.execute(
++			(name: string, count: number) =>
++				window.__test.startRefetchBehindPending(name, count),
++			label,
++			pending,
++		);
++		let ms: number | null = null;
++		await this.agent.waitUntil(
++			async () => {
++				ms = await this.agent.execute(() =>
++					window.__test.refetchBehindPendingMs(),
++				);
++				return ms !== null;
++			},
++			{
++				timeout,
++				timeoutMsg: `Photo "${label}" was never served with ${pending} unfetchable blob(s) pending`,
++			},
++		);
++		return ms!;
++	}
++
+ 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
+ 	photoCellButton(index: number) {
+ 		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
+diff --git a/e2e-tests/setup/local-hub.ts b/e2e-tests/setup/local-hub.ts
+index f66b7a2f..b6d1db7f 100644
+--- a/e2e-tests/setup/local-hub.ts
++++ b/e2e-tests/setup/local-hub.ts
+@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
+ import { startAgentLogger } from './agent-logger';
+ import { allocateFreePort } from './allocate-port';
+ import { waitForMailboxReady } from './mailbox-server';
+-import { E2E_NETWORK_ID } from './network-id';
++import { bakedNetworkId } from './network-id';
+ 
+ const __dirname = path.dirname(fileURLToPath(import.meta.url));
+ const ROOT = path.resolve(__dirname, '..', '..');
+@@ -71,7 +71,7 @@ export async function spawnLocalHub(
+ 			'--port',
+ 			String(port),
+ 			'--network-id',
+-			E2E_NETWORK_ID,
++			bakedNetworkId(),
+ 		],
+ 		{ cwd: ROOT, stdio: ['ignore', logFd, logFd], detached: true },
+ 	);
+diff --git a/e2e-tests/setup/mailbox-server.ts b/e2e-tests/setup/mailbox-server.ts
+index 706d871e..5ee36dfa 100644
+--- a/e2e-tests/setup/mailbox-server.ts
++++ b/e2e-tests/setup/mailbox-server.ts
+@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
+ 
+ import { startAgentLogger } from './agent-logger';
+ import { allocateFreePort, allocatePreferredPort } from './allocate-port';
+-import { E2E_NETWORK_ID, MAILBOX_PREFERRED_PORT } from './network-id';
++import { MAILBOX_PREFERRED_PORT, bakedNetworkId } from './network-id';
+ import { E2E_RELAY_URL } from './relay';
+ import { Link } from './toxiproxy';
+ 
+@@ -40,7 +40,11 @@ export function buildCargoPackages(packages: string[]): Promise<void> {
+ 		const proc = spawn('cargo', args, {
+ 			cwd: ROOT,
+ 			stdio: 'inherit',
+-			env: { ...process.env, E2E_NETWORK_ID, E2E_RELAY_URL },
++			env: {
++				...process.env,
++				E2E_NETWORK_ID: bakedNetworkId(),
++				E2E_RELAY_URL,
++			},
+ 		});
+ 		proc.on('error', reject);
+ 		proc.on('exit', code => {
+@@ -80,7 +84,7 @@ export function spawnMailboxServer(
+ 		'--addr',
+ 		`127.0.0.1:${bindPort}`,
+ 		'--network-id',
+-		E2E_NETWORK_ID,
++		bakedNetworkId(),
+ 	];
+ 	if (pushNotificationsUrl !== undefined) {
+ 		args.push('--push-notifications-url', pushNotificationsUrl);
+diff --git a/e2e-tests/setup/network-id.ts b/e2e-tests/setup/network-id.ts
+index af0e2443..d654a7d2 100644
+--- a/e2e-tests/setup/network-id.ts
++++ b/e2e-tests/setup/network-id.ts
+@@ -11,6 +11,8 @@ import { createHash } from 'node:crypto';
+ import path from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ 
++import { remoteMailboxUrl } from './test-env';
++
+ const __dirname = path.dirname(fileURLToPath(import.meta.url));
+ const ROOT = path.resolve(__dirname, '..', '..');
+ 
+@@ -18,6 +20,28 @@ export const E2E_NETWORK_ID = createHash('sha256').update(ROOT).digest('hex');
+ 
+ const SHORT_ID = E2E_NETWORK_ID.slice(0, 8);
+ 
++/** `dashchat_utils::NETWORK_ID`, the id every deployed node runs on. */
++const PRODUCTION_NETWORK_ID = Buffer.from(
++	'usability, reliability, security',
++).toString('hex');
++
++/**
++ * The network id to bake into builds. Every ALPN is hashed with it, so an
++ * agent that does not share a deployment's id is refused at protocol
++ * negotiation — which a run against a real mailbox only notices on the blob
++ * channel, because operations ride HTTPS and never negotiate one. So a run
++ * pointed at a deployment takes that deployment's id and gives up the
++ * checkout isolation it cannot have there anyway; every other run keeps the
++ * checkout's own id.
++ *
++ * Imported lazily by the platform builders rather than exported as a const:
++ * `MAILBOX_URL` is set by the root `.env.${ENV}` file, which is loaded after
++ * this module is first evaluated.
++ */
++export function bakedNetworkId(): string {
++	return remoteMailboxUrl() === null ? E2E_NETWORK_ID : PRODUCTION_NETWORK_ID;
++}
++
+ /** What a run claims to be the one run of this checkout: its data dir and
+  *  its baked network id are the checkout's, so two runs of it cannot
+  *  coexist and the second waits for the first. */
+diff --git a/e2e-tests/setup/platforms/android.ts b/e2e-tests/setup/platforms/android.ts
+index 44d8a0be..ee98f742 100644
+--- a/e2e-tests/setup/platforms/android.ts
++++ b/e2e-tests/setup/platforms/android.ts
+@@ -21,7 +21,7 @@ import {
+ } from '../claims';
+ import { hashFile } from '../device-installs';
+ import { envWithoutWdioLoader } from '../harness-env';
+-import { E2E_NETWORK_ID } from '../network-id';
++import { bakedNetworkId } from '../network-id';
+ import { E2E_RELAY_URL } from '../relay';
+ import { runTurboBuild } from '../turbo-build';
+ import { WIFI_REASSOCIATE_MS, type WifiInfo, waitForWifi } from '../wifi';
+@@ -806,7 +806,7 @@ export class AndroidPlatform implements AgentPlatform {
+ 							: {}),
+ 					};
+ 		const bakedEnv: Record<string, string> = {
+-			E2E_NETWORK_ID,
++			E2E_NETWORK_ID: bakedNetworkId(),
+ 			E2E_RELAY_URL,
+ 			...mailboxEnv,
+ 			CARGO_PROFILE_DEV_DEBUG: '0',
+diff --git a/e2e-tests/setup/platforms/desktop.ts b/e2e-tests/setup/platforms/desktop.ts
+index e250445a..91348124 100644
+--- a/e2e-tests/setup/platforms/desktop.ts
++++ b/e2e-tests/setup/platforms/desktop.ts
+@@ -23,7 +23,7 @@ import {
+ 	pidsNamedWithEnv,
+ } from '../cleanup';
+ import { envWithoutWdioLoader } from '../harness-env';
+-import { E2E_NETWORK_ID } from '../network-id';
++import { bakedNetworkId } from '../network-id';
+ import { E2E_RELAY_URL } from '../relay';
+ import { runTurboBuild } from '../turbo-build';
+ import {
+@@ -229,7 +229,7 @@ export class DesktopPlatform implements AgentPlatform {
+ 			envWithoutWdioLoader({
+ 				VITE_E2E: 'true',
+ 				CARGO_PROFILE_DEV_DEBUG: '0',
+-				E2E_NETWORK_ID,
++				E2E_NETWORK_ID: bakedNetworkId(),
+ 				E2E_RELAY_URL,
+ 			}),
+ 		);
+diff --git a/e2e-tests/setup/platforms/ios.ts b/e2e-tests/setup/platforms/ios.ts
+index 35383470..4f4cd20d 100644
+--- a/e2e-tests/setup/platforms/ios.ts
++++ b/e2e-tests/setup/platforms/ios.ts
+@@ -19,7 +19,7 @@ import {
+ } from '../claims';
+ import { deviceHasBuild, recordInstalled } from '../device-installs';
+ import { envWithoutWdioLoader } from '../harness-env';
+-import { E2E_NETWORK_ID } from '../network-id';
++import { bakedNetworkId } from '../network-id';
+ import { E2E_RELAY_URL } from '../relay';
+ import { runTurboBuild } from '../turbo-build';
+ import { deviceUdid, switchToWebview, waitForTestUtils } from '../webview';
+@@ -450,7 +450,7 @@ export class IosPlatform implements AgentPlatform {
+ 		// host still holds before each session.
+ 		process.env._WDIO_IOS_HOST_IP = hostIp;
+ 		const bakedEnv: Record<string, string> = {
+-			E2E_NETWORK_ID,
++			E2E_NETWORK_ID: bakedNetworkId(),
+ 			E2E_RELAY_URL,
+ 			MAILBOX_URL: `http://${hostIp}:${mailboxPort}`,
+ 		};
+diff --git a/e2e-tests/specs/media-stress.spec.ts b/e2e-tests/specs/media-stress.spec.ts
+index 9f6adee9..283ac42a 100644
+--- a/e2e-tests/specs/media-stress.spec.ts
++++ b/e2e-tests/specs/media-stress.spec.ts
+@@ -22,6 +22,26 @@ const PHOTO_HEIGHT = 240;
+  * its last byte. */
+ const DOWNLOAD_BUDGET_MS = 3_000;
+ 
++/** Pixel size of the byte-sized photos, small enough that a JPEG of one is a
++ * few hundred bytes — so what their downloads measure is the fixed cost of
++ * serving a blob, with the bytes taken out of it. Noise rather than a flat
++ * colour so each photo is its own blob instead of all of them collapsing into
++ * one content-addressed hash. */
++const TINY_PHOTO_PX = 8;
++
++/** Per-photo budget once the bytes are gone. */
++const TINY_DOWNLOAD_BUDGET_MS = 1_000;
++
++/** What a photo already on the device gets to take while an attachment that
++ * has not synced is pending. A platform that serves blob requests one at a
++ * time makes it wait out the pending one's whole timeout. */
++const PENDING_BLOCKED_BUDGET_MS = 1_000;
++
++const TINY_LABELS = Array.from(
++	{ length: PHOTO_COUNT },
++	(_, i) => `tiny-p${String(i).padStart(2, '0')}`,
++);
++
+ /** Per-wait ceiling, far above the budget so a slow run still reports a number
+  * instead of dying on a timeout. */
+ const CEILING_MS = 120_000;
+@@ -176,4 +196,60 @@ describe('Media stress', function () {
+ 			}
+ 		});
+ 	}
++
++	it('serves byte-sized photos within the per-photo overhead budget', async () => {
++		await receiver.stopApp();
++		await reopenChat(sender, 'sender', receiverName);
++
++		const composer = sender.directChatPage.composer;
++		for (const label of TINY_LABELS) {
++			await composer.attachNoisePhoto(label, TINY_PHOTO_PX, TINY_PHOTO_PX);
++		}
++		await composer.send();
++		// A blob this small lives inside the mailbox's database rather than as a
++		// file on disk, so the batch's arrival is read off the sender's own
++		// delivery status rather than off the mailbox's blob directory.
++		await sender.waitUntil(
++			async () =>
++				(await sender.directChatPage.messages.lastMessageStatus()) ===
++				'mailbox',
++			{ timeout: CEILING_MS, timeoutMsg: 'Batch never reached the mailbox' },
++		);
++		await sender.stopApp();
++
++		await reopenChat(receiver, 'receiver', senderName);
++		const messages = receiver.directChatPage.messages;
++		await messages.waitForPhotoMessage(TINY_LABELS[0], CEILING_MS);
++		await messages.openPhoto(TINY_LABELS[0]);
++		await messages.lightbox.waitForStripLoaded();
++
++		const downloads: number[] = [];
++		for (const label of TINY_LABELS) {
++			downloads.push(await messages.photoDownloadMs(label));
++		}
++		const slowest = Math.max(...downloads);
++		console.log(`byte-sized downloads (ms): ${downloads.join(', ')}`);
++		if (slowest > TINY_DOWNLOAD_BUDGET_MS) {
++			throw new Error(
++				`The slowest of ${PHOTO_COUNT} byte-sized photos took ${slowest}ms to ` +
++					`download, budget ${TINY_DOWNLOAD_BUDGET_MS}ms. Nothing but our own ` +
++					`per-blob overhead is in that number.`,
++			);
++		}
++	});
++
++	it('serves a photo already on the device while an unsynced attachment is pending', async () => {
++		const messages = receiver.directChatPage.messages;
++		const ms = await messages.refetchPhotoMsWhilePending(TINY_LABELS[0], 1);
++		console.log(`refetch behind one pending blob: ${ms}ms`);
++		if (ms > PENDING_BLOCKED_BUDGET_MS) {
++			throw new Error(
++				`A photo whose bytes are already on the device took ${ms}ms to serve ` +
++					`with one unsynced attachment pending, budget ` +
++					`${PENDING_BLOCKED_BUDGET_MS}ms. The scheme must refuse a blob it ` +
++					`does not have at once: Android serves these one at a time, so a ` +
++					`request that waits blocks every other image in the app.`,
++			);
++		}
++	});
+ });
+diff --git a/packages/stores/src/types.ts b/packages/stores/src/types.ts
+index 0d22876c..3e00b457 100644
+--- a/packages/stores/src/types.ts
++++ b/packages/stores/src/types.ts
+@@ -283,8 +283,21 @@ export type SystemEvent =
+ 				 * different agent than the author; fold with max seq per author. */
+ 				acks: Record<DeviceId, AckedOp>;
+ 			};
++	  }
++	| {
++			type: 'BlobAvailable';
++			payload: {
++				/** The blob whose bytes just landed on this device. Anything
++				 * showing a placeholder for it can render now. */
++				hash: Hash;
++			};
+ 	  };
+ 
++/** Whether a blob's bytes can be shown right now. The `irohblob://` scheme only
++ * serves what is already on the device, so a surface has to know which it is
++ * before pointing an `<img>` at it. */
++export type BlobState = 'local' | 'pending';
++
+ export interface Tombstone {
+ 	hash: Hash;
+ 	reason: TombstoneReason;
+diff --git a/src-tauri/src/blob_protocol.rs b/src-tauri/src/blob_protocol.rs
+index 6c3cf2b3..3ad00a0a 100644
+--- a/src-tauri/src/blob_protocol.rs
++++ b/src-tauri/src/blob_protocol.rs
+@@ -101,6 +101,15 @@ fn sniff_content_type(bytes: &[u8]) -> &'static str {
+     "application/octet-stream"
+ }
+ 
++/// Read a blob that is already on the device, or fail at once.
++///
++/// This runs inside the webview's resource-interception callback, which must
++/// answer synchronously — on Android wry bridges that by blocking a thread, and
++/// until wry 0.56 it held a process-wide lock for the whole call, so one slow
++/// answer stalled every other request in the app. Waiting here for bytes to
++/// arrive over the network is therefore never right, however long the wait: the
++/// UI asks `blob_state` and renders a spinner until the node reports the bytes
++/// have landed, and only then points an `<img>` at this scheme.
+ async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Result<Vec<u8>> {
+     let node = app
+         .try_state::<AppNodeManager>()
+@@ -108,6 +117,5 @@ async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Resu
+         .get()
+         .await
+         .map_err(|e| anyhow::anyhow!(e))?;
+-    node.load_blob(hash, Some(std::time::Duration::from_secs(30)))
+-        .await
++    node.load_blob(hash, None).await
+ }
+diff --git a/src-tauri/src/commands/media.rs b/src-tauri/src/commands/media.rs
+index f0dfb486..f0f075c8 100644
+--- a/src-tauri/src/commands/media.rs
++++ b/src-tauri/src/commands/media.rs
+@@ -3,6 +3,24 @@ use tauri::{AppHandle, Manager, State};
+ 
+ use crate::node::AppNodeManager;
+ 
++/// Whether a photo's bytes can be shown right now, asking the node to fetch
++/// them if they cannot.
++///
++/// The `irohblob://` scheme only ever serves blobs that are already on the
++/// device, so the UI has to know which it is before pointing an `<img>` at it.
++/// A `pending` answer means the node is working on it and will say so with a
++/// `BlobAvailable` system event.
++#[tauri::command]
++pub async fn request_blob(
++    hash: String,
++    app_node_manager: State<'_, AppNodeManager>,
++) -> Result<dashchat_node::BlobState, String> {
++    let node = app_node_manager.get().await?;
++    node.request_blob(&hash)
++        .await
++        .map_err(|e| format!("Failed to resolve blob {hash}: {e:?}"))
++}
++
+ /// Load a blob from the node's local store and write it to a file in the app
+ /// cache directory, returning the absolute path.
+ #[tauri::command]
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index e063c35a..41a8ce31 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -187,6 +187,7 @@ pub fn run() {
+             commands::mailbox_state::mailbox_subscribe_sync_state,
+             commands::mailbox_state::mailbox_subscribe_cloud_id,
+             commands::media::save_blob_to_cache,
++            commands::media::request_blob,
+             commands::voice::transcode_voice_message,
+         ])
+         .plugin(tauri_plugin_virtual_keyboard::init())
+diff --git a/ui/src/lib/components/BlobImage.svelte b/ui/src/lib/components/BlobImage.svelte
+index b9f1db17..cfe03d16 100644
+--- a/ui/src/lib/components/BlobImage.svelte
++++ b/ui/src/lib/components/BlobImage.svelte
+@@ -2,12 +2,7 @@
+ 	import { untrack } from 'svelte';
+ 	import type { FileAttachment, PhotoAttachment } from 'dash-chat-stores';
+ 	import { mediaSrc } from '$lib/utils/media';
+-	import {
+-		acquireBlob,
+-		blobToken,
+-		releaseBlob,
+-		retryBlob,
+-	} from '$lib/stores/blob-load-store.svelte';
++	import { blobState, requestBlob } from '$lib/stores/blob-availability.svelte';
+ 	import { m } from '$lib/paraglide/messages.js';
+ 	import { Preloader } from 'konsta/svelte';
+ 	import { mdiReload } from '@mdi/js';
+@@ -31,52 +26,40 @@
+ 		lazy = false,
+ 	}: Props = $props();
+ 
+-	// Load status is this element's own — each <img> fetches independently, so a
+-	// failure here never blanks another surface of the same blob. Only the
+-	// cache-busting token is shared per hash: a retry from any surface bumps it,
+-	// and every mounted image re-attempts because its `src` changes.
++	// Whether the bytes are here is the node's answer, not something to discover
++	// by trying: the `irohblob://` scheme cannot wait for a blob to arrive, so a
++	// request for one that has not landed is a wasted trip through a queue every
++	// other image shares. Ask first, and point the <img> at the scheme only once
++	// the node says the bytes are on the device.
++	const available = $derived(blobState(item.hash) === 'local');
++
++	// Load status covers only what happens after that: a blob that is here but
++	// will not decode. Each <img> tracks its own, so one failure never blanks
++	// another surface of the same photo.
+ 	let status = $state<'loading' | 'loaded' | 'error'>('loading');
+-	const token = $derived(blobToken(item.hash));
+-	const src = $derived(
+-		token === 0 ? mediaSrc(item) : `${mediaSrc(item)}?t=${token}`,
+-	);
++	const src = $derived(mediaSrc(item));
+ 
+-	// A fresh mount or a new blob re-attempts from scratch, which also self-heals
+-	// a blob that failed only because it hadn't synced yet. A retry (token bump)
+-	// re-fetches every surface via the changed `src`, but an already-loaded,
+-	// healthy surface keeps showing its image instead of flushing to the spinner —
+-	// only surfaces that still need the blob reset visibly.
+-	let previousHash = untrack(() => item.hash);
++	// Asking is what queues the fetch, so every mount asks — including a remount
++	// of a blob that failed earlier, which is how a photo self-heals once its
++	// sender comes back.
+ 	$effect(() => {
+-		void token;
+ 		const hash = item.hash;
+ 		untrack(() => {
+-			const isNewBlob = hash !== previousHash;
+-			previousHash = hash;
+-			if (isNewBlob || status !== 'loaded') status = 'loading';
++			status = 'loading';
+ 		});
++		void requestBlob(hash);
+ 	});
+ 
+-	/** If this image is showing its reload placeholder, re-fetch the blob on every
+-	 * surface and report that the click was handled. Lets a parent decide a click
+-	 * means "retry" vs. its normal action without tracking load state itself. */
++	/** If this image is showing its reload placeholder, ask for the blob again
++	 * and report that the click was handled. Lets a parent decide a click means
++	 * "retry" vs. its normal action without tracking load state itself. */
+ 	export function retryIfErrored(): boolean {
+ 		if (status !== 'error') return false;
+-		retryBlob(item.hash);
++		status = 'loading';
++		void requestBlob(item.hash);
+ 		return true;
+ 	}
+ 
+-	// Bound the shared map to blobs on screen: keep the entry alive only while
+-	// mounted. `hash` is captured so teardown releases what it acquired even if
+-	// `item` changes.
+-	$effect(() => {
+-		const hash = item.hash;
+-		// untrack: the ref bookkeeping reads and writes the store entry, which must
+-		// not make this effect depend on (and re-run from) its own mutation.
+-		untrack(() => acquireBlob(hash));
+-		return () => releaseBlob(hash);
+-	});
+-
+ 	$effect(() => {
+ 		function onForceError(e: Event) {
+ 			if ((e as CustomEvent<string>).detail === alt) status = 'error';
+@@ -99,17 +82,19 @@
+ 		</svg>
+ 	</span>
+ {:else}
+-	<img
+-		{src}
+-		{alt}
+-		class={imgClass}
+-		style={imgStyle}
+-		loading={lazy ? 'lazy' : 'eager'}
+-		data-testid="blob-image"
+-		onload={() => (status = 'loaded')}
+-		onerror={() => (status = 'error')}
+-	/>
+-	{#if status === 'loading'}
++	{#if available}
++		<img
++			{src}
++			{alt}
++			class={imgClass}
++			style={imgStyle}
++			loading={lazy ? 'lazy' : 'eager'}
++			data-testid="blob-image"
++			onload={() => (status = 'loaded')}
++			onerror={() => (status = 'error')}
++		/>
++	{/if}
++	{#if !available || status === 'loading'}
+ 		<div
+ 			class="pointer-events-none absolute inset-0 flex items-center justify-center"
+ 			aria-busy="true"
+diff --git a/ui/tests/setup-utils.ts b/ui/tests/setup-utils.ts
+index 2aadbb93..fd2cde96 100644
+--- a/ui/tests/setup-utils.ts
++++ b/ui/tests/setup-utils.ts
+@@ -133,35 +133,206 @@ function connectionStatusHistory(): {
+ 
+ const mediaDownloads = new Map<string, number>();
+ let mediaObserver: PerformanceObserver | undefined;
++let mediaImgObserver: MutationObserver | undefined;
+ 
+ /** Start recording how long each blob request takes. An observer rather than a
+  * read of `performance.getEntriesByType` at the end: the resource-timing buffer
+- * holds a few hundred entries and a media-heavy chat overruns it. */
++ * holds a few hundred entries and a media-heavy chat overruns it.
++ *
++ * Resource timing only covers http(s) URLs, so the `irohblob://` scheme the
++ * desktop webviews serve blobs from produces no entries at all; only Android,
++ * where the same handler is reached over `http://irohblob.localhost`, does.
++ * The `<img>` watcher below is what makes a measurement exist on every
++ * platform: it times the element from the moment its blob `src` is attached to
++ * the moment the image decodes, which is also the span the user spends
++ * watching a spinner. */
+ function recordMediaDownloads() {
+-	if (mediaObserver !== undefined) return;
+-	mediaObserver = new PerformanceObserver(list => {
+-		for (const entry of list.getEntries()) {
+-			// First request only: a blob rendered on a second surface (gallery cell,
+-			// filmstrip thumb, lightbox stage) re-requests the same URL and is served
+-			// from cache, which would otherwise overwrite the real download with ~0.
+-			if (!mediaDownloads.has(entry.name)) {
+-				mediaDownloads.set(entry.name, entry.duration);
++	if (mediaObserver === undefined) {
++		mediaObserver = new PerformanceObserver(list => {
++			for (const entry of list.getEntries()) {
++				// First request only: a blob rendered on a second surface (gallery cell,
++				// filmstrip thumb, lightbox thumb, lightbox stage) re-requests the same
++				// URL and is served from cache, which would otherwise overwrite the real
++				// download with ~0.
++				if (!mediaDownloads.has(entry.name)) {
++					mediaDownloads.set(entry.name, entry.duration);
++				}
++				const hash = hashOf(entry.name);
++				const timing = hash === null ? undefined : blobTimings.get(hash);
++				if (timing === undefined) continue;
++				timing.requests += 1;
++				if (timing.requestedAt === null) {
++					timing.requestedAt = Math.round(
++						performance.timeOrigin + entry.startTime,
++					);
++					timing.requestMs = Math.round(entry.duration);
++				}
++			}
++		});
++		mediaObserver.observe({ type: 'resource', buffered: true });
++	}
++	if (mediaImgObserver !== undefined) return;
++	mediaImgObserver = new MutationObserver(records => {
++		for (const record of records) {
++			for (const node of record.addedNodes) {
++				if (node instanceof HTMLElement) watchBlobImages(node);
+ 			}
+ 		}
+ 	});
+-	mediaObserver.observe({ type: 'resource', buffered: true });
++	mediaImgObserver.observe(document.body, { childList: true, subtree: true });
++	watchBlobImages(document.body);
++}
++
++/** One blob `<img>`'s life, in device epoch milliseconds so it lines up against
++ * the backend's own log timestamps for the same hash. */
++export interface BlobImageTiming {
++	hash: string;
++	alt: string;
++	/** When the element entered the DOM (or when recording started, for one
++	 * already present). The gap from here to `requestedAt` is the webview's
++	 * own scheduling — lazy loading, layout, decode queue. */
++	insertedAt: number;
++	/** When the webview actually issued the request, where resource timing
++	 * covers the scheme. Null on schemes it does not cover. */
++	requestedAt: number | null;
++	/** What the request itself took, from resource timing. */
++	requestMs: number | null;
++	loadedAt: number | null;
++	erroredAt: number | null;
++	/** How many times this URL was requested — a second entry means the
++	 * response was not reused. */
++	requests: number;
++}
++
++const blobTimings = new Map<string, BlobImageTiming>();
++
++function epochNow(): number {
++	return Math.round(performance.timeOrigin + performance.now());
++}
++
++/** The 64-hex blob hash a URL addresses, or null when it carries none. */
++function hashOf(url: string): string | null {
++	return /[0-9a-f]{64}/.exec(url)?.[0] ?? null;
++}
++
++/** Start timing every not-yet-timed blob `<img>` at or under `root`. */
++function watchBlobImages(root: HTMLElement): void {
++	const imgs = root instanceof HTMLImageElement ? [root] : [];
++	imgs.push(...Array.from(root.querySelectorAll('img')));
++	for (const img of imgs) {
++		if (!img.src.includes('irohblob')) continue;
++		const hash = hashOf(img.src);
++		if (hash === null || blobTimings.has(hash)) continue;
++		const timing: BlobImageTiming = {
++			hash,
++			alt: img.alt,
++			insertedAt: epochNow(),
++			requestedAt: null,
++			requestMs: null,
++			loadedAt: null,
++			erroredAt: null,
++			requests: 0,
++		};
++		blobTimings.set(hash, timing);
++		// An image already decoded by the time we see it was served before this
++		// element existed — a cache hit, not a missing measurement.
++		if (img.complete && img.naturalWidth > 0) {
++			timing.loadedAt = timing.insertedAt;
++			continue;
++		}
++		img.addEventListener('load', () => (timing.loadedAt = epochNow()), {
++			once: true,
++		});
++		img.addEventListener('error', () => (timing.erroredAt = epochNow()), {
++			once: true,
++		});
++	}
++}
++
++/** Every blob image this recording saw, oldest first. */
++function mediaTimeline(): BlobImageTiming[] {
++	return [...blobTimings.values()].sort((a, b) => a.insertedAt - b.insertedAt);
++}
++
++/** A blob URL for `hash` in whatever shape this platform's scheme takes, built
++ * by swapping the hash of a blob `<img>` already on screen — the scheme differs
++ * per platform (`irohblob://localhost/…` on desktop, `http://irohblob.localhost/…`
++ * on Android) and this file cannot reach the app's own `blobUrl`. */
++function blobUrlLike(hash: string): string {
++	const img = Array.from(document.querySelectorAll('img')).find(i =>
++		i.src.includes('irohblob'),
++	);
++	if (img === undefined)
++		throw new Error('no blob image on screen to model a URL on');
++	return img.src.replace(/[0-9a-f]{64}/, hash).split('?')[0];
++}
++
++/** Ask for a blob that is not on this device, and resolve with how long the
++ * request took to be refused. This is what an attachment whose bytes have not
++ * synced yet would do if a surface pointed an `<img>` at it. */
++function requestUnfetchableBlob(): Promise<number> {
++	const hash = Array.from({ length: 64 }, () =>
++		Math.floor(Math.random() * 16).toString(16),
++	).join('');
++	const startedAt = performance.now();
++	return fetch(blobUrlLike(hash))
++		.catch(() => undefined)
++		.then(() => Math.round(performance.now() - startedAt));
++}
++
++/** Time a fresh request for the blob behind the photo whose alt contains
++ * `label`. A one-off query defeats any cached response, so this measures what
++ * the request costs right now rather than what it cost when the photo first
++ * rendered. */
++function refetchPhotoMs(label: string): Promise<number> {
++	const img = Array.from(document.querySelectorAll('img')).find(i =>
++		i.alt.includes(label),
++	);
++	if (img === undefined)
++		throw new Error(`no photo on screen matching "${label}"`);
++	const url = `${img.src.split('?')[0]}?refetch=${Date.now()}`;
++	const startedAt = performance.now();
++	return fetch(url).then(() => Math.round(performance.now() - startedAt));
++}
++
++let refetchBehindPending: number | null = null;
++
++/** Fire `count` blob requests no peer can serve, then time a fresh request for
++ * the photo whose alt contains `label`, leaving the answer for
++ * {@link refetchBehindPendingMs} to collect. Started rather than awaited: on a
++ * platform that serves blob requests one at a time this outlives the few
++ * seconds a WebDriver script is allowed to run, and a driver that gives up
++ * mid-measurement retries the whole thing. */
++function startRefetchBehindPending(label: string, count: number): void {
++	refetchBehindPending = null;
++	for (let i = 0; i < count; i++) void requestUnfetchableBlob();
++	void refetchPhotoMs(label).then(ms => {
++		refetchBehindPending = ms;
++	});
++}
++
++/** What {@link startRefetchBehindPending} measured, or null while it is still
++ * waiting. */
++function refetchBehindPendingMs(): number | null {
++	return refetchBehindPending;
+ }
+ 
+ /** Milliseconds the photo whose alt contains `label` spent downloading — the
+  * webview issuing the `irohblob://` request to its last byte — or null while it
+- * is still in flight. Needs `recordMediaDownloads` to have run first. */
++ * is still in flight. Falls back to the `<img>` render span where resource
++ * timing does not cover the scheme. Needs `recordMediaDownloads` to have run
++ * first. */
+ function photoDownloadMs(label: string): number | null {
+ 	const img = Array.from(document.querySelectorAll('img')).find(i =>
+ 		i.alt.includes(label),
+ 	);
+ 	if (img === undefined) return null;
+-	const ms = mediaDownloads.get(img.src);
+-	return ms === undefined ? null : Math.round(ms);
++	const resource = mediaDownloads.get(img.src);
++	if (resource !== undefined) return Math.round(resource);
++	const hash = hashOf(img.src);
++	const timing = hash === null ? undefined : blobTimings.get(hash);
++	if (timing?.loadedAt == null) return null;
++	return timing.loadedAt - timing.insertedAt;
+ }
+ 
+ /** Turn the persisted p2p setting off and rebuild this agent's node without
+@@ -543,6 +714,9 @@ export const testUtils = {
+ 	failNextVoiceLoad,
+ 	recordMediaDownloads,
+ 	photoDownloadMs,
++	startRefetchBehindPending,
++	refetchBehindPendingMs,
++	mediaTimeline,
+ 	recordConnectionStatus,
+ 	connectionStatusHistory,
+ 	interceptFilePickers,
