@@ -205,7 +205,7 @@ impl Default for NodeConfig {
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
-            enable_lan_router: false,
+            enable_lan_router: true,
         }
     }
 }

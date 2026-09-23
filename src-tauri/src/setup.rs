@@ -150,6 +150,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .level(log::LevelFilter::Warn)
         .level_for("dashchat_node", log::LevelFilter::Debug)
         .level_for("dashchat_utils", log::LevelFilter::Debug)
+        .level_for("dash_router", log::LevelFilter::Debug)
         .level_for("mailbox_client", log::LevelFilter::Debug)
         .level_for("mailbox_server", log::LevelFilter::Debug)
         .level_for("mailbox_local_server", log::LevelFilter::Debug)
