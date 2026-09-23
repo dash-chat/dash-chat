@@ -281,7 +281,7 @@ export async function backToChatList(
 	// A tap that lands while the chat is re-rendering — a message arriving, a
 	// block's system message — does nothing, and one missed back would leave
 	// the whole check waiting on a list the app was never asked for.
-	for (let attempt = 1; attempt <= BACK_ATTEMPTS; attempt++) {
+	for (let i = 0; i < BACK_ATTEMPTS; i++) {
 		let pressed = false;
 		for (const page of [sa.agent.groupChatPage, sa.agent.directChatPage]) {
 			if (!(await page.page.isExisting())) continue;

@@ -413,8 +413,9 @@ export class ExpectedModel {
 	 *  the one it was taken away from: what the device was showing for it and
 	 *  what its row had counted are both gone. */
 	foreground(name: string): void {
-		this.backgrounded.delete(name);
-		this.catchUp(name);
+		// Only what was away has anything to catch up on: a move that
+		// foregrounds an app already on screen must not silence it.
+		if (this.backgrounded.delete(name)) this.catchUp(name);
 		const route = this.viewing.get(name)?.route;
 		if (route === undefined) return;
 		this.clearPosted(name, route);
@@ -446,8 +447,7 @@ export class ExpectedModel {
 	/** An app that was stopped comes back on the chat list, not on whatever it
 	 *  was showing when it went away. */
 	startApp(name: string): void {
-		this.stopped.delete(name);
-		this.catchUp(name);
+		if (this.stopped.delete(name)) this.catchUp(name);
 		this.wentHome(name);
 	}
 

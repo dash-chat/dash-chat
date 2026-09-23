@@ -16,7 +16,15 @@ const ROOT = path.resolve(__dirname, '..', '..');
 
 // Not under .dbs/e2e — onPrepare wipes that dir every run and the record
 // must survive across runs.
-const STAMP_FILE = path.join(ROOT, '.dbs', 'e2e-device-installs.json');
+/** Where the record lives. Read per call rather than once at import so a test
+ *  can point it somewhere of its own: the real file decides what a run
+ *  installs, and a `pnpm check` beside a run must not write to it. */
+function stampFile(): string {
+	return (
+		process.env.E2E_DEVICE_INSTALLS_FILE ??
+		path.join(ROOT, '.dbs', 'e2e-device-installs.json')
+	);
+}
 
 /** Hex digest of a file's content; `algo` defaults to sha256 (md5 matches the
  *  on-device `md5sum` used to compare an installed APK). */
@@ -39,7 +47,7 @@ type StoredStamp = string | Partial<InstallStamp> | null;
 function readStamps(): InstallStamps {
 	let stored: Record<string, StoredStamp>;
 	try {
-		stored = JSON.parse(readFileSync(STAMP_FILE, 'utf8')) as Record<
+		stored = JSON.parse(readFileSync(stampFile(), 'utf8')) as Record<
 			string,
 			StoredStamp
 		>;
@@ -89,6 +97,6 @@ export function recordInstalled(
 		...readStamps(),
 		[udid]: { archive: hashFile(archive), marker },
 	};
-	mkdirSync(path.dirname(STAMP_FILE), { recursive: true });
-	writeFileSync(STAMP_FILE, JSON.stringify(stamps, null, '\t'));
+	mkdirSync(path.dirname(stampFile()), { recursive: true });
+	writeFileSync(stampFile(), JSON.stringify(stamps, null, '\t'));
 }

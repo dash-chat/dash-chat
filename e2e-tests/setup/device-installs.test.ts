@@ -1,28 +1,18 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { after, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { test } from 'node:test';
 
 import { deviceHasBuild, recordInstalled } from './device-installs.ts';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-/** The file the module writes, so a test can leave it as it found it: a run
- *  in this checkout reads it to decide what to install. */
-const STAMP_FILE = path.resolve(
-	__dirname,
-	'..',
-	'..',
-	'.dbs',
-	'e2e-device-installs.json',
+// Set before the module under test reads it, so nothing here touches the
+// checkout's own stamp file.
+const STAMP_FILE = path.join(
+	mkdtempSync(path.join(tmpdir(), 'device-installs-')),
+	'stamps.json',
 );
-const before = existsSync(STAMP_FILE) ? readFileSync(STAMP_FILE) : null;
-after(() => {
-	if (before === null) rmSync(STAMP_FILE, { force: true });
-	else writeFileSync(STAMP_FILE, before);
-});
+process.env.E2E_DEVICE_INSTALLS_FILE = STAMP_FILE;
 
 /** An archive to hash, and a udid no real device has. */
 const archive = path.join(

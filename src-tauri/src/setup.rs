@@ -150,10 +150,16 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .level(log::LevelFilter::Warn)
         .level_for("dashchat_node", log::LevelFilter::Debug)
         .level_for("dashchat_utils", log::LevelFilter::Debug)
-        // Peer discovery and connection, mDNS included (`p2panda_net::iroh_mdns`).
-        // At its default Warn only the failures reach a device's log, which
-        // reads as "p2p is broken" whether or not anything ever worked.
-        .level_for("p2panda_net", log::LevelFilter::Debug)
+        // Whether peers find each other, and who is in a topic once they have:
+        // at the default Warn only the failures reach a device's log, which
+        // reads as "p2p is broken" whether or not anything ever worked. Per
+        // module rather than the whole crate — `p2panda_net::sync` and
+        // `::iroh_endpoint` are together ~70% of its Debug output, and what
+        // they add over their own warnings is not worth that much of the log
+        // tail an error report carries.
+        .level_for("p2panda_net::discovery", log::LevelFilter::Debug)
+        .level_for("p2panda_net::gossip", log::LevelFilter::Debug)
+        .level_for("p2panda_net::iroh_mdns", log::LevelFilter::Debug)
         .level_for("mailbox_client", log::LevelFilter::Debug)
         .level_for("mailbox_server", log::LevelFilter::Debug)
         .level_for("mailbox_local_server", log::LevelFilter::Debug)

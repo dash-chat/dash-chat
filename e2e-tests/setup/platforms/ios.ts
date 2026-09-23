@@ -268,8 +268,17 @@ export async function clearIosAppData(b: WebdriverIO.Browser): Promise<void> {
 
 /** Whether the phone can reach the internet, asked of the app's own webview:
  *  iOS has no adb-style shell to run a probe in, and the answer has to come
- *  from the phone, not from the host, which is on a different network. Brings
- *  the app up to ask — the callers wipe and relaunch it straight after. */
+ *  from the phone, not from the host, which is on a different network.
+ *
+ *  The probe reads a cross-origin response rather than just seeing a request
+ *  leave, so a captive portal answering in the internet's place cannot pass
+ *  for it: a portal serves its own page from its own origin, which the browser
+ *  refuses to hand back without the CORS header the real endpoint sends.
+ *
+ *  Brings the app to the foreground to ask, and leaves it there — every caller
+ *  wipes and relaunches it next, so what it comes up on does not matter. The
+ *  raised script timeout is left raised too: XCUITest's default is ~0, which
+ *  is no state worth restoring. */
 export async function iosHasInternet(b: WebdriverIO.Browser): Promise<boolean> {
 	await attachToIosApp(b);
 	// XCUITest defaults the async-script timeout to ~0 (see `agent.disableP2p`).
@@ -280,13 +289,13 @@ export async function iosHasInternet(b: WebdriverIO.Browser): Promise<boolean> {
 			clearTimeout(timer);
 			done(reachable);
 		};
-		// `no-cors`: the probe only asks whether the request got out, and an
-		// opaque response answers that without the host having to allow us.
-		fetch('https://captive.apple.com/hotspot-detect.html', {
-			mode: 'no-cors',
+		// A DNS-over-HTTPS query: small, meant to be read programmatically, and
+		// served with `access-control-allow-origin: *`.
+		fetch('https://cloudflare-dns.com/dns-query?name=example.com&type=A', {
+			headers: { accept: 'application/dns-json' },
 			cache: 'no-store',
 		}).then(
-			() => settle(true),
+			response => settle(response.ok),
 			() => settle(false),
 		);
 	}, INTERNET_PROBE_TIMEOUT);

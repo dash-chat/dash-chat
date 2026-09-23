@@ -209,9 +209,11 @@ export type Agent = WebdriverIO.Browser & {
 	 *  brings the app to the foreground — call it where that is harmless, or
 	 *  where what follows resets the app anyway. */
 	hasInternet(): Promise<boolean>;
-	/** Wipe the stopped app back to first launch, with its runtime permissions
-	 *  granted again as a new session's fast reset leaves them. Android only;
-	 *  call between [`stopApp`] and [`startApp`]. */
+	/** Wipe the app back to first launch and leave it not running, to be
+	 *  called between [`stopApp`] and [`startApp`]. On android a `clearApp`
+	 *  with its runtime permissions granted again, as a new session's fast
+	 *  reset leaves them; on iOS the app's own delete_account, which means the
+	 *  app is brought up to run it and exits on its own afterwards. */
 	clearAppData(): Promise<void>;
 	/** Kill the phone's push extension process, so the next push starts a
 	 *  fresh one. iOS only. */

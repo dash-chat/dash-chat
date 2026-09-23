@@ -688,7 +688,7 @@ export class Message extends TestHelper {
 		// node is replaced before the hold is up, which any message arriving
 		// meanwhile does. Repeat the gesture rather than spend the whole wait on
 		// one that was cancelled.
-		for (let attempt = 1; attempt <= OPEN_ACTIONS_ATTEMPTS; attempt++) {
+		for (let i = 0; i < OPEN_ACTIONS_ATTEMPTS; i++) {
 			await this.longPressBubble();
 			const opened = await this.actionsMenu
 				.waitForDisplayed({ timeout: RENDER_SETTLE_WINDOW })
@@ -698,7 +698,12 @@ export class Message extends TestHelper {
 				);
 			if (opened) return;
 		}
-		await this.actionsMenu.waitForDisplayed();
+		await this.actionsMenu.waitForDisplayed({
+			timeout: RENDER_SETTLE_WINDOW,
+			timeoutMsg:
+				`The actions menu did not open after ${OPEN_ACTIONS_ATTEMPTS} ` +
+				'long-presses — each one lost, most likely to a re-render',
+		});
 	}
 
 	/** Fail unless this message's actions menu is open now and still open

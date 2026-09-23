@@ -149,7 +149,13 @@ export class Fuzzer {
 			// phone wherever `resetAgent` last put it, which is off Wi-Fi, and
 			// the host's card on a lab network. Nothing else puts them back,
 			// so every later run on these devices starts off the air.
-			suite.afterAll('restore networks', () => restoreNetworks(real));
+			// `eachTest` above only reaches tests, so this hook would inherit
+			// whatever the suite allows — too little, and the phones are left
+			// off the air by the very hook that exists to put them back.
+			suite.afterAll('restore networks', function (this: Mocha.Context) {
+				this.timeout(FUZZ_TEST_TIMEOUT_MS);
+				return restoreNetworks(real);
+			});
 			assertInRange(
 				real.hubsDevice,
 				labNetworks(real).map(n => n.ssid),

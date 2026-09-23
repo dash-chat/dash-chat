@@ -25,6 +25,8 @@ import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
 async function relaunchOn(agent: Agent, network: WifiNetwork): Promise<void> {
 	await agent.stopApp();
 	await agent.connectWifi(network.ssid, network.passphrase);
+	// On iOS this brings the app up on the old account to ask from its
+	// webview, so the wipe below is what actually leaves it at first launch.
 	if (await agent.hasInternet()) {
 		throw new Error(
 			`"${network.ssid}" reaches the internet; this spec needs a network with no upstream`,
