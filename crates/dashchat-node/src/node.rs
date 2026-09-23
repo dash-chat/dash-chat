@@ -679,6 +679,42 @@ impl Node {
         Ok(())
     }
 
+    /// Testing: refuse every connection with `node_id` in both directions,
+    /// for every protocol (p2panda's global blocklist, enforced by the iroh
+    /// endpoint hooks). Set it before the peer is introduced. A no-op on a
+    /// node with no networking layer.
+    #[cfg(feature = "testing")]
+    pub async fn block_peer(&self, node_id: NodeId) -> Result<()> {
+        if self.endpoint.is_none() {
+            return Ok(());
+        }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::BlockPeer { node_id, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await?;
+        Ok(())
+    }
+
+    /// Testing: turn p2panda's native log sync with `node_id` off on every
+    /// topic, subscribed now or later. Gossip is unaffected, so the LAN
+    /// router still runs between the two. A no-op on a node with no
+    /// networking layer.
+    #[cfg(feature = "testing")]
+    pub async fn block_native_sync_with(&self, node_id: NodeId) -> Result<()> {
+        if self.endpoint.is_none() {
+            return Ok(());
+        }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::BlockNativeSync { node_id, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await?;
+        Ok(())
+    }
+
     /// The node's blob sync, or an error when blob sync is disabled (the push
     /// extension never opens a blob store). Only the media send/serve paths —
     /// never reached by the extension — call this.

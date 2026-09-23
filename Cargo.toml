@@ -58,7 +58,7 @@ p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashc
 # crates.io and are patched below onto the same fork the rest of the
 # workspace uses, so there is exactly one VerifyingKey type.
 # Dev-time path (the lan-router worktree); switched to a git rev before merge.
-dash-router = { path = "../dash-router-lan-router/crates/dash-router", features = ["p2panda"] }
+dash-router = { path = "../dash-router-lan-router-e2e/crates/dash-router", features = ["p2panda"] }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [
