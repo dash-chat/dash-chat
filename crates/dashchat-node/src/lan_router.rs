@@ -579,6 +579,20 @@ mod imp {
             self.ext.forwarded()
         }
 
+        /// Testing: whether the relay store holds at least one op on
+        /// `topic`, by any author. The ext store (ops p2panda already has)
+        /// is not consulted.
+        #[cfg(feature = "testing")]
+        pub async fn relay_holds_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
+            let prefix = LogId::from_topic(topic);
+            Ok(self
+                .handle
+                .relay_held()
+                .await?
+                .iter()
+                .any(|(log, ranges)| log.log_id() == prefix && !ranges.is_empty()))
+        }
+
         pub async fn unsubscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
             self.ext.unregister_topic(topic);
             self.handle.unsubscribe(LogId::from_topic(topic)).await

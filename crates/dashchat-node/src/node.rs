@@ -552,6 +552,16 @@ impl Node {
         self.lan_router.as_ref().map(|r| r.delivered_count())
     }
 
+    /// Testing: whether the LAN router's relay store holds an op on
+    /// `topic` for someone else; `None` when the router is not running.
+    #[cfg(all(feature = "lan-router", feature = "testing"))]
+    pub async fn lan_router_relay_holds(&self, topic: TopicId) -> Result<Option<bool>> {
+        match &self.lan_router {
+            Some(router) => Ok(Some(router.relay_holds_topic(topic).await?)),
+            None => Ok(None),
+        }
+    }
+
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
         self.local_store
             .get_advertised_inbox_topics()
@@ -2377,6 +2387,20 @@ mod lan_router_tests {
         assert!(router.subscribe_topic(TopicId::random()).await.is_err());
         node.initialize_topic(TopicId::random()).await.unwrap();
         node.shutdown().await;
+    }
+
+    /// Review focus 4: an unseen topic reads as not held, not as an error.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_holds_nothing_at_start() {
+        let mut config = NodeConfig::testing();
+        config.enable_lan_router = true;
+        let node = TestNode::new(config, "relay").await;
+        let topic = TopicId::random();
+        assert_eq!(node.lan_router_relay_holds(topic).await.unwrap(), Some(false));
+        let off = TestNode::new(NodeConfig::testing(), "off").await;
+        assert_eq!(off.lan_router_relay_holds(topic).await.unwrap(), None);
+        node.shutdown().await;
+        off.shutdown().await;
     }
 }
 
