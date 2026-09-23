@@ -92,6 +92,16 @@ impl OpStore {
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
     }
 
+    /// Every sequence number present for `author`'s log, ascending. The
+    /// router's held-range input (see `lan_router.rs`).
+    pub(crate) async fn get_log_seqs(
+        &self,
+        author: &DeviceId,
+        log_id: &LogId,
+    ) -> anyhow::Result<Vec<SeqNum>> {
+        queries::get_log_seqs(&self.store, author, log_id).await
+    }
+
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
     pub async fn close(&self) {
         self.store.pool().close().await;
@@ -428,13 +438,84 @@ fn is_application(op: &Operation) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use mailbox_client::store::MailboxStore;
-    use p2panda::operation::{Extensions, Header, LogId};
+pub(crate) mod test_support {
+    use p2panda::operation::{Extensions, Header};
     use p2panda_core::{Body, Timestamp};
     use p2panda_store::Transaction;
     use p2panda_store::operations::OperationStore;
 
+    use super::*;
+
+    /// An operation of a plain stream topic, as sync stores it before it is processed.
+    pub(crate) fn signed_op(
+        signing_key: &p2panda::SigningKey,
+        log_id: LogId,
+        seq_num: SeqNum,
+        backlink: Option<Hash>,
+        payload: &[u8],
+    ) -> Operation {
+        // Timestamps track seq_num so the tests' expected ordering is deterministic.
+        let extensions = Extensions::builder(log_id)
+            .timestamp(Timestamp::new(seq_num.into()))
+            .build();
+        let header = Header::builder()
+            .body(payload)
+            .seq_num(seq_num)
+            .backlink(backlink)
+            .build(signing_key, extensions);
+        Operation {
+            hash: header.hash(),
+            header,
+            body: Some(Body::from_bytes(payload)),
+        }
+    }
+
+    pub(crate) async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
+        let permit = store.store.begin().await.unwrap();
+        OperationStore::<Operation, Hash>::insert_operation_tx(&store.store, &op.hash, op, log_id)
+            .await
+            .unwrap();
+        store.store.commit(permit).await.unwrap();
+    }
+
+    /// Advance p2panda's ack cursor for `author`'s log to `seq`, mimicking what
+    /// `ProcessedOperation::ack` persists once application-layer processing has
+    /// finished (see `OpStore::acked_log_height`).
+    pub(crate) async fn ack_up_to(
+        store: &OpStore,
+        topic: &TopicId,
+        author: &DeviceId,
+        log_id: LogId,
+        seq: SeqNum,
+    ) {
+        use p2panda_core::Cursor;
+        use p2panda_core::logs::LogHeights;
+        use p2panda_store::cursors::CursorStore;
+
+        let permit = store.store.begin().await.unwrap();
+        let mut cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
+            &store.store,
+            topic.to_string(),
+        )
+        .await
+        .unwrap()
+        .unwrap_or_else(|| Cursor::new(topic.to_string(), LogHeights::default()));
+        cursor.advance(**author, log_id, seq);
+        CursorStore::set_cursor_tx(&store.store, &cursor)
+            .await
+            .unwrap();
+        store.store.commit(permit).await.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mailbox_client::store::MailboxStore;
+    use maplit::btreemap;
+    use p2panda::operation::{Header, LogId};
+    use p2panda_core::Body;
+
+    use super::test_support::*;
     use super::*;
     use crate::testing::*;
 
@@ -459,7 +540,6 @@ mod tests {
         (alice, bobbi, chat)
     }
 
-    /// An operation of a plain stream topic, as sync stores it before it is processed.
     fn stream_op(
         signing_key: &p2panda::SigningKey,
         log_id: LogId,
@@ -467,58 +547,13 @@ mod tests {
         backlink: Option<Hash>,
         payload: &Payload,
     ) -> Operation {
-        let payload = payload.as_bytes().unwrap();
-        // Timestamps track seq_num so the tests' expected ordering is deterministic.
-        let extensions = Extensions::builder(log_id)
-            .timestamp(Timestamp::new(seq_num.into()))
-            .build();
-        let header = Header::builder()
-            .body(&payload)
-            .seq_num(seq_num)
-            .backlink(backlink)
-            .build(signing_key, extensions);
-        Operation {
-            hash: header.hash(),
-            header,
-            body: Some(Body::from_bytes(&payload)),
-        }
-    }
-
-    async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
-        let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash>::insert_operation_tx(&store.store, &op.hash, op, log_id)
-            .await
-            .unwrap();
-        store.store.commit(permit).await.unwrap();
-    }
-
-    /// Advance p2panda's ack cursor for `author`'s log to `seq`, mimicking what
-    /// `ProcessedOperation::ack` persists once application-layer processing has
-    /// finished (see `OpStore::acked_log_height`).
-    async fn ack_up_to(
-        store: &OpStore,
-        topic: &TopicId,
-        author: &DeviceId,
-        log_id: LogId,
-        seq: SeqNum,
-    ) {
-        use p2panda_core::Cursor;
-        use p2panda_core::logs::LogHeights;
-        use p2panda_store::cursors::CursorStore;
-
-        let permit = store.store.begin().await.unwrap();
-        let mut cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
-            &store.store,
-            topic.to_string(),
+        signed_op(
+            signing_key,
+            log_id,
+            seq_num,
+            backlink,
+            &payload.as_bytes().unwrap(),
         )
-        .await
-        .unwrap()
-        .unwrap_or_else(|| Cursor::new(topic.to_string(), LogHeights::default()));
-        cursor.advance(**author, log_id, seq);
-        CursorStore::set_cursor_tx(&store.store, &cursor)
-            .await
-            .unwrap();
-        store.store.commit(permit).await.unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -738,5 +773,29 @@ mod tests {
         assert!(stored.body.is_none());
         // The header is retained so log sync stays consistent.
         assert_eq!(stored.header.seq_num, message.seq_num);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_log_seqs_lists_present_seqs_ascending() {
+        let node = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
+        let store = &node.op_store;
+        let key = p2panda::SigningKey::generate();
+        let author = DeviceId::from(key.verifying_key());
+        let log_id = LogId::from_topic(TopicId::random());
+        let op0 = signed_op(&key, log_id, 0, None, b"a");
+        let op1 = signed_op(&key, log_id, 1, Some(op0.hash), b"b");
+        let op2 = signed_op(&key, log_id, 2, Some(op1.hash), b"c");
+        insert(store, &op2, &log_id).await;
+        insert(store, &op0, &log_id).await;
+        insert(store, &op1, &log_id).await;
+        assert_eq!(
+            store.get_log_seqs(&author, &log_id).await.unwrap(),
+            vec![0, 1, 2]
+        );
+        let other = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
+        assert_eq!(
+            store.get_log_seqs(&other, &log_id).await.unwrap(),
+            Vec::<SeqNum>::new()
+        );
     }
 }
