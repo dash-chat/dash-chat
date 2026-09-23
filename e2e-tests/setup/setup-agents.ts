@@ -37,6 +37,7 @@ import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
+import { ASYNC_SCRIPT_TIMEOUT } from '../helpers/timeouts';
 import { ensurePhonesShareALan } from './phone-lan';
 import {
 	APP_PACKAGE,
@@ -61,6 +62,8 @@ import {
 } from './platforms/desktop';
 import {
 	APP_STATE_NOT_RUNNING,
+	clearIosAppData,
+	iosHasInternet,
 	killIosPushExtension,
 	resetIosAppState,
 } from './platforms/ios';
@@ -202,12 +205,17 @@ export type Agent = WebdriverIO.Browser & {
 	 *  Cheaper than [`wifiInfo`], which on iOS walks into the Wi-Fi page for an
 	 *  address; this reads only what the platform says for free. */
 	wifiSsid(): Promise<string>;
-	/** Whether the device reaches the internet over its current network.
-	 *  Physical Android phones only; throws elsewhere. */
+	/** Whether the phone can reach the internet. On android this is a pure adb
+	 *  probe; on iOS the answer has to come from the app's own webview, so it
+	 *  brings the app to the foreground — call it where that is harmless, or
+	 *  where what follows resets the app anyway. Physical phones only; throws
+	 *  for desktop and for an emulator, which is NAT'd off the host. */
 	hasInternet(): Promise<boolean>;
-	/** Wipe the stopped app back to first launch, with its runtime permissions
-	 *  granted again as a new session's fast reset leaves them. Android only;
-	 *  call between [`stopApp`] and [`startApp`]. */
+	/** Wipe the app back to first launch and leave it not running, to be
+	 *  called between [`stopApp`] and [`startApp`]. On android a `clearApp`
+	 *  with its runtime permissions granted again, as a new session's fast
+	 *  reset leaves them; on iOS the app's own delete_account, which means the
+	 *  app is brought up to run it and exits on its own afterwards. */
 	clearAppData(): Promise<void>;
 	/** Kill the phone's push extension process, so the next push starts a
 	 *  fresh one. iOS only. */
@@ -325,10 +333,9 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.execute(() => window.__test.enablePreviewFeatures());
 	};
 	agent.disableP2p = async () => {
-		// `set_p2p_enabled` rebuilds the node (pause + resume), a few seconds;
-		// XCUITest defaults the async-script timeout to ~0, so raise it first or
-		// `executeAsync` times out at once (desktop's driver tolerates the default).
-		await b.setTimeout({ script: 60_000 });
+		// `set_p2p_enabled` rebuilds the node (pause + resume), a few seconds,
+		// which the driver's default async-script timeout does not allow for.
+		await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
 		await b.executeAsync((done: () => void) =>
 			window.__test.disableP2p().then(done, done),
 		);
@@ -435,10 +442,17 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await iosWifiSsid(b)
 			: androidWifiSsid(deviceUdid(b));
-	agent.hasInternet = async () => androidHasInternet(wifiUdid(agent, b));
+	agent.hasInternet = async () =>
+		agent.platform === 'ios'
+			? await iosHasInternet(b)
+			: androidHasInternet(wifiUdid(agent, b));
 	agent.clearAppData = async () => {
+		if (agent.platform === 'ios') {
+			await clearIosAppData(b);
+			return;
+		}
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
-			throw new Error(`clearAppData needs Android, got ${agent.platform}`);
+			throw new Error(`clearAppData needs a phone, got ${agent.platform}`);
 		}
 		await b.execute('mobile: clearApp', { appId: APP_PACKAGE });
 		await b.execute('mobile: changePermissions', {

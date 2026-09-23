@@ -16,7 +16,10 @@ import { fileURLToPath } from 'node:url';
 
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
 import { claimAllWhenFreeSync, release } from './setup/claims';
-import { killLeftoverMailboxServers } from './setup/cleanup';
+import {
+	killAllE2EProcesses,
+	killLeftoverMailboxServers,
+} from './setup/cleanup';
 import {
 	failureSlug,
 	failuresDir,
@@ -31,7 +34,7 @@ import {
 import { CHECKOUT_CLAIM } from './setup/network-id';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
 import { DesktopPlatform } from './setup/platforms/desktop';
-import { IosPlatform, wipeIosAppAfterSpec } from './setup/platforms/ios';
+import { IosPlatform, clearIosAppData } from './setup/platforms/ios';
 import type { AgentPlatform } from './setup/platforms/platform';
 import {
 	buildPushServer,
@@ -210,6 +213,17 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		// A failed onPrepare must abort the run: wdio only logs hook errors and
 		// would carry on into sessions doomed to hang out their timeouts.
 		try {
+			// Before the wipe: anything still running holds handles under
+			// `.dbs/e2e` and goes on writing, which leaves the dir dirty behind
+			// the `rmSync`.
+			killLeftoverMailboxServers();
+			// A desktop run clears its own app processes, but a leftover agent
+			// outlives a phone-only run, where nothing used to clear it: it goes
+			// on announcing itself over mDNS under the run's own network id, and
+			// every agent that finds it spends a discovery session timing out on
+			// a node that will never answer.
+			killAllE2EProcesses();
+
 			// Clean up leftover databases from previous interrupted runs
 			const dataDir = path.join(ROOT, '.dbs', 'e2e');
 			try {
@@ -220,8 +234,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			// The appium service starts right after this hook and writes its log
 			// here, so the directory has to exist before the first server does.
 			mkdirSync(dataDir, { recursive: true });
-
-			killLeftoverMailboxServers();
 
 			// When MAILBOX_URL names a deployment environment, run against its
 			// cloud mailbox instead of spawning a local server. Specs that drive
@@ -302,7 +314,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 	async after() {
 		for (const slot of iosSlots) {
-			await wipeIosAppAfterSpec(browser.getInstance(`agent${slot}`));
+			await clearIosAppData(browser.getInstance(`agent${slot}`));
 		}
 	},
 

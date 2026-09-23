@@ -358,7 +358,7 @@ function injectVoiceMessage(durationMs = 3000, audioDurationMs = durationMs) {
 }
 
 /** Result of injecting a voice message through the real transcode command. */
-interface RecordedVoiceMessage {
+export interface RecordedVoiceMessage {
 	isOgg: boolean;
 	opusBytes: number;
 	wavBytes: number;
