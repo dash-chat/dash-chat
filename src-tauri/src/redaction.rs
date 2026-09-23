@@ -22,10 +22,14 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // quotes are consumed so the value cannot survive as `""`.
         r#"\b(remote_node_id|node_id|endpoint_id)="?[0-9a-fA-F]{8,}"?"#,
         // Socket addresses of peers and of this device, as the address book
-        // prints them (`Ip(188.84.6.11:49882)`, `addresses=[iroh] {…}`). A
-        // peer's address says who a user is talking to and the public one says
-        // where they are, and neither is anything a report needs.
-        r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{1,5}\b",
+        // prints them: `Ip(188.84.6.11:49882)`, and bracketed for v6,
+        // `Ip([2a02:…:1]:41234)` / `Ip([fe80::…%en0]:…)`. A peer's address says
+        // who a user is talking to and the public one says where they are.
+        // Anchored on p2panda's `Ip(…)` wrapper so the urls the app logs —
+        // `MAILBOX_URL: http://192.168.0.104:4338`, and the ones a connection
+        // error names — stay readable, since a wrong one is only ever spotted
+        // by reading it back.
+        r"Ip\(\[?[0-9a-zA-Z:.%_-]+\]?:[0-9]{1,5}\)",
         // Base64 blobs (40+ chars)
         r"[A-Za-z0-9+/]{40,}={0,2}",
         // Mailbox id (base64url inbox address) as logged by the mailbox
@@ -139,20 +143,29 @@ mod tests {
     #[test]
     fn redacts_peer_socket_addresses() {
         let input = "addresses=[iroh] {Ip(188.84.6.11:49882), Ip(192.168.0.106:65133)}";
-        assert_eq!(
-            redact(input),
-            "addresses=[iroh] {Ip([REDACTED]), Ip([REDACTED])}"
-        );
+        assert_eq!(redact(input), "addresses=[iroh] {[REDACTED], [REDACTED]}");
     }
 
     #[test]
-    fn preserves_a_bare_address_without_a_port() {
-        // The mailbox url a build is pointed at is not a peer's address, and
-        // reading it back is how a wrong one gets spotted.
-        let input = "Using compile-time MAILBOX_URL: http://192.168.0.104";
+    fn redacts_ipv6_peer_socket_addresses() {
+        let input =
+            "addresses=[iroh] {Ip([2a02:8109:a1c0::1]:41234), Ip([fe80::1ff:fe23:4567%en0]:5353)}";
+        assert_eq!(redact(input), "addresses=[iroh] {[REDACTED], [REDACTED]}");
+    }
+
+    #[test]
+    fn preserves_the_url_a_build_is_pointed_at() {
+        // Every url the app logs carries a port, and reading one back is how a
+        // build pointed at the wrong mailbox gets spotted.
+        let input = "Using compile-time MAILBOX_URL: http://192.168.0.104:4338";
         assert_eq!(
             redact(input),
-            "Using compile-time MAILBOX_URL: http://192.168.0.104"
+            "Using compile-time MAILBOX_URL: http://192.168.0.104:4338"
+        );
+        let input = "error sending request for url (http://127.0.0.1:3200/health)";
+        assert_eq!(
+            redact(input),
+            "error sending request for url (http://127.0.0.1:3200/health)"
         );
     }
 

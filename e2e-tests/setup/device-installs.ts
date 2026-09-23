@@ -32,21 +32,32 @@ export function hashFile(file: string, algo = 'sha256'): string {
 type InstallStamp = { archive: string; marker: string };
 type InstallStamps = Record<string, InstallStamp>;
 
+/** The file as it may be found: entries from before the marker existed are a
+ *  bare hash string, and a half-written one is anything at all. */
+type StoredStamp = string | Partial<InstallStamp> | null;
+
 function readStamps(): InstallStamps {
+	let stored: Record<string, StoredStamp>;
 	try {
-		const parsed: unknown = JSON.parse(readFileSync(STAMP_FILE, 'utf8'));
-		if (typeof parsed !== 'object' || parsed === null) return {};
-		return Object.fromEntries(
-			Object.entries(parsed as Record<string, unknown>).flatMap(
-				([udid, stamp]) =>
-					typeof stamp === 'object' && stamp !== null
-						? [[udid, stamp as InstallStamp]]
-						: [],
-			),
-		);
+		stored = JSON.parse(readFileSync(STAMP_FILE, 'utf8')) as Record<
+			string,
+			StoredStamp
+		>;
 	} catch {
 		return {};
 	}
+	// Both fields checked, not assumed: an entry that cannot say what is on the
+	// device is one that reinstalls.
+	return Object.fromEntries(
+		Object.entries(stored).flatMap(([udid, stamp]) =>
+			typeof stamp === 'object' &&
+			stamp !== null &&
+			typeof stamp.archive === 'string' &&
+			typeof stamp.marker === 'string'
+				? [[udid, { archive: stamp.archive, marker: stamp.marker }]]
+				: [],
+		),
+	);
 }
 
 /** Whether `udid` already has this exact `archive` installed (per the stamp).

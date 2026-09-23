@@ -204,8 +204,6 @@ export type Agent = WebdriverIO.Browser & {
 	 *  Cheaper than [`wifiInfo`], which on iOS walks into the Wi-Fi page for an
 	 *  address; this reads only what the platform says for free. */
 	wifiSsid(): Promise<string>;
-	/** Whether the device reaches the internet over its current network.
-	 *  Physical Android phones only; throws elsewhere. */
 	/** Whether the phone can reach the internet. On android this is a pure adb
 	 *  probe; on iOS the answer has to come from the app's own webview, so it
 	 *  brings the app to the foreground — call it where that is harmless, or

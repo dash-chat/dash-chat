@@ -239,6 +239,11 @@ export class Composer extends TestHelper {
 					.then(done, err => done({ failed: String(err) })),
 			durationMs,
 		);
+		// The driver handing back something other than what the script returned
+		// is the very quirk above; `in` on it would throw naming nothing.
+		if (result === null || result === undefined) {
+			throw new Error('the driver returned no transcode result');
+		}
 		if ('failed' in result) throw new Error(result.failed);
 		return result;
 	}

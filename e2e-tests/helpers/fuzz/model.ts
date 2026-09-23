@@ -428,7 +428,13 @@ export class ExpectedModel {
 
 	/** Everything `name` has yet to hear is now a catch-up rather than an
 	 *  announcement: what it missed while it was away, which its app fetches
-	 *  quietly on the next sync. Anything written after this notifies. */
+	 *  quietly on the next sync. Anything written after this notifies.
+	 *
+	 *  The set is dropped at the end of that one `spread`, whether or not it
+	 *  delivered anything — an agent that comes back onto no network and
+	 *  rejoins later announces what it then fetches. That is the modelled
+	 *  choice, not a measured one: if the app stays quiet through that second
+	 *  sync too, this reports a notification the device never posts. */
 	private catchUp(name: string): void {
 		const known = this.knows(name);
 		this.catchingUp.set(

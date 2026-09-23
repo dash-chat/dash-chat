@@ -1,6 +1,9 @@
 import { tid } from '../selectors';
 import { TestHelper } from './test-helper';
 
+/** Spelt once: `tid()` yields CSS, and the row lookup below needs XPath. */
+const CHAT_LIST_ID = 'all-chats-list';
+
 const GET_STARTED_CARD_IDS = [
 	'add-contact',
 	'add-photo',
@@ -33,7 +36,7 @@ export class HomePage extends TestHelper {
 	settingsLink = this.el(tid('home-settings-link'));
 	newMessageButton = this.el(tid('home-new-message-btn'));
 	firstChatTooltip = this.el(tid('first-chat-tooltip'));
-	chatList = this.el(tid('all-chats-list'));
+	chatList = this.el(tid(CHAT_LIST_ID));
 	chatRow = this.el(tid('all-chats-row'));
 	emptyState = this.el(tid('all-chats-empty'));
 	blockedRowIcon = this.el(tid('blocked-row-icon'));
@@ -58,7 +61,7 @@ export class HomePage extends TestHelper {
 	 * caller here is waiting for the row to turn up. */
 	chatListItem(contactName: string) {
 		return this.agent.$(
-			`//*[@data-testid="all-chats-list"]//a[contains(., ${xpathLiteral(contactName)})]`,
+			`//*[@data-testid="${CHAT_LIST_ID}"]//a[contains(., ${xpathLiteral(contactName)})]`,
 		);
 	}
 

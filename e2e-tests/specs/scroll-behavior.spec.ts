@@ -10,9 +10,11 @@ import { UI_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Chat scroll behavior', () => {
-	/** Set by the one test that needs the Material navbar, so the theme does
-	 *  not leak into whatever is appended after it. */
-	let restoreTheme = false;
+	/** The theme the app picked for itself, kept by the one test that overrides
+	 *  it so the override does not leak into whatever is appended after it.
+	 *  Read from the app rather than assumed: a phone picks iOS or Material by
+	 *  platform, which is the whole reason that test overrides it. */
+	let themeBefore: 'ios' | 'material' | null = null;
 	// Need enough overflow that scrollUp can move past the bottom
 	// threshold (200px) — leave headroom so timing/layout jitter doesn't
 	// drop us below.
@@ -31,7 +33,7 @@ describe('Chat scroll behavior', () => {
 	});
 
 	after(async () => {
-		if (restoreTheme) await agent1.setTheme('ios');
+		if (themeBefore !== null) await agent1.setTheme(themeBefore);
 	});
 
 	it('fills the chat until it overflows enough to scroll', async () => {
@@ -143,8 +145,10 @@ describe('Chat scroll behavior', () => {
 		// ReverseScrollPage leaves the navbar alone on purpose — its gradient
 		// and blur do the fading — so it writes no opacity to read, and on a
 		// phone that is the theme the app picks.
+		themeBefore = await agent1.execute(() =>
+			document.querySelector('.k-ios') === null ? 'material' : 'ios',
+		);
 		await agent1.setTheme('material');
-		restoreTheme = true;
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(true);
 		await agent1.waitUntil(
 			async () =>
