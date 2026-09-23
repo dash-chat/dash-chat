@@ -43,7 +43,10 @@ async fn native_sync_block_stops_the_pair_converging() {
     b.add_contact(qr).await.unwrap();
     let topics = inbox_topics(&a).await;
     assert!(
-        bounded().consistency([&a, &b], topics.iter()).await.is_err(),
+        bounded()
+            .consistency([&a, &b], topics.iter())
+            .await
+            .is_err(),
         "the inbox must not converge with native sync blocked"
     );
     a.shutdown().await;
@@ -68,7 +71,10 @@ async fn native_sync_block_covers_topics_subscribed_earlier() {
     b.add_contact(qr).await.unwrap();
     let topics = inbox_topics(&a).await;
     assert!(
-        bounded().consistency([&a, &b], topics.iter()).await.is_err(),
+        bounded()
+            .consistency([&a, &b], topics.iter())
+            .await
+            .is_err(),
         "a's one-sided block must hold"
     );
     a.shutdown().await;
@@ -88,7 +94,10 @@ async fn peer_block_stops_the_pair_converging() {
     b.add_contact(qr).await.unwrap();
     let topics = inbox_topics(&a).await;
     assert!(
-        bounded().consistency([&a, &b], topics.iter()).await.is_err(),
+        bounded()
+            .consistency([&a, &b], topics.iter())
+            .await
+            .is_err(),
         "the inbox must not converge with the peer blocked"
     );
     a.shutdown().await;

@@ -2396,7 +2396,10 @@ mod lan_router_tests {
         config.enable_lan_router = true;
         let node = TestNode::new(config, "relay").await;
         let topic = TopicId::random();
-        assert_eq!(node.lan_router_relay_holds(topic).await.unwrap(), Some(false));
+        assert_eq!(
+            node.lan_router_relay_holds(topic).await.unwrap(),
+            Some(false)
+        );
         let off = TestNode::new(NodeConfig::testing(), "off").await;
         assert_eq!(off.lan_router_relay_holds(topic).await.unwrap(), None);
         node.shutdown().await;
