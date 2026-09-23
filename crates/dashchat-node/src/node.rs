@@ -128,6 +128,13 @@ pub struct NodeConfig {
     /// keep them in `lan_router.redb`; this is why the flag defaults off and
     /// is not exposed in the UI yet.
     pub enable_lan_router: bool,
+    /// Quiet window after a locally authored op before the LAN router pushes
+    /// a Have for every op authored in the window (dash-router
+    /// `PushDebouncePolicy::window_ms`).
+    pub lan_router_push_debounce: std::time::Duration,
+    /// Hard cap after the oldest still-pending authored op, so a steady
+    /// stream of authoring still pushes (`PushDebouncePolicy::max_latency_ms`).
+    pub lan_router_push_max_latency: std::time::Duration,
 }
 
 impl NodeConfig {
@@ -179,6 +186,8 @@ impl NodeConfig {
             enable_message_acks: true,
             stream_cursor_prefix: None,
             enable_lan_router: false,
+            lan_router_push_debounce: std::time::Duration::from_millis(50),
+            lan_router_push_max_latency: std::time::Duration::from_millis(200),
         }
     }
 
@@ -206,6 +215,8 @@ impl Default for NodeConfig {
             enable_message_acks: true,
             stream_cursor_prefix: None,
             enable_lan_router: false,
+            lan_router_push_debounce: std::time::Duration::from_millis(50),
+            lan_router_push_max_latency: std::time::Duration::from_millis(200),
         }
     }
 }
@@ -402,6 +413,8 @@ impl Node {
         // take the p2panda path down with it.
         let lan_router = crate::lan_router::LanRouter::spawn(crate::lan_router::LanRouterParams {
             enabled: config.enable_lan_router,
+            push_debounce: config.lan_router_push_debounce,
+            push_max_latency: config.lan_router_push_max_latency,
             data_path: filesystem.data_path().clone(),
             device_id: *node_keys.device_id(),
             op_store: op_store.clone(),

@@ -305,7 +305,14 @@ impl Node {
         operation.ack().await?;
 
         if let Some(router) = &self.lan_router {
-            router.hint_changed(operation.author(), operation.topic());
+            if DeviceId::from(operation.author()) == self.device_id() {
+                // Our own op: push it (append also refreshes the held view).
+                if let Err(e) = router.authored(operation).await {
+                    warn!(error = %e, "lan router could not push an authored op");
+                }
+            } else {
+                router.hint_changed(operation.author(), operation.topic());
+            }
         }
 
         if DeviceId::from(operation.author()) == self.device_id() {

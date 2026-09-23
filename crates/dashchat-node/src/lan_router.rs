@@ -3,18 +3,21 @@
 //!
 //! Everything is a no-op unless BOTH the `lan-router` cargo feature is on
 //! and `NodeConfig::enable_lan_router` is true. The node calls this module
-//! at three points: `LanRouter::spawn` in `Node::init`, `subscribe_topic`
-//! from `initialize_topic`, and `hint_changed` after an operation is
-//! acked. With the feature off, this file is the stub below and every call
-//! site's `Option` is `None`.
+//! at four points: `LanRouter::spawn` in `Node::init`, `subscribe_topic`
+//! from `initialize_topic`, and, after an operation is acked, `authored`
+//! for our own ops (the router pushes them) or `hint_changed` for others'.
+//! With the feature off, this file is the stub below and every call site's
+//! `Option` is `None`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use p2panda::VerifyingKey;
+use p2panda::streams::ProcessedOperation;
 use tokio::sync::mpsc;
 
 use crate::node::actor::Command;
+use crate::payload::Payload;
 use crate::stores::OpStore;
 use crate::topic::TopicId;
 
@@ -24,6 +27,8 @@ pub struct LanRouterParams {
     pub data_path: PathBuf,
     pub device_id: VerifyingKey,
     pub op_store: OpStore,
+    pub push_debounce: std::time::Duration,
+    pub push_max_latency: std::time::Duration,
     /// Read only by the feature-on router.
     #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
     pub(crate) actor_tx: mpsc::Sender<Command>,
@@ -48,6 +53,9 @@ impl LanRouter {
         Ok(())
     }
     pub fn hint_changed(&self, _author: VerifyingKey, _topic: TopicId) {}
+    pub async fn authored(&self, _operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
+        Ok(())
+    }
     pub async fn shutdown(&self) {}
 }
 
@@ -478,8 +486,8 @@ mod imp {
                 relay_cap: RELAY_CAP,
                 evict_at: EVICT_AT,
                 debounce: PushDebouncePolicy {
-                    window_ms: 50,
-                    max_latency_ms: 200,
+                    window_ms: params.push_debounce.as_millis() as u64,
+                    max_latency_ms: params.push_max_latency.as_millis() as u64,
                 },
                 max_wire_bytes: dash_router::pack::DEFAULT_MAX_WIRE_BYTES,
             };
@@ -605,6 +613,24 @@ mod imp {
                 .hint(RouterLog::new(LogId::from_topic(topic), author));
         }
 
+        /// A locally authored op was acked: hand it to the router, which
+        /// pushes one Have for every op authored in the debounce window to
+        /// its neighbours (DESIGN.md: "authors emit a Have for newly
+        /// authored ops"). Relays park it for peers who are away. The ext
+        /// ingest inside `append` is a no-op for an op p2panda already has.
+        pub async fn authored(
+            &self,
+            operation: &ProcessedOperation<Payload>,
+        ) -> anyhow::Result<()> {
+            let header = operation.processed().header();
+            let log = RouterLog::new(header.extensions.log_id(), operation.author());
+            let op = Op {
+                header: header.encode(),
+                payload: operation.processed().body().map(|b| b.to_bytes()),
+            };
+            self.handle.append(log, header.seq_num, op).await
+        }
+
         pub async fn shutdown(&self) {
             let _ = self.handle.clone().shutdown().await;
             if let Some(mut t) = self.node_task.lock().await.take() {
@@ -652,6 +678,8 @@ mod imp {
                     data_path: dir.path().to_path_buf(),
                     device_id,
                     op_store: store,
+                    push_debounce: Duration::from_millis(50),
+                    push_max_latency: Duration::from_millis(200),
                     actor_tx,
                 },
                 dir,
