@@ -3,10 +3,7 @@
 	import { fade } from 'svelte/transition';
 	import { untrack, type Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import {
-		holdKeyboardSlot,
-		suppressKeyboardRestore,
-	} from 'tauri-plugin-virtual-keyboard';
+	import { holdKeyboardSlot } from 'tauri-plugin-virtual-keyboard';
 	import { safeAreaInsets } from '$lib/utils/safe-area';
 
 	interface Props {
@@ -82,12 +79,9 @@
 		if (opened) spotlighted = true;
 	});
 
-	// A sheet covering the overlay (contentHidden) lays out against the keyboard
-	// inset, so the slot is given back while it shows; its restore waits for the
-	// overlay to close, as it would have with the slot held.
 	$effect(() => {
 		if (!spotlighted) return;
-		return contentHidden ? suppressKeyboardRestore() : holdKeyboardSlot();
+		return holdKeyboardSlot();
 	});
 
 	// The whole spotlight scene lives between the page chrome (z <= 30) and

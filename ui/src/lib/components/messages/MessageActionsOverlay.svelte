@@ -38,12 +38,15 @@
 
 	let expanded = $state(false);
 
-	// Reset the picker state once the actions UI is closed.
-	$effect(() => {
-		if (!opened) expanded = false;
-	});
-
 	function close() {
+		opened = false;
+		expanded = false;
+	}
+
+	// The spotlighted message is pinned inside the message list, which the
+	// keyboard glide transforms, so it would drift as the search keyboard comes
+	// and goes. Put it back and leave the sheet on its own, as in Signal.
+	function releaseSpotlight() {
 		opened = false;
 	}
 
@@ -98,11 +101,13 @@
 	</SpotlightOverlay>
 {/await}
 
-{#if opened}
+{#if opened || expanded}
 	<ExpandedReactionsSheet
 		{message}
 		opened={expanded}
 		onReact={react}
 		onClose={close}
+		backdrop={!opened}
+		onSearchFocus={releaseSpotlight}
 	/>
 {/if}

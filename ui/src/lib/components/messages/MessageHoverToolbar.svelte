@@ -197,5 +197,6 @@
 		opened={expanded}
 		onReact={react}
 		onClose={close}
+		backdrop={false}
 	/>
 {/if}

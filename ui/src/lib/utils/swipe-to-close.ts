@@ -19,14 +19,8 @@ function isOnScrolledContent(event: TouchEvent, sheet: HTMLElement) {
  * past a third of its height; a cancelled drag snaps back. Moves the sheet
  * through `transform`, which composes with the `translate` Konsta opens it
  * with. Leaves the offset of a close in place for the caller to clear on the
- * next open. The keyboard glide also writes the sheet's `transform` and
- * `transition`, so `onDrag` reports while a drag owns them. Returns a function
- * that removes the gesture. */
-export function swipeToClose(
-	sheet: HTMLElement,
-	onClose: () => void,
-	onDrag?: (dragging: boolean) => void,
-) {
+ * next open. Returns a function that removes the gesture. */
+export function swipeToClose(sheet: HTMLElement, onClose: () => void) {
 	let startX = 0;
 	let startY: number | null = null;
 	let dragging = false;
@@ -40,7 +34,6 @@ export function swipeToClose(
 	function endDrag() {
 		dragging = false;
 		startY = null;
-		onDrag?.(false);
 	}
 
 	function cancel() {
@@ -75,7 +68,6 @@ export function swipeToClose(
 			return;
 		}
 		dragging = true;
-		onDrag?.(true);
 		startY = event.touches[0].clientY;
 		sheet.style.transition = 'none';
 	}

@@ -10,9 +10,12 @@
 		opened: boolean;
 		onReact: (emoji: string) => void;
 		onClose: () => void;
+		backdrop: boolean;
+		onSearchFocus?: () => void;
 	}
 
-	let { message, opened, onReact, onClose }: Props = $props();
+	let { message, opened, onReact, onClose, backdrop, onSearchFocus }: Props =
+		$props();
 
 	const myAgentId = useMyAgentId();
 
@@ -24,7 +27,13 @@
 	);
 </script>
 
-<EmojiPickerSheet {opened} {onClose} backdrop={false} onEmojiSelected={onReact}>
+<EmojiPickerSheet
+	{opened}
+	{onClose}
+	{onSearchFocus}
+	{backdrop}
+	onEmojiSelected={onReact}
+>
 	{#if condensed.length > 0}
 		<Block>
 			{#each condensed as reaction}

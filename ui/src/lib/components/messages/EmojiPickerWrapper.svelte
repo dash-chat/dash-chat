@@ -5,8 +5,9 @@
 
 	interface Props {
 		onEmojiSelected: (emoji: string) => void;
+		onSearchFocus?: () => void;
 	}
-	let { onEmojiSelected }: Props = $props();
+	let { onEmojiSelected, onSearchFocus }: Props = $props();
 
 	let content: Element;
 	let pickerComponent: HTMLElement | undefined;
@@ -33,6 +34,14 @@
 			if (event.detail.unicode) {
 				onEmojiSelected(event.detail.unicode);
 			}
+		});
+		// On the shadow root: focus inside it is retargeted to the host outside.
+		picker.shadowRoot!.addEventListener('focusin', (event: Event) => {
+			if (
+				event.target instanceof HTMLInputElement &&
+				event.target.id === 'search'
+			)
+				onSearchFocus?.();
 		});
 		content.appendChild(picker);
 		pickerComponent = picker;
