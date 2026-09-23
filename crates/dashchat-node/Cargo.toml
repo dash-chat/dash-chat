@@ -67,7 +67,7 @@ p2panda-store = { workspace = true, features = ["test_utils"] }
 postcard = "1"
 
 [features]
-default = ["instrument"]
+default = ["instrument", "lan-router"]
 instrument = []
 testing = ["tempfile", "nanoid", "p2panda-store/test_utils"]
 p2p = []
