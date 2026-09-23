@@ -246,7 +246,7 @@ pub mod testing {
             Self {
                 content,
                 author: header.verifying_key.into(),
-                timestamp: header.extensions.timestamp(),
+                timestamp: header.timestamp,
             }
         }
     }

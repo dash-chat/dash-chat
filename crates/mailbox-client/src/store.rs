@@ -1,16 +1,12 @@
-use crate::{MailboxItem, SeqNum};
+use crate::MailboxItem;
 
 #[async_trait::async_trait]
 pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
-    /// Get an author's log for a topic, starting at sequence number `from`.
-    ///
-    /// `None` means the log is absent; `Some(vec![])` means we hold nothing at
-    /// or above `from`.
     async fn get_log(
         &self,
         author: &Item::Author,
         topic: &Item::Topic,
-        from: SeqNum,
+        from: u64,
     ) -> Result<Option<Vec<Item>>, anyhow::Error>;
 
     /// Get the last sequence number of each author's log.
@@ -22,5 +18,5 @@ pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
     async fn get_log_heights(
         &self,
         topic: &Item::Topic,
-    ) -> Result<Vec<(Item::Author, SeqNum)>, anyhow::Error>;
+    ) -> Result<Vec<(Item::Author, u64)>, anyhow::Error>;
 }

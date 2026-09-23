@@ -1,8 +1,6 @@
-use dashchat_utils::SeqNum;
-use p2panda::groups::GroupsArgs;
 use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
-use p2panda_auth::group::GroupAction;
+use p2panda_auth::{group::GroupAction, processor::GroupsArgs};
 use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
@@ -160,7 +158,7 @@ pub enum ChatPayload {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AckedOp {
     pub hash: Hash,
-    pub seq: SeqNum,
+    pub seq: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -276,7 +274,7 @@ impl Cbor for Payload {}
 impl AsBody for Payload {}
 
 pub fn encode_gossip_message(header: &Header, body: Option<&Body>) -> Result<Vec<u8>, EncodeError> {
-    encode_cbor(&(header.encode(), body.map(|body| body.to_bytes())))
+    encode_cbor(&(header.to_bytes(), body.map(|body| body.to_bytes())))
 }
 
 pub fn decode_gossip_message(bytes: &[u8]) -> Result<(Vec<u8>, Option<Vec<u8>>), DecodeError> {
@@ -288,7 +286,7 @@ mod sqlx_impls {
     use super::Profile;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
     use sqlx::*;
-    use sqlx::{Sqlite, encode::IsNull, error::BoxDynError};
+    use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 
     impl sqlx::Type<Sqlite> for Profile {
         fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
@@ -299,7 +297,7 @@ mod sqlx_impls {
     impl sqlx::Encode<'_, Sqlite> for Profile {
         fn encode_by_ref(
             &self,
-            buf: &mut <Sqlite as sqlx::Database>::ArgumentBuffer,
+            buf: &mut Vec<SqliteArgumentValue<'_>>,
         ) -> Result<IsNull, BoxDynError> {
             let bytes = encode_cbor(self)?;
             <Vec<u8> as sqlx::Encode<Sqlite>>::encode(bytes, buf)

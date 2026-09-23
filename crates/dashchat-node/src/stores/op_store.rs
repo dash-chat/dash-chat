@@ -7,16 +7,15 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use dashchat_utils::SeqNum;
-use futures::TryStreamExt;
 use p2panda::Hash;
 #[cfg(any(test, feature = "testing"))]
 use p2panda::operation::Header;
 use p2panda::operation::{LogId, Operation};
+use p2panda_core::SeqNum;
 use p2panda_store::SqliteStore;
 use p2panda_store::logs::LogStore;
 
-use crate::{mailbox::MailboxOperation, topic::TopicId, *};
+use crate::{mailbox::MailboxOperation, topic::TopicId, util::first, *};
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
 pub struct OpStore {
@@ -82,7 +81,7 @@ impl OpStore {
         topic: &TopicId,
         author: &DeviceId,
         log_id: &LogId,
-    ) -> anyhow::Result<Option<SeqNum>> {
+    ) -> anyhow::Result<Option<u64>> {
         use p2panda_store::cursors::CursorStore;
         // The ack cursor is persisted by p2panda under the topic's string
         // representation (see `StreamSubscription`'s internal `Acked`).
@@ -101,47 +100,29 @@ impl OpStore {
         &self,
         author: &DeviceId,
         log_id: &LogId,
-        from: Option<SeqNum>,
+        from: Option<u64>,
     ) -> anyhow::Result<Vec<Operation>> {
-        let log = self.log_operations(author, log_id, from).await?;
-        if log.is_empty() && !self.log_exists(author, log_id).await? {
-            tracing::warn!(
-                "No log found for log_id {} and author {}",
-                Hash::from_bytes(*log_id.as_bytes()),
-                author
-            );
-        }
-        Ok(log)
-    }
-
-    /// Whether we hold any entry of `author`'s log, telling an absent log apart
-    /// from one with nothing past a cursor.
-    async fn log_exists(&self, author: &DeviceId, log_id: &LogId) -> anyhow::Result<bool> {
-        let heights = self
+        let log = self
             .store
-            .get_log_heights(author, std::slice::from_ref(log_id))
-            .await?;
-        Ok(heights.is_some())
-    }
-
-    /// Collect a log's entries, decoding each stored operation into our extension type.
-    async fn log_operations(
-        &self,
-        author: &DeviceId,
-        log_id: &LogId,
-        from: Option<SeqNum>,
-    ) -> anyhow::Result<Vec<Operation>> {
-        self.store
-            .log_entries(author, log_id, from, None)?
-            .map_err(anyhow::Error::from)
-            .and_then(|entry| async move { Ok(Operation::try_from(entry.entry)?) })
-            .try_collect()
-            .await
+            .get_log_entries(author, log_id, from, None)
+            .await?
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    "No log found for log_id {} and author {}",
+                    Hash::from_bytes(*log_id.as_bytes()),
+                    author
+                );
+                vec![]
+            })
+            .into_iter()
+            .map(first)
+            .collect();
+        Ok(log)
     }
 
     pub async fn get_operation(&self, hash: &Hash) -> anyhow::Result<Option<Operation>> {
         use p2panda_store::operations::OperationStore;
-        OperationStore::<Operation, Hash>::get_operation(&self.store, hash)
+        OperationStore::<Operation, Hash, LogId>::get_operation(&self.store, hash)
             .await
             .map_err(|err| anyhow::anyhow!("failed to get operation for {hash:?}: {err}"))
     }
@@ -185,7 +166,7 @@ impl OpStore {
                 }
             }
         }
-        logs.sort_by_key(|(h, _)| h.extensions.timestamp());
+        logs.sort_by_key(|(h, _)| h.timestamp);
         Ok(logs)
     }
 
@@ -193,7 +174,8 @@ impl OpStore {
     /// intact so log sync stays consistent. Used to enforce tombstones.
     pub async fn delete_body(&self, hash: &Hash) -> anyhow::Result<()> {
         use p2panda_store::operations::OperationStore;
-        OperationStore::<Operation, Hash>::delete_operation_payload(&self.store, hash).await?;
+        OperationStore::<Operation, Hash, LogId>::delete_operation_payload(&self.store, hash)
+            .await?;
         Ok(())
     }
 
@@ -224,14 +206,21 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         &self,
         author: &DeviceId,
         topic: &TopicId,
-        from: SeqNum,
+        from: u64,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
         let log_id = LogId::from_topic(*topic);
-        let from = from.checked_sub(1);
-        let log = self.log_operations(author, &log_id, from).await?;
-        if log.is_empty() && !self.log_exists(author, &log_id).await? {
+        let from = if from == 0 { None } else { Some(from - 1) };
+        let log = self
+            .store
+            .get_log_entries(author, &log_id, from, None)
+            .await
+            .map_err(|err| {
+                anyhow::anyhow!("failed to get log for {author:?}: {log_id:?}: {err}")
+            })?;
+
+        let Some(log) = log else {
             return Ok(None);
-        }
+        };
 
         // Only transmit the contiguous prefix of fully-processed operations.
         // An operation that hasn't completed application-layer processing may
@@ -243,7 +232,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         // p2panda before ever reaching the application layer.
         let acked_height = self.acked_log_height(topic, author, &log_id).await?;
         let mut ops = Vec::with_capacity(log.len());
-        for op in log {
+        for (op, _) in log {
             if op.body.is_some() && acked_height.is_none_or(|h| op.header.seq_num > h) {
                 break;
             }
@@ -256,7 +245,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         Ok(Some(ops))
     }
 
-    async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, SeqNum)>> {
+    async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
         Ok(OpStore::get_log_heights(self, &LogId::from_topic(*topic))
             .await?
             .into_iter()
@@ -267,14 +256,14 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
 #[cfg(test)]
 mod tests {
     use p2panda::operation::{Extensions, Header};
-    use p2panda_core::{Body, Timestamp};
+    use p2panda_core::{Body, PruneFlag, Timestamp};
     use p2panda_store::Transaction;
     use p2panda_store::operations::OperationStore;
 
     use super::*;
 
     async fn fetch(store: &OpStore, hash: &Hash) -> Operation {
-        OperationStore::<Operation, Hash>::get_operation(&store.store, hash)
+        OperationStore::<Operation, Hash, LogId>::get_operation(&store.store, hash)
             .await
             .unwrap()
             .unwrap()
@@ -283,20 +272,28 @@ mod tests {
     fn signed_op(
         signing_key: &p2panda::SigningKey,
         log_id: LogId,
-        seq_num: SeqNum,
+        seq_num: u64,
         backlink: Option<Hash>,
         payload: &[u8],
     ) -> Operation {
-        let body = Body::from_bytes(payload);
-        // Timestamps track seq_num so the tests' expected ordering is deterministic.
-        let extensions = Extensions::builder(log_id)
-            .timestamp(Timestamp::new(seq_num.into()))
-            .build();
-        let header = Header::builder()
-            .body(payload)
-            .seq_num(seq_num)
-            .backlink(backlink)
-            .build(signing_key, extensions);
+        let body = Body::new(payload);
+        let mut header = Header {
+            version: 1,
+            verifying_key: signing_key.verifying_key(),
+            signature: None,
+            payload_size: body.size(),
+            payload_hash: Some(body.hash()),
+            timestamp: Timestamp::new(seq_num),
+            seq_num,
+            backlink,
+            extensions: Extensions {
+                log_id,
+                prune_flag: PruneFlag::default(),
+                groups_args: None,
+                version: 1,
+            },
+        };
+        header.sign(signing_key);
         Operation {
             hash: header.hash(),
             header,
@@ -306,9 +303,14 @@ mod tests {
 
     async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
         let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash>::insert_operation(&store.store, &op.hash, op, log_id)
-            .await
-            .unwrap();
+        OperationStore::<Operation, Hash, LogId>::insert_operation(
+            &store.store,
+            &op.hash,
+            op,
+            log_id,
+        )
+        .await
+        .unwrap();
         store.store.commit(permit).await.unwrap();
     }
 
@@ -320,7 +322,7 @@ mod tests {
         topic: &TopicId,
         author: &DeviceId,
         log_id: LogId,
-        seq: SeqNum,
+        seq: u64,
     ) {
         use p2panda_core::Cursor;
         use p2panda_core::logs::LogHeights;
@@ -339,35 +341,6 @@ mod tests {
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn mailbox_get_log_distinguishes_absent_from_up_to_date() {
-        use mailbox_client::store::MailboxStore;
-
-        let store = OpStore::temporary_sqlite().await.unwrap();
-        let topic = TopicId::random();
-        let log_id = LogId::from_topic(topic);
-        let signing_key = p2panda::SigningKey::generate();
-        let author = DeviceId::from(signing_key.verifying_key());
-
-        for from in [0, 1] {
-            let log = MailboxStore::get_log(&store, &author, &topic, from)
-                .await
-                .unwrap();
-            assert!(log.is_none(), "absent log from {from}: {log:?}");
-        }
-
-        insert(
-            &store,
-            &signed_op(&signing_key, log_id, 0, None, b"zero"),
-            &log_id,
-        )
-        .await;
-        let log = MailboxStore::get_log(&store, &author, &topic, 1)
-            .await
-            .unwrap();
-        assert_eq!(log.map(|ops| ops.len()), Some(0));
     }
 
     /// Mailbox sync must only see the contiguous prefix of a log whose
@@ -426,10 +399,24 @@ mod tests {
         let log_id = LogId::from_topic(topic);
 
         let signing_key = p2panda::SigningKey::generate();
-        let body = Body::from_bytes(b"payload");
-        let header = Header::builder()
-            .body(b"payload")
-            .build(&signing_key, Extensions::builder(log_id).build());
+        let body = Body::new(b"payload");
+        let mut header = Header {
+            version: 1,
+            verifying_key: signing_key.verifying_key(),
+            signature: None,
+            payload_size: body.size(),
+            payload_hash: Some(body.hash()),
+            timestamp: Timestamp::new(0),
+            seq_num: 0,
+            backlink: None,
+            extensions: Extensions {
+                log_id,
+                prune_flag: PruneFlag::default(),
+                groups_args: None,
+                version: 1,
+            },
+        };
+        header.sign(&signing_key);
         let hash = header.hash();
         let op = Operation {
             hash,
@@ -438,9 +425,14 @@ mod tests {
         };
 
         let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash>::insert_operation(&store.store, &hash, &op, &log_id)
-            .await
-            .unwrap();
+        OperationStore::<Operation, Hash, LogId>::insert_operation(
+            &store.store,
+            &hash,
+            &op,
+            &log_id,
+        )
+        .await
+        .unwrap();
         store.store.commit(permit).await.unwrap();
         assert!(fetch(&store, &hash).await.body.is_some());
 

@@ -1,5 +1,7 @@
 use futures::future::join_all;
-use mailbox_server::{test_utils::create_test_server, Author, GetBlipsResponse, SeqNum, TopicId};
+use mailbox_server::{
+    test_utils::create_test_server, Author, GetBlipsResponse, SequenceNumber, TopicId,
+};
 use serde_json::json;
 use serial_test::serial;
 use std::collections::BTreeMap;
@@ -9,7 +11,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 // Helper to create a simple store request with a single message
-fn create_store_request(topic_id: &str, message: &[u8], seq_num: SeqNum) -> serde_json::Value {
+fn create_store_request(
+    topic_id: &str,
+    message: &[u8],
+    seq_num: SequenceNumber,
+) -> serde_json::Value {
     let message_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, message);
     json!({
         "blips": {
@@ -77,16 +83,13 @@ async fn stress_test_concurrent_writes() {
         get_response.assert_status_ok();
         let body: GetBlipsResponse = get_response.json();
         let topic_authors = &body.blips_by_topic[&format!("stress-topic-{}", topic_idx)];
-        let total_messages: usize = topic_authors
+        let total_messages: u64 = topic_authors
             .blips
             .values()
-            .map(|author| author.len())
+            .map(|author| author.len() as u64)
             .sum();
 
-        assert_eq!(
-            total_messages,
-            (num_concurrent_writes / num_topics) as usize
-        );
+        assert_eq!(total_messages, num_concurrent_writes / num_topics);
     }
 }
 
@@ -141,12 +144,12 @@ async fn stress_test_concurrent_reads() {
             response.assert_status_ok();
             let body: GetBlipsResponse = response.json();
             let topic_authors = &body.blips_by_topic[&topic_id_clone];
-            let total_messages: usize = topic_authors
+            let total_messages: u64 = topic_authors
                 .blips
                 .values()
-                .map(|author| author.len())
+                .map(|author| author.len() as u64)
                 .sum();
-            assert_eq!(total_messages, messages_per_topic as usize);
+            assert_eq!(total_messages, messages_per_topic);
         };
         tasks.push(task);
     }
@@ -241,7 +244,7 @@ async fn stress_test_large_messages() {
 
             let response = server_clone
                 .post("/blips/store")
-                .json(&create_store_request(&topic_id, &message, i as SeqNum))
+                .json(&create_store_request(&topic_id, &message, i as u64))
                 .await;
 
             response.assert_status(axum::http::StatusCode::CREATED);
@@ -277,12 +280,12 @@ async fn stress_test_large_messages() {
         response.assert_status_ok();
         let body: GetBlipsResponse = response.json();
         let topic_authors = &body.blips_by_topic[&topic_id];
-        let total_messages: usize = topic_authors
+        let total_messages: u64 = topic_authors
             .blips
             .values()
-            .map(|author| author.len())
+            .map(|author| author.len() as u64)
             .sum();
-        assert_eq!(total_messages, num_large_messages / 5);
+        assert_eq!(total_messages, num_large_messages as u64 / 5);
     }
 }
 
@@ -324,7 +327,7 @@ async fn stress_test_many_topics() {
 
     let mut topics_map = BTreeMap::new();
     for topic_id in &topic_ids {
-        topics_map.insert(topic_id.clone(), BTreeMap::<Author, SeqNum>::new());
+        topics_map.insert(topic_id.clone(), BTreeMap::<Author, SequenceNumber>::new());
     }
 
     let start = Instant::now();
@@ -343,12 +346,12 @@ async fn stress_test_many_topics() {
     assert_eq!(body.blips_by_topic.len(), 100);
     for topic_id in &topic_ids {
         let topic_authors = &body.blips_by_topic[topic_id];
-        let total_messages: usize = topic_authors
+        let total_messages: u64 = topic_authors
             .blips
             .values()
-            .map(|author| author.len())
+            .map(|author| author.len() as u64)
             .sum();
-        assert_eq!(total_messages, messages_per_topic as usize);
+        assert_eq!(total_messages, messages_per_topic);
     }
 
     println!(
@@ -398,10 +401,10 @@ async fn stress_test_rapid_sequential_writes() {
     response.assert_status_ok();
     let body: GetBlipsResponse = response.json();
     let topic_authors = &body.blips_by_topic[topic_id];
-    let total_messages: usize = topic_authors
+    let total_messages: u64 = topic_authors
         .blips
         .values()
-        .map(|author| author.len())
+        .map(|author| author.len() as u64)
         .sum();
-    assert_eq!(total_messages, num_messages as usize);
+    assert_eq!(total_messages, num_messages);
 }

@@ -37,7 +37,7 @@ impl NotifiedOperationsStore {
             .busy_timeout(Duration::from_secs(30));
         let pool = SqlitePoolOptions::new().connect_with(opts).await?;
         for sql in MIGRATIONS {
-            sqlx::query(*sql).execute(&pool).await?;
+            sqlx::query(sql).execute(&pool).await?;
         }
         Ok(pool)
     }

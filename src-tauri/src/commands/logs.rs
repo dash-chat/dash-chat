@@ -1,7 +1,7 @@
-use dashchat_node::{DeviceId, Payload, SeqNum, TopicId};
-use p2panda::groups::GroupsArgs;
+use dashchat_node::{DeviceId, Payload, TopicId};
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
+use p2panda_auth::processor::GroupsArgs;
 use p2panda_core::cbor::decode_cbor;
 use p2panda_core::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -50,7 +50,7 @@ pub struct SimplifiedHeader {
 
     /// Number of operations this author has published to this log, begins with 0 and is always
     /// incremented by 1 with each new operation by the same author.
-    seq_num: SeqNum,
+    seq_num: u64,
 
     /// Hash of the previous operation of the same author and log. Can be omitted if first
     /// operation in log.
@@ -76,19 +76,20 @@ impl SimplifiedHeader {
     /// form of a LogId) we need to pass this in as a separate argument.
     pub fn from_header(topic: TopicId, header: Header) -> Self {
         // Only operations contain groups args in their extension have dependency requirements.
-        let auth = header.extensions.group_args();
-        let previous = auth
+        let previous = header
+            .extensions
+            .groups_args
             .as_ref()
             .map(|args| args.dependencies.clone())
             .unwrap_or_default();
         SimplifiedHeader {
             verifying_key: header.verifying_key,
-            timestamp: header.extensions.timestamp(),
+            timestamp: header.timestamp,
             seq_num: header.seq_num,
             backlink: header.backlink,
             previous,
             topic_id: topic,
-            auth,
+            auth: header.extensions.groups_args.clone(),
         }
     }
 }

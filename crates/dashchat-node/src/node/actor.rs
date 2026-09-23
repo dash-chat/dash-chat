@@ -13,8 +13,6 @@ use p2panda::streams::{
     StreamEvent, StreamFrom, StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
-use p2panda_stream::Processor;
-use p2panda_stream::groups::GroupsArgs as GroupsProcessorArgs;
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
@@ -22,8 +20,9 @@ use tokio_stream::{StreamExt, StreamMap};
 use tracing::warn;
 
 use crate::Payload;
+use crate::stores::GROUPS_STATE_ID;
 
-type GroupsProcessor = p2panda_stream::groups::Groups<GroupsProcessorArgs<()>, Extensions, LogId>;
+type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Topic, Extensions, LogId>;
 
 /// Node actor commands.
 pub(crate) enum Command {
@@ -390,19 +389,20 @@ impl Actor {
         &self,
         operation: &ProcessedOperation<Payload>,
     ) -> Result<(), ProcessorError> {
-        self.groups_processor
-            .process(operation.event.groups_args.clone())
-            .await
-            .map_err(|(_, err)| ProcessorError::Groups(err.to_string()))?;
+        let topic = operation.topic();
+        let header = operation.processed().header().to_owned();
+        let body = operation.processed().body().cloned();
 
-        // A successful `process` always enqueues exactly one item, no-ops included, and this is
-        // the only caller (the actor's single event loop), so `next` returns our own item without
-        // blocking. It carries only the input back plus a processed/no-op flag, so dropping it
-        // loses nothing; we drain it so the queue doesn't grow unboundedly.
+        let operation = Operation {
+            hash: header.hash(),
+            header,
+            body,
+        };
+
         self.groups_processor
-            .next()
+            .process(&GROUPS_STATE_ID, &topic, &operation)
             .await
-            .map_err(|(_, err)| ProcessorError::Groups(err.to_string()))?;
+            .map_err(|err| ProcessorError::Groups(err.to_string()))?;
 
         Ok(())
     }
@@ -473,17 +473,15 @@ pub enum ProcessorError {
 #[cfg(test)]
 mod tests {
     use futures::future::join_all;
-    use p2panda::groups::GroupsArgs;
     use p2panda::{Hash, Node, SigningKey, Topic, VerifyingKey};
     use p2panda_auth::Access;
     use p2panda_auth::group::{GroupAction, GroupCrdtState, GroupMember};
+    use p2panda_auth::processor::{GroupsArgs, GroupsOperation};
     use p2panda_store::groups::GroupsStore;
     use p2panda_store::{SqliteStore, tx_unwrap};
-    use p2panda_stream::groups::GroupsOperation;
     use tokio::sync::oneshot;
 
     use crate::node::actor::ProcessorEvent;
-    use crate::stores::GROUPS_STATE_ID;
     use crate::testing::setup_tracing;
     use crate::{ChatMessageContent, ChatPayload, Payload};
 
@@ -500,12 +498,11 @@ mod tests {
         group_id: VerifyingKey,
         action: GroupAction<VerifyingKey>,
     ) -> Payload {
-        let groups_y: GroupsState =
-            tx_unwrap!(store, { store.get_groups_state_tx(*GROUPS_STATE_ID).await })
-                .unwrap()
-                .unwrap_or_default();
+        let groups_y: GroupsState = tx_unwrap!(store, { store.get_groups_state(&0).await })
+            .unwrap()
+            .unwrap_or_default();
 
-        let dependencies = groups_y.heads(&[group_id]);
+        let dependencies = groups_y.heads();
         Payload::GroupControl(GroupsArgs {
             group_id,
             action,
@@ -690,10 +687,9 @@ mod tests {
 
         // And they have also processed the groups control message.
         for store in [alice_store, bobbi_store] {
-            let groups_y: GroupsState =
-                tx_unwrap!(store, { store.get_groups_state_tx(*GROUPS_STATE_ID).await })
-                    .unwrap()
-                    .unwrap();
+            let groups_y: GroupsState = tx_unwrap!(store, { store.get_groups_state(&0).await })
+                .unwrap()
+                .unwrap();
             let members = groups_y.members(group_id);
             assert!(members.contains(&(alice_id, Access::manage())));
             assert!(members.contains(&(bobbi_id, Access::manage())));

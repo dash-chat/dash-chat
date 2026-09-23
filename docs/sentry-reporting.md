@@ -248,6 +248,9 @@ outcome would require a test-only backend hook whose cost exceeds its value.
 - **`cargo nextest run` alone cannot substantiate a "no warnings" claim** for
   this crate: it compiles with `cfg(test)`, so test-only imports look used. Run a
   plain `cargo build -p tauri-plugin-sentry-reporting` too.
+- **clippy is not installed for the pinned 1.94.0 toolchain.** Run it inside the
+  nix shell: `nix develop --command cargo clippy -p tauri-plugin-sentry-reporting
+  --all-targets -- -D warnings`.
 - `HttpSender` is tested against a real `tokio::net::TcpListener` rather than a
   mock, so the URL, `X-Sentry-Auth` header, content type, and body bytes are
   pinned end to end. Follow that pattern rather than adding an HTTP-mock

@@ -6,7 +6,7 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use p2panda_net::NetworkId;
 use push_notifications_client::client::PushNotificationsClient;
-use redb::{Database, TableHandle};
+use redb::Database;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{future::Future, path::PathBuf};
@@ -57,8 +57,7 @@ pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
 pub type TopicId = String;
 pub type Author = String;
-
-pub use dashchat_utils::SeqNum;
+pub type SequenceNumber = u64;
 
 /// Encode an iroh EndpointId as the canonical MailboxId string (base64url, no pad).
 pub fn encode_mailbox_id(id: iroh::EndpointId) -> String {
@@ -193,7 +192,6 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     let db = Database::create(&db_path)?;
 
     let write_txn = db.begin_write()?;
-    drop_legacy_tables(&write_txn)?;
     {
         let _blips_table = write_txn.open_table(BLIPS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
@@ -208,21 +206,6 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     tracing::info!("Database initialized successfully");
 
     Ok(db)
-}
-
-/// Drop tables superseded by a versioned rename. Their key layout no longer
-/// matches, so their rows can never be read, served or pruned.
-fn drop_legacy_tables(write_txn: &redb::WriteTransaction) -> Result<(), redb::Error> {
-    const LEGACY_TABLES: [&str; 2] = ["blips", "watermarks"];
-    let legacy: Vec<_> = write_txn
-        .list_tables()?
-        .filter(|table| LEGACY_TABLES.contains(&table.name()))
-        .collect();
-    for table in legacy {
-        tracing::info!("Dropping legacy table {}", table.name());
-        write_txn.delete_table(table)?;
-    }
-    Ok(())
 }
 
 pub fn create_app(
@@ -253,38 +236,4 @@ pub fn create_app(
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))
         .with_state(state)
-}
-
-#[cfg(test)]
-mod tests {
-    use redb::{ReadableDatabase, TableDefinition};
-
-    use super::*;
-
-    #[test]
-    fn init_db_drops_legacy_tables() {
-        const LEGACY_BLIPS: TableDefinition<u64, &[u8]> = TableDefinition::new("blips");
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.redb");
-        {
-            let db = Database::create(&path).unwrap();
-            let txn = db.begin_write().unwrap();
-            txn.open_table(LEGACY_BLIPS)
-                .unwrap()
-                .insert(1, b"old".as_slice())
-                .unwrap();
-            txn.commit().unwrap();
-        }
-
-        let db = init_db(path).unwrap();
-        let names: Vec<String> = db
-            .begin_read()
-            .unwrap()
-            .list_tables()
-            .unwrap()
-            .map(|table| table.name().to_string())
-            .collect();
-        assert!(!names.contains(&"blips".to_string()), "{names:?}");
-        assert!(names.contains(&"blips_v2".to_string()), "{names:?}");
-    }
 }

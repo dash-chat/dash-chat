@@ -821,8 +821,7 @@ where
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
         let mut request = BTreeMap::new();
-        let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> =
-            BTreeMap::new();
+        let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> = BTreeMap::new();
         for topic in topics {
             let heights =
                 BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
@@ -833,7 +832,7 @@ where
         let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
 
         let mut ops_to_publish: Vec<Item> = vec![];
-        let mut acks: Vec<(Item::Topic, Item::Author, SeqNum)> = vec![];
+        let mut acks: Vec<(Item::Topic, Item::Author, u64)> = vec![];
 
         for (topic, response) in response.into_iter() {
             let FetchTopicResponse { items, missing } = response;
@@ -901,7 +900,7 @@ where
 
         // For ops we successfully publish, the mailbox now has at least their seq_num.
         // ACID: a power cut here would lose these ops_to_publish.
-        let publish_acks: Vec<(Item::Topic, Item::Author, SeqNum)> = ops_to_publish
+        let publish_acks: Vec<(Item::Topic, Item::Author, u64)> = ops_to_publish
             .iter()
             .map(|op| (op.topic(), op.author(), op.seq_num()))
             .collect();
@@ -2651,7 +2650,7 @@ mod tests {
 
     // -- sync_after_publish tests --
 
-    type EchoSeqs = Arc<std::sync::Mutex<BTreeMap<(u8, char), BTreeSet<SeqNum>>>>;
+    type EchoSeqs = Arc<std::sync::Mutex<BTreeMap<(u8, char), BTreeSet<u64>>>>;
     type Published = Arc<std::sync::Mutex<Vec<Vec<Msg>>>>;
 
     /// A mailbox client that stores published ops and echoes the resulting
@@ -2732,7 +2731,7 @@ mod tests {
         }
     }
 
-    fn msgs(topic: u8, author: char, seqs: impl IntoIterator<Item = SeqNum>) -> Vec<Msg> {
+    fn msgs(topic: u8, author: char, seqs: impl IntoIterator<Item = u64>) -> Vec<Msg> {
         seqs.into_iter()
             .map(|seq| Msg { topic, author, seq })
             .collect()
