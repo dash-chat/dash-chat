@@ -149,10 +149,13 @@ impl Node {
         tracing::info!(topic = ?topic.aliased(), "initialize topic");
 
         self.subscribe_to_stream(topic).await?;
-        if let Some(router) = &self.lan_router {
-            router.subscribe_topic(topic).await?;
-        }
         self.import_mailbox_stream(topic).await?;
+        // The router only accelerates what p2panda and mailboxes already do.
+        if let Some(router) = &self.lan_router {
+            if let Err(e) = router.subscribe_topic(topic).await {
+                warn!(topic = ?topic.aliased(), error = %e, "lan router topic subscription failed");
+            }
+        }
         Ok(())
     }
 
