@@ -132,6 +132,12 @@ describe('Chat scroll behavior', () => {
 	// under the navbar — and fade out ('0') only once the user scrolls
 	// all the way to the welcome / avatar surface at the top of the chat.
 	it('toggles transparent navbar opacity on scroll', async () => {
+		// The opacity is the Material navbar's. Under the iOS theme
+		// ReverseScrollPage leaves the navbar alone on purpose — its gradient
+		// and blur do the fading — so it writes no opacity to read, and on a
+		// phone that is the theme the app picks. Left set: this is the last
+		// test in the file, and every spec starts from a fresh app.
+		await agent1.setTheme('material');
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(true);
 		await agent1.waitUntil(
 			async () =>
