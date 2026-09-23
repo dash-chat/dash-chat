@@ -24,7 +24,7 @@ pub struct LanRouterParams {
     pub data_path: PathBuf,
     pub device_id: VerifyingKey,
     pub op_store: OpStore,
-    pub actor_tx: mpsc::Sender<Command>,
+    pub(crate) actor_tx: mpsc::Sender<Command>,
 }
 
 #[cfg(not(feature = "lan-router"))]
