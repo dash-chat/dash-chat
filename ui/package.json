@@ -15,7 +15,7 @@
 		"format:check": "prettier --check '{src,tests}/**/*.{ts,svelte}'"
 	},
 	"dependencies": {
-		"@awesome.me/webawesome": "3.0.0-beta.6",
+		"@awesome.me/webawesome": "3.13.0",
 		"@choochmeque/tauri-plugin-sharekit-api": "^0.3.0",
 		"@gbyte/tauri-plugin-ios-photos": "github:dash-chat/tauri-plugin-ios-photos#ec723636ddf248dd6542e02fb2e83d91d1da36c9",
 		"@mdi/js": "^7.4.47",
