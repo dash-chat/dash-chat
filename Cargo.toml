@@ -39,13 +39,13 @@ reporting = { path = "crates/reporting" }
 #   extension sharing one database file stop refusing each other's writes with
 #   "database is locked".
 # - The `custom_cursor_name` param to `stream_from` (p2panda#1408).
-p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -53,9 +53,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashch
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [
