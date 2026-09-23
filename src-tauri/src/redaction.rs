@@ -19,11 +19,14 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // the rule above is too long to catch: sampling a run's Debug output
         // shows `endpoint_id=…`, `node_id="…"`, `remote_node_id=…` and the
         // topic ones — `topic=…`, `gossip_topic="…"`, `sync_topic="…"`, which
-        // name the conversation a device is in. Any `…_node_id` prefix and
-        // either separator, and the quotes are consumed so nothing survives as
-        // `""`. `alpn=`/`protocol_id=` are left: they are the same constant
-        // for every user of a build, and say nothing about who is using it.
-        r#"\b[a-z_]*(node_id|endpoint_id|topic)["\s]*[=:]\s*"?[0-9a-fA-F]{8,}"?"#,
+        // name the conversation a device is in. Any prefix, an `_id` suffix or
+        // a plural, and either separator; the quotes are consumed so nothing
+        // survives as `""`. A bracketed list (`node_ids=[a, b]`) is not one of
+        // these forms — nothing logs one, and a full-length id inside one is
+        // caught by the generic hex rule above. `alpn=`/`protocol_id=` are
+        // left: they are the same constant for every user of a build, and say
+        // nothing about who is using it.
+        r#"\b[a-z_]*(node_id|endpoint_id|topic(_id)?)s?["\s]*[=:]\s*"?[0-9a-fA-F]{8,}"?"#,
         // Socket addresses of peers and of this device, as the address book
         // prints them: `Ip(188.84.6.11:49882)`, and bracketed for v6,
         // `Ip([2a02:…:1]:41234)` / `Ip([fe80::…%en0]:…)`. A peer's address says
@@ -139,6 +142,10 @@ mod tests {
         );
         let input = "register sync protocol sync_topic=\"02d9de2757\"";
         assert_eq!(redact(input), "register sync protocol [REDACTED]");
+        // The `_id` suffix, which nothing logs today — covered before
+        // something starts to.
+        let input = "subscribing topic_id=371ac34c42";
+        assert_eq!(redact(input), "subscribing [REDACTED]");
     }
 
     #[test]

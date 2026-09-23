@@ -136,7 +136,7 @@ export class HomePage extends TestHelper {
 			if (await messages.isExisting()) return;
 			const href = await this.directChatHref(contactName);
 			if (href !== null) {
-				const row = this.agent.$(`${tid('all-chats-list')} a[href="${href}"]`);
+				const row = this.agent.$(`${tid(CHAT_LIST_ID)} a[href="${href}"]`);
 				if (await row.isExisting()) await row.click();
 			}
 			try {
@@ -163,7 +163,7 @@ export class HomePage extends TestHelper {
 				);
 				return row?.getAttribute('href') ?? null;
 			},
-			tid('all-chats-list'),
+			tid(CHAT_LIST_ID),
 			contactName,
 		);
 	}
@@ -211,6 +211,6 @@ export class HomePage extends TestHelper {
 				}
 			});
 			return issues.slice(0, 10);
-		}, tid('all-chats-list'));
+		}, tid(CHAT_LIST_ID));
 	}
 }

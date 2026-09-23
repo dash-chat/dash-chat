@@ -242,7 +242,11 @@ export class Composer extends TestHelper {
 		// The driver handing back something other than what the script returned
 		// is the very quirk above, and `in` on a primitive throws naming
 		// nothing — which is the failure this is here to avoid.
-		if (typeof result !== 'object' || result === null) {
+		if (
+			typeof result !== 'object' ||
+			result === null ||
+			Array.isArray(result)
+		) {
 			throw new Error(
 				`the driver returned no transcode result (${String(result)})`,
 			);
