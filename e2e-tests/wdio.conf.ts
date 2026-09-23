@@ -16,7 +16,10 @@ import { fileURLToPath } from 'node:url';
 
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
 import { claimAllWhenFreeSync, release } from './setup/claims';
-import { killLeftoverMailboxServers } from './setup/cleanup';
+import {
+	killAllE2EProcesses,
+	killLeftoverMailboxServers,
+} from './setup/cleanup';
 import {
 	failureSlug,
 	failuresDir,
@@ -222,6 +225,12 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			mkdirSync(dataDir, { recursive: true });
 
 			killLeftoverMailboxServers();
+			// And this checkout's app processes. A desktop run does this itself,
+			// but a leftover agent outlives a phone-only run, where nothing used
+			// to clear it: it goes on announcing itself over mDNS under the run's
+			// own network id, and every agent that finds it spends a discovery
+			// session timing out on a node that will never answer.
+			killAllE2EProcesses();
 
 			// When MAILBOX_URL names a deployment environment, run against its
 			// cloud mailbox instead of spawning a local server. Specs that drive
