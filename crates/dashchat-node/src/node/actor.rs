@@ -55,6 +55,21 @@ pub(crate) enum Command {
         addr: iroh::EndpointAddr,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
+    /// Testing: refuse every connection with `node_id` in both directions
+    /// (p2panda's global blocklist, enforced by the endpoint hooks).
+    #[cfg(feature = "testing")]
+    BlockPeer {
+        node_id: NodeId,
+        reply_tx: oneshot::Sender<()>,
+    },
+    /// Testing: block native log sync with `node_id` on every topic,
+    /// subscribed now or later (p2panda's per-topic blocklist, checked when
+    /// a sync session is initiated or accepted). Gossip is unaffected.
+    #[cfg(feature = "testing")]
+    BlockNativeSync {
+        node_id: NodeId,
+        reply_tx: oneshot::Sender<()>,
+    },
     /// Open an ephemeral (gossip) stream on `topic` for the LAN router:
     /// raw bytes in a signed envelope, no persistence (see `lan_router.rs`).
     #[cfg(feature = "lan-router")]
@@ -142,6 +157,11 @@ pub struct Actor {
     /// Prefix for each topic stream's ack cursor name. `None` uses p2panda's
     /// default per-topic cursor (`"{topic}"`);
     stream_cursor_prefix: Option<String>,
+
+    /// Testing: peers whose native sync is blocked on every topic; applied
+    /// to each topic as its stream is opened (`open_stream`).
+    #[cfg(feature = "testing")]
+    native_sync_blocked: std::collections::BTreeSet<NodeId>,
 }
 
 impl Actor {
@@ -166,6 +186,8 @@ impl Actor {
                 groups_processor,
                 events_tx,
                 stream_cursor_prefix,
+                #[cfg(feature = "testing")]
+                native_sync_blocked: Default::default(),
             },
             events_rx,
         )
@@ -208,6 +230,21 @@ impl Actor {
                                 let result = self.handle_register_peer_addr(addr).await;
                                 let _ = reply_tx.send(result);
                             },
+                            #[cfg(feature = "testing")]
+                            Command::BlockPeer { node_id, reply_tx } => {
+                                self.inner.block(node_id).await;
+                                let _ = reply_tx.send(());
+                            }
+                            #[cfg(feature = "testing")]
+                            Command::BlockNativeSync { node_id, reply_tx } => {
+                                self.native_sync_blocked.insert(node_id);
+                                // Topics already open: block them now.
+                                let topics: Vec<Topic> = self.tx_map.keys().copied().collect();
+                                for topic in topics {
+                                    self.inner.topic_block(node_id, topic).await;
+                                }
+                                let _ = reply_tx.send(());
+                            }
                             #[cfg(feature = "lan-router")]
                             Command::RouterStream { topic, reply_tx } => {
                                 let result = self.inner.ephemeral_stream::<serde_bytes::ByteBuf>(topic).await;
@@ -251,6 +288,12 @@ impl Actor {
             .stream_cursor_prefix
             .as_ref()
             .map(|prefix| format!("{prefix}:{topic}"));
+        // Testing: the one place a topic becomes syncable, so the block
+        // cannot race the first sync session.
+        #[cfg(feature = "testing")]
+        for node_id in &self.native_sync_blocked {
+            self.inner.topic_block(*node_id, topic).await;
+        }
         self.inner
             .stream_from(topic, StreamFrom::Frontier, cursor_name)
             .await

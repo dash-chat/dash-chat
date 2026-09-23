@@ -128,6 +128,13 @@ pub struct NodeConfig {
     /// keep them in `lan_router.redb`; this is why the flag defaults off and
     /// is not exposed in the UI yet.
     pub enable_lan_router: bool,
+    /// Quiet window after a locally authored op before the LAN router pushes
+    /// a Have for every op authored in the window (dash-router
+    /// `PushDebouncePolicy::window_ms`).
+    pub lan_router_push_debounce: std::time::Duration,
+    /// Hard cap after the oldest still-pending authored op, so a steady
+    /// stream of authoring still pushes (`PushDebouncePolicy::max_latency_ms`).
+    pub lan_router_push_max_latency: std::time::Duration,
 }
 
 impl NodeConfig {
@@ -179,6 +186,8 @@ impl NodeConfig {
             enable_message_acks: true,
             stream_cursor_prefix: None,
             enable_lan_router: false,
+            lan_router_push_debounce: std::time::Duration::from_millis(50),
+            lan_router_push_max_latency: std::time::Duration::from_millis(200),
         }
     }
 
@@ -206,6 +215,8 @@ impl Default for NodeConfig {
             enable_message_acks: true,
             stream_cursor_prefix: None,
             enable_lan_router: true,
+            lan_router_push_debounce: std::time::Duration::from_millis(50),
+            lan_router_push_max_latency: std::time::Duration::from_millis(200),
         }
     }
 }
@@ -402,6 +413,8 @@ impl Node {
         // take the p2panda path down with it.
         let lan_router = crate::lan_router::LanRouter::spawn(crate::lan_router::LanRouterParams {
             enabled: config.enable_lan_router,
+            push_debounce: config.lan_router_push_debounce,
+            push_max_latency: config.lan_router_push_max_latency,
             data_path: filesystem.data_path().clone(),
             device_id: *node_keys.device_id(),
             op_store: op_store.clone(),
@@ -552,6 +565,17 @@ impl Node {
         self.lan_router.as_ref().map(|r| r.delivered_count())
     }
 
+    /// Testing: ops the relay store holds for others on `topic` (our own
+    /// ops live in the ext store, never here); `None` when the router is
+    /// not running.
+    #[cfg(all(feature = "lan-router", feature = "testing"))]
+    pub async fn lan_router_relay_holds(&self, topic: TopicId) -> Result<Option<bool>> {
+        match &self.lan_router {
+            Some(router) => Ok(Some(router.relay_holds_topic(topic).await?)),
+            None => Ok(None),
+        }
+    }
+
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
         self.local_store
             .get_advertised_inbox_topics()
@@ -676,6 +700,42 @@ impl Node {
             .await
             .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
         reply_rx.await??;
+        Ok(())
+    }
+
+    /// Testing: refuse every connection with `node_id` in both directions,
+    /// for every protocol (p2panda's global blocklist, enforced by the iroh
+    /// endpoint hooks). Set it before the peer is introduced. A no-op on a
+    /// node with no networking layer.
+    #[cfg(feature = "testing")]
+    pub async fn block_peer(&self, node_id: NodeId) -> Result<()> {
+        if self.endpoint.is_none() {
+            return Ok(());
+        }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::BlockPeer { node_id, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await?;
+        Ok(())
+    }
+
+    /// Testing: turn p2panda's native log sync with `node_id` off on every
+    /// topic, subscribed now or later. Gossip is unaffected, so the LAN
+    /// router still runs between the two. A no-op on a node with no
+    /// networking layer.
+    #[cfg(feature = "testing")]
+    pub async fn block_native_sync_with(&self, node_id: NodeId) -> Result<()> {
+        if self.endpoint.is_none() {
+            return Ok(());
+        }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::BlockNativeSync { node_id, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await?;
         Ok(())
     }
 
@@ -2341,6 +2401,23 @@ mod lan_router_tests {
         assert!(router.subscribe_topic(TopicId::random()).await.is_err());
         node.initialize_topic(TopicId::random()).await.unwrap();
         node.shutdown().await;
+    }
+
+    /// Review focus 4: an unseen topic reads as not held, not as an error.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_holds_nothing_at_start() {
+        let mut config = NodeConfig::testing();
+        config.enable_lan_router = true;
+        let node = TestNode::new(config, "relay").await;
+        let topic = TopicId::random();
+        assert_eq!(
+            node.lan_router_relay_holds(topic).await.unwrap(),
+            Some(false)
+        );
+        let off = TestNode::new(NodeConfig::testing(), "off").await;
+        assert_eq!(off.lan_router_relay_holds(topic).await.unwrap(), None);
+        node.shutdown().await;
+        off.shutdown().await;
     }
 }
 
