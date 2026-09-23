@@ -203,8 +203,8 @@ importers:
         specifier: ^0.3.0
         version: 0.3.0
       '@gbyte/tauri-plugin-ios-photos':
-        specifier: github:dash-chat/tauri-plugin-ios-photos#ec723636ddf248dd6542e02fb2e83d91d1da36c9
-        version: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9
+        specifier: github:dash-chat/tauri-plugin-ios-photos#034dafd0a591fce73d4fe865e216cc3e225236c5
+        version: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/034dafd0a591fce73d4fe865e216cc3e225236c5
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
@@ -1176,8 +1176,8 @@ packages:
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
 
-  '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9':
-    resolution: {gitHosted: true, integrity: sha512-SELutoAURzJHTr0mOJb9lgxVUBuUbhpJ+CiMkrrjTHdpDa+bELXjDlLIjq0oZ9GbjgV3FldSuLkPvCNMhwC65w==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9}
+  '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/034dafd0a591fce73d4fe865e216cc3e225236c5':
+    resolution: {gitHosted: true, integrity: sha512-nwR8DGyLTMd5kR2lbu70Xb0wRi4GIX3L1+/Ajf0cp7bq42+PneBYnhmmb72vRVG/Q99E0mClFKXxkgfJ7xtqcg==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/034dafd0a591fce73d4fe865e216cc3e225236c5}
     version: 0.3.0
 
   '@holo-host/identicon@0.1.0':
@@ -7337,9 +7337,9 @@ snapshots:
 
   '@floating-ui/utils@0.2.10': {}
 
-  '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/ec723636ddf248dd6542e02fb2e83d91d1da36c9':
+  '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/034dafd0a591fce73d4fe865e216cc3e225236c5':
     dependencies:
-      '@tauri-apps/api': 2.11.0
+      '@tauri-apps/api': 2.11.1
 
   '@holo-host/identicon@0.1.0': {}
 
