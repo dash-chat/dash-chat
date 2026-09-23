@@ -33,6 +33,11 @@ mod lan {
     use dashchat_node::{AddContactResult, NodeConfig};
     use p2panda::network::MdnsDiscoveryMode;
 
+    /// Held for the whole of each LAN test. Run concurrently, native sync
+    /// was observed to win every op and leave the router's `Delivered`
+    /// count at zero; serial runs did not show that.
+    static LAN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     /// `RUST_LOG` directives, if any, go to the test's tracing output.
     fn tracing() {
         let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "error".into());
@@ -67,8 +72,9 @@ mod lan {
     /// (the advertised inbox) and the subsequent direct-chat message both
     /// arrive with no mailbox in the picture.
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "binds real sockets and mDNS; run manually: cargo test -p dashchat-node --features lan-router --test lan_router -- --ignored --nocapture"]
+    #[ignore = "binds real sockets and mDNS; run manually: cargo test -p dashchat-node --features lan-router --test lan_router -- --ignored --nocapture; the two LAN tests serialise on a mutex"]
     async fn contact_request_and_message_replicate_over_lan() {
+        let _serial = LAN.lock().await;
         tracing();
         let start = Instant::now();
         let (a, b) = pair(true).await;
@@ -100,15 +106,15 @@ mod lan {
             .expect("direct chat converges over LAN");
         println!("### {:.1?} direct chat converged", start.elapsed());
         // p2panda's own log sync runs over the same mDNS link (see the
-        // control below) and races the router for every op, so which one
-        // lands an op first is not deterministic: observed runs show 0 to
-        // 5 router deliveries. Printed for the reader, not asserted.
-        let delivered = (a.lan_router_delivered(), b.lan_router_delivered());
-        println!("### router delivered (a, b) = {delivered:?}");
-        assert!(
-            delivered.0.is_some() && delivered.1.is_some(),
-            "both routers run"
+        // control below), so convergence alone does not prove the router
+        // carried anything: its `Delivered` count does.
+        println!(
+            "### router delivered (a, b) = ({:?}, {:?})",
+            a.lan_router_delivered(),
+            b.lan_router_delivered()
         );
+        let delivered = a.lan_router_delivered().unwrap() + b.lan_router_delivered().unwrap();
+        assert!(delivered > 0, "router delivered nothing: {delivered}");
         a.shutdown().await;
         b.shutdown().await;
     }
@@ -116,12 +122,13 @@ mod lan {
     /// Control, router off. p2panda's native log sync over mDNS already
     /// converges the contact request on its own (observed: ~2 s), so a
     /// "must not converge" control is false on this stack. The control is
-    /// instead that the same flow converges with no router at all: the
-    /// test above shows the router coexists with native sync, not that it
-    /// alone carries the ops.
+    /// instead that the same flow converges with no router at all, which
+    /// is why the test above checks the router's `Delivered` count rather
+    /// than convergence alone.
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "binds real sockets and mDNS; see above"]
+    #[ignore = "binds real sockets and mDNS; see above; the two LAN tests serialise on a mutex"]
     async fn without_the_router_native_sync_still_converges() {
+        let _serial = LAN.lock().await;
         tracing();
         let start = Instant::now();
         let (a, b) = pair(false).await;
