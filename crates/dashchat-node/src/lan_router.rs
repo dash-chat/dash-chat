@@ -62,11 +62,17 @@ mod imp {
 
     use anyhow::{Context as _, anyhow, ensure};
     use dash_router::core::{LogRanges, Op, Ranges, Seq};
-    use dash_router::{AsyncStorage, WatchableStorage};
+    use dash_router::{
+        AsyncStorage, GossipPublisher, GossipSubscription, GossipTransport, PeerKey,
+        WatchableStorage,
+    };
+    use futures::StreamExt as _;
     use p2panda::operation::{Header, LogId, Operation};
+    use p2panda::streams::{EphemeralStreamPublisher, EphemeralStreamSubscription};
     use p2panda_core::Body;
     use serde::{Deserialize, Serialize};
-    use tokio::sync::broadcast;
+    use serde_bytes::ByteBuf;
+    use tokio::sync::{broadcast, oneshot};
 
     use crate::DeviceId;
 
@@ -347,6 +353,60 @@ mod imp {
         fn changed(&self) -> broadcast::Receiver<BTreeSet<RouterLog>> {
             self.hints.subscribe()
         }
+    }
+
+    /// The well-known router overlay. The topic name comes from
+    /// `dash_router::GOSSIP_TOPIC` (not hashed as a local literal) so this
+    /// side and dash-router's own `panda.rs` transport can never drift:
+    /// dash-router ties that constant to `WIRE_VERSION` with a
+    /// compile-time assert. Peers on a different network id never connect
+    /// at all (every ALPN is hashed with it), so no further scoping.
+    #[allow(dead_code)] // until Task 6
+    pub(crate) fn router_topic() -> TopicId {
+        p2panda::Hash::digest(dash_router::GOSSIP_TOPIC.as_bytes()).into()
+    }
+
+    #[allow(dead_code)] // until Task 6
+    pub(crate) struct Publisher(EphemeralStreamPublisher<ByteBuf>);
+
+    impl GossipPublisher for Publisher {
+        async fn publish(&mut self, bytes: Vec<u8>) -> anyhow::Result<()> {
+            self.0
+                .publish(ByteBuf::from(bytes))
+                .await
+                .map_err(|e| anyhow!("gossip publish: {e}"))
+        }
+    }
+
+    #[allow(dead_code)] // until Task 6
+    pub(crate) struct Subscription(EphemeralStreamSubscription<ByteBuf>);
+
+    impl GossipSubscription for Subscription {
+        async fn next(&mut self) -> Option<(PeerKey, Vec<u8>)> {
+            let msg = self.0.next().await?;
+            Some((PeerKey::from(msg.author()), msg.body().to_vec()))
+        }
+    }
+
+    #[allow(dead_code)] // until Task 6
+    pub(crate) async fn open_transport(
+        actor_tx: &mpsc::Sender<Command>,
+    ) -> anyhow::Result<GossipTransport<Publisher, Subscription>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        actor_tx
+            .send(Command::RouterStream {
+                topic: router_topic(),
+                reply_tx,
+            })
+            .await
+            .map_err(|_| anyhow!("actor channel closed"))?;
+        let (publisher, subscription) = reply_rx
+            .await?
+            .map_err(|e| anyhow!("ephemeral stream: {e}"))?;
+        Ok(GossipTransport::new(
+            Publisher(publisher),
+            Subscription(subscription),
+        ))
     }
 
     pub struct LanRouter;

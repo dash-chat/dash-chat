@@ -55,6 +55,21 @@ pub(crate) enum Command {
         addr: iroh::EndpointAddr,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
+    /// Open an ephemeral (gossip) stream on `topic` for the LAN router:
+    /// raw bytes in a signed envelope, no persistence (see `lan_router.rs`).
+    #[cfg(feature = "lan-router")]
+    RouterStream {
+        topic: Topic,
+        reply_tx: oneshot::Sender<
+            Result<
+                (
+                    p2panda::streams::EphemeralStreamPublisher<serde_bytes::ByteBuf>,
+                    p2panda::streams::EphemeralStreamSubscription<serde_bytes::ByteBuf>,
+                ),
+                CreateStreamError,
+            >,
+        >,
+    },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
     },
@@ -193,6 +208,11 @@ impl Actor {
                                 let result = self.handle_register_peer_addr(addr).await;
                                 let _ = reply_tx.send(result);
                             },
+                            #[cfg(feature = "lan-router")]
+                            Command::RouterStream { topic, reply_tx } => {
+                                let result = self.inner.ephemeral_stream::<serde_bytes::ByteBuf>(topic).await;
+                                let _ = reply_tx.send(result);
+                            }
                             Command::Shutdown { reply_tx } => {
                                 // Drop self and then break out of the processing loop which will
                                 // cause the actor task to complete.
@@ -698,5 +718,32 @@ mod tests {
             assert!(members.contains(&(alice_id, Access::manage())));
             assert!(members.contains(&(bobbi_id, Access::manage())));
         }
+    }
+
+    #[cfg(feature = "lan-router")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn router_stream_returns_an_ephemeral_pair_on_the_topic() {
+        use serde_bytes::ByteBuf;
+        let node = p2panda::Node::builder()
+            .network_id(p2panda::Topic::random().into())
+            .spawn()
+            .await
+            .unwrap();
+        let (actor, _events) = Actor::new(node, None);
+        let tx = actor.spawn().await.unwrap();
+        let topic = p2panda::Topic::random();
+        let (reply_tx, reply_rx) = oneshot::channel();
+        tx.send(Command::RouterStream { topic, reply_tx })
+            .await
+            .unwrap();
+        let (publisher, _subscription) = reply_rx.await.unwrap().unwrap();
+        // Publishing to an overlay with no peers is fine; it just goes nowhere.
+        publisher
+            .publish(ByteBuf::from(vec![1, 2, 3]))
+            .await
+            .unwrap();
+        let (reply_tx, reply_rx) = oneshot::channel();
+        tx.send(Command::Shutdown { reply_tx }).await.unwrap();
+        reply_rx.await.unwrap();
     }
 }
