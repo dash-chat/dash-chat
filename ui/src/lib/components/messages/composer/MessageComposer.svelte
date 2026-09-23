@@ -335,6 +335,28 @@
 	<EmojiButton onClick={openEmojiPicker} />
 {/snippet}
 
+{#snippet composerActions()}
+	{#if !editing}
+		{#if drafting && theme === 'material'}
+			<InlineAttachButton
+				expanded={showMediaPanel}
+				onClick={toggleMediaPanel}
+			/>
+		{/if}
+		<div
+			class="flex shrink-0 items-center overflow-hidden transition-all duration-200 ease-out {drafting
+				? 'w-0 opacity-0'
+				: 'w-10 opacity-100'}"
+			aria-hidden={drafting}
+		>
+			<CameraButton onClick={captureFromCamera} />
+		</div>
+	{/if}
+	{#if showVoiceButton}
+		<VoiceRecordButton {voice} />
+	{/if}
+{/snippet}
+
 {#snippet editingBanner()}
 	<EditingBanner />
 {/snippet}
@@ -370,6 +392,7 @@
 			<div
 				class="input-row row gap-2"
 				class:covered={recordingCoversInput}
+				class:control-inset={theme !== 'ios'}
 				style="align-items: flex-end"
 			>
 				{#if editing}
@@ -395,29 +418,8 @@
 					hidden={recordingCoversInput}
 					before={isMobile && !isIos ? emojiButton : undefined}
 					banner={editing !== null ? editingBanner : replyBanner}
-				>
-					{#snippet after()}
-						{#if !editing && isMobile}
-							{#if drafting && theme === 'material'}
-								<InlineAttachButton
-									expanded={showMediaPanel}
-									onClick={toggleMediaPanel}
-								/>
-							{/if}
-							<div
-								class="flex shrink-0 items-center overflow-hidden transition-all duration-200 ease-out {drafting
-									? 'me-0 w-0 opacity-0'
-									: 'me-1 w-10 opacity-100'}"
-								aria-hidden={drafting}
-							>
-								<CameraButton onClick={captureFromCamera} />
-							</div>
-						{/if}
-						{#if isMobile && showVoiceButton}
-							<VoiceRecordButton {voice} />
-						{/if}
-					{/snippet}
-				</MessageInput>
+					after={isMobile ? composerActions : undefined}
+				/>
 
 				{#if editing}
 					{#if isWideScreen.value}
@@ -516,6 +518,17 @@
 <style>
 	.input-row.covered {
 		visibility: hidden;
+	}
+
+	/* The round controls are 40px in Material's 44px row, so flex-end alone would
+	   drop them 2px below the input pill's axis. The row reserves that inset and
+	   the pill opts back out of it. iOS sizes both at 40 and needs none. */
+	.input-row.control-inset {
+		padding-block-end: 2px;
+	}
+
+	.input-row.control-inset > :global(.input-container) {
+		margin-block-end: -2px;
 	}
 
 	/* During keyboard glides the bar can lead the keyboard's edge by a few px;

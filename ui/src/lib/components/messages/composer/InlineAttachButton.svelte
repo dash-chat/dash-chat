@@ -15,5 +15,5 @@
 	class="flex"
 	transition:fly={{ x: document.dir === 'rtl' ? -16 : 16, duration: 150 }}
 >
-	<AttachButton {onClick} {expanded} class="me-1" />
+	<AttachButton {onClick} {expanded} />
 </div>

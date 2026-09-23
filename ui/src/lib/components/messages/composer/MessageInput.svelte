@@ -69,21 +69,23 @@
 </script>
 
 <div
-	class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
+	class="input-container flex min-w-0 flex-1 flex-col justify-center {theme ===
 	'ios'
-		? 'input-container-border bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-		: 'bg-incoming-surface'}"
+		? 'input-container-border min-h-[42px] bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+		: 'min-h-[44px] bg-incoming-surface'}"
 	{onpaste}
 >
 	{@render banner?.()}
 
-	<div class="flex w-full items-center">
+	<div class="flex w-full items-end" class:pe-1={after}>
 		{@render before?.()}
 
 		<textarea
 			class:ms-4={!before}
+			class:me-4={!after}
+			class:me-2={after}
 			class:blanked={hidden}
-			class="message-textarea me-2"
+			class="message-textarea self-center"
 			data-testid="message-input-textarea"
 			{placeholder}
 			bind:value
