@@ -154,6 +154,10 @@ pub struct NodeConfig {
     /// Consulted by the blob push-authorization loop. Created above the node
     /// (and shared with hub spawns) because a hub outlives node rebuilds.
     pub local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
+    /// Whether to run the Dash Router LAN gossip shell alongside p2panda
+    /// sync (see `lan_router.rs`). Requires the `lan-router` cargo feature;
+    /// without it this flag is ignored with a warning. Off by default.
+    pub enable_lan_router: bool,
 }
 
 impl NodeConfig {
@@ -209,6 +213,7 @@ impl NodeConfig {
             import_recorded_operations: false,
             sqlite_gate: Default::default(),
             local_hub_registry: Default::default(),
+            enable_lan_router: false,
         }
     }
 
@@ -241,6 +246,7 @@ impl Default for NodeConfig {
             import_recorded_operations: false,
             sqlite_gate: Default::default(),
             local_hub_registry: Default::default(),
+            enable_lan_router: false,
         }
     }
 }
