@@ -497,6 +497,7 @@
 <EmojiPickerSheet
 	opened={showEmojiPicker}
 	onClose={() => (showEmojiPicker = false)}
+	testid="composer-emoji-picker"
 	onEmojiSelected={emoji => {
 		value += emoji;
 		showEmojiPicker = false;

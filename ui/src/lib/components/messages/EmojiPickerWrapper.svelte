@@ -11,11 +11,13 @@
 	let content: Element;
 	let pickerComponent: HTMLElement | undefined;
 
+	/** Empty the search and take focus off it, which also drops its keyboard. */
 	export function clearSearch() {
-		const input = pickerComponent?.shadowRoot?.querySelector<HTMLInputElement>(
-			'input[type="search"]',
-		);
-		if (!input || input.value === '') return;
+		const input =
+			pickerComponent?.shadowRoot?.querySelector<HTMLInputElement>('#search');
+		if (!input) return;
+		input.blur();
+		if (input.value === '') return;
 		input.value = '';
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 	}

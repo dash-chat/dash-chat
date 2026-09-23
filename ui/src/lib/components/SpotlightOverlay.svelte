@@ -86,13 +86,8 @@
 	// inset, so the slot is given back while it shows; its restore waits for the
 	// overlay to close, as it would have with the slot held.
 	$effect(() => {
-		if (!spotlighted || contentHidden) return;
-		return holdKeyboardSlot();
-	});
-
-	$effect(() => {
-		if (!spotlighted || !contentHidden) return;
-		return suppressKeyboardRestore();
+		if (!spotlighted) return;
+		return contentHidden ? suppressKeyboardRestore() : holdKeyboardSlot();
 	});
 
 	// The whole spotlight scene lives between the page chrome (z <= 30) and

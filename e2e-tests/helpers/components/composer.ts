@@ -41,6 +41,69 @@ export class Composer extends TestHelper {
 		`${tid('staged-media-page')} ${tid('message-input-textarea')}`,
 	);
 
+	emojiButton = this.el(tid('message-input-emoji'));
+	private emojiPickerSelector = tid('composer-emoji-picker');
+
+	/** Open the emoji picker sheet from the composer's emoji button. */
+	async openEmojiPicker(): Promise<void> {
+		await this.emojiButton.click();
+		await this.agent.waitUntil(() => this.emojiPickerOpen());
+	}
+
+	emojiPickerOpen(): Promise<boolean> {
+		return this.agent.execute(
+			(sel: string) =>
+				!!document
+					.querySelector(sel)
+					?.closest('.k-sheet')
+					?.classList.contains('-translate-y-full'),
+			this.emojiPickerSelector,
+		);
+	}
+
+	async searchEmojiPicker(query: string): Promise<void> {
+		await this.agent
+			.$(this.emojiPickerSelector)
+			.$('emoji-picker')
+			.shadow$('#search')
+			.setValue(query);
+	}
+
+	emojiPickerSearchText(): Promise<string> {
+		return this.agent.execute(
+			(sel: string) =>
+				document
+					.querySelector(sel)
+					?.querySelector('emoji-picker')
+					?.shadowRoot?.querySelector<HTMLInputElement>('#search')?.value ?? '',
+			this.emojiPickerSelector,
+		);
+	}
+
+	/** Close the emoji picker sheet by clicking its backdrop. */
+	async closeEmojiPicker(): Promise<void> {
+		await this.agent.execute((sel: string) => {
+			const sheet = document.querySelector(sel)?.closest('.k-sheet');
+			(sheet?.previousElementSibling as HTMLElement | null)?.click();
+		}, this.emojiPickerSelector);
+		await this.agent.waitUntil(async () => !(await this.emojiPickerOpen()));
+	}
+
+	/** Drag the emoji picker sheet down `distance` px; with `gridScrollTop` the
+	 * drag starts on the emoji grid, scrolled that far. */
+	async swipeEmojiPickerDown(
+		distance: number,
+		gridScrollTop?: number,
+	): Promise<void> {
+		await this.agent.execute(
+			(sel: string, d: number, top: number | null) =>
+				window.__test.swipeSheetDown(sel, d, top ?? undefined),
+			'composer-emoji-picker',
+			distance,
+			gridScrollTop ?? null,
+		);
+	}
+
 	removeAttachmentButton(index: number) {
 		return this.agent.$(tid(`message-input-remove-attachment-${index}`));
 	}

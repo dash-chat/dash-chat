@@ -29,7 +29,7 @@
 	{onClose}
 	backdrop={false}
 	onEmojiSelected={onReact}
-	testid="expanded-reactions-sheet"
+	testid="expanded-reactions-picker"
 >
 	{#if condensed.length > 0}
 		<Block>

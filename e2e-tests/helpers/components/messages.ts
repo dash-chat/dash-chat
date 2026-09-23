@@ -835,7 +835,7 @@ export class Message extends TestHelper {
 		await this.openReactionBar();
 		await this.wrapper.$(tid('quick-reaction-more')).click();
 		const picker = this.agent
-			.$(tid('expanded-reactions-sheet'))
+			.$(tid('expanded-reactions-picker'))
 			.$('emoji-picker');
 		await picker.shadow$('#search').setValue(query);
 		await picker.shadow$(`#emo-${emoji}`).waitForExist();
@@ -850,7 +850,7 @@ export class Message extends TestHelper {
 					picker?.shadowRoot?.getElementById(resultId) as HTMLElement | null
 				)?.click();
 			},
-			tid('expanded-reactions-sheet'),
+			tid('expanded-reactions-picker'),
 			`emo-${emoji}`,
 		);
 	}
