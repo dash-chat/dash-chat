@@ -15,7 +15,6 @@ use sqlx::{
 use tokio::sync::{Mutex, watch};
 
 use crate::MailboxId;
-use crate::SeqNum;
 use crate::manager::SyncStatus;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
@@ -38,7 +37,7 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
     );";
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
-pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
+pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, u64>>;
 
 /// Persistent, watch-based tracker for what each mailbox has acknowledged syncing.
 /// SQLite-backed (or in-memory for tests), with watch channels layered on top so
@@ -61,7 +60,7 @@ enum SyncBackend {
 #[derive(Default)]
 struct MemRows {
     /// `(mailbox_id, topic_bytes, author_bytes) -> seq`
-    rows: BTreeMap<(MailboxId, Vec<u8>, Vec<u8>), SeqNum>,
+    rows: BTreeMap<(MailboxId, Vec<u8>, Vec<u8>), u64>,
     /// `mailbox_id -> base url`
     urls: BTreeMap<MailboxId, String>,
     /// `mailbox_id -> last known sync status`
@@ -138,12 +137,12 @@ where
     pub async fn record_synced(
         &self,
         mailbox: &MailboxId,
-        entries: &[(T, A, SeqNum)],
+        entries: &[(T, A, u64)],
     ) -> anyhow::Result<()> {
         if entries.is_empty() {
             return Ok(());
         }
-        let mut encoded: Vec<(Vec<u8>, Vec<u8>, SeqNum)> = Vec::with_capacity(entries.len());
+        let mut encoded: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::with_capacity(entries.len());
         for (t, a, s) in entries {
             encoded.push((
                 encode(t).context("encoding topic")?,
@@ -165,13 +164,13 @@ where
                         seq_num = MAX(excluded.seq_num, mailbox_sync_state.seq_num),
                         updated_at = excluded.updated_at"
                 );
-                let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+                let mut query = sqlx::query(&sql);
                 for (topic_bytes, author_bytes, seq) in &encoded {
                     query = query
                         .bind(mailbox)
                         .bind(topic_bytes)
                         .bind(author_bytes)
-                        .bind(i64::from(*seq))
+                        .bind(*seq as i64)
                         .bind(now);
                 }
                 query.execute(pool).await?;
@@ -329,7 +328,7 @@ where
         mailbox: &MailboxId,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<Option<SeqNum>> {
+    ) -> anyhow::Result<Option<u64>> {
         let topic_bytes = encode(topic)?;
         let author_bytes = encode(author)?;
         match &self.inner {
@@ -343,7 +342,7 @@ where
                 .bind(&author_bytes)
                 .fetch_optional(pool)
                 .await?;
-                Ok(row.map(|(s,)| SeqNum::try_from(s)).transpose()?)
+                Ok(row.map(|(s,)| s as u64))
             }
             SyncBackend::Mem(rows) => {
                 let rows = rows.lock().await;
@@ -360,7 +359,7 @@ where
         &self,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<BTreeMap<MailboxId, SeqNum>> {
+    ) -> anyhow::Result<BTreeMap<MailboxId, u64>> {
         let topic_bytes = encode(topic)?;
         let author_bytes = encode(author)?;
         match &self.inner {
@@ -373,9 +372,7 @@ where
                 .bind(&author_bytes)
                 .fetch_all(pool)
                 .await?;
-                rows.into_iter()
-                    .map(|(m, s)| Ok((m, SeqNum::try_from(s)?)))
-                    .collect()
+                Ok(rows.into_iter().map(|(m, s)| (m, s as u64)).collect())
             }
             SyncBackend::Mem(rows) => {
                 let rows = rows.lock().await;
@@ -407,9 +404,7 @@ where
                 for (t_bytes, a_bytes, s) in rows {
                     let topic: T = decode(&t_bytes).context("decoding topic")?;
                     let author: A = decode(&a_bytes).context("decoding author")?;
-                    out.entry(topic)
-                        .or_default()
-                        .insert(author, SeqNum::try_from(s)?);
+                    out.entry(topic).or_default().insert(author, s as u64);
                 }
                 Ok(out)
             }

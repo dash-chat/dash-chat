@@ -237,7 +237,7 @@ where
         }
 
         // Group operations by topic -> author -> seq_num
-        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, Blip>>> = BTreeMap::new();
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
 
         let blob_hashes: Vec<iroh_blobs::Hash> =
             ops.iter().flat_map(|op| op.blob_hashes()).collect();
@@ -311,11 +311,11 @@ where
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error> {
         // Convert FetchRequest to GetBlipsRequest
-        let mut topics: BTreeMap<String, BTreeMap<String, SeqNum>> = BTreeMap::new();
+        let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
         for (log_id, authors) in request.0.iter() {
             let topic_id = Self::encode_topic_id(log_id);
-            let mut log_map: BTreeMap<String, SeqNum> = BTreeMap::new();
+            let mut log_map: BTreeMap<String, u64> = BTreeMap::new();
 
             for (device_id, height) in authors.iter() {
                 let server_log_id = Self::device_id_to_log_id(device_id);
@@ -351,14 +351,15 @@ where
             let log_id = Self::log_id_from_string(&topic_id_str)?;
 
             // Deserialize blips to operations
-            let items: Vec<Item> = topic_response
-                .blips
-                .into_values()
-                .flat_map(Self::decode_log)
-                .collect();
+            let mut items = Vec::new();
+            for (_author_str, seq_blips) in topic_response.blips {
+                for (_seq, blip) in seq_blips {
+                    items.push(Self::deserialize_operation(&blip)?);
+                }
+            }
 
             // Convert missing map
-            let mut missing: HashMap<Item::Author, Vec<SeqNum>> = HashMap::new();
+            let mut missing: HashMap<Item::Author, Vec<u64>> = HashMap::new();
             for (author_str, seq_nums) in topic_response.missing {
                 let device_id = Self::device_id_from_string(&author_str)?;
                 missing.insert(device_id, seq_nums);
@@ -401,27 +402,6 @@ where
 
     fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
         Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
-    }
-
-    /// Decode one author's blobs in sequence order, stopping at the first one this build
-    /// cannot decode.
-    ///
-    /// The mailbox is shared with peers on other builds, so a blob we cannot decode must not
-    /// fail the whole exchange and wedge sync until retention expires it. Truncating rather
-    /// than skipping leaves the author's log short instead of ingesting operations whose
-    /// backlink can never arrive; every other author and topic in the exchange is unaffected.
-    fn decode_log(seq_blips: BTreeMap<SeqNum, Blip>) -> Vec<Item> {
-        let mut items = Vec::with_capacity(seq_blips.len());
-        for (seq_num, blip) in seq_blips {
-            match Self::deserialize_operation(&blip) {
-                Ok(item) => items.push(item),
-                Err(err) => {
-                    tracing::warn!(?err, seq_num, "undecodable mailbox blob; truncating log");
-                    break;
-                }
-            }
-        }
-        items
     }
 }
 

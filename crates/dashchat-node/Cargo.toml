@@ -20,9 +20,7 @@ p2panda-auth = { workspace = true }
 p2panda-core = { workspace = true }
 p2panda-net = { workspace = true }
 p2panda-store = { workspace = true }
-p2panda-encryption = { workspace = true }
 p2panda-spaces = { workspace = true }
-p2panda-stream = { workspace = true }
 
 iroh = { workspace = true }
 iroh-blobs = { workspace = true }
@@ -49,7 +47,7 @@ tokio-util = "0.7"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 bytes = { workspace = true }
-sqlx = "0.9.0"
+sqlx = "0.8.6"
 
 tempfile = { version = "3.24", optional = true }
 nanoid = { version = "0.4", optional = true }

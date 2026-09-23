@@ -174,7 +174,7 @@ async fn notification_loop(
             Notification::Op(n) => {
                 let body = match n.payload.as_ref() {
                     Some(payload) => match encode_cbor(payload) {
-                        Ok(bytes) => Some(Body::from_bytes(&bytes[..])),
+                        Ok(bytes) => Some(Body::new(&bytes[..])),
                         Err(err) => {
                             log::error!("Failed to serialize payload: {err:?}");
                             continue;

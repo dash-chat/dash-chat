@@ -5,7 +5,7 @@ use derive_more::{
 use p2panda::VerifyingKey;
 use p2panda_spaces::ActorId;
 use serde::{Deserialize, Serialize};
-use sqlx::{Sqlite, encode::IsNull, error::BoxDynError};
+use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
 
 /// The ID tied to a particular device.
 #[derive(
@@ -87,10 +87,7 @@ impl sqlx::Type<Sqlite> for DeviceId {
 }
 
 impl sqlx::Encode<'_, Sqlite> for DeviceId {
-    fn encode_by_ref(
-        &self,
-        buf: &mut <Sqlite as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
+    fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
         <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.as_bytes().to_vec(), buf)
     }
 }
@@ -112,10 +109,7 @@ impl sqlx::Type<Sqlite> for AgentId {
 }
 
 impl sqlx::Encode<'_, Sqlite> for AgentId {
-    fn encode_by_ref(
-        &self,
-        buf: &mut <Sqlite as sqlx::Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
+    fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
         <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.as_bytes().to_vec(), buf)
     }
 }

@@ -5,7 +5,7 @@ use std::{
 };
 
 use aliased::Aliasing;
-use p2panda::operation::{Header, Operation};
+use p2panda::operation::{Header, LogId, Operation};
 use p2panda_store::operations::OperationStore;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, mpsc::Receiver};
@@ -366,7 +366,7 @@ impl ConsistencyReport {
         for (node, hashes) in hashes.iter() {
             let mut headers = vec![];
             for hash in hashes {
-                let op = OperationStore::<Operation, p2panda::Hash>::get_operation(
+                let op = OperationStore::<Operation, p2panda::Hash, LogId>::get_operation(
                     &node.op_store.store,
                     hash,
                 )
@@ -395,7 +395,7 @@ impl ConsistencyReport {
     fn op_line((hash, header): (p2panda::Hash, Header)) -> String {
         format!(
             "{:32?} {:3} {:32?}",
-            header.extensions.log_id().aliased(),
+            header.extensions.log_id.aliased(),
             header.seq_num,
             hash.aliased()
         )
