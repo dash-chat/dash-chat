@@ -760,6 +760,23 @@ test('a member may leave a group, and a last admin with company may not', () => 
 	assert.deepEqual(showing(m, B), []);
 });
 
+test('a group is read-only once the removal has reached the one removed', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	assert.equal(m.view(B, group).departed, false);
+	m.removeGroupMember(group, A, B);
+	// The removal travels like anything else: B keeps the group, and its
+	// composer, until it arrives.
+	assert.equal(m.view(B, group).departed, false);
+	m.propagate();
+	assert.equal(m.view(B, group).departed, true);
+	// A is still in it, so nothing changed there.
+	assert.equal(m.view(A, group).departed, false);
+});
+
 test('a group stays on a device that was away until the removal reaches it', () => {
 	const m = sameLan(A, B);
 	contacts(m, A, B);

@@ -65,6 +65,10 @@ export interface ChatView {
 	/** Direct chats only: the viewer has blocked the peer, which turns the
 	 * chat read-only. */
 	blocked: boolean;
+	/** Groups only: the viewer has left or been removed. The group goes on
+	 * syncing, so the chat stays open and readable, with the app saying why
+	 * there is no composer instead of showing one. */
+	departed: boolean;
 	messages: MessageView[];
 }
 
@@ -999,6 +1003,8 @@ export class ExpectedModel {
 				: null;
 		return {
 			blocked: peer !== null && this.blocks(agent, peer),
+			departed:
+				chat.kind === 'group' && !this.membersFor(chat, agent).includes(agent),
 			messages: [...views.values()],
 		};
 	}
