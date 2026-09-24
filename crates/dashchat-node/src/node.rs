@@ -49,7 +49,8 @@ use crate::{
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
     MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
 };
-use dashchat_utils::{NETWORK_ID, RELAY_URL};
+use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
+use tracing::{error, warn};
 
 pub use app_processing::{Notification, OpNotification, SystemNotification};
 
@@ -512,14 +513,21 @@ impl Node {
         if node.config.defer_stored_topics_initialization {
             // Initialize stored topics on a background task so the node is
             // returned immediately. This keeps app launch responsive while still ensuring all
-            // topics are eventually subscribed. The handle is aborted during
-            // shutdown so teardown does not race the replay.
+            // topics are eventually subscribed. Retry with backoff so transient
+            // SQLite or mailbox failures do not leave topics unsubscribed.
+            // The handle is aborted during shutdown so teardown does not race
+            // the replay.
             let init_handle = tokio::spawn({
                 let node = node.clone();
                 async move {
-                    if let Err(err) = node.initialize_stored_topics().await {
-                        tracing::error!(?err, "failed to initialize stored topics");
-                    }
+                    let _ = retry_with_backoff(
+                        None,
+                        std::time::Duration::from_secs(1),
+                        std::time::Duration::from_secs(60),
+                        "initialize_stored_topics",
+                        || async { node.initialize_stored_topics().await },
+                    )
+                    .await;
                 }
             });
             node.stored_topics_init_handle
@@ -2043,6 +2051,10 @@ impl Node {
         self.initialize_stored_topics().await
     }
 
+    /// Initialize all stored topics. Per-topic failures are logged and skipped
+    /// so one bad topic does not starve the rest. The caller is responsible for
+    /// retrying the whole call if it returns an error (the deferred init path
+    /// does this with exponential backoff).
     pub async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         self.initialize_topic(
             *Topic::announcements(self.agent_id())
@@ -2050,38 +2062,53 @@ impl Node {
         )
         .await?;
 
-        for topic in self.local_store.get_advertised_inbox_topics().await?.iter() {
-            self.initialize_topic(
-                *topic
-                    .topic
-                    .clone()
-                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
-            )
-            .await?;
+        let advertised_inbox_topics = self.local_store.get_advertised_inbox_topics().await?;
+        for topic in advertised_inbox_topics.iter() {
+            if let Err(err) = self
+                .initialize_topic(
+                    *topic
+                        .topic
+                        .clone()
+                        .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
+                )
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize advertised inbox topic");
+            }
         }
 
-        for (topic, peer_device) in self
+        let reply_inbox_topics = self
             .local_store
             .get_reply_inbox_topics_with_author()
-            .await?
-            .iter()
-        {
-            self.initialize_topic(*topic.topic.clone().alias_named(&format!(
-                "reply_inbox({:?},peer={})",
-                self.device_id().aliased(),
-                &hex::encode(&peer_device.as_bytes()[..4])
-            )))
             .await?;
+        for (topic, peer_device) in reply_inbox_topics.iter() {
+            if let Err(err) = self
+                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                    "reply_inbox({:?},peer={})",
+                    self.device_id().aliased(),
+                    &hex::encode(&peer_device.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize reply inbox topic");
+            }
         }
 
-        for topic in self.local_store.subscribed_topics().await?.iter() {
-            self.initialize_topic(*topic).await?;
+        let subscribed_topics = self.local_store.subscribed_topics().await?;
+        for topic in subscribed_topics.iter() {
+            if let Err(err) = self.initialize_topic(*topic).await {
+                error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed topic");
+            }
         }
 
         // @TODO: I had to add this so that the device group topic is subscribed to when we later
         // attempt to publish operations to it.
-        self.initialize_topic(self.device_group_topic().into())
-            .await?;
+        if let Err(err) = self
+            .initialize_topic(self.device_group_topic().into())
+            .await
+        {
+            error!(?err, "failed to initialize device group topic");
+        }
 
         Ok(())
     }
