@@ -1,9 +1,11 @@
 //! Where an outbox entry lives on disk and how it gets there intact.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
+use sentry::protocol::Attachment;
 use sentry::Envelope;
 
 const EXTENSION: &str = "envelope";
@@ -153,6 +155,41 @@ pub(crate) fn move_to(path: &Path, root: &Path, state: State) -> anyhow::Result<
     let moved = dir.join(name);
     std::fs::rename(path, &moved).context("the entry could not be moved")?;
     Ok(moved)
+}
+
+/// Rewritten through a temporary file and a rename, like [`write`], so a kill
+/// mid-append leaves the entry as it was.
+pub(crate) fn append_attachments(path: &Path, attachments: &[Attachment]) -> anyhow::Result<()> {
+    if attachments.is_empty() {
+        return Ok(());
+    }
+    let mut bytes = std::fs::read(path).context("the entry could not be read")?;
+    if !bytes.ends_with(b"\n") {
+        bytes.push(b'\n');
+    }
+    for attachment in attachments {
+        attachment
+            .to_writer(&mut bytes)
+            .context("an attachment could not be written")?;
+        bytes.push(b'\n');
+    }
+
+    let partial = with_suffix(path, PARTIAL);
+    let written = write_bytes(&partial, &bytes)
+        .and_then(|()| std::fs::rename(&partial, path).context("the entry could not be finished"));
+    if let Err(err) = written {
+        let _ = std::fs::remove_file(&partial);
+        return Err(err);
+    }
+    Ok(())
+}
+
+fn write_bytes(partial: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    let mut file = std::fs::File::create(partial).context("the entry could not be created")?;
+    file.write_all(bytes)
+        .context("the entry could not be written")?;
+    file.sync_all().context("the entry could not be flushed")?;
+    Ok(())
 }
 
 /// Renames out of the way of any other drainer, in this process or another.

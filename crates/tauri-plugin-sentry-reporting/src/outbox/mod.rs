@@ -13,6 +13,7 @@ pub(crate) mod sender;
 
 use std::path::{Path, PathBuf};
 
+use sentry::protocol::Attachment;
 use sentry::Envelope;
 
 use crate::outbox::entry::State;
@@ -72,10 +73,16 @@ impl Outbox {
     }
 
     /// Returns where each approved crash now waits, oldest first.
-    pub(crate) fn approve_held(&self) -> anyhow::Result<Vec<PathBuf>> {
+    ///
+    /// `attachments` join each crash here because the panic hook is synchronous
+    /// and cannot read and redact the log tail itself.
+    pub(crate) fn approve_held(&self, attachments: &[Attachment]) -> anyhow::Result<Vec<PathBuf>> {
         entry::list(&self.root, State::Held)
             .iter()
-            .map(|held| entry::move_to(&held.path, &self.root, State::Queued))
+            .map(|held| {
+                entry::append_attachments(&held.path, attachments)?;
+                entry::move_to(&held.path, &self.root, State::Queued)
+            })
             .collect()
     }
 
@@ -127,10 +134,35 @@ mod tests {
         assert!(outbox.has_held());
         assert!(outbox.queued().is_empty());
 
-        outbox.approve_held().unwrap();
+        outbox.approve_held(&[]).unwrap();
 
         assert!(!outbox.has_held());
         assert_eq!(outbox.queued().len(), 1);
+    }
+
+    #[test]
+    fn an_approved_crash_carries_the_attachments() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.hold(&envelope("crash")).unwrap();
+
+        let log = Attachment {
+            buffer: b"the crashed session\n".to_vec(),
+            filename: "Dash Chat.log".into(),
+            content_type: Some("text/plain".into()),
+            ty: None,
+        };
+        let approved = outbox.approve_held(&[log]).unwrap();
+
+        assert!(entry::validate(&approved[0]));
+        let sent = String::from_utf8(std::fs::read(&approved[0]).unwrap()).unwrap();
+        assert!(sent.contains(r#""type":"attachment""#), "got: {sent}");
+        assert!(
+            sent.contains(r#""filename":"Dash Chat.log""#),
+            "got: {sent}"
+        );
+        assert!(sent.contains("the crashed session"), "got: {sent}");
+        assert!(sent.contains("crash"), "got: {sent}");
     }
 
     #[test]
