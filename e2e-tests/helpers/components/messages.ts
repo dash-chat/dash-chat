@@ -107,13 +107,7 @@ export class Messages extends TestHelper {
 		forGroup?: boolean,
 	): Promise<MessageStatus | null> {
 		return this.agent.execute(
-			(
-				messagesSel: string,
-				groupSel: string,
-				statusSel: string,
-				t: string,
-				group: boolean,
-			) => {
+			(messagesSel: string, statusSel: string, t: string, group: boolean) => {
 				const wrappers = document.querySelectorAll<HTMLElement>(
 					`${messagesSel} [data-message-hash]`,
 				);
@@ -121,9 +115,15 @@ export class Messages extends TestHelper {
 					if (!wrapper.textContent?.includes(t)) continue;
 					let el: HTMLElement | null = null;
 					if (group) {
-						const groupEl = wrapper.closest(groupSel);
-						const els = groupEl
-							? Array.from(groupEl.querySelectorAll<HTMLElement>(statusSel))
+						const groupId = wrapper
+							.closest<HTMLElement>('[data-message-group]')
+							?.getAttribute('data-message-group');
+						const els = groupId
+							? Array.from(
+									document.querySelectorAll<HTMLElement>(
+										`${messagesSel} [data-message-group="${groupId}"] ${statusSel}`,
+									),
+								)
 							: [];
 						el =
 							els.find(
@@ -150,7 +150,6 @@ export class Messages extends TestHelper {
 				return null;
 			},
 			this.messagesSelector,
-			tid('message-group'),
 			tid('message-status'),
 			text,
 			forGroup ?? false,
@@ -363,6 +362,40 @@ export class Messages extends TestHelper {
 				),
 			{ timeout, timeoutMsg: `Photo message "${label}" not found` },
 		);
+	}
+
+	/** Start recording every moment the photo whose filename contains `label`
+	 * goes on or off screen. Returns the recording's token, to be handed back to
+	 * [`photoHiddenPeriods`]. */
+	recordPhotoVisibility(label: string): Promise<string> {
+		return this.agent.execute(
+			(l: string) => window.__test.recordPhotoVisibility(l),
+			label,
+		);
+	}
+
+	/** How long, in ms, each stretch lasted in which the recorded photo was off
+	 * screen after it had been shown; a stretch still ongoing runs to now.
+	 * Throws if the webview reloaded in between, which would otherwise look like
+	 * a photo that never went away. */
+	async photoHiddenPeriods(token: string): Promise<number[]> {
+		const history = await this.agent.execute(() =>
+			window.__test.photoVisibilityHistory(),
+		);
+		if (history.token !== token) {
+			throw new Error(
+				`photo-visibility recording was lost (expected token ${token}, got ${history.token}) — the webview reloaded, so what the photo did in between was not observed`,
+			);
+		}
+		const firstShown = history.samples.findIndex(s => s.shown);
+		if (firstShown === -1) return [];
+		const periods: number[] = [];
+		for (const [i, sample] of history.samples.entries()) {
+			if (i <= firstShown || sample.shown) continue;
+			const back = history.samples[i + 1]?.at ?? Date.now();
+			periods.push(back - sample.at);
+		}
+		return periods;
 	}
 
 	/** Inline width/height styles of the cell of the photo whose filename
