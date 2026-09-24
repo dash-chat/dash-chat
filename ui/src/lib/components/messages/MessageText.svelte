@@ -63,15 +63,26 @@
 		const link = e.target.closest('a');
 		if (!link) return;
 		e.preventDefault();
-		openTappedLink(link.href).catch(err => {
-			console.error('[links] failed to open link', err);
-			showToast(m.errorUnexpected(), 'unexpected', err);
-		});
+		openTappedLink(link.href).catch(err =>
+			console.error('[links] failed to open link', err),
+		);
 	}
 
 	async function openTappedLink(href: string) {
-		if (await handleDeepLink(href, contactsStore)) return;
+		if (await handledInApp(href)) return;
 		await openExternalUrl(href);
+	}
+
+	/** Whether a deep link handler took `href`. A handler that fails is
+	 * reported and leaves the link to the browser. */
+	async function handledInApp(href: string): Promise<boolean> {
+		try {
+			return await handleDeepLink(href, contactsStore);
+		} catch (err) {
+			console.error('[links] in-app handling failed', err);
+			showToast(m.errorUnexpected(), 'unexpected', err);
+			return false;
+		}
 	}
 </script>
 
