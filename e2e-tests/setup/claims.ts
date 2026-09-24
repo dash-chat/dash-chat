@@ -38,7 +38,9 @@ function holder(id: string): number | null {
 		return null;
 	}
 	const pid = Number(text.trim());
-	if (Number.isNaN(pid) || !isAlive(pid)) return null;
+	// An empty claim (its writer died mid-write) parses as 0, and kill(0)
+	// signals our own process group, so it would read as held forever.
+	if (!Number.isInteger(pid) || pid <= 0 || !isAlive(pid)) return null;
 	return pid;
 }
 
