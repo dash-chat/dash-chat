@@ -61,9 +61,13 @@ impl PendingNavigations {
         let Some(url) = urls.last().map(|url| url.to_string()) else {
             return;
         };
-        let already_seen =
-            self.0.lock().expect("pending navigations poisoned").last_deep_link.as_ref()
-                == Some(&url);
+        let already_seen = self
+            .0
+            .lock()
+            .expect("pending navigations poisoned")
+            .last_deep_link
+            .as_ref()
+            == Some(&url);
         if !already_seen {
             self.push(app, PendingNavigation::DeepLink(url));
         }
@@ -126,5 +130,11 @@ pub fn take_pending_navigations(
     pending: State<'_, PendingNavigations>,
 ) -> Vec<PendingNavigation> {
     pending.queue_current_deep_link(&app);
-    std::mem::take(&mut pending.0.lock().expect("pending navigations poisoned").pending)
+    std::mem::take(
+        &mut pending
+            .0
+            .lock()
+            .expect("pending navigations poisoned")
+            .pending,
+    )
 }
