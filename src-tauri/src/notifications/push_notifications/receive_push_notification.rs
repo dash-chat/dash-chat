@@ -219,16 +219,11 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
-    // Fetch the new operation. The push itself is evidence the cloud mailbox is
-    // reachable — it only exists because the mailbox server took the blob and
-    // asked for it — so wake the mailbox rather than probing it, clearing any
-    // backoff a network-less background stretch left behind. Fall back to a
-    // general trigger if it isn't registered yet.
-    if let Some(cloud_id) = crate::mailbox::cloud_mailbox_id(&node).await {
-        node.mailboxes.wakeup(cloud_id).await;
-    } else {
-        node.mailboxes.nudge_poll_loop();
-    }
+    // Probe rather than wake: the push proves the cloud mailbox is up, not that
+    // this device can reach it, and a wakeup would reset the connection status
+    // on every push. Re-probing while waiting keeps retries quick when the first
+    // poll fails because the network isn't back yet.
+    crate::mailbox::probe_cloud_mailbox(&node).await;
 
     // Poll for the operation to arrive (up to 15 seconds)
     // PERF: consider adding the ability for the op store to notify when an op is stored,
@@ -238,7 +233,10 @@ async fn handle_push_notification(
     // to include seq_num itself. seq_num == 0 → None means "from the start".
     let from = seq_num.checked_sub(1);
     let mut entry = None;
-    for _ in 0..75 {
+    for attempt in 1..=75 {
+        if attempt % 10 == 0 {
+            crate::mailbox::probe_cloud_mailbox(&node).await;
+        }
         let log = node
             .op_store
             .get_log(&device_id, &LogId::from_topic(topic_id), from)
