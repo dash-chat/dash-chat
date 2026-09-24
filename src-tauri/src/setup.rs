@@ -170,6 +170,9 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .format(|out, message, _record| out.finish(format_args!("{message}")))
         .clear_targets()
         .max_file_size(5 * 1024 * 1024)
+        // The default, `KeepOne`, deletes the log on every rotation, so a report
+        // sent just after one carries almost nothing. ~50 MB in all.
+        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(9))
         .targets(targets)
         .build();
 
