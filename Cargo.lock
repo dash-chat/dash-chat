@@ -10935,7 +10935,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-ios-photos"
 version = "0.3.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-ios-photos?rev=ec723636ddf248dd6542e02fb2e83d91d1da36c9#ec723636ddf248dd6542e02fb2e83d91d1da36c9"
+source = "git+https://github.com/dash-chat/tauri-plugin-ios-photos?rev=034dafd0a591fce73d4fe865e216cc3e225236c5#034dafd0a591fce73d4fe865e216cc3e225236c5"
 dependencies = [
  "serde",
  "tauri",
