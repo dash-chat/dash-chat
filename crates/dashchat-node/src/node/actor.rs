@@ -9,8 +9,8 @@ use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
-    ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture, Source,
-    StreamEvent, StreamFrom, StreamPublisher, StreamSubscription,
+    ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
+    StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use thiserror::Error;
@@ -38,7 +38,7 @@ pub(crate) enum Command {
     Import {
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-        reply_tx: oneshot::Sender<Result<ExternalStreamFuture, NodeActorError>>,
+        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
     Publish {
         topic: Topic,
@@ -255,7 +255,7 @@ impl Actor {
         &mut self,
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-    ) -> Result<ExternalStreamFuture, NodeActorError> {
+    ) -> Result<(), NodeActorError> {
         // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
         let tx = match self.tx_map.get(&topic) {
             Some(tx) => tx.clone(),
@@ -267,8 +267,24 @@ impl Actor {
             }
         };
 
-        let import_fut = tx.import(stream).await?;
-        Ok(import_fut)
+        // Spawn the import consumption into a separate task so the actor loop
+        // is not blocked while the topic processor replays local operations
+        // before accepting the external stream. This keeps Publish commands and
+        // event processing responsive during backlog replay.
+        tokio::spawn(async move {
+            match tx.import(stream).await {
+                Ok(_import_fut) => {
+                    // The stream will be consumed by the topic processor; we
+                    // don't need to await completion here; dropping the future
+                    // is fine since it only signals end-of-stream processing.
+                }
+                Err(err) => {
+                    warn!(topic = ?topic.aliased(), ?err, "import stream failed");
+                }
+            }
+        });
+
+        Ok(())
     }
 
     async fn handle_publish(

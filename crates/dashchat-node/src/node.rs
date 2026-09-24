@@ -116,6 +116,10 @@ pub struct NodeConfig {
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
+    /// Whether to subscribe to all stored topics and replay their backlogs
+    /// synchronously inside `Node::new`. The main app sets this to `false` so
+    /// launch is not blocked; the iOS push extension and tests keep `true`.
+    pub initialize_stored_topics_on_start: bool,
 }
 
 impl NodeConfig {
@@ -165,6 +169,7 @@ impl NodeConfig {
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
+            initialize_stored_topics_on_start: true,
         }
     }
 
@@ -191,6 +196,7 @@ impl Default for NodeConfig {
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
+            initialize_stored_topics_on_start: true,
         }
     }
 }
@@ -500,7 +506,9 @@ impl Node {
 
         // === topics === //
 
-        node.initialize_stored_topics().await?;
+        if node.config.initialize_stored_topics_on_start {
+            node.initialize_stored_topics().await?;
+        }
 
         Ok(node)
     }
@@ -2007,7 +2015,7 @@ impl Node {
         self.initialize_stored_topics().await
     }
 
-    async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+    pub async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         self.initialize_topic(
             *Topic::announcements(self.agent_id())
                 .alias_named(&format!("announce({:?})", self.agent_id().aliased())),
