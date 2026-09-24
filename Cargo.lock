@@ -11155,6 +11155,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dashchat-utils",
+ "flate2",
  "log",
  "network-watch",
  "regex",

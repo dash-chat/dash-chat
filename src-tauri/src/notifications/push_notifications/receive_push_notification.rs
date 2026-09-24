@@ -23,8 +23,10 @@ static ANDROID_LOGS_ONCE: std::sync::Once = std::sync::Once::new();
 #[cfg(target_os = "ios")]
 static IOS_LOGGER_ONCE: std::sync::Once = std::sync::Once::new();
 
+/// Just over the 10 MB tail a report attaches, so this file and the previous
+/// one together always cover it.
 #[cfg(target_os = "ios")]
-const MAX_NSE_LOG_SIZE: u64 = 5 * 1024 * 1024;
+const MAX_NSE_LOG_SIZE: u64 = 12 * 1024 * 1024;
 
 /// Wall clock, not a count of polls: the iOS extension is killed at ~30 s
 /// whatever the loop's body spends on the network.
@@ -115,10 +117,14 @@ fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(&logs_dir)?;
     let log_path = logs_dir.join("notification-service.log");
 
-    // Simple size-based rotation: clear the file if it has grown too large.
+    // Rotate rather than clear: a report attaches every `*.log` here, and a
+    // cleared file would leave it with only the pushes since the rotation.
     if let Ok(metadata) = std::fs::metadata(&log_path) {
         if metadata.len() > MAX_NSE_LOG_SIZE {
-            let _ = std::fs::remove_file(&log_path);
+            let _ = std::fs::rename(
+                &log_path,
+                logs_dir.join("notification-service.previous.log"),
+            );
         }
     }
 
