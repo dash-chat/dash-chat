@@ -197,7 +197,7 @@ async fn reconnect_cloud_mailbox(
         None => None,
     };
     let (Some(id), Some(mailbox)) = (cloud_id.clone(), tracked) else {
-        if register_cloud_mailbox_briefly(node).await {
+        if register_cloud_mailbox_with_timeout(node).await {
             // Re-resolve next time: the id the server reported can differ from a
             // stale persisted one, which would otherwise never become tracked.
             *cloud_id = None;
@@ -213,7 +213,7 @@ async fn reconnect_cloud_mailbox(
 /// Runs the registration as its own task so that giving up on it after
 /// [`REGISTER_WAIT`] never cancels it halfway through `Mailboxes::register`; a
 /// slow attempt still completes in the background.
-async fn register_cloud_mailbox_briefly(node: &dashchat_node::Node) -> bool {
+async fn register_cloud_mailbox_with_timeout(node: &dashchat_node::Node) -> bool {
     let node = node.clone();
     let registering = tokio::spawn(async move { crate::setup::track_cloud_mailbox(&node).await });
     match tokio::time::timeout(REGISTER_WAIT, registering).await {
