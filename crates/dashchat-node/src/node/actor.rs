@@ -16,8 +16,9 @@ use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio_stream::{StreamExt, StreamMap};
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::Payload;
 use crate::stores::GROUPS_STATE_ID;
@@ -126,6 +127,10 @@ pub struct Actor {
     /// Prefix for each topic stream's ack cursor name. `None` uses p2panda's
     /// default per-topic cursor (`"{topic}"`);
     stream_cursor_prefix: Option<String>,
+
+    /// Import tasks spawned so `handle_import` does not block the actor loop.
+    /// Dropped on shutdown, aborting any still-parked imports.
+    import_tasks: JoinSet<()>,
 }
 
 impl Actor {
@@ -150,6 +155,7 @@ impl Actor {
                 groups_processor,
                 events_tx,
                 stream_cursor_prefix,
+                import_tasks: JoinSet::new(),
             },
             events_rx,
         )
@@ -204,6 +210,11 @@ impl Actor {
                     Some((_, event)) = self.streams.next() => {
                         if let Err(err) = self.process_event(event).await {
                             warn!(?err, "actor event processing failed");
+                        }
+                    }
+                    Some(result) = self.import_tasks.join_next() => {
+                        if let Err(err) = result {
+                            error!(?err, "import task panicked");
                         }
                     }
                     else => {
@@ -271,7 +282,7 @@ impl Actor {
         // is not blocked while the topic processor replays local operations
         // before accepting the external stream. This keeps Publish commands and
         // event processing responsive during backlog replay.
-        tokio::spawn(async move {
+        self.import_tasks.spawn(async move {
             if let Err(err) = tx.import(stream).await {
                 warn!(topic = ?topic.aliased(), ?err, "import stream failed");
             }

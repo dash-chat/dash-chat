@@ -118,9 +118,7 @@ pub struct NodeConfig {
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
     /// Whether to defer subscribing to all stored topics and replaying their
-    /// backlogs until after `Node::new` returns. The main app sets this to
-    /// `true` so launch is not blocked; the push extension, background tasks,
-    /// and tests keep `false` to be fully initialized synchronously.
+    /// backlogs until after `Node::new` returns.
     pub defer_stored_topics_initialization: bool,
 }
 
