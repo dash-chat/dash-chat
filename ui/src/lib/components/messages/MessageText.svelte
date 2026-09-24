@@ -8,6 +8,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { handleDeepLink } from '$lib/utils/deep-links';
 	import { openExternalUrl } from '$lib/utils/links';
+	import { showToast } from '$lib/utils/toasts';
 	import { messageTextHtml } from './message-helpers';
 
 	interface Props {
@@ -62,9 +63,10 @@
 		const link = e.target.closest('a');
 		if (!link) return;
 		e.preventDefault();
-		openTappedLink(link.href).catch(err =>
-			console.error('[links] failed to open link', err),
-		);
+		openTappedLink(link.href).catch(err => {
+			console.error('[links] failed to open link', err);
+			showToast(m.errorUnexpected(), 'unexpected', err);
+		});
 	}
 
 	async function openTappedLink(href: string) {
