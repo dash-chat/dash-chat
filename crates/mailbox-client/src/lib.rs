@@ -1,3 +1,4 @@
+pub mod blob_push;
 pub mod manager;
 pub mod mem;
 pub mod store;
@@ -148,18 +149,3 @@ pub trait MailboxItem:
 /// Extra traits for ItemTraits which are feature-dependent.
 pub trait OptionalItemTraits {}
 impl<T> OptionalItemTraits for T {}
-
-/// Implemented in `dashchat-node`; kept as a trait here so this crate stays
-/// free of node types.
-#[async_trait::async_trait]
-pub trait BlobPushQueue: Send + Sync + 'static {
-    async fn enqueue(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]);
-}
-
-#[derive(Clone, Default)]
-pub struct NoopBlobPushQueue;
-
-#[async_trait::async_trait]
-impl BlobPushQueue for NoopBlobPushQueue {
-    async fn enqueue(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
-}

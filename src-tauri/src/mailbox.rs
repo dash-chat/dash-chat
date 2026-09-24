@@ -168,7 +168,6 @@ async fn register_local_hub(
             id.clone(),
             url.clone(),
             node.endpoint_id(),
-            node.blob_push_queue(),
         ))
         .await;
     log::info!("*** Registered local mailbox client via mdns: {id} ({url}) ***");

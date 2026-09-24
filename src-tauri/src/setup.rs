@@ -22,7 +22,6 @@ pub(crate) async fn track_cloud_mailbox(node: &Node) -> anyhow::Result<String> {
             health.mailbox_id,
             mailbox_url.clone(),
             node.endpoint_id(),
-            node.blob_push_queue(),
         );
         node.mailboxes.register(mailbox_client).await;
     }

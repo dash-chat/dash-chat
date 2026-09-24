@@ -40,30 +40,13 @@ impl Drop for LocalMailbox {
     }
 }
 
-impl TestMailbox {
-    /// Builds a mailbox for the test run. When `DASHCHAT_SPAWN_LOCAL_MAILBOX`
-    /// is set, spawns a standalone in-process mailbox server on a free port with
-    /// its own temp storage. Otherwise falls back to `MAILBOX_URL`: unset or
-    /// empty → a fresh [`MemMailbox`]; a URL → that environment's cloud mailbox.
-    pub fn from_env() -> Self {
-        if spawn_local_mailbox_enabled() {
-            return Self::spawn_local();
-        }
-        match std::env::var("MAILBOX_URL")
-            .ok()
-            .filter(|url| !url.is_empty())
-        {
-            None => Self::Mem(MemMailbox::new()),
-            Some(url) => Self::Cloud { url },
-        }
-    }
-
+impl LocalMailbox {
     /// Spawn a standalone mailbox server (its own endpoint + blob store, no
     /// blob-store sharing with any node) on a free port under a temp dir. No
     /// relay is configured, so the mailbox stays fully local and needs no
     /// internet access — nodes reach it over their directly-registered
     /// addresses.
-    fn spawn_local() -> Self {
+    pub fn spawn() -> Self {
         let dir = tempfile::tempdir().expect("failed to create temp dir for local mailbox");
         let db_path = dir.path().join("mailbox.redb");
         let port = free_port().expect("failed to allocate a free port for local mailbox");
@@ -97,12 +80,35 @@ impl TestMailbox {
             }
         });
 
-        Self::Local(Arc::new(LocalMailbox {
+        Self {
             url,
             _dir: dir,
             stop_signal: StdMutex::new(Some(stop_signal)),
             task: StdMutex::new(Some(task)),
-        }))
+        }
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+}
+
+impl TestMailbox {
+    /// Builds a mailbox for the test run. When `DASHCHAT_SPAWN_LOCAL_MAILBOX`
+    /// is set, spawns a standalone in-process mailbox server on a free port with
+    /// its own temp storage. Otherwise falls back to `MAILBOX_URL`: unset or
+    /// empty → a fresh [`MemMailbox`]; a URL → that environment's cloud mailbox.
+    pub fn from_env() -> Self {
+        if spawn_local_mailbox_enabled() {
+            return Self::Local(Arc::new(LocalMailbox::spawn()));
+        }
+        match std::env::var("MAILBOX_URL")
+            .ok()
+            .filter(|url| !url.is_empty())
+        {
+            None => Self::Mem(MemMailbox::new()),
+            Some(url) => Self::Cloud { url },
+        }
     }
 
     /// The mailbox's id: the in-memory id, or a served mailbox's canonical id
@@ -142,12 +148,7 @@ impl TestMailbox {
 
 async fn inspection_client(url: &str) -> ToyMailboxClient<MailboxOperation> {
     let health = fetch_mailbox_health(url).await.unwrap();
-    ToyMailboxClient::new(
-        health.mailbox_id,
-        url,
-        iroh::SecretKey::generate().public(),
-        Arc::new(mailbox_client::NoopBlobPushQueue),
-    )
+    ToyMailboxClient::new(health.mailbox_id, url, iroh::SecretKey::generate().public())
 }
 
 async fn register_served_mailbox(node: &crate::Node, url: &str) {
@@ -160,7 +161,6 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
             health.mailbox_id.clone(),
             url,
             node.endpoint_id(),
-            node.blob_push_queue(),
         ))
         .await;
 }

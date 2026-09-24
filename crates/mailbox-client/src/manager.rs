@@ -6,6 +6,9 @@ use chrono::{DateTime, Utc};
 use serde::{Serialize, Serializer};
 use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
+use tokio_util::task::AbortOnDropHandle;
+
+use crate::blob_push::BlobPusher;
 
 use super::*;
 
@@ -190,6 +193,7 @@ pub struct TrackedMailbox<Item: MailboxItem> {
     polling: AtomicBool,
     pending_request: std::sync::Mutex<PendingRequest<Item::Topic>>,
     config: MailboxesConfig,
+    blob_push: std::sync::Mutex<Option<AbortOnDropHandle<()>>>,
 }
 
 impl<Item: MailboxItem> TrackedMailbox<Item> {
@@ -206,6 +210,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
             polling: AtomicBool::new(false),
             pending_request: std::sync::Mutex::new(PendingRequest::None),
             config,
+            blob_push: std::sync::Mutex::new(None),
         }
     }
 
@@ -366,6 +371,7 @@ where
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
+    blob_pusher: Option<Arc<BlobPusher>>,
 }
 
 impl<Item, Store> Mailboxes<Item, Store>
@@ -378,6 +384,7 @@ where
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
+        blob_pusher: Option<BlobPusher>,
     ) -> Self {
         let (active_mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
@@ -388,6 +395,7 @@ where
             sync_tracker,
             config,
             nudge: Arc::new(Notify::new()),
+            blob_pusher: blob_pusher.map(Arc::new),
         }
     }
 
@@ -624,7 +632,8 @@ where
         let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
             return Ok(());
         };
-        let response = tracked.client().await.publish(ops).await?;
+        let response = self.publish(&tracked.client().await, ops).await?;
+        self.start_blob_push(id, tracked);
 
         let watermark = response.watermark(&topic, &author);
         if let Some(wm) = watermark {
@@ -700,12 +709,15 @@ where
         Ok(())
     }
 
+    /// Without a `blob_pusher`, blobs referenced by published operations are
+    /// never pushed to mailboxes.
     pub async fn spawn(
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
+        blob_pusher: Option<BlobPusher>,
     ) -> Result<Self, anyhow::Error> {
-        let manager = Self::new(store, sync_tracker, config);
+        let manager = Self::new(store, sync_tracker, config, blob_pusher);
         let r = manager.clone();
         tokio::spawn(
             async move {
@@ -790,6 +802,9 @@ where
         let id = id.clone();
         let task = tokio::spawn(async move {
             let result = manager.sync_topics(topics.into_iter(), &client).await;
+            if result.is_ok() {
+                manager.start_blob_push(&id, &tracked_mailbox);
+            }
             manager
                 .persist_status_change(&id, &tracked_mailbox, |tracked_mailbox| match result {
                     Ok(()) => tracked_mailbox.record_success(),
@@ -810,6 +825,86 @@ where
             guard.complete();
         });
         Some(task)
+    }
+
+    /// Publish `ops` to `mailbox`, having first queued their blobs to be pushed
+    /// after them, so that no crash in between loses the push.
+    async fn publish(
+        &self,
+        mailbox: &Arc<dyn MailboxClient<Item>>,
+        ops: Vec<Item>,
+    ) -> anyhow::Result<PublishResponse<Item>> {
+        let blob_hashes: Vec<iroh_blobs::Hash> =
+            ops.iter().flat_map(|op| op.blob_hashes()).collect();
+        self.record_pending_blobs(&mailbox.id(), &blob_hashes)
+            .await?;
+        mailbox.publish(ops).await
+    }
+
+    /// A push can take far longer than a poll, so it runs beside the polls, one
+    /// at a time per mailbox. A failed push is retried once the mailbox has
+    /// been polled successfully again.
+    fn start_blob_push(&self, id: &MailboxId, tracked_mailbox: &TrackedMailbox<Item>) {
+        let Some(blob_pusher) = self.blob_pusher.clone() else {
+            return;
+        };
+        let mut blob_push = tracked_mailbox.blob_push.lock().unwrap();
+        if blob_push.as_ref().is_some_and(|push| !push.is_finished()) {
+            return;
+        }
+        let manager = self.clone();
+        let id = id.clone();
+        *blob_push = Some(AbortOnDropHandle::new(tokio::spawn(async move {
+            if let Err(err) = manager.push_pending_blobs(&id, &blob_pusher).await {
+                tracing::warn!(?err, mailbox = %id, "mailbox blob push error");
+            }
+        })));
+    }
+
+    async fn push_pending_blobs(
+        &self,
+        id: &MailboxId,
+        blob_pusher: &BlobPusher,
+    ) -> anyhow::Result<()> {
+        let pending = self.sync_tracker.pending_blobs(id).await?;
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let held = blob_pusher.push(id, &pending).await?;
+        self.sync_tracker.remove_pending_blobs(id, &held).await
+    }
+
+    /// Only mailboxes reachable over iroh, whose id is their EndpointId, can
+    /// be pushed blobs.
+    async fn record_pending_blobs(
+        &self,
+        id: &MailboxId,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        if hashes.is_empty()
+            || self.blob_pusher.is_none()
+            || mailbox_server::decode_mailbox_id(id).is_err()
+        {
+            return Ok(());
+        }
+        self.sync_tracker.record_pending_blobs(id, hashes).await
+    }
+
+    /// A blob this device just fetched may be waiting to be pushed to some
+    /// mailboxes, having reached them inside an operation before its bytes.
+    pub async fn blob_fetched(&self, hash: iroh_blobs::Hash) {
+        let mailboxes = match self.sync_tracker.mailboxes_awaiting_blob(hash).await {
+            Ok(mailboxes) => mailboxes,
+            Err(err) => {
+                tracing::error!(?err, %hash, "failed to read mailboxes awaiting a blob");
+                return;
+            }
+        };
+        for id in mailboxes {
+            if let Some(tracked_mailbox) = self.tracked_mailbox(&id).await {
+                self.start_blob_push(&id, &tracked_mailbox);
+            }
+        }
     }
 
     /// Immediately sync the given topics with the given mailbox:
@@ -909,7 +1004,7 @@ where
             .map(|op| (op.topic(), op.author(), op.seq_num()))
             .collect();
 
-        mailbox.publish(ops_to_publish).await?;
+        self.publish(mailbox, ops_to_publish).await?;
 
         acks.extend(publish_acks);
         if let Err(err) = self.sync_tracker.record_synced(&mailbox.id(), &acks).await {
@@ -1167,11 +1262,11 @@ mod tests {
 
     /// Create a Mailboxes instance without spawning the background loop
     fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::new(DummyStore, test_sync_tracker(), config)
+        Mailboxes::new(DummyStore, test_sync_tracker(), config, None)
     }
 
     async fn spawn_test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_sync_tracker(), config)
+        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_sync_tracker(), config, None)
             .await
             .unwrap()
     }
@@ -2726,7 +2821,7 @@ mod tests {
         config: MailboxesConfig,
         store: MemStore,
     ) -> Mailboxes<Msg, MemStore> {
-        Mailboxes::new(store, test_sync_tracker(), config)
+        Mailboxes::new(store, test_sync_tracker(), config, None)
     }
 
     async fn join(handles: Vec<tokio::task::JoinHandle<()>>) {

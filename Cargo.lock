@@ -2185,7 +2185,6 @@ name = "dashchat-utils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "ciborium",
  "futures",
  "iroh",
@@ -5578,6 +5577,7 @@ dependencies = [
  "chrono",
  "ciborium",
  "derive_more 1.0.0",
+ "futures",
  "hex",
  "iroh",
  "iroh-blobs",
@@ -5593,6 +5593,7 @@ dependencies = [
  "sqlx",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
@@ -5606,7 +5607,6 @@ dependencies = [
  "dashchat-utils",
  "futures",
  "iroh",
- "iroh-blobs",
  "local-hub-discovery",
  "log",
  "mailbox-server",

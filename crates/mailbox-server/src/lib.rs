@@ -71,7 +71,7 @@ pub struct AppState {
     pub db: Arc<Database>,
     pub push_client: Option<Arc<PushNotificationsClient>>,
     pub push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
-    pub blob_sync: BlobSync,
+    pub endpoint: iroh::Endpoint,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -96,9 +96,10 @@ pub fn parse_network_id(hex: &str) -> Result<NetworkId, hex::FromHexError> {
     hex::FromHex::from_hex(hex)
 }
 
-/// Run the mailbox server on `listener` until `signal` resolves. `relay_url`
-/// and `network_id` configure the standalone [`BlobSync`] built when
-/// `blob_sync` is `None`.
+/// Run the mailbox server on `listener` until `signal` resolves. With a
+/// `shared_endpoint` (an in-process node's), blobs are pushed to and served
+/// from that node's store; otherwise the server builds its own [`BlobSync`]
+/// from `relay_url` and `network_id`.
 ///
 /// Takes the socket already bound, so whoever reserved the port holds it until
 /// this takes over and a failure to bind is theirs to report.
@@ -106,7 +107,7 @@ pub async fn spawn_server(
     db_path: PathBuf,
     listener: tokio::net::TcpListener,
     push_notifications_url: Option<String>,
-    blob_sync: Option<BlobSync>,
+    shared_endpoint: Option<iroh::Endpoint>,
     relay_url: Option<iroh::RelayUrl>,
     network_id: NetworkId,
     signal: impl Future<Output = ()> + Send + 'static,
@@ -118,17 +119,18 @@ pub async fn spawn_server(
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
-    let blob_sync = match blob_sync {
-        Some(blob_sync) => blob_sync,
+    let (endpoint, blob_sync) = match shared_endpoint {
+        Some(endpoint) => (endpoint, None),
         None => {
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root, relay_url, network_id).await?
+            let blob_sync = BlobSync::new(secret_key, blobs_root, relay_url, network_id).await?;
+            (blob_sync.endpoint(), Some(blob_sync))
         }
     };
-    tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
-    let blob_gc_handle = blob_sync.spawn_blob_gc_task();
+    tracing::info!("Mailbox iroh endpoint id: {}", endpoint.id());
+    let blob_gc_handle = blob_sync.as_ref().map(BlobSync::spawn_blob_gc_task);
 
     let push_client = match push_notifications_url {
         Some(url) => {
@@ -139,7 +141,7 @@ pub async fn spawn_server(
     };
 
     let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
-    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks), blob_sync);
+    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks), endpoint);
 
     let addr = listener.local_addr()?;
 
@@ -167,8 +169,8 @@ pub async fn spawn_server(
 async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
-        endpoint_id: encode_mailbox_id(state.blob_sync.endpoint_id()),
-        endpoint_addr: state.blob_sync.endpoint_addr(),
+        endpoint_id: encode_mailbox_id(state.endpoint.id()),
+        endpoint_addr: state.endpoint.addr(),
     })
 }
 
@@ -202,13 +204,13 @@ pub fn create_app(
     db: Arc<Database>,
     push_client: Option<Arc<PushNotificationsClient>>,
     push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
-    blob_sync: BlobSync,
+    endpoint: iroh::Endpoint,
 ) -> Router {
     let state = AppState {
         db,
         push_client,
         push_tasks,
-        blob_sync,
+        endpoint,
     };
 
     Router::new()

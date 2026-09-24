@@ -40,12 +40,12 @@ async fn start_mailbox_server(
     let (db, temp_file) = create_test_db();
     let push_client = PushNotificationsClient::new(push_url).unwrap();
     let push_tasks = Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
-    let blob_sync = mailbox_server::test_utils::test_blob_sync().await;
+    let endpoint = mailbox_server::test_utils::test_endpoint().await;
     let app = mailbox_server::create_app(
         Arc::new(db),
         Some(Arc::new(push_client)),
         push_tasks.clone(),
-        blob_sync,
+        endpoint,
     );
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),

@@ -22,7 +22,7 @@ pub async fn save_blob_to_cache(
 
     if !path.exists() {
         let bytes = node
-            .load_blob(&hash, Some(Duration::from_secs(30)))
+            .load_blob(&hash, Duration::from_secs(30))
             .await
             .map_err(|e| format!("Failed to load blob {hash}: {e:?}"))?;
 

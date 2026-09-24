@@ -24,7 +24,6 @@ pub struct ToyMailboxClient<Item: MailboxItem> {
     id: MailboxId,
     base_url: String,
     sender_pubkey: iroh::EndpointId,
-    blob_pushes: std::sync::Arc<dyn crate::BlobPushQueue>,
     phantom: std::marker::PhantomData<Item>,
 }
 
@@ -33,13 +32,11 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         id: MailboxId,
         base_url: impl Into<String>,
         sender_pubkey: iroh::EndpointId,
-        blob_pushes: std::sync::Arc<dyn crate::BlobPushQueue>,
     ) -> Self {
         Self {
             id,
             base_url: base_url.into(),
             sender_pubkey,
-            blob_pushes,
             phantom: std::marker::PhantomData,
         }
     }
@@ -66,9 +63,6 @@ where
 
         // Group operations by topic -> author -> seq_num
         let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
-
-        let blob_hashes: Vec<iroh_blobs::Hash> =
-            ops.iter().flat_map(|op| op.blob_hashes()).collect();
 
         for op in ops {
             let topic_id = Self::encode_topic_id(&op.topic());
@@ -97,7 +91,6 @@ where
 
         if response.status().is_success() {
             let response: StoreBlipsResponse = response.json().await?;
-            self.blob_pushes.enqueue(&self.id, &blob_hashes).await;
 
             let mut result = PublishResponse::default();
             for (topic_str, authors) in response.watermarks {

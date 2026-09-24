@@ -1,4 +1,4 @@
-mod blob_push;
+mod blob_fetch;
 pub mod blob_sync;
 mod chat;
 mod contact;
@@ -20,7 +20,6 @@ pub mod testing;
 
 pub use aliased::Aliasing;
 
-pub use blob_push::{LocalStoreBlobPushQueue, push_pending_blobs_once, spawn_blob_push_task};
 pub use chat::*;
 pub use contact::AddContactQrCode;
 pub use error::{

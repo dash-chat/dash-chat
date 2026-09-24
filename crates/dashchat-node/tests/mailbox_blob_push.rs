@@ -4,6 +4,7 @@ use dashchat_node::{testing::*, *};
 use futures::StreamExt;
 use iroh_blobs::api::proto::Bitfield;
 use iroh_blobs::protocol::{GetRequest, ObserveRequest, PushRequest};
+use mailbox_client::blob_push::BlobPusher;
 use mailbox_server::BlobSync;
 
 mod common;
@@ -156,50 +157,117 @@ async fn mailbox_keeps_a_blob_it_holds_whole_once_a_sender_observes_it() {
     .expect("the mailbox never tagged the blob it holds whole");
 }
 
+/// A pushed blob over the app's own size cap is not kept.
+#[tokio::test(flavor = "multi_thread")]
+async fn mailbox_does_not_keep_a_pushed_blob_over_the_size_cap() {
+    let network_id = *dashchat_utils::NETWORK_ID;
+    let blobs_alpn = p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, network_id);
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mailbox_dir.path().join("blobs"),
+        None,
+        network_id,
+    )
+    .await
+    .unwrap();
+
+    let alice = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
+    let oversized = vec![1u8; dashchat_utils::blob_sync::MAX_BLOB_BYTES as usize + 1];
+    let hash = alice
+        .blobs()
+        .add_bytes(unique_blob_bytes(oversized))
+        .await
+        .unwrap()
+        .hash;
+    let connection = alice
+        .iroh_endpoint()
+        .await
+        .unwrap()
+        .connect(mailbox.endpoint_addr(), &blobs_alpn)
+        .await
+        .unwrap();
+    alice
+        .blobs()
+        .store()
+        .remote()
+        .execute_push(
+            connection.clone(),
+            PushRequest::from(GetRequest::blob(hash)),
+        )
+        .complete()
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while !mailbox.blobs.has(hash).await.unwrap() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the mailbox never stored the pushed blob");
+    let mut observed = alice
+        .blobs()
+        .store()
+        .remote()
+        .observe(connection, ObserveRequest::new(hash));
+    assert!(observed.next().await.unwrap().unwrap().is_complete());
+    drop(observed);
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(
+        !has_retention_tag(&mailbox, hash).await,
+        "the mailbox kept a pushed blob over the size cap"
+    );
+}
+
 /// A node hosting a local hub is its own mailbox, and does not try to push to
 /// itself.
 #[tokio::test(flavor = "multi_thread")]
 async fn node_hosting_a_local_hub_does_not_push_to_itself() {
     let hub = TestNode::new(NodeConfig::testing(), "hub").await;
-    let mailbox_dir = tempfile::tempdir().unwrap();
-    let server = common::spawn_relay_mailbox(&hub, mailbox_dir.path().join("mailbox.redb")).await;
     let own_mailbox = mailbox_server::encode_mailbox_id(hub.endpoint_id());
-    hub.add_mailbox_client(common::app_mailbox_client(&hub, &own_mailbox, &server.url))
-        .await;
     let hash = hub
         .blobs()
         .add_bytes(unique_blob_bytes(vec![5u8; 1024]))
         .await
         .unwrap()
         .hash;
-
-    hub.blob_push_queue().enqueue(&own_mailbox, &[hash]).await;
-    push_pending_blobs_once(&hub).await;
-
-    assert!(
-        !has_pending_push(&hub, &own_mailbox, hash).await,
-        "the hub keeps retrying a push to itself"
+    let blobs_alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
     );
-    server.stop().await;
+    let pusher = BlobPusher::new(
+        hub.blobs().store().clone(),
+        hub.iroh_endpoint().await.unwrap(),
+        blobs_alpn.to_vec(),
+    );
+
+    let held = pusher
+        .push(&own_mailbox, &[hash])
+        .await
+        .expect("the hub tried to dial itself");
+
+    assert_eq!(held, vec![hash]);
 }
 
 /// A push queued while its mailbox is not registered, as after a relaunch,
-/// goes out as soon as the mailbox is registered rather than on the next retry.
+/// goes out once the mailbox is registered.
 #[tokio::test(flavor = "multi_thread")]
 async fn queued_push_goes_out_once_its_mailbox_is_registered() {
     let mailbox = common::spawn_standalone_mailbox().await;
-    let mut config = NodeConfig::testing().no_p2p();
-    config.blob_push_interval = Duration::from_secs(60 * 60);
-    let alice = TestNode::new(config, "alice").await;
+    let alice = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
     let hash = alice
         .blobs()
         .add_bytes(unique_blob_bytes(vec![9u8; 1024]))
         .await
         .unwrap()
         .hash;
-    alice.blob_push_queue().enqueue(&mailbox.id, &[hash]).await;
-    // Let the pass that queueing triggers find the mailbox unregistered.
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    alice
+        .mailboxes
+        .sync_tracker()
+        .record_pending_blobs(&mailbox.id, &[hash])
+        .await
+        .unwrap();
 
     alice
         .insert_peer_addr(mailbox.endpoint_addr.clone())
@@ -217,7 +285,7 @@ async fn queued_push_goes_out_once_its_mailbox_is_registered() {
         .wait_for(|| async {
             (!has_pending_push(&alice, &mailbox.id, hash).await)
                 .then_some(())
-                .ok_or("the push is still waiting for the next retry")
+                .ok_or("the push has not gone out")
         })
         .await
         .unwrap();
@@ -228,12 +296,12 @@ async fn has_pending_push(
     mailbox_id: &mailbox_client::MailboxId,
     hash: iroh_blobs::Hash,
 ) -> bool {
-    node.local_store
-        .pending_blob_pushes_by_mailbox()
+    node.mailboxes
+        .sync_tracker()
+        .pending_blobs(mailbox_id)
         .await
         .unwrap()
-        .get(mailbox_id)
-        .is_some_and(|hashes| hashes.contains(&hash))
+        .contains(&hash)
 }
 
 async fn has_retention_tag(mailbox: &BlobSync, hash: iroh_blobs::Hash) -> bool {

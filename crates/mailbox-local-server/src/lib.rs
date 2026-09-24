@@ -7,8 +7,7 @@ use std::net::Ipv6Addr;
 use std::path::{Path, PathBuf};
 
 use iroh::EndpointId;
-use iroh_blobs::BlobsProtocol;
-use mailbox_server::{encode_mailbox_id, BlobSync};
+use mailbox_server::encode_mailbox_id;
 
 pub use local_hub_discovery::LocalHubAnnouncementService;
 
@@ -40,16 +39,15 @@ impl LocalMailboxServer {
     }
 }
 
-/// Spawn an in-process mailbox server sharing the given iroh endpoint and blob
-/// store, so it serves blobs from the same store over the same endpoint. The
-/// server is announced on the LAN over mDNS, owned by the returned server so
-/// stopping it retires the announcement.
+/// Spawn an in-process mailbox server sharing the given iroh endpoint, so
+/// blobs are pushed to and served from the store behind it. The server is
+/// announced on the LAN over mDNS, owned by the returned server so stopping it
+/// retires the announcement.
 ///
 /// The port is remembered beside `db_path` and reused across restarts, so
 /// peers that discovered this hub keep reaching it.
 pub async fn spawn_local_mailbox_server(
     db_path: PathBuf,
-    blobs: BlobsProtocol,
     endpoint: iroh::Endpoint,
 ) -> anyhow::Result<LocalMailboxServer> {
     let (listener, port) = {
@@ -58,10 +56,8 @@ pub async fn spawn_local_mailbox_server(
     };
     listener.set_nonblocking(true)?;
     let listener = tokio::net::TcpListener::from_std(listener)?;
-    // Captured before `endpoint` is moved into the blob sync.
+    // Captured before `endpoint` is moved into the server task.
     let endpoint_id = endpoint.id();
-
-    let blob_sync = BlobSync::shared(blobs, endpoint);
 
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel::<()>();
 
@@ -73,7 +69,7 @@ pub async fn spawn_local_mailbox_server(
             db_path,
             listener,
             None,
-            Some(blob_sync),
+            Some(endpoint),
             None,
             *dashchat_utils::NETWORK_ID,
             signal,

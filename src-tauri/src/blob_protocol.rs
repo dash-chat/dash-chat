@@ -110,7 +110,7 @@ const NODE_READY_POLL: std::time::Duration = std::time::Duration::from_millis(10
 
 async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Result<Vec<u8>> {
     let node = wait_for_node(app).await?;
-    node.load_blob(hash, Some(std::time::Duration::from_secs(30)))
+    node.load_blob(hash, std::time::Duration::from_secs(30))
         .await
 }
 

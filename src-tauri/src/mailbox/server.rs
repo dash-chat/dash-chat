@@ -22,13 +22,10 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let endpoint = node.iroh_endpoint().await?;
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
 
-    // The in-process mailbox shares the node's iroh endpoint and blob store, so
-    // its EndpointId equals the node's and pushed blobs are served from the same
-    // store.
-    let blob_sync = node.blob_sync_optional().expect("blob sync is enabled");
-    let server =
-        mailbox_local_server::spawn_local_mailbox_server(path, blob_sync.blobs.clone(), endpoint)
-            .await?;
+    // The in-process mailbox shares the node's iroh endpoint, so its EndpointId
+    // equals the node's and pushed blobs land in and are served from the node's
+    // blob store.
+    let server = mailbox_local_server::spawn_local_mailbox_server(path, endpoint).await?;
 
     *guard = Some(server);
 

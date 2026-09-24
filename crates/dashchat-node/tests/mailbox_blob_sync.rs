@@ -217,12 +217,12 @@ async fn has_pending_push(
     mailbox_id: &mailbox_client::MailboxId,
     photo: iroh_blobs::Hash,
 ) -> bool {
-    node.local_store
-        .pending_blob_pushes_by_mailbox()
+    node.mailboxes
+        .sync_tracker()
+        .pending_blobs(mailbox_id)
         .await
         .unwrap()
-        .get(mailbox_id)
-        .is_some_and(|hashes| hashes.contains(&photo))
+        .contains(&photo)
 }
 
 /// Shuts `sender` down once `mailbox_id` has stored its message carrying
@@ -261,16 +261,12 @@ fn setup_field_test_tracing() {
     );
 }
 
-/// A receiver that forwards a sender's photo message to another mailbox does
-/// not queue a push of the photo there while it does not hold it.
-///
-/// Seen on four receivers in the field test (DASH-CHAT-4F, 43, 3W, 41): the
-/// message reached them through one mailbox, a second mailbox reported it
-/// missing, and the receiver re-published it there — announcing itself as the
-/// photo's source with an upload it could never make, then re-announcing it
-/// every minute.
+/// A receiver that forwards a sender's photo message to another mailbox before
+/// it has the photo pushes the photo there once it fetches it. The sender never
+/// publishes to that mailbox, which already has her message, so without the
+/// receiver the photo would never reach it.
 #[tokio::test(flavor = "multi_thread")]
-async fn receiver_does_not_queue_push_of_photo_it_lacks() {
+async fn receiver_pushes_photo_it_forwarded_once_it_fetches_it() {
     setup_field_test_tracing();
     let config = NodeConfig::testing();
 
@@ -322,7 +318,7 @@ async fn receiver_does_not_queue_push_of_photo_it_lacks() {
         .first()
         .expect("at least one media item")
         .hash();
-    freeze_once_message_reaches_mailbox(alice, &hub_id, hash).await;
+    let alice_dir = freeze_once_message_reaches_mailbox(alice, &hub_id, hash).await;
 
     let bobbi = TestNode::new_at_path(config.clone(), "bobbi", bobbi_dir).await;
     add_app_mailboxes(&bobbi).await;
@@ -331,7 +327,6 @@ async fn receiver_does_not_queue_push_of_photo_it_lacks() {
         cloud_id.clone(),
         &cloud_server.url,
         iroh::SecretKey::generate().public(),
-        std::sync::Arc::new(mailbox_client::NoopBlobPushQueue),
     );
     PollConfig::seconds(30)
         .wait_for(|| async {
@@ -356,10 +351,26 @@ async fn receiver_does_not_queue_push_of_photo_it_lacks() {
         !bobbi.blobs().has(hash).await.unwrap(),
         "precondition: bobbi must not hold the photo's bytes"
     );
-    assert!(
-        !has_pending_push(&bobbi, &cloud_id, hash).await,
-        "bobbi queued a push to the cloud mailbox of a photo he does not hold"
-    );
+
+    // Alice is back, and bobbi can reach her, though she still cannot push.
+    let alice = TestNode::new_at_path(config.clone(), "alice", alice_dir).await;
+    alice
+        .add_mailbox_client(common::app_mailbox_client(&alice, &hub_id, &hub_server.url))
+        .await;
+    teach_peers(&bobbi, [&alice]).await.unwrap();
+
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            cloud
+                .blobs()
+                .has(hash)
+                .await
+                .unwrap_or(false)
+                .then_some(())
+                .ok_or("bobbi has not pushed the photo to the cloud mailbox")
+        })
+        .await
+        .unwrap();
 
     hub_server.stop().await;
     cloud_server.stop().await;

@@ -15,7 +15,6 @@ dashchat-utils = { workspace = true }
 local-hub-discovery = { workspace = true }
 mailbox-server = { workspace = true }
 iroh = { workspace = true }
-iroh-blobs = { workspace = true }
 anyhow = "1"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }

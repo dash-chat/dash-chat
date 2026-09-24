@@ -106,7 +106,6 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
-            std::sync::Arc::new(mailbox_client::NoopBlobPushQueue),
         ))
         .await;
     bobbi
@@ -114,7 +113,6 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
-            std::sync::Arc::new(mailbox_client::NoopBlobPushQueue),
         ))
         .await;
 
@@ -157,7 +155,6 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
-            std::sync::Arc::new(mailbox_client::NoopBlobPushQueue),
         ))
         .await;
     bobbi
@@ -165,7 +162,6 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
-            std::sync::Arc::new(mailbox_client::NoopBlobPushQueue),
         ))
         .await;
 

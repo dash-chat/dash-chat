@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use dashchat_node::mailbox::MailboxOperation;
-use dashchat_node::testing::TestNode;
+use dashchat_node::testing::{LocalMailbox, TestNode};
 use mailbox_client::toy::ToyMailboxClient;
 use mailbox_local_server::LocalMailboxServer;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -14,10 +14,8 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 /// and blob store and wait for it to become healthy. This is the in-process
 /// test equivalent of `src-tauri/src/mailbox/server.rs`.
 pub async fn spawn_relay_mailbox(relay: &TestNode, db_path: PathBuf) -> LocalMailboxServer {
-    let blob_sync = relay.blob_sync_optional().expect("blob sync is enabled");
     let server = mailbox_local_server::spawn_local_mailbox_server(
         db_path,
-        blob_sync.blobs.clone(),
         relay.iroh_endpoint().await.unwrap(),
     )
     .await
@@ -32,34 +30,12 @@ pub struct StandaloneMailbox {
     pub url: String,
     pub id: mailbox_client::MailboxId,
     pub endpoint_addr: iroh::EndpointAddr,
-    _dir: tempfile::TempDir,
-    _stop: tokio::sync::oneshot::Sender<()>,
+    _mailbox: LocalMailbox,
 }
 
 pub async fn spawn_standalone_mailbox() -> StandaloneMailbox {
-    let dir = tempfile::tempdir().unwrap();
-    let db_path = dir.path().join("mailbox.redb");
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    tokio::spawn(async move {
-        let signal = async move {
-            let _ = stopped.await;
-        };
-        if let Err(err) = mailbox_server::spawn_server(
-            db_path,
-            listener,
-            None,
-            None,
-            None,
-            *dashchat_utils::NETWORK_ID,
-            signal,
-        )
-        .await
-        {
-            tracing::error!("standalone test mailbox failed: {err:?}");
-        }
-    });
+    let mailbox = LocalMailbox::spawn();
+    let url = mailbox.url().to_string();
     mailbox_client::toy::wait_for_mailbox_health(&url).await;
     let health = dashchat_node::mailbox::fetch_mailbox_health(&url)
         .await
@@ -68,8 +44,7 @@ pub async fn spawn_standalone_mailbox() -> StandaloneMailbox {
         url,
         id: health.mailbox_id,
         endpoint_addr: health.endpoint_addr,
-        _dir: dir,
-        _stop: stop,
+        _mailbox: mailbox,
     }
 }
 
@@ -161,19 +136,13 @@ async fn copy_throttled(
     }
 }
 
-/// A mailbox client wired the way the app wires one: pushing blobs through the
-/// node's persisted push queue.
+/// A mailbox client wired the way the app wires one.
 pub fn app_mailbox_client(
     node: &TestNode,
     mailbox_id: &mailbox_client::MailboxId,
     url: &str,
 ) -> ToyMailboxClient<MailboxOperation> {
-    ToyMailboxClient::new(
-        mailbox_id.clone(),
-        url,
-        node.endpoint_id(),
-        node.blob_push_queue(),
-    )
+    ToyMailboxClient::new(mailbox_id.clone(), url, node.endpoint_id())
 }
 
 /// A client for reading what a mailbox holds, independent of any node.
@@ -185,6 +154,5 @@ pub fn inspection_client(
         mailbox_id.clone(),
         url,
         iroh::SecretKey::generate().public(),
-        Arc::new(mailbox_client::NoopBlobPushQueue),
     )
 }

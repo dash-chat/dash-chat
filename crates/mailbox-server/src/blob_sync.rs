@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use futures::StreamExt;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
-use iroh_blobs::provider::events::{
-    EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
-};
+use iroh_blobs::api::proto::BlobStatus;
+use iroh_blobs::provider::events::{EventMask, EventSender, ProviderMessage, RequestMode};
 use p2panda_net::NetworkId;
 use tokio::task::JoinHandle;
 
@@ -22,20 +22,8 @@ const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
 #[derive(Clone)]
 pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
-    /// The iroh endpoint blobs are served from. Held both to keep a
-    /// standalone server's endpoint alive and to read its live [`EndpointAddr`]
-    /// (relay + direct addresses) for the `/health` response so clients can
-    /// dial this mailbox by its EndpointId. In the shared model this is a clone
-    /// of the in-process node's endpoint.
     endpoint: iroh::Endpoint,
-    /// True when this BlobSync owns its blob store (standalone server) and is
-    /// therefore responsible for GCing stored blobs. False when sharing an
-    /// in-process node's store, where the node owns blob lifecycle.
-    enable_gc: bool,
-    /// Held only when this BlobSync owns its iroh endpoint (standalone server).
-    /// `None` when sharing an in-process node's endpoint, in which case the
-    /// node keeps the router and blob store alive.
-    _router: Option<Router>,
+    _router: Router,
 }
 
 impl BlobSync {
@@ -97,44 +85,27 @@ impl BlobSync {
         Ok(Self {
             blobs,
             endpoint,
-            enable_gc: true,
-            _router: Some(router),
+            _router: router,
         })
     }
 
-    /// Build a mailbox BlobSync that shares an existing iroh endpoint and blob
-    /// store (the in-process node's) instead of creating its own. Pushed blobs
-    /// land in the shared store and are served by the node's existing protocol,
-    /// so the mailbox's EndpointId is the node's EndpointId and its advertised
-    /// `EndpointAddr` is the node's.
-    pub fn shared(blobs: iroh_blobs::BlobsProtocol, endpoint: iroh::Endpoint) -> Self {
-        Self {
-            blobs,
-            endpoint,
-            enable_gc: false,
-            _router: None,
-        }
+    pub fn endpoint(&self) -> iroh::Endpoint {
+        self.endpoint.clone()
     }
 
     pub fn endpoint_id(&self) -> iroh::EndpointId {
         self.endpoint.id()
     }
 
-    /// The endpoint's current dialing address (relay + direct addresses),
-    /// served via `/health` so clients can reach this mailbox by its EndpointId.
     pub fn endpoint_addr(&self) -> iroh::EndpointAddr {
         self.endpoint.addr()
     }
 
     /// Spawn the loop that expires stored-blob tags past the retention window;
-    /// iroh's background GC then reclaims the now-untagged blobs. Returns `None`
-    /// when sharing a node's store (the node owns blob lifecycle).
-    pub fn spawn_blob_gc_task(&self) -> Option<JoinHandle<()>> {
-        if !self.enable_gc {
-            return None;
-        }
+    /// iroh's background GC then reclaims the now-untagged blobs.
+    pub fn spawn_blob_gc_task(&self) -> JoinHandle<()> {
         let blobs = self.blobs.clone();
-        Some(tokio::spawn(async move {
+        tokio::spawn(async move {
             let mut interval = tokio::time::interval(BLOB_GC_INTERVAL);
             loop {
                 interval.tick().await;
@@ -142,7 +113,7 @@ impl BlobSync {
                     tracing::error!(?err, "failed to expire stored blob tags");
                 }
             }
-        }))
+        })
     }
 }
 
@@ -159,8 +130,26 @@ async fn tag_for_retention(store: &iroh_blobs::api::Store, hash: iroh_blobs::Has
     }
 }
 
-/// Tag each blob a peer pushes once its push completes, since iroh-blobs
-/// stores pushed blobs untagged and GC would reclaim them. The provider fails a
+/// Pushes can't be cut off mid-transfer (iroh-blobs reports no progress for
+/// them), so a blob over the app's own cap is only refused afterwards: left
+/// untagged, for GC to reclaim.
+async fn keep_pushed_blob(store: &iroh_blobs::api::Store, hash: iroh_blobs::Hash) {
+    match store.blobs().status(hash).await {
+        Ok(BlobStatus::Complete { size }) if size <= MAX_BLOB_BYTES => {
+            tag_for_retention(store, hash).await;
+        }
+        Ok(BlobStatus::Complete { size }) => {
+            tracing::warn!(%hash, size, "refusing to keep a pushed blob over the size cap");
+        }
+        Ok(_) => {}
+        Err(err) => tracing::warn!(%hash, ?err, "failed to read the status of a pushed blob"),
+    }
+}
+
+/// Tag each blob a peer pushes once the push or observe request on it ends,
+/// since iroh-blobs stores pushed blobs untagged and GC would reclaim them. A
+/// sender stops pushing once it observes the blob whole, so a push that ended
+/// without completing is kept when that observe ends. The provider fails a
 /// transfer whose update receiver is dropped, so every request's updates are
 /// read to the end.
 fn spawn_pushed_blob_tagger(
@@ -169,42 +158,24 @@ fn spawn_pushed_blob_tagger(
 ) {
     tokio::spawn(async move {
         while let Some(msg) = provider_events.recv().await {
-            match msg {
+            let (mut updates, pushed) = match msg {
                 ProviderMessage::PushRequestReceivedNotify(msg) => {
-                    let hash = msg.inner.request.hash;
-                    let store = store.clone();
-                    let mut updates = msg.rx;
-                    tokio::spawn(async move {
-                        while let Ok(Some(update)) = updates.recv().await {
-                            if let RequestUpdate::Completed(_) = update {
-                                tag_for_retention(&store, hash).await;
-                            }
-                        }
-                    });
-                }
-                ProviderMessage::GetRequestReceivedNotify(msg) => {
-                    let mut updates = msg.rx;
-                    tokio::spawn(async move { while let Ok(Some(_)) = updates.recv().await {} });
-                }
-                ProviderMessage::GetManyRequestReceivedNotify(msg) => {
-                    let mut updates = msg.rx;
-                    tokio::spawn(async move { while let Ok(Some(_)) = updates.recv().await {} });
+                    (msg.rx, Some(msg.inner.request.hash))
                 }
                 ProviderMessage::ObserveRequestReceivedNotify(msg) => {
-                    let hash = msg.inner.request.hash;
-                    let store = store.clone();
-                    let mut updates = msg.rx;
-                    tokio::spawn(async move {
-                        while let Ok(Some(_)) = updates.recv().await {}
-                        // A sender stops pushing once it sees the blob whole, so
-                        // a push that ended without completing is tagged here.
-                        if store.has(hash).await.unwrap_or(false) {
-                            tag_for_retention(&store, hash).await;
-                        }
-                    });
+                    (msg.rx, Some(msg.inner.request.hash))
                 }
-                _ => {}
-            }
+                ProviderMessage::GetRequestReceivedNotify(msg) => (msg.rx, None),
+                ProviderMessage::GetManyRequestReceivedNotify(msg) => (msg.rx, None),
+                _ => continue,
+            };
+            let store = store.clone();
+            tokio::spawn(async move {
+                while let Ok(Some(_)) = updates.recv().await {}
+                if let Some(hash) = pushed {
+                    keep_pushed_blob(&store, hash).await;
+                }
+            });
         }
     });
 }
