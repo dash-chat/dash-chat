@@ -49,7 +49,8 @@ use crate::{
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
     MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
 };
-use dashchat_utils::{NETWORK_ID, RELAY_URL};
+use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
+use tracing::error;
 
 pub use app_processing::{Notification, OpNotification, SystemNotification};
 
@@ -116,6 +117,9 @@ pub struct NodeConfig {
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
+    /// Whether to defer subscribing to all stored topics and replaying their
+    /// backlogs until after `Node::new` returns.
+    pub defer_stored_topics_initialization: bool,
 }
 
 impl NodeConfig {
@@ -165,6 +169,7 @@ impl NodeConfig {
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
+            defer_stored_topics_initialization: false,
         }
     }
 
@@ -191,6 +196,7 @@ impl Default for NodeConfig {
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
+            defer_stored_topics_initialization: false,
         }
     }
 }
@@ -211,6 +217,7 @@ pub struct Node {
     actor_tx: mpsc::Sender<Command>,
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 
     /// All bootstrap nodes we have registered on our node.
     ///
@@ -438,6 +445,7 @@ impl Node {
             actor_tx,
             processor_cancel_tx,
             processor_handle: Default::default(),
+            stored_topics_init_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
@@ -500,7 +508,33 @@ impl Node {
 
         // === topics === //
 
-        node.initialize_stored_topics().await?;
+        if node.config.defer_stored_topics_initialization {
+            // Initialize stored topics on a background task so the node is
+            // returned immediately. This keeps app launch responsive while still ensuring all
+            // topics are eventually subscribed. Retry with backoff so transient
+            // SQLite or mailbox failures do not leave topics unsubscribed.
+            // The handle is aborted during shutdown so teardown does not race
+            // the replay.
+            let init_handle = tokio::spawn({
+                let node = node.clone();
+                async move {
+                    let _ = retry_with_backoff(
+                        None,
+                        std::time::Duration::from_secs(1),
+                        std::time::Duration::from_secs(60),
+                        "initialize_stored_topics",
+                        || async { node.initialize_stored_topics().await },
+                    )
+                    .await;
+                }
+            });
+            node.stored_topics_init_handle
+                .lock()
+                .await
+                .replace(init_handle);
+        } else {
+            node.initialize_stored_topics().await?;
+        }
 
         Ok(node)
     }
@@ -1493,6 +1527,14 @@ impl Node {
 
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        // Stop any deferred stored-topic initialization before we tear down
+        // the actor or clear mailboxes, so it cannot race SQLite pool closure
+        // or re-insert topics into mailboxes after clear().
+        if let Some(handle) = self.stored_topics_init_handle.lock().await.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 
@@ -2007,45 +2049,78 @@ impl Node {
         self.initialize_stored_topics().await
     }
 
+    /// Initialize all stored topics.
+    ///
+    /// Failures loading the topic lists from `local_store` and the announcements
+    /// topic initialization are propagated, causing the caller to retry the
+    /// whole call. Once the lists are loaded, per-topic failures in the loops
+    /// are logged and skipped so one bad topic does not starve the rest; the
+    /// function returns an error at the end if any of those loops failed, so
+    /// the deferred init retry path will re-run it.
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+        let mut failures = 0usize;
+
         self.initialize_topic(
             *Topic::announcements(self.agent_id())
                 .alias_named(&format!("announce({:?})", self.agent_id().aliased())),
         )
         .await?;
 
-        for topic in self.local_store.get_advertised_inbox_topics().await?.iter() {
-            self.initialize_topic(
-                *topic
-                    .topic
-                    .clone()
-                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
-            )
-            .await?;
+        let advertised_inbox_topics = self.local_store.get_advertised_inbox_topics().await?;
+        for topic in advertised_inbox_topics.iter() {
+            if let Err(err) = self
+                .initialize_topic(
+                    *topic
+                        .topic
+                        .clone()
+                        .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
+                )
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize advertised inbox topic");
+                failures += 1;
+            }
         }
 
-        for (topic, peer_device) in self
+        let reply_inbox_topics = self
             .local_store
             .get_reply_inbox_topics_with_author()
-            .await?
-            .iter()
-        {
-            self.initialize_topic(*topic.topic.clone().alias_named(&format!(
-                "reply_inbox({:?},peer={})",
-                self.device_id().aliased(),
-                &hex::encode(&peer_device.as_bytes()[..4])
-            )))
             .await?;
+        for (topic, peer_device) in reply_inbox_topics.iter() {
+            if let Err(err) = self
+                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                    "reply_inbox({:?},peer={})",
+                    self.device_id().aliased(),
+                    &hex::encode(&peer_device.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize reply inbox topic");
+                failures += 1;
+            }
         }
 
-        for topic in self.local_store.subscribed_topics().await?.iter() {
-            self.initialize_topic(*topic).await?;
+        let subscribed_topics = self.local_store.subscribed_topics().await?;
+        for topic in subscribed_topics.iter() {
+            if let Err(err) = self.initialize_topic(*topic).await {
+                error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed topic");
+                failures += 1;
+            }
         }
 
         // @TODO: I had to add this so that the device group topic is subscribed to when we later
         // attempt to publish operations to it.
-        self.initialize_topic(self.device_group_topic().into())
-            .await?;
+        if let Err(err) = self
+            .initialize_topic(self.device_group_topic().into())
+            .await
+        {
+            error!(?err, "failed to initialize device group topic");
+            failures += 1;
+        }
+
+        if failures > 0 {
+            anyhow::bail!("{failures} topic(s) failed to initialize");
+        }
 
         Ok(())
     }

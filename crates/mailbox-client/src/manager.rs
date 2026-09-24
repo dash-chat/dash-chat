@@ -869,7 +869,11 @@ where
             };
 
             for item in items {
-                sender.send(item).await?;
+                if sender.send(item).await.is_err() {
+                    tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
+                    self.topics.lock().await.remove(&topic);
+                    break;
+                }
             }
 
             for (author, seqs) in missing {
