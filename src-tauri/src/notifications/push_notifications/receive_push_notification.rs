@@ -26,10 +26,14 @@ static IOS_LOGGER_ONCE: std::sync::Once = std::sync::Once::new();
 #[cfg(target_os = "ios")]
 const MAX_NSE_LOG_SIZE: u64 = 5 * 1024 * 1024;
 
-const OP_POLLS: u32 = 75;
+/// Wall clock, not a count of polls: the iOS extension is killed at ~30 s
+/// whatever the loop's body spends on the network.
+const OP_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
 const OP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
-/// About every 2 s of the wait for a pushed operation.
-const RECONNECT_EVERY_POLLS: u32 = 10;
+const RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+/// How long a registration attempt may hold up the wait. A hanging connect
+/// otherwise takes up to the HTTP client's 10 s timeout.
+const REGISTER_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Entry point called by the FirebaseMessagingService when a push notification arrives.
 /// Fetches the operation referenced by the push and builds a user-facing notification, dedup'd
@@ -188,22 +192,43 @@ async fn reconnect_cloud_mailbox(
     if cloud_id.is_none() {
         *cloud_id = crate::mailbox::cloud_mailbox_id(node).await;
     }
-    let Some(id) = cloud_id.clone() else {
-        node.mailboxes.nudge_poll_loop();
+    let tracked = match cloud_id.as_ref() {
+        Some(id) => node.mailboxes.tracked_mailbox(id).await,
+        None => None,
+    };
+    let (Some(id), Some(mailbox)) = (cloud_id.clone(), tracked) else {
+        if register_cloud_mailbox_briefly(node).await {
+            // Re-resolve next time: the id the server reported can differ from a
+            // stale persisted one, which would otherwise never become tracked.
+            *cloud_id = None;
+        }
         return;
     };
-    match node.mailboxes.tracked_mailbox(&id).await {
-        None => {
-            if let Err(err) = crate::setup::track_cloud_mailbox(node).await {
-                log::debug!(
-                    "cloud mailbox still unreachable while waiting for a pushed operation: {err:?}"
-                );
-            }
+    let status = mailbox.connection_state().borrow().status;
+    if status != mailbox_client::manager::SyncStatus::Active {
+        node.mailboxes.probe(id).await;
+    }
+}
+
+/// Runs the registration as its own task so that giving up on it after
+/// [`REGISTER_WAIT`] never cancels it halfway through `Mailboxes::register`; a
+/// slow attempt still completes in the background.
+async fn register_cloud_mailbox_briefly(node: &dashchat_node::Node) -> bool {
+    let node = node.clone();
+    let registering = tokio::spawn(async move { crate::setup::track_cloud_mailbox(&node).await });
+    match tokio::time::timeout(REGISTER_WAIT, registering).await {
+        Ok(Ok(Ok(_))) => true,
+        Ok(Ok(Err(err))) => {
+            log::debug!(
+                "cloud mailbox still unreachable while waiting for a pushed operation: {err:?}"
+            );
+            false
         }
-        Some(mailbox)
-            if mailbox.connection_state().borrow().status
-                == mailbox_client::manager::SyncStatus::Active => {}
-        Some(_) => node.mailboxes.probe(id).await,
+        Ok(Err(err)) => {
+            log::warn!("cloud mailbox registration task failed: {err}");
+            false
+        }
+        Err(_) => false,
     }
 }
 
@@ -260,13 +285,9 @@ async fn handle_push_notification(
     // Probe rather than wake: the push proves the cloud mailbox is up, not that
     // this device can reach it, and a wakeup would reset the connection status
     // on every push.
-    let mut cloud_id = crate::mailbox::cloud_mailbox_id(&node).await;
-    match &cloud_id {
-        Some(id) => node.mailboxes.probe(id.clone()).await,
-        None => node.mailboxes.nudge_poll_loop(),
-    }
+    crate::mailbox::probe_cloud_mailbox(&node).await;
 
-    // Poll for the operation to arrive (up to 15 seconds)
+    // Poll for the operation to arrive
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
     let device_id = dashchat_node::DeviceId::from(verifying_key);
@@ -274,9 +295,13 @@ async fn handle_push_notification(
     // to include seq_num itself. seq_num == 0 → None means "from the start".
     let from = seq_num.checked_sub(1);
     let mut entry = None;
-    for attempt in 1..=OP_POLLS {
-        if attempt % RECONNECT_EVERY_POLLS == 0 {
+    let mut cloud_id = None;
+    let deadline = tokio::time::Instant::now() + OP_WAIT;
+    let mut next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
+    while tokio::time::Instant::now() < deadline {
+        if tokio::time::Instant::now() >= next_reconnect {
             reconnect_cloud_mailbox(&node, &mut cloud_id).await;
+            next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
         }
         let log = node
             .op_store
