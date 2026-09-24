@@ -497,12 +497,12 @@ mod imp {
             };
             let intervals = PolicyIntervals {
                 want: IntervalPolicy::Fixed {
-                    min_ms: 500.0,
-                    max_ms: 1500.0,
+                    min_ms: 1_000.0,
+                    max_ms: 10_000.0,
                 },
                 have: IntervalPolicy::Fixed {
-                    min_ms: 50.0,
-                    max_ms: 250.0,
+                    min_ms: 1_000.0,
+                    max_ms: 10_000.0,
                 },
                 n: NETWORK_SIZE_ESTIMATE,
                 rng: rand::rngs::StdRng::from_os_rng(),
