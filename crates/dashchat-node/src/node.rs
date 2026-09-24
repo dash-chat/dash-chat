@@ -116,10 +116,11 @@ pub struct NodeConfig {
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
-    /// Whether to subscribe to all stored topics and replay their backlogs
-    /// synchronously inside `Node::new`. The main app sets this to `false` so
-    /// launch is not blocked; the iOS push extension and tests keep `true`.
-    pub initialize_stored_topics_on_start: bool,
+    /// Whether to defer subscribing to all stored topics and replaying their
+    /// backlogs until after `Node::new` returns. The main app sets this to
+    /// `true` so launch is not blocked; the iOS push extension and tests keep
+    /// `false` to be fully initialized synchronously.
+    pub defer_stored_topics_initialization: bool,
 }
 
 impl NodeConfig {
@@ -169,7 +170,7 @@ impl NodeConfig {
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
-            initialize_stored_topics_on_start: true,
+            defer_stored_topics_initialization: false,
         }
     }
 
@@ -196,7 +197,7 @@ impl Default for NodeConfig {
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
-            initialize_stored_topics_on_start: true,
+            defer_stored_topics_initialization: false,
         }
     }
 }
@@ -217,6 +218,7 @@ pub struct Node {
     actor_tx: mpsc::Sender<Command>,
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 
     /// All bootstrap nodes we have registered on our node.
     ///
@@ -444,6 +446,7 @@ impl Node {
             actor_tx,
             processor_cancel_tx,
             processor_handle: Default::default(),
+            stored_topics_init_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
@@ -506,7 +509,24 @@ impl Node {
 
         // === topics === //
 
-        if node.config.initialize_stored_topics_on_start {
+        if node.config.defer_stored_topics_initialization {
+            // Initialize stored topics on a background task so the node is
+            // returned immediately. This keeps app launch responsive while still ensuring all
+            // topics are eventually subscribed. The handle is aborted during
+            // shutdown so teardown does not race the replay.
+            let init_handle = tokio::spawn({
+                let node = node.clone();
+                async move {
+                    if let Err(err) = node.initialize_stored_topics().await {
+                        tracing::error!(?err, "failed to initialize stored topics");
+                    }
+                }
+            });
+            node.stored_topics_init_handle
+                .lock()
+                .await
+                .replace(init_handle);
+        } else {
             node.initialize_stored_topics().await?;
         }
 
@@ -1501,6 +1521,14 @@ impl Node {
 
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        // Stop any deferred stored-topic initialization before we tear down
+        // the actor or clear mailboxes, so it cannot race SQLite pool closure
+        // or re-insert topics into mailboxes after clear().
+        if let Some(handle) = self.stored_topics_init_handle.lock().await.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 

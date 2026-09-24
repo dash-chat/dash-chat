@@ -192,9 +192,8 @@ impl NodeContext {
             config = config.no_blob_sync();
         }
 
-        // The main app builds the node in Tauri setup; replay backlogs in the
-        // background so iOS scene creation is not blocked.
-        config.initialize_stored_topics_on_start = self.role != NodeRole::App;
+        // The main app builds the node in Tauri setup; defer backlog replay to keep launch responsive.
+        config.defer_stored_topics_initialization = self.role == NodeRole::App;
 
         config
     }

@@ -154,19 +154,6 @@ impl AppNodeManager {
         // app was backgrounded. Probe like Android's on_resume so recovery is
         // immediate either way, without presuming the result.
         if let Ok(node) = self.get().await {
-            // When startup deferred backlog replay, start it now on a worker
-            // task so the webview can render before the backlog is processed.
-            if !node.config.initialize_stored_topics_on_start {
-                tokio::spawn({
-                    let node = node.clone();
-                    async move {
-                        if let Err(err) = node.initialize_stored_topics().await {
-                            log::error!("Failed to initialize stored topics: {err:?}");
-                        }
-                    }
-                });
-            }
-
             crate::mailbox::probe_cloud_mailbox(&node).await;
         }
         Ok(())
