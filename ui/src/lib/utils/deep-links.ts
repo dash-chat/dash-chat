@@ -24,21 +24,28 @@ function sanitizeUrl(url: string): string {
 	}
 }
 
+/** Hands `url` to the deep link handler whose path it matches. Resolves to
+ * whether one did. */
+export async function handleDeepLink(
+	url: string,
+	contactsStore: ContactsStore,
+): Promise<boolean> {
+	for (const handler of handlers) {
+		const params = extractDeepLinkParams(url, handler.path);
+		if (params) {
+			await handler.handle(params, contactsStore);
+			return true;
+		}
+	}
+	return false;
+}
+
 export async function handleUrls(
 	urls: string[],
 	contactsStore: ContactsStore,
 ): Promise<void> {
 	for (const url of urls) {
-		let matched = false;
-		for (const handler of handlers) {
-			const params = extractDeepLinkParams(url, handler.path);
-			if (params) {
-				await handler.handle(params, contactsStore);
-				matched = true;
-				break;
-			}
-		}
-		if (!matched) {
+		if (!(await handleDeepLink(url, contactsStore))) {
 			console.log('[deep-link] url did not match pattern:', sanitizeUrl(url));
 			showToast(m.errorReceivedUnrecognizedLink({ url }), 'error');
 		}

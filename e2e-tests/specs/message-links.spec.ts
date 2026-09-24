@@ -43,6 +43,22 @@ describe('Links in messages', () => {
 		await expect(agent.directChatPage.page).toBeDisplayed();
 	});
 
+	it('opens a tapped contact link in the app itself', async () => {
+		// iOS is where the OS won't route the app's own universal link back to
+		// it, so tap there when an iPhone is in the run.
+		const tapper = agent1.platform === 'ios' ? agent1 : agent2;
+		const sender = tapper === agent1 ? agent2 : agent1;
+		// Short enough to fit on one line, so the tap lands on the anchor.
+		const link = 'https://dashchat.org/add-contact/x';
+		await sender.directChatPage.composer.sendMessage(link);
+		const message = await tapper.directChatPage.messages.waitForMessage(link);
+		await message.tapLink(link);
+		await tapper.toast.expectMessage(
+			await tapper.tr('errorAddContactInvalidLink'),
+		);
+		await expect(tapper.directChatPage.page).toBeDisplayed();
+	});
+
 	it('excludes trailing punctuation from the link', async () => {
 		const text = 'visit dashchat.org.';
 		await agent1.directChatPage.composer.sendMessage(text);

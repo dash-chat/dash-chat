@@ -3,7 +3,10 @@
 </script>
 
 <script lang="ts">
+	import { getContext } from 'svelte';
+	import type { ContactsStore } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
+	import { handleDeepLink } from '$lib/utils/deep-links';
 	import { openExternalUrl } from '$lib/utils/links';
 	import { messageTextHtml } from './message-helpers';
 
@@ -13,6 +16,8 @@
 	}
 
 	let { text, searchQuery = '' }: Props = $props();
+
+	const contactsStore: ContactsStore = getContext('contacts-store');
 
 	// Signal-Desktop "read more" truncation constants.
 	const INITIAL_LENGTH = 800;
@@ -50,14 +55,21 @@
 
 	// The anchors come from `{@html}`, so the listener has to be delegated.
 	// `preventDefault` keeps the webview from navigating away from the app.
+	// Our own links are routed in-app: the OS won't hand a universal link back
+	// to the app that opened it.
 	function openLink(e: MouseEvent) {
 		if (!(e.target instanceof HTMLElement)) return;
 		const link = e.target.closest('a');
 		if (!link) return;
 		e.preventDefault();
-		openExternalUrl(link.href).catch(err =>
+		openTappedLink(link.href).catch(err =>
 			console.error('[links] failed to open link', err),
 		);
+	}
+
+	async function openTappedLink(href: string) {
+		if (await handleDeepLink(href, contactsStore)) return;
+		await openExternalUrl(href);
 	}
 </script>
 
