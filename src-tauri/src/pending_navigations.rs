@@ -1,4 +1,5 @@
-use std::sync::Mutex;
+use std::collections::HashSet;
+use std::sync::{Mutex, MutexGuard};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -17,7 +18,47 @@ pub enum PendingNavigation {
 #[derive(Default)]
 struct Queue {
     pending: Vec<PendingNavigation>,
-    last_deep_link: Option<String>,
+    /// Every deep link delivered to this process, by event or stored value.
+    seen_deep_links: HashSet<String>,
+}
+
+impl Queue {
+    /// Returns whether the navigation was queued. A launch link or tap reaches
+    /// us both through the plugin's stored value and through its event; the
+    /// second copy is not a new one, so it's neither queued nor announced.
+    fn push(&mut self, navigation: PendingNavigation) -> bool {
+        if self.pending.contains(&navigation) {
+            return false;
+        }
+        self.pending.push(navigation);
+        true
+    }
+
+    fn push_deep_links(&mut self, urls: Vec<String>) -> bool {
+        let mut queued = false;
+        for url in urls {
+            self.seen_deep_links.insert(url.clone());
+            queued |= self.push(PendingNavigation::DeepLink(url));
+        }
+        queued
+    }
+
+    /// Hand out everything pending, plus the deep-link plugin's current links
+    /// this process hasn't seen yet. Those are the only delivery for a cold
+    /// start and for an Android Activity the OS recreated (no event fires for
+    /// either), so they predate anything else queued in this Activity and go
+    /// first. The plugin keeps them for the whole process — and a recreated
+    /// Activity carries its original intent, not the latest link — so any
+    /// link seen before is a replay.
+    fn take(&mut self, current_deep_links: Vec<String>) -> Vec<PendingNavigation> {
+        let unseen: Vec<PendingNavigation> = current_deep_links
+            .into_iter()
+            .filter(|url| self.seen_deep_links.insert(url.clone()))
+            .map(PendingNavigation::DeepLink)
+            .collect();
+        self.pending.splice(0..0, unseen);
+        std::mem::take(&mut self.pending)
+    }
 }
 
 /// Navigations the OS handed to the app (opened deep links, tapped
@@ -28,49 +69,8 @@ struct Queue {
 pub struct PendingNavigations(Mutex<Queue>);
 
 impl PendingNavigations {
-    fn push(&self, app: &AppHandle, navigation: PendingNavigation) {
-        {
-            let mut queue = self.0.lock().expect("pending navigations poisoned");
-            if let PendingNavigation::DeepLink(url) = &navigation {
-                queue.last_deep_link = Some(url.clone());
-            }
-            // A launch tap reaches us both through the plugin's stored value
-            // and through its event; the second copy is not a new one.
-            if queue.pending.contains(&navigation) {
-                return;
-            }
-            queue.pending.push(navigation);
-        }
-        if let Err(err) = app.emit(PENDING_NAVIGATIONS_EVENT, ()) {
-            log::error!("Failed to announce a pending navigation: {err:?}");
-        }
-    }
-
-    /// Queue the deep-link plugin's current link unless it's the last one we
-    /// already saw. That link is the only delivery for a cold start and for an
-    /// Android Activity the OS recreated (no event fires for either), and it
-    /// stays set for the whole process, so an unchanged value is a replay.
-    fn queue_current_deep_link(&self, app: &AppHandle) {
-        let urls = match app.deep_link().get_current() {
-            Ok(urls) => urls.unwrap_or_default(),
-            Err(err) => {
-                log::error!("Failed to read the current deep link: {err:?}");
-                return;
-            }
-        };
-        let Some(url) = urls.last().map(|url| url.to_string()) else {
-            return;
-        };
-        let already_seen = self
-            .0
-            .lock()
-            .expect("pending navigations poisoned")
-            .last_deep_link
-            .as_ref()
-            == Some(&url);
-        if !already_seen {
-            self.push(app, PendingNavigation::DeepLink(url));
-        }
+    fn queue(&self) -> MutexGuard<'_, Queue> {
+        self.0.lock().expect("pending navigations poisoned")
     }
 }
 
@@ -80,8 +80,17 @@ pub fn setup(app: &AppHandle) {
 
     let handle = app.clone();
     app.deep_link().on_open_url(move |event| {
-        for url in event.urls() {
-            push(&handle, PendingNavigation::DeepLink(url.to_string()));
+        let urls = event
+            .urls()
+            .into_iter()
+            .map(|url| url.to_string())
+            .collect();
+        let queued = handle
+            .state::<PendingNavigations>()
+            .queue()
+            .push_deep_links(urls);
+        if queued {
+            announce(&handle);
         }
     });
 
@@ -107,8 +116,10 @@ pub fn setup(app: &AppHandle) {
     }
 }
 
-fn push(app: &AppHandle, navigation: PendingNavigation) {
-    app.state::<PendingNavigations>().push(app, navigation);
+fn announce(app: &AppHandle) {
+    if let Err(err) = app.emit(PENDING_NAVIGATIONS_EVENT, ()) {
+        log::error!("Failed to announce a pending navigation: {err:?}");
+    }
 }
 
 #[cfg(mobile)]
@@ -120,7 +131,27 @@ fn push_tapped_route(
         return;
     }
     if let Some(route) = action.notification.route.filter(|r| !r.is_empty()) {
-        push(app, PendingNavigation::Route(route));
+        let queued = app
+            .state::<PendingNavigations>()
+            .queue()
+            .push(PendingNavigation::Route(route));
+        if queued {
+            announce(app);
+        }
+    }
+}
+
+fn current_deep_links(app: &AppHandle) -> Vec<String> {
+    match app.deep_link().get_current() {
+        Ok(urls) => urls
+            .unwrap_or_default()
+            .into_iter()
+            .map(|url| url.to_string())
+            .collect(),
+        Err(err) => {
+            log::error!("Failed to read the current deep link: {err:?}");
+            Vec::new()
+        }
     }
 }
 
@@ -129,12 +160,9 @@ pub fn take_pending_navigations(
     app: AppHandle,
     pending: State<'_, PendingNavigations>,
 ) -> Vec<PendingNavigation> {
-    pending.queue_current_deep_link(&app);
-    std::mem::take(
-        &mut pending
-            .0
-            .lock()
-            .expect("pending navigations poisoned")
-            .pending,
-    )
+    // Read outside the lock: it's a plugin call. Comparing, queueing and
+    // draining then happen under one guard, so overlapping takes can't both
+    // hand out the same link.
+    let current = current_deep_links(&app);
+    pending.queue().take(current)
 }
