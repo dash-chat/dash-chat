@@ -17,7 +17,10 @@ use crate::outbox::blocking;
 
 pub(crate) const USER_AGENT: &str = concat!("dash-chat/", env!("CARGO_PKG_VERSION"));
 const CONTENT_TYPE: &str = "application/x-sentry-envelope";
-const TIMEOUT: Duration = Duration::from_secs(30);
+const BASE_TIMEOUT: Duration = Duration::from_secs(30);
+/// A slow mobile uplink (~256 kbps). A full-log report is megabytes even
+/// gzipped, and a fixed limit would time it out, and retry it, forever there.
+const UPLOAD_BYTES_PER_SEC: u64 = 32 * 1024;
 /// Short, so the offline case — the whole point of the outbox — reaches the
 /// "saved for later" answer without a long stall.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -75,7 +78,7 @@ impl EnvelopeSender for HttpSender {
             )
             .header(reqwest::header::CONTENT_TYPE, CONTENT_TYPE)
             .header(reqwest::header::CONTENT_ENCODING, "gzip")
-            .timeout(TIMEOUT)
+            .timeout(timeout_for(body.len()))
             .body(body)
             .send()
             .await;
@@ -96,6 +99,10 @@ fn gzipped(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     encoder.write_all(bytes)?;
     encoder.finish()
+}
+
+fn timeout_for(body_len: usize) -> Duration {
+    BASE_TIMEOUT + Duration::from_secs(body_len as u64 / UPLOAD_BYTES_PER_SEC)
 }
 
 fn classify(status: StatusCode, retry_after: Option<Duration>) -> Delivery {
@@ -228,6 +235,15 @@ mod tests {
         format!("http://key@{}:{}/1", addr.ip(), addr.port())
             .parse()
             .unwrap()
+    }
+
+    #[test]
+    fn the_timeout_grows_with_the_upload() {
+        assert_eq!(timeout_for(0), BASE_TIMEOUT);
+        assert_eq!(
+            timeout_for(2 * 1024 * 1024),
+            BASE_TIMEOUT + Duration::from_secs(64)
+        );
     }
 
     #[tokio::test]
