@@ -92,9 +92,9 @@ mod imp {
 
     use crate::DeviceId;
 
-    /// The router's log identity: `(LogId, author)`, prefix first so the
+    /// The router's log identity: `(LogId, author)`, channel first so the
     /// relay store's ordered scans keep one topic's logs contiguous. The
-    /// prefix (`LogId = blake3(topic)`) is what a subscription names.
+    /// channel (`LogId = blake3(topic)`) is what a subscription names.
     #[derive(
         Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug,
     )]
@@ -115,7 +115,7 @@ mod imp {
             LogId::from(p2panda::Hash::from_bytes(self.log_id))
         }
 
-        pub(crate) fn author(&self) -> anyhow::Result<VerifyingKey> {
+        pub(crate) fn verifying_key(&self) -> anyhow::Result<VerifyingKey> {
             Ok(VerifyingKey::from_bytes(&self.author)?)
         }
     }
@@ -126,15 +126,39 @@ mod imp {
                 f,
                 "{}/{}",
                 hex::encode(&self.log_id[..4]),
-                hex::encode(&self.author[..4])
+                AuthorKey(self.author)
             )
         }
     }
 
+    /// The per-author half of a [`RouterLog`]: raw verifying-key bytes,
+    /// kept raw (not a `VerifyingKey`) so an id received off the wire with
+    /// an invalid key still round-trips through `Log::new` losslessly.
+    #[derive(
+        Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug,
+    )]
+    pub(crate) struct AuthorKey([u8; 32]);
+
+    impl std::fmt::Display for AuthorKey {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", hex::encode(&self.0[..4]))
+        }
+    }
+
     impl dash_router::core::Log for RouterLog {
-        type Prefix = LogId;
-        fn prefix(&self) -> LogId {
+        type Channel = LogId;
+        type Author = AuthorKey;
+        fn channel(&self) -> LogId {
             self.log_id()
+        }
+        fn author(&self) -> AuthorKey {
+            AuthorKey(self.author)
+        }
+        fn new(channel: LogId, author: AuthorKey) -> Self {
+            Self {
+                log_id: *channel.as_bytes(),
+                author: author.0,
+            }
         }
     }
 
@@ -244,7 +268,7 @@ mod imp {
             let Some(topic) = self.topic_of(&log.log_id()) else {
                 return Ok(Ranges::empty());
             };
-            let Ok(author) = log.author() else {
+            let Ok(author) = log.verifying_key() else {
                 return Ok(Ranges::empty());
             };
             let author = DeviceId::from(author);
@@ -302,7 +326,7 @@ mod imp {
                     continue;
                 };
                 // A bogus author is an unknown log, not a batch failure.
-                let Ok(author) = log.author() else {
+                let Ok(author) = log.verifying_key() else {
                     continue;
                 };
                 let author = DeviceId::from(author);
@@ -323,7 +347,7 @@ mod imp {
                         continue;
                     }
                     out.push((
-                        *log,
+                        log,
                         seq,
                         Op {
                             header: op.header.encode(),
@@ -344,7 +368,7 @@ mod imp {
                     header.seq_num
                 );
                 ensure!(
-                    header.verifying_key == log.author()?,
+                    header.verifying_key == log.verifying_key()?,
                     "header author != log author"
                 );
                 ensure!(
@@ -549,7 +573,7 @@ mod imp {
             })))
         }
 
-        /// One router prefix subscription per topic: every author's log on
+        /// One router channel subscription per topic: every author's log on
         /// it, known or not yet. Idempotent. A failure unregisters the
         /// topic, so a later call retries instead of reporting success.
         /// Concurrent calls for the same topic may both return Ok while the
@@ -600,13 +624,13 @@ mod imp {
         /// own ops live in the ext store, never here).
         #[cfg(feature = "testing")]
         pub async fn relay_holds_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
-            let prefix = LogId::from_topic(topic);
+            let channel = LogId::from_topic(topic);
             Ok(self
                 .handle
                 .relay_held()
                 .await?
                 .iter()
-                .any(|(log, ranges)| log.log_id() == prefix && !ranges.is_empty()))
+                .any(|(log, ranges)| log.log_id() == channel && !ranges.is_empty()))
         }
 
         pub async fn unsubscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
@@ -757,24 +781,26 @@ mod imp {
         use dash_router::disk::LogKey;
 
         #[test]
-        fn prefix_is_the_log_id_and_order_is_prefix_first() {
+        fn channel_is_the_log_id_and_order_is_channel_first() {
             // Key bytes do not sort like their seeds: seed [2; 32] gives the smaller key.
             let key_a = p2panda::SigningKey::from_bytes(&[2; 32]).verifying_key();
             let key_b = p2panda::SigningKey::from_bytes(&[1; 32]).verifying_key();
             let t1 = TopicId::from([1u8; 32]);
             let t2 = TopicId::from([2u8; 32]);
             let l = RouterLog::new(LogId::from_topic(t1), key_b);
-            assert_eq!(l.prefix(), LogId::from_topic(t1));
+            assert_eq!(l.channel(), LogId::from_topic(t1));
             assert_eq!(l.log_id(), LogId::from_topic(t1));
-            assert_eq!(l.author().unwrap(), key_b);
+            assert_eq!(l.verifying_key().unwrap(), key_b);
             // Same topic, different authors, sorts inside the topic; a later
             // topic sorts after regardless of author bytes.
             let same_topic_other_author = RouterLog::new(LogId::from_topic(t1), key_a);
             let other_topic = RouterLog::new(LogId::from_topic(t2), key_a);
             assert!(same_topic_other_author < l);
             assert!(l < other_topic || other_topic < l);
-            assert_eq!(l.prefix(), same_topic_other_author.prefix());
-            assert_ne!(l.prefix(), other_topic.prefix());
+            assert_eq!(l.channel(), same_topic_other_author.channel());
+            assert_ne!(l.channel(), other_topic.channel());
+            // `Log::new` is the lossless inverse the nested LogRanges relies on.
+            assert_eq!(<RouterLog as Log>::new(l.channel(), l.author()), l);
         }
 
         #[test]
@@ -1044,7 +1070,10 @@ mod imp {
                 log_id: *f.log_id.as_bytes(),
                 author,
             };
-            assert!(bogus.author().is_err(), "fixture needs an invalid key");
+            assert!(
+                bogus.verifying_key().is_err(),
+                "fixture needs an invalid key"
+            );
             let valid = RouterLog::new(f.log_id, f.key.verifying_key());
 
             let held = f
