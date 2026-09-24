@@ -2054,6 +2054,8 @@ impl Node {
     /// retrying the whole call if it returns an error (the deferred init path
     /// does this with exponential backoff).
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+        let mut failures = 0usize;
+
         self.initialize_topic(
             *Topic::announcements(self.agent_id())
                 .alias_named(&format!("announce({:?})", self.agent_id().aliased())),
@@ -2072,6 +2074,7 @@ impl Node {
                 .await
             {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize advertised inbox topic");
+                failures += 1;
             }
         }
 
@@ -2089,6 +2092,7 @@ impl Node {
                 .await
             {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize reply inbox topic");
+                failures += 1;
             }
         }
 
@@ -2096,6 +2100,7 @@ impl Node {
         for topic in subscribed_topics.iter() {
             if let Err(err) = self.initialize_topic(*topic).await {
                 error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed topic");
+                failures += 1;
             }
         }
 
@@ -2106,6 +2111,11 @@ impl Node {
             .await
         {
             error!(?err, "failed to initialize device group topic");
+            failures += 1;
+        }
+
+        if failures > 0 {
+            anyhow::bail!("{failures} topic(s) failed to initialize");
         }
 
         Ok(())

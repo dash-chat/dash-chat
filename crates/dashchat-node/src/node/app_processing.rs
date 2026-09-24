@@ -149,7 +149,7 @@ impl Node {
             return Err(anyhow!("Error sending on actor channel"));
         };
 
-        let _ = reply_rx.await?;
+        reply_rx.await??;
 
         Ok(())
     }
