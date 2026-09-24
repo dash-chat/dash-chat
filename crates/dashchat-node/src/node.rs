@@ -50,7 +50,7 @@ use crate::{
     MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
-use tracing::{error, warn};
+use tracing::error;
 
 pub use app_processing::{Notification, OpNotification, SystemNotification};
 
@@ -2049,10 +2049,14 @@ impl Node {
         self.initialize_stored_topics().await
     }
 
-    /// Initialize all stored topics. Per-topic failures are logged and skipped
-    /// so one bad topic does not starve the rest. The caller is responsible for
-    /// retrying the whole call if it returns an error (the deferred init path
-    /// does this with exponential backoff).
+    /// Initialize all stored topics.
+    ///
+    /// Failures loading the topic lists from `local_store` and the announcements
+    /// topic initialization are propagated, causing the caller to retry the
+    /// whole call. Once the lists are loaded, per-topic failures in the loops
+    /// are logged and skipped so one bad topic does not starve the rest; the
+    /// function returns an error at the end if any of those loops failed, so
+    /// the deferred init retry path will re-run it.
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         let mut failures = 0usize;
 

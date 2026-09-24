@@ -91,6 +91,11 @@ pub enum ProcessorEvent {
         source: Source,
         processed_tx: Option<oneshot::Sender<Result<(), ProcessorError>>>,
     },
+
+    ImportFailed {
+        topic: Topic,
+        error: ImportError,
+    },
 }
 
 /// Actor for the p2panda node.
@@ -282,9 +287,11 @@ impl Actor {
         // is not blocked while the topic processor replays local operations
         // before accepting the external stream. This keeps Publish commands and
         // event processing responsive during backlog replay.
+        let events_tx = self.events_tx.clone();
         self.import_tasks.spawn(async move {
             if let Err(err) = tx.import(stream).await {
-                warn!(topic = ?topic.aliased(), ?err, "import stream failed");
+                error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
+                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, error: err });
             }
         });
 
