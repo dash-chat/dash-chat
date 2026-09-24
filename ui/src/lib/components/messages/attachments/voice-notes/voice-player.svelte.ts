@@ -54,10 +54,14 @@ export class VoicePlayer {
 		audio.addEventListener('play', onPlay);
 		audio.addEventListener('pause', onPause);
 		audio.addEventListener('ended', onEnded);
+		// The frame loop only runs during playback; a seek from outside this
+		// player (e.g. OS media controls) while paused would leave the bar stale.
+		audio.addEventListener('seeked', this.#sync);
 		return () => {
 			audio.removeEventListener('play', onPlay);
 			audio.removeEventListener('pause', onPause);
 			audio.removeEventListener('ended', onEnded);
+			audio.removeEventListener('seeked', this.#sync);
 			if (playing === this) playing = undefined;
 			if (this.#frame !== undefined) cancelAnimationFrame(this.#frame);
 			if (this.#objectUrl) URL.revokeObjectURL(this.#objectUrl);
