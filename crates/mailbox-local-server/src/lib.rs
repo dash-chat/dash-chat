@@ -122,7 +122,7 @@ fn port_path(db_path: &Path) -> PathBuf {
 ///
 /// Holding the socket is the reservation -- nothing can take the port between
 /// here and the server taking it over.
-fn reserve_listener(db_path: &Path) -> anyhow::Result<(std::net::TcpListener, u16)> {
+pub fn reserve_listener(db_path: &Path) -> anyhow::Result<(std::net::TcpListener, u16)> {
     // A remembered port outlives its hub only as long as the store it belongs
     // to; next to a database that is gone it would pin an arbitrary port on a
     // fresh install.

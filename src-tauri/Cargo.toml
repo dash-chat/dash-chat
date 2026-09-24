@@ -38,7 +38,7 @@ tauri-plugin-audio-recorder = "=0.1.2"
 tauri-plugin-sentry-reporting = { workspace = true }
 
 tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "a86d8cf2ea998eba7f93dc6b53674fdb77d3def5" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "29867d696371de6cc315fbb0db9820e288b4124c", features = [
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "8eec1f09322c09efa0c0e81a8fa523d3745ba035", features = [
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
@@ -119,7 +119,7 @@ oslog = "0.2"
 # Fork: adds `limit`/`offset` (newest-first) to requestAlbumMedias and a
 # `requestMediasByIds` fetch-by-id command, so the recent-photos strip and
 # tap-to-send no longer render the entire album.
-tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "ec723636ddf248dd6542e02fb2e83d91d1da36c9" }
+tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "034dafd0a591fce73d4fe865e216cc3e225236c5" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

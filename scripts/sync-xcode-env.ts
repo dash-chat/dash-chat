@@ -22,6 +22,10 @@ const ENV_LOCAL = path.join(
  * silently joins the production network and browses the production hub name
  * while the run's mailbox and hubs use the run's own, and every cross-device
  * sync in the suite quietly finds nobody.
+ *
+ * `ENV` becomes the Sentry environment (`option_env!` in `sentry.rs`); without
+ * it every iOS report is filed under "development". The `SENTRY_*` vars are for
+ * the "Upload dSYMs to Sentry" phase, which skips the upload without them.
  */
 export const MANAGED = [
 	'MAILBOX_URL',
@@ -30,6 +34,10 @@ export const MANAGED = [
 	'PUSH_NOTIFICATIONS_SERVER_PORT',
 	'E2E_NETWORK_ID',
 	'E2E_RELAY_URL',
+	'ENV',
+	'SENTRY_AUTH_TOKEN',
+	'SENTRY_ORG',
+	'SENTRY_PROJECT',
 ] as const;
 export type ManagedKey = (typeof MANAGED)[number];
 
@@ -47,8 +55,10 @@ export function syncXcodeEnv(vars: Partial<Record<ManagedKey, string>>): void {
 		line =>
 			line.trim() !== '' && !MANAGED.some(k => line.startsWith(`export ${k}=`)),
 	);
+	// Single-quoted so a `$`, backtick or `"` in a value (the auth token is a
+	// secret we don't control) is never expanded when the phases source this.
 	const added = MANAGED.filter(k => vars[k]).map(
-		k => `export ${k}="${vars[k]}"`,
+		k => `export ${k}='${vars[k]?.replace(/'/g, `'\\''`)}'`,
 	);
 	writeFileSync(ENV_LOCAL, `${[...kept, ...added].join('\n')}\n`);
 }

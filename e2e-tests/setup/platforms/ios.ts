@@ -596,7 +596,15 @@ export class IosPlatform implements AgentPlatform {
 				? remoteBakedEnv()
 				: this.localBakedEnv(ctx.mailboxPort, ctx.pushPort)),
 		};
-		syncXcodeEnv(bakedEnv);
+		// `ENV` and the `SENTRY_*` vars are `MANAGED` too: pass the shell's through
+		// so a run doesn't strip what `just ios build` wrote for the dSYM upload.
+		syncXcodeEnv({
+			...bakedEnv,
+			ENV: process.env.ENV,
+			SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN,
+			SENTRY_ORG: process.env.SENTRY_ORG,
+			SENTRY_PROJECT: process.env.SENTRY_PROJECT,
+		});
 		// The task's last step (scripts/export-session-ipa.ts) copies the built
 		// .ipa to SESSION_IPA, so turbo snapshots and restores the final artifact.
 		runTurboBuild(

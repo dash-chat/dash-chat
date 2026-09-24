@@ -13,6 +13,7 @@ pub(crate) mod sender;
 
 use std::path::{Path, PathBuf};
 
+use sentry::protocol::Attachment;
 use sentry::Envelope;
 
 use crate::outbox::entry::State;
@@ -72,10 +73,13 @@ impl Outbox {
     }
 
     /// Returns where each approved crash now waits, oldest first.
-    pub(crate) fn approve_held(&self) -> anyhow::Result<Vec<PathBuf>> {
+    ///
+    /// `attachments` join each crash here because the panic hook is synchronous
+    /// and cannot read and redact the log tail itself.
+    pub(crate) fn approve_held(&self, attachments: &[Attachment]) -> anyhow::Result<Vec<PathBuf>> {
         entry::list(&self.root, State::Held)
             .iter()
-            .map(|held| entry::move_to(&held.path, &self.root, State::Queued))
+            .map(|held| entry::queue_with_attachments(&held.path, &self.root, attachments))
             .collect()
     }
 
@@ -95,7 +99,7 @@ impl Outbox {
 mod tests {
     use super::*;
 
-    use sentry::protocol::Event;
+    use sentry::protocol::{EnvelopeItem, Event};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn envelope(message: &str) -> Envelope {
@@ -127,10 +131,77 @@ mod tests {
         assert!(outbox.has_held());
         assert!(outbox.queued().is_empty());
 
-        outbox.approve_held().unwrap();
+        outbox.approve_held(&[]).unwrap();
 
         assert!(!outbox.has_held());
         assert_eq!(outbox.queued().len(), 1);
+    }
+
+    fn log(filename: &str, text: &str) -> Attachment {
+        Attachment {
+            buffer: text.as_bytes().to_vec(),
+            filename: filename.into(),
+            content_type: Some("text/plain".into()),
+            ty: None,
+        }
+    }
+
+    fn attachments(path: &Path) -> Vec<(String, Vec<u8>)> {
+        let stored = crate::testing::parsed(&entry::read(path).expect("unreadable entry"));
+        stored
+            .items()
+            .filter_map(|item| match item {
+                EnvelopeItem::Attachment(a) => Some((a.filename.clone(), a.buffer.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_approved_crash_carries_the_attachments() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.hold(&envelope("crash")).unwrap();
+
+        let approved = outbox
+            .approve_held(&[
+                log("Dash Chat.log", "the crashed session\n"),
+                log("notification-service.log", "a push\n"),
+            ])
+            .unwrap();
+
+        assert_eq!(
+            attachments(&approved[0]),
+            [
+                ("Dash Chat.log".into(), b"the crashed session\n".to_vec()),
+                ("notification-service.log".into(), b"a push\n".to_vec()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failed_approval_leaves_the_crash_to_approve_again_cleanly() {
+        let dir = tempfile::tempdir().unwrap();
+        let outbox = Outbox::new(dir.path());
+        outbox.hold(&envelope("crash")).unwrap();
+        let held = entry::list(outbox.root(), State::Held).remove(0).path;
+        let before = std::fs::read(&held).unwrap();
+
+        // A file where `queued/` should be makes queueing fail.
+        let queued = entry::state_dir(outbox.root(), State::Queued);
+        std::fs::remove_dir_all(&queued).unwrap();
+        std::fs::write(&queued, "").unwrap();
+        assert!(outbox
+            .approve_held(&[log("Dash Chat.log", "tail\n")])
+            .is_err());
+        assert_eq!(std::fs::read(&held).unwrap(), before);
+
+        std::fs::remove_file(&queued).unwrap();
+        let approved = outbox
+            .approve_held(&[log("Dash Chat.log", "tail\n")])
+            .unwrap();
+        assert_eq!(attachments(&approved[0]).len(), 1);
+        assert!(!outbox.has_held());
     }
 
     #[test]

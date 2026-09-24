@@ -5,7 +5,7 @@ use sentry::protocol::Attachment;
 
 use crate::redaction;
 
-const MAX_BYTES: usize = 1024 * 1024;
+const MAX_BYTES: usize = 10 * 1024 * 1024;
 
 pub(crate) async fn build_logs_attachments(
     patterns: &[Regex],

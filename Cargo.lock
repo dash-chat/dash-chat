@@ -10935,7 +10935,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-ios-photos"
 version = "0.3.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-ios-photos?rev=ec723636ddf248dd6542e02fb2e83d91d1da36c9#ec723636ddf248dd6542e02fb2e83d91d1da36c9"
+source = "git+https://github.com/dash-chat/tauri-plugin-ios-photos?rev=034dafd0a591fce73d4fe865e216cc3e225236c5#034dafd0a591fce73d4fe865e216cc3e225236c5"
 dependencies = [
  "serde",
  "tauri",
@@ -11053,7 +11053,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=29867d696371de6cc315fbb0db9820e288b4124c#29867d696371de6cc315fbb0db9820e288b4124c"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=8eec1f09322c09efa0c0e81a8fa523d3745ba035#8eec1f09322c09efa0c0e81a8fa523d3745ba035"
 dependencies = [
  "log",
  "ndk-context",
@@ -11075,7 +11075,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=29867d696371de6cc315fbb0db9820e288b4124c#29867d696371de6cc315fbb0db9820e288b4124c"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=8eec1f09322c09efa0c0e81a8fa523d3745ba035#8eec1f09322c09efa0c0e81a8fa523d3745ba035"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -11089,7 +11089,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=29867d696371de6cc315fbb0db9820e288b4124c#29867d696371de6cc315fbb0db9820e288b4124c"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=8eec1f09322c09efa0c0e81a8fa523d3745ba035#8eec1f09322c09efa0c0e81a8fa523d3745ba035"
 dependencies = [
  "rand 0.8.7",
  "serde",
@@ -11155,6 +11155,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dashchat-utils",
+ "flate2",
  "log",
  "network-watch",
  "regex",
