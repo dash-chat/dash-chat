@@ -33,8 +33,8 @@ const MAX_NSE_LOG_SIZE: u64 = 12 * 1024 * 1024;
 const OP_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
 const OP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
 const RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
-/// How long a registration attempt may hold up the wait. A hanging connect
-/// otherwise takes up to the HTTP client's 10 s timeout.
+/// How long a cloud mailbox registration may hold up the handler at a time. A
+/// hanging connect otherwise takes up to the HTTP client's 10 s timeout.
 const REGISTER_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Entry point called by the FirebaseMessagingService when a push notification arrives.
@@ -186,14 +186,14 @@ async fn handle_push_notifications_with_fallback_messages(
 
 /// Retries reaching the cloud mailbox while a push waits for its operation.
 ///
-/// A mailbox that was never registered is registered again: a node built for a
-/// push has no registration retry of its own, so the attempt made while building
-/// it would otherwise be the only one. A mailbox already polling on the Active
-/// cadence is left alone, since extra probes there only pile up errors fast
-/// enough to flip the connection status on a brief hiccup.
+/// A mailbox that is not tracked yet is registered again, since a node built for
+/// a push has no registration retry of its own. A mailbox already polling on the
+/// Active cadence is left alone, since extra probes there only pile up errors
+/// fast enough to flip the connection status on a brief hiccup.
 async fn reconnect_cloud_mailbox(
     node: &dashchat_node::Node,
     cloud_id: &mut Option<mailbox_client::MailboxId>,
+    attempt: &mut Option<crate::setup::CloudMailboxAttempt>,
 ) {
     if cloud_id.is_none() {
         *cloud_id = crate::mailbox::cloud_mailbox_id(node).await;
@@ -203,7 +203,7 @@ async fn reconnect_cloud_mailbox(
         None => None,
     };
     let (Some(id), Some(mailbox)) = (cloud_id.clone(), tracked) else {
-        if register_cloud_mailbox_with_timeout(node).await {
+        if crate::setup::track_cloud_mailbox_with_timeout(node, REGISTER_WAIT, attempt).await {
             // Re-resolve next time: the id the server reported can differ from a
             // stale persisted one, which would otherwise never become tracked.
             *cloud_id = None;
@@ -213,28 +213,6 @@ async fn reconnect_cloud_mailbox(
     let status = mailbox.connection_state().borrow().status;
     if status != mailbox_client::manager::SyncStatus::Active {
         node.mailboxes.probe(id).await;
-    }
-}
-
-/// Runs the registration as its own task so that giving up on it after
-/// [`REGISTER_WAIT`] never cancels it halfway through `Mailboxes::register`; a
-/// slow attempt still completes in the background.
-async fn register_cloud_mailbox_with_timeout(node: &dashchat_node::Node) -> bool {
-    let node = node.clone();
-    let registering = tokio::spawn(async move { crate::setup::track_cloud_mailbox(&node).await });
-    match tokio::time::timeout(REGISTER_WAIT, registering).await {
-        Ok(Ok(Ok(_))) => true,
-        Ok(Ok(Err(err))) => {
-            log::debug!(
-                "cloud mailbox still unreachable while waiting for a pushed operation: {err:?}"
-            );
-            false
-        }
-        Ok(Err(err)) => {
-            log::warn!("cloud mailbox registration task failed: {err}");
-            false
-        }
-        Err(_) => false,
     }
 }
 
@@ -288,6 +266,20 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
+    // On every push, not once per node: the extension caches its node for hours
+    // and its networking is often not up on the cold-start push. The `/health`
+    // round trip also refreshes the mailbox's dialing address. Track it as a
+    // fetch source only: `register_cloud_mailbox`'s up-to-10s endpoint wait
+    // would eat the extension's ~30 s budget. Bounded, since the wait below
+    // keeps retrying.
+    let mut cloud_mailbox_attempt = None;
+    crate::setup::track_cloud_mailbox_with_timeout(
+        &node,
+        REGISTER_WAIT,
+        &mut cloud_mailbox_attempt,
+    )
+    .await;
+
     // Probe rather than wake: the push proves the cloud mailbox is up, not that
     // this device can reach it, and a wakeup would reset the connection status
     // on every push.
@@ -306,7 +298,7 @@ async fn handle_push_notification(
     let mut next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
     while tokio::time::Instant::now() < deadline {
         if tokio::time::Instant::now() >= next_reconnect {
-            reconnect_cloud_mailbox(&node, &mut cloud_id).await;
+            reconnect_cloud_mailbox(&node, &mut cloud_id, &mut cloud_mailbox_attempt).await;
             next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
         }
         let log = node
