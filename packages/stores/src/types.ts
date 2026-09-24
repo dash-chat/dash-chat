@@ -223,7 +223,8 @@ export type ChatPayload =
 	| { type: 'DeleteMessage'; payload: DeleteMessagePayload }
 	| { type: 'JoinGroup'; payload: { chat_id: string } }
 	| { type: 'GroupInfo'; payload: GroupInfo }
-	| { type: 'MessageAck'; payload: MessageAckPayload };
+	| { type: 'MessageAck'; payload: MessageAckPayload }
+	| { type: 'IntroduceAgents'; payload: { agents: Record<DeviceId, AgentId> } };
 
 /** An entry in a `MessageAck` map: the latest operation of one author that the
  * acker has processed. Covers everything at or below `seq` in that author's
