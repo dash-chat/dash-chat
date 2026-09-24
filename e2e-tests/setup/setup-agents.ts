@@ -54,6 +54,7 @@ import {
 	waitForAppLinksVerified,
 } from './platforms/android';
 import {
+	clearAgentDir,
 	isAgentAppRunning,
 	killAgentApp,
 	launchAgentApp,
@@ -215,7 +216,8 @@ export type Agent = WebdriverIO.Browser & {
 	 *  called between [`stopApp`] and [`startApp`]. On android a `clearApp`
 	 *  with its runtime permissions granted again, as a new session's fast
 	 *  reset leaves them; on iOS the app's own delete_account, which means the
-	 *  app is brought up to run it and exits on its own afterwards. */
+	 *  app is brought up to run it and exits on its own afterwards; on desktop
+	 *  the agent's data directory, which the app is not holding open. */
 	clearAppData(): Promise<void>;
 	/** Kill the phone's push extension process, so the next push starts a
 	 *  fresh one. iOS only. */
@@ -451,8 +453,14 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await clearIosAppData(b);
 			return;
 		}
+		if (agent.platform === 'desktop') {
+			clearAgentDir(slot);
+			return;
+		}
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
-			throw new Error(`clearAppData needs a phone, got ${agent.platform}`);
+			throw new Error(
+				`clearAppData needs a phone or desktop, got ${agent.platform}`,
+			);
 		}
 		await b.execute('mobile: clearApp', { appId: APP_PACKAGE });
 		await b.execute('mobile: changePermissions', {
@@ -554,8 +562,8 @@ async function tapPoint(
 			? { x, y }
 			: null;
 	};
-	return await agent.waitUntil(
-		async () => {
+	try {
+		return await agent.waitUntil(async () => {
 			const live = await refetch(element);
 			if (live === null) return null;
 			const point = await agent.execute(centreIfTopmost, live);
@@ -569,14 +577,47 @@ async function tapPoint(
 				return null;
 			}
 			return { ...point, live };
-		},
-		{
-			timeoutMsg:
-				`${String(element.selector)} is in the page but never became the ` +
+		});
+	} catch (err) {
+		const why = err instanceof Error ? err.message : String(err);
+		throw new Error(
+			`${String(element.selector)} is in the page but never became the ` +
 				'topmost element at its own centre, so a tap there would have hit ' +
-				'whatever is covering it',
-		},
-	);
+				`${await describeCover(agent, element)} (${why})`,
+		);
+	}
+}
+
+/** What a tap at `element`'s centre would have hit instead of it. A cover is
+ *  often invisible — a backdrop a popover left behind at opacity 0 is in no
+ *  screenshot — so the failure has to name it rather than point at it. */
+async function describeCover(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+): Promise<string> {
+	const describe = (el: HTMLElement) => {
+		const rect = el.getBoundingClientRect();
+		const top = document.elementFromPoint(
+			rect.x + rect.width / 2,
+			rect.y + rect.height / 2,
+		);
+		if (top === null) return 'nothing: its centre is outside the viewport';
+		const style = window.getComputedStyle(top);
+		const testid = top.getAttribute('data-testid');
+		const klass = top.getAttribute('class');
+		const names = klass === null ? '' : klass.trim().split(/\s+/).join('.');
+		return [
+			top.tagName.toLowerCase(),
+			testid === null ? '' : `[data-testid="${testid}"]`,
+			names === '' ? '' : `.${names}`,
+			` (${style.position}, opacity ${style.opacity}, z-index ${style.zIndex})`,
+		].join('');
+	};
+	try {
+		return await agent.execute(describe, element);
+	} catch {
+		return 'something the page replaced before it could be named';
+	}
 }
 
 /** Touch (x, y) and report whether `element` actually received a click.

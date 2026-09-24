@@ -203,7 +203,7 @@ export class Composer extends TestHelper {
 		// composer empty, and `send()` then falls through to Enter — which types
 		// a newline on mobile rather than sending — so the spec would fail much
 		// later on a missing message instead of here on a missing draft.
-		await this.voiceRecordButton.waitForExist({
+		await this.voiceRecordButton.waitForDisplayed({
 			reverse: true,
 			timeoutMsg: 'Injected voice draft never landed in the composer',
 		});
@@ -280,10 +280,7 @@ export class Composer extends TestHelper {
 	}
 
 	/** Type `text` and send it the way a user on this platform does — see
-	 * `send()`. An operation arriving in the type→send window re-renders the
-	 * composer and can swallow the keydown, so if the textarea hasn't cleared,
-	 * send once more — the send() `sending` guard makes the retry a no-op when
-	 * the first send is merely slow. */
+	 * `send()`. */
 	async sendMessage(text: string): Promise<void> {
 		// In direct chats the composer only mounts once the chat leaves the
 		// pending state, which depends on the peer's profile syncing
@@ -291,6 +288,16 @@ export class Composer extends TestHelper {
 		await this.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
 		await this.typeInto(tid('message-input-textarea'), text);
 		await this.agent.pause(50);
+		await this.sendAndWaitForClear(text);
+	}
+
+	/** Send what the composer holds and wait for the textarea to clear,
+	 * sending once more if it has not: an operation arriving in the type→send
+	 * window re-renders the composer and can swallow the keydown, and on a
+	 * phone a tap aimed at the send button can land while the keyboard is
+	 * still animating and miss it. The send() `sending` guard makes the retry
+	 * a no-op when the first send is merely slow. */
+	async sendAndWaitForClear(text: string): Promise<void> {
 		await this.send();
 		try {
 			await this.agent.waitUntil(

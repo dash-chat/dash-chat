@@ -23,6 +23,7 @@ import {
 	type NotificationTexts,
 	PHOTO_COUNTS,
 } from './model';
+import { expectCaughtUp } from './view';
 
 // Mirrors QUICK_EMOJIS in ui/src/lib/utils/emojis.ts.
 export const QUICK_EMOJIS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
@@ -278,6 +279,11 @@ export async function backToChatList(
 	sa: StressAgent,
 	model: ExpectedModel,
 ): Promise<void> {
+	// Nothing may still be on the wire for the chat being left: an op that
+	// lands after the app has gone counts unread on a row, while the model
+	// credited it to the screen it was on. Draining here is what keeps the
+	// two readings of "read" the same one.
+	await expectCaughtUp(sa, model);
 	// A tap that lands while the chat is re-rendering — a message arriving, a
 	// block's system message — does nothing, and one missed back would leave
 	// the whole check waiting on a list the app was never asked for.

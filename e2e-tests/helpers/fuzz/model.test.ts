@@ -89,7 +89,14 @@ test('a text reaches a contact on the same LAN', () => {
 });
 
 test('a mutual add is writable at once, before the peer profile arrives', () => {
-	const m = sameLan(A, B);
+	// The model converges on every mutator, so a pair on one LAN has the
+	// profile the moment it is deliverable. Cutting the only path they have
+	// is what keeps it in flight long enough to ask about.
+	const m = new ExpectedModel(
+		[A, B].map(name => ({ ...phone(name), p2p: false })),
+		[],
+		false,
+	);
 	m.recordAdded(A, B);
 	m.recordAdded(B, A);
 	const chat = m.directChat(A, B);
@@ -97,8 +104,72 @@ test('a mutual add is writable at once, before the peer profile arrives', () => 
 	// chat from that moment; the profile is a separate op still in flight.
 	assert.equal(m.knowsProfile(A, B), false);
 	assert.deepEqual(m.sendableChatsFor(A), [chat]);
-	m.propagate();
+	m.setCloudUsable(true);
 	assert.equal(m.knowsProfile(A, B), true);
+});
+
+test('entering a link into a dead network makes a contact on neither side', () => {
+	// Entering a link only leaves a placeholder; the contact marker is written
+	// by whoever receives the second request, and its reply is what lets the
+	// other write theirs. Cut the only path these two have between the adds
+	// and neither ever gets there.
+	const m = new ExpectedModel(
+		[A, B].map(name => ({ ...phone(name), p2p: false })),
+		[],
+		true,
+	);
+	m.recordAdded(A, B);
+	m.setCloudUsable(false);
+	m.recordAdded(B, A);
+	assert.equal(m.areContacts(A, B), true);
+	assert.deepEqual(m.contactsOf(A), []);
+	assert.deepEqual(m.contactsOf(B), []);
+	// The link comes back: B's request lands on A, who had already entered
+	// B's, so A answers it and both have the contact.
+	m.setCloudUsable(true);
+	assert.deepEqual(m.contactsOf(A), [B]);
+	assert.deepEqual(m.contactsOf(B), [A]);
+});
+
+test('a group a blocked peer invites you into never arrives', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	m.blockContact(A, B);
+	const group = m.addGroup(B, [A], 'group-001');
+	m.propagate();
+	// An invitation is an ordinary chat payload, and the node admits only the
+	// control and info of a group from a blocked author — enough to keep one
+	// already joined working, not enough to join a new one.
+	assert.equal(m.chatsFor(A).includes(group), false);
+	assert.equal(m.chatsFor(B).includes(group), true);
+});
+
+test('contacts read off the devices can be grouped and blocked', () => {
+	// What a run adopts is already a contact there, marker and all. Without
+	// that the moves that need one would have nobody to make it with, and a
+	// run would pass having made no group and blocked nobody.
+	const m = sameLan(A, B);
+	m.recordExistingContacts(A, B);
+	assert.deepEqual(m.contactsOf(A), [B]);
+	assert.deepEqual(m.blockablePeers(A), [B]);
+});
+
+test('tapping accept makes the contact there and then, the reply in time', () => {
+	// Accepting writes the marker on the accepter's own device with no round
+	// trip; the requester gets theirs when the reply reaches them.
+	const m = new ExpectedModel(
+		[A, B].map(name => ({ ...phone(name), p2p: false })),
+		[],
+		true,
+	);
+	m.recordAdded(A, B);
+	m.setCloudUsable(false);
+	m.recordAccepted(B, A);
+	assert.deepEqual(m.contactsOf(B), [A]);
+	assert.deepEqual(m.contactsOf(A), []);
+	m.setCloudUsable(true);
+	assert.deepEqual(m.contactsOf(A), [B]);
 });
 
 test('a backgrounded agent gains nothing until it is back', () => {
@@ -233,11 +304,14 @@ test('learning a group subscribes to its chat in the same step', () => {
 	const m = sameLan(A, B);
 	contacts(m, A, B);
 	m.propagate();
+	// Made while B's app is down, so both the group and what was said in it
+	// reach B in the one pass that starting it sets off.
+	m.stopApp(B);
 	const g = m.addGroup(A, [B], 'g1');
 	m.addMessage(g, A, 'text', 'sm-1');
 	assert.deepEqual(m.chatsFor(B).includes(g), false);
-	const growth = m.propagate();
-	assert.deepEqual([...(growth.get(B) ?? [])], [g]);
+	m.startApp(B);
+	assert.deepEqual([...(m.propagate().get(B) ?? [])], [g]);
 	assert.equal(m.chatsFor(B).includes(g), true);
 	assert.equal(m.view(B, g).messages.length, 1);
 });
@@ -450,6 +524,14 @@ test('a contact request reaches a phone that is away', () => {
 	assert.deepEqual(showing(m, B), [A]);
 });
 
+test('a contact request is announced under the name it was sent with', () => {
+	const m = sameLan(A, B);
+	m.updateProfile(A, 'person-01');
+	m.recordAdded(A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), ['person-01']);
+});
+
 test('opening the chat clears the request it was sent in', () => {
 	const m = sameLan(A, B);
 	m.recordAdded(A, B);
@@ -469,6 +551,22 @@ test('a group invite notifies the member it names, after whoever added them', ()
 	assert.deepEqual(showing(m, B), [A]);
 	m.openedChat(B, group);
 	assert.deepEqual(showing(m, B), []);
+});
+
+test('being put back in a group notifies again, the removal having said nothing', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	m.openedChat(B, group);
+	m.wentHome(B);
+	m.removeGroupMember(group, A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), []);
+	m.addGroupMember(group, A, B);
+	m.propagate();
+	assert.deepEqual(showing(m, B), [A]);
 });
 
 test('a message notifies everyone in its chat but its sender', () => {
@@ -788,12 +886,14 @@ test('a member may leave a group, and a last admin with company may not', () => 
 	// Leaving starts by opening the group, which clears the invite it was
 	// announced with.
 	m.openedChat(B, group);
+	// A's app is down for the departure, so it goes on counting B until the
+	// op reaches it.
+	m.stopApp(A);
 	m.leaveGroup(group, B);
 	m.wentHome(B);
 	assert.deepEqual(m.chatsFor(B), [m.directChat(A, B)]);
-	// A still counts B until the departure reaches it.
 	assert.deepEqual(m.leavableGroups(A), []);
-	m.propagate();
+	m.startApp(A);
 	assert.deepEqual(m.leavableGroups(A), [group]);
 	// Leaving is its own doing, so nothing is announced for it.
 	assert.deepEqual(showing(m, B), []);
@@ -806,10 +906,14 @@ test('a group is read-only once the removal has reached the one removed', () => 
 	const group = m.addGroup(A, [B], 'group-001');
 	m.propagate();
 	assert.equal(m.view(B, group).departed, false);
+	// Away is what keeps the removal from arriving: the model converges on
+	// every mutator, so a B that could hear it already would have.
+	m.background(B);
 	m.removeGroupMember(group, A, B);
 	// The removal travels like anything else: B keeps the group, and its
 	// composer, until it arrives.
 	assert.equal(m.view(B, group).departed, false);
+	m.foreground(B);
 	m.propagate();
 	assert.equal(m.view(B, group).departed, true);
 	// A is still in it, so nothing changed there.
@@ -856,7 +960,7 @@ test('a blocked contact is offered by no picker and writes to nobody', () => {
 	assert.deepEqual(showing(m, A), []);
 });
 
-test('a rename a blocked peer makes waits for the unblock', () => {
+test('a rename a blocked peer makes is lost, and the next one lands', () => {
 	const m = sameLan(A, B);
 	contacts(m, A, B);
 	m.propagate();
@@ -865,9 +969,13 @@ test('a rename a blocked peer makes waits for the unblock', () => {
 	m.updateProfile(B, 'person-01');
 	m.propagate();
 	assert.equal(m.chatListName(chat, A), B);
+	// Unlike a message, a rename thrown away is not offered again.
 	m.unblockContact(A, B);
 	m.propagate();
-	assert.equal(m.chatListName(chat, A), 'person-01');
+	assert.equal(m.chatListName(chat, A), B);
+	m.updateProfile(B, 'person-02');
+	m.propagate();
+	assert.equal(m.chatListName(chat, A), 'person-02');
 });
 
 test('unblocking brings back what comes after, never what was thrown away', () => {
@@ -878,6 +986,7 @@ test('unblocking brings back what comes after, never what was thrown away', () =
 	m.blockContact(A, B);
 	m.addMessage(chat, B, 'text', 'sm-1');
 	m.propagate();
+	assert.deepEqual(m.view(A, chat).messages, []);
 	m.unblockContact(A, B);
 	m.addMessage(chat, B, 'text', 'sm-2');
 	m.propagate();
@@ -886,6 +995,38 @@ test('unblocking brings back what comes after, never what was thrown away', () =
 		['sm-2'],
 	);
 	assert.deepEqual(m.contactsOf(A), [B]);
+});
+
+test('a blocked contact goes on receiving what the blocker writes', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.blockContact(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.propagate();
+	// Blocking is one-sided: B is never told, and A's own writing still lands.
+	assert.deepEqual(
+		m.view(B, chat).messages.map(v => v.text),
+		['sm-1'],
+	);
+});
+
+test('a group goes on reaching the member it removed', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	m.removeGroupMember(group, A, B);
+	m.addMessage(group, A, 'text', 'sm-1');
+	m.propagate();
+	// Removal takes away what the app offers, not what the node receives.
+	assert.deepEqual(
+		m.view(B, group).messages.map(v => v.text),
+		['sm-1'],
+	);
+	assert.equal(m.view(B, group).departed, true);
 });
 
 test('a renamed group keeps its identity and reaches members one by one', () => {
@@ -1088,4 +1229,162 @@ test('entering a chat by a peer link reads it', () => {
 	assert.equal(m.unreadCount(A, chat), 1);
 	m.openedDirectChat(A, B);
 	assert.equal(m.unreadCount(A, chat), 0);
+});
+
+test('every mutator leaves the model converged', () => {
+	// What the check helpers assert before comparing a device to the model. A
+	// mutator that changes who can reach what without converging fails here
+	// rather than as a phantom mismatch in a run.
+	const m = withCloud(A, B);
+	const after = (what: string) => m.assertConverged(what);
+
+	m.recordAdded(A, B);
+	after('one side adding the other');
+	m.recordAdded(B, A);
+	after('the pair becoming contacts');
+	const direct = m.directChat(A, B);
+	m.addMessage(direct, A, 'text', 'sm-1');
+	after('a message');
+	m.updateProfile(A, 'renamed');
+	after('a rename');
+
+	const group = m.addGroup(A, [B], 'group-001');
+	after('a group');
+	m.setGroupInfo(group, 'renamed-001', 'about');
+	after('group info');
+	m.removeGroupMember(group, A, B);
+	after('a removal');
+	m.addGroupMember(group, A, B);
+	after('an add back');
+
+	for (const change of [
+		() => m.background(B),
+		() => m.foreground(B),
+		() => m.stopApp(B),
+		() => m.startApp(B),
+		() => m.setCloudUsable(false),
+		() => m.setCloudUsable(true),
+		() => m.blockContact(A, B),
+		() => m.unblockContact(A, B),
+	]) {
+		change();
+		after('an app or link change');
+	}
+});
+
+test('a request names its sender before any profile of theirs arrives', () => {
+	// What a device does with a request from someone it has never heard of:
+	// the request carries their profile, so it can name them, and the chat
+	// they open with it is not waiting on anything.
+	const m = new ExpectedModel(
+		[A, B].map(name => ({ ...phone(name), p2p: false })),
+		[],
+		true,
+		true,
+		true,
+	);
+	m.recordAdded(A, B);
+	assert.equal(m.knows(B).has('profile:Alice:0'), false);
+	assert.equal(m.displayName(B, A), A);
+
+	// The link goes before B adds back, so nothing else of A's can arrive.
+	m.setCloudUsable(false);
+	m.recordAdded(B, A);
+	assert.deepEqual(m.sendableChatsFor(B), [m.directChat(A, B)]);
+});
+
+test('a group the viewer was removed from takes no message', () => {
+	const m = sameLan(A, B);
+	contacts(m, A, B);
+	m.propagate();
+	const group = m.addGroup(A, [B], 'group-001');
+	m.propagate();
+	assert.equal(m.view(B, group).departed, false);
+
+	m.removeGroupMember(group, A, B);
+	// The app leaves the chat readable and says why it cannot be written in.
+	assert.equal(m.view(B, group).departed, true);
+	assert.equal(m.view(A, group).departed, false);
+	assert.equal(m.view(A, m.directChat(A, B)).departed, false);
+});
+
+test('an app nothing wakes writes nothing out', () => {
+	// A message composed while the link was down, on an app that was killed
+	// before it came back: there is no push for its phone, so nothing runs to
+	// upload what it holds.
+	// Cloud-only, so the link being down is the whole of being cut off.
+	const m = new ExpectedModel(
+		[A, B].map(name => ({ ...phone(name), p2p: false })),
+		[],
+		true,
+		true,
+		true,
+	);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+
+	m.setCloudUsable(false);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.stopApp(A);
+	m.setCloudUsable(true);
+	assert.equal(m.knows(B).has('message:sm-1'), false);
+
+	// Starting it is what gets the message out.
+	m.startApp(A);
+	assert.equal(m.knows(B).has('message:sm-1'), true);
+});
+
+test('what was written during a block stays off the screen after it lifts', () => {
+	// The chat filters by when an op was written, not when it arrived: an op
+	// written during a block is gone from that screen even if it only turns up
+	// afterwards, and even if it is unblocked first.
+	const m = new ExpectedModel(
+		[A, B].map(name => ({ ...phone(name), p2p: false })),
+		[],
+		true,
+		true,
+		true,
+	);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+
+	m.blockContact(A, B);
+	m.setCloudUsable(false);
+	m.addMessage(chat, B, 'text', 'sm-1');
+	m.unblockContact(A, B);
+	m.setCloudUsable(true);
+	m.propagate();
+
+	assert.equal(m.knows(A).has('message:sm-1'), true);
+	assert.deepEqual(m.view(A, chat).messages, []);
+	assert.equal(m.unreadCount(A, chat), 0);
+
+	// What B writes once the block is off is written outside the window.
+	m.addMessage(chat, B, 'text', 'sm-2');
+	m.propagate();
+	assert.deepEqual(
+		m.view(A, chat).messages.map(v => v.text),
+		['sm-2'],
+	);
+});
+
+test('a request is announced only on the device it was sent to', () => {
+	// An agent syncs the inbox of every peer it has added, so it sees the
+	// requests other people send them; only the owner of an inbox announces
+	// what is in it.
+	const m = withCloud(A, B, C);
+	contacts(m, A, B);
+	m.propagate();
+	m.recordAdded(C, B);
+	m.propagate();
+	assert.deepEqual(
+		m.expectedNotifications(A).map(n => n.shows),
+		[],
+	);
+	assert.deepEqual(
+		m.expectedNotifications(B).map(n => n.shows),
+		[[C]],
+	);
 });

@@ -972,7 +972,7 @@ export class Message extends TestHelper {
 			{ timeoutMsg: 'Editing input is not prefilled with the original text' },
 		);
 		await this.composer.type(newText);
-		await this.composer.send();
+		await this.composer.sendAndWaitForClear(newText);
 	}
 
 	/** The hover toolbar's Reply shortcut, which sits alongside React on desktop. */
@@ -1021,7 +1021,7 @@ export class Message extends TestHelper {
 	private async composeReply(replyText: string): Promise<void> {
 		await this.composer.replyBanner.waitForExist();
 		await this.composer.type(replyText);
-		await this.composer.send();
+		await this.composer.sendAndWaitForClear(replyText);
 	}
 
 	/** Trimmed text of this message's reply quote, or null when it has none.

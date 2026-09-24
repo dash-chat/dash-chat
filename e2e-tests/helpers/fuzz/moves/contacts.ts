@@ -2,6 +2,7 @@
  *  request, and accepting one that arrived. A pair are contacts once each has
  *  the other — by both entering links, or by one entering and the other
  *  accepting. */
+import { SYNC_TIMEOUT } from '../../timeouts';
 import {
 	type Real,
 	addContact,
@@ -32,12 +33,28 @@ class AddContactMove extends ActorMove {
 		const peer = byName(real, at(m.notYetAdded(actor.name), this.peerIdx));
 		log(`${actor.name}: ${this.toString()} -> adds ${peer.name}`);
 		await addContact(actor, peer, m);
+		if (!m.isActive(peer.name)) return;
+		if (!m.areContacts(actor.name, peer.name)) {
+			// The add that only opens a request puts a row on the peer's list
+			// all the same, which settle would miss because the model makes no
+			// chat for it until the pair complete. Waiting for it is what stops
+			// a later move — a cut link, say — from stranding a request the
+			// model has already credited the peer with, leaving every
+			// `acceptContact` after it asserting against an op that never
+			// arrived. Only once the model says it got there: over a link that
+			// is down it has not, and the peer is right to show nothing.
+			if (!m.pendingRequestsFor(peer.name).includes(actor.name)) return;
+			const title = m.displayName(peer.name, actor.name) ?? actor.name;
+			log(`${peer.name}: should now see a request from ${title}`);
+			await backToChatList(peer, m);
+			await peer.agent.homePage
+				.chatListItem(title)
+				.waitForExist({ timeout: SYNC_TIMEOUT });
+			return;
+		}
 		// The add that completes a pair puts the chat on the peer's screen too,
 		// which settle would miss: the peer may have known the actor's profile
 		// since its own add, so its knowledge does not grow here.
-		if (!m.areContacts(actor.name, peer.name) || !m.isActive(peer.name)) {
-			return;
-		}
 		const chat = m.directChat(actor.name, peer.name);
 		log(`${peer.name}: should now see ${m.chatListName(chat, peer.name)}`);
 		await openChat(peer, chat, m);
@@ -72,7 +89,7 @@ class AcceptContactMove extends ActorMove {
 			m.displayName(actor.name, requester) ?? requester,
 		);
 		await actor.agent.directChatPage.acceptContactRequest();
-		m.recordAdded(actor.name, requester);
+		m.recordAccepted(actor.name, requester);
 		m.openedDirectChat(actor.name, requester);
 		// Accepting is the add that completes the pair, so the requester's
 		// chat stops being pending — which settle would miss for the same

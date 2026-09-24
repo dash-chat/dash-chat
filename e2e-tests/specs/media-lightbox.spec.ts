@@ -2,7 +2,8 @@
  * Lightbox E2E — opening photos from a message bubble, navigating between
  * them (buttons, keyboard, filmstrip), and closing with focus restored.
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Photo lightbox', () => {
@@ -14,7 +15,8 @@ describe('Photo lightbox', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 
 		for (let i = 0; i < 3; i++) {
 			await agent1.directChatPage.composer.attachPhotos('lightbox');

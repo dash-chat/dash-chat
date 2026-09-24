@@ -6,7 +6,8 @@
  * on the media panel), so the test skips on desktop user agents where the
  * attach button opens the MediaMenu instead.
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Recent photos strip', () => {
@@ -18,7 +19,8 @@ describe('Recent photos strip', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('stages and sends photos tapped from the strip', async function () {
