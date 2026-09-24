@@ -1,6 +1,6 @@
 //! Where an outbox entry lives on disk and how it gets there intact.
 
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -146,50 +146,74 @@ fn parse_header(header: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn move_to(path: &Path, root: &Path, state: State) -> anyhow::Result<PathBuf> {
-    let dir = state_dir(root, state);
+/// Queues a held entry with `attachments` appended, in one rename into
+/// `queued/`. Until that rename the held entry is untouched, so a failure
+/// leaves it to be approved again from scratch rather than with a copy of the
+/// attachments already on it.
+pub(crate) fn queue_with_attachments(
+    held: &Path,
+    root: &Path,
+    attachments: &[Attachment],
+) -> anyhow::Result<PathBuf> {
+    let dir = state_dir(root, State::Queued);
     std::fs::create_dir_all(&dir).context("the outbox directory could not be created")?;
-    let name = path
-        .file_name()
-        .context("an outbox entry with no file name")?;
-    let moved = dir.join(name);
-    std::fs::rename(path, &moved).context("the entry could not be moved")?;
-    Ok(moved)
-}
+    let queued = dir.join(
+        held.file_name()
+            .context("an outbox entry with no file name")?,
+    );
+    let partial = with_suffix(&queued, PARTIAL);
 
-/// Rewritten through a temporary file and a rename, like [`write`], so a kill
-/// mid-append leaves the entry as it was.
-pub(crate) fn append_attachments(path: &Path, attachments: &[Attachment]) -> anyhow::Result<()> {
-    if attachments.is_empty() {
-        return Ok(());
-    }
-    let mut bytes = std::fs::read(path).context("the entry could not be read")?;
-    if !bytes.ends_with(b"\n") {
-        bytes.push(b'\n');
-    }
-    for attachment in attachments {
-        attachment
-            .to_writer(&mut bytes)
-            .context("an attachment could not be written")?;
-        bytes.push(b'\n');
-    }
-
-    let partial = with_suffix(path, PARTIAL);
-    let written = write_bytes(&partial, &bytes)
-        .and_then(|()| std::fs::rename(&partial, path).context("the entry could not be finished"));
+    let written = write_with_attachments(held, &partial, attachments).and_then(|()| {
+        std::fs::rename(&partial, &queued).context("the approved entry could not be queued")
+    });
     if let Err(err) = written {
         let _ = std::fs::remove_file(&partial);
         return Err(err);
     }
+    // It is queued either way; a leftover would only be offered, and sent, twice.
+    if let Err(err) = std::fs::remove_file(held) {
+        log::warn!("sentry-reporting: an approved crash stayed held: {err}");
+    }
+    Ok(queued)
+}
+
+/// Streamed, so neither the entry nor the attachments are copied into one buffer.
+fn write_with_attachments(
+    from: &Path,
+    to: &Path,
+    attachments: &[Attachment],
+) -> anyhow::Result<()> {
+    let mut original = std::fs::File::open(from).context("the held entry could not be opened")?;
+    let ends_with_newline = last_byte(&mut original)? == Some(b'\n');
+    let mut file = std::fs::File::create(to).context("the approved entry could not be created")?;
+    std::io::copy(&mut original, &mut file).context("the held entry could not be copied")?;
+    if !ends_with_newline {
+        file.write_all(b"\n")
+            .context("the held entry could not be terminated")?;
+    }
+    for attachment in attachments {
+        attachment
+            .to_writer(&mut file)
+            .context("an attachment could not be written")?;
+        file.write_all(b"\n")
+            .context("an attachment could not be terminated")?;
+    }
+    file.sync_all()
+        .context("the approved entry could not be flushed")?;
     Ok(())
 }
 
-fn write_bytes(partial: &Path, bytes: &[u8]) -> anyhow::Result<()> {
-    let mut file = std::fs::File::create(partial).context("the entry could not be created")?;
-    file.write_all(bytes)
-        .context("the entry could not be written")?;
-    file.sync_all().context("the entry could not be flushed")?;
-    Ok(())
+/// Leaves `file` rewound to its start.
+fn last_byte(file: &mut std::fs::File) -> anyhow::Result<Option<u8>> {
+    let mut last = None;
+    if file.metadata()?.len() > 0 {
+        file.seek(SeekFrom::End(-1))?;
+        let mut byte = [0u8];
+        file.read_exact(&mut byte)?;
+        last = Some(byte[0]);
+    }
+    file.seek(SeekFrom::Start(0))?;
+    Ok(last)
 }
 
 /// Renames out of the way of any other drainer, in this process or another.
@@ -335,7 +359,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write(dir.path(), State::Held, &envelope("crash")).unwrap();
 
-        let moved = move_to(&path, dir.path(), State::Queued).unwrap();
+        let moved = queue_with_attachments(&path, dir.path(), &[]).unwrap();
 
         assert!(list(dir.path(), State::Held).is_empty());
         assert_eq!(list(dir.path(), State::Queued).len(), 1);
