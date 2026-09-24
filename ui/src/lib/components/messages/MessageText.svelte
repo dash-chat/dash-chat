@@ -56,32 +56,23 @@
 
 	// The anchors come from `{@html}`, so the listener has to be delegated.
 	// `preventDefault` keeps the webview from navigating away from the app.
-	// Our own links are routed in-app: the OS won't hand a universal link back
-	// to the app that opened it.
 	function openLink(e: MouseEvent) {
 		if (!(e.target instanceof HTMLElement)) return;
 		const link = e.target.closest('a');
 		if (!link) return;
 		e.preventDefault();
-		openTappedLink(link.href).catch(err =>
-			console.error('[links] failed to open link', err),
-		);
+		void openTappedLink(link.href);
 	}
 
+	// Our own links stay in-app, even when handling them fails: the OS won't
+	// hand a universal link back to the app that opened it.
 	async function openTappedLink(href: string) {
-		if (await handledInApp(href)) return;
-		await openExternalUrl(href);
-	}
-
-	/** Whether a deep link handler took `href`. A handler that fails is
-	 * reported and leaves the link to the browser. */
-	async function handledInApp(href: string): Promise<boolean> {
 		try {
-			return await handleDeepLink(href, contactsStore);
+			if (await handleDeepLink(href, contactsStore)) return;
+			await openExternalUrl(href);
 		} catch (err) {
-			console.error('[links] in-app handling failed', err);
+			console.error('[links] failed to open link', err);
 			showToast(m.errorUnexpected(), 'unexpected', err);
-			return false;
 		}
 	}
 </script>
