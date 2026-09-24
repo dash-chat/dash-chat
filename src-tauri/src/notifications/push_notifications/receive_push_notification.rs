@@ -268,10 +268,8 @@ async fn handle_push_notification(
 
     // On every push, not once per node: the extension caches its node for hours
     // and its networking is often not up on the cold-start push. The `/health`
-    // round trip also refreshes the mailbox's dialing address. Track it as a
-    // fetch source only: `register_cloud_mailbox`'s up-to-10s endpoint wait
-    // would eat the extension's ~30 s budget. Bounded, since the wait below
-    // keeps retrying.
+    // round trip also refreshes the mailbox's dialing address. Bounded, since
+    // the wait below keeps retrying.
     let mut cloud_mailbox_attempt = None;
     crate::setup::track_cloud_mailbox_with_timeout(
         &node,

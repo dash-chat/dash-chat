@@ -22,30 +22,13 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let endpoint = node.iroh_endpoint().await?;
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
 
-    let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
-    let node_for_peer_addrs = node.clone();
-    tokio::spawn(async move {
-        while let Some(addr) = peer_addr_rx.recv().await {
-            if let Err(err) = node_for_peer_addrs.insert_peer_addr(addr).await {
-                log::warn!("Failed to register peer addr: {err}");
-            }
-        }
-    });
-
     // The in-process mailbox shares the node's iroh endpoint and blob store, so
-    // its EndpointId equals the node's and relayed blobs are served from the same
+    // its EndpointId equals the node's and pushed blobs are served from the same
     // store.
     let blob_sync = node.blob_sync_optional().expect("blob sync is enabled");
-    let server = mailbox_local_server::spawn_local_mailbox_server(
-        path,
-        blob_sync.blobs.clone(),
-        blob_sync.downloader(),
-        endpoint,
-        None,
-        None,
-        peer_addr_tx,
-    )
-    .await?;
+    let server =
+        mailbox_local_server::spawn_local_mailbox_server(path, blob_sync.blobs.clone(), endpoint)
+            .await?;
 
     *guard = Some(server);
 

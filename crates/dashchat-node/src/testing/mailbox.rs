@@ -126,9 +126,8 @@ impl TestMailbox {
     }
 
     /// Registers this mailbox on a node the way the production app does: for a
-    /// served mailbox, resolve its id from `/health`, add its dialing address
-    /// to the node's address book, and register the node's own address back so
-    /// the mailbox's blob fetcher can dial it.
+    /// served mailbox, resolve its id from `/health` and add its dialing address
+    /// to the node's address book so the node can push blobs to it.
     pub async fn register_on(&self, node: &crate::Node) {
         match self {
             Self::Mem(mb) => node.mailboxes.register(mb.client()).await,
@@ -147,7 +146,7 @@ async fn inspection_client(url: &str) -> ToyMailboxClient<MailboxOperation> {
         health.mailbox_id,
         url,
         iroh::SecretKey::generate().public(),
-        Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+        Arc::new(mailbox_client::NoopBlobPushQueue),
     )
 }
 
@@ -157,17 +156,13 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
         .await
         .unwrap();
     node.mailboxes
-        .register(
-            ToyMailboxClient::<MailboxOperation>::new(
-                health.mailbox_id.clone(),
-                url,
-                node.endpoint_id(),
-                node.unfetched_blob_tracker(),
-            )
-            .with_blob_reader(node.blob_reader()),
-        )
+        .register(ToyMailboxClient::<MailboxOperation>::new(
+            health.mailbox_id.clone(),
+            url,
+            node.endpoint_id(),
+            node.blob_push_queue(),
+        ))
         .await;
-    node.register_with_mailbox(url).await.unwrap();
 }
 
 fn spawn_local_mailbox_enabled() -> bool {

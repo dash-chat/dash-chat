@@ -19,8 +19,6 @@ mod blob_sync;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
-mod register_hashes;
-mod register_peer;
 mod report;
 mod reports_table;
 mod server_key;
@@ -38,17 +36,11 @@ const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
-pub use blob_sync::{BlobFetchPool, BlobSync};
+pub use blob_sync::BlobSync;
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
-pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
 };
-pub use register_hashes::{
-    record_blob_sources, register_hashes, upload_blob, RegisterHashesRequest,
-    RegisterHashesResponse, UploadBlobResponse,
-};
-pub use register_peer::RegisterPeerRequest;
 pub use reports_table::REPORTS_TABLE;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest, StoreBlipsResponse};
@@ -136,7 +128,6 @@ pub async fn spawn_server(
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
-    let blob_fetch_handle = blob_sync.spawn_fetch_loop(blob_sync.fetch_config());
     let blob_gc_handle = blob_sync.spawn_blob_gc_task();
 
     let push_client = match push_notifications_url {
@@ -165,7 +156,6 @@ pub async fn spawn_server(
     while tasks.join_next().await.is_some() {}
 
     cleanup_task.abort();
-    blob_fetch_handle.abort();
     if let Some(handle) = blob_gc_handle {
         handle.abort();
     }
@@ -224,13 +214,7 @@ pub fn create_app(
     Router::new()
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
-        .route(
-            "/blobs/register-hashes",
-            post(register_hashes::register_hashes),
-        )
-        .route("/blobs/upload", post(register_hashes::upload_blob))
         .route("/blips/get", post(get_blips_for_topics))
-        .route("/peers/register", post(register_peer::register_peer))
         .route("/report", post(report::report))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())

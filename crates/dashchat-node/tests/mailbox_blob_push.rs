@@ -1,0 +1,249 @@
+use std::time::Duration;
+
+use dashchat_node::{testing::*, *};
+use futures::StreamExt;
+use iroh_blobs::api::proto::Bitfield;
+use iroh_blobs::protocol::{GetRequest, ObserveRequest, PushRequest};
+use mailbox_server::BlobSync;
+
+mod common;
+
+/// A node pushes a photo into a standalone mailbox with iroh-blobs' push
+/// request, confirms the mailbox holds all of it with an observe request, the
+/// mailbox tags it for retention, and another node then downloads it from the
+/// mailbox. The sender is never dialed:
+/// it runs without p2p and never tells the mailbox its address.
+#[tokio::test(flavor = "multi_thread")]
+async fn node_pushes_photo_to_mailbox_and_receiver_downloads_it() {
+    dashchat_node::testing::setup_tracing(&["dashchat=info", "iroh_blobs=debug"], true);
+    let network_id = *dashchat_utils::NETWORK_ID;
+    let blobs_alpn = p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, network_id);
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mailbox_dir.path().join("blobs"),
+        None,
+        network_id,
+    )
+    .await
+    .unwrap();
+
+    let alice = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
+    let photo = unique_blob_bytes(vec![7u8; 256 * 1024]);
+    let hash = alice.blobs().add_bytes(photo.clone()).await.unwrap().hash;
+
+    let connection = alice
+        .iroh_endpoint()
+        .await
+        .unwrap()
+        .connect(mailbox.endpoint_addr(), &blobs_alpn)
+        .await
+        .unwrap();
+    alice
+        .blobs()
+        .store()
+        .remote()
+        .execute_push(
+            connection.clone(),
+            PushRequest::from(GetRequest::blob(hash)),
+        )
+        .complete()
+        .await
+        .unwrap();
+
+    // A push completes once the sender has written the bytes, before the
+    // mailbox has stored them, so the sender learns the outcome by observing
+    // the mailbox's copy. Observe streams the current state and then only the
+    // ranges added since, which the sender folds together.
+    let mut observed = alice
+        .blobs()
+        .store()
+        .remote()
+        .observe(connection, ObserveRequest::new(hash));
+    let mut mailbox_copy = Bitfield::empty();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(update) = observed.next().await {
+            mailbox_copy.update(&update.unwrap());
+            if mailbox_copy.is_complete() {
+                return;
+            }
+        }
+        panic!("observe stream ended before the mailbox held the whole photo");
+    })
+    .await
+    .expect("the mailbox never reported holding the whole photo");
+    assert_eq!(
+        mailbox.blobs.get_bytes(hash).await.unwrap().as_ref(),
+        photo.as_slice()
+    );
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !has_retention_tag(&mailbox, hash).await {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the mailbox never tagged the pushed photo, so its GC would reclaim it");
+
+    let bobbi = TestNode::new(NodeConfig::testing().no_p2p(), "bobbi").await;
+    bobbi
+        .insert_peer_addr(mailbox.endpoint_addr())
+        .await
+        .unwrap();
+    let fetched = dashchat_utils::blob_sync::download_capped(
+        &bobbi.blob_downloader(),
+        hash,
+        vec![mailbox.endpoint_id()],
+        Duration::from_secs(10),
+        &bobbi.blobs(),
+    )
+    .await;
+    assert!(
+        fetched,
+        "bobbi could not download the pushed photo from the mailbox"
+    );
+    assert_eq!(
+        bobbi.blobs().get_bytes(hash).await.unwrap().as_ref(),
+        photo.as_slice()
+    );
+}
+
+/// A mailbox holding the whole of a blob whose push ended before completing
+/// keeps it once the sender, seeing it whole, stops pushing.
+#[tokio::test(flavor = "multi_thread")]
+async fn mailbox_keeps_a_blob_it_holds_whole_once_a_sender_observes_it() {
+    let network_id = *dashchat_utils::NETWORK_ID;
+    let blobs_alpn = p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, network_id);
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mailbox_dir.path().join("blobs"),
+        None,
+        network_id,
+    )
+    .await
+    .unwrap();
+    let hash = mailbox
+        .blobs
+        .add_bytes(unique_blob_bytes(vec![3u8; 64 * 1024]))
+        .temp_tag()
+        .await
+        .unwrap()
+        .hash();
+
+    let alice = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
+    let connection = alice
+        .iroh_endpoint()
+        .await
+        .unwrap()
+        .connect(mailbox.endpoint_addr(), &blobs_alpn)
+        .await
+        .unwrap();
+    let mut observed = alice
+        .blobs()
+        .store()
+        .remote()
+        .observe(connection, ObserveRequest::new(hash));
+    assert!(observed.next().await.unwrap().unwrap().is_complete());
+    drop(observed);
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !has_retention_tag(&mailbox, hash).await {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the mailbox never tagged the blob it holds whole");
+}
+
+/// A node hosting a local hub is its own mailbox, and does not try to push to
+/// itself.
+#[tokio::test(flavor = "multi_thread")]
+async fn node_hosting_a_local_hub_does_not_push_to_itself() {
+    let hub = TestNode::new(NodeConfig::testing(), "hub").await;
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let server = common::spawn_relay_mailbox(&hub, mailbox_dir.path().join("mailbox.redb")).await;
+    let own_mailbox = mailbox_server::encode_mailbox_id(hub.endpoint_id());
+    hub.add_mailbox_client(common::app_mailbox_client(&hub, &own_mailbox, &server.url))
+        .await;
+    let hash = hub
+        .blobs()
+        .add_bytes(unique_blob_bytes(vec![5u8; 1024]))
+        .await
+        .unwrap()
+        .hash;
+
+    hub.blob_push_queue().enqueue(&own_mailbox, &[hash]).await;
+    push_pending_blobs_once(&hub).await;
+
+    assert!(
+        !has_pending_push(&hub, &own_mailbox, hash).await,
+        "the hub keeps retrying a push to itself"
+    );
+    server.stop().await;
+}
+
+/// A push queued while its mailbox is not registered, as after a relaunch,
+/// goes out as soon as the mailbox is registered rather than on the next retry.
+#[tokio::test(flavor = "multi_thread")]
+async fn queued_push_goes_out_once_its_mailbox_is_registered() {
+    let mailbox = common::spawn_standalone_mailbox().await;
+    let mut config = NodeConfig::testing().no_p2p();
+    config.blob_push_interval = Duration::from_secs(60 * 60);
+    let alice = TestNode::new(config, "alice").await;
+    let hash = alice
+        .blobs()
+        .add_bytes(unique_blob_bytes(vec![9u8; 1024]))
+        .await
+        .unwrap()
+        .hash;
+    alice.blob_push_queue().enqueue(&mailbox.id, &[hash]).await;
+    // Let the pass that queueing triggers find the mailbox unregistered.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    alice
+        .insert_peer_addr(mailbox.endpoint_addr.clone())
+        .await
+        .unwrap();
+    alice
+        .add_mailbox_client(common::app_mailbox_client(
+            &alice,
+            &mailbox.id,
+            &mailbox.url,
+        ))
+        .await;
+
+    PollConfig::seconds(10)
+        .wait_for(|| async {
+            (!has_pending_push(&alice, &mailbox.id, hash).await)
+                .then_some(())
+                .ok_or("the push is still waiting for the next retry")
+        })
+        .await
+        .unwrap();
+}
+
+async fn has_pending_push(
+    node: &TestNode,
+    mailbox_id: &mailbox_client::MailboxId,
+    hash: iroh_blobs::Hash,
+) -> bool {
+    node.local_store
+        .pending_blob_pushes_by_mailbox()
+        .await
+        .unwrap()
+        .get(mailbox_id)
+        .is_some_and(|hashes| hashes.contains(&hash))
+}
+
+async fn has_retention_tag(mailbox: &BlobSync, hash: iroh_blobs::Hash) -> bool {
+    mailbox
+        .blobs
+        .store()
+        .tags()
+        .list_prefix(b"mailbox/".as_slice())
+        .await
+        .unwrap()
+        .any(|tag| std::future::ready(tag.unwrap().hash == hash))
+        .await
+}

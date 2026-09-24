@@ -1,3 +1,4 @@
+mod blob_push;
 pub mod blob_sync;
 mod chat;
 mod contact;
@@ -8,7 +9,6 @@ pub mod node;
 mod payload;
 pub mod stores;
 pub mod topic;
-mod unfetched_blobs;
 pub mod util;
 
 mod id;
@@ -20,6 +20,7 @@ pub mod testing;
 
 pub use aliased::Aliasing;
 
+pub use blob_push::{LocalStoreBlobPushQueue, push_pending_blobs_once, spawn_blob_push_task};
 pub use chat::*;
 pub use contact::AddContactQrCode;
 pub use error::{
@@ -32,9 +33,6 @@ pub use p2panda::SigningKey;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;
 pub use topic::{Topic, TopicId};
-pub use unfetched_blobs::{
-    LocalStoreBlobTracker, followup_unfetched_blobs_once, spawn_unfetched_blob_followup_task,
-};
 
 pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
     fn as_bytes(&self) -> Result<Vec<u8>, p2panda_core::cbor::EncodeError> {

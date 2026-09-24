@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
 use mailbox_client::toy::ToyMailboxClient;
 
@@ -70,11 +68,9 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
 /// the mailbox is provably the only possible relay — mirroring
 /// `tests/mailbox_blob_sync.rs` but with `no_p2p` nodes.
 ///
-/// With p2p (and its random-walk discovery) disabled, the mailbox cannot learn
-/// Alice's iroh address on its own. Alice registers it via the mailbox's
-/// `/peers/register` endpoint, which the in-process server forwards back to the
-/// relay node's address book so its blob fetcher can dial her. This is the
-/// regression test for the mailbox-client-discovery path under `no_p2p`.
+/// With p2p (and its random-walk discovery) disabled, Alice reaches the
+/// mailbox only through the address its `/health` reports, and pushes her blob
+/// to it over that.
 #[tokio::test(flavor = "multi_thread")]
 async fn no_p2p_exchanges_media_through_mailbox_only() {
     dashchat_node::testing::setup_tracing(&["dashchat=info", "mailbox_server=info"], true);
@@ -89,17 +85,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
     let mailbox_addr = relay.iroh_endpoint().await.unwrap().addr();
 
     let mailbox_dir = tempfile::tempdir().unwrap();
-    let server = common::spawn_relay_mailbox(
-        &relay,
-        mailbox_dir.path().join("mailbox.redb"),
-        mailbox_server::FetchConfig {
-            concurrency: 4,
-            attempt_timeout: Duration::from_secs(10),
-            pass_interval: Duration::from_secs(2),
-            retry_cooldown: Duration::from_secs(2),
-        },
-    )
-    .await;
+    let server = common::spawn_relay_mailbox(&relay, mailbox_dir.path().join("mailbox.redb")).await;
     let url = server.url.clone();
 
     let config = NodeConfig::testing().no_p2p();
@@ -110,13 +96,10 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             alice.endpoint_id(),
-            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            alice.blob_push_queue(),
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
-    // Alice tells the mailbox her dialing address so its fetcher can reach her
-    // while she is the only blob source.
-    alice.register_with_mailbox(&url).await.unwrap();
 
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
     bobbi
@@ -124,7 +107,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
-            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailbox_client::NoopBlobPushQueue),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -167,8 +150,6 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
         .expect("alice's message carries media metadata");
     let hash = meta.first().expect("at least one media item").hash();
 
-    // The mailbox must fetch the blob from Alice. With mDNS off this only works
-    // if the mailbox has learned Alice's iroh address — the behavior under test.
     poll.wait_for(|| async {
         relay
             .blobs()
@@ -176,7 +157,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             .await
             .unwrap_or(false)
             .then_some(())
-            .ok_or("mailbox has not fetched the blob from alice yet")
+            .ok_or("alice has not pushed the blob to the mailbox yet")
     })
     .await
     .unwrap();
@@ -194,7 +175,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
-            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailbox_client::NoopBlobPushQueue),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();
@@ -240,17 +221,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
     let mailbox_addr = relay.iroh_endpoint().await.unwrap().addr();
 
     let mailbox_dir = tempfile::tempdir().unwrap();
-    let server = common::spawn_relay_mailbox(
-        &relay,
-        mailbox_dir.path().join("mailbox.redb"),
-        mailbox_server::FetchConfig {
-            concurrency: 4,
-            attempt_timeout: Duration::from_secs(10),
-            pass_interval: Duration::from_secs(2),
-            retry_cooldown: Duration::from_secs(2),
-        },
-    )
-    .await;
+    let server = common::spawn_relay_mailbox(&relay, mailbox_dir.path().join("mailbox.redb")).await;
     let url = server.url.clone();
 
     let config = NodeConfig::testing().no_p2p();
@@ -261,11 +232,10 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             mailbox_id.clone(),
             &url,
             alice.endpoint_id(),
-            alice.unfetched_blob_tracker(),
+            alice.blob_push_queue(),
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
-    alice.register_with_mailbox(&url).await.unwrap();
 
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
     bobbi
@@ -273,7 +243,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
-            bobbi.unfetched_blob_tracker(),
+            bobbi.blob_push_queue(),
         ))
         .await;
     // Poison: register the mailbox endpoint with NO usable transport. Op sync
@@ -327,7 +297,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             .await
             .unwrap_or(false)
             .then_some(())
-            .ok_or("mailbox has not fetched the blob from alice yet")
+            .ok_or("alice has not pushed the blob to the mailbox yet")
     })
     .await
     .unwrap();
@@ -345,7 +315,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
-            bobbi.unfetched_blob_tracker(),
+            bobbi.blob_push_queue(),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();

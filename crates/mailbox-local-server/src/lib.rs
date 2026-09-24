@@ -5,13 +5,10 @@
 use std::fs;
 use std::net::Ipv6Addr;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use iroh::EndpointId;
-use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::BlobsProtocol;
-use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig};
-use tokio::sync::mpsc::UnboundedSender;
+use mailbox_server::{encode_mailbox_id, BlobSync};
 
 pub use local_hub_discovery::LocalHubAnnouncementService;
 
@@ -50,18 +47,10 @@ impl LocalMailboxServer {
 ///
 /// The port is remembered beside `db_path` and reused across restarts, so
 /// peers that discovered this hub keep reaching it.
-///
-/// `upload_grace` overrides how long the mailbox defers dialing a blob's source
-/// after an announce that expects an inline upload; `None` uses the production
-/// default.
 pub async fn spawn_local_mailbox_server(
     db_path: PathBuf,
     blobs: BlobsProtocol,
-    downloader: Downloader,
     endpoint: iroh::Endpoint,
-    fetch_config: Option<FetchConfig>,
-    upload_grace: Option<Duration>,
-    peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
 ) -> anyhow::Result<LocalMailboxServer> {
     let (listener, port) = {
         let db_path = db_path.clone();
@@ -72,13 +61,7 @@ pub async fn spawn_local_mailbox_server(
     // Captured before `endpoint` is moved into the blob sync.
     let endpoint_id = endpoint.id();
 
-    let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint, peer_addr_tx);
-    if let Some(fetch_config) = fetch_config {
-        blob_sync = blob_sync.with_fetch_config(fetch_config);
-    }
-    if let Some(upload_grace) = upload_grace {
-        blob_sync = blob_sync.with_upload_grace(upload_grace);
-    }
+    let blob_sync = BlobSync::shared(blobs, endpoint);
 
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel::<()>();
 

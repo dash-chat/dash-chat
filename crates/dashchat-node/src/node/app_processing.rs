@@ -461,10 +461,10 @@ impl Node {
                         let is_own = DeviceId::from(author) == self.device_id();
                         if let Err(err) = self
                             .local_store
-                            .remove_unfetched_blobs_all_mailboxes(&hashes)
+                            .remove_pending_blob_pushes_all_mailboxes(&hashes)
                             .await
                         {
-                            tracing::warn!(?err, "failed to clear unfetched blob rows on delete");
+                            tracing::warn!(?err, "failed to clear pending blob pushes on delete");
                         }
                         blob_sync
                             .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)

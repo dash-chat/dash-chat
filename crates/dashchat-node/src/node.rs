@@ -103,9 +103,9 @@ pub struct NodeConfig {
     /// server — is unavailable.
     pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
-    /// How often the followup task re-announces still-unfetched blob hashes to
-    /// their mailboxes.
-    pub unfetched_blob_followup_interval: std::time::Duration,
+    /// How often the push task retries blobs not yet confirmed held by their
+    /// mailboxes.
+    pub blob_push_interval: std::time::Duration,
     /// How long the delivery-ack writer waits after new operations arrive
     /// before publishing a [`ChatPayload::MessageAck`], so a burst of incoming
     /// operations is covered by a single ack.
@@ -165,7 +165,7 @@ impl NodeConfig {
                 attempt_timeout: std::time::Duration::from_secs(3),
                 retry_cooldown: std::time::Duration::from_secs(1),
             },
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
+            blob_push_interval: std::time::Duration::from_secs(1),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
@@ -192,7 +192,7 @@ impl Default for NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
+            blob_push_interval: std::time::Duration::from_secs(60),
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
@@ -241,8 +241,8 @@ pub struct Node {
     /// once nothing needs the endpoint (see [`Self::init`]).
     endpoint: Option<p2panda::Endpoint>,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    unfetched_blob_trigger: Arc<tokio::sync::Notify>,
-    unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    blob_push_trigger: Arc<tokio::sync::Notify>,
+    blob_push_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
@@ -420,7 +420,6 @@ impl Node {
                     filesystem.blobs_store_path(),
                     blob_fetch,
                     source_lookup,
-                    local_store.clone(),
                 )
                 .await?,
             )
@@ -451,8 +450,8 @@ impl Node {
             blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
-            unfetched_blob_trigger: Default::default(),
-            unfetched_blob_followup_handle: Default::default(),
+            blob_push_trigger: Default::default(),
+            blob_push_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
             dirty_ack_topics: Default::default(),
@@ -483,17 +482,14 @@ impl Node {
             .await
             .replace(network_change_handle);
 
-        // === unfetched blob followup loop === //
+        // === blob push loop === //
 
-        let followup_handle = crate::spawn_unfetched_blob_followup_task(
+        let blob_push_handle = crate::spawn_blob_push_task(
             node.clone(),
-            node.config.unfetched_blob_followup_interval,
-            node.unfetched_blob_trigger.clone(),
+            node.config.blob_push_interval,
+            node.blob_push_trigger.clone(),
         );
-        node.unfetched_blob_followup_handle
-            .lock()
-            .await
-            .replace(followup_handle);
+        node.blob_push_handle.lock().await.replace(blob_push_handle);
 
         // === message ack writer === //
 
@@ -599,26 +595,14 @@ impl Node {
             .expect("blob sync is enabled for p2p (testing) nodes")
     }
 
-    pub fn unfetched_blob_tracker(
-        &self,
-    ) -> std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker> {
-        crate::LocalStoreBlobTracker::new(self.local_store.clone())
-    }
-
-    /// A blob-bytes source backed by this node's blob store, for the toy mailbox
-    /// client to upload blob bytes inline. Reads error when blob sync is disabled
-    /// (e.g. the push extension), which makes the client fall back to announcing
-    /// hashes only.
-    pub fn blob_reader(&self) -> std::sync::Arc<dyn mailbox_client::BlobReader> {
-        std::sync::Arc::new(NodeBlobReader {
-            blob_sync: self.blob_sync.clone(),
-        })
-    }
-
-    /// Wake the unfetched-blob followup task to run a reconciliation pass now
-    /// (e.g. on unpause / network change).
-    pub fn notify_unfetched_blob_followup(&self) {
-        self.unfetched_blob_trigger.notify_one();
+    pub fn blob_push_queue(&self) -> std::sync::Arc<dyn mailbox_client::BlobPushQueue> {
+        std::sync::Arc::new(crate::LocalStoreBlobPushQueue::new(
+            self.local_store.clone(),
+            self.blob_sync
+                .as_ref()
+                .map(|blob_sync| blob_sync.blobs.clone()),
+            self.blob_push_trigger.clone(),
+        ))
     }
 
     /// Use the node's device ID as an iroh endpoint id.
@@ -692,8 +676,6 @@ impl Node {
     }
 
     #[cfg(feature = "testing")]
-    /// The node's blob downloader, for an in-process mailbox to fetch blobs
-    /// into the shared store over the node's endpoint.
     pub fn blob_downloader(&self) -> iroh_blobs::api::downloader::Downloader {
         self.blob_sync
             .as_ref()
@@ -1562,7 +1544,7 @@ impl Node {
             handle.abort();
         }
 
-        if let Some(handle) = self.unfetched_blob_followup_handle.lock().await.take() {
+        if let Some(handle) = self.blob_push_handle.lock().await.take() {
             handle.abort();
         }
 
@@ -2298,22 +2280,6 @@ impl Node {
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
         Ok(OutgoingMedia::Photos { photos })
-    }
-}
-
-/// [`mailbox_client::BlobReader`] backed by the node's blob store.
-struct NodeBlobReader {
-    blob_sync: Option<BlobSync>,
-}
-
-#[async_trait::async_trait]
-impl mailbox_client::BlobReader for NodeBlobReader {
-    async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
-        let blob_sync = self
-            .blob_sync
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("blob sync disabled"))?;
-        Ok(blob_sync.blobs.get_bytes(hash).await?)
     }
 }
 

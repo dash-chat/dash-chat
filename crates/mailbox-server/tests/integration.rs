@@ -1,8 +1,4 @@
-use mailbox_server::{
-    encode_mailbox_id,
-    test_utils::{create_test_server, test_blob_sync},
-    GetBlipsResponse,
-};
+use mailbox_server::{encode_mailbox_id, test_utils::create_test_server, GetBlipsResponse};
 use serde_json::json;
 
 #[tokio::test]
@@ -579,17 +575,4 @@ async fn test_no_missing_when_server_is_ahead() {
 
     // No missing since server is ahead
     assert!(topic_response.missing.is_empty());
-}
-
-#[tokio::test]
-async fn register_peer_returns_no_content() {
-    let (server, _temp_file) = create_test_server().await;
-    // Use a real BlobSync endpoint to obtain a well-formed EndpointAddr.
-    let peer = test_blob_sync().await;
-    let addr = peer.endpoint_addr();
-    server
-        .post("/peers/register")
-        .json(&serde_json::json!({ "addr": addr }))
-        .await
-        .assert_status_no_content();
 }
