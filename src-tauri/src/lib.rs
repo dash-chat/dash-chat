@@ -14,6 +14,7 @@ mod mailbox;
 mod media_drop;
 mod node;
 mod notifications;
+mod pending_navigations;
 mod redaction;
 mod sentry;
 mod settings;
@@ -188,6 +189,7 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::media::save_blob_to_cache,
             commands::voice::transcode_voice_message,
+            pending_navigations::take_pending_navigations,
         ])
         .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -235,6 +237,8 @@ pub fn run() {
                     log::error!("Failed to register deep links: {err:?}");
                 }
             }
+
+            pending_navigations::setup(app.handle());
 
             let handle = app.handle().clone();
 
