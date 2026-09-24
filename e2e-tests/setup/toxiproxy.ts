@@ -18,6 +18,7 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+	type Bandwidth,
 	type Latency,
 	type Proxy,
 	type Timeout,
@@ -35,6 +36,10 @@ const INFO_PATH = path.join(ROOT, '.dbs', 'e2e', 'toxiproxy-info.json');
 /** Each way; a request answers about a second late. */
 const SLOW_LATENCY_MS = 500;
 const SLOW_JITTER_MS = 250;
+
+/** Room for a message's few kilobytes, but a photo's megabyte takes about a
+ *  minute: a phone on a weak uplink. */
+const THROTTLED_UPLOAD_KB_PER_S = 20;
 
 /** Every run's mailbox goes through the proxy, so a missing binary has to
  *  fail here, by name, rather than as a port that never listens. */
@@ -138,6 +143,19 @@ export class Link {
 				attributes,
 			});
 		}
+	}
+
+	/** Requests reach the server at a trickle while answers come back at full
+	 *  speed, so small requests land and large uploads crawl. */
+	async throttleUploads(): Promise<void> {
+		const proxy = await this.healed();
+		await proxy.addToxic<Bandwidth>({
+			name: 'bandwidth_upstream',
+			type: 'bandwidth',
+			stream: 'upstream',
+			toxicity: 1,
+			attributes: { rate: THROTTLED_UPLOAD_KB_PER_S },
+		});
 	}
 
 	/** Connections open but nothing ever reaches the server, so every request

@@ -108,6 +108,11 @@ export function slowMailboxLink(): Promise<void> {
 	return link().slow();
 }
 
+/** Small requests land at once; a photo upload takes about a minute. */
+export function throttleMailboxUploads(): Promise<void> {
+	return link().throttleUploads();
+}
+
 /** Requests are accepted and then never answered. */
 export function hangMailboxLink(): Promise<void> {
 	return link().hang();

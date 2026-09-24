@@ -1,7 +1,9 @@
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::toy::ToyMailboxClient;
+use mailbox_client::{
+    FetchRequest, FetchResponse, MailboxClient, MailboxItem, toy::ToyMailboxClient,
+};
 
 mod common;
 
@@ -526,4 +528,437 @@ async fn blob_fetch_succeeds_after_peer_addr_registration() {
 
     let fetched = mailbox.blobs.get_bytes(hash).await.unwrap();
     assert_eq!(fetched.as_ref(), blob_data.as_slice());
+}
+
+fn field_test_fetch_config() -> mailbox_server::FetchConfig {
+    mailbox_server::FetchConfig {
+        concurrency: 4,
+        attempt_timeout: Duration::from_secs(2),
+        pass_interval: Duration::from_millis(500),
+        retry_cooldown: Duration::from_millis(500),
+    }
+}
+
+fn test_photo() -> OutgoingMedia {
+    OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
+            data: rand::random::<[u8; 8192]>().to_vec(),
+            name: "pic.png".into(),
+            mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
+        }],
+    }
+}
+
+async fn sent_media(node: &TestNode, chat: ChatId) -> Vec<MediaMetadata> {
+    node.get_messages(chat)
+        .await
+        .unwrap()
+        .into_iter()
+        .find_map(|m| m.content.media().cloned())
+        .expect("the message carries media metadata")
+}
+
+/// Shuts `sender` down as soon as `mailbox_id` has stored its message carrying
+/// `photo`, i.e. once the sender records the photo as not yet held there, and
+/// returns its store directory for a restart. Polls tightly: the mailbox dials
+/// the sender for the bytes once its upload grace window elapses, and the
+/// sender must be gone by then.
+async fn freeze_once_message_reaches_mailbox(
+    sender: TestNode,
+    mailbox_id: &mailbox_client::MailboxId,
+    photo: iroh_blobs::Hash,
+) -> std::sync::Arc<tempfile::TempDir> {
+    PollConfig {
+        poll_interval: Duration::from_millis(10),
+        poll_timeout: Duration::from_secs(30),
+    }
+    .wait_for(|| async {
+        sender
+            .local_store
+            .unfetched_blobs_by_mailbox()
+            .await
+            .unwrap()
+            .get(mailbox_id)
+            .is_some_and(|hashes| hashes.contains(&photo))
+            .then_some(())
+            .ok_or("the sender's photo message has not reached the mailbox yet")
+    })
+    .await
+    .unwrap();
+    sender.shutdown().await
+}
+
+fn setup_field_test_tracing() {
+    dashchat_node::testing::setup_tracing(
+        &[
+            "dashchat=info",
+            "mailbox_server=info",
+            "mailbox_client=info",
+            "p2panda_stream=warn",
+            "p2panda_auth=warn",
+            "p2panda_spaces=warn",
+            "aliased=warn",
+        ],
+        true,
+    );
+}
+
+/// A photo whose sender froze right after the message landed on the mailbox,
+/// before the photo's bytes were uploaded, reaches the receiver once the sender
+/// is back.
+///
+/// Field report #600 / DASH-CHAT-4F: the receiver synced the message, but the
+/// image never loaded — no mailbox held the bytes and the sender was offline.
+/// The client stores the op first and only then announces and uploads its blob,
+/// so until the sender returns nobody can serve the photo.
+#[tokio::test(flavor = "multi_thread")]
+async fn photo_reaches_receiver_once_frozen_sender_returns() {
+    setup_field_test_tracing();
+    let config = NodeConfig::testing();
+
+    let relay = TestNode::new(config.clone(), "relay").await;
+    let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let server = common::spawn_relay_mailbox(
+        &relay,
+        mailbox_dir.path().join("mailbox.redb"),
+        field_test_fetch_config(),
+    )
+    .await;
+    let url = server.url.clone();
+
+    let alice = TestNode::new(config.clone(), "alice").await;
+    alice
+        .add_mailbox_client(common::app_mailbox_client(
+            &alice,
+            &mailbox_id,
+            &url,
+            std::sync::Arc::new(common::FrozenAppBlobReader),
+        ))
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
+    bobbi
+        .add_mailbox_client(common::app_mailbox_client(
+            &bobbi,
+            &mailbox_id,
+            &url,
+            bobbi.blob_reader(),
+        ))
+        .await;
+    teach_peers(&alice, [&relay]).await.unwrap();
+    teach_peers(&bobbi, [&relay]).await.unwrap();
+    alice.register_with_mailbox(&url).await.unwrap();
+    bobbi.register_with_mailbox(&url).await.unwrap();
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+    let bobbi_dir = bobbi.shutdown().await;
+
+    alice
+        .send_message(chat, "look at this", Some(test_photo()), None)
+        .await
+        .unwrap();
+    let meta = sent_media(&alice, chat).await;
+    let hash = meta.first().expect("at least one media item").hash();
+    let alice_dir = freeze_once_message_reaches_mailbox(alice, &mailbox_id, hash).await;
+
+    let bobbi = TestNode::new_at_path(config.clone(), "bobbi", bobbi_dir).await;
+    bobbi
+        .add_mailbox_client(common::app_mailbox_client(
+            &bobbi,
+            &mailbox_id,
+            &url,
+            bobbi.blob_reader(),
+        ))
+        .await;
+    teach_peers(&bobbi, [&relay]).await.unwrap();
+
+    PollConfig::default()
+        .wait_for(|| async {
+            bobbi
+                .get_messages(chat)
+                .await
+                .unwrap()
+                .iter()
+                .any(|m| m.content.media().is_some())
+                .then_some(())
+                .ok_or("bobbi has not synced alice's photo message")
+        })
+        .await
+        .unwrap();
+
+    // Alice opens the app again, registering with the mailbox as the app does
+    // on launch.
+    let alice = TestNode::new_at_path(config.clone(), "alice", alice_dir).await;
+    alice
+        .add_mailbox_client(common::app_mailbox_client(
+            &alice,
+            &mailbox_id,
+            &url,
+            alice.blob_reader(),
+        ))
+        .await;
+    teach_peers(&alice, [&relay]).await.unwrap();
+    alice.register_with_mailbox(&url).await.unwrap();
+
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let mailbox_holds_photo = relay.blobs().has(hash).await.unwrap_or(false);
+            bobbi
+                .load_media(meta.clone())
+                .await
+                .map(|_| ())
+                .map_err(|err| {
+                    format!(
+                        "bobbi has the photo message but not its bytes \
+                     (mailbox holds them: {mailbox_holds_photo}): {err:?}"
+                    )
+                })
+        })
+        .await
+        .unwrap();
+
+    server.stop().await;
+}
+
+/// A photo reaches its receiver while its sender stays online, even when the
+/// sender's first upload of it is cut short and the mailbox cannot dial the
+/// sender to fetch it.
+///
+/// Field report #600 / DASH-CHAT-4F, with nobody going offline: a phone on
+/// mobile data reaches its mailbox over HTTPS but cannot be dialed back over
+/// iroh, and phones rarely reach each other directly. Once the inline upload
+/// after the message fails, nothing uploads the photo again — the followup only
+/// re-announces its hash, which asks the mailbox to dial the sender.
+#[tokio::test(flavor = "multi_thread")]
+async fn photo_reaches_receiver_when_online_senders_upload_is_cut_short() {
+    setup_field_test_tracing();
+    let config = NodeConfig::testing().no_p2p();
+
+    let relay = TestNode::new(NodeConfig::testing(), "relay").await;
+    let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let server = common::spawn_relay_mailbox(
+        &relay,
+        mailbox_dir.path().join("mailbox.redb"),
+        field_test_fetch_config(),
+    )
+    .await;
+    let url = server.url.clone();
+
+    let alice = TestNode::new(config.clone(), "alice").await;
+    alice
+        .add_mailbox_client(common::app_mailbox_client(
+            &alice,
+            &mailbox_id,
+            &url,
+            std::sync::Arc::new(common::UploadCutShortOnce::new(alice.blob_reader())),
+        ))
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
+    bobbi
+        .add_mailbox_client(common::app_mailbox_client(
+            &bobbi,
+            &mailbox_id,
+            &url,
+            bobbi.blob_reader(),
+        ))
+        .await;
+    // Only bobbi can be dialed: the mailbox never learns alice's address.
+    teach_peers(&bobbi, [&relay]).await.unwrap();
+    bobbi.register_with_mailbox(&url).await.unwrap();
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    alice
+        .send_message(chat, "look at this", Some(test_photo()), None)
+        .await
+        .unwrap();
+    let meta = sent_media(&alice, chat).await;
+    let hash = meta.first().expect("at least one media item").hash();
+
+    PollConfig::default()
+        .wait_for(|| async {
+            bobbi
+                .get_messages(chat)
+                .await
+                .unwrap()
+                .iter()
+                .any(|m| m.content.media().is_some())
+                .then_some(())
+                .ok_or("bobbi has not synced alice's photo message")
+        })
+        .await
+        .unwrap();
+
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let mailbox_holds_photo = relay.blobs().has(hash).await.unwrap_or(false);
+            bobbi
+                .load_media(meta.clone())
+                .await
+                .map(|_| ())
+                .map_err(|err| {
+                    format!(
+                        "bobbi has the photo message but not its bytes, though alice is \
+                     online (mailbox holds them: {mailbox_holds_photo}): {err:?}"
+                    )
+                })
+        })
+        .await
+        .unwrap();
+
+    server.stop().await;
+}
+
+/// A receiver that forwards a sender's photo message to another mailbox does
+/// not tell that mailbox to fetch the photo from it while it does not hold it.
+///
+/// Seen on four receivers in the field test (DASH-CHAT-4F, 43, 3W, 41): the
+/// message reached them through one mailbox, a second mailbox reported it
+/// missing, and the receiver re-published it there — announcing itself as the
+/// photo's source with an upload it can never make (`failed to read blob for
+/// upload`), then re-announcing it every minute from its unfetched-blob tracker.
+#[tokio::test(flavor = "multi_thread")]
+async fn receiver_does_not_announce_itself_as_source_of_photo_it_lacks() {
+    setup_field_test_tracing();
+    let config = NodeConfig::testing();
+
+    let hub = TestNode::new(config.clone(), "hub").await;
+    let hub_id = mailbox_server::encode_mailbox_id(hub.endpoint_id());
+    let hub_dir = tempfile::tempdir().unwrap();
+    let hub_server = common::spawn_relay_mailbox(
+        &hub,
+        hub_dir.path().join("mailbox.redb"),
+        field_test_fetch_config(),
+    )
+    .await;
+
+    let cloud = TestNode::new(config.clone(), "cloud").await;
+    let cloud_id = mailbox_server::encode_mailbox_id(cloud.endpoint_id());
+    let cloud_dir = tempfile::tempdir().unwrap();
+    let cloud_server = common::spawn_relay_mailbox(
+        &cloud,
+        cloud_dir.path().join("mailbox.redb"),
+        field_test_fetch_config(),
+    )
+    .await;
+
+    let mailboxes = [(&hub_id, &hub_server.url), (&cloud_id, &cloud_server.url)];
+    let add_app_mailboxes = async |node: &TestNode| {
+        for (id, url) in mailboxes {
+            node.add_mailbox_client(common::app_mailbox_client(
+                node,
+                id,
+                url,
+                node.blob_reader(),
+            ))
+            .await;
+        }
+        teach_peers(node, [&hub, &cloud]).await.unwrap();
+    };
+
+    // Alice only reaches the hub, and her photo's bytes never leave her device.
+    let alice = TestNode::new(config.clone(), "alice").await;
+    alice
+        .add_mailbox_client(common::app_mailbox_client(
+            &alice,
+            &hub_id,
+            &hub_server.url,
+            std::sync::Arc::new(common::FrozenAppBlobReader),
+        ))
+        .await;
+    teach_peers(&alice, [&hub]).await.unwrap();
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
+    add_app_mailboxes(&bobbi).await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    // Bobbi is away while alice sends, and alice is gone before he returns, so
+    // he can never fetch the photo's bytes from her directly.
+    let bobbi_dir = bobbi.shutdown().await;
+    alice
+        .send_message(chat, "look at this", Some(test_photo()), None)
+        .await
+        .unwrap();
+    let hash = sent_media(&alice, chat)
+        .await
+        .first()
+        .expect("at least one media item")
+        .hash();
+    freeze_once_message_reaches_mailbox(alice, &hub_id, hash).await;
+
+    let bobbi = TestNode::new_at_path(config.clone(), "bobbi", bobbi_dir).await;
+    add_app_mailboxes(&bobbi).await;
+
+    let cloud_inspector = ToyMailboxClient::<MailboxOperation>::new(
+        cloud_id.clone(),
+        &cloud_server.url,
+        iroh::SecretKey::generate().public(),
+        std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+    );
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let FetchResponse(topics) = cloud_inspector
+                .fetch(FetchRequest(BTreeMap::from([(*chat, BTreeMap::new())])))
+                .await
+                .unwrap();
+            topics
+                .get(&*chat)
+                .is_some_and(|topic| {
+                    topic
+                        .items
+                        .iter()
+                        .any(|op| op.blob_hashes().contains(&hash))
+                })
+                .then_some(())
+                .ok_or("bobbi has not forwarded alice's photo message to the cloud mailbox")
+        })
+        .await
+        .unwrap();
+    assert!(
+        !bobbi.blobs().has(hash).await.unwrap(),
+        "precondition: bobbi must not hold the photo's bytes"
+    );
+
+    let announced_himself = PollConfig {
+        poll_interval: Duration::from_millis(100),
+        poll_timeout: Duration::from_secs(3),
+    }
+    .wait_for(|| async {
+        bobbi
+            .local_store
+            .unfetched_blobs_by_mailbox()
+            .await
+            .unwrap()
+            .get(&cloud_id)
+            .is_some_and(|hashes| hashes.contains(&hash))
+            .then_some(())
+            .ok_or("bobbi has not announced himself as the photo's source")
+    })
+    .await
+    .is_ok();
+    assert!(
+        !announced_himself,
+        "bobbi announced himself to the cloud mailbox as a source of a photo he does not hold"
+    );
+
+    hub_server.stop().await;
+    cloud_server.stop().await;
 }

@@ -43,3 +43,58 @@ pub async fn spawn_relay_mailbox(
 
     server
 }
+
+/// A mailbox client wired the way the app wires one: the node's persisted
+/// unfetched-blob tracker, streaming blob bytes read through `blob_reader`.
+pub fn app_mailbox_client(
+    node: &TestNode,
+    mailbox_id: &mailbox_client::MailboxId,
+    url: &str,
+    blob_reader: std::sync::Arc<dyn mailbox_client::BlobReader>,
+) -> mailbox_client::toy::ToyMailboxClient<dashchat_node::mailbox::MailboxOperation> {
+    mailbox_client::toy::ToyMailboxClient::new(
+        mailbox_id.clone(),
+        url,
+        node.endpoint_id(),
+        node.unfetched_blob_tracker(),
+    )
+    .with_blob_reader(blob_reader)
+}
+
+/// Stands in for an app that is frozen or killed after its op reached the
+/// mailbox but before the blob upload that follows it could run.
+pub struct FrozenAppBlobReader;
+
+#[async_trait::async_trait]
+impl mailbox_client::BlobReader for FrozenAppBlobReader {
+    async fn read_blob(&self, _hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+        std::future::pending().await
+    }
+}
+
+/// Reads blob bytes through `inner`, except that the first read fails: an
+/// inline upload a dropped connection cut short, which the client gives up on
+/// just as it gives up on an unreadable blob.
+pub struct UploadCutShortOnce {
+    inner: std::sync::Arc<dyn mailbox_client::BlobReader>,
+    cut: std::sync::atomic::AtomicBool,
+}
+
+impl UploadCutShortOnce {
+    pub fn new(inner: std::sync::Arc<dyn mailbox_client::BlobReader>) -> Self {
+        Self {
+            inner,
+            cut: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl mailbox_client::BlobReader for UploadCutShortOnce {
+    async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+        if !self.cut.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            anyhow::bail!("connection dropped mid-upload");
+        }
+        self.inner.read_blob(hash).await
+    }
+}
