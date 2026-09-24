@@ -17,7 +17,6 @@ pub struct LocalMailboxServer {
     /// A loopback URL the server can be reached at locally (e.g. for health
     /// checks).
     pub url: String,
-    pub port: u16,
     stop_signal: tokio::sync::oneshot::Sender<()>,
     task: tokio::task::JoinHandle<()>,
     announcement: LocalHubAnnouncementService,
@@ -69,9 +68,7 @@ pub async fn spawn_local_mailbox_server(
             db_path,
             listener,
             None,
-            Some(endpoint),
-            None,
-            *dashchat_utils::NETWORK_ID,
+            mailbox_server::MailboxBlobs::Shared(endpoint),
             signal,
         )
         .await
@@ -84,7 +81,6 @@ pub async fn spawn_local_mailbox_server(
 
     Ok(LocalMailboxServer {
         url: format!("http://127.0.0.1:{port}"),
-        port,
         stop_signal,
         task,
         announcement,

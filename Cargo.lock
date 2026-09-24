@@ -2186,9 +2186,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ciborium",
- "futures",
  "iroh",
- "iroh-blobs",
  "log",
  "serde",
  "serde_json",
@@ -5573,7 +5571,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "bytes",
  "chrono",
  "ciborium",
  "derive_more 1.0.0",
@@ -5605,7 +5602,6 @@ dependencies = [
  "anyhow",
  "clap",
  "dashchat-utils",
- "futures",
  "iroh",
  "local-hub-discovery",
  "log",
@@ -5620,7 +5616,6 @@ name = "mailbox-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "axum",
  "axum-test",
  "base64 0.22.1",
@@ -5645,7 +5640,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
- "tower",
+ "tokio-util",
  "tower-http",
  "tracing",
  "tracing-subscriber",

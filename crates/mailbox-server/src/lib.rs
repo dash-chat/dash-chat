@@ -15,7 +15,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod blip;
 mod blips_table;
-mod blob_sync;
+mod blob_store;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
@@ -36,7 +36,7 @@ const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
-pub use blob_sync::BlobSync;
+pub use blob_store::MailboxBlobStore;
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
@@ -96,10 +96,19 @@ pub fn parse_network_id(hex: &str) -> Result<NetworkId, hex::FromHexError> {
     hex::FromHex::from_hex(hex)
 }
 
-/// Run the mailbox server on `listener` until `signal` resolves. With a
-/// `shared_endpoint` (an in-process node's), blobs are pushed to and served
-/// from that node's store; otherwise the server builds its own [`BlobSync`]
-/// from `relay_url` and `network_id`.
+/// Where a mailbox server receives and serves blobs.
+pub enum MailboxBlobs {
+    /// Over an in-process node's endpoint, from that node's blob store.
+    Shared(iroh::Endpoint),
+    /// Over the server's own endpoint and [`MailboxBlobStore`], reachable
+    /// through `relay_url` when set.
+    Own {
+        relay_url: Option<iroh::RelayUrl>,
+        network_id: NetworkId,
+    },
+}
+
+/// Run the mailbox server on `listener` until `signal` resolves.
 ///
 /// Takes the socket already bound, so whoever reserved the port holds it until
 /// this takes over and a failure to bind is theirs to report.
@@ -107,9 +116,7 @@ pub async fn spawn_server(
     db_path: PathBuf,
     listener: tokio::net::TcpListener,
     push_notifications_url: Option<String>,
-    shared_endpoint: Option<iroh::Endpoint>,
-    relay_url: Option<iroh::RelayUrl>,
-    network_id: NetworkId,
+    blobs: MailboxBlobs,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path.clone())?;
@@ -119,18 +126,21 @@ pub async fn spawn_server(
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
-    let (endpoint, blob_sync) = match shared_endpoint {
-        Some(endpoint) => (endpoint, None),
-        None => {
+    let (endpoint, _blob_store) = match blobs {
+        MailboxBlobs::Shared(endpoint) => (endpoint, None),
+        MailboxBlobs::Own {
+            relay_url,
+            network_id,
+        } => {
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            let blob_sync = BlobSync::new(secret_key, blobs_root, relay_url, network_id).await?;
-            (blob_sync.endpoint(), Some(blob_sync))
+            let blob_store =
+                MailboxBlobStore::new(secret_key, blobs_root, relay_url, network_id).await?;
+            (blob_store.endpoint(), Some(blob_store))
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", endpoint.id());
-    let blob_gc_handle = blob_sync.as_ref().map(BlobSync::spawn_blob_gc_task);
 
     let push_client = match push_notifications_url {
         Some(url) => {
@@ -158,9 +168,6 @@ pub async fn spawn_server(
     while tasks.join_next().await.is_some() {}
 
     cleanup_task.abort();
-    if let Some(handle) = blob_gc_handle {
-        handle.abort();
-    }
     tracing::info!("Mailbox server gracefully shut down");
 
     Ok(())

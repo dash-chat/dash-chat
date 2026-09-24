@@ -1,5 +1,4 @@
-use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::toy::ToyMailboxClient;
+use dashchat_node::{testing::*, *};
 
 mod common;
 
@@ -63,140 +62,6 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
     );
 }
 
-/// Media reaches a `no_p2p` node *through the mailbox* even when the sender is
-/// offline. The two nodes are never online together while the blob exists, so
-/// the mailbox is provably the only possible relay — mirroring
-/// `tests/mailbox_blob_sync.rs` but with `no_p2p` nodes.
-///
-/// With p2p (and its random-walk discovery) disabled, Alice reaches the
-/// mailbox only through the address its `/health` reports, and pushes her blob
-/// to it over that.
-#[tokio::test(flavor = "multi_thread")]
-async fn no_p2p_exchanges_media_through_mailbox_only() {
-    dashchat_node::testing::setup_tracing(&["dashchat=info", "mailbox_server=info"], true);
-
-    let poll = PollConfig::default();
-
-    // Always-on node hosting an in-process mailbox that shares its iroh endpoint
-    // and blob store. Its p2p config is irrelevant — it is only a relay, never a
-    // chat participant.
-    let relay = TestNode::new(NodeConfig::testing(), "relay").await;
-    let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
-    let mailbox_addr = relay.iroh_endpoint().await.unwrap().addr();
-
-    let mailbox_dir = tempfile::tempdir().unwrap();
-    let server = common::spawn_relay_mailbox(&relay, mailbox_dir.path().join("mailbox.redb")).await;
-    let url = server.url.clone();
-
-    let config = NodeConfig::testing().no_p2p();
-
-    let alice = TestNode::new(config.clone(), "alice").await;
-    alice
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            mailbox_id.clone(),
-            &url,
-            alice.endpoint_id(),
-        ))
-        .await;
-    alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
-
-    let bobbi = TestNode::new(config.clone(), "bobbi").await;
-    bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            mailbox_id.clone(),
-            &url,
-            bobbi.endpoint_id(),
-        ))
-        .await;
-    bobbi.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
-
-    // Establish contact while both are online (no media exchanged yet).
-    alice
-        .behavior()
-        .initiate_and_establish_contact(&bobbi)
-        .await
-        .unwrap();
-
-    let chat = alice.direct_chat_with(&bobbi);
-    let bobbi_agent_id = bobbi.agent_id();
-
-    // Bobbi goes offline before any media exists.
-    let bobbi_dir = bobbi.shutdown().await;
-
-    // Alice sends a photo while Bobbi is offline.
-    let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
-    let media = OutgoingMedia::Photos {
-        photos: vec![OutgoingPhoto {
-            data: photo_bytes.clone(),
-            name: "pic.png".into(),
-            mime_type: "image/png".into(),
-            width: 640,
-            height: 480,
-        }],
-    };
-    alice
-        .send_message(chat, "look at this", Some(media), None)
-        .await
-        .unwrap();
-
-    let meta = alice
-        .get_messages(chat)
-        .await
-        .unwrap()
-        .into_iter()
-        .find_map(|m| m.content.media().cloned())
-        .expect("alice's message carries media metadata");
-    let hash = meta.first().expect("at least one media item").hash();
-
-    poll.wait_for(|| async {
-        relay
-            .blobs()
-            .has(hash)
-            .await
-            .unwrap_or(false)
-            .then_some(())
-            .ok_or("alice has not pushed the blob to the mailbox yet")
-    })
-    .await
-    .unwrap();
-
-    // Alice goes offline. The blob now lives only in the mailbox's store, so
-    // Bobbi cannot possibly fetch it directly from Alice.
-    alice.shutdown().await;
-
-    // Bobbi comes back (same identity/store) and syncs the op + blob from the
-    // mailbox alone.
-    let bobbi = TestNode::new_at_path(config.clone(), "bobbi", bobbi_dir).await;
-    assert_eq!(bobbi.agent_id(), bobbi_agent_id);
-    bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            mailbox_id.clone(),
-            &url,
-            bobbi.endpoint_id(),
-        ))
-        .await;
-    bobbi.insert_peer_addr(mailbox_addr).await.unwrap();
-
-    poll.wait_for(|| async {
-        bobbi
-            .load_media(meta.clone())
-            .await
-            .map(|_| ())
-            .map_err(|err| format!("bobbi has not downloaded the blob yet: {err:?}"))
-    })
-    .await
-    .unwrap();
-
-    let loaded = bobbi.load_media(meta).await.unwrap();
-    let OutgoingMedia::Photos { photos } = loaded else {
-        panic!("expected a photo attachment");
-    };
-    assert_eq!(photos.len(), 1);
-    assert_eq!(photos[0].data, photo_bytes);
-
-    server.stop().await;
-}
-
 /// Regression test for the address-book refresh in `handle_register_peer_addr`.
 ///
 /// The p2panda address book is persisted, so an entry for the mailbox endpoint
@@ -206,47 +71,39 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
 /// skips re-inserting an endpoint that was already in the address book but not
 /// registered *in the current process* (which is every persisted entry after a
 /// restart, since that set is in-memory), the unusable address is never
-/// refreshed and the blob can never be fetched.
+/// refreshed and the photo can never be fetched.
 #[tokio::test(flavor = "multi_thread")]
 async fn stale_mailbox_addr_is_refreshed_on_reregister() {
     dashchat_node::testing::setup_tracing(&["dashchat=info", "mailbox_server=info"], true);
 
     let poll = PollConfig::default();
 
-    let relay = TestNode::new(NodeConfig::testing(), "relay").await;
-    let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
-    let mailbox_addr = relay.iroh_endpoint().await.unwrap().addr();
+    let hub = TestNode::new(NodeConfig::testing(), "hub").await;
+    let mailbox_id = mailbox_server::encode_mailbox_id(hub.endpoint_id());
+    let mailbox_addr = hub.iroh_endpoint().await.unwrap().addr();
 
     let mailbox_dir = tempfile::tempdir().unwrap();
-    let server = common::spawn_relay_mailbox(&relay, mailbox_dir.path().join("mailbox.redb")).await;
+    let server = common::spawn_hub_mailbox(&hub, mailbox_dir.path().join("mailbox.redb")).await;
     let url = server.url.clone();
 
     let config = NodeConfig::testing().no_p2p();
 
     let alice = TestNode::new(config.clone(), "alice").await;
     alice
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            mailbox_id.clone(),
-            &url,
-            alice.endpoint_id(),
-        ))
+        .add_mailbox_client(common::app_mailbox_client(&alice, &mailbox_id, &url))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
 
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
     bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            mailbox_id.clone(),
-            &url,
-            bobbi.endpoint_id(),
-        ))
+        .add_mailbox_client(common::app_mailbox_client(&bobbi, &mailbox_id, &url))
         .await;
     // Poison: register the mailbox endpoint with NO usable transport. Op sync
     // rides the mailbox HTTP client so contact still establishes, but this entry
     // (which persists across Bobbi's restart) leaves the mailbox undialable until
     // it is refreshed with the real address below.
     bobbi
-        .insert_peer_addr(iroh::EndpointAddr::new(relay.endpoint_id()))
+        .insert_peer_addr(iroh::EndpointAddr::new(hub.endpoint_id()))
         .await
         .unwrap();
 
@@ -286,8 +143,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
     let hash = meta.first().expect("at least one media item").hash();
 
     poll.wait_for(|| async {
-        relay
-            .blobs()
+        hub.blobs()
             .has(hash)
             .await
             .unwrap_or(false)
@@ -306,11 +162,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
     let bobbi = TestNode::new_at_path(config.clone(), "bobbi", bobbi_dir).await;
     assert_eq!(bobbi.agent_id(), bobbi_agent_id);
     bobbi
-        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
-            mailbox_id.clone(),
-            &url,
-            bobbi.endpoint_id(),
-        ))
+        .add_mailbox_client(common::app_mailbox_client(&bobbi, &mailbox_id, &url))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();
 

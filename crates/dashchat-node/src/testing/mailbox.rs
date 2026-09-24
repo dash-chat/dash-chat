@@ -49,29 +49,25 @@ impl LocalMailbox {
     pub fn spawn() -> Self {
         let dir = tempfile::tempdir().expect("failed to create temp dir for local mailbox");
         let db_path = dir.path().join("mailbox.redb");
-        let port = free_port().expect("failed to allocate a free port for local mailbox");
-        let addr = format!("127.0.0.1:{port}");
-        let url = format!("http://127.0.0.1:{port}");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .expect("failed to bind a port for local mailbox");
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
 
         let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel::<()>();
         let task = tokio::spawn(async move {
             let signal = async move {
                 let _ = stop_signal_rx.await;
             };
-            let listener = match tokio::net::TcpListener::bind(addr).await {
-                Ok(listener) => listener,
-                Err(e) => {
-                    tracing::error!("Local test mailbox server could not bind: {e:?}");
-                    return;
-                }
-            };
             if let Err(e) = mailbox_server::spawn_server(
                 db_path,
                 listener,
                 None,
-                None,
-                None,
-                *dashchat_utils::NETWORK_ID,
+                mailbox_server::MailboxBlobs::Own {
+                    relay_url: None,
+                    network_id: *dashchat_utils::NETWORK_ID,
+                },
                 signal,
             )
             .await
@@ -169,11 +165,6 @@ fn spawn_local_mailbox_enabled() -> bool {
     std::env::var("DASHCHAT_SPAWN_LOCAL_MAILBOX")
         .map(|v| v == "true" || v == "1")
         .unwrap_or(false)
-}
-
-fn free_port() -> std::io::Result<u16> {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-    Ok(listener.local_addr()?.port())
 }
 
 /// Client produced by [`TestMailbox::client`], delegating to the in-memory or

@@ -371,7 +371,7 @@ where
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
-    blob_pusher: Option<Arc<BlobPusher>>,
+    blob_pusher: Option<BlobPusher>,
 }
 
 impl<Item, Store> Mailboxes<Item, Store>
@@ -395,7 +395,7 @@ where
             sync_tracker,
             config,
             nudge: Arc::new(Notify::new()),
-            blob_pusher: blob_pusher.map(Arc::new),
+            blob_pusher,
         }
     }
 
@@ -867,9 +867,6 @@ where
         blob_pusher: &BlobPusher,
     ) -> anyhow::Result<()> {
         let pending = self.sync_tracker.pending_blobs(id).await?;
-        if pending.is_empty() {
-            return Ok(());
-        }
         let held = blob_pusher.push(id, &pending).await?;
         self.sync_tracker.remove_pending_blobs(id, &held).await
     }
@@ -888,23 +885,6 @@ where
             return Ok(());
         }
         self.sync_tracker.record_pending_blobs(id, hashes).await
-    }
-
-    /// A blob this device just fetched may be waiting to be pushed to some
-    /// mailboxes, having reached them inside an operation before its bytes.
-    pub async fn blob_fetched(&self, hash: iroh_blobs::Hash) {
-        let mailboxes = match self.sync_tracker.mailboxes_awaiting_blob(hash).await {
-            Ok(mailboxes) => mailboxes,
-            Err(err) => {
-                tracing::error!(?err, %hash, "failed to read mailboxes awaiting a blob");
-                return;
-            }
-        };
-        for id in mailboxes {
-            if let Some(tracked_mailbox) = self.tracked_mailbox(&id).await {
-                self.start_blob_push(&id, &tracked_mailbox);
-            }
-        }
     }
 
     /// Immediately sync the given topics with the given mailbox:

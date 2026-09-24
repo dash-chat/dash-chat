@@ -458,7 +458,6 @@ impl Node {
 
                     if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash()).collect();
-                        let is_own = DeviceId::from(author) == self.device_id();
                         if let Err(err) = self
                             .mailboxes
                             .sync_tracker()
@@ -468,7 +467,7 @@ impl Node {
                             tracing::warn!(?err, "failed to clear pending blob pushes on delete");
                         }
                         blob_sync
-                            .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)
+                            .delete_blobs(topic, author.into(), operation.hash, hashes)
                             .await;
                     }
                 }

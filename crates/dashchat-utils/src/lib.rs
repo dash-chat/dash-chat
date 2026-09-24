@@ -1,8 +1,6 @@
 #[cfg(feature = "iroh")]
 pub mod blob_sync;
 mod derive_watch;
-#[cfg(feature = "iroh")]
-pub mod endpoint;
 mod retry_with_backoff;
 mod singleton_task_with_retries;
 

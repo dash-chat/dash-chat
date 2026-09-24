@@ -9,6 +9,7 @@ use crate::MailboxId;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const PUSH_CONFIRM_TIMEOUT: Duration = Duration::from_secs(30);
 
+#[derive(Clone)]
 pub struct BlobPusher {
     store: iroh_blobs::api::Store,
     endpoint: iroh::Endpoint,

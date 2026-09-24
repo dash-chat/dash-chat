@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::blob_sync::{BlobFetchConfig, BlobSync, SENTINEL_OP_HASH};
+use crate::blob_sync::{BlobFetchConfig, BlobSync};
 use crate::compat::Capabilities;
 use crate::error::{
     AddContactError, AddContactResult, Error, RemoveGroupMemberError, ShutdownError,
@@ -21,7 +21,6 @@ use crate::testing::TestNode;
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use mailbox_client::blob_push::BlobPusher;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
@@ -232,7 +231,6 @@ pub struct Node {
     /// `redb` metadata store — whose exclusive single-process lock the always-on
     /// main app holds, which would otherwise deadlock the extension's node build.
     blob_sync: Option<BlobSync>,
-    blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     /// `None` when p2panda was spawned with no networking layer, which happens
     /// once nothing needs the endpoint (see [`Self::init`]).
     endpoint: Option<p2panda::Endpoint>,
@@ -240,15 +238,6 @@ pub struct Node {
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
-}
-
-/// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
-/// node never references a blob that the fetcher's own cap would reject.
-fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
-    if size as u64 > MAX_BLOB_BYTES {
-        anyhow::bail!("a media item is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
-    }
-    Ok(())
 }
 
 impl Node {
@@ -407,7 +396,16 @@ impl Node {
         // === blob sync === //
 
         let blob_sync = if let Some((blob_store, endpoint)) = blob_store {
-            Some(BlobSync::new(endpoint, blob_store, op_store.clone(), mailboxes.clone()).await?)
+            Some(
+                BlobSync::new(
+                    endpoint,
+                    blob_store,
+                    op_store.clone(),
+                    mailboxes.clone(),
+                    config.blob_fetch.clone(),
+                )
+                .await?,
+            )
         } else {
             None
         };
@@ -432,7 +430,6 @@ impl Node {
             stored_topics_init_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
-            blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
             message_ack_trigger: Default::default(),
@@ -445,16 +442,6 @@ impl Node {
         let processor_handle =
             node.spawn_application_processor_task(events_rx, processor_cancel_rx);
         node.processor_handle.lock().await.replace(processor_handle);
-
-        // === blob fetch loop === //
-
-        if let Some(blob_sync) = &node.blob_sync {
-            let blob_fetch_handle = blob_sync.spawn_fetch_loop(node.config.blob_fetch.clone());
-            node.blob_fetch_handle
-                .lock()
-                .await
-                .replace(blob_fetch_handle);
-        }
 
         // === network change notifier === //
 
@@ -629,14 +616,6 @@ impl Node {
             .expect("blob sync is enabled for p2p (testing) nodes")
             .blobs
             .clone()
-    }
-
-    #[cfg(feature = "testing")]
-    pub fn blob_downloader(&self) -> iroh_blobs::api::downloader::Downloader {
-        self.blob_sync
-            .as_ref()
-            .expect("blob sync is enabled for p2p (testing) nodes")
-            .downloader()
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
@@ -1058,29 +1037,15 @@ impl Node {
             .validate(&valid_ops)?;
         }
 
-        let meta = if let Some(media) = media {
-            Some(
-                self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
-                    .await?,
-            )
-        } else {
-            None
-        };
-        let message = ChatMessageContent::new(message, meta.clone(), reply);
-        let header = self.send_message_raw(chat_id, message).await?;
-        if let Some(bundle) = meta {
-            let topic_id: TopicId = chat_id.into();
-            for item in bundle.iter() {
-                if let Err(err) = self
-                    .require_blob_sync()?
-                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash())
-                    .await
-                {
-                    tracing::warn!(?err, "failed to retag blob after operation creation");
-                }
+        let (meta, _stored_media) = match media {
+            Some(media) => {
+                let (meta, stored) = self.store_media(media).await?;
+                (Some(meta), stored)
             }
-        }
-        Ok(header)
+            None => (None, Vec::new()),
+        };
+        let message = ChatMessageContent::new(message, meta, reply);
+        Ok(self.send_message_raw(chat_id, message).await?)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -1484,10 +1449,6 @@ impl Node {
             let _ = handle.await;
         }
 
-        if let Some(handle) = self.blob_fetch_handle.lock().await.take() {
-            handle.abort();
-        }
-
         if let Some(handle) = self.message_ack_handle.lock().await.take() {
             handle.abort();
         }
@@ -1500,20 +1461,10 @@ impl Node {
         // suspended app (0xdead10cc). File locks first, slow best-effort endpoint
         // close last, each time-bounded so none outlasts the suspension window.
 
-        // iroh-blobs redb store: a file lock like the SQLite pools; fetch loop
-        // aborted above so nothing else is using it now. Absent when blob sync
-        // is disabled (the push extension), which never opens it.
+        // iroh-blobs redb store: a file lock like the SQLite pools. Absent when
+        // blob sync is disabled (the push extension), which never opens it.
         if let Some(blob_sync) = &self.blob_sync {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                blob_sync.blobs.store().shutdown(),
-            )
-            .await
-            {
-                Ok(Ok(())) => {}
-                Ok(Err(err)) => tracing::warn!("failed to shut down blob store: {err:?}"),
-                Err(_) => tracing::warn!("timed out shutting down blob store"),
-            }
+            blob_sync.shutdown().await;
         }
 
         // Close pools last.
@@ -2047,64 +1998,56 @@ impl Node {
         Ok(())
     }
 
-    pub async fn store_media(
+    /// Store the bytes of media about to be sent, returning its metadata and
+    /// the temp tags that keep the bytes until the message is processed.
+    async fn store_media(
         &self,
-        topic: TopicId,
-        operation_hash: p2panda::Hash,
         media: OutgoingMedia,
-    ) -> anyhow::Result<MediaBundle> {
+    ) -> anyhow::Result<(MediaBundle, Vec<iroh_blobs::api::TempTag>)> {
+        let blob_sync = self.require_blob_sync()?;
         let mut items = vec![];
+        let mut stored = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
                     let size = photo.data.len() as u64;
-                    ensure_blob_size(size, &photo.name)?;
-                    let hash = self
-                        .require_blob_sync()?
-                        .store_blob(topic, self.device_id(), operation_hash, photo.data)
-                        .await?;
+                    let tag = blob_sync.store_blob(photo.data).await?;
                     items.push(MediaMetadata::Photo {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
                         width: photo.width,
                         height: photo.height,
-                        hash,
+                        hash: tag.hash(),
                     });
+                    stored.push(tag);
                 }
             }
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
-                ensure_blob_size(size, &file.name)?;
-                let hash = self
-                    .require_blob_sync()?
-                    .store_blob(topic, self.device_id(), operation_hash, file.data)
-                    .await?;
+                let tag = blob_sync.store_blob(file.data).await?;
                 items.push(MediaMetadata::File {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
-                    hash,
+                    hash: tag.hash(),
                 });
+                stored.push(tag);
             }
             OutgoingMedia::VoiceNote { voice_note } => {
                 let size = voice_note.data.len() as u64;
-                ensure_blob_size(size, "voice note")?;
-
-                let hash = self
-                    .require_blob_sync()?
-                    .store_blob(topic, self.device_id(), operation_hash, voice_note.data)
-                    .await?;
+                let tag = blob_sync.store_blob(voice_note.data).await?;
                 items.push(MediaMetadata::VoiceNote {
                     mime_type: voice_note.mime_type,
                     size,
                     duration_ms: voice_note.duration_ms,
                     waveform: voice_note.waveform,
-                    hash,
+                    hash: tag.hash(),
                 });
+                stored.push(tag);
             }
         }
-        Ok(MediaBundle::from(items))
+        Ok((MediaBundle::from(items), stored))
     }
 
     /// Load the raw bytes of a single blob by its hash, downloading it on demand

@@ -22,7 +22,6 @@ tokio = { version = "1.43.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-bytes = { workspace = true }
 
 
 

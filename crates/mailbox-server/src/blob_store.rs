@@ -8,7 +8,7 @@ use iroh::protocol::Router;
 use iroh_blobs::api::proto::BlobStatus;
 use iroh_blobs::provider::events::{EventMask, EventSender, ProviderMessage, RequestMode};
 use p2panda_net::NetworkId;
-use tokio::task::JoinHandle;
+use tokio_util::task::AbortOnDropHandle;
 
 /// Tag-name prefix marking a stored blob the server is responsible for GCing.
 /// The store time (unix seconds, zero-padded for lexical order) is embedded so
@@ -18,20 +18,21 @@ const BLOB_TAG_PREFIX: &str = "mailbox/";
 const BLOB_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// How often iroh sweeps untagged blobs and how often we expire stale tags.
 const BLOB_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
+const RELAY_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-#[derive(Clone)]
-pub struct BlobSync {
+/// The blob store of a standalone mailbox: it keeps the blobs senders push to
+/// it for [`BLOB_RETENTION`] and serves them to their receivers.
+pub struct MailboxBlobStore {
     pub blobs: iroh_blobs::BlobsProtocol,
     endpoint: iroh::Endpoint,
     _router: Router,
+    _gc: AbortOnDropHandle<()>,
 }
 
-impl BlobSync {
-    /// Build a standalone mailbox BlobSync that owns its own iroh endpoint and
-    /// blob store. When `relay_url` is set the endpoint registers with that
-    /// relay so it is reachable behind NAT and its advertised [`EndpointAddr`]
-    /// includes the relay; the call waits (bounded) for the relay connection so
-    /// the first `/health` response carries a complete address. Only peers on
+impl MailboxBlobStore {
+    /// Build a store with its own iroh endpoint. When `relay_url` is set the
+    /// endpoint registers with that relay so it is reachable behind NAT and its
+    /// advertised [`EndpointAddr`] includes the relay. Only peers on
     /// `network_id` can transfer blobs with it.
     pub async fn new(
         secret_key: iroh::SecretKey,
@@ -39,26 +40,30 @@ impl BlobSync {
         relay_url: Option<iroh::RelayUrl>,
         network_id: NetworkId,
     ) -> anyhow::Result<Self> {
-        let mut builder = iroh::Endpoint::builder(presets::Minimal).secret_key(secret_key);
-        let has_relay = relay_url.is_some();
-        if let Some(relay_url) = relay_url {
-            builder = builder.relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::from_iter([
-                relay_url,
-            ])));
-        }
-        let endpoint = builder.bind().await?;
-
-        // `endpoint.addr()` only includes the relay once the endpoint has
-        // connected to it, so wait for that before serving `/health`. Bounded
-        // so an unreachable relay can't block server startup indefinitely.
-        // Skipped when no relay is configured (e.g. tests): with the `Minimal`
-        // preset there is no default relay, so `online()` would never resolve.
-        dashchat_utils::endpoint::wait_endpoint_online(
-            has_relay,
-            &endpoint,
-            Duration::from_secs(10),
-        )
-        .await?;
+        let builder = iroh::Endpoint::builder(presets::Minimal).secret_key(secret_key);
+        let endpoint = match relay_url {
+            None => builder.bind().await?,
+            Some(relay_url) => {
+                let endpoint = builder
+                    .relay_mode(iroh::RelayMode::Custom(iroh::RelayMap::from_iter([
+                        relay_url,
+                    ])))
+                    .bind()
+                    .await?;
+                // `endpoint.addr()` only includes the relay once the endpoint
+                // has connected to it, so wait for that before serving
+                // `/health`. Bounded so an unreachable relay can't block server
+                // startup indefinitely.
+                tokio::time::timeout(RELAY_CONNECT_TIMEOUT, endpoint.online())
+                    .await
+                    .map_err(|_| {
+                        anyhow::anyhow!(
+                            "mailbox endpoint did not connect to its relay within {RELAY_CONNECT_TIMEOUT:?}"
+                        )
+                    })?;
+                endpoint
+            }
+        };
 
         let db_path = root.join("blobs.db");
         let mut options = iroh_blobs::store::fs::options::Options::new(&root);
@@ -83,6 +88,7 @@ impl BlobSync {
             .spawn();
 
         Ok(Self {
+            _gc: spawn_blob_gc_task(blobs.clone()),
             blobs,
             endpoint,
             _router: router,
@@ -93,28 +99,23 @@ impl BlobSync {
         self.endpoint.clone()
     }
 
-    pub fn endpoint_id(&self) -> iroh::EndpointId {
-        self.endpoint.id()
-    }
-
     pub fn endpoint_addr(&self) -> iroh::EndpointAddr {
         self.endpoint.addr()
     }
+}
 
-    /// Spawn the loop that expires stored-blob tags past the retention window;
-    /// iroh's background GC then reclaims the now-untagged blobs.
-    pub fn spawn_blob_gc_task(&self) -> JoinHandle<()> {
-        let blobs = self.blobs.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(BLOB_GC_INTERVAL);
-            loop {
-                interval.tick().await;
-                if let Err(err) = expire_blob_tags(&blobs).await {
-                    tracing::error!(?err, "failed to expire stored blob tags");
-                }
+/// Spawn the loop that expires stored-blob tags past the retention window;
+/// iroh's background GC then reclaims the now-untagged blobs.
+fn spawn_blob_gc_task(blobs: iroh_blobs::BlobsProtocol) -> AbortOnDropHandle<()> {
+    AbortOnDropHandle::new(tokio::spawn(async move {
+        let mut interval = tokio::time::interval(BLOB_GC_INTERVAL);
+        loop {
+            interval.tick().await;
+            if let Err(err) = expire_blob_tags(&blobs).await {
+                tracing::error!(?err, "failed to expire stored blob tags");
             }
-        })
-    }
+        }
+    }))
 }
 
 /// Tag a stored blob so iroh's GC keeps it; the tag name embeds the store time
@@ -216,22 +217,6 @@ fn tag_stored_secs(name: &[u8]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn endpoint_id_matches_secret_key() {
-        let dir = tempfile::tempdir().unwrap();
-        let key = iroh::SecretKey::generate();
-        let expected = key.public();
-        let bs = BlobSync::new(
-            key,
-            dir.path().to_path_buf(),
-            None,
-            *dashchat_utils::NETWORK_ID,
-        )
-        .await
-        .unwrap();
-        assert_eq!(bs.endpoint_id(), expected);
-    }
 
     #[test]
     fn tag_stored_secs_round_trips_retention_tag_format() {

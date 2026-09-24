@@ -1,7 +1,7 @@
 use clap::Parser;
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 use futures::FutureExt;
-use mailbox_server::spawn_server;
+use mailbox_server::{spawn_server, MailboxBlobs};
 use p2panda_net::NetworkId;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -45,9 +45,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.db_path.into(),
         listener,
         args.push_notifications_url,
-        None,
-        Some(RELAY_URL.clone()),
-        args.network_id.unwrap_or(*NETWORK_ID),
+        MailboxBlobs::Own {
+            relay_url: Some(RELAY_URL.clone()),
+            network_id: args.network_id.unwrap_or(*NETWORK_ID),
+        },
         signal,
     )
     .await?;

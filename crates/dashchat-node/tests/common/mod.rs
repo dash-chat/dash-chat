@@ -10,13 +10,13 @@ use mailbox_local_server::LocalMailboxServer;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
-/// Spawn an in-process local mailbox server that shares `relay`'s iroh endpoint
+/// Spawn an in-process local mailbox server that shares `hub`'s iroh endpoint
 /// and blob store and wait for it to become healthy. This is the in-process
 /// test equivalent of `src-tauri/src/mailbox/server.rs`.
-pub async fn spawn_relay_mailbox(relay: &TestNode, db_path: PathBuf) -> LocalMailboxServer {
+pub async fn spawn_hub_mailbox(hub: &TestNode, db_path: PathBuf) -> LocalMailboxServer {
     let server = mailbox_local_server::spawn_local_mailbox_server(
         db_path,
-        relay.iroh_endpoint().await.unwrap(),
+        hub.iroh_endpoint().await.unwrap(),
     )
     .await
     .unwrap();

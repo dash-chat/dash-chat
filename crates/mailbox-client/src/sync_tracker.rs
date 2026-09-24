@@ -487,31 +487,6 @@ where
         }
     }
 
-    pub async fn mailboxes_awaiting_blob(
-        &self,
-        hash: iroh_blobs::Hash,
-    ) -> anyhow::Result<Vec<MailboxId>> {
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let rows: Vec<(String,)> = sqlx::query_as(
-                    "SELECT mailbox_id FROM mailbox_pending_blob WHERE blob_hash = ?",
-                )
-                .bind(hash.as_bytes().to_vec())
-                .fetch_all(pool)
-                .await?;
-                Ok(rows.into_iter().map(|(mailbox,)| mailbox).collect())
-            }
-            SyncBackend::Mem(rows) => Ok(rows
-                .lock()
-                .await
-                .pending_blobs
-                .iter()
-                .filter(|(_, h)| *h == hash)
-                .map(|(mailbox, _)| mailbox.clone())
-                .collect()),
-        }
-    }
-
     pub async fn remove_pending_blobs(
         &self,
         mailbox: &MailboxId,
@@ -746,10 +721,6 @@ mod tests {
             .record_pending_blobs(&"mb2".into(), &[h1, h3])
             .await
             .unwrap();
-
-        let mut awaiting = store.mailboxes_awaiting_blob(h1).await.unwrap();
-        awaiting.sort();
-        assert_eq!(awaiting, vec!["mb1".to_string(), "mb2".to_string()]);
 
         store
             .remove_pending_blobs(&"mb1".into(), &[h1])
