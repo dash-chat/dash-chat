@@ -37,7 +37,7 @@ build:
 
 # run the binary produced by `just build`
 run:
-    ./target/debug/dash-chat
+    nix develop --command ./target/debug/dash-chat
 
 # delete the data dirs of the binary run by `just run`, after confirmation
 wipe:
