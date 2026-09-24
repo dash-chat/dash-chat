@@ -320,9 +320,9 @@
     "someoneDeletedThisMessage": "{{name}} این پیام را حذف کرد.",
     "voicePause": "پیام صوتی Pause",
     "discardDraftTitle": "پیش نویس Discard?",
-    "messageStatusSending": "ارسال",
+    "messageStatusSending": "تلاش برای ارسال",
     "voiceSeek": "پیام صوتی",
-    "messageStatusMailbox": "سن و هنوز ارسال",
+    "messageStatusMailbox": "گواهی به سرور",
     "voiceRecordFailed": "نمی تواند ضبط را تمام کند. لطفا دوباره امتحان کنید.",
     "discard": "Discard",
     "errorAddContactInvalidLink": "لینک تماس داخلی لطفا از تماس خود بخواهید دوباره لینک خود را به اشتراک بگذارید.",
@@ -384,5 +384,6 @@
     "errorReceivedUnrecognizedLink": "پیوند ناشناخته: {{url}}",
     "fileDownloadFailed": "دانلود فایل شکست خورد.",
     "contactRequestSent": "درخواست تماس ارسال شده.",
-    "errorAddContactDeviceLinkingNotSupported": "این کد برای اتصال یک دستگاه است، نه اضافه کردن یک تماس."
+    "errorAddContactDeviceLinkingNotSupported": "این کد برای اتصال یک دستگاه است، نه اضافه کردن یک تماس.",
+    "messageStatusUnsent": "ارسال"
 }

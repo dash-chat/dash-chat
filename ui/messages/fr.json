@@ -308,8 +308,8 @@
     "replyingTo": "Réponse à {{name}}",
     "voiceMessage": "Message vocal",
     "messageDeleted": "Message supprimé",
-    "messageStatusSending": "Envoi",
-    "messageStatusMailbox": "Sent and still sending",
+    "messageStatusSending": "Essayer d'envoyer",
+    "messageStatusMailbox": "Envoyé au serveur",
     "messageStatusDelivered": "Livré",
     "discardDraftTitle": "Je rejette l'ébauche ?",
     "discardDraftDescription": "Cette action ne peut être annulée.",
@@ -387,5 +387,6 @@
     "errorReceivedUnrecognizedLink": "Reçu un lien non reconnu: {{url}}",
     "fileDownloadFailed": "Le téléchargement de fichiers a échoué.",
     "contactRequestSent": "Demande de contact envoyée.",
-    "errorAddContactDeviceLinkingNotSupported": "Ce code est pour lier un périphérique, sans ajouter de contact."
+    "errorAddContactDeviceLinkingNotSupported": "Ce code est pour lier un périphérique, sans ajouter de contact.",
+    "messageStatusUnsent": "Envoi"
 }
