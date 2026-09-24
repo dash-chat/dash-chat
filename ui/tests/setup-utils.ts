@@ -620,6 +620,7 @@ export const testUtils = {
 	recentPhotos: undefined as RecentPhotosTestData | undefined,
 	forceBlobError,
 	swipeToReply,
+	myDeviceId: (): Promise<string> => invokeAfterSetup('my_device_id'),
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

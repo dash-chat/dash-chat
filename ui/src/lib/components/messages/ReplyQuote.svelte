@@ -61,7 +61,9 @@
 		<span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-1.5">
 			{#if reply.kind === 'content'}
 				{#if authorName}
-					<span class="reply-quote-author">{authorName}</span>
+					<span class="reply-quote-author" data-testid="reply-quote-author"
+						>{authorName}</span
+					>
 				{/if}
 				<span class="reply-quote-text" data-testid="reply-quote-text">
 					{#if reply.text}

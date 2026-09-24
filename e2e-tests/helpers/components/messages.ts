@@ -1085,6 +1085,29 @@ export class Message extends TestHelper {
 		);
 	}
 
+	/** Wait until this message's reply quote names `authorName` as the quoted
+	 * author. Read from the DOM for the same reason as `replyQuoteText`. */
+	async waitForReplyQuoteAuthor(
+		authorName: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				const author = await this.agent.execute(
+					(wrapperSel: string, authorSel: string) =>
+						document
+							.querySelector(wrapperSel)
+							?.querySelector(authorSel)
+							?.textContent?.trim() ?? null,
+					this.wrapperSelector,
+					tid('reply-quote-author'),
+				);
+				return author === authorName;
+			},
+			{ timeout, timeoutMsg: `Reply quote author "${authorName}" not found` },
+		);
+	}
+
 	async clickReplyQuote(): Promise<void> {
 		await this.replyQuote.waitForClickable();
 		await this.replyQuote.click();
