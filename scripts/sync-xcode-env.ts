@@ -55,8 +55,10 @@ export function syncXcodeEnv(vars: Partial<Record<ManagedKey, string>>): void {
 		line =>
 			line.trim() !== '' && !MANAGED.some(k => line.startsWith(`export ${k}=`)),
 	);
+	// Single-quoted so a `$`, backtick or `"` in a value (the auth token is a
+	// secret we don't control) is never expanded when the phases source this.
 	const added = MANAGED.filter(k => vars[k]).map(
-		k => `export ${k}="${vars[k]}"`,
+		k => `export ${k}='${vars[k]?.replace(/'/g, `'\\''`)}'`,
 	);
 	writeFileSync(ENV_LOCAL, `${[...kept, ...added].join('\n')}\n`);
 }

@@ -396,7 +396,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "[ \"$DEBUG_INFORMATION_FORMAT\" = \"dwarf-with-dsym\" ] || exit 0\n[ -f \"$SRCROOT/.xcode.env\" ] && . \"$SRCROOT/.xcode.env\"\n[ -f \"$SRCROOT/.xcode.env.local\" ] && . \"$SRCROOT/.xcode.env.local\"\nif [ -z \"${SENTRY_AUTH_TOKEN:-}\" ]; then\n  echo \"warning: SENTRY_AUTH_TOKEN is not set, so this build's crashes will not be symbolicated in Sentry\"\n  exit 0\nfi\npnpm dlx @sentry/cli@2 debug-files upload \"$DWARF_DSYM_FOLDER_PATH\" || echo \"warning: uploading dSYMs to Sentry failed\"\n";
+			shellScript = "# Debug builds carry no dSYM. The folder also holds the push\n# extension's dSYM, since the extension builds first.\n[ \"$DEBUG_INFORMATION_FORMAT\" = \"dwarf-with-dsym\" ] || exit 0\n[ -f \"$SRCROOT/.xcode.env\" ] && . \"$SRCROOT/.xcode.env\"\n[ -f \"$SRCROOT/.xcode.env.local\" ] && . \"$SRCROOT/.xcode.env.local\"\nif [ -z \"${SENTRY_AUTH_TOKEN:-}\" ] || [ -z \"${SENTRY_ORG:-}\" ] || [ -z \"${SENTRY_PROJECT:-}\" ]; then\n  echo \"warning: SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT must all be set, so this build's crashes will not be symbolicated in Sentry\"\n  exit 0\nfi\npnpm dlx @sentry/cli@2.58.6 debug-files upload \"$DWARF_DSYM_FOLDER_PATH\" || echo \"warning: uploading dSYMs to Sentry failed\"\n";
 		};
 		A206911C64BE8EF9637A3492 /* Build Rust Code */ = {
 			isa = PBXShellScriptBuildPhase;

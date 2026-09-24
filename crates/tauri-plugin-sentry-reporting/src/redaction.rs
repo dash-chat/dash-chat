@@ -1,4 +1,5 @@
-use std::io::Read;
+use std::borrow::Cow;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -13,7 +14,15 @@ const PLACEHOLDER: &str = "[REDACTED]";
 pub fn redact(patterns: &[Regex], text: &str) -> String {
     let mut out = text.to_owned();
     for re in patterns {
-        out = re.replace_all(&out, PLACEHOLDER).into_owned();
+        // `replace_all` borrows when nothing matched, as for most patterns on a
+        // log tail; skipping the copy then saves a full-buffer copy per pattern.
+        let replaced = match re.replace_all(&out, PLACEHOLDER) {
+            Cow::Owned(replaced) => Some(replaced),
+            Cow::Borrowed(_) => None,
+        };
+        if let Some(replaced) = replaced {
+            out = replaced;
+        }
     }
     out
 }
@@ -46,16 +55,30 @@ where
     Ok(serde_json::from_value(json)?)
 }
 
-/// Newline-terminated, so the boundary between two files is always a line break.
-pub(crate) fn concat_files(paths: &[PathBuf]) -> std::io::Result<String> {
+/// Newline-terminated, so the boundary between two files is always a line
+/// break. Each file contributes at most its last `max_bytes` plus the line they
+/// cut into: a just-rotated file can be many times the tail it feeds.
+pub(crate) fn concat_file_tails(paths: &[PathBuf], max_bytes: usize) -> std::io::Result<String> {
     let mut buf = String::new();
     for path in paths {
-        std::fs::File::open(path)?.read_to_string(&mut buf)?;
+        buf.push_str(&read_tail(path, max_bytes)?);
         if !buf.is_empty() && !buf.ends_with('\n') {
             buf.push('\n');
         }
     }
     Ok(buf)
+}
+
+/// Lossy because the seek can land inside a multi-byte character. That only
+/// garbles the cut first line, which is always one byte over `max_bytes` and so
+/// never survives [`last_whole_lines`].
+fn read_tail(path: &Path, max_bytes: usize) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(max_bytes as u64 + 1)))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 pub(crate) fn last_whole_lines(text: &str, max_bytes: usize) -> &str {
@@ -90,20 +113,20 @@ pub(crate) fn redacted_log_tail(
     if files.is_empty() {
         anyhow::bail!("no log files in {}", logs_dir.display());
     }
-    let text = concat_files(&newest_files_covering(files, max_bytes))?;
+    let text = concat_file_tails(newest_files_covering(&files, max_bytes), max_bytes)?;
     Ok(redact(patterns, last_whole_lines(&text, max_bytes)))
 }
 
 /// Still oldest first. Rotation keeps tens of MB of older files that a tail
 /// would read into memory only to cut away.
-fn newest_files_covering(oldest_first: Vec<PathBuf>, max_bytes: usize) -> Vec<PathBuf> {
+fn newest_files_covering(oldest_first: &[PathBuf], max_bytes: usize) -> &[PathBuf] {
     let mut covered: u64 = 0;
     let mut needed = oldest_first.len();
     while needed > 0 && covered < max_bytes as u64 {
         needed -= 1;
         covered += std::fs::metadata(&oldest_first[needed]).map_or(0, |m| m.len());
     }
-    oldest_first[needed..].to_vec()
+    &oldest_first[needed..]
 }
 
 #[cfg(test)]
@@ -191,8 +214,33 @@ mod tests {
         std::fs::write(&first, "no trailing newline").unwrap();
         std::fs::write(&second, "next file\n").unwrap();
 
-        let text = concat_files(&[first, second]).unwrap();
+        let text = concat_file_tails(&[first, second], 1024).unwrap();
         assert_eq!(text, "no trailing newline\nnext file\n");
+    }
+
+    #[test]
+    fn a_file_larger_than_the_tail_is_read_only_from_its_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("big.log");
+        let lines: String = (0..100).map(|i| format!("line {i:03}\n")).collect();
+        std::fs::write(&log, &lines).unwrap();
+
+        let read = read_tail(&log, 30).unwrap();
+        assert_eq!(read.len(), 31);
+
+        let tail = redacted_log_tail(&[], dir.path(), 30).unwrap();
+        assert_eq!(tail, "line 097\nline 098\nline 099\n");
+    }
+
+    #[test]
+    fn the_tail_crosses_a_file_boundary_and_drops_the_cut_line() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("old.log"), "old one\nold two\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.path().join("new.log"), "new one\n").unwrap();
+
+        let tail = redacted_log_tail(&[], dir.path(), 16).unwrap();
+        assert_eq!(tail, "old two\nnew one\n");
     }
 
     #[test]
@@ -223,10 +271,13 @@ mod tests {
             })
             .collect();
 
-        let names: Vec<_> = newest_files_covering(files, 15)
-            .iter()
-            .map(|p| p.file_name().unwrap().to_str().unwrap().to_owned())
-            .collect();
-        assert_eq!(names, ["mid.log", "new.log"]);
+        let names = |max_bytes| -> Vec<String> {
+            newest_files_covering(&files, max_bytes)
+                .iter()
+                .map(|p| p.file_name().unwrap().to_str().unwrap().to_owned())
+                .collect()
+        };
+        assert_eq!(names(15), ["mid.log", "new.log"]);
+        assert_eq!(names(5), ["new.log"]);
     }
 }

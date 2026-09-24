@@ -5,12 +5,15 @@
 //! outbox needs that answer to know what to delete, so it does the POST itself.
 
 use std::future::Future;
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::StatusCode;
 use sentry::types::Dsn;
 use sentry::Envelope;
+
+use crate::outbox::blocking;
 
 pub(crate) const USER_AGENT: &str = concat!("dash-chat/", env!("CARGO_PKG_VERSION"));
 const CONTENT_TYPE: &str = "application/x-sentry-envelope";
@@ -50,10 +53,15 @@ impl HttpSender {
 
 impl EnvelopeSender for HttpSender {
     async fn post(&self, envelope: &Envelope) -> Delivery {
-        let body = match gzipped(envelope) {
+        let mut serialized = Vec::new();
+        if let Err(err) = envelope.to_writer(&mut serialized) {
+            log::warn!("sentry-reporting: an entry could not be serialized: {err}");
+            return Delivery::Rejected { status: None };
+        }
+        let body = match blocking(move || gzipped(&serialized)).await {
             Ok(body) => body,
             Err(err) => {
-                log::warn!("sentry-reporting: an entry could not be serialized: {err}");
+                log::warn!("sentry-reporting: an entry could not be compressed: {err}");
                 return Delivery::Rejected { status: None };
             }
         };
@@ -82,10 +90,11 @@ impl EnvelopeSender for HttpSender {
     }
 }
 
-/// Reports carry tens of MB of log text, which compresses about tenfold.
-fn gzipped(envelope: &Envelope) -> std::io::Result<Vec<u8>> {
-    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    envelope.to_writer(&mut encoder)?;
+/// Reports carry tens of MB of log text, which compresses about tenfold even
+/// at the fastest level; the slower levels buy little on text this redundant.
+fn gzipped(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder.write_all(bytes)?;
     encoder.finish()
 }
 
@@ -94,6 +103,13 @@ fn classify(status: StatusCode, retry_after: Option<Duration>) -> Delivery {
         Delivery::Delivered
     } else if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
         Delivery::Retry { after: retry_after }
+    } else if status == StatusCode::PAYLOAD_TOO_LARGE {
+        log::error!(
+            "sentry-reporting: a report was too large for Sentry and is dropped; the attached log tail needs a lower cap"
+        );
+        Delivery::Rejected {
+            status: Some(status),
+        }
     } else {
         log::warn!("sentry-reporting: a report was rejected with {status}");
         Delivery::Rejected {

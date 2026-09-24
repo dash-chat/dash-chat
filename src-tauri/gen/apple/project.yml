@@ -144,11 +144,11 @@ targets:
           [ "$DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym" ] || exit 0
           [ -f "$SRCROOT/.xcode.env" ] && . "$SRCROOT/.xcode.env"
           [ -f "$SRCROOT/.xcode.env.local" ] && . "$SRCROOT/.xcode.env.local"
-          if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
-            echo "warning: SENTRY_AUTH_TOKEN is not set, so this build's crashes will not be symbolicated in Sentry"
+          if [ -z "${SENTRY_AUTH_TOKEN:-}" ] || [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
+            echo "warning: SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT must all be set, so this build's crashes will not be symbolicated in Sentry"
             exit 0
           fi
-          pnpm dlx @sentry/cli@2 debug-files upload "$DWARF_DSYM_FOLDER_PATH" || echo "warning: uploading dSYMs to Sentry failed"
+          pnpm dlx @sentry/cli@2.58.6 debug-files upload "$DWARF_DSYM_FOLDER_PATH" || echo "warning: uploading dSYMs to Sentry failed"
         name: Upload dSYMs to Sentry
         basedOnDependencyAnalysis: false
         inputFiles:

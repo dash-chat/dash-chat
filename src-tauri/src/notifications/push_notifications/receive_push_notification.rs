@@ -23,8 +23,10 @@ static ANDROID_LOGS_ONCE: std::sync::Once = std::sync::Once::new();
 #[cfg(target_os = "ios")]
 static IOS_LOGGER_ONCE: std::sync::Once = std::sync::Once::new();
 
+/// Just over the 10 MB tail a report attaches, so this file and the previous
+/// one together always cover it.
 #[cfg(target_os = "ios")]
-const MAX_NSE_LOG_SIZE: u64 = 25 * 1024 * 1024;
+const MAX_NSE_LOG_SIZE: u64 = 12 * 1024 * 1024;
 
 /// Entry point called by the FirebaseMessagingService when a push notification arrives.
 /// Fetches the operation referenced by the push and builds a user-facing notification, dedup'd
