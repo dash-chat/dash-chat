@@ -90,8 +90,20 @@ pub(crate) fn redacted_log_tail(
     if files.is_empty() {
         anyhow::bail!("no log files in {}", logs_dir.display());
     }
-    let text = concat_files(&files)?;
+    let text = concat_files(&newest_files_covering(files, max_bytes))?;
     Ok(redact(patterns, last_whole_lines(&text, max_bytes)))
+}
+
+/// Still oldest first. Rotation keeps tens of MB of older files that a tail
+/// would read into memory only to cut away.
+fn newest_files_covering(oldest_first: Vec<PathBuf>, max_bytes: usize) -> Vec<PathBuf> {
+    let mut covered: u64 = 0;
+    let mut needed = oldest_first.len();
+    while needed > 0 && covered < max_bytes as u64 {
+        needed -= 1;
+        covered += std::fs::metadata(&oldest_first[needed]).map_or(0, |m| m.len());
+    }
+    oldest_first[needed..].to_vec()
 }
 
 #[cfg(test)]
@@ -197,5 +209,24 @@ mod tests {
             .map(|p| p.file_name().unwrap().to_str().unwrap())
             .collect();
         assert_eq!(names, ["old.log", "new.log"]);
+    }
+
+    #[test]
+    fn the_tail_reads_only_the_newest_files_it_needs() {
+        let dir = tempfile::tempdir().unwrap();
+        let files: Vec<PathBuf> = ["old.log", "mid.log", "new.log"]
+            .iter()
+            .map(|name| {
+                let path = dir.path().join(name);
+                std::fs::write(&path, "123456789\n").unwrap();
+                path
+            })
+            .collect();
+
+        let names: Vec<_> = newest_files_covering(files, 15)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(names, ["mid.log", "new.log"]);
     }
 }

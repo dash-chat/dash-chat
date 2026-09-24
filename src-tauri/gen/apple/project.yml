@@ -137,3 +137,19 @@ targets:
           - $(SRCROOT)/Externals/$(ARCHS)/$(CONFIGURATION)/libapp.a
         outputFiles:
           - $(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a
+    postBuildScripts:
+      - script: |
+          # Debug builds carry no dSYM. The folder also holds the push
+          # extension's dSYM, since the extension builds first.
+          [ "$DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym" ] || exit 0
+          [ -f "$SRCROOT/.xcode.env" ] && . "$SRCROOT/.xcode.env"
+          [ -f "$SRCROOT/.xcode.env.local" ] && . "$SRCROOT/.xcode.env.local"
+          if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+            echo "warning: SENTRY_AUTH_TOKEN is not set, so this build's crashes will not be symbolicated in Sentry"
+            exit 0
+          fi
+          pnpm dlx @sentry/cli@2 debug-files upload "$DWARF_DSYM_FOLDER_PATH" || echo "warning: uploading dSYMs to Sentry failed"
+        name: Upload dSYMs to Sentry
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - ${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${EXECUTABLE_NAME}

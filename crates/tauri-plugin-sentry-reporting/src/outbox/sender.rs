@@ -50,11 +50,13 @@ impl HttpSender {
 
 impl EnvelopeSender for HttpSender {
     async fn post(&self, envelope: &Envelope) -> Delivery {
-        let mut body = Vec::new();
-        if let Err(err) = envelope.to_writer(&mut body) {
-            log::warn!("sentry-reporting: an entry could not be serialized: {err}");
-            return Delivery::Rejected { status: None };
-        }
+        let body = match gzipped(envelope) {
+            Ok(body) => body,
+            Err(err) => {
+                log::warn!("sentry-reporting: an entry could not be serialized: {err}");
+                return Delivery::Rejected { status: None };
+            }
+        };
 
         let response = self
             .client
@@ -64,6 +66,7 @@ impl EnvelopeSender for HttpSender {
                 self.dsn.to_auth(Some(USER_AGENT)).to_string(),
             )
             .header(reqwest::header::CONTENT_TYPE, CONTENT_TYPE)
+            .header(reqwest::header::CONTENT_ENCODING, "gzip")
             .timeout(TIMEOUT)
             .body(body)
             .send()
@@ -77,6 +80,13 @@ impl EnvelopeSender for HttpSender {
             }
         }
     }
+}
+
+/// Reports carry tens of MB of log text, which compresses about tenfold.
+fn gzipped(envelope: &Envelope) -> std::io::Result<Vec<u8>> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    envelope.to_writer(&mut encoder)?;
+    encoder.finish()
 }
 
 fn classify(status: StatusCode, retry_after: Option<Duration>) -> Delivery {
@@ -131,6 +141,7 @@ pub(crate) fn webpki_roots_client() -> reqwest::Client {
 mod tests {
     use super::*;
 
+    use std::io::Read;
     use std::net::SocketAddr;
 
     use sentry::protocol::Event;
@@ -232,7 +243,15 @@ mod tests {
             header_value(&request.head, "content-type").unwrap(),
             CONTENT_TYPE
         );
-        assert_eq!(request.body, expected_body);
+        assert_eq!(
+            header_value(&request.head, "content-encoding").unwrap(),
+            "gzip"
+        );
+        let mut body = Vec::new();
+        flate2::read::GzDecoder::new(request.body.as_slice())
+            .read_to_end(&mut body)
+            .unwrap();
+        assert_eq!(body, expected_body);
     }
 
     #[tokio::test]
