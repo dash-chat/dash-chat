@@ -308,6 +308,7 @@
 				5C1662138B6DDF78C1BA8683 /* Resources */,
 				AB3C8759DF258BE9A005EF44 /* Frameworks */,
 				BD1216392F9FA61B00B762AE /* Embed Foundation Extensions */,
+				5E57A0D5F00D000000000001 /* Upload dSYMs to Sentry */,
 			);
 			buildRules = (
 			);
@@ -377,6 +378,26 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		5E57A0D5F00D000000000001 /* Upload dSYMs to Sentry */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${EXECUTABLE_NAME}",
+			);
+			name = "Upload dSYMs to Sentry";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Debug builds carry no dSYM. The folder also holds the push\n# extension's dSYM, since the extension builds first.\n[ \"$DEBUG_INFORMATION_FORMAT\" = \"dwarf-with-dsym\" ] || exit 0\n[ -f \"$SRCROOT/.xcode.env\" ] && . \"$SRCROOT/.xcode.env\"\n[ -f \"$SRCROOT/.xcode.env.local\" ] && . \"$SRCROOT/.xcode.env.local\"\nif [ -z \"${SENTRY_AUTH_TOKEN:-}\" ] || [ -z \"${SENTRY_ORG:-}\" ] || [ -z \"${SENTRY_PROJECT:-}\" ]; then\n  echo \"warning: SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT must all be set, so this build's crashes will not be symbolicated in Sentry\"\n  exit 0\nfi\npnpm dlx @sentry/cli@2.58.6 debug-files upload \"$DWARF_DSYM_FOLDER_PATH\" || echo \"warning: uploading dSYMs to Sentry failed\"\n";
+		};
 		A206911C64BE8EF9637A3492 /* Build Rust Code */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

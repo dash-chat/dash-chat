@@ -30,7 +30,7 @@ build-xcode: sync-xcode-env
     pnpm tauri ios build -o
 
 # build and install the app on a USB-connected iPhone in production mode
-install:
+install: sync-xcode-env
     #!/usr/bin/env bash
     set -euo pipefail
     pnpm tauri ios build
