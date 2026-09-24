@@ -15,12 +15,10 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 mod blip;
 mod blips_table;
-mod blob_sync;
+mod blob_store;
 mod cleanup;
 mod get_blips;
 mod notify_topics_subscribers;
-mod register_hashes;
-mod register_peer;
 mod report;
 mod reports_table;
 mod server_key;
@@ -38,17 +36,11 @@ const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
-pub use blob_sync::{BlobFetchPool, BlobSync};
+pub use blob_store::MailboxBlobStore;
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
-pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
 };
-pub use register_hashes::{
-    record_blob_sources, register_hashes, upload_blob, RegisterHashesRequest,
-    RegisterHashesResponse, UploadBlobResponse,
-};
-pub use register_peer::RegisterPeerRequest;
 pub use reports_table::REPORTS_TABLE;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest, StoreBlipsResponse};
@@ -79,7 +71,7 @@ pub struct AppState {
     pub db: Arc<Database>,
     pub push_client: Option<Arc<PushNotificationsClient>>,
     pub push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
-    pub blob_sync: BlobSync,
+    pub endpoint: iroh::Endpoint,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -104,9 +96,19 @@ pub fn parse_network_id(hex: &str) -> Result<NetworkId, hex::FromHexError> {
     hex::FromHex::from_hex(hex)
 }
 
-/// Run the mailbox server on `listener` until `signal` resolves. `relay_url`
-/// and `network_id` configure the standalone [`BlobSync`] built when
-/// `blob_sync` is `None`.
+/// Where a mailbox server receives and serves blobs.
+pub enum MailboxBlobs {
+    /// Over an in-process node's endpoint, from that node's blob store.
+    Shared(iroh::Endpoint),
+    /// Over the server's own endpoint and [`MailboxBlobStore`], reachable
+    /// through `relay_url` when set.
+    Own {
+        relay_url: Option<iroh::RelayUrl>,
+        network_id: NetworkId,
+    },
+}
+
+/// Run the mailbox server on `listener` until `signal` resolves.
 ///
 /// Takes the socket already bound, so whoever reserved the port holds it until
 /// this takes over and a failure to bind is theirs to report.
@@ -114,9 +116,7 @@ pub async fn spawn_server(
     db_path: PathBuf,
     listener: tokio::net::TcpListener,
     push_notifications_url: Option<String>,
-    blob_sync: Option<BlobSync>,
-    relay_url: Option<iroh::RelayUrl>,
-    network_id: NetworkId,
+    blobs: MailboxBlobs,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path.clone())?;
@@ -126,18 +126,21 @@ pub async fn spawn_server(
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
-    let blob_sync = match blob_sync {
-        Some(blob_sync) => blob_sync,
-        None => {
+    let (endpoint, _blob_store) = match blobs {
+        MailboxBlobs::Shared(endpoint) => (endpoint, None),
+        MailboxBlobs::Own {
+            relay_url,
+            network_id,
+        } => {
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root, relay_url, network_id).await?
+            let blob_store =
+                MailboxBlobStore::new(secret_key, blobs_root, relay_url, network_id).await?;
+            (blob_store.endpoint(), Some(blob_store))
         }
     };
-    tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
-    let blob_fetch_handle = blob_sync.spawn_fetch_loop(blob_sync.fetch_config());
-    let blob_gc_handle = blob_sync.spawn_blob_gc_task();
+    tracing::info!("Mailbox iroh endpoint id: {}", endpoint.id());
 
     let push_client = match push_notifications_url {
         Some(url) => {
@@ -148,7 +151,7 @@ pub async fn spawn_server(
     };
 
     let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
-    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks), blob_sync);
+    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks), endpoint);
 
     let addr = listener.local_addr()?;
 
@@ -165,10 +168,6 @@ pub async fn spawn_server(
     while tasks.join_next().await.is_some() {}
 
     cleanup_task.abort();
-    blob_fetch_handle.abort();
-    if let Some(handle) = blob_gc_handle {
-        handle.abort();
-    }
     tracing::info!("Mailbox server gracefully shut down");
 
     Ok(())
@@ -177,8 +176,8 @@ pub async fn spawn_server(
 async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
-        endpoint_id: encode_mailbox_id(state.blob_sync.endpoint_id()),
-        endpoint_addr: state.blob_sync.endpoint_addr(),
+        endpoint_id: encode_mailbox_id(state.endpoint.id()),
+        endpoint_addr: state.endpoint.addr(),
     })
 }
 
@@ -212,25 +211,19 @@ pub fn create_app(
     db: Arc<Database>,
     push_client: Option<Arc<PushNotificationsClient>>,
     push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
-    blob_sync: BlobSync,
+    endpoint: iroh::Endpoint,
 ) -> Router {
     let state = AppState {
         db,
         push_client,
         push_tasks,
-        blob_sync,
+        endpoint,
     };
 
     Router::new()
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
-        .route(
-            "/blobs/register-hashes",
-            post(register_hashes::register_hashes),
-        )
-        .route("/blobs/upload", post(register_hashes::upload_blob))
         .route("/blips/get", post(get_blips_for_topics))
-        .route("/peers/register", post(register_peer::register_peer))
         .route("/report", post(report::report))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())

@@ -458,16 +458,16 @@ impl Node {
 
                     if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash()).collect();
-                        let is_own = DeviceId::from(author) == self.device_id();
                         if let Err(err) = self
-                            .local_store
-                            .remove_unfetched_blobs_all_mailboxes(&hashes)
+                            .mailboxes
+                            .sync_tracker()
+                            .forget_pending_blobs(&hashes)
                             .await
                         {
-                            tracing::warn!(?err, "failed to clear unfetched blob rows on delete");
+                            tracing::warn!(?err, "failed to clear pending blob pushes on delete");
                         }
                         blob_sync
-                            .delete_blobs(topic, author.into(), operation.hash, hashes, is_own)
+                            .delete_blobs(topic, author.into(), operation.hash, hashes)
                             .await;
                     }
                 }
@@ -672,7 +672,7 @@ impl Node {
                 if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                     for item in media.iter() {
                         blob_sync
-                            .add_to_fetch_pool(topic.into(), author, hash, item.hash())
+                            .queue_blob_fetch(topic.into(), author, hash, item.hash())
                             .await?;
                     }
                 }

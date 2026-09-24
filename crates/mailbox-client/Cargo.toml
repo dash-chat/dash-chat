@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 aliased = { workspace = true }
 anyhow = "1"
+futures = "0.3"
 async-trait = "0.1.85"
 chrono = { version = "0.4.42", features = ["serde"] }
 ciborium = "0.2.2"
@@ -18,9 +19,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
 tokio = { version = "1.43.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-bytes = { workspace = true }
 
 
 

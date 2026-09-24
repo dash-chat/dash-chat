@@ -77,9 +77,10 @@ async fn main() -> anyhow::Result<()> {
         args.db_path,
         listener,
         None,
-        None,
-        None,
-        args.network_id.unwrap_or(*dashchat_utils::NETWORK_ID),
+        mailbox_server::MailboxBlobs::Own {
+            relay_url: None,
+            network_id: args.network_id.unwrap_or(*dashchat_utils::NETWORK_ID),
+        },
         signal,
     )
     .await;

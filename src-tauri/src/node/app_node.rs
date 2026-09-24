@@ -30,7 +30,7 @@ impl CloudMailboxRegistration {
                     "register cloud mailbox",
                     move || {
                         let node = node.clone();
-                        async move { crate::setup::register_cloud_mailbox(&node).await }
+                        async move { crate::setup::track_cloud_mailbox(&node).await }
                     },
                 )),
         );

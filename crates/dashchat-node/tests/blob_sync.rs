@@ -88,13 +88,10 @@ async fn media_blob_syncs_between_nodes() {
     assert_eq!(photos[0].data, photo_bytes);
 }
 
-/// A media op already in the store at startup must re-queue its blob for
-/// download. Regression test for the blob fetch pool coming up empty after a
-/// restart: `from_ops`'s `topic_for_log_id` was stubbed to `|_| None`, so every
-/// stored op was skipped and any blob left undownloaded at shutdown could never
-/// load again (only the live receive path queued blobs).
+/// A blob left undownloaded at shutdown is still queued for download after a
+/// restart, with the topic it was referenced in, so it can still load.
 #[tokio::test(flavor = "multi_thread")]
-async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
+async fn undownloaded_media_is_still_queued_after_restart() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
     let poll = PollConfig::default();
@@ -158,11 +155,11 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
     let hash = meta.first().expect("at least one media item").hash();
 
     // Restart Bobbi from the same store. The media op is already persisted and
-    // is not re-delivered, so only startup hydration can re-queue its blob.
+    // is not re-delivered, so only what survived the restart can queue its blob.
     let bobbi_dir = bobbi.shutdown().await;
     let bobbi = TestNode::new_at_path(config.clone(), "bobbi", bobbi_dir).await;
 
-    let topics = bobbi.blob_fetch_pool_topics_for(hash).await;
+    let topics = bobbi.blob_sync().topics_for(hash).await.unwrap();
     assert!(
         topics.contains(&chat_topic),
         "restarted node should re-queue the stored media blob for its chat topic, got {topics:?}",

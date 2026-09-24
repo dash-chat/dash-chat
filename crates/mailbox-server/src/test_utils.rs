@@ -5,7 +5,7 @@ use redb::Database;
 use tempfile::NamedTempFile;
 use tokio::task::JoinSet;
 
-use crate::{create_app, BlobSync, BLIPS_TABLE, WATERMARKS_TABLE};
+use crate::{create_app, BLIPS_TABLE, WATERMARKS_TABLE};
 
 pub const LONG_AGO: Duration = Duration::from_hours(100 * 24); // 100 days
 
@@ -23,27 +23,19 @@ pub fn create_test_db() -> (Database, NamedTempFile) {
     (db, temp_file)
 }
 
-pub async fn test_blob_sync() -> BlobSync {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let key = iroh::SecretKey::generate();
-    let bs = BlobSync::new(
-        key,
-        dir.path().to_path_buf(),
-        None,
-        *dashchat_utils::NETWORK_ID,
-    )
-    .await
-    .expect("blob sync");
-    std::mem::forget(dir);
-    bs
+pub async fn test_endpoint() -> iroh::Endpoint {
+    iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+        .bind()
+        .await
+        .expect("endpoint")
 }
 
 /// Creates a test server with HTTP transport so server_address() works
 pub async fn create_test_server() -> (TestServer, NamedTempFile) {
     let (db, temp_file) = create_test_db();
     let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
-    let blob_sync = test_blob_sync().await;
-    let app = create_app(Arc::new(db), None, push_tasks, blob_sync);
+    let endpoint = test_endpoint().await;
+    let app = create_app(Arc::new(db), None, push_tasks, endpoint);
     let config = TestServerConfig {
         transport: Some(Transport::HttpRandomPort),
         ..TestServerConfig::default()

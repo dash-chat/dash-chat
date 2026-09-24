@@ -40,55 +40,34 @@ impl Drop for LocalMailbox {
     }
 }
 
-impl TestMailbox {
-    /// Builds a mailbox for the test run. When `DASHCHAT_SPAWN_LOCAL_MAILBOX`
-    /// is set, spawns a standalone in-process mailbox server on a free port with
-    /// its own temp storage. Otherwise falls back to `MAILBOX_URL`: unset or
-    /// empty → a fresh [`MemMailbox`]; a URL → that environment's cloud mailbox.
-    pub fn from_env() -> Self {
-        if spawn_local_mailbox_enabled() {
-            return Self::spawn_local();
-        }
-        match std::env::var("MAILBOX_URL")
-            .ok()
-            .filter(|url| !url.is_empty())
-        {
-            None => Self::Mem(MemMailbox::new()),
-            Some(url) => Self::Cloud { url },
-        }
-    }
-
+impl LocalMailbox {
     /// Spawn a standalone mailbox server (its own endpoint + blob store, no
     /// blob-store sharing with any node) on a free port under a temp dir. No
     /// relay is configured, so the mailbox stays fully local and needs no
     /// internet access — nodes reach it over their directly-registered
     /// addresses.
-    fn spawn_local() -> Self {
+    pub fn spawn() -> Self {
         let dir = tempfile::tempdir().expect("failed to create temp dir for local mailbox");
         let db_path = dir.path().join("mailbox.redb");
-        let port = free_port().expect("failed to allocate a free port for local mailbox");
-        let addr = format!("127.0.0.1:{port}");
-        let url = format!("http://127.0.0.1:{port}");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .expect("failed to bind a port for local mailbox");
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
 
         let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel::<()>();
         let task = tokio::spawn(async move {
             let signal = async move {
                 let _ = stop_signal_rx.await;
             };
-            let listener = match tokio::net::TcpListener::bind(addr).await {
-                Ok(listener) => listener,
-                Err(e) => {
-                    tracing::error!("Local test mailbox server could not bind: {e:?}");
-                    return;
-                }
-            };
             if let Err(e) = mailbox_server::spawn_server(
                 db_path,
                 listener,
                 None,
-                None,
-                None,
-                *dashchat_utils::NETWORK_ID,
+                mailbox_server::MailboxBlobs::Own {
+                    relay_url: None,
+                    network_id: *dashchat_utils::NETWORK_ID,
+                },
                 signal,
             )
             .await
@@ -97,12 +76,35 @@ impl TestMailbox {
             }
         });
 
-        Self::Local(Arc::new(LocalMailbox {
+        Self {
             url,
             _dir: dir,
             stop_signal: StdMutex::new(Some(stop_signal)),
             task: StdMutex::new(Some(task)),
-        }))
+        }
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+}
+
+impl TestMailbox {
+    /// Builds a mailbox for the test run. When `DASHCHAT_SPAWN_LOCAL_MAILBOX`
+    /// is set, spawns a standalone in-process mailbox server on a free port with
+    /// its own temp storage. Otherwise falls back to `MAILBOX_URL`: unset or
+    /// empty → a fresh [`MemMailbox`]; a URL → that environment's cloud mailbox.
+    pub fn from_env() -> Self {
+        if spawn_local_mailbox_enabled() {
+            return Self::Local(Arc::new(LocalMailbox::spawn()));
+        }
+        match std::env::var("MAILBOX_URL")
+            .ok()
+            .filter(|url| !url.is_empty())
+        {
+            None => Self::Mem(MemMailbox::new()),
+            Some(url) => Self::Cloud { url },
+        }
     }
 
     /// The mailbox's id: the in-memory id, or a served mailbox's canonical id
@@ -126,9 +128,8 @@ impl TestMailbox {
     }
 
     /// Registers this mailbox on a node the way the production app does: for a
-    /// served mailbox, resolve its id from `/health`, add its dialing address
-    /// to the node's address book, and register the node's own address back so
-    /// the mailbox's blob fetcher can dial it.
+    /// served mailbox, resolve its id from `/health` and add its dialing address
+    /// to the node's address book so the node can push blobs to it.
     pub async fn register_on(&self, node: &crate::Node) {
         match self {
             Self::Mem(mb) => node.mailboxes.register(mb.client()).await,
@@ -143,12 +144,7 @@ impl TestMailbox {
 
 async fn inspection_client(url: &str) -> ToyMailboxClient<MailboxOperation> {
     let health = fetch_mailbox_health(url).await.unwrap();
-    ToyMailboxClient::new(
-        health.mailbox_id,
-        url,
-        iroh::SecretKey::generate().public(),
-        Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-    )
+    ToyMailboxClient::new(health.mailbox_id, url, iroh::SecretKey::generate().public())
 }
 
 async fn register_served_mailbox(node: &crate::Node, url: &str) {
@@ -157,28 +153,18 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
         .await
         .unwrap();
     node.mailboxes
-        .register(
-            ToyMailboxClient::<MailboxOperation>::new(
-                health.mailbox_id.clone(),
-                url,
-                node.endpoint_id(),
-                node.unfetched_blob_tracker(),
-            )
-            .with_blob_reader(node.blob_reader()),
-        )
+        .register(ToyMailboxClient::<MailboxOperation>::new(
+            health.mailbox_id.clone(),
+            url,
+            node.endpoint_id(),
+        ))
         .await;
-    node.register_with_mailbox(url).await.unwrap();
 }
 
 fn spawn_local_mailbox_enabled() -> bool {
     std::env::var("DASHCHAT_SPAWN_LOCAL_MAILBOX")
         .map(|v| v == "true" || v == "1")
         .unwrap_or(false)
-}
-
-fn free_port() -> std::io::Result<u16> {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-    Ok(listener.local_addr()?.port())
 }
 
 /// Client produced by [`TestMailbox::client`], delegating to the in-memory or

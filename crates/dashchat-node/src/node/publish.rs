@@ -38,9 +38,6 @@ impl Node {
         // Now we await the operation being published and processed on the system layer.
         let event = warn_if_slow("awaiting process_fut", process_fut).await?;
 
-        // Re-announce any still-unfetched blobs now that we've published.
-        self.notify_unfetched_blob_followup();
-
         Ok(event.header().to_owned())
     }
 }

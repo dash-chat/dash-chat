@@ -5,10 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 iroh = { workspace = true, optional = true }
-iroh-blobs = { workspace = true, optional = true }
-futures = "0.3"
 log = "0.4"
 tokio = { version = "1", features = ["time", "sync", "rt", "macros"] }
 tracing = { workspace = true }
@@ -22,5 +19,5 @@ tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread"
 
 [features]
 default = ["iroh"]
-iroh = ["dep:iroh", "dep:iroh-blobs"]
+iroh = ["dep:iroh"]
 cbor = ["dep:serde", "dep:ciborium"]

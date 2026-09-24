@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
+use crate::blob_sync::{BlobFetchConfig, BlobSync};
 use crate::compat::Capabilities;
 use crate::error::{
     AddContactError, AddContactResult, Error, RemoveGroupMemberError, ShutdownError,
@@ -21,7 +21,7 @@ use crate::testing::TestNode;
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
+use mailbox_client::blob_push::BlobPusher;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
@@ -99,13 +99,10 @@ pub struct NodeConfig {
     ///
     /// Off together with [`Self::enable_p2p`], it also drops the whole
     /// networking layer: [`Node::iroh_endpoint`] then errors, and every surface
-    /// that dials — cloud-mailbox self-registration, the in-process mailbox
+    /// that dials — pushing blobs to mailboxes, the in-process mailbox
     /// server — is unavailable.
     pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
-    /// How often the followup task re-announces still-unfetched blob hashes to
-    /// their mailboxes.
-    pub unfetched_blob_followup_interval: std::time::Duration,
     /// How long the delivery-ack writer waits after new operations arrive
     /// before publishing a [`ChatPayload::MessageAck`], so a burst of incoming
     /// operations is covered by a single ack.
@@ -158,14 +155,13 @@ impl NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             // Retry blob downloads quickly so tests don't wait on the
-            // production-scale pass interval.
+            // production-scale backoff.
             blob_fetch: BlobFetchConfig {
                 concurrency: 4,
-                pass_interval: std::time::Duration::from_secs(1),
                 attempt_timeout: std::time::Duration::from_secs(3),
-                retry_cooldown: std::time::Duration::from_secs(1),
+                min_retry_interval: std::time::Duration::from_secs(1),
+                max_retry_interval: std::time::Duration::from_secs(1),
             },
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
@@ -192,7 +188,6 @@ impl Default for NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
@@ -236,25 +231,13 @@ pub struct Node {
     /// `redb` metadata store — whose exclusive single-process lock the always-on
     /// main app holds, which would otherwise deadlock the extension's node build.
     blob_sync: Option<BlobSync>,
-    blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     /// `None` when p2panda was spawned with no networking layer, which happens
     /// once nothing needs the endpoint (see [`Self::init`]).
     endpoint: Option<p2panda::Endpoint>,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    unfetched_blob_trigger: Arc<tokio::sync::Notify>,
-    unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
-}
-
-/// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
-/// node never references a blob that the fetcher's own cap would reject.
-fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
-    if size as u64 > MAX_BLOB_BYTES {
-        anyhow::bail!("a media item is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
-    }
-    Ok(())
 }
 
 impl Node {
@@ -369,6 +352,30 @@ impl Node {
         let group_store = GroupStore::new(store.clone());
         let op_store = OpStore::from_sqlite(store.clone());
 
+        // === blob store === //
+
+        // The push extension never touches media and must not open the
+        // iroh-blobs store — its `redb` metadata db takes an exclusive
+        // single-process lock the always-on main app already holds, which would
+        // deadlock this build. It reads the operation and builds a notification
+        // from its payload only, so blob sync is skipped entirely.
+        let blob_store = match &endpoint {
+            Some(endpoint) if config.enable_blob_sync => Some((
+                iroh_blobs::store::fs::FsStore::load(filesystem.blobs_store_path()).await?,
+                endpoint.clone(),
+            )),
+            _ => None,
+        };
+        let blob_pusher = match &blob_store {
+            Some((blob_store, endpoint)) => Some(BlobPusher::new(
+                blob_store.as_ref().clone(),
+                endpoint.endpoint().await?,
+                p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, config.network_id)
+                    .to_vec(),
+            )),
+            None => None,
+        };
+
         // === mailboxes === //
 
         let sync_tracker = std::sync::Arc::new(
@@ -382,45 +389,20 @@ impl Node {
             op_store.clone(),
             sync_tracker,
             config.mailboxes_config.clone(),
+            blob_pusher,
         )
         .await?;
 
         // === blob sync === //
 
-        // The push extension never touches media and must not open the
-        // iroh-blobs store — its `redb` metadata db takes an exclusive
-        // single-process lock the always-on main app already holds, which would
-        // deadlock this build. It reads the operation and builds a notification
-        // from its payload only, so blob sync is skipped entirely.
-        let blob_sync = if config.enable_blob_sync {
-            let endpoint = endpoint
-                .clone()
-                .context("blob sync needs an iroh endpoint")?;
-            let self_endpoint = iroh::EndpointId::from_bytes(node_keys.device_id().as_bytes())?;
-            let source_lookup = crate::blob_sync::MixedSourceLookup::new(
-                op_store.clone(),
-                mailboxes.clone(),
-                self_endpoint,
-            );
-
-            // LogId = blake3(topic.as_bytes()) is one-way and the op-store does not
-            // persist TopicId alongside each operation, so we invert it by hashing
-            // the topics we subscribe to (chat media lives in subscribed chat
-            // topics). Without this the pool starts empty and a blob left
-            // undownloaded at shutdown is never re-queued — only the live path adds
-            // it — so it can never load again after a restart.
-            let blob_fetch = BlobFetchPool::from_ops(
-                op_store.get_all_operations_not_fully_sorted(),
-                op_store.store.clone(),
-            )
-            .await?;
+        let blob_sync = if let Some((blob_store, endpoint)) = blob_store {
             Some(
                 BlobSync::new(
                     endpoint,
-                    filesystem.blobs_store_path(),
-                    blob_fetch,
-                    source_lookup,
-                    local_store.clone(),
+                    blob_store,
+                    op_store.clone(),
+                    mailboxes.clone(),
+                    config.blob_fetch.clone(),
                 )
                 .await?,
             )
@@ -448,11 +430,8 @@ impl Node {
             stored_topics_init_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
-            blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
-            unfetched_blob_trigger: Default::default(),
-            unfetched_blob_followup_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
             dirty_ack_topics: Default::default(),
@@ -464,16 +443,6 @@ impl Node {
             node.spawn_application_processor_task(events_rx, processor_cancel_rx);
         node.processor_handle.lock().await.replace(processor_handle);
 
-        // === blob fetch loop === //
-
-        if let Some(blob_sync) = &node.blob_sync {
-            let blob_fetch_handle = blob_sync.spawn_fetch_loop(node.config.blob_fetch.clone());
-            node.blob_fetch_handle
-                .lock()
-                .await
-                .replace(blob_fetch_handle);
-        }
-
         // === network change notifier === //
 
         let network_change_handle =
@@ -482,18 +451,6 @@ impl Node {
             .lock()
             .await
             .replace(network_change_handle);
-
-        // === unfetched blob followup loop === //
-
-        let followup_handle = crate::spawn_unfetched_blob_followup_task(
-            node.clone(),
-            node.config.unfetched_blob_followup_interval,
-            node.unfetched_blob_trigger.clone(),
-        );
-        node.unfetched_blob_followup_handle
-            .lock()
-            .await
-            .replace(followup_handle);
 
         // === message ack writer === //
 
@@ -588,37 +545,11 @@ impl Node {
         self.device_id().into()
     }
 
-    pub fn blob_sync_optional(&self) -> Option<&crate::blob_sync::BlobSync> {
-        self.blob_sync.as_ref()
-    }
-
     #[cfg(feature = "testing")]
     pub fn blob_sync(&self) -> &crate::blob_sync::BlobSync {
         self.blob_sync
             .as_ref()
             .expect("blob sync is enabled for p2p (testing) nodes")
-    }
-
-    pub fn unfetched_blob_tracker(
-        &self,
-    ) -> std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker> {
-        crate::LocalStoreBlobTracker::new(self.local_store.clone())
-    }
-
-    /// A blob-bytes source backed by this node's blob store, for the toy mailbox
-    /// client to upload blob bytes inline. Reads error when blob sync is disabled
-    /// (e.g. the push extension), which makes the client fall back to announcing
-    /// hashes only.
-    pub fn blob_reader(&self) -> std::sync::Arc<dyn mailbox_client::BlobReader> {
-        std::sync::Arc::new(NodeBlobReader {
-            blob_sync: self.blob_sync.clone(),
-        })
-    }
-
-    /// Wake the unfetched-blob followup task to run a reconciliation pass now
-    /// (e.g. on unpause / network change).
-    pub fn notify_unfetched_blob_followup(&self) {
-        self.unfetched_blob_trigger.notify_one();
     }
 
     /// Use the node's device ID as an iroh endpoint id.
@@ -644,11 +575,10 @@ impl Node {
     }
 
     /// Add (or refresh) a peer's dialing address (relay + direct addresses) in
-    /// the p2panda address book so the iroh blob downloader can reach that peer
-    /// by its EndpointId. Used for mailbox `/health` self-addresses and for peer
-    /// addresses forwarded by a user's opt-in local mailbox. Always overwrites
-    /// any existing entry so a stale one (refused by `AddressBookDiscovery`) is
-    /// refreshed and becomes dialable again.
+    /// the p2panda address book so blobs can be pushed to and downloaded from
+    /// that peer by its EndpointId. Used for the addresses mailboxes report on
+    /// `/health`. Always overwrites any existing entry so a stale one (refused
+    /// by `AddressBookDiscovery`) is refreshed and becomes dialable again.
     pub async fn insert_peer_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
         // A node with no networking layer dials nobody, so it keeps no address
         // book. Callers register a mailbox's address on every poll; erroring
@@ -680,37 +610,12 @@ impl Node {
     }
 
     #[cfg(feature = "testing")]
-    /// The node's iroh-blobs protocol handle, sharing its blob store. An
-    /// in-process mailbox uses this so relayed blobs land in—and are served
-    /// from—the same store on the same endpoint as the node.
     pub fn blobs(&self) -> iroh_blobs::BlobsProtocol {
         self.blob_sync
             .as_ref()
             .expect("blob sync is enabled for p2p (testing) nodes")
             .blobs
             .clone()
-    }
-
-    #[cfg(feature = "testing")]
-    /// The node's blob downloader, for an in-process mailbox to fetch blobs
-    /// into the shared store over the node's endpoint.
-    pub fn blob_downloader(&self) -> iroh_blobs::api::downloader::Downloader {
-        self.blob_sync
-            .as_ref()
-            .expect("blob sync is enabled for p2p (testing) nodes")
-            .downloader()
-    }
-
-    #[cfg(feature = "testing")]
-    /// Topics the blob fetch pool currently associates with `hash`. Lets a test
-    /// assert that startup hydration re-queued a stored op's blob.
-    pub async fn blob_fetch_pool_topics_for(&self, hash: iroh_blobs::Hash) -> Vec<TopicId> {
-        self.blob_sync
-            .as_ref()
-            .expect("blob sync is enabled for p2p (testing) nodes")
-            .fetch_pool
-            .topics_for(hash)
-            .await
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
@@ -1132,29 +1037,15 @@ impl Node {
             .validate(&valid_ops)?;
         }
 
-        let meta = if let Some(media) = media {
-            Some(
-                self.store_media(chat_id.into(), SENTINEL_OP_HASH, media)
-                    .await?,
-            )
-        } else {
-            None
-        };
-        let message = ChatMessageContent::new(message, meta.clone(), reply);
-        let header = self.send_message_raw(chat_id, message).await?;
-        if let Some(bundle) = meta {
-            let topic_id: TopicId = chat_id.into();
-            for item in bundle.iter() {
-                if let Err(err) = self
-                    .require_blob_sync()?
-                    .retag_blob(topic_id, self.device_id(), header.hash(), item.hash())
-                    .await
-                {
-                    tracing::warn!(?err, "failed to retag blob after operation creation");
-                }
+        let (meta, _stored_media) = match media {
+            Some(media) => {
+                let (meta, stored) = self.store_media(media).await?;
+                (Some(meta), stored)
             }
-        }
-        Ok(header)
+            None => (None, Vec::new()),
+        };
+        let message = ChatMessageContent::new(message, meta, reply);
+        Ok(self.send_message_raw(chat_id, message).await?)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -1558,14 +1449,6 @@ impl Node {
             let _ = handle.await;
         }
 
-        if let Some(handle) = self.blob_fetch_handle.lock().await.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.unfetched_blob_followup_handle.lock().await.take() {
-            handle.abort();
-        }
-
         if let Some(handle) = self.message_ack_handle.lock().await.take() {
             handle.abort();
         }
@@ -1578,20 +1461,10 @@ impl Node {
         // suspended app (0xdead10cc). File locks first, slow best-effort endpoint
         // close last, each time-bounded so none outlasts the suspension window.
 
-        // iroh-blobs redb store: a file lock like the SQLite pools; fetch loop
-        // aborted above so nothing else is using it now. Absent when blob sync
-        // is disabled (the push extension), which never opens it.
+        // iroh-blobs redb store: a file lock like the SQLite pools. Absent when
+        // blob sync is disabled (the push extension), which never opens it.
         if let Some(blob_sync) = &self.blob_sync {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                blob_sync.blobs.store().shutdown(),
-            )
-            .await
-            {
-                Ok(Ok(())) => {}
-                Ok(Err(err)) => tracing::warn!("failed to shut down blob store: {err:?}"),
-                Err(_) => tracing::warn!("timed out shutting down blob store"),
-            }
+            blob_sync.shutdown().await;
         }
 
         // Close pools last.
@@ -2125,107 +1998,75 @@ impl Node {
         Ok(())
     }
 
-    pub async fn store_media(
+    /// Store the bytes of media about to be sent, returning its metadata and
+    /// the temp tags that keep the bytes until the message is processed.
+    async fn store_media(
         &self,
-        topic: TopicId,
-        operation_hash: p2panda::Hash,
         media: OutgoingMedia,
-    ) -> anyhow::Result<MediaBundle> {
+    ) -> anyhow::Result<(MediaBundle, Vec<iroh_blobs::api::TempTag>)> {
+        let blob_sync = self.require_blob_sync()?;
         let mut items = vec![];
+        let mut stored = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
                 for photo in photos {
                     let size = photo.data.len() as u64;
-                    ensure_blob_size(size, &photo.name)?;
-                    let hash = self
-                        .require_blob_sync()?
-                        .store_blob(topic, self.device_id(), operation_hash, photo.data)
-                        .await?;
+                    let tag = blob_sync.store_blob(photo.data).await?;
                     items.push(MediaMetadata::Photo {
                         name: photo.name,
                         mime_type: photo.mime_type,
                         size,
                         width: photo.width,
                         height: photo.height,
-                        hash,
+                        hash: tag.hash(),
                     });
+                    stored.push(tag);
                 }
             }
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
-                ensure_blob_size(size, &file.name)?;
-                let hash = self
-                    .require_blob_sync()?
-                    .store_blob(topic, self.device_id(), operation_hash, file.data)
-                    .await?;
+                let tag = blob_sync.store_blob(file.data).await?;
                 items.push(MediaMetadata::File {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
-                    hash,
+                    hash: tag.hash(),
                 });
+                stored.push(tag);
             }
             OutgoingMedia::VoiceNote { voice_note } => {
                 let size = voice_note.data.len() as u64;
-                ensure_blob_size(size, "voice note")?;
-
-                let hash = self
-                    .require_blob_sync()?
-                    .store_blob(topic, self.device_id(), operation_hash, voice_note.data)
-                    .await?;
+                let tag = blob_sync.store_blob(voice_note.data).await?;
                 items.push(MediaMetadata::VoiceNote {
                     mime_type: voice_note.mime_type,
                     size,
                     duration_ms: voice_note.duration_ms,
                     waveform: voice_note.waveform,
-                    hash,
+                    hash: tag.hash(),
                 });
+                stored.push(tag);
             }
         }
-        Ok(MediaBundle::from(items))
+        Ok((MediaBundle::from(items), stored))
     }
 
-    /// Load the raw bytes of a single blob by its hash from the local blob store.
-    ///
-    /// With `timeout: Some(d)` the call triggers an immediate on-demand download
-    /// (rather than waiting for the background fetch loop's next pass, which can
-    /// be up to a minute away) and polls the local store until the blob is
-    /// present or `d` elapses. This is what makes a user-driven retry actually
-    /// re-attempt the fetch. `None` reads once and errors immediately if the
-    /// blob is absent.
+    /// Load the raw bytes of a single blob by its hash, downloading it on demand
+    /// (rather than waiting for the background fetch loop's backoff) if it is
+    /// not held yet, and erroring once `timeout` elapses without it. This is
+    /// what makes a user-driven retry actually re-attempt the fetch.
     ///
     /// Used by the `irohblob://` URI scheme handler to serve media to the webview.
     pub async fn load_blob(
         &self,
         hash: &str,
-        timeout: Option<std::time::Duration>,
+        timeout: std::time::Duration,
     ) -> anyhow::Result<Vec<u8>> {
         let hash: iroh_blobs::Hash = hash.parse()?;
         let blob_sync = self.require_blob_sync()?;
-        let Some(timeout) = timeout else {
-            return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
-        };
-
-        if !blob_sync.blobs.has(hash).await.unwrap_or(false) {
-            // Kick the download in the background so the poll below can still
-            // observe the blob arriving via any path (this fetch, the
-            // background loop, or a mailbox relay) rather than blocking on one.
-            let blob_sync = blob_sync.clone();
-            tokio::spawn(async move {
-                blob_sync.fetch_now(hash, timeout).await;
-            });
+        if !blob_sync.fetch_now(hash, timeout).await {
+            anyhow::bail!("blob {hash} not available after {timeout:?}");
         }
-
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            if blob_sync.blobs.has(hash).await.unwrap_or(false) {
-                return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
-            }
-            if std::time::Instant::now() >= deadline {
-                anyhow::bail!("blob {hash} not available after {timeout:?}");
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        }
+        Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec())
     }
 
     pub async fn load_media(&self, meta: Vec<MediaMetadata>) -> anyhow::Result<OutgoingMedia> {
@@ -2301,22 +2142,6 @@ impl Node {
     }
 }
 
-/// [`mailbox_client::BlobReader`] backed by the node's blob store.
-struct NodeBlobReader {
-    blob_sync: Option<BlobSync>,
-}
-
-#[async_trait::async_trait]
-impl mailbox_client::BlobReader for NodeBlobReader {
-    async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
-        let blob_sync = self
-            .blob_sync
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("blob sync disabled"))?;
-        Ok(blob_sync.blobs.get_bytes(hash).await?)
-    }
-}
-
 #[cfg(test)]
 mod config_validation_tests {
     use crate::NodeConfig;
@@ -2357,22 +2182,13 @@ mod blob_load_tests {
     use std::time::Duration;
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn load_blob_present_returns_bytes_without_timeout() {
+    async fn load_blob_present_returns_bytes_without_waiting() {
         let node = TestNode::new(NodeConfig::testing(), "alice").await;
         let tag = node.blobs().add_bytes(b"hello".to_vec()).await.unwrap();
         let hash = tag.hash.to_string();
 
-        let got = node.load_blob(&hash, None).await.unwrap();
+        let got = node.load_blob(&hash, Duration::ZERO).await.unwrap();
         assert_eq!(got, b"hello");
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn load_blob_missing_without_timeout_errors_immediately() {
-        let node = TestNode::new(NodeConfig::testing(), "alice").await;
-        let missing = iroh_blobs::Hash::new(b"missing-without-timeout").to_string();
-
-        let err = node.load_blob(&missing, None).await;
-        assert!(err.is_err());
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2381,9 +2197,7 @@ mod blob_load_tests {
         let missing = iroh_blobs::Hash::new(b"missing-with-timeout").to_string();
 
         let start = std::time::Instant::now();
-        let err = node
-            .load_blob(&missing, Some(Duration::from_millis(400)))
-            .await;
+        let err = node.load_blob(&missing, Duration::from_millis(400)).await;
         assert!(err.is_err());
         assert!(start.elapsed() >= Duration::from_millis(400));
     }
@@ -2402,7 +2216,7 @@ mod blob_load_tests {
         });
 
         let got = node
-            .load_blob(&hash.to_string(), Some(Duration::from_secs(3)))
+            .load_blob(&hash.to_string(), Duration::from_secs(3))
             .await
             .unwrap();
         assert_eq!(got, content);

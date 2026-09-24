@@ -34,7 +34,13 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         mailbox_id TEXT NOT NULL PRIMARY KEY,
         status     TEXT NOT NULL,
         updated_at INTEGER NOT NULL
-    );";
+    );
+    CREATE TABLE IF NOT EXISTS mailbox_pending_blob (
+        mailbox_id TEXT NOT NULL,
+        blob_hash  BLOB NOT NULL,
+        PRIMARY KEY (mailbox_id, blob_hash)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pending_blob_hash ON mailbox_pending_blob(blob_hash);";
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
 pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, u64>>;
@@ -65,6 +71,8 @@ struct MemRows {
     urls: BTreeMap<MailboxId, String>,
     /// `mailbox_id -> last known sync status`
     statuses: BTreeMap<MailboxId, SyncStatus>,
+    /// `(mailbox_id, blob hash)` of blobs a mailbox still needs
+    pending_blobs: BTreeSet<(MailboxId, iroh_blobs::Hash)>,
 }
 
 impl<T, A> MailboxSyncTracker<T, A>
@@ -354,38 +362,6 @@ where
         }
     }
 
-    /// All `(mailbox_id, seq)` entries for the given (topic, author).
-    pub async fn get_synced_for_log(
-        &self,
-        topic: &T,
-        author: &A,
-    ) -> anyhow::Result<BTreeMap<MailboxId, u64>> {
-        let topic_bytes = encode(topic)?;
-        let author_bytes = encode(author)?;
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let rows: Vec<(String, i64)> = sqlx::query_as(
-                    "SELECT mailbox_id, seq_num FROM mailbox_sync_state
-                     WHERE topic = ? AND author = ?",
-                )
-                .bind(&topic_bytes)
-                .bind(&author_bytes)
-                .fetch_all(pool)
-                .await?;
-                Ok(rows.into_iter().map(|(m, s)| (m, s as u64)).collect())
-            }
-            SyncBackend::Mem(rows) => {
-                let rows = rows.lock().await;
-                Ok(rows
-                    .rows
-                    .iter()
-                    .filter(|((_, t, a), _)| t == &topic_bytes && a == &author_bytes)
-                    .map(|((m, _, _), s)| (m.clone(), *s))
-                    .collect())
-            }
-        }
-    }
-
     /// All `topic -> author -> seq` entries for the given mailbox.
     pub async fn get_all_for_mailbox(
         &self,
@@ -438,18 +414,134 @@ where
                     .bind(mailbox)
                     .execute(pool)
                     .await?;
+                sqlx::query("DELETE FROM mailbox_pending_blob WHERE mailbox_id = ?")
+                    .bind(mailbox)
+                    .execute(pool)
+                    .await?;
             }
             SyncBackend::Mem(rows) => {
                 let mut rows = rows.lock().await;
                 rows.rows.retain(|(m, _, _), _| m != mailbox);
                 rows.urls.remove(mailbox);
                 rows.statuses.remove(mailbox);
+                rows.pending_blobs.retain(|(m, _)| m != mailbox);
             }
         }
         self.all_ids_tx.send_if_modified(|ids| ids.remove(mailbox));
         self.per_mailbox.lock().await.remove(mailbox);
         Ok(())
     }
+
+    pub async fn record_pending_blobs(
+        &self,
+        mailbox: &MailboxId,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        match &self.inner {
+            SyncBackend::Sqlite(pool) => {
+                for hash in hashes {
+                    sqlx::query(
+                        "INSERT OR IGNORE INTO mailbox_pending_blob (mailbox_id, blob_hash)
+                         VALUES (?, ?)",
+                    )
+                    .bind(mailbox)
+                    .bind(hash.as_bytes().to_vec())
+                    .execute(pool)
+                    .await?;
+                }
+            }
+            SyncBackend::Mem(rows) => {
+                let mut rows = rows.lock().await;
+                for hash in hashes {
+                    rows.pending_blobs.insert((mailbox.clone(), *hash));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn pending_blobs(
+        &self,
+        mailbox: &MailboxId,
+    ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
+        match &self.inner {
+            SyncBackend::Sqlite(pool) => {
+                let rows: Vec<(Vec<u8>,)> = sqlx::query_as(
+                    "SELECT blob_hash FROM mailbox_pending_blob WHERE mailbox_id = ?",
+                )
+                .bind(mailbox)
+                .fetch_all(pool)
+                .await?;
+                rows.into_iter()
+                    .map(|(bytes,)| decode_hash(bytes))
+                    .collect()
+            }
+            SyncBackend::Mem(rows) => Ok(rows
+                .lock()
+                .await
+                .pending_blobs
+                .iter()
+                .filter(|(m, _)| m == mailbox)
+                .map(|(_, hash)| *hash)
+                .collect()),
+        }
+    }
+
+    pub async fn remove_pending_blobs(
+        &self,
+        mailbox: &MailboxId,
+        hashes: &[iroh_blobs::Hash],
+    ) -> anyhow::Result<()> {
+        match &self.inner {
+            SyncBackend::Sqlite(pool) => {
+                for hash in hashes {
+                    sqlx::query(
+                        "DELETE FROM mailbox_pending_blob WHERE mailbox_id = ? AND blob_hash = ?",
+                    )
+                    .bind(mailbox)
+                    .bind(hash.as_bytes().to_vec())
+                    .execute(pool)
+                    .await?;
+                }
+            }
+            SyncBackend::Mem(rows) => {
+                let mut rows = rows.lock().await;
+                for hash in hashes {
+                    rows.pending_blobs.remove(&(mailbox.clone(), *hash));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Forget pending pushes of these blobs to every mailbox, for blobs this
+    /// device no longer holds.
+    pub async fn forget_pending_blobs(&self, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
+        match &self.inner {
+            SyncBackend::Sqlite(pool) => {
+                for hash in hashes {
+                    sqlx::query("DELETE FROM mailbox_pending_blob WHERE blob_hash = ?")
+                        .bind(hash.as_bytes().to_vec())
+                        .execute(pool)
+                        .await?;
+                }
+            }
+            SyncBackend::Mem(rows) => {
+                rows.lock()
+                    .await
+                    .pending_blobs
+                    .retain(|(_, hash)| !hashes.contains(hash));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn decode_hash(bytes: Vec<u8>) -> anyhow::Result<iroh_blobs::Hash> {
+    let bytes: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("pending blob hash is not 32 bytes"))?;
+    Ok(iroh_blobs::Hash::from_bytes(bytes))
 }
 
 async fn load_all_ids_sqlite(pool: &SqlitePool) -> anyhow::Result<BTreeSet<MailboxId>> {
@@ -542,9 +634,14 @@ mod tests {
             .record_synced(&"mb2".into(), &[(7u8, 'a', 5)])
             .await
             .unwrap();
-        let for_log = store.get_synced_for_log(&7u8, &'a').await.unwrap();
-        assert_eq!(for_log.get("mb1"), Some(&1));
-        assert_eq!(for_log.get("mb2"), Some(&5));
+        assert_eq!(
+            store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
+            Some(1)
+        );
+        assert_eq!(
+            store.get_synced(&"mb2".into(), &7u8, &'a').await.unwrap(),
+            Some(5)
+        );
     }
 
     #[tokio::test]
@@ -611,6 +708,41 @@ mod tests {
             store.get_synced(&"mb2".into(), &7u8, &'a').await.unwrap(),
             Some(2)
         );
+    }
+
+    async fn pending_blobs_impl(b: Backend) {
+        let (_dir, store) = open(b).await;
+        let [h1, h2, h3] = [1u8, 2, 3].map(|n| iroh_blobs::Hash::new([n]));
+        store
+            .record_pending_blobs(&"mb1".into(), &[h1, h2])
+            .await
+            .unwrap();
+        store
+            .record_pending_blobs(&"mb2".into(), &[h1, h3])
+            .await
+            .unwrap();
+
+        store
+            .remove_pending_blobs(&"mb1".into(), &[h1])
+            .await
+            .unwrap();
+        assert_eq!(store.pending_blobs(&"mb1".into()).await.unwrap(), vec![h2]);
+
+        store.forget_pending_blobs(&[h1]).await.unwrap();
+        assert_eq!(store.pending_blobs(&"mb2".into()).await.unwrap(), vec![h3]);
+
+        store.drop_mailbox(&"mb2".into()).await.unwrap();
+        assert_eq!(store.pending_blobs(&"mb2".into()).await.unwrap(), vec![]);
+    }
+
+    #[tokio::test]
+    async fn pending_blobs_sqlite() {
+        pending_blobs_impl(Backend::Sqlite).await;
+    }
+
+    #[tokio::test]
+    async fn pending_blobs_mem() {
+        pending_blobs_impl(Backend::Mem).await;
     }
 
     #[tokio::test]

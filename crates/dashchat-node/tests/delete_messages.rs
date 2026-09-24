@@ -212,17 +212,9 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
     }
 
     // Bobbi's unprocess_app removed everything to do with the deleted media:
-    // no pinning tags, nothing left in the fetch pool. The other message's
-    // media is still tracked.
+    // no pinning tags, so nothing left to fetch. The other message's media is
+    // still tracked.
     assert_eq!(tag_count_for_hash(&bobbi, media1).await, 0);
-    assert!(
-        bobbi
-            .blob_sync()
-            .fetch_pool
-            .topics_for(media1)
-            .await
-            .is_empty()
-    );
     assert!(tag_count_for_hash(&bobbi, media2).await > 0);
     // Alice (the author) also released her own copy of the deleted media.
     assert_eq!(tag_count_for_hash(&alice, media1).await, 0);
@@ -344,14 +336,6 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 
     assert!(!carol.blobs().has(media1).await.unwrap());
     assert_eq!(tag_count_for_hash(&carol, media1).await, 0);
-    assert!(
-        carol
-            .blob_sync()
-            .fetch_pool
-            .topics_for(media1)
-            .await
-            .is_empty()
-    );
 }
 
 #[deprecated = "this just calls attention to the need for mailbox scrubbing. When that is implemented, replace all calls to this function with `true`."]
