@@ -119,8 +119,8 @@ pub struct NodeConfig {
     pub stream_cursor_prefix: Option<String>,
     /// Whether to defer subscribing to all stored topics and replaying their
     /// backlogs until after `Node::new` returns. The main app sets this to
-    /// `true` so launch is not blocked; the iOS push extension and tests keep
-    /// `false` to be fully initialized synchronously.
+    /// `true` so launch is not blocked; the push extension, background tasks,
+    /// and tests keep `false` to be fully initialized synchronously.
     pub defer_stored_topics_initialization: bool,
 }
 
@@ -2055,7 +2055,7 @@ impl Node {
     /// so one bad topic does not starve the rest. The caller is responsible for
     /// retrying the whole call if it returns an error (the deferred init path
     /// does this with exponential backoff).
-    pub async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+    async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         self.initialize_topic(
             *Topic::announcements(self.agent_id())
                 .alias_named(&format!("announce({:?})", self.agent_id().aliased())),

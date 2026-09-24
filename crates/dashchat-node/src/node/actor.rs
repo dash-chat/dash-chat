@@ -272,15 +272,8 @@ impl Actor {
         // before accepting the external stream. This keeps Publish commands and
         // event processing responsive during backlog replay.
         tokio::spawn(async move {
-            match tx.import(stream).await {
-                Ok(_import_fut) => {
-                    // The stream will be consumed by the topic processor; we
-                    // don't need to await completion here; dropping the future
-                    // is fine since it only signals end-of-stream processing.
-                }
-                Err(err) => {
-                    warn!(topic = ?topic.aliased(), ?err, "import stream failed");
-                }
+            if let Err(err) = tx.import(stream).await {
+                warn!(topic = ?topic.aliased(), ?err, "import stream failed");
             }
         });
 
