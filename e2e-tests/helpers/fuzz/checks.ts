@@ -38,7 +38,7 @@ export const DEPARTURE_MS = 9_000;
  *  has had it by then. Tight on purpose: a goodbye that silently stopped
  *  working would still meet [`DEPARTURE_MS`] on the lapse alone, so only this
  *  budget can tell the two apart. */
-export const GOODBYE_MS = 1_000;
+export const GOODBYE_MS = 3_000;
 
 /** What a notification gets to travel before it has to be on the device:
  *  the op reaches the mailbox, which tells the push server, which goes
