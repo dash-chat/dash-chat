@@ -22,7 +22,7 @@ sentry-types = "0.42"
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
 
-tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "839ce7f5641b94a07b3fb27aa8dd2dab869365cc" }
+tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "347505a15d1607529d1426fe126274a9082e27a9" }
 tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
@@ -37,7 +37,7 @@ tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
 tauri-plugin-audio-recorder = "=0.1.2"
 tauri-plugin-sentry-reporting = { workspace = true }
 
-tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "29e69206ca2411eba331676304c34d1717982b96" }
+tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "6163645a2c730338cadc0d9def0ff3091be0515b" }
 tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "8eec1f09322c09efa0c0e81a8fa523d3745ba035", features = [
   "push-notifications-fcm",
 ] }
