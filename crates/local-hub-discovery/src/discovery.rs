@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -333,19 +333,31 @@ impl DiscoveryBrowser {
         log::debug!("Local hub's announcements lapsed, checking it still answers: mailbox={id}");
         let check_id = next_probe_id();
         hub.lapse_check = Some(check_id);
-        tokio::spawn(self.clone().confirm_lapsed(id.to_string(), check_id));
+        tokio::spawn(Self::confirm_lapsed(
+            Arc::downgrade(self),
+            id.to_string(),
+            check_id,
+        ));
     }
 
     /// Until swarm-discovery sights the hub again, only its answering says it
     /// is still there — for [`REMEMBER_LAPSED_FOR`] at most, past which the
     /// phone may be on another LAN where something else answers there.
-    async fn confirm_lapsed(self: Arc<Self>, id: String, check_id: u64) {
+    /// Holds the browser weakly between steps, so a lapse check cannot keep
+    /// discovery browsing after the service is dropped.
+    async fn confirm_lapsed(browser: Weak<Self>, id: String, check_id: u64) {
         loop {
-            let Some(addrs) = self.lapse_check_addrs(&id, check_id) else {
+            let Some(addrs) = browser
+                .upgrade()
+                .and_then(|browser| browser.lapse_check_addrs(&id, check_id))
+            else {
                 return;
             };
             let still_answers = any_answers(addrs).await;
-            if !self.lapse_check_kept(&id, check_id, still_answers) {
+            let kept = browser
+                .upgrade()
+                .is_some_and(|browser| browser.lapse_check_kept(&id, check_id, still_answers));
+            if !kept {
                 return;
             }
             tokio::time::sleep(REPROBE_INTERVAL).await;
@@ -452,6 +464,11 @@ impl DiscoveryBrowser {
         }
         if hub.answered_at.is_empty() {
             log::debug!("Local hub answered at {}: mailbox={id}", answered_at[0]);
+        }
+        // Answering on the network we are on now restarts the wait for its
+        // announcements, however long ago it went quiet elsewhere.
+        if hub.answered_at.is_empty() && hub.lapsed_at.is_some() {
+            hub.lapsed_at = Some(Instant::now());
         }
         hub.answered_at = answered_at;
         self.watch_lapsed(id, hub);
@@ -869,6 +886,31 @@ mod tests {
 
         assert!(h.browser.hubs.lock().unwrap()["hub"].answered_at.is_empty());
         assert_eq!(*h.hubs.borrow(), BTreeMap::new());
+    }
+
+    /// A phone back on its LAN just before the hub would be forgotten finds it
+    /// again, and it gets a whole window to be announced in.
+    #[tokio::test]
+    async fn a_hub_found_again_is_not_forgotten_for_how_long_it_was_quiet_before() {
+        let h = Harness::new();
+        let hub = listen().await;
+        let addr = hub.local_addr().unwrap();
+        let almost_forgotten = REMEMBER_LAPSED_FOR - Duration::from_millis(100);
+        h.browser.hubs.lock().unwrap().insert(
+            "hub".to_string(),
+            Hub {
+                probed_addrs: [addr].into_iter().collect(),
+                awaiting_probe: Some(1),
+                lapsed_at: Some(Instant::now() - almost_forgotten),
+                ..Default::default()
+            },
+        );
+
+        h.browser.answered("hub", 1, vec![addr], true);
+        let check = h.browser.hubs.lock().unwrap()["hub"].lapse_check.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(h.browser.lapse_check_addrs("hub", check), Some(vec![addr]));
     }
 
     #[tokio::test]
