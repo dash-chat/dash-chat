@@ -27,6 +27,7 @@ import {
 } from './setup/failure-screenshots';
 import { releaseWifiDevice } from './setup/host-wifi';
 import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
+import { ensureLoopback } from './setup/loopback';
 import {
 	buildCargoPackages,
 	startLocalMailboxServer,
@@ -213,6 +214,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		// A failed onPrepare must abort the run: wdio only logs hook errors and
 		// would carry on into sessions doomed to hang out their timeouts.
 		try {
+			ensureLoopback();
 			// Before the wipe: anything still running holds handles under
 			// `.dbs/e2e` and goes on writing, which leaves the dir dirty behind
 			// the `rmSync`.
