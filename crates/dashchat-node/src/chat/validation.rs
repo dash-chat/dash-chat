@@ -12,6 +12,7 @@ pub use reply::*;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
+use dashchat_utils::SeqNum;
 use derive_more::{Deref, DerefMut, From};
 use p2panda::Hash;
 
@@ -42,7 +43,7 @@ pub struct ChatOp {
     /// Microseconds since the UNIX epoch (the operation header timestamp).
     pub timestamp: u64,
     /// Position in the author's append-only log; monotonic in publish order.
-    pub seq_num: u64,
+    pub seq_num: SeqNum,
     pub kind: ChatOpKind,
 }
 

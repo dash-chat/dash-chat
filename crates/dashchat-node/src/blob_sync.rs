@@ -9,7 +9,7 @@ use iroh_blobs::provider::events::{
 };
 use mailbox_client::manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
-use p2panda_store::{SqliteStore, topics::TopicStore};
+use p2panda_store::SqliteStore;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -426,13 +426,16 @@ impl BlobFetchPool {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     if let Some(media) = m.media() {
-                        let Some(topic) = topic_store
-                            .resolve_topic(&op.header.verifying_key, &op.header.extensions.log_id)
-                            .await?
+                        let Some(topic) = crate::topic::resolve_application_topic(
+                            &topic_store,
+                            &op.header.verifying_key,
+                            &op.header.extensions.log_id(),
+                        )
+                        .await?
                         else {
                             tracing::error!(
                                 author = ?op.header.verifying_key.aliased(),
-                                log_id = ?op.header.extensions.log_id.aliased(),
+                                log_id = ?op.header.extensions.log_id().aliased(),
                                 "failed to resolve topic for operation",
                             );
                             continue;
