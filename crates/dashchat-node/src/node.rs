@@ -120,6 +120,17 @@ pub struct NodeConfig {
     /// Whether to defer subscribing to all stored topics and replaying their
     /// backlogs until after `Node::new` returns.
     pub defer_stored_topics_initialization: bool,
+    /// Whether to record every operation this node processes that the app has
+    /// not acknowledged, for the app to process too. On for the iOS push
+    /// extension: whichever process fetches an operation first stores it, and
+    /// mailbox fetches and sync only ever ask for what comes after the store's
+    /// log heights, so the app is never handed it again. An operation the
+    /// extension stored but was killed before recording is handed to it again
+    /// by its own replay on its next launch, and recorded then.
+    pub record_processed_operations: bool,
+    /// Whether to import, on a resync, the operations another node over the
+    /// same store recorded as processed. On for the iOS app.
+    pub import_recorded_operations: bool,
 }
 
 impl NodeConfig {
@@ -170,6 +181,8 @@ impl NodeConfig {
             enable_message_acks: true,
             stream_cursor_prefix: None,
             defer_stored_topics_initialization: false,
+            record_processed_operations: false,
+            import_recorded_operations: false,
         }
     }
 
@@ -192,11 +205,13 @@ impl Default for NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(4),
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
             defer_stored_topics_initialization: false,
+            record_processed_operations: false,
+            import_recorded_operations: false,
         }
     }
 }
@@ -476,8 +491,11 @@ impl Node {
 
         // === network change notifier === //
 
-        let network_change_handle =
-            crate::network_change_notifier::spawn(node.endpoint.clone(), node.mailboxes.clone());
+        let network_change_handle = crate::network_change_notifier::spawn(
+            node.endpoint.clone(),
+            node.mailboxes.clone(),
+            node.unfetched_blob_trigger.clone(),
+        );
         node.network_change_handle
             .lock()
             .await
@@ -2044,9 +2062,61 @@ impl Node {
     /// Re-run stored-topic initialization so the app catches up on operations
     /// another process (the iOS push extension) wrote into the shared store
     /// while the app was running: it subscribes to any newly-stored topics,
-    /// replaying their operations from the app's own un-advanced cursor.
+    /// replaying their operations from the app's own un-advanced cursor, and
+    /// imports the operations the extension recorded as processed.
     pub async fn resync(&self) -> anyhow::Result<()> {
         self.initialize_stored_topics().await
+    }
+
+    /// Import the operations the push extension processed and recorded, so
+    /// this node processes them too. They are in the shared store already, so
+    /// nothing else delivers them to it; importing processes them regardless,
+    /// and acknowledging one below this node's cursor is a no-op. A freshly
+    /// opened stream replays the ones above the cursor as well, which is
+    /// harmless: processing an operation twice is idempotent.
+    async fn import_extension_processed_operations(&self) -> anyhow::Result<()> {
+        if !self.config.import_recorded_operations {
+            return Ok(());
+        }
+        let mut by_topic: HashMap<TopicId, Vec<Operation>> = HashMap::new();
+        for (hash, topic) in self.local_store.extension_processed_operations().await? {
+            // Without a body there is nothing left for the app layer to see.
+            match self.op_store.get_operation(&hash).await? {
+                Some(operation) if operation.body.is_some() => {
+                    by_topic.entry(topic).or_default().push(operation)
+                }
+                _ => {
+                    if let Err(err) = self
+                        .local_store
+                        .forget_extension_processed_operation(&hash)
+                        .await
+                    {
+                        tracing::warn!(
+                            ?err,
+                            "failed to forget an operation the push extension recorded"
+                        );
+                    }
+                }
+            }
+        }
+        let mut failures = 0usize;
+        for (topic, mut operations) in by_topic {
+            operations
+                .sort_by_key(|op| (DeviceId::from(op.header.verifying_key), op.header.seq_num));
+            // The race e2e spec matches on this line.
+            tracing::info!(topic = ?topic.aliased(), count = operations.len(), "importing operations the push extension processed");
+            if let Err(err) = self
+                .import_stream(topic, Box::pin(futures::stream::iter(operations)))
+                .await
+            {
+                error!(topic = ?topic.aliased(), ?err, "failed to import the operations the push extension processed");
+                failures += 1;
+            }
+        }
+        if failures > 0 {
+            anyhow::bail!("{failures} topic(s) failed to import");
+        }
+        Ok(())
     }
 
     /// Initialize all stored topics.
@@ -2118,10 +2188,11 @@ impl Node {
             failures += 1;
         }
 
+        self.import_extension_processed_operations().await?;
+
         if failures > 0 {
             anyhow::bail!("{failures} topic(s) failed to initialize");
         }
-
         Ok(())
     }
 
@@ -2314,6 +2385,13 @@ impl mailbox_client::BlobReader for NodeBlobReader {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("blob sync disabled"))?;
         Ok(blob_sync.blobs.get_bytes(hash).await?)
+    }
+
+    async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
+        match &self.blob_sync {
+            Some(blob_sync) => blob_sync.blobs.has(hash).await.unwrap_or(false),
+            None => false,
+        }
     }
 }
 

@@ -9,7 +9,7 @@ use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_notification::*;
 
 use crate::node::AppNodeManager;
-use crate::notifications::are_notifications_enabled;
+use crate::notifications::{are_notifications_enabled, run_plugin_call};
 
 mod receive_push_notification;
 
@@ -117,11 +117,11 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
     let client = handle.state::<PushNotificationsClient>();
 
-    if are_notifications_enabled(&handle) {
+    if are_notifications_enabled(&handle).await {
         log::info!("Notifications are enabled: registering FCM token.");
-        let token = handle
-            .notification()
-            .register_for_push_notifications()
+        let h = handle.clone();
+        let token = run_plugin_call(move || h.notification().register_for_push_notifications())
+            .await?
             .context("register_for_push_notifications failed")?;
         client
             .register_fcm_token(verifying_key.clone(), FcmToken::from(token.clone()))
@@ -150,7 +150,7 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!(e))?;
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
-    let topic_ids = if are_notifications_enabled(&app_handle) {
+    let topic_ids = if are_notifications_enabled(&app_handle).await {
         // Inbox topics live in their own store (they expire) and are not in
         // subscribed_topics; without them this full sync unsubscribes the
         // inbox on the server and a contact request can't wake the app.

@@ -76,7 +76,7 @@ impl OpStore {
     /// cursor is exactly the "processed" watermark that gates mailbox
     /// transmission — an operation whose payload might still be tombstoned by
     /// pending processing sits above the watermark and is never sent onward.
-    async fn acked_log_height(
+    pub(crate) async fn acked_log_height(
         &self,
         topic: &TopicId,
         author: &DeviceId,

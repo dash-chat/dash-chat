@@ -183,6 +183,15 @@ impl NodeContext {
         if self.role == NodeRole::PushNotification {
             config.stream_cursor_prefix = Some("nse".to_string());
         }
+        // Only on iOS do the extension and the app run at the same time over
+        // one store, so only there can the extension store an operation the
+        // running app then never gets; elsewhere a background node runs only
+        // while the app does not, and the app's replay at startup covers it.
+        let shares_store_with_running_app = cfg!(target_os = "ios");
+        config.record_processed_operations =
+            self.role == NodeRole::PushNotification && shares_store_with_running_app;
+        config.import_recorded_operations =
+            self.role == NodeRole::App && shares_store_with_running_app;
 
         if !self.p2p_enabled() {
             config = config.no_p2p();

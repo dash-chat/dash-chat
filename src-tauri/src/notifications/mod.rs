@@ -15,15 +15,30 @@ use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionSta
 
 use crate::node::AppNodeManager;
 
+/// Run a notification plugin call on the blocking pool. On mobile each call
+/// parks its thread until the native side answers, which can take seconds
+/// (FCM's getToken, or `show()` asking the webview for its route); on a
+/// runtime worker that stalls unrelated commands, e.g. creating a contact code.
+pub(crate) async fn run_plugin_call<T: Send + 'static>(
+    call: impl FnOnce() -> T + Send + 'static,
+) -> anyhow::Result<T> {
+    tokio::task::spawn_blocking(call)
+        .await
+        .context("notification plugin call panicked")
+}
+
 /// Returns `true` iff the user has both enabled notifications in app settings
 /// and granted OS-level permission. On desktop the permission state is always
 /// `Granted` so this collapses to the settings check.
-pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
-    crate::settings::load_settings(handle).notifications_enabled
-        && matches!(
-            handle.notification().permission_state(),
-            Ok(PermissionState::Granted)
-        )
+pub(crate) async fn are_notifications_enabled(handle: &AppHandle) -> bool {
+    if !crate::settings::load_settings(handle).notifications_enabled {
+        return false;
+    }
+    let h = handle.clone();
+    matches!(
+        run_plugin_call(move || h.notification().permission_state()).await,
+        Ok(Ok(PermissionState::Granted))
+    )
 }
 
 /// Show a system notification for an operation that arrived through the
@@ -34,7 +49,7 @@ pub(crate) async fn show_sync_notification(
     app_handle: &AppHandle,
     notification: &dashchat_node::OpNotification,
 ) {
-    if !are_notifications_enabled(app_handle) {
+    if !are_notifications_enabled(app_handle).await {
         return;
     }
 
@@ -70,8 +85,10 @@ pub(crate) async fn show_sync_notification(
         }
     }
 
-    if let Err(err) = show_notification_from_data(app_handle, data) {
-        log::error!("Failed to show sync-path notification: {err:?}");
+    let h = app_handle.clone();
+    match run_plugin_call(move || show_notification_from_data(&h, data)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) | Err(err) => log::error!("Failed to show sync-path notification: {err:?}"),
     }
 }
 

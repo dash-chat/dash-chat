@@ -95,6 +95,11 @@ pub fn run() {
                         if let Err(err) = app_node_manager.resume(&app).await {
                             log::error!("Failed to rebuild node on foreground: {err:?}");
                         }
+                        // Uploads cut off while we were away go out again now.
+                        mailbox_client::toy::restart_uploads();
+                        if let Ok(node) = app_node_manager.get().await {
+                            node.notify_unfetched_blob_followup();
+                        }
                     }
                 })
                 .build(),
