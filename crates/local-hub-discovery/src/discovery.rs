@@ -308,6 +308,22 @@ impl DiscoveryBrowser {
         if hub.lapsed_at.is_none() {
             hub.lapsed_at = Some(Instant::now());
         }
+        // Off every subnet it answered on, the phone is the one that moved:
+        // dialling it from here would only hang.
+        let subnets = local_subnets_v4();
+        if !hub.answered_at.is_empty()
+            && !hub
+                .answered_at
+                .iter()
+                .any(|addr| reachable_from_here(*addr, &subnets))
+        {
+            log::debug!(
+                "Local hub is gone, its announcements lapsed and we left its network: mailbox={id}"
+            );
+            hub.unlist();
+            self.publish(hubs);
+            return;
+        }
         self.watch_lapsed(id, hub);
     }
 
