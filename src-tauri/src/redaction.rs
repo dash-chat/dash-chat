@@ -15,6 +15,37 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // catch. Anchored on the `me=`/`peer=` label so ordinary short hex
         // (contact codes) stays readable.
         r"\b(me|peer)=[0-9a-fA-F]{8,}\b",
+        // The ids p2panda-net's discovery, gossip and address book label, which
+        // the rule above is too long to catch: sampling a run's Debug output
+        // shows `endpoint_id=…`, `node_id="…"`, `remote_node_id=…` and the
+        // topic ones — `topic=…`, `gossip_topic="…"`, `sync_topic="…"`, which
+        // name the conversation a device is in. Any prefix, an `_id` suffix or
+        // a plural, and either separator; the quotes are consumed so nothing
+        // survives as `""`. `alpn=`/`protocol_id=` are left: they are the same
+        // constant for every user of a build, and say nothing about who is
+        // using it.
+        r#"\b[a-z_]*(node_id|endpoint_id|topic(_id)?)s?["\s]*[=:]\s*"?[0-9a-fA-F]{8,}"?"#,
+        // The peers a gossip overlay joins, which the rule above misses on both
+        // counts — the label is `nodes`, not `node_id`, and the ids sit inside
+        // brackets. Sampling one run's os_log output found this shape 856 times
+        // (`(re-) join gossip overlay topic=… nodes=[…]`, `joined topic …`),
+        // naming who a device is gossiping with. The list is taken whole, so a
+        // second id cannot survive by being unlabelled. The `_id` and endpoint
+        // spellings are covered too, for a version that labels the same list
+        // differently: what the sample shows is the 10-character short form, so
+        // the 40-char hex rule above is no backstop for any of them. An empty
+        // `nodes=[]` stays readable: it says nobody was found, which is what a
+        // discovery failure looks like, and it names no one.
+        r"\b[a-z_]*(node|endpoint)(_id)?s?=\[[0-9a-fA-F][0-9a-fA-F,\s]*\]",
+        // Socket addresses of peers and of this device, as the address book
+        // prints them: `Ip(188.84.6.11:49882)`, and bracketed for v6,
+        // `Ip([2a02:…:1]:41234)` / `Ip([fe80::…%en0]:…)`. A peer's address says
+        // who a user is talking to and the public one says where they are.
+        // Anchored on p2panda's `Ip(…)` wrapper so the urls the app logs —
+        // `MAILBOX_URL: http://192.168.0.104:4338`, and the ones a connection
+        // error names — stay readable, since a wrong one is only ever spotted
+        // by reading it back.
+        r"Ip\(\[?[0-9a-zA-Z:.%_-]+\]?:[0-9]{1,5}\)",
         // Base64 blobs (40+ chars)
         r"[A-Za-z0-9+/]{40,}={0,2}",
         // Mailbox id (base64url inbox address) as logged by the mailbox
@@ -110,6 +141,94 @@ mod tests {
     fn preserves_short_hex() {
         let input = "code=abcdef12";
         assert_eq!(redact(input), "code=abcdef12");
+    }
+
+    #[test]
+    fn redacts_discovery_topic_ids() {
+        let input = "(re-) join gossip overlay topic=371ac34c42 nodes=[]";
+        assert_eq!(
+            redact(input),
+            "(re-) join gossip overlay [REDACTED] nodes=[]"
+        );
+        let input = "register sync protocol sync_topic=\"02d9de2757\"";
+        assert_eq!(redact(input), "register sync protocol [REDACTED]");
+        // The `_id` suffix, which nothing logs today — covered before
+        // something starts to.
+        let input = "subscribing topic_id=371ac34c42";
+        assert_eq!(redact(input), "subscribing [REDACTED]");
+    }
+
+    /// The exact lines one run's os_log produced, as the gossip and discovery
+    /// modules write them at Debug.
+    #[test]
+    fn redacts_the_peers_a_gossip_overlay_names() {
+        let input = "(re-) join gossip overlay topic=d63c2396b0 nodes=[9b26ccaba4]";
+        assert_eq!(
+            redact(input),
+            "(re-) join gossip overlay [REDACTED] [REDACTED]"
+        );
+        let input = "joined topic topic=0083bbda68 nodes=[a64c9c1b7f, 7dd414f859]";
+        assert_eq!(redact(input), "joined topic [REDACTED] [REDACTED]");
+        // Finding nobody is not private, and it is what a discovery failure
+        // looks like.
+        let input = "(re-) join gossip overlay topic=d63c2396b0 nodes=[]";
+        assert_eq!(
+            redact(input),
+            "(re-) join gossip overlay [REDACTED] nodes=[]"
+        );
+        // The spellings the sample did not happen to show. What p2panda logs is
+        // the 10-character short form, so nothing else would catch these.
+        let input = "peers node_ids=[a64c9c1b7f, 7dd414f859] endpoint_ids=[9b26ccaba4]";
+        assert_eq!(redact(input), "peers [REDACTED] [REDACTED]");
+    }
+
+    #[test]
+    fn preserves_the_networks_own_constants() {
+        // The same for every user of a build, so they name nobody.
+        let input = "register protocol alpn=d129148097";
+        assert_eq!(redact(input), "register protocol alpn=d129148097");
+    }
+
+    #[test]
+    fn redacts_discovery_node_ids() {
+        let input = "mark node as stale remote_node_id=3026d92c8c";
+        assert_eq!(redact(input), "mark node as stale [REDACTED]");
+        let input = "successful discovery session node_id=\"5299f918f8\" topics=5";
+        assert_eq!(
+            redact(input),
+            "successful discovery session [REDACTED] topics=5"
+        );
+        let input = "discovered new transport info endpoint_id=fa09a0a99a";
+        assert_eq!(redact(input), "discovered new transport info [REDACTED]");
+    }
+
+    #[test]
+    fn redacts_peer_socket_addresses() {
+        let input = "addresses=[iroh] {Ip(188.84.6.11:49882), Ip(192.168.0.106:65133)}";
+        assert_eq!(redact(input), "addresses=[iroh] {[REDACTED], [REDACTED]}");
+    }
+
+    #[test]
+    fn redacts_ipv6_peer_socket_addresses() {
+        let input =
+            "addresses=[iroh] {Ip([2a02:8109:a1c0::1]:41234), Ip([fe80::1ff:fe23:4567%en0]:5353)}";
+        assert_eq!(redact(input), "addresses=[iroh] {[REDACTED], [REDACTED]}");
+    }
+
+    #[test]
+    fn preserves_the_url_a_build_is_pointed_at() {
+        // Every url the app logs carries a port, and reading one back is how a
+        // build pointed at the wrong mailbox gets spotted.
+        let input = "Using compile-time MAILBOX_URL: http://192.168.0.104:4338";
+        assert_eq!(
+            redact(input),
+            "Using compile-time MAILBOX_URL: http://192.168.0.104:4338"
+        );
+        let input = "error sending request for url (http://127.0.0.1:3200/health)";
+        assert_eq!(
+            redact(input),
+            "error sending request for url (http://127.0.0.1:3200/health)"
+        );
     }
 
     #[test]

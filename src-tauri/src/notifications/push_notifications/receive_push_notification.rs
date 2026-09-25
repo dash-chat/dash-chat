@@ -23,8 +23,19 @@ static ANDROID_LOGS_ONCE: std::sync::Once = std::sync::Once::new();
 #[cfg(target_os = "ios")]
 static IOS_LOGGER_ONCE: std::sync::Once = std::sync::Once::new();
 
+/// Just over the 10 MB tail a report attaches, so this file and the previous
+/// one together always cover it.
 #[cfg(target_os = "ios")]
-const MAX_NSE_LOG_SIZE: u64 = 5 * 1024 * 1024;
+const MAX_NSE_LOG_SIZE: u64 = 12 * 1024 * 1024;
+
+/// Wall clock, not a count of polls: the iOS extension is killed at ~30 s
+/// whatever the loop's body spends on the network.
+const OP_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+const OP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+const RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+/// How long a cloud mailbox registration may hold up the handler at a time. A
+/// hanging connect otherwise takes up to the HTTP client's 10 s timeout.
+const REGISTER_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Entry point called by the FirebaseMessagingService when a push notification arrives.
 /// Fetches the operation referenced by the push and builds a user-facing notification, dedup'd
@@ -106,10 +117,14 @@ fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(&logs_dir)?;
     let log_path = logs_dir.join("notification-service.log");
 
-    // Simple size-based rotation: clear the file if it has grown too large.
+    // Rotate rather than clear: a report attaches every `*.log` here, and a
+    // cleared file would leave it with only the pushes since the rotation.
     if let Ok(metadata) = std::fs::metadata(&log_path) {
         if metadata.len() > MAX_NSE_LOG_SIZE {
-            let _ = std::fs::remove_file(&log_path);
+            let _ = std::fs::rename(
+                &log_path,
+                logs_dir.join("notification-service.previous.log"),
+            );
         }
     }
 
@@ -169,6 +184,38 @@ async fn handle_push_notifications_with_fallback_messages(
     }
 }
 
+/// Retries reaching the cloud mailbox while a push waits for its operation.
+///
+/// A mailbox that is not tracked yet is registered again, since a node built for
+/// a push has no registration retry of its own. A mailbox already polling on the
+/// Active cadence is left alone, since extra probes there only pile up errors
+/// fast enough to flip the connection status on a brief hiccup.
+async fn reconnect_cloud_mailbox(
+    node: &dashchat_node::Node,
+    cloud_id: &mut Option<mailbox_client::MailboxId>,
+    attempt: &mut Option<crate::setup::CloudMailboxAttempt>,
+) {
+    if cloud_id.is_none() {
+        *cloud_id = crate::mailbox::cloud_mailbox_id(node).await;
+    }
+    let tracked = match cloud_id.as_ref() {
+        Some(id) => node.mailboxes.tracked_mailbox(id).await,
+        None => None,
+    };
+    let (Some(id), Some(mailbox)) = (cloud_id.clone(), tracked) else {
+        if crate::setup::track_cloud_mailbox_with_timeout(node, REGISTER_WAIT, attempt).await {
+            // Re-resolve next time: the id the server reported can differ from a
+            // stale persisted one, which would otherwise never become tracked.
+            *cloud_id = None;
+        }
+        return;
+    };
+    let status = mailbox.connection_state().borrow().status;
+    if status != mailbox_client::manager::SyncStatus::Active {
+        node.mailboxes.probe(id).await;
+    }
+}
+
 async fn handle_push_notification(
     notification: NotificationData,
     app_data_root: PathBuf,
@@ -219,18 +266,26 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
-    // Fetch the new operation. The push itself is evidence the cloud mailbox is
-    // reachable — it only exists because the mailbox server took the blob and
-    // asked for it — so wake the mailbox rather than probing it, clearing any
-    // backoff a network-less background stretch left behind. Fall back to a
-    // general trigger if it isn't registered yet.
-    if let Some(cloud_id) = crate::mailbox::cloud_mailbox_id(&node).await {
-        node.mailboxes.wakeup(cloud_id).await;
-    } else {
-        node.mailboxes.nudge_poll_loop();
-    }
+    // On every push, not once per node: the extension caches its node for hours
+    // and its networking is often not up on the cold-start push. The `/health`
+    // round trip also refreshes the mailbox's dialing address. Track it as a
+    // fetch source only: `register_cloud_mailbox`'s up-to-10s endpoint wait
+    // would eat the extension's ~30 s budget. Bounded, since the wait below
+    // keeps retrying.
+    let mut cloud_mailbox_attempt = None;
+    crate::setup::track_cloud_mailbox_with_timeout(
+        &node,
+        REGISTER_WAIT,
+        &mut cloud_mailbox_attempt,
+    )
+    .await;
 
-    // Poll for the operation to arrive (up to 15 seconds)
+    // Probe rather than wake: the push proves the cloud mailbox is up, not that
+    // this device can reach it, and a wakeup would reset the connection status
+    // on every push.
+    crate::mailbox::probe_cloud_mailbox(&node).await;
+
+    // Poll for the operation to arrive
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
     let device_id = dashchat_node::DeviceId::from(verifying_key);
@@ -238,7 +293,14 @@ async fn handle_push_notification(
     // to include seq_num itself. seq_num == 0 → None means "from the start".
     let from = seq_num.checked_sub(1);
     let mut entry = None;
-    for _ in 0..75 {
+    let mut cloud_id = None;
+    let deadline = tokio::time::Instant::now() + OP_WAIT;
+    let mut next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
+    while tokio::time::Instant::now() < deadline {
+        if tokio::time::Instant::now() >= next_reconnect {
+            reconnect_cloud_mailbox(&node, &mut cloud_id, &mut cloud_mailbox_attempt).await;
+            next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
+        }
         let log = node
             .op_store
             .get_log(&device_id, &LogId::from_topic(topic_id), from)
@@ -248,7 +310,7 @@ async fn handle_push_notification(
             entry = Some(first);
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(OP_POLL_INTERVAL).await;
     }
 
     let Some(operation) = entry else {

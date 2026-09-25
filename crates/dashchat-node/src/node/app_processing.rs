@@ -6,7 +6,7 @@ use p2panda::operation::Header;
 use p2panda::streams::{ProcessedOperation, Source, StreamEvent};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::AckedOp;
 use crate::forward_edit_closure;
@@ -156,7 +156,7 @@ impl Node {
             return Err(anyhow!("Error sending on actor channel"));
         };
 
-        let _ = reply_rx.await?;
+        reply_rx.await??;
 
         Ok(())
     }
@@ -239,6 +239,12 @@ impl Node {
                                     tracing::error!(?err, "failed to acknowledge operation");
                                 }
                             },
+                            ProcessorEvent::ImportFailed { topic, error } => {
+                                error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
+                                if let Err(err) = node.mailboxes.unsubscribe(topic).await {
+                                    error!(topic = ?topic.aliased(), ?err, "failed to unsubscribe topic after import failure");
+                                }
+                            }
                             ProcessorEvent::App { operation, source, processed_tx } => {
                                 let topic = operation.topic();
                                 let id = operation.id();

@@ -131,6 +131,72 @@ function connectionStatusHistory(): {
 	};
 }
 
+export interface PhotoVisibilitySample {
+	shown: boolean;
+	at: number;
+}
+
+let photoVisibilityLabel: string | undefined;
+let photoVisibilityToken: string | undefined;
+const photoVisibility: PhotoVisibilitySample[] = [];
+let photoVisibilityObserver: MutationObserver | undefined;
+
+/** Whether a decoded photo whose alt contains `label` is on screen: an `<img>`
+ * that finished loading, not its spinner or its reload placeholder. */
+function photoShown(label: string): boolean {
+	return Array.from(
+		document.querySelectorAll<HTMLImageElement>('[data-testid="blob-image"]'),
+	).some(
+		img =>
+			img.alt.includes(label) &&
+			img.complete &&
+			img.naturalWidth > 0 &&
+			img.parentElement?.querySelector('[data-testid="blob-image-loading"]') ===
+				null,
+	);
+}
+
+function samplePhotoVisibility() {
+	if (photoVisibilityLabel === undefined) return;
+	const shown = photoShown(photoVisibilityLabel);
+	if (photoVisibility[photoVisibility.length - 1]?.shown === shown) return;
+	photoVisibility.push({ shown, at: Date.now() });
+}
+
+/** Start recording every change in whether the photo whose alt contains
+ * `label` is on screen. Mutations catch a swap that lasts a single frame; the
+ * poll catches an `<img>` finishing its decode, which mutates nothing. */
+function recordPhotoVisibility(label: string): string {
+	photoVisibilityLabel = label;
+	photoVisibility.length = 0;
+	photoVisibilityToken = `${Date.now()}-${Math.random()}`;
+	samplePhotoVisibility();
+	if (photoVisibilityObserver === undefined) {
+		photoVisibilityObserver = new MutationObserver(samplePhotoVisibility);
+		photoVisibilityObserver.observe(document.body, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ['src'],
+		});
+		setInterval(samplePhotoVisibility, 25);
+	}
+	return photoVisibilityToken;
+}
+
+/** The shown/hidden transitions of the photo since [`recordPhotoVisibility`],
+ * with the token of the recording they came from, so a caller can tell a
+ * reloaded page from a photo that never changed. */
+function photoVisibilityHistory(): {
+	token: string | null;
+	samples: PhotoVisibilitySample[];
+} {
+	return {
+		token: photoVisibilityToken ?? null,
+		samples: [...photoVisibility],
+	};
+}
+
 const mediaDownloads = new Map<string, number>();
 let mediaObserver: PerformanceObserver | undefined;
 
@@ -358,7 +424,7 @@ function injectVoiceMessage(durationMs = 3000, audioDurationMs = durationMs) {
 }
 
 /** Result of injecting a voice message through the real transcode command. */
-interface RecordedVoiceMessage {
+export interface RecordedVoiceMessage {
 	isOgg: boolean;
 	opusBytes: number;
 	wavBytes: number;
@@ -545,6 +611,8 @@ export const testUtils = {
 	photoDownloadMs,
 	recordConnectionStatus,
 	connectionStatusHistory,
+	recordPhotoVisibility,
+	photoVisibilityHistory,
 	interceptFilePickers,
 	collectFilePickers,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
@@ -552,6 +620,7 @@ export const testUtils = {
 	recentPhotos: undefined as RecentPhotosTestData | undefined,
 	forceBlobError,
 	swipeToReply,
+	myDeviceId: (): Promise<string> => invokeAfterSetup('my_device_id'),
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

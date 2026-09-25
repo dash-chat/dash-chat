@@ -21,11 +21,11 @@
 		NavbarBackLink,
 		ListItem,
 		Chip,
-		Sheet,
 		BlockTitle,
 		useTheme,
 		Link,
 	} from 'konsta/svelte';
+	import SwipeableSheet from '$lib/components/SwipeableSheet.svelte';
 
 	import { page } from '$app/state';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
@@ -230,10 +230,10 @@
 						{/if}
 
 						{@const sheetMember = sheetOpenFor ? members[sheetOpenFor] : null}
-						<Sheet
+						<SwipeableSheet
 							class="pb-safe"
 							opened={sheetOpenFor !== null}
-							onBackdropClick={() => (sheetOpenFor = null)}
+							onClose={() => (sheetOpenFor = null)}
 						>
 							{#if sheetMember}
 								<div
@@ -295,7 +295,7 @@
 									{/if}
 								</ActionList>
 							{/if}
-						</Sheet>
+						</SwipeableSheet>
 					{/await}
 				</div>
 			</div>

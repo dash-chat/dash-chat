@@ -37,6 +37,7 @@ import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
+import { ASYNC_SCRIPT_TIMEOUT } from '../helpers/timeouts';
 import { ensurePhonesShareALan } from './phone-lan';
 import {
 	APP_PACKAGE,
@@ -53,6 +54,7 @@ import {
 	waitForAppLinksVerified,
 } from './platforms/android';
 import {
+	clearAgentDir,
 	isAgentAppRunning,
 	killAgentApp,
 	launchAgentApp,
@@ -61,6 +63,8 @@ import {
 } from './platforms/desktop';
 import {
 	APP_STATE_NOT_RUNNING,
+	clearIosAppData,
+	iosHasInternet,
 	killIosPushExtension,
 	resetIosAppState,
 } from './platforms/ios';
@@ -202,12 +206,18 @@ export type Agent = WebdriverIO.Browser & {
 	 *  Cheaper than [`wifiInfo`], which on iOS walks into the Wi-Fi page for an
 	 *  address; this reads only what the platform says for free. */
 	wifiSsid(): Promise<string>;
-	/** Whether the device reaches the internet over its current network.
-	 *  Physical Android phones only; throws elsewhere. */
+	/** Whether the phone can reach the internet. On android this is a pure adb
+	 *  probe; on iOS the answer has to come from the app's own webview, so it
+	 *  brings the app to the foreground — call it where that is harmless, or
+	 *  where what follows resets the app anyway. Physical phones only; throws
+	 *  for desktop and for an emulator, which is NAT'd off the host. */
 	hasInternet(): Promise<boolean>;
-	/** Wipe the stopped app back to first launch, with its runtime permissions
-	 *  granted again as a new session's fast reset leaves them. Android only;
-	 *  call between [`stopApp`] and [`startApp`]. */
+	/** Wipe the app back to first launch and leave it not running, to be
+	 *  called between [`stopApp`] and [`startApp`]. On android a `clearApp`
+	 *  with its runtime permissions granted again, as a new session's fast
+	 *  reset leaves them; on iOS the app's own delete_account, which means the
+	 *  app is brought up to run it and exits on its own afterwards; on desktop
+	 *  the agent's data directory, which the app is not holding open. */
 	clearAppData(): Promise<void>;
 	/** Kill the phone's push extension process, so the next push starts a
 	 *  fresh one. iOS only. */
@@ -325,10 +335,9 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.execute(() => window.__test.enablePreviewFeatures());
 	};
 	agent.disableP2p = async () => {
-		// `set_p2p_enabled` rebuilds the node (pause + resume), a few seconds;
-		// XCUITest defaults the async-script timeout to ~0, so raise it first or
-		// `executeAsync` times out at once (desktop's driver tolerates the default).
-		await b.setTimeout({ script: 60_000 });
+		// `set_p2p_enabled` rebuilds the node (pause + resume), a few seconds,
+		// which the driver's default async-script timeout does not allow for.
+		await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
 		await b.executeAsync((done: () => void) =>
 			window.__test.disableP2p().then(done, done),
 		);
@@ -435,10 +444,23 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await iosWifiSsid(b)
 			: androidWifiSsid(deviceUdid(b));
-	agent.hasInternet = async () => androidHasInternet(wifiUdid(agent, b));
+	agent.hasInternet = async () =>
+		agent.platform === 'ios'
+			? await iosHasInternet(b)
+			: androidHasInternet(wifiUdid(agent, b));
 	agent.clearAppData = async () => {
+		if (agent.platform === 'ios') {
+			await clearIosAppData(b);
+			return;
+		}
+		if (agent.platform === 'desktop') {
+			clearAgentDir(slot);
+			return;
+		}
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
-			throw new Error(`clearAppData needs Android, got ${agent.platform}`);
+			throw new Error(
+				`clearAppData needs a phone or desktop, got ${agent.platform}`,
+			);
 		}
 		await b.execute('mobile: clearApp', { appId: APP_PACKAGE });
 		await b.execute('mobile: changePermissions', {
@@ -540,8 +562,8 @@ async function tapPoint(
 			? { x, y }
 			: null;
 	};
-	return await agent.waitUntil(
-		async () => {
+	try {
+		return await agent.waitUntil(async () => {
 			const live = await refetch(element);
 			if (live === null) return null;
 			const point = await agent.execute(centreIfTopmost, live);
@@ -555,14 +577,47 @@ async function tapPoint(
 				return null;
 			}
 			return { ...point, live };
-		},
-		{
-			timeoutMsg:
-				`${String(element.selector)} is in the page but never became the ` +
+		});
+	} catch (err) {
+		const why = err instanceof Error ? err.message : String(err);
+		throw new Error(
+			`${String(element.selector)} is in the page but never became the ` +
 				'topmost element at its own centre, so a tap there would have hit ' +
-				'whatever is covering it',
-		},
-	);
+				`${await describeCover(agent, element)} (${why})`,
+		);
+	}
+}
+
+/** What a tap at `element`'s centre would have hit instead of it. A cover is
+ *  often invisible — a backdrop a popover left behind at opacity 0 is in no
+ *  screenshot — so the failure has to name it rather than point at it. */
+async function describeCover(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+): Promise<string> {
+	const describe = (el: HTMLElement) => {
+		const rect = el.getBoundingClientRect();
+		const top = document.elementFromPoint(
+			rect.x + rect.width / 2,
+			rect.y + rect.height / 2,
+		);
+		if (top === null) return 'nothing: its centre is outside the viewport';
+		const style = window.getComputedStyle(top);
+		const testid = top.getAttribute('data-testid');
+		const klass = top.getAttribute('class');
+		const names = klass === null ? '' : klass.trim().split(/\s+/).join('.');
+		return [
+			top.tagName.toLowerCase(),
+			testid === null ? '' : `[data-testid="${testid}"]`,
+			names === '' ? '' : `.${names}`,
+			` (${style.position}, opacity ${style.opacity}, z-index ${style.zIndex})`,
+		].join('');
+	};
+	try {
+		return await agent.execute(describe, element);
+	} catch {
+		return 'something the page replaced before it could be named';
+	}
 }
 
 /** Touch (x, y) and report whether `element` actually received a click.

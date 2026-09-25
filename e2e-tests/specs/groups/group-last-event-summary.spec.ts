@@ -1,5 +1,6 @@
 import { backToHome } from '../../helpers/flows/back-to-home';
-import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { createProfiles } from '../../helpers/flows/create-profiles';
+import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -12,7 +13,8 @@ describe('Group chat list last-event summary', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 		await backToHome([agent1, agent2]);
 	});
 

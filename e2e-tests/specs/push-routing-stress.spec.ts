@@ -65,7 +65,6 @@ describe('Adding contacts on a phone, at scale', () => {
 		]);
 		const agents: Record<string, Agent> = { [PHONE]: phone };
 		CONTACTS.forEach((name, i) => (agents[name] = desktops[i]));
-		await createProfiles(agents);
 		// Asked here because this is where the model reads it: a mailbox that
 		// answered before the agents booted can miss the health probe once they
 		// are all running, and the model would then route no push at all —
@@ -76,7 +75,12 @@ describe('Adding contacts on a phone, at scale', () => {
 				'the mailbox is not forwarding pushes, so push routing cannot be exercised',
 			);
 		}
-		fuzzer = await Fuzzer.prepare(this, { agents });
+		fuzzer = await Fuzzer.prepare(this, {
+			agents,
+			// The exchange is what this spec searches, so its agents start as
+			// strangers rather than as the contacts a run is normally given.
+			setUp: createProfiles,
+		});
 	});
 
 	it('every add, message and notification is what the agents can know', async () => {

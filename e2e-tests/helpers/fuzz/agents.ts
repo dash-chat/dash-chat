@@ -15,7 +15,7 @@ import { navigateToAddContact } from '../flows/exchange-contacts';
 import type { DirectChatPage } from '../pages/direct-chats/direct-chat-page';
 import type { GroupChatPage } from '../pages/group-chat/group-chat-page';
 import { tid } from '../selectors';
-import { SYNC_TIMEOUT } from '../timeouts';
+import { RENDER_SETTLE_WINDOW, SYNC_TIMEOUT } from '../timeouts';
 import { stampedLog } from '../utils';
 import {
 	type ExpectedChat,
@@ -23,6 +23,7 @@ import {
 	type NotificationTexts,
 	PHOTO_COUNTS,
 } from './model';
+import { expectCaughtUp } from './view';
 
 // Mirrors QUICK_EMOJIS in ui/src/lib/utils/emojis.ts.
 export const QUICK_EMOJIS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
@@ -267,6 +268,10 @@ async function waitForChatRow(sa: StressAgent, title: string): Promise<void> {
 	);
 }
 
+/** Back presses to try before letting the chat list's own wait report it.
+ *  Each costs a settle window, so this stays small. */
+const BACK_ATTEMPTS = 3;
+
 /** Get to the chat list, from a chat the agent still has open or from the
  * list it is already on. Moves leave the app wherever they finish, the way a
  * user does, so anything that needs the list starts by asking for it. */
@@ -274,10 +279,32 @@ export async function backToChatList(
 	sa: StressAgent,
 	model: ExpectedModel,
 ): Promise<void> {
-	for (const page of [sa.agent.groupChatPage, sa.agent.directChatPage]) {
-		if (!(await page.page.isExisting())) continue;
-		await page.back.click();
-		break;
+	// Nothing may still be on the wire for the chat being left: an op that
+	// lands after the app has gone counts unread on a row, while the model
+	// credited it to the screen it was on. Draining here is what keeps the
+	// two readings of "read" the same one.
+	await expectCaughtUp(sa, model);
+	// A tap that lands while the chat is re-rendering — a message arriving, a
+	// block's system message — does nothing, and one missed back would leave
+	// the whole check waiting on a list the app was never asked for.
+	for (let i = 0; i < BACK_ATTEMPTS; i++) {
+		let pressed = false;
+		for (const page of [sa.agent.groupChatPage, sa.agent.directChatPage]) {
+			if (!(await page.page.isExisting())) continue;
+			await page.back.click();
+			pressed = true;
+			break;
+		}
+		if (!pressed) break;
+		const home = await sa.agent
+			.waitUntil(() => sa.agent.homePage.isLoaded(), {
+				timeout: RENDER_SETTLE_WINDOW,
+			})
+			.then(
+				() => true,
+				() => false,
+			);
+		if (home) break;
 	}
 	await sa.agent.homePage.ready();
 	model.wentHome(sa.name);

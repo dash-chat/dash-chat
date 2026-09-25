@@ -6,17 +6,9 @@
  * `expectNotifications` asserts every device whose notifications a run reads;
  * `expectHubs` and `expectCloud` assert the connection chip.
  */
-import type { RenderedMessage } from '../components/messages';
-import type {
-	DeliveredNotification,
-	NotificationHelper,
-} from '../components/notifications';
+import type { DeliveredNotification } from '../components/notifications';
 import type { ChatRow } from '../pages/home-page';
-import {
-	MAILBOX_HEALED_MS,
-	MEDIA_SYNC_TIMEOUT,
-	SYNC_TIMEOUT,
-} from '../timeouts';
+import { MAILBOX_HEALED_MS } from '../timeouts';
 import {
 	type ChatPage,
 	type Real,
@@ -27,13 +19,8 @@ import {
 	notificationsOf,
 	openChatRow,
 } from './agents';
-import type {
-	ChatView,
-	ExpectedChat,
-	ExpectedModel,
-	MessageView,
-	NotificationView,
-} from './model';
+import type { ExpectedChat, ExpectedModel, NotificationView } from './model';
+import { expectView, syncTimeoutFor } from './view';
 
 /** What any move gets before its effect has to be on screen — a hub
  *  appearing or disappearing, every hub named in the dialog. Beyond this a
@@ -77,6 +64,7 @@ export async function expectNotifications(
  *  is as often one the app has yet to clear as one it should never have
  *  posted. */
 async function expectShade(m: ExpectedModel, sa: StressAgent): Promise<void> {
+	m.assertConverged(`the notifications of ${sa.name}`);
 	const helper = notificationsOf(sa);
 	const expected = m.expectedNotifications(sa.name);
 	const generic = sa.notificationTexts?.generic ?? null;
@@ -206,29 +194,9 @@ export async function checkChatList(
 	m: ExpectedModel,
 	sa: StressAgent,
 ): Promise<void> {
-	await expectCaughtUp(sa, m);
+	// `backToChatList` drains the chat it leaves.
 	await backToChatList(sa, m);
 	await expectChatList(m, sa);
-}
-
-/**
- * Check the chat `sa` is sitting in before it walks away from it. The model
- * hands an agent everything a move produced at once, and counts what lands in
- * the chat on screen as read; the real ops arrive when they arrive, and one
- * still on the wire when the app leaves lands on a chat it is no longer
- * showing, where the row counts it unread. Waiting for the view here is what
- * makes "the chat it is in is a chat it has read" true of both.
- */
-async function expectCaughtUp(
-	sa: StressAgent,
-	model: ExpectedModel,
-): Promise<void> {
-	const chat = model.viewingChat(sa.name);
-	if (chat === null) return;
-	const page =
-		chat.kind === 'direct' ? sa.agent.directChatPage : sa.agent.groupChatPage;
-	if (!(await page.page.isExisting())) return;
-	await expectView(sa, chat, model, page);
 }
 
 /**
@@ -242,6 +210,7 @@ export async function expectChatList(
 	m: ExpectedModel,
 	sa: StressAgent,
 ): Promise<void> {
+	m.assertConverged(`${sa.name}'s chat list`);
 	const chats = m.chatsFor(sa.name);
 	const expected = new Map<string, number>();
 	for (const chat of chats) {
@@ -271,14 +240,6 @@ export async function expectChatList(
 	}
 }
 
-/** What `views` get to arrive: longer as soon as one of them holds media,
- *  whose bytes travel behind the operations that announce them. */
-function syncTimeoutFor(views: ChatView[]): number {
-	return views.some(view => view.messages.some(v => v.kind !== 'text'))
-		? MEDIA_SYNC_TIMEOUT
-		: SYNC_TIMEOUT;
-}
-
 /** What `rows` gets wrong about the badges `expected` wants, spelled out for
  *  a report, each with what it is most likely to be: a row short of what the
  *  model wants is as often an operation that never arrived as a badge that
@@ -304,53 +265,6 @@ function wrongBadges(expected: Map<string, number>, rows: ChatRow[]): string[] {
 		);
 	}
 	return wrong;
-}
-
-/**
- * Wait until `page` shows exactly `sa`'s view of `chat`: every message it
- * knows, at the revision and with the reactions it knows, and the composer
- * iff the chat is not pending. Then fail on any rendered message the view
- * does not contain — read once, after the expected ones settled, so absence
- * never waits out a timeout.
- */
-export async function expectView(
-	sa: StressAgent,
-	chat: ExpectedChat,
-	model: ExpectedModel,
-	page: ChatPage,
-): Promise<void> {
-	const view = model.view(sa.name, chat);
-	const where = `${sa.name} in "${model.chatListName(chat, sa.name)}"`;
-	await expectComposer(page, view, where);
-	let missing: MessageView[] = [];
-	let extra: RenderedMessage[] = [];
-	const timeout = syncTimeoutFor([view]);
-	try {
-		await sa.agent.waitUntil(
-			async () => {
-				({ missing, extra } = match(
-					view,
-					await page.messages.renderedMessages(),
-				));
-				return missing.length === 0;
-			},
-			{ timeout },
-		);
-	} catch {
-		throw new Error(
-			`${where}: never showed ${missing.map(describeView).join(', ')}`,
-		);
-	}
-	if (extra.length > 0) {
-		throw new Error(
-			`${where}: shows what the model says it cannot know: ` +
-				extra.map(describeRendered).join(', '),
-		);
-	}
-	// Reading the chat can have scrolled away from the bottom — `renderedMessages`
-	// pulls a photo into view to load it — and a message landing above the fold
-	// is never marked read, while the model counts a chat on screen as read.
-	if (!(await page.scroll.isAtBottom())) await page.scroll.scrollToBottom();
 }
 
 /** Propagate the last move's effects through the model and check every
@@ -483,77 +397,4 @@ export async function checkHubsOn(
 	for (const name of m.activeNamesOn(network)) {
 		await checkHubs(m, byName(real, name), after);
 	}
-}
-
-async function expectComposer(
-	page: ChatPage,
-	view: ChatView,
-	where: string,
-): Promise<void> {
-	const readOnly = view.pending
-		? 'the peer profile has not arrived'
-		: view.blocked
-			? 'the peer is blocked'
-			: null;
-	if (readOnly === null) {
-		await page.composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
-		return;
-	}
-	if (await page.composer.messageInput.isExisting()) {
-		throw new Error(`${where}: has a composer although ${readOnly}`);
-	}
-}
-
-/** Pair every expected message with a rendered one; what is left on either
- *  side is missing or extra. */
-function match(
-	view: ChatView,
-	rendered: RenderedMessage[],
-): { missing: MessageView[]; extra: RenderedMessage[] } {
-	const extra = [...rendered];
-	const missing: MessageView[] = [];
-	for (const v of view.messages) {
-		const i = extra.findIndex(r => matches(v, r));
-		if (i === -1) missing.push(v);
-		else extra.splice(i, 1);
-	}
-	return { missing, extra };
-}
-
-function matches(v: MessageView, r: RenderedMessage): boolean {
-	if (v.deleted) return r.deleted;
-	if (r.deleted || !sameReactions(v, r)) return false;
-	switch (v.kind) {
-		case 'text':
-			return r.text?.trim() === v.text;
-		case 'photo':
-			return r.photosLoaded && r.photoAlts.some(a => a.includes(v.label));
-		case 'file':
-			return r.fileName?.includes(v.label) === true;
-		case 'voice':
-			return r.voiceDuration === v.label;
-	}
-}
-
-function sameReactions(v: MessageView, r: RenderedMessage): boolean {
-	const expected = new Set(v.reactions.values());
-	return (
-		[...expected].every(e => r.reactions.includes(e)) &&
-		r.reactions.every(e => expected.has(e))
-	);
-}
-
-function describeView(v: MessageView): string {
-	const state = v.deleted ? ' (deleted)' : '';
-	const reactions =
-		v.reactions.size > 0 ? ` with ${[...v.reactions.values()].join('')}` : '';
-	return `${v.kind} "${v.text}"${state}${reactions}`;
-}
-
-function describeRendered(r: RenderedMessage): string {
-	if (r.deleted) return 'a deleted message';
-	if (r.photoAlts.length > 0) return `photo "${r.photoAlts.join(',')}"`;
-	if (r.fileName !== null) return `file "${r.fileName.trim()}"`;
-	if (r.voiceDuration !== null) return `voice note of ${r.voiceDuration}`;
-	return `text "${r.text?.trim() ?? ''}"`;
 }

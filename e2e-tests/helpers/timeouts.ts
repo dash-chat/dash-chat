@@ -41,3 +41,12 @@ export const MAILBOX_HEALED_MS = 4_000;
  *  before the whole burst has landed passes on a chat that is about to tear
  *  the element down. */
 export const RENDER_SETTLE_WINDOW = 5_000;
+
+/** What the async-script timeout is raised to before any `executeAsync`.
+ *  XCUITest defaults it to ~0, so a script that does real work — rebuilding
+ *  the node, transcoding audio, reaching the network — times out at once
+ *  unless a caller raises it (desktop's driver tolerates the default). One
+ *  value, since whoever raises it last decides for the callers after it: a
+ *  site that picked a smaller one would silently lower the ceiling under
+ *  them. */
+export const ASYNC_SCRIPT_TIMEOUT = 60_000;

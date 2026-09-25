@@ -192,5 +192,11 @@
 </div>
 
 {#if open !== null}
-	<ExpandedReactionsSheet {message} opened={expanded} onReact={react} />
+	<ExpandedReactionsSheet
+		{message}
+		opened={expanded}
+		onReact={react}
+		onClose={close}
+		backdrop={false}
+	/>
 {/if}

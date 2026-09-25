@@ -1,4 +1,4 @@
-import { reactive, relay } from 'signalium';
+import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
@@ -57,12 +57,25 @@ export class ContactsStore {
 
 	myDeviceId = reactive(async () => await this.client.myDeviceId());
 
+	/** The backend only learns a non-contact's mapping when it reduces an
+	 * `IntroduceAgents` op, which can land after the device's own ops, so an
+	 * unknown device is looked up again once an introduction names it. */
 	agentForDevice = reactive(
-		async (deviceId: DeviceId): Promise<AgentId | undefined> => {
-			const myDeviceId = await this.myDeviceId();
-			if (deviceId === myDeviceId) return await this.myAgentId();
-			return await this.client.agentForDevice(deviceId);
-		},
+		(deviceId: DeviceId): ReactivePromise<AgentId | undefined> =>
+			relay<AgentId | undefined>(state => {
+				const fetchAgent = async () => {
+					const myDeviceId = await this.myDeviceId();
+					if (deviceId === myDeviceId) return await this.myAgentId();
+					return await this.client.agentForDevice(deviceId);
+				};
+				state.setPromise(fetchAgent());
+
+				return this.logsStore.logsClient.onNewOperation((_topicId, op) => {
+					if (state.value !== undefined) return;
+					if (!introducesDevice(op, deviceId)) return;
+					state.setPromise(fetchAgent());
+				});
+			}),
 	);
 
 	agentsForDevices = reactive(async (deviceIds: Set<DeviceId>) => {
@@ -431,5 +444,16 @@ export class ContactsStore {
 					(entry): entry is ContactWithProfile => entry.profile !== undefined,
 				);
 		},
+	);
+}
+
+function introducesDevice(
+	op: SimplifiedOperation<Payload>,
+	deviceId: DeviceId,
+): boolean {
+	return (
+		op.body?.type === 'Chat' &&
+		op.body.payload.type === 'IntroduceAgents' &&
+		deviceId in op.body.payload.payload.agents
 	);
 }

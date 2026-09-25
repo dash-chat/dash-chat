@@ -88,21 +88,6 @@ pub async fn get_node_for_push_notification(
         }
     }
 
-    // Best-effort: resolve and track the cloud mailbox so the sync below can
-    // fetch. On every push, not once per node: the node is cached across pushes
-    // for the extension process's whole lifetime (hours), and its networking is
-    // often not up yet on the cold-start push — a one-shot attempt that failed
-    // there would leave every later push unable to fetch (each showing the
-    // generic fallback notification). Registering is idempotent, and the
-    // `/health` round trip also refreshes the mailbox's dialing address. Track
-    // it as a fetch source only — do NOT register ourselves back as a blob
-    // source here: `register_cloud_mailbox`'s up-to-10s `wait_endpoint_online`
-    // would eat the extension's ~30s budget before the operation poll can
-    // start, making iOS kill the extension and deliver the raw APNS fallback.
-    if let Err(err) = crate::setup::track_cloud_mailbox(&acquired.node).await {
-        log::warn!("failed to track cloud mailbox in push extension: {err:?}");
-    }
-
     Ok(acquired)
 }
 

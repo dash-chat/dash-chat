@@ -115,8 +115,7 @@ impl OpStore {
         from: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
         let log = self.log_operations(author, log_id, from).await?;
-        // With a `from` cursor an empty tail just means "nothing new", not a missing log.
-        if log.is_empty() && from.is_none() {
+        if log.is_empty() && !self.log_exists(author, log_id).await? {
             tracing::warn!(
                 "No log found for log_id {} and author {}",
                 Hash::from_bytes(*log_id.as_bytes()),
@@ -124,6 +123,16 @@ impl OpStore {
             );
         }
         Ok(log)
+    }
+
+    /// Whether we hold any entry of `author`'s log, telling an absent log apart
+    /// from one with nothing past a cursor.
+    async fn log_exists(&self, author: &DeviceId, log_id: &LogId) -> anyhow::Result<bool> {
+        let heights = self
+            .store
+            .get_log_heights(author, std::slice::from_ref(log_id))
+            .await?;
+        Ok(heights.is_some())
     }
 
     /// Collect a log's entries, decoding each stored operation into our extension type.
@@ -240,8 +249,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         let log_id = LogId::from_topic(*topic);
         let from = from.checked_sub(1);
         let log = self.log_operations(author, &log_id, from).await?;
-        // With a `from` cursor an empty tail just means "nothing new", not a missing log.
-        if log.is_empty() && from.is_none() {
+        if log.is_empty() && !self.log_exists(author, &log_id).await? {
             return Ok(None);
         }
 
@@ -362,6 +370,35 @@ mod tests {
             .await
             .unwrap()
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn mailbox_get_log_distinguishes_absent_from_up_to_date() {
+        use mailbox_client::store::MailboxStore;
+
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let topic = TopicId::random();
+        let log_id = LogId::from_topic(topic);
+        let signing_key = p2panda::SigningKey::generate();
+        let author = DeviceId::from(signing_key.verifying_key());
+
+        for from in [0, 1] {
+            let log = MailboxStore::get_log(&store, &author, &topic, from)
+                .await
+                .unwrap();
+            assert!(log.is_none(), "absent log from {from}: {log:?}");
+        }
+
+        insert(
+            &store,
+            &signed_op(&signing_key, log_id, 0, None, b"zero"),
+            &log_id,
+        )
+        .await;
+        let log = MailboxStore::get_log(&store, &author, &topic, 1)
+            .await
+            .unwrap();
+        assert_eq!(log.map(|ops| ops.len()), Some(0));
     }
 
     /// Mailbox sync must only see the contiguous prefix of a log whose

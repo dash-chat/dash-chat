@@ -68,6 +68,7 @@
 		class="voice-bar has-end-button {surfaceClass} {hold
 			? 'pointer-events-none px-2 text-[var(--k-text-color)]'
 			: 'ps-3 pe-2'}"
+		style="--end-button-size: {theme === 'ios' ? '42px' : '40px'}"
 		data-testid={hold ? 'voice-recording-overlay' : 'voice-locked-bar'}
 		transition:morph={morphParams}
 		onoutrostart={() => onLeavingChange?.(true)}
@@ -128,7 +129,7 @@
 	/* Leave the trailing slot free so the action button (mic / send) sits outside
 	   the bordered pill, mirroring the message input's send button. */
 	.voice-bar.has-end-button {
-		inset-inline-end: calc(42px + 0.5rem);
+		inset-inline-end: calc(var(--end-button-size) + 0.5rem);
 	}
 	/* On desktop the bar spans the full row and lays out its own inner pill plus
 	   the Cancel/Send buttons, so it must not look like a pill — it just paints

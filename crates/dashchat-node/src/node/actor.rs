@@ -9,8 +9,8 @@ use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
-    ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture, Source,
-    StreamEvent, StreamFrom, StreamPublisher, StreamSubscription,
+    ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
+    StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_stream::Processor;
@@ -18,8 +18,9 @@ use p2panda_stream::groups::GroupsArgs as GroupsProcessorArgs;
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio_stream::{StreamExt, StreamMap};
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::Payload;
 
@@ -39,7 +40,7 @@ pub(crate) enum Command {
     Import {
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-        reply_tx: oneshot::Sender<Result<ExternalStreamFuture, NodeActorError>>,
+        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
     Publish {
         topic: Topic,
@@ -121,6 +122,11 @@ pub enum ProcessorEvent {
         source: Source,
         processed_tx: Option<oneshot::Sender<Result<(), ProcessorError>>>,
     },
+
+    ImportFailed {
+        topic: Topic,
+        error: ImportError,
+    },
 }
 
 /// Actor for the p2panda node.
@@ -158,6 +164,10 @@ pub struct Actor {
     /// default per-topic cursor (`"{topic}"`);
     stream_cursor_prefix: Option<String>,
 
+    /// Import tasks spawned so `handle_import` does not block the actor loop.
+    /// Dropped on shutdown, aborting any still-parked imports.
+    import_tasks: JoinSet<()>,
+
     /// Testing: peers whose native sync is blocked on every topic; applied
     /// to each topic as its stream is opened (`open_stream`).
     #[cfg(feature = "testing")]
@@ -186,6 +196,7 @@ impl Actor {
                 groups_processor,
                 events_tx,
                 stream_cursor_prefix,
+                import_tasks: JoinSet::new(),
                 #[cfg(feature = "testing")]
                 native_sync_blocked: Default::default(),
             },
@@ -264,6 +275,11 @@ impl Actor {
                             warn!(?err, "actor event processing failed");
                         }
                     }
+                    Some(result) = self.import_tasks.join_next() => {
+                        if let Err(err) = result {
+                            error!(?err, "import task panicked");
+                        }
+                    }
                     else => {
                         warn!("node actor message channel closed, exiting event loop");
                         break;
@@ -319,7 +335,7 @@ impl Actor {
         &mut self,
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-    ) -> Result<ExternalStreamFuture, NodeActorError> {
+    ) -> Result<(), NodeActorError> {
         // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
         let tx = match self.tx_map.get(&topic) {
             Some(tx) => tx.clone(),
@@ -331,8 +347,19 @@ impl Actor {
             }
         };
 
-        let import_fut = tx.import(stream).await?;
-        Ok(import_fut)
+        // Spawn the import consumption into a separate task so the actor loop
+        // is not blocked while the topic processor replays local operations
+        // before accepting the external stream. This keeps Publish commands and
+        // event processing responsive during backlog replay.
+        let events_tx = self.events_tx.clone();
+        self.import_tasks.spawn(async move {
+            if let Err(err) = tx.import(stream).await {
+                error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
+                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, error: err });
+            }
+        });
+
+        Ok(())
     }
 
     async fn handle_publish(

@@ -30,6 +30,43 @@ pub(crate) async fn track_cloud_mailbox(node: &Node) -> anyhow::Result<String> {
     Ok(mailbox_url)
 }
 
+/// A [`track_cloud_mailbox`] attempt running in its own task, so that giving up
+/// on waiting for it never cancels it halfway through `Mailboxes::register`.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) type CloudMailboxAttempt = tokio::task::JoinHandle<anyhow::Result<String>>;
+
+/// [`track_cloud_mailbox`] that holds its caller up for at most `wait`, returning
+/// whether the cloud mailbox is now tracked. An attempt still running when the
+/// wait runs out stays in `attempt` and is awaited again by the next call rather
+/// than started twice; it keeps going only as long as the process does.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) async fn track_cloud_mailbox_with_timeout(
+    node: &Node,
+    wait: std::time::Duration,
+    attempt: &mut Option<CloudMailboxAttempt>,
+) -> bool {
+    let running = attempt.get_or_insert_with(|| {
+        let node = node.clone();
+        tokio::spawn(async move { track_cloud_mailbox(&node).await })
+    });
+    let Ok(finished) = tokio::time::timeout(wait, running).await else {
+        log::debug!("cloud mailbox registration still pending after {wait:?}");
+        return false;
+    };
+    *attempt = None;
+    match finished {
+        Ok(Ok(_)) => true,
+        Ok(Err(err)) => {
+            log::warn!("failed to track cloud mailbox: {err:?}");
+            false
+        }
+        Err(err) => {
+            log::warn!("cloud mailbox registration task failed: {err}");
+            false
+        }
+    }
+}
+
 /// Track the cloud mailbox (so we can fetch from it) and additionally register
 /// our own dialing address with it so its blob fetch pool can dial us to fetch
 /// blobs we publish. The endpoint-online wait and self-registration are only
@@ -151,6 +188,16 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .level_for("dashchat_node", log::LevelFilter::Debug)
         .level_for("dashchat_utils", log::LevelFilter::Debug)
         .level_for("dash_router", log::LevelFilter::Debug)
+        // Whether peers find each other, and who is in a topic once they have:
+        // at the default Warn only the failures reach a device's log, which
+        // reads as "p2p is broken" whether or not anything ever worked. Per
+        // module rather than the whole crate — `p2panda_net::sync` and
+        // `::iroh_endpoint` are together ~70% of its Debug output, and what
+        // they add over their own warnings is not worth that much of the log
+        // tail an error report carries.
+        .level_for("p2panda_net::discovery", log::LevelFilter::Debug)
+        .level_for("p2panda_net::gossip", log::LevelFilter::Debug)
+        .level_for("p2panda_net::iroh_mdns", log::LevelFilter::Debug)
         .level_for("mailbox_client", log::LevelFilter::Debug)
         .level_for("mailbox_server", log::LevelFilter::Debug)
         .level_for("mailbox_local_server", log::LevelFilter::Debug)
@@ -161,6 +208,9 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .format(|out, message, _record| out.finish(format_args!("{message}")))
         .clear_targets()
         .max_file_size(5 * 1024 * 1024)
+        // The default, `KeepOne`, deletes the log on every rotation, so a report
+        // sent just after one carries almost nothing. ~50 MB in all.
+        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(9))
         .targets(targets)
         .build();
 
