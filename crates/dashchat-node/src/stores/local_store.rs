@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
+use p2panda::Hash;
 use sqlx::SqlitePool;
 
 use crate::{
@@ -42,7 +43,17 @@ const MIGRATIONS: &[&str] = &[
         mailbox_id TEXT NOT NULL,
         PRIMARY KEY (blob_hash, mailbox_id)
     )",
+    "CREATE TABLE IF NOT EXISTS extension_processed_operations (
+        hash BLOB PRIMARY KEY,
+        topic_id BLOB NOT NULL
+    )",
 ];
+
+fn bytes32(bytes: Vec<u8>, column: &str) -> anyhow::Result<[u8; 32]> {
+    bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("{column} is not 32 bytes"))
+}
 
 #[derive(Clone, Debug)]
 pub struct NodeKeys {
@@ -150,9 +161,7 @@ impl LocalStore {
             .fetch_optional(&self.pool)
             .await?;
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Private key field not found"))?;
-        let arr: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("identity.private_key is not 32 bytes"))?;
+        let arr: [u8; 32] = bytes32(bytes, "identity.private_key")?;
         Ok(SigningKey::from_bytes(&arr))
     }
 
@@ -166,15 +175,53 @@ impl LocalStore {
             .fetch_optional(&self.pool)
             .await?;
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Agent ID field not found"))?;
-        let arr: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("identity.agent_id is not 32 bytes"))?;
+        let arr: [u8; 32] = bytes32(bytes, "identity.agent_id")?;
         Ok(AgentId::from(crate::ActorId::from_bytes(&arr)?))
     }
 
     /// Inbox topics this node created and advertises via its QR code.
     pub async fn get_advertised_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
         self.get_inbox_topics(InboxRole::Advertised).await
+    }
+
+    /// Record that the push extension processed `hash`, for the app to process
+    /// it too (see [`crate::NodeConfig::record_processed_operations`]).
+    pub async fn record_extension_processed_operation(
+        &self,
+        hash: Hash,
+        topic: TopicId,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO extension_processed_operations (hash, topic_id) VALUES (?, ?)",
+        )
+        .bind(hash.as_bytes().to_vec())
+        .bind(topic.as_bytes().to_vec())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn extension_processed_operations(&self) -> anyhow::Result<Vec<(Hash, TopicId)>> {
+        let rows: Vec<(Vec<u8>, Topic<kind::Untyped>)> =
+            sqlx::query_as("SELECT hash, topic_id FROM extension_processed_operations")
+                .fetch_all(&self.pool)
+                .await?;
+        rows.into_iter()
+            .map(|(hash, topic)| {
+                Ok((
+                    Hash::from_bytes(bytes32(hash, "extension_processed_operations.hash")?),
+                    *topic,
+                ))
+            })
+            .collect()
+    }
+
+    pub async fn forget_extension_processed_operation(&self, hash: &Hash) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM extension_processed_operations WHERE hash = ?")
+            .bind(hash.as_bytes().to_vec())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Reply inbox topics this node created for a specific contact exchange and
@@ -375,12 +422,12 @@ impl LocalStore {
         let mut out: std::collections::BTreeMap<String, Vec<iroh_blobs::Hash>> =
             std::collections::BTreeMap::new();
         for (bytes, mailbox_id) in rows {
-            let arr: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("unfetched blob_hash is not 32 bytes"))?;
             out.entry(mailbox_id)
                 .or_default()
-                .push(iroh_blobs::Hash::from_bytes(arr));
+                .push(iroh_blobs::Hash::from_bytes(bytes32(
+                    bytes,
+                    "unfetched_blob_hashes.blob_hash",
+                )?));
         }
         Ok(out)
     }

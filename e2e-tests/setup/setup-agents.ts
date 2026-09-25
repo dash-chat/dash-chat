@@ -9,6 +9,8 @@
  * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
  * multiset can't fulfill the requirements.
  */
+import { existsSync, readFileSync } from 'node:fs';
+
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
@@ -38,6 +40,7 @@ import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import { ASYNC_SCRIPT_TIMEOUT } from '../helpers/timeouts';
+import { sourceLogFile } from './agent-logger';
 import { ensurePhonesShareALan } from './phone-lan';
 import {
 	APP_PACKAGE,
@@ -222,6 +225,9 @@ export type Agent = WebdriverIO.Browser & {
 	/** Kill the phone's push extension process, so the next push starts a
 	 *  fresh one. iOS only. */
 	killPushExtension(): Promise<void>;
+	/** What this agent's device has logged so far in the run, as the harness
+	 *  captured it. */
+	readLog(): string;
 };
 
 /** (Re)build every page object against `b`. Called on first setup and again
@@ -264,6 +270,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.execute(async (p: string) => {
 			await window.__test.goto(p);
 		}, path);
+	};
+	agent.readLog = () => {
+		const file = sourceLogFile(`agent-${slot}`);
+		if (!existsSync(file))
+			throw new Error(`no log was captured for agent-${slot} at ${file}`);
+		return readFileSync(file, 'utf8');
 	};
 	agent.injectDeepLink = async (url: string) => {
 		await b.execute((u: string) => window.__test.handleDeepLink(u), url);

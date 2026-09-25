@@ -8,11 +8,16 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 
+/** Where the lines echoed for `source` (e.g. `agent-1`) are kept on disk. */
+export function sourceLogFile(source: string): string {
+	return path.join(ROOT, '.dbs', 'e2e', 'agents', `${source}.log`);
+}
+
 /** Echo each line of a stream to the test runner's stdout with a source prefix,
  *  and keep a copy on disk: stdout is gone once the run scrolls past, and these
  *  lines carry the device-side log that a post-mortem needs. */
 export function echoLinesWithPrefix(source: string, input: Readable): void {
-	const logFile = path.join(ROOT, '.dbs', 'e2e', 'agents', `${source}.log`);
+	const logFile = sourceLogFile(source);
 	mkdirSync(path.dirname(logFile), { recursive: true });
 	const rl = createInterface({ input });
 	rl.on('line', (line: string) => {
