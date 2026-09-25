@@ -1,18 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{MailboxItem, store::MailboxStore};
+use crate::{MailboxItem, SeqNum, store::MailboxStore};
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, derive_more::Debug)]
 #[debug("Msg({author} {seq})")]
 pub struct Msg {
     pub topic: u8,
     pub author: char,
-    pub seq: u64,
+    pub seq: SeqNum,
 }
 
 impl MailboxItem for Msg {
     type Author = char;
-    type Hash = (char, u64);
+    type Hash = (char, SeqNum);
     type Topic = u8;
 
     fn hash(&self) -> Self::Hash {
@@ -21,7 +21,7 @@ impl MailboxItem for Msg {
     fn author(&self) -> Self::Author {
         self.author
     }
-    fn seq_num(&self) -> u64 {
+    fn seq_num(&self) -> SeqNum {
         self.seq
     }
     fn topic(&self) -> Self::Topic {
@@ -38,11 +38,11 @@ impl MailboxStore<Msg> for DummyStore {
         &self,
         _author: &char,
         _topic: &u8,
-        _from: u64,
+        _from: SeqNum,
     ) -> Result<Option<Vec<Msg>>, anyhow::Error> {
         Ok(None)
     }
-    async fn get_log_heights(&self, _topic: &u8) -> Result<Vec<(char, u64)>, anyhow::Error> {
+    async fn get_log_heights(&self, _topic: &u8) -> Result<Vec<(char, SeqNum)>, anyhow::Error> {
         Ok(vec![])
     }
 }
@@ -50,11 +50,11 @@ impl MailboxStore<Msg> for DummyStore {
 /// A store holding one complete log per (topic, author): seqs `0..=height`.
 #[derive(Clone, Default)]
 pub struct MemStore {
-    heights: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(u8, char), u64>>>,
+    heights: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(u8, char), SeqNum>>>,
 }
 
 impl MemStore {
-    pub fn set_height(&self, topic: u8, author: char, height: u64) {
+    pub fn set_height(&self, topic: u8, author: char, height: SeqNum) {
         self.heights.lock().unwrap().insert((topic, author), height);
     }
 }
@@ -65,7 +65,7 @@ impl MailboxStore<Msg> for MemStore {
         &self,
         author: &char,
         topic: &u8,
-        from: u64,
+        from: SeqNum,
     ) -> Result<Option<Vec<Msg>>, anyhow::Error> {
         let Some(height) = self
             .heights
@@ -87,7 +87,7 @@ impl MailboxStore<Msg> for MemStore {
         ))
     }
 
-    async fn get_log_heights(&self, topic: &u8) -> Result<Vec<(char, u64)>, anyhow::Error> {
+    async fn get_log_heights(&self, topic: &u8) -> Result<Vec<(char, SeqNum)>, anyhow::Error> {
         Ok(self
             .heights
             .lock()

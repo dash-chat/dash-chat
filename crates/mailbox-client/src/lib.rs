@@ -69,7 +69,7 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
 #[serde(bound(deserialize = "Item: DeserializeOwned"))]
 pub struct FetchRequest<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopicRequest<Item>>);
 
-pub type FetchTopicRequest<Item> = BTreeMap<<Item as MailboxItem>::Author, u64>;
+pub type FetchTopicRequest<Item> = BTreeMap<<Item as MailboxItem>::Author, SeqNum>;
 
 /// Returned by the `fetch` method.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -107,11 +107,12 @@ pub struct FetchTopicResponse<Item: MailboxItem> {
     pub items: Vec<Item>,
     /// The operations held locally that are missing from the mailbox,
     /// and which this node should now publish.
-    pub missing: HashMap<<Item as MailboxItem>::Author, Vec<u64>>,
+    pub missing: HashMap<<Item as MailboxItem>::Author, Vec<SeqNum>>,
 }
 
 pub type MailboxId = String;
-pub type SeqNum = u64;
+
+pub use dashchat_utils::SeqNum;
 
 pub trait ItemTraits:
     Copy + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync
