@@ -192,7 +192,7 @@ impl Default for NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(4),
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
@@ -476,8 +476,11 @@ impl Node {
 
         // === network change notifier === //
 
-        let network_change_handle =
-            crate::network_change_notifier::spawn(node.endpoint.clone(), node.mailboxes.clone());
+        let network_change_handle = crate::network_change_notifier::spawn(
+            node.endpoint.clone(),
+            node.mailboxes.clone(),
+            node.unfetched_blob_trigger.clone(),
+        );
         node.network_change_handle
             .lock()
             .await
@@ -2314,6 +2317,13 @@ impl mailbox_client::BlobReader for NodeBlobReader {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("blob sync disabled"))?;
         Ok(blob_sync.blobs.get_bytes(hash).await?)
+    }
+
+    async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
+        match &self.blob_sync {
+            Some(blob_sync) => blob_sync.blobs.has(hash).await.unwrap_or(false),
+            None => false,
+        }
     }
 }
 

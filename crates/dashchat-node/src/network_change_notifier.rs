@@ -36,6 +36,7 @@ use crate::stores::OpStore;
 pub(crate) fn spawn(
     endpoint: Option<p2panda::Endpoint>,
     mailboxes: Mailboxes<MailboxOperation, OpStore>,
+    unfetched_blob_trigger: std::sync::Arc<tokio::sync::Notify>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut settled = network_watch::network_change();
@@ -51,6 +52,8 @@ pub(crate) fn spawn(
             }
             tracing::info!("network-change notifier: probing mailboxes");
             mailboxes.probe_all().await;
+            mailbox_client::toy::restart_uploads();
+            unfetched_blob_trigger.notify_one();
             if let Some(endpoint) = &endpoint {
                 notify_iroh(endpoint).await;
             }

@@ -60,27 +60,33 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         let Some(url) = tracked.client().await.url() else {
             continue; // non-HTTP mailbox (e.g. in-memory test mailbox)
         };
-        if hashes.is_empty() {
-            continue; // no unfetched blobs to re-announce
+        let reader = node.blob_reader();
+        let mut held = Vec::new();
+        for hash in hashes {
+            if mailbox_client::toy::upload_due(&url, hash) && reader.has_blob(hash).await {
+                held.push(hash);
+            }
         }
-        // Re-announce so the mailbox re-registers these hashes for fetching. No
-        // upload follows here, so ask it to fetch immediately rather than deferring
-        // by its grace window.
-        match mailbox_client::toy::send_register_hashes(&url, hashes, self_endpoint, false).await {
-            Ok(already_stored) => {
-                if let Err(err) = node
-                    .local_store
-                    .remove_unfetched_blobs(&mailbox_id, &already_stored)
-                    .await
-                {
-                    tracing::error!(?err, mailbox = %mailbox_id, "failed to reconcile unfetched blobs");
-                }
-                let already_stored_count = already_stored.len();
-                tracing::info!(mailbox = %mailbox_id, %already_stored_count, "re-sent unfetched blobs");
-            }
-            Err(err) => {
-                tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
-            }
+        if held.is_empty() {
+            continue; // nothing to upload now: in flight, backing off, or not fetched yet
+        }
+        // Our address changes with the network, and the mailbox fetches from us
+        // with the last one we gave it.
+        if let Err(err) = node.register_with_mailbox(&url).await {
+            tracing::warn!(?err, mailbox = %mailbox_id, "failed to refresh our address on the mailbox");
+        }
+        // Upload again too: the upload that followed these blobs' message may
+        // have been cut off, and the mailbox can't fetch from a phone it can't dial.
+        let client =
+            mailbox_client::toy::ToyMailboxClient::<crate::mailbox::MailboxOperation>::new(
+                mailbox_id.clone(),
+                url,
+                self_endpoint,
+                node.unfetched_blob_tracker(),
+            )
+            .with_blob_reader(reader);
+        if let Err(err) = client.store_blobs(held).await {
+            tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
         }
     }
 }
