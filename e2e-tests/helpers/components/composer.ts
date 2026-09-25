@@ -22,7 +22,11 @@ export class Composer extends TestHelper {
 	discardDraftDialog = this.el(tid('composer-discard-draft-dialog'));
 	discardDraftCancel = this.el(tid('composer-discard-draft-cancel'));
 	discardDraftConfirm = this.el(tid('composer-discard-draft-confirm'));
-	attachButton = this.el(tid('message-input-attach'));
+	// Material keeps a second attach button inside the input, hidden (under
+	// aria-hidden) while there is no draft.
+	attachButton = this.el(
+		`${tid('message-input-attach')}:not([aria-hidden="true"] *)`,
+	);
 	cameraButton = this.el(tid('message-input-camera'));
 	/** Only rendered while the composer holds no content, so its absence is how
 	 *  a staged draft shows up in the DOM. */
