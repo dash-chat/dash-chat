@@ -120,11 +120,13 @@ pub struct NodeConfig {
     /// Whether to defer subscribing to all stored topics and replaying their
     /// backlogs until after `Node::new` returns.
     pub defer_stored_topics_initialization: bool,
-    /// Whether to record every operation this node processes, for another
-    /// node over the same store to process too. On for the iOS push extension:
-    /// whichever process fetches an operation first stores it, and mailbox
-    /// fetches and sync only ever ask for what comes after the store's log
-    /// heights, so the app is never handed it again.
+    /// Whether to record every operation this node processes that the app has
+    /// not acknowledged, for the app to process too. On for the iOS push
+    /// extension: whichever process fetches an operation first stores it, and
+    /// mailbox fetches and sync only ever ask for what comes after the store's
+    /// log heights, so the app is never handed it again. An operation the
+    /// extension stored but was killed before recording is handed to it again
+    /// by its own replay on its next launch, and recorded then.
     pub record_processed_operations: bool,
     /// Whether to import, on a resync, the operations another node over the
     /// same store recorded as processed. On for the iOS app.
@@ -2069,8 +2071,13 @@ impl Node {
     /// Import the operations the push extension processed and recorded, so
     /// this node processes them too. They are in the shared store already, so
     /// nothing else delivers them to it; importing processes them regardless,
-    /// and acknowledging one below this node's cursor is a no-op.
+    /// and acknowledging one below this node's cursor is a no-op. A freshly
+    /// opened stream replays the ones above the cursor as well, which is
+    /// harmless: processing an operation twice is idempotent.
     async fn import_extension_processed_operations(&self) -> anyhow::Result<()> {
+        if !self.config.import_recorded_operations {
+            return Ok(());
+        }
         let mut by_topic: HashMap<TopicId, Vec<Operation>> = HashMap::new();
         for (hash, topic) in self.local_store.extension_processed_operations().await? {
             // Without a body there is nothing left for the app layer to see.
@@ -2079,18 +2086,35 @@ impl Node {
                     by_topic.entry(topic).or_default().push(operation)
                 }
                 _ => {
-                    self.local_store
+                    if let Err(err) = self
+                        .local_store
                         .forget_extension_processed_operation(&hash)
-                        .await?
+                        .await
+                    {
+                        tracing::warn!(
+                            ?err,
+                            "failed to forget an operation the push extension recorded"
+                        );
+                    }
                 }
             }
         }
+        let mut failures = 0usize;
         for (topic, mut operations) in by_topic {
             operations
                 .sort_by_key(|op| (DeviceId::from(op.header.verifying_key), op.header.seq_num));
+            // The race e2e spec matches on this line.
             tracing::info!(topic = ?topic.aliased(), count = operations.len(), "importing operations the push extension processed");
-            self.import_stream(topic, Box::pin(futures::stream::iter(operations)))
-                .await?;
+            if let Err(err) = self
+                .import_stream(topic, Box::pin(futures::stream::iter(operations)))
+                .await
+            {
+                error!(topic = ?topic.aliased(), ?err, "failed to import the operations the push extension processed");
+                failures += 1;
+            }
+        }
+        if failures > 0 {
+            anyhow::bail!("{failures} topic(s) failed to import");
         }
         Ok(())
     }
@@ -2164,12 +2188,10 @@ impl Node {
             failures += 1;
         }
 
+        self.import_extension_processed_operations().await?;
+
         if failures > 0 {
             anyhow::bail!("{failures} topic(s) failed to initialize");
-        }
-
-        if self.config.import_recorded_operations {
-            self.import_extension_processed_operations().await?;
         }
         Ok(())
     }

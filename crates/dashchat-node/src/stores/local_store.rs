@@ -49,6 +49,12 @@ const MIGRATIONS: &[&str] = &[
     )",
 ];
 
+fn bytes32(bytes: Vec<u8>, column: &str) -> anyhow::Result<[u8; 32]> {
+    bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("{column} is not 32 bytes"))
+}
+
 #[derive(Clone, Debug)]
 pub struct NodeKeys {
     pub private_key: SigningKey,
@@ -155,9 +161,7 @@ impl LocalStore {
             .fetch_optional(&self.pool)
             .await?;
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Private key field not found"))?;
-        let arr: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("identity.private_key is not 32 bytes"))?;
+        let arr: [u8; 32] = bytes32(bytes, "identity.private_key")?;
         Ok(SigningKey::from_bytes(&arr))
     }
 
@@ -171,9 +175,7 @@ impl LocalStore {
             .fetch_optional(&self.pool)
             .await?;
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Agent ID field not found"))?;
-        let arr: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("identity.agent_id is not 32 bytes"))?;
+        let arr: [u8; 32] = bytes32(bytes, "identity.agent_id")?;
         Ok(AgentId::from(crate::ActorId::from_bytes(&arr)?))
     }
 
@@ -206,10 +208,10 @@ impl LocalStore {
                 .await?;
         rows.into_iter()
             .map(|(hash, topic)| {
-                let hash: [u8; 32] = hash
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("stored operation hash is not 32 bytes"))?;
-                Ok((Hash::from_bytes(hash), *topic))
+                Ok((
+                    Hash::from_bytes(bytes32(hash, "extension_processed_operations.hash")?),
+                    *topic,
+                ))
             })
             .collect()
     }
@@ -420,12 +422,12 @@ impl LocalStore {
         let mut out: std::collections::BTreeMap<String, Vec<iroh_blobs::Hash>> =
             std::collections::BTreeMap::new();
         for (bytes, mailbox_id) in rows {
-            let arr: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("unfetched blob_hash is not 32 bytes"))?;
             out.entry(mailbox_id)
                 .or_default()
-                .push(iroh_blobs::Hash::from_bytes(arr));
+                .push(iroh_blobs::Hash::from_bytes(bytes32(
+                    bytes,
+                    "unfetched_blob_hashes.blob_hash",
+                )?));
         }
         Ok(out)
     }

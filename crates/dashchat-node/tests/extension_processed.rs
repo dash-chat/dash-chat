@@ -30,13 +30,35 @@ async fn resync_processes_what_the_extension_stored_first() {
 /// extension's record still names the one it stored.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_operation_below_the_cursor_is_still_processed() {
+    let (bobbi, chat, photo) = app_acknowledges_a_later_operation().await;
+
+    bobbi.resync().await.unwrap();
+
+    wait_until_processed(&bobbi, chat, photo).await;
+    wait_until_nothing_recorded(&bobbi).await;
+}
+
+/// At startup the app's fresh subscriptions replay what is above its cursor;
+/// what the cursor passed is imported from the extension's records.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_operation_below_the_cursor_is_processed_at_startup() {
+    let (bobbi, chat, photo) = app_acknowledges_a_later_operation().await;
+
+    let bobbi = TestNode::new_at_path(app_config(), "bobbi", bobbi.shutdown().await).await;
+
+    wait_until_processed(&bobbi, chat, photo).await;
+    wait_until_nothing_recorded(&bobbi).await;
+}
+
+/// After the extension stored the photo message, Bobbi's app fetches and
+/// acknowledges Alice's next message itself, so its cursor is past the photo.
+async fn app_acknowledges_a_later_operation() -> (TestNode, ChatId, iroh_blobs::Hash) {
     let Stored {
         alice,
         bobbi,
         mailbox,
         chat,
         photo,
-        ..
     } = extension_stores_a_photo().await;
 
     alice
@@ -57,11 +79,7 @@ async fn an_operation_below_the_cursor_is_still_processed() {
         bobbi.blob_fetch_pool_topics_for(photo).await.is_empty(),
         "the app processed the photo message before resyncing"
     );
-
-    bobbi.resync().await.unwrap();
-
-    wait_until_processed(&bobbi, chat, photo).await;
-    wait_until_nothing_recorded(&bobbi).await;
+    (bobbi, chat, photo)
 }
 
 /// The extension already applied a group control operation to the groups

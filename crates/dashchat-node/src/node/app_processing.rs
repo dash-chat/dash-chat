@@ -203,7 +203,12 @@ impl Node {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "groups operation processing");
-                                if !node.record_if_extension(&operation).await {
+                                if !node.recorded_for_app(&operation).await {
+                                    if let Some(processed_tx) = processed_tx {
+                                        let _ = processed_tx.send(Err(ProcessorError::App(
+                                            "failed to record the operation for the app".into(),
+                                        )));
+                                    }
                                     continue;
                                 }
 
@@ -253,7 +258,12 @@ impl Node {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
-                                if !node.record_if_extension(&operation).await {
+                                if !node.recorded_for_app(&operation).await {
+                                    if let Some(processed_tx) = processed_tx {
+                                        let _ = processed_tx.send(Err(ProcessorError::App(
+                                            "failed to record the operation for the app".into(),
+                                        )));
+                                    }
                                     continue;
                                 }
 
@@ -304,12 +314,16 @@ impl Node {
     }
 
     /// As the push extension, record `operation` for the app to process too,
-    /// unless the app acknowledged it already. Done before processing it, so
-    /// the record outlives the extension being killed mid-way; returns whether
-    /// to go on processing, since acknowledging an unrecorded operation would
-    /// hide it from the app for good.
-    async fn record_if_extension(&self, operation: &ProcessedOperation<Payload>) -> bool {
+    /// unless the app acknowledged it already or authored it. Done before
+    /// processing it, so the record outlives the extension being killed
+    /// mid-way; returns whether to go on processing, since acknowledging an
+    /// unrecorded operation would hide it from the app for good.
+    async fn recorded_for_app(&self, operation: &ProcessedOperation<Payload>) -> bool {
         if !self.config.record_processed_operations {
+            return true;
+        }
+        let author = DeviceId::from(operation.author());
+        if author == self.device_id() {
             return true;
         }
         let topic = TopicId::from(operation.topic());
@@ -317,11 +331,7 @@ impl Node {
         let recorded = async {
             let acked = self
                 .op_store
-                .acked_log_height(
-                    &topic,
-                    &DeviceId::from(operation.author()),
-                    &header.extensions.log_id,
-                )
+                .acked_log_height(&topic, &author, &header.extensions.log_id)
                 .await?;
             if acked.is_some_and(|acked| acked >= header.seq_num) {
                 return anyhow::Ok(());
@@ -356,10 +366,17 @@ impl Node {
         // operation eligible for mailbox transmission (see
         // `OpStore::acked_log_height`).
         operation.ack().await?;
-        if self.config.import_recorded_operations {
-            self.local_store
+        if self.config.import_recorded_operations
+            && let Err(err) = self
+                .local_store
                 .forget_extension_processed_operation(&operation.id())
-                .await?;
+                .await
+        {
+            // At worst the operation is imported once more.
+            warn!(
+                ?err,
+                "failed to forget an operation the push extension recorded"
+            );
         }
 
         if DeviceId::from(operation.author()) == self.device_id() {
