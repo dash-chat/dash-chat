@@ -60,7 +60,13 @@ pub async fn download_capped(
     .await;
 
     match result {
-        Ok(Ok(())) => blobs.has(hash).await.unwrap_or(false),
+        Ok(Ok(())) => {
+            let present = blobs.has(hash).await.unwrap_or(false);
+            if !present {
+                tracing::debug!(%hash, "blob download ended without the blob");
+            }
+            present
+        }
         Ok(Err(err)) => {
             tracing::debug!(%hash, ?err, "blob download failed");
             false
