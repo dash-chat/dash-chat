@@ -39,6 +39,7 @@ pub(crate) enum Command {
     },
     Import {
         topic: Topic,
+        origin: ImportOrigin,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
@@ -55,6 +56,36 @@ pub(crate) enum Command {
     RegisterPeerAddr {
         addr: iroh::EndpointAddr,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
+    },
+    /// Testing: refuse every connection with `node_id` in both directions
+    /// (p2panda's global blocklist, enforced by the endpoint hooks).
+    #[cfg(feature = "testing")]
+    BlockPeer {
+        node_id: NodeId,
+        reply_tx: oneshot::Sender<()>,
+    },
+    /// Testing: block native log sync with `node_id` on every topic,
+    /// subscribed now or later (p2panda's per-topic blocklist, checked when
+    /// a sync session is initiated or accepted). Gossip is unaffected.
+    #[cfg(feature = "testing")]
+    BlockNativeSync {
+        node_id: NodeId,
+        reply_tx: oneshot::Sender<()>,
+    },
+    /// Open an ephemeral (gossip) stream on `topic` for the LAN router:
+    /// raw bytes in a signed envelope, no persistence (see `lan_router.rs`).
+    #[cfg(feature = "lan-router")]
+    RouterStream {
+        topic: Topic,
+        reply_tx: oneshot::Sender<
+            Result<
+                (
+                    p2panda::streams::EphemeralStreamPublisher<serde_bytes::ByteBuf>,
+                    p2panda::streams::EphemeralStreamSubscription<serde_bytes::ByteBuf>,
+                ),
+                CreateStreamError,
+            >,
+        >,
     },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
@@ -95,8 +126,17 @@ pub enum ProcessorEvent {
 
     ImportFailed {
         topic: Topic,
+        origin: ImportOrigin,
         error: ImportError,
     },
+}
+
+/// Which delivery path handed the actor an import stream, so a failure on
+/// one path never tears down the other's subscription.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ImportOrigin {
+    Mailbox,
+    LanRouter,
 }
 
 /// Actor for the p2panda node.
@@ -137,6 +177,11 @@ pub struct Actor {
     /// Import tasks spawned so `handle_import` does not block the actor loop.
     /// Dropped on shutdown, aborting any still-parked imports.
     import_tasks: JoinSet<()>,
+
+    /// Testing: peers whose native sync is blocked on every topic; applied
+    /// to each topic as its stream is opened (`open_stream`).
+    #[cfg(feature = "testing")]
+    native_sync_blocked: std::collections::BTreeSet<NodeId>,
 }
 
 impl Actor {
@@ -162,6 +207,8 @@ impl Actor {
                 events_tx,
                 stream_cursor_prefix,
                 import_tasks: JoinSet::new(),
+                #[cfg(feature = "testing")]
+                native_sync_blocked: Default::default(),
             },
             events_rx,
         )
@@ -183,8 +230,8 @@ impl Actor {
                                 self.handle_unsubscribe(topic);
                                 let _ = reply_tx.send(());
                             }
-                            Command::Import { topic, stream, reply_tx } => {
-                                let result = self.handle_import(topic, stream).await;
+                            Command::Import { topic, origin, stream, reply_tx } => {
+                                let result = self.handle_import(topic, origin, stream).await;
                                 let _ = reply_tx.send(result);
                             }
                             Command::Publish {
@@ -204,6 +251,26 @@ impl Actor {
                                 let result = self.handle_register_peer_addr(addr).await;
                                 let _ = reply_tx.send(result);
                             },
+                            #[cfg(feature = "testing")]
+                            Command::BlockPeer { node_id, reply_tx } => {
+                                self.inner.block(node_id).await;
+                                let _ = reply_tx.send(());
+                            }
+                            #[cfg(feature = "testing")]
+                            Command::BlockNativeSync { node_id, reply_tx } => {
+                                self.native_sync_blocked.insert(node_id);
+                                // Topics already open: block them now.
+                                let topics: Vec<Topic> = self.tx_map.keys().copied().collect();
+                                for topic in topics {
+                                    self.inner.topic_block(node_id, topic).await;
+                                }
+                                let _ = reply_tx.send(());
+                            }
+                            #[cfg(feature = "lan-router")]
+                            Command::RouterStream { topic, reply_tx } => {
+                                let result = self.inner.ephemeral_stream::<serde_bytes::ByteBuf>(topic).await;
+                                let _ = reply_tx.send(result);
+                            }
                             Command::Shutdown { reply_tx } => {
                                 // Drop self and then break out of the processing loop which will
                                 // cause the actor task to complete.
@@ -247,6 +314,12 @@ impl Actor {
             .stream_cursor_prefix
             .as_ref()
             .map(|prefix| format!("{prefix}:{topic}"));
+        // Testing: the one place a topic becomes syncable, so the block
+        // cannot race the first sync session.
+        #[cfg(feature = "testing")]
+        for node_id in &self.native_sync_blocked {
+            self.inner.topic_block(*node_id, topic).await;
+        }
         self.inner
             .stream_from(topic, StreamFrom::Frontier, cursor_name)
             .await
@@ -271,6 +344,7 @@ impl Actor {
     async fn handle_import(
         &mut self,
         topic: Topic,
+        origin: ImportOrigin,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) -> Result<(), NodeActorError> {
         // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
@@ -291,8 +365,8 @@ impl Actor {
         let events_tx = self.events_tx.clone();
         self.import_tasks.spawn(async move {
             if let Err(err) = tx.import(stream).await {
-                error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
-                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, error: err });
+                error!(topic = ?topic.aliased(), ?origin, ?err, "import stream failed; topic will not receive further deliveries on this path until re-imported");
+                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, origin, error: err });
             }
         });
 
@@ -725,5 +799,32 @@ mod tests {
             assert!(members.contains(&(alice_id, Access::manage())));
             assert!(members.contains(&(bobbi_id, Access::manage())));
         }
+    }
+
+    #[cfg(feature = "lan-router")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn router_stream_returns_an_ephemeral_pair_on_the_topic() {
+        use serde_bytes::ByteBuf;
+        let node = p2panda::Node::builder()
+            .network_id(p2panda::Topic::random().into())
+            .spawn()
+            .await
+            .unwrap();
+        let (actor, _events) = Actor::new(node, None);
+        let tx = actor.spawn().await.unwrap();
+        let topic = p2panda::Topic::random();
+        let (reply_tx, reply_rx) = oneshot::channel();
+        tx.send(Command::RouterStream { topic, reply_tx })
+            .await
+            .unwrap();
+        let (publisher, _subscription) = reply_rx.await.unwrap().unwrap();
+        // Publishing to an overlay with no peers is fine; it just goes nowhere.
+        publisher
+            .publish(ByteBuf::from(vec![1, 2, 3]))
+            .await
+            .unwrap();
+        let (reply_tx, reply_rx) = oneshot::channel();
+        tx.send(Command::Shutdown { reply_tx }).await.unwrap();
+        reply_rx.await.unwrap();
     }
 }

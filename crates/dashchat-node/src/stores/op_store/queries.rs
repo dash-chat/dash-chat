@@ -8,6 +8,8 @@ use p2panda_store::SqliteStore;
 use sqlx::prelude::*;
 
 use crate::DeviceId;
+#[cfg(any(test, feature = "lan-router"))]
+use crate::stores::op_store::LogSeqSummary;
 
 /// Database representation of a public key and sequence number for a single operation.
 #[derive(FromRow, Debug, Clone, PartialEq, Eq)]
@@ -136,6 +138,91 @@ pub(super) async fn get_log_heights_by_author(
     }
 
     Ok(log_heights)
+}
+
+#[cfg(any(test, feature = "lan-router"))]
+#[derive(FromRow)]
+struct SeqRow {
+    seq_num: String,
+}
+
+/// Every sequence number present for one `(author, log)`, ascending.
+#[cfg(any(test, feature = "lan-router"))]
+pub(super) async fn get_log_seqs(
+    db: &SqliteStore,
+    author: &DeviceId,
+    log_id: &LogId,
+) -> Result<Vec<SeqNum>, anyhow::Error> {
+    let query_str = "
+        SELECT CAST(seq_num AS TEXT) as seq_num
+        FROM operations_v1
+        WHERE verifying_key = ? AND log_id = ?
+        ORDER BY CAST(seq_num AS NUMERIC)
+        ";
+    let key = hex::encode(author.as_bytes());
+    let log_bytes = p2panda_core::cbor::encode_cbor(log_id)?;
+    let rows = db
+        .execute(async move |tx| {
+            let query = sqlx::query_as::<_, SeqRow>(query_str)
+                .bind(key)
+                .bind(log_bytes);
+            Ok(query.fetch_all(tx).await?)
+        })
+        .await?;
+    rows.into_iter()
+        .map(|r| Ok(r.seq_num.parse::<SeqNum>()?))
+        .collect()
+}
+
+#[cfg(any(test, feature = "lan-router"))]
+#[derive(FromRow)]
+struct SeqSummaryRow {
+    verifying_key: String,
+    min_seq: String,
+    max_seq: String,
+    count: i64,
+}
+
+/// A [`LogSeqSummary`] per author of `log_id`, or just `author`'s.
+#[cfg(any(test, feature = "lan-router"))]
+pub(super) async fn get_log_seq_summaries(
+    db: &SqliteStore,
+    log_id: &LogId,
+    author: Option<&DeviceId>,
+) -> Result<BTreeMap<DeviceId, LogSeqSummary>, anyhow::Error> {
+    let query_str = "
+        SELECT
+            verifying_key,
+            CAST(MIN(seq_num) AS TEXT) as min_seq,
+            CAST(MAX(seq_num) AS TEXT) as max_seq,
+            COUNT(*) as count
+        FROM operations_v1
+        WHERE log_id = ? AND (? IS NULL OR verifying_key = ?)
+        GROUP BY verifying_key
+        ";
+    let log_bytes = p2panda_core::cbor::encode_cbor(log_id)?;
+    let key = author.map(|a| hex::encode(a.as_bytes()));
+    let rows = db
+        .execute(async move |tx| {
+            let query = sqlx::query_as::<_, SeqSummaryRow>(query_str)
+                .bind(log_bytes)
+                .bind(key.clone())
+                .bind(key);
+            Ok(query.fetch_all(tx).await?)
+        })
+        .await?;
+    rows.into_iter()
+        .map(|r| {
+            let key =
+                VerifyingKey::from_bytes(&hex::decode(&r.verifying_key)?.try_into().unwrap())?;
+            let summary = LogSeqSummary {
+                min: r.min_seq.parse()?,
+                max: r.max_seq.parse()?,
+                count: r.count.try_into()?,
+            };
+            Ok((DeviceId::from(key), summary))
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -187,6 +187,7 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .level(log::LevelFilter::Warn)
         .level_for("dashchat_node", log::LevelFilter::Debug)
         .level_for("dashchat_utils", log::LevelFilter::Debug)
+        .level_for("dash_router", log::LevelFilter::Debug)
         // Whether peers find each other, and who is in a topic once they have:
         // at the default Warn only the failures reach a device's log, which
         // reads as "p2p is broken" whether or not anything ever worked. Per

@@ -33,19 +33,13 @@ mailbox-local-server = { path = "crates/mailbox-local-server" }
 local-hub-discovery = { path = "crates/local-hub-discovery" }
 reporting = { path = "crates/reporting" }
 
-# p2panda 0.7.1 with the offline-node backport and the groups extension API,
-# merged with `dashchat-named-stream-cursors`, which adds:
-# - SQLite transactions begin with BEGIN IMMEDIATE, so the app and the iOS push
-#   extension sharing one database file stop refusing each other's writes with
-#   "database is locked".
-# - The `custom_cursor_name` param to `stream_from` (p2panda#1408).
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -53,9 +47,14 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "9bf66a5ec69ea78c" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
+
+# Dash Router LAN gossip shell. Its p2panda-core/p2panda-net come from
+# crates.io and are patched below onto the same fork the rest of the
+# workspace uses, so there is exactly one VerifyingKey type.
+dash-router = { git = "https://github.com/dash-chat/dash-router", branch = "main", features = ["p2panda"] }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [
@@ -64,6 +63,9 @@ iroh = { version = "1.0.0", default-features = false, features = [
 iroh-blobs = "0.103.0"
 
 [patch.crates-io]
+# dash-router depends on registry p2panda-core/p2panda-net 0.7; route them to the fork.
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
 iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
 # Fork of iroh main (1.2.0 + PR #4512, the relay-backpressure fix) carrying the
 # iroh#4390 pending_open_paths fix (dash-chat/iroh branch dashchat)
@@ -72,7 +74,7 @@ iroh-base = { git = "https://github.com/dash-chat/iroh", rev = "4e42c93504146095
 iroh-dns = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 # iroh-gossip 0.101.0 + n0-computer/iroh-gossip PR #159 (redial after a failed dial)
-iroh-gossip = { git = "https://github.com/YuniqueUnic/iroh-gossip", rev = "9eb21c0b99fab5cfca9876e949b05d2aa1fae850" }
+iroh-gossip = { git = "https://github.com/dash-chat/iroh-gossip", rev = "efc565e0e63800a77a3add0dbb97f980278e2974" }
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.

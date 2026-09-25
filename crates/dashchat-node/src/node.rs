@@ -117,6 +117,25 @@ pub struct NodeConfig {
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
+    /// Whether to run the Dash Router LAN gossip shell alongside p2panda
+    /// sync (see `lan_router.rs`). Requires the `lan-router` cargo feature;
+    /// without it this flag is ignored with a warning. Off by default, and
+    /// [`Self::no_p2p`] turns it off. A router that fails to start, or to
+    /// follow a topic, is logged and skipped: the p2panda path never depends on it.
+    ///
+    /// The router floods to every member of the node's gossip overlay on its
+    /// topic, which is not LAN-scoped by construction. Op bodies are not
+    /// end-to-end encrypted, so every overlay member reads them, and relays
+    /// keep them in `lan_router.redb`; this is why the flag defaults off and
+    /// is not exposed in the UI yet.
+    pub enable_lan_router: bool,
+    /// Quiet window after a locally authored op before the LAN router pushes
+    /// a Have for every op authored in the window (dash-router
+    /// `PushDebouncePolicy::window_ms`).
+    pub lan_router_push_debounce: std::time::Duration,
+    /// Hard cap after the oldest still-pending authored op, so a steady
+    /// stream of authoring still pushes (`PushDebouncePolicy::max_latency_ms`).
+    pub lan_router_push_max_latency: std::time::Duration,
     /// Whether to defer subscribing to all stored topics and replaying their
     /// backlogs until after `Node::new` returns.
     pub defer_stored_topics_initialization: bool,
@@ -128,6 +147,7 @@ impl NodeConfig {
         self.mdns_mode = MdnsDiscoveryMode::Disabled;
         self.use_relay = false;
         self.enable_p2p = false;
+        self.enable_lan_router = false;
         self
     }
 
@@ -169,6 +189,9 @@ impl NodeConfig {
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
+            enable_lan_router: false,
+            lan_router_push_debounce: std::time::Duration::from_millis(50),
+            lan_router_push_max_latency: std::time::Duration::from_millis(200),
             defer_stored_topics_initialization: false,
         }
     }
@@ -196,6 +219,9 @@ impl Default for NodeConfig {
             message_ack_debounce: std::time::Duration::from_secs(3),
             enable_message_acks: true,
             stream_cursor_prefix: None,
+            enable_lan_router: true,
+            lan_router_push_debounce: std::time::Duration::from_millis(50),
+            lan_router_push_max_latency: std::time::Duration::from_millis(200),
             defer_stored_topics_initialization: false,
         }
     }
@@ -246,6 +272,9 @@ pub struct Node {
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
+    /// `None` unless `NodeConfig::enable_lan_router` and the `lan-router`
+    /// feature are both on (see `lan_router.rs`).
+    lan_router: Option<Arc<crate::lan_router::LanRouter>>,
 }
 
 /// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
@@ -385,6 +414,25 @@ impl Node {
         )
         .await?;
 
+        // === lan router === //
+
+        // The router is an optional accelerator: failing to start it must not
+        // take the p2panda path down with it.
+        let lan_router = crate::lan_router::LanRouter::spawn(crate::lan_router::LanRouterParams {
+            enabled: config.enable_lan_router,
+            push_debounce: config.lan_router_push_debounce,
+            push_max_latency: config.lan_router_push_max_latency,
+            data_path: filesystem.data_path().clone(),
+            device_id: *node_keys.device_id(),
+            op_store: op_store.clone(),
+            actor_tx: actor_tx.clone(),
+        })
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "lan router disabled: failed to start");
+            None
+        });
+
         // === blob sync === //
 
         // The push extension never touches media and must not open the
@@ -456,6 +504,7 @@ impl Node {
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
             dirty_ack_topics: Default::default(),
+            lan_router,
         };
 
         // === application processor task === //
@@ -541,6 +590,24 @@ impl Node {
 
     pub fn data_path(&self) -> &PathBuf {
         self.filesystem.data_path()
+    }
+
+    /// Ops the LAN router has delivered so far; `None` when it is not
+    /// running (see [`crate::lan_router::LanRouter::delivered_count`]).
+    #[cfg(feature = "lan-router")]
+    pub fn lan_router_delivered(&self) -> Option<u64> {
+        self.lan_router.as_ref().map(|r| r.delivered_count())
+    }
+
+    /// Testing: ops the relay store holds for others on `topic` (our own
+    /// ops live in the ext store, never here); `None` when the router is
+    /// not running.
+    #[cfg(all(feature = "lan-router", feature = "testing"))]
+    pub async fn lan_router_relay_holds(&self, topic: TopicId) -> Result<Option<bool>> {
+        match &self.lan_router {
+            Some(router) => Ok(Some(router.relay_holds_topic(topic).await?)),
+            None => Ok(None),
+        }
     }
 
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
@@ -667,6 +734,42 @@ impl Node {
             .await
             .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
         reply_rx.await??;
+        Ok(())
+    }
+
+    /// Testing: refuse every connection with `node_id` in both directions,
+    /// for every protocol (p2panda's global blocklist, enforced by the iroh
+    /// endpoint hooks). Set it before the peer is introduced. A no-op on a
+    /// node with no networking layer.
+    #[cfg(feature = "testing")]
+    pub async fn block_peer(&self, node_id: NodeId) -> Result<()> {
+        if self.endpoint.is_none() {
+            return Ok(());
+        }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::BlockPeer { node_id, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await?;
+        Ok(())
+    }
+
+    /// Testing: turn p2panda's native log sync with `node_id` off on every
+    /// topic, subscribed now or later. Gossip is unaffected, so the LAN
+    /// router still runs between the two. A no-op on a node with no
+    /// networking layer.
+    #[cfg(feature = "testing")]
+    pub async fn block_native_sync_with(&self, node_id: NodeId) -> Result<()> {
+        if self.endpoint.is_none() {
+            return Ok(());
+        }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::BlockNativeSync { node_id, reply_tx })
+            .await
+            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
+        reply_rx.await?;
         Ok(())
     }
 
@@ -1528,6 +1631,10 @@ impl Node {
 
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        if let Some(router) = &self.lan_router {
+            router.shutdown().await;
+        }
+
         // Stop any deferred stored-topic initialization before we tear down
         // the actor or clear mailboxes, so it cannot race SQLite pool closure
         // or re-insert topics into mailboxes after clear().
@@ -2348,6 +2455,44 @@ mod config_validation_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn init_accepts_consistent_no_p2p_config() {
         assert!(init_result(NodeConfig::testing().no_p2p()).await.is_ok());
+    }
+}
+
+#[cfg(all(test, feature = "lan-router"))]
+mod lan_router_tests {
+    use crate::NodeConfig;
+    use crate::testing::TestNode;
+    use crate::topic::TopicId;
+
+    /// A router whose task has ended fails every `subscribe_topic`; topic
+    /// setup must still succeed on the p2panda path.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn initialize_topic_survives_a_dead_router() {
+        let mut config = NodeConfig::testing();
+        config.enable_lan_router = true;
+        let node = TestNode::new(config, "alice").await;
+        let router = node.lan_router.clone().expect("router on");
+        router.shutdown().await;
+        assert!(router.subscribe_topic(TopicId::random()).await.is_err());
+        node.initialize_topic(TopicId::random()).await.unwrap();
+        node.shutdown().await;
+    }
+
+    /// Review focus 4: an unseen topic reads as not held, not as an error.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_holds_nothing_at_start() {
+        let mut config = NodeConfig::testing();
+        config.enable_lan_router = true;
+        let node = TestNode::new(config, "relay").await;
+        let topic = TopicId::random();
+        assert_eq!(
+            node.lan_router_relay_holds(topic).await.unwrap(),
+            Some(false)
+        );
+        let off = TestNode::new(NodeConfig::testing(), "off").await;
+        assert_eq!(off.lan_router_relay_holds(topic).await.unwrap(), None);
+        node.shutdown().await;
+        off.shutdown().await;
     }
 }
 

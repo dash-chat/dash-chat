@@ -18,6 +18,24 @@ use p2panda_store::logs::LogStore;
 
 use crate::{mailbox::MailboxOperation, topic::TopicId, *};
 
+/// The shape of one `(author, log)` in the op store: its lowest and highest
+/// stored seq and how many rows lie in between.
+#[cfg(any(test, feature = "lan-router"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LogSeqSummary {
+    pub min: SeqNum,
+    pub max: SeqNum,
+    pub count: SeqNum,
+}
+
+#[cfg(any(test, feature = "lan-router"))]
+impl LogSeqSummary {
+    /// Every seq from `min` to `max` is present.
+    pub fn is_contiguous(&self) -> bool {
+        self.max - self.min + 1 == self.count
+    }
+}
+
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
 pub struct OpStore {
     #[deref]
@@ -77,7 +95,7 @@ impl OpStore {
     /// cursor is exactly the "processed" watermark that gates mailbox
     /// transmission — an operation whose payload might still be tombstoned by
     /// pending processing sits above the watermark and is never sent onward.
-    async fn acked_log_height(
+    pub(crate) async fn acked_log_height(
         &self,
         topic: &TopicId,
         author: &DeviceId,
@@ -92,6 +110,59 @@ impl OpStore {
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
     }
 
+    /// [`Self::acked_log_height`] for every author of `log_id` in `topic`,
+    /// from one read of the topic's cursor.
+    #[cfg(any(test, feature = "lan-router"))]
+    pub(crate) async fn acked_log_heights(
+        &self,
+        topic: &TopicId,
+        log_id: &LogId,
+    ) -> anyhow::Result<BTreeMap<DeviceId, SeqNum>> {
+        use p2panda_store::cursors::CursorStore;
+        let cursor =
+            CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(&self.store, topic.to_string())
+                .await?;
+        let Some(cursor) = cursor else {
+            return Ok(BTreeMap::new());
+        };
+        Ok(cursor
+            .state()
+            .iter()
+            .filter_map(|(author, logs)| Some((DeviceId::from(*author), *logs.get(log_id)?)))
+            .collect())
+    }
+
+    /// Every sequence number present for `author`'s log, ascending. The
+    /// router's held-range input when a log has gaps (see `lan_router.rs`).
+    #[cfg(any(test, feature = "lan-router"))]
+    pub(crate) async fn get_log_seqs(
+        &self,
+        author: &DeviceId,
+        log_id: &LogId,
+    ) -> anyhow::Result<Vec<SeqNum>> {
+        queries::get_log_seqs(&self.store, author, log_id).await
+    }
+
+    /// One [`LogSeqSummary`] per author of `log_id`, from a single query.
+    #[cfg(any(test, feature = "lan-router"))]
+    pub(crate) async fn get_log_seq_summaries(
+        &self,
+        log_id: &LogId,
+    ) -> anyhow::Result<BTreeMap<DeviceId, LogSeqSummary>> {
+        queries::get_log_seq_summaries(&self.store, log_id, None).await
+    }
+
+    #[cfg(any(test, feature = "lan-router"))]
+    pub(crate) async fn get_log_seq_summary(
+        &self,
+        author: &DeviceId,
+        log_id: &LogId,
+    ) -> anyhow::Result<Option<LogSeqSummary>> {
+        let mut summaries =
+            queries::get_log_seq_summaries(&self.store, log_id, Some(author)).await?;
+        Ok(summaries.remove(author))
+    }
+
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
     pub async fn close(&self) {
         self.store.pool().close().await;
@@ -103,7 +174,7 @@ impl OpStore {
         log_id: &LogId,
         from: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
-        let log = self.log_operations(author, log_id, from).await?;
+        let log = self.log_operations(author, log_id, from, None).await?;
         if log.is_empty() && !self.log_exists(author, log_id).await? {
             tracing::warn!(
                 "No log found for log_id {} and author {}",
@@ -124,15 +195,28 @@ impl OpStore {
         Ok(heights.is_some())
     }
 
+    /// `author`'s log after `from` (exclusive) up to `until` (inclusive).
+    #[cfg(any(test, feature = "lan-router"))]
+    pub(crate) async fn get_log_until(
+        &self,
+        author: &DeviceId,
+        log_id: &LogId,
+        from: Option<SeqNum>,
+        until: SeqNum,
+    ) -> anyhow::Result<Vec<Operation>> {
+        self.log_operations(author, log_id, from, Some(until)).await
+    }
+
     /// Collect a log's entries, decoding each stored operation into our extension type.
     async fn log_operations(
         &self,
         author: &DeviceId,
         log_id: &LogId,
         from: Option<SeqNum>,
+        until: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
         self.store
-            .log_entries(author, log_id, from, None)?
+            .log_entries(author, log_id, from, until)?
             .map_err(anyhow::Error::from)
             .and_then(|entry| async move { Ok(Operation::try_from(entry.entry)?) })
             .try_collect()
@@ -144,6 +228,15 @@ impl OpStore {
         OperationStore::<Operation, Hash>::get_operation(&self.store, hash)
             .await
             .map_err(|err| anyhow::anyhow!("failed to get operation for {hash:?}: {err}"))
+    }
+
+    /// Whether an operation is stored, with or without its body.
+    #[cfg(feature = "lan-router")]
+    pub(crate) async fn has_operation(&self, hash: &Hash) -> anyhow::Result<bool> {
+        use p2panda_store::operations::OperationStore;
+        OperationStore::<Operation, Hash>::has_operation(&self.store, hash)
+            .await
+            .map_err(|err| anyhow::anyhow!("failed to look up operation {hash:?}: {err}"))
     }
 
     #[deprecated = "will be replace by proper use of p2panda-streams"]
@@ -228,7 +321,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
         let log_id = LogId::from_topic(*topic);
         let from = from.checked_sub(1);
-        let log = self.log_operations(author, &log_id, from).await?;
+        let log = self.log_operations(author, &log_id, from, None).await?;
         if log.is_empty() && !self.log_exists(author, &log_id).await? {
             return Ok(None);
         }
@@ -265,7 +358,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod test_support {
     use p2panda::operation::{Extensions, Header};
     use p2panda_core::{Body, Timestamp};
     use p2panda_store::Transaction;
@@ -273,14 +366,7 @@ mod tests {
 
     use super::*;
 
-    async fn fetch(store: &OpStore, hash: &Hash) -> Operation {
-        OperationStore::<Operation, Hash>::get_operation(&store.store, hash)
-            .await
-            .unwrap()
-            .unwrap()
-    }
-
-    fn signed_op(
+    pub(crate) fn signed_op(
         signing_key: &p2panda::SigningKey,
         log_id: LogId,
         seq_num: SeqNum,
@@ -304,7 +390,7 @@ mod tests {
         }
     }
 
-    async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
+    pub(crate) async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
         let permit = store.store.begin().await.unwrap();
         OperationStore::<Operation, Hash>::insert_operation(&store.store, &op.hash, op, log_id)
             .await
@@ -315,7 +401,7 @@ mod tests {
     /// Advance p2panda's ack cursor for `author`'s log to `seq`, mimicking what
     /// `ProcessedOperation::ack` persists once application-layer processing has
     /// finished (see `OpStore::acked_log_height`).
-    async fn ack_up_to(
+    pub(crate) async fn ack_up_to(
         store: &OpStore,
         topic: &TopicId,
         author: &DeviceId,
@@ -339,6 +425,25 @@ mod tests {
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use maplit::btreemap;
+    use p2panda::operation::{Extensions, Header};
+    use p2panda_core::Body;
+    use p2panda_store::Transaction;
+    use p2panda_store::operations::OperationStore;
+
+    use super::test_support::*;
+    use super::*;
+
+    async fn fetch(store: &OpStore, hash: &Hash) -> Operation {
+        OperationStore::<Operation, Hash>::get_operation(&store.store, hash)
+            .await
+            .unwrap()
+            .unwrap()
     }
 
     #[tokio::test]
@@ -450,5 +555,154 @@ mod tests {
         assert!(stored.body.is_none());
         // The header is retained so log sync stays consistent.
         assert_eq!(stored.header.seq_num, 0);
+    }
+
+    #[tokio::test]
+    async fn get_log_seqs_lists_present_seqs_ascending() {
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let key = p2panda::SigningKey::generate();
+        let author = DeviceId::from(key.verifying_key());
+        let log_id = LogId::from_topic(TopicId::random());
+        let op0 = signed_op(&key, log_id, 0, None, b"a");
+        let op1 = signed_op(&key, log_id, 1, Some(op0.hash), b"b");
+        let op2 = signed_op(&key, log_id, 2, Some(op1.hash), b"c");
+        insert(&store, &op2, &log_id).await;
+        insert(&store, &op0, &log_id).await;
+        insert(&store, &op1, &log_id).await;
+        assert_eq!(
+            store.get_log_seqs(&author, &log_id).await.unwrap(),
+            vec![0, 1, 2]
+        );
+        let other = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
+        assert_eq!(
+            store.get_log_seqs(&other, &log_id).await.unwrap(),
+            Vec::<SeqNum>::new()
+        );
+    }
+
+    /// Chained ops `0..n` for `key`, not inserted.
+    fn chain(key: &p2panda::SigningKey, log_id: LogId, n: SeqNum) -> Vec<Operation> {
+        let mut ops = Vec::new();
+        let mut backlink = None;
+        for seq in 0..n {
+            let op = signed_op(key, log_id, seq, backlink, &[seq as u8]);
+            backlink = Some(op.hash);
+            ops.push(op);
+        }
+        ops
+    }
+
+    #[tokio::test]
+    async fn log_seq_summaries_describe_a_run_and_a_gap() {
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let log_id = LogId::from_topic(TopicId::random());
+        let run_key = p2panda::SigningKey::generate();
+        let gap_key = p2panda::SigningKey::generate();
+        for op in chain(&run_key, log_id, 3) {
+            insert(&store, &op, &log_id).await;
+        }
+        for op in chain(&gap_key, log_id, 6)
+            .iter()
+            .filter(|op| [2, 3, 5].contains(&op.header.seq_num))
+        {
+            insert(&store, op, &log_id).await;
+        }
+        let run = DeviceId::from(run_key.verifying_key());
+        let gap = DeviceId::from(gap_key.verifying_key());
+        let run_summary = LogSeqSummary {
+            min: 0,
+            max: 2,
+            count: 3,
+        };
+        let gap_summary = LogSeqSummary {
+            min: 2,
+            max: 5,
+            count: 3,
+        };
+        assert!(run_summary.is_contiguous());
+        assert!(!gap_summary.is_contiguous());
+        assert_eq!(
+            store.get_log_seq_summaries(&log_id).await.unwrap(),
+            btreemap! { run => run_summary, gap => gap_summary }
+        );
+        assert_eq!(
+            store.get_log_seq_summary(&gap, &log_id).await.unwrap(),
+            Some(gap_summary)
+        );
+        let other = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
+        assert_eq!(
+            store.get_log_seq_summary(&other, &log_id).await.unwrap(),
+            None
+        );
+        let other_log = LogId::from_topic(TopicId::random());
+        assert!(
+            store
+                .get_log_seq_summaries(&other_log)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn acked_log_heights_lists_every_author_of_the_log() {
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let topic = TopicId::random();
+        let log_id = LogId::from_topic(topic);
+        let a = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
+        let b = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
+        assert!(
+            store
+                .acked_log_heights(&topic, &log_id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        ack_up_to(&store, &topic, &a, log_id, 1).await;
+        ack_up_to(&store, &topic, &b, log_id, 3).await;
+        ack_up_to(&store, &topic, &b, LogId::from_topic(TopicId::random()), 9).await;
+        assert_eq!(
+            store.acked_log_heights(&topic, &log_id).await.unwrap(),
+            btreemap! { a => 1, b => 3 }
+        );
+    }
+
+    #[tokio::test]
+    async fn get_log_until_bounds_both_ends() {
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let key = p2panda::SigningKey::generate();
+        let log_id = LogId::from_topic(TopicId::random());
+        for op in chain(&key, log_id, 5) {
+            insert(&store, &op, &log_id).await;
+        }
+        let author = DeviceId::from(key.verifying_key());
+        let seqs = |ops: Vec<Operation>| ops.iter().map(|op| op.header.seq_num).collect::<Vec<_>>();
+        assert_eq!(
+            seqs(
+                store
+                    .get_log_until(&author, &log_id, Some(1), 3)
+                    .await
+                    .unwrap()
+            ),
+            vec![2, 3]
+        );
+        assert_eq!(
+            seqs(
+                store
+                    .get_log_until(&author, &log_id, None, 1)
+                    .await
+                    .unwrap()
+            ),
+            vec![0, 1]
+        );
+        assert_eq!(
+            seqs(
+                store
+                    .get_log_until(&author, &log_id, None, 99)
+                    .await
+                    .unwrap()
+            ),
+            vec![0, 1, 2, 3, 4]
+        );
     }
 }

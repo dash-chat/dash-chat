@@ -14,6 +14,7 @@ serde_repr = "0.1"
 mailbox-client = { workspace = true }
 mailbox-server = { workspace = true }
 reporting = { workspace = true }
+dash-router = { workspace = true, optional = true }
 
 p2panda = { workspace = true, features = ["test_utils"] }
 p2panda-auth = { workspace = true }
@@ -63,9 +64,11 @@ maplit = "1.0"
 pretty_assertions = "1.4.1"
 tempfile = "3"
 p2panda-store = { workspace = true, features = ["test_utils"] }
+postcard = "1"
 
 [features]
-default = ["instrument"]
+default = ["instrument", "lan-router"]
 instrument = []
 testing = ["tempfile", "nanoid", "p2panda-store/test_utils"]
 p2p = []
+lan-router = ["dep:dash-router"]

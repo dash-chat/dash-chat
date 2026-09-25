@@ -5,7 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  emoji-picker-element@1.29.0: 0caf2f5b07fd483c809d7592b323c7f42075a842d46a7f2386ab42a593b18031
   konsta@5.0.6: 1e038298da6b55fe1f7ffd625b171603997dbdc355849796317ad1087f5dc569
   signalium@3.0.1: 1b98b8fc84b8e5d35451ca4c1766447cf362069bd4cf3b8917e1d529cf67d302
 
@@ -256,7 +255,7 @@ importers:
         version: link:../packages/stores
       emoji-picker-element:
         specifier: ^1.29.0
-        version: 1.29.0(patch_hash=0caf2f5b07fd483c809d7592b323c7f42075a842d46a7f2386ab42a593b18031)
+        version: 1.29.0
       image-blob-reduce:
         specifier: ^5.0.0
         version: 5.0.0
@@ -9813,7 +9812,7 @@ snapshots:
       '@emmetio/abbreviation': 2.3.3
       '@emmetio/css-abbreviation': 2.1.8
 
-  emoji-picker-element@1.29.0(patch_hash=0caf2f5b07fd483c809d7592b323c7f42075a842d46a7f2386ab42a593b18031): {}
+  emoji-picker-element@1.29.0: {}
 
   emoji-regex@10.6.0: {}
 
