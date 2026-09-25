@@ -21,6 +21,14 @@ use crate::{
 };
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// A dial that has not connected by now gets another alongside it rather than
+/// waiting on the kernel's own SYN retransmit a second later: right after a
+/// link comes up the first SYN is routinely lost.
+const REDIAL_INTERVAL: Duration = Duration::from_millis(500);
+/// How long a hub that went quiet is remembered for a network change to probe
+/// it at again: a phone stepping off its LAN and back, not one that moved on,
+/// where some other service may listen at the same address.
+const REMEMBER_LAPSED_FOR: Duration = Duration::from_secs(60);
 /// Longer than [`PROBE_TIMEOUT`], so a hub with an address that hangs is not
 /// re-probed before the sweep that is still waiting on it gives up.
 const REPROBE_INTERVAL: Duration = Duration::from_secs(PROBE_TIMEOUT.as_secs() + 1);
@@ -76,12 +84,34 @@ struct Hub {
     probed_addrs: BTreeSet<SocketAddr>,
     awaiting_probe: Option<u64>,
     probed_at: Option<Instant>,
+    /// When swarm-discovery aged it out, until it sights it again: meanwhile
+    /// nothing but a lapse check can notice it leave.
+    lapsed_at: Option<Instant>,
+    lapse_check: Option<u64>,
 }
 
 impl Hub {
+    fn worth_remembering(&self) -> bool {
+        !self.answered_at.is_empty()
+            || self
+                .lapsed_at
+                .is_none_or(|at| at.elapsed() < REMEMBER_LAPSED_FOR)
+    }
+
+    fn unlist(&mut self) {
+        self.lapse_check = None;
+        self.answered_at.clear();
+        self.probed_at = None;
+    }
+
     fn needs_probe(&self, advertised: &BTreeSet<SocketAddr>) -> bool {
         if self.awaiting_probe.is_some() {
             return false;
+        }
+        // Holding off is for not re-dialling a hub that answers; one that has
+        // not is worth every sighting.
+        if self.answered_at.is_empty() {
+            return true;
         }
         match self.probed_at {
             Some(at) if self.probed_addrs == *advertised => at.elapsed() >= REPROBE_INTERVAL,
@@ -142,10 +172,37 @@ impl DiscoveryBrowser {
         for gone in joined.difference(&current) {
             guard.remove_interface_v4(*gone);
         }
+        let joined_new = !current.is_subset(joined);
         for new in current.difference(joined) {
             guard.add_interface_v4(*new);
         }
         *joined = current;
+        drop(browsing);
+        if joined_new {
+            self.reprobe_known_hubs();
+        }
+    }
+
+    /// Probe every hub we know at where it last advertised: on a network we
+    /// just joined, its next announcement is a whole mDNS round away.
+    fn reprobe_known_hubs(self: &Arc<Self>) {
+        let mut hubs = self
+            .hubs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        hubs.retain(|_, hub| hub.worth_remembering());
+        log::debug!(
+            "Probing the {} known local hubs on the new network",
+            hubs.len()
+        );
+        for (id, hub) in hubs.iter_mut() {
+            // One already dialling is left to finish: it redials until the
+            // route is up, and replacing it would throw its answer away.
+            if hub.awaiting_probe.is_none() && !hub.probed_addrs.is_empty() {
+                let addrs = hub.probed_addrs.clone();
+                self.start_probe(id, hub, addrs);
+            }
+        }
     }
 
     /// A probe that cannot answer blocks every later sighting of that hub until
@@ -208,31 +265,122 @@ impl DiscoveryBrowser {
             .hubs
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        // An unanswered probe is deliberately not a third way to be gone: it
-        // looks exactly like our own network being down.
-        if goodbye || advertised.is_empty() {
+        hubs.retain(|_, hub| hub.worth_remembering());
+        if goodbye {
             // Dropping it drops what the probe it was waiting on would have
             // said, so one still in flight cannot bring it back.
             if hubs.remove(&id).is_some() {
-                if goodbye {
-                    log::debug!("Local hub is gone, it said goodbye: mailbox={id}");
-                } else {
-                    log::debug!("Local hub is gone, its announcements lapsed: mailbox={id}");
-                }
+                log::debug!("Local hub is gone, it said goodbye: mailbox={id}");
                 self.publish(&hubs);
             }
             return;
         }
+        if advertised.is_empty() {
+            self.lapsed(&id, &mut hubs);
+            return;
+        }
         let hub = hubs.entry(id.clone()).or_default();
+        hub.lapsed_at = None;
+        hub.lapse_check = None;
         if !hub.needs_probe(&advertised) {
             return;
         }
         log::debug!("Local hub sighted at {advertised:?}, probing: mailbox={id}");
+        self.start_probe(&id, hub, advertised);
+    }
+
+    fn start_probe(self: &Arc<Self>, id: &str, hub: &mut Hub, addrs: BTreeSet<SocketAddr>) {
         let probe_id = next_probe_id();
         hub.awaiting_probe = Some(probe_id);
         hub.probed_at = Some(Instant::now());
-        hub.probed_addrs = advertised.clone();
-        tokio::spawn(self.clone().probe_hub(id, probe_id, advertised));
+        hub.probed_addrs = addrs.clone();
+        tokio::spawn(self.clone().probe_hub(id.to_string(), probe_id, addrs));
+    }
+
+    /// swarm-discovery ages a hub out after a few missed announcements, which
+    /// lossy Wi-Fi multicast produces while the hub is still up, so the hub
+    /// stays for as long as it still answers. One that goes quiet keeps its
+    /// addresses, for a network change to probe it at again.
+    fn lapsed(self: &Arc<Self>, id: &str, hubs: &mut BTreeMap<String, Hub>) {
+        let Some(hub) = hubs.get_mut(id) else {
+            return;
+        };
+        if hub.lapsed_at.is_none() {
+            hub.lapsed_at = Some(Instant::now());
+        }
+        self.watch_lapsed(id, hub);
+    }
+
+    /// A lapsed hub that answers is listed, so something has to notice it
+    /// leave: swarm-discovery will not age it out a second time.
+    fn watch_lapsed(self: &Arc<Self>, id: &str, hub: &mut Hub) {
+        if hub.lapsed_at.is_none() || hub.answered_at.is_empty() || hub.lapse_check.is_some() {
+            return;
+        }
+        log::debug!("Local hub's announcements lapsed, checking it still answers: mailbox={id}");
+        let check_id = next_probe_id();
+        hub.lapse_check = Some(check_id);
+        tokio::spawn(self.clone().confirm_lapsed(id.to_string(), check_id));
+    }
+
+    /// Until swarm-discovery sights the hub again, only its answering says it
+    /// is still there — for [`REMEMBER_LAPSED_FOR`] at most, past which the
+    /// phone may be on another LAN where something else answers there.
+    async fn confirm_lapsed(self: Arc<Self>, id: String, check_id: u64) {
+        loop {
+            let Some(addrs) = self.lapse_check_addrs(&id, check_id) else {
+                return;
+            };
+            let still_answers = any_answers(addrs).await;
+            if !self.lapse_check_kept(&id, check_id, still_answers) {
+                return;
+            }
+            tokio::time::sleep(REPROBE_INTERVAL).await;
+        }
+    }
+
+    /// Whether the lapse check `check_id` goes on after the hub did or did not
+    /// answer, unlisting it when it did not.
+    fn lapse_check_kept(&self, id: &str, check_id: u64, still_answers: bool) -> bool {
+        let mut hubs = self
+            .hubs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(hub) = hubs.get_mut(id) else {
+            return false;
+        };
+        if hub.lapse_check != Some(check_id) {
+            return false;
+        }
+        if !still_answers {
+            log::debug!("Local hub is gone, its announcements lapsed and it stopped answering: mailbox={id}");
+            hub.unlist();
+            self.publish(&hubs);
+        }
+        still_answers
+    }
+
+    /// Where the lapse check `check_id` probes next, or `None` once it is no
+    /// longer the hub's check or the hub has been silent too long to trust.
+    fn lapse_check_addrs(&self, id: &str, check_id: u64) -> Option<Vec<SocketAddr>> {
+        let mut hubs = self
+            .hubs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let hub = hubs.get_mut(id)?;
+        if hub.lapse_check != Some(check_id) {
+            return None;
+        }
+        if hub
+            .lapsed_at
+            .is_some_and(|at| at.elapsed() >= REMEMBER_LAPSED_FOR)
+        {
+            log::debug!("Local hub is gone, it has not announced itself for {REMEMBER_LAPSED_FOR:?}: mailbox={id}");
+            hub.unlist();
+            self.publish(&hubs);
+            return None;
+        }
+        Some(hub.answered_at.clone())
     }
 
     async fn probe_hub(
@@ -260,7 +408,13 @@ impl DiscoveryBrowser {
 
     /// A hub only takes the results of the probe it is waiting on, so one
     /// outlived by a newer sighting cannot speak for it.
-    fn answered(&self, id: &str, probe_id: u64, answered_at: Vec<SocketAddr>, swept: bool) {
+    fn answered(
+        self: &Arc<Self>,
+        id: &str,
+        probe_id: u64,
+        answered_at: Vec<SocketAddr>,
+        swept: bool,
+    ) {
         let mut hubs = self
             .hubs
             .lock()
@@ -287,6 +441,7 @@ impl DiscoveryBrowser {
             log::debug!("Local hub answered at {}: mailbox={id}", answered_at[0]);
         }
         hub.answered_at = answered_at;
+        self.watch_lapsed(id, hub);
         self.publish(&hubs);
     }
 
@@ -336,18 +491,59 @@ fn on_a_local_subnet(ip: Ipv4Addr, subnets: &[(Ipv4Addr, u8)]) -> bool {
     })
 }
 
+/// Dials `addr` again every [`REDIAL_INTERVAL`] without giving up on the
+/// earlier dials, so a slow handshake still gets its whole [`PROBE_TIMEOUT`].
 async fn answers(addr: SocketAddr) -> bool {
-    match tokio::time::timeout(PROBE_TIMEOUT, tokio::net::TcpStream::connect(addr)).await {
-        Ok(Ok(_stream)) => true,
-        Ok(Err(err)) => {
-            log::trace!("Probe to {addr} refused / errored: {err}");
-            false
+    let dials = PROBE_TIMEOUT.as_millis() / REDIAL_INTERVAL.as_millis();
+    let mut dials: FuturesUnordered<_> = (0..dials as u32)
+        .map(|n| async move {
+            tokio::time::sleep(REDIAL_INTERVAL * n).await;
+            dial(addr).await
+        })
+        .collect();
+    let verdict = tokio::time::timeout(PROBE_TIMEOUT, async {
+        while let Some(dialled) = dials.next().await {
+            if let Some(answered) = dialled {
+                return answered;
+            }
         }
-        Err(_elapsed) => {
-            log::trace!("Probe to {addr} timed out after {PROBE_TIMEOUT:?}");
-            false
+        false
+    })
+    .await;
+    verdict.unwrap_or_else(|_elapsed| {
+        log::trace!("Probe to {addr} timed out after {PROBE_TIMEOUT:?}");
+        false
+    })
+}
+
+/// Whether one dial of `addr` settles if it answers, or `None` when it failed
+/// in a way a later dial may not: an address on a subnet we are on is
+/// routinely unroutable for a moment after the link comes up.
+async fn dial(addr: SocketAddr) -> Option<bool> {
+    match tokio::net::TcpStream::connect(addr).await {
+        Ok(_stream) => Some(true),
+        Err(err)
+            if err.kind() == std::io::ErrorKind::ConnectionRefused
+                || !reachable_from_here(addr, &local_subnets_v4()) =>
+        {
+            log::trace!("Probe to {addr} refused / errored: {err}");
+            Some(false)
+        }
+        Err(err) => {
+            log::trace!("Probe to {addr} not through yet: {err}");
+            None
         }
     }
+}
+
+async fn any_answers(addrs: Vec<SocketAddr>) -> bool {
+    let mut probes: FuturesUnordered<_> = addrs.into_iter().map(answers).collect();
+    while let Some(answered) = probes.next().await {
+        if answered {
+            return true;
+        }
+    }
+    false
 }
 
 /// Unique for the process, so a hub that left and came back cannot take the
@@ -668,8 +864,9 @@ mod tests {
         h.unchanged().await;
     }
 
+    /// Lossy Wi-Fi multicast ages out hubs that are still up.
     #[tokio::test]
-    async fn an_expired_hub_leaves_the_set() {
+    async fn a_lapsed_hub_that_still_answers_stays_in_the_set() {
         let mut h = Harness::new();
         let hub = listen().await;
         let hub_addr = hub.local_addr().unwrap();
@@ -677,6 +874,63 @@ mod tests {
         assert_eq!(h.next().await, hubs(&[("hub", hub_addr)]));
 
         h.expired("hub");
+        h.unchanged().await;
+    }
+
+    #[tokio::test]
+    async fn a_hub_kept_after_lapsing_leaves_once_it_stops_answering() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let hub_addr = hub.local_addr().unwrap();
+        h.seen("hub", hub_addr);
+        assert_eq!(h.next().await, hubs(&[("hub", hub_addr)]));
+        h.expired("hub");
+        h.unchanged().await;
+
+        drop(hub);
+        assert_eq!(h.next().await, BTreeMap::new());
+    }
+
+    /// A phone that left its LAN saw the hub lapse there; back on it, the hub
+    /// is found at its old address without waiting for its next announcement.
+    #[tokio::test]
+    async fn a_network_change_finds_a_hub_that_went_quiet_where_it_was() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let addr = hub.local_addr().unwrap();
+        h.seen("hub", addr);
+        assert_eq!(h.next().await, hubs(&[("hub", addr)]));
+        drop(hub);
+        h.expired("hub");
+        assert_eq!(h.next().await, BTreeMap::new());
+
+        // These run in parallel: another test can take the port in between,
+        // and then there is nothing here to prove.
+        let Ok(_hub) = TcpListener::bind(addr).await else {
+            return;
+        };
+        h.browser.reprobe_known_hubs();
+        assert_eq!(h.next().await, hubs(&[("hub", addr)]));
+    }
+
+    /// swarm-discovery has already aged it out, so it will not say so again.
+    #[tokio::test]
+    async fn a_hub_found_again_after_it_went_quiet_leaves_once_it_stops_answering() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let addr = hub.local_addr().unwrap();
+        h.seen("hub", addr);
+        assert_eq!(h.next().await, hubs(&[("hub", addr)]));
+        drop(hub);
+        h.expired("hub");
+        assert_eq!(h.next().await, BTreeMap::new());
+        let Ok(hub) = TcpListener::bind(addr).await else {
+            return;
+        };
+        h.browser.reprobe_known_hubs();
+        assert_eq!(h.next().await, hubs(&[("hub", addr)]));
+
+        drop(hub);
         assert_eq!(h.next().await, BTreeMap::new());
     }
 
