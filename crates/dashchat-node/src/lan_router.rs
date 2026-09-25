@@ -53,9 +53,7 @@ impl LanRouter {
         Ok(())
     }
     pub fn hint_changed(&self, _author: VerifyingKey, _topic: TopicId) {}
-    pub async fn authored(&self, _operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
-        Ok(())
-    }
+    pub fn authored(&self, _operation: &ProcessedOperation<Payload>) {}
     pub async fn shutdown(&self) {}
 }
 
@@ -90,7 +88,8 @@ mod imp {
     use tokio::task::JoinHandle;
     use tokio_stream::wrappers::ReceiverStream;
 
-    use crate::DeviceId;
+    use crate::stores::LogSeqSummary;
+    use crate::{DeviceId, SeqNum};
 
     /// The router's log identity: `(LogId, author)`, channel first so the
     /// relay store's ordered scans keep one topic's logs contiguous. The
@@ -280,7 +279,30 @@ mod imp {
             else {
                 return Ok(Ranges::empty());
             };
-            let seqs = self.store.get_log_seqs(&author, &log_id).await?;
+            let Some(summary) = self.store.get_log_seq_summary(&author, &log_id).await? else {
+                return Ok(Ranges::empty());
+            };
+            self.held_below(&author, &log_id, summary, acked).await
+        }
+
+        /// The seqs of `summary` at or below `acked`. Acks are in log order
+        /// and only a prefix is ever pruned, so the stored seqs form one
+        /// run and the summary alone gives the answer; a gap (not expected)
+        /// falls back to listing every seq.
+        async fn held_below(
+            &self,
+            author: &DeviceId,
+            log_id: &LogId,
+            summary: LogSeqSummary,
+            acked: SeqNum,
+        ) -> anyhow::Result<Ranges> {
+            if summary.min > acked {
+                return Ok(Ranges::empty());
+            }
+            if summary.is_contiguous() {
+                return Ok(Ranges::range(summary.min, summary.max.min(acked) + 1));
+            }
+            let seqs = self.store.get_log_seqs(author, log_id).await?;
             Ok(Ranges::from_seqs(seqs.into_iter().filter(|q| *q <= acked)))
         }
     }
@@ -298,14 +320,23 @@ mod imp {
         }
 
         async fn held_all(&self) -> anyhow::Result<LogRanges<RouterLog>> {
-            let log_ids: Vec<LogId> = self.topics.read().unwrap().keys().copied().collect();
+            let topics: Vec<(LogId, TopicId)> = self
+                .topics
+                .read()
+                .unwrap()
+                .iter()
+                .map(|(log_id, (topic, _))| (*log_id, *topic))
+                .collect();
             let mut out = LogRanges::empty();
-            for log_id in log_ids {
-                for (author, _height) in self.store.get_log_heights(&log_id).await? {
-                    let log = RouterLog::new(log_id, *author);
-                    let r = self.held_one(&log).await?;
+            for (log_id, topic) in topics {
+                let acked = self.store.acked_log_heights(&topic, &log_id).await?;
+                for (author, summary) in self.store.get_log_seq_summaries(&log_id).await? {
+                    let Some(acked) = acked.get(&author) else {
+                        continue;
+                    };
+                    let r = self.held_below(&author, &log_id, summary, *acked).await?;
                     if !r.is_empty() {
-                        out.insert(log, r);
+                        out.insert(RouterLog::new(log_id, *author), r);
                     }
                 }
             }
@@ -338,12 +369,18 @@ mod imp {
                 else {
                     continue;
                 };
-                // `get_log`'s cursor is exclusive ("after"): start one below
-                // the first wanted seq, or from the beginning when that is 0.
+                // The store's lower bound is exclusive ("after"): start one
+                // below the first wanted seq, or from the beginning when
+                // that is 0. An open-ended want reads up to the ack cursor.
                 let after = r.boundaries().first().and_then(|s| s.checked_sub(1));
-                for op in self.store.get_log(&author, &log_id, after).await? {
+                let until = r.last().map_or(acked, |last| last.min(acked));
+                for op in self
+                    .store
+                    .get_log_until(&author, &log_id, after, until)
+                    .await?
+                {
                     let seq = op.header.seq_num;
-                    if seq > acked || !r.contains(seq) {
+                    if !r.contains(seq) {
                         continue;
                     }
                     out.push((
@@ -583,7 +620,11 @@ mod imp {
 
         /// One router channel subscription per topic: every author's log on
         /// it, known or not yet. Idempotent. A failure unregisters the
-        /// topic, so a later call retries instead of reporting success.
+        /// topic, so a later call retries instead of reporting success;
+        /// unregistering drops the import channel's only sender, which ends
+        /// the stream handed to p2panda, so a retry's fresh import never
+        /// runs beside a stale one (p2panda would allow it anyway: each
+        /// external stream is its own session).
         /// Concurrent calls for the same topic may both return Ok while the
         /// first is still in flight; callers must not rely on the second
         /// call observing the first's failure.
@@ -610,6 +651,7 @@ mod imp {
             self.actor_tx
                 .send(Command::Import {
                     topic,
+                    origin: crate::node::actor::ImportOrigin::LanRouter,
                     stream,
                     reply_tx,
                 })
@@ -661,17 +703,26 @@ mod imp {
         /// An op whose header and body cannot fit `max_wire_bytes` alone is
         /// never pushed (it is counted in `StatsSnapshot::oversize_drops`)
         /// and is served only on request, header-only.
-        pub async fn authored(
-            &self,
-            operation: &ProcessedOperation<Payload>,
-        ) -> anyhow::Result<()> {
+        ///
+        /// Returns at once: the hand-off runs on its own task so a full
+        /// router channel never stalls the caller's ack loop. If the router
+        /// refuses the op, the log is hinted instead (lossy fallback).
+        pub fn authored(&self, operation: &ProcessedOperation<Payload>) {
             let header = operation.processed().header();
             let log = RouterLog::new(header.extensions.log_id(), operation.author());
+            let seq = header.seq_num;
             let op = Op {
                 header: header.encode(),
                 payload: operation.processed().body().map(|b| b.to_bytes()),
             };
-            self.handle.append(log, header.seq_num, op).await
+            let handle = self.handle.clone();
+            let ext = self.ext.clone();
+            tokio::spawn(async move {
+                if let Err(e) = handle.append(log, seq, op).await {
+                    tracing::warn!(error = %e, %log, seq, "lan router could not push an authored op");
+                    ext.hint(log);
+                }
+            });
         }
 
         pub async fn shutdown(&self) {
@@ -905,6 +956,36 @@ mod imp {
             );
             let of = f.ext.held_of(&BTreeSet::from([log])).await.unwrap();
             assert_eq!(of.get(&log), Some(&Ranges::range(0, 2)));
+        }
+
+        /// A pruned prefix leaves one run above it; a gap inside the acked
+        /// part (never expected) still yields exactly the stored seqs.
+        #[tokio::test]
+        async fn held_follows_a_pruned_prefix_and_a_gap() {
+            let f = fixture_n(0, None).await;
+            let author = DeviceId::from(f.key.verifying_key());
+            let mut backlink = None;
+            for seq in 0..6 {
+                let op = signed_op(&f.key, f.log_id, seq, backlink, &[seq as u8]);
+                backlink = Some(op.hash);
+                if seq >= 2 && seq != 4 {
+                    insert(&f.ext.store, &op, &f.log_id).await;
+                }
+            }
+            let log = RouterLog::new(f.log_id, f.key.verifying_key());
+            ack_up_to(&f.ext.store, &f.topic, &author, f.log_id, 3).await;
+            assert_eq!(
+                f.ext.held_all().await.unwrap().get(&log),
+                Some(&Ranges::range(2, 4)),
+                "prefix 0..2 pruned, 2 and 3 acked"
+            );
+            ack_up_to(&f.ext.store, &f.topic, &author, f.log_id, 5).await;
+            let of = f.ext.held_of(&BTreeSet::from([log])).await.unwrap();
+            assert_eq!(
+                of.get(&log),
+                Some(&Ranges::from_seqs([2, 3, 5])),
+                "gap at 4 is not claimed"
+            );
         }
 
         #[tokio::test]

@@ -39,6 +39,7 @@ pub(crate) enum Command {
     },
     Import {
         topic: Topic,
+        origin: ImportOrigin,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
@@ -125,8 +126,17 @@ pub enum ProcessorEvent {
 
     ImportFailed {
         topic: Topic,
+        origin: ImportOrigin,
         error: ImportError,
     },
+}
+
+/// Which delivery path handed the actor an import stream, so a failure on
+/// one path never tears down the other's subscription.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ImportOrigin {
+    Mailbox,
+    LanRouter,
 }
 
 /// Actor for the p2panda node.
@@ -220,8 +230,8 @@ impl Actor {
                                 self.handle_unsubscribe(topic);
                                 let _ = reply_tx.send(());
                             }
-                            Command::Import { topic, stream, reply_tx } => {
-                                let result = self.handle_import(topic, stream).await;
+                            Command::Import { topic, origin, stream, reply_tx } => {
+                                let result = self.handle_import(topic, origin, stream).await;
                                 let _ = reply_tx.send(result);
                             }
                             Command::Publish {
@@ -334,6 +344,7 @@ impl Actor {
     async fn handle_import(
         &mut self,
         topic: Topic,
+        origin: ImportOrigin,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) -> Result<(), NodeActorError> {
         // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
@@ -354,8 +365,8 @@ impl Actor {
         let events_tx = self.events_tx.clone();
         self.import_tasks.spawn(async move {
             if let Err(err) = tx.import(stream).await {
-                error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
-                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, error: err });
+                error!(topic = ?topic.aliased(), ?origin, ?err, "import stream failed; topic will not receive further deliveries on this path until re-imported");
+                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, origin, error: err });
             }
         });
 
