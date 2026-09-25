@@ -2173,6 +2173,7 @@ dependencies = [
 [[package]]
 name = "dash-router"
 version = "0.1.0"
+source = "git+https://github.com/dash-chat/dash-router?branch=main#a7e4129bb0775a2675762611f383fbdbf6fdf8ac"
 dependencies = [
  "anyhow",
  "dash-router-core",
@@ -2193,6 +2194,7 @@ dependencies = [
 [[package]]
 name = "dash-router-core"
 version = "0.1.0"
+source = "git+https://github.com/dash-chat/dash-router?branch=main#a7e4129bb0775a2675762611f383fbdbf6fdf8ac"
 dependencies = [
  "anyhow",
  "polestar",
@@ -2203,6 +2205,7 @@ dependencies = [
 [[package]]
 name = "dash-router-policy"
 version = "0.1.0"
+source = "git+https://github.com/dash-chat/dash-router?branch=main#a7e4129bb0775a2675762611f383fbdbf6fdf8ac"
 dependencies = [
  "rand 0.9.5",
  "serde",
@@ -7676,7 +7679,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -7702,7 +7705,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "p2panda-core",
  "petgraph",
@@ -7714,7 +7717,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "blake3",
  "cbor-core",
@@ -7729,7 +7732,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7744,7 +7747,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -7767,7 +7770,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -7795,7 +7798,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7811,7 +7814,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -7829,7 +7832,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "futures-util",
  "indexmap 2.14.2",
@@ -7847,7 +7850,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-071-merge#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -8191,6 +8194,7 @@ dependencies = [
 [[package]]
 name = "polestar"
 version = "0.1.0"
+source = "git+https://github.com/maackle/polestar-rs.git?branch=main#338589893661e521de2c5f31635760613dbbc03e"
 dependencies = [
  "polestar-core",
 ]
@@ -8198,6 +8202,7 @@ dependencies = [
 [[package]]
 name = "polestar-core"
 version = "0.1.0"
+source = "git+https://github.com/maackle/polestar-rs.git?branch=main#338589893661e521de2c5f31635760613dbbc03e"
 dependencies = [
  "anyhow",
  "derive_more 1.0.0",
