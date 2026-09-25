@@ -107,7 +107,7 @@ describe('Local hub discovery', function () {
 		if (mailboxKilled) await restartMailbox();
 	});
 
-	it('shows a hub within 2 seconds of it starting', async () => {
+	it('shows a hub within 4 seconds of it starting', async () => {
 		hub = await spawnLocalHub('a');
 		await expectLocal('the hub started');
 	});
@@ -171,7 +171,7 @@ describe('Local hub discovery', function () {
 		await expectLocal('the hub started');
 	});
 
-	it('shows the hub again within 2 seconds of the phone rejoining the LAN', async function () {
+	it('shows the hub again within 4 seconds of the phone rejoining the LAN', async function () {
 		if (!agent.isMobile) this.skip();
 		const { ssid } = await agent.wifiInfo();
 		await agent.disableWifi();
