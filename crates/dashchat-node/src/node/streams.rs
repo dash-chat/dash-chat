@@ -152,19 +152,25 @@ pub enum ProcessorEvent {
 
     ImportFailed {
         topic: Topic,
+        origin: ImportOrigin,
         error: ImportError,
     },
 
     /// A space's membership changed.
-    SpaceMembersChanged {
-        topic: Topic,
-    },
+    SpaceMembersChanged { topic: Topic },
 
     /// A group-auth operation on `topic`'s space was processed.
-    GroupMembershipOp {
-        topic: Topic,
-        header: Header,
-    },
+    GroupMembershipOp { topic: Topic, header: Header },
+}
+
+/// Which delivery path handed over an import stream, so a failure on one
+/// path never tears down the other's subscription.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ImportOrigin {
+    Mailbox,
+    // Constructed only by the feature-on router.
+    #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
+    LanRouter,
 }
 
 /// Per-topic p2panda streams.
@@ -253,6 +259,7 @@ enum DrainCommand {
     Unsubscribe(Topic),
     Import {
         topic: Topic,
+        origin: ImportOrigin,
         publisher: Publisher,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     },
@@ -489,11 +496,13 @@ impl TopicStreams {
     pub(crate) async fn import(
         &self,
         topic: Topic,
+        origin: ImportOrigin,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) -> Result<(), StreamsError> {
         let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
         self.send_to_drain(DrainCommand::Import {
             topic,
+            origin,
             publisher,
             stream,
         })
@@ -697,7 +706,7 @@ pub(crate) struct TopicDrain {
 
     /// Import tasks spawned so an import does not block the drain.
     /// Dropped with the drain, aborting any still-parked imports.
-    import_tasks: JoinSet<Option<(Topic, ImportError)>>,
+    import_tasks: JoinSet<Option<(Topic, ImportOrigin, ImportError)>>,
 }
 
 impl TopicDrain {
@@ -721,8 +730,12 @@ impl TopicDrain {
                 }
                 Some(result) = self.import_tasks.join_next() => {
                     match result {
-                        Ok(Some((topic, error))) => {
-                            return Some(ProcessorEvent::ImportFailed { topic, error });
+                        Ok(Some((topic, origin, error))) => {
+                            return Some(ProcessorEvent::ImportFailed {
+                                topic,
+                                origin,
+                                error,
+                            });
                         }
                         Ok(None) => {}
                         Err(err) => error!(?err, "import task panicked"),
@@ -742,10 +755,11 @@ impl TopicDrain {
             }
             DrainCommand::Import {
                 topic,
+                origin,
                 publisher,
                 stream,
             } => {
-                self.spawn_import(topic, publisher, stream);
+                self.spawn_import(topic, origin, publisher, stream);
             }
         }
     }
@@ -753,13 +767,14 @@ impl TopicDrain {
     fn spawn_import(
         &mut self,
         topic: Topic,
+        origin: ImportOrigin,
         publisher: Publisher,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) {
         self.import_tasks.spawn(async move {
             let err = publisher.tx().import(stream).await.err()?;
-            error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
-            Some((topic, err))
+            error!(topic = ?topic.aliased(), ?origin, ?err, "import stream failed; topic will not receive further deliveries on this path until re-imported");
+            Some((topic, origin, err))
         });
     }
 
