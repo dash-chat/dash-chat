@@ -25,9 +25,10 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// waiting on the kernel's own SYN retransmit a second later: right after a
 /// link comes up the first SYN is routinely lost.
 const REDIAL_INTERVAL: Duration = Duration::from_millis(500);
-/// How long a hub that went quiet is remembered for a network change to probe
-/// it at again: a phone stepping off its LAN and back, not one that moved on,
-/// where some other service may listen at the same address.
+/// How long a hub neither announces itself nor answers before it is forgotten:
+/// long enough for a phone stepping off its LAN and back to find it again.
+/// A probe is only a TCP connect, so a hub kept alive by answers alone is
+/// taken on trust: whatever answers at its address keeps it listed.
 const REMEMBER_LAPSED_FOR: Duration = Duration::from_secs(60);
 /// Longer than [`PROBE_TIMEOUT`], so a hub with an address that hangs is not
 /// re-probed before the sweep that is still waiting on it gives up.
@@ -84,9 +85,9 @@ struct Hub {
     probed_addrs: BTreeSet<SocketAddr>,
     awaiting_probe: Option<u64>,
     probed_at: Option<Instant>,
-    /// When swarm-discovery aged it out, until it sights it again: meanwhile
-    /// nothing but a lapse check can notice it leave.
-    lapsed_at: Option<Instant>,
+    /// Since swarm-discovery aged it out and no probe has answered, until it
+    /// sights it again: meanwhile nothing but a lapse check can notice it leave.
+    quiet_since: Option<Instant>,
     lapse_check: Option<u64>,
 }
 
@@ -94,8 +95,15 @@ impl Hub {
     fn worth_remembering(&self) -> bool {
         !self.answered_at.is_empty()
             || self
-                .lapsed_at
+                .quiet_since
                 .is_none_or(|at| at.elapsed() < REMEMBER_LAPSED_FOR)
+    }
+
+    /// A hub that answers is not quiet, whatever swarm-discovery last said.
+    fn heard_from(&mut self) {
+        if self.quiet_since.is_some() {
+            self.quiet_since = Some(Instant::now());
+        }
     }
 
     /// Drops the probe it was waiting on too, so one still in flight cannot
@@ -277,7 +285,7 @@ impl DiscoveryBrowser {
             return;
         }
         let hub = hubs.entry(id.clone()).or_default();
-        hub.lapsed_at = None;
+        hub.quiet_since = None;
         hub.lapse_check = None;
         if !hub.needs_probe(&advertised) {
             return;
@@ -302,8 +310,8 @@ impl DiscoveryBrowser {
         let Some(hub) = hubs.get_mut(id) else {
             return;
         };
-        if hub.lapsed_at.is_none() {
-            hub.lapsed_at = Some(Instant::now());
+        if hub.quiet_since.is_none() {
+            hub.quiet_since = Some(Instant::now());
         }
         // Off every subnet it answered on, the phone is the one that moved:
         // dialling it from here would only hang.
@@ -327,7 +335,7 @@ impl DiscoveryBrowser {
     /// A lapsed hub that answers is listed, so something has to notice it
     /// leave: swarm-discovery will not age it out a second time.
     fn watch_lapsed(self: &Arc<Self>, id: &str, hub: &mut Hub) {
-        if hub.lapsed_at.is_none() || hub.answered_at.is_empty() || hub.lapse_check.is_some() {
+        if hub.quiet_since.is_none() || hub.answered_at.is_empty() || hub.lapse_check.is_some() {
             return;
         }
         log::debug!("Local hub's announcements lapsed, checking it still answers: mailbox={id}");
@@ -341,8 +349,7 @@ impl DiscoveryBrowser {
     }
 
     /// Until swarm-discovery sights the hub again, only its answering says it
-    /// is still there — for [`REMEMBER_LAPSED_FOR`] at most, past which the
-    /// phone may be on another LAN where something else answers there.
+    /// is still there.
     /// Holds the browser weakly between steps, so a lapse check cannot keep
     /// discovery browsing after the service is dropped.
     async fn confirm_lapsed(browser: Weak<Self>, id: String, check_id: u64) {
@@ -377,7 +384,9 @@ impl DiscoveryBrowser {
         if hub.lapse_check != Some(check_id) {
             return false;
         }
-        if !still_answers {
+        if still_answers {
+            hub.heard_from();
+        } else {
             log::debug!("Local hub is gone, its announcements lapsed and it stopped answering: mailbox={id}");
             hub.unlist();
             self.publish(&hubs);
@@ -397,12 +406,12 @@ impl DiscoveryBrowser {
             return None;
         }
         if hub
-            .lapsed_at
+            .quiet_since
             .is_none_or(|at| at.elapsed() < REMEMBER_LAPSED_FOR)
         {
             return Some(hub.answered_at.clone());
         }
-        log::debug!("Local hub is gone, it has not announced itself for {REMEMBER_LAPSED_FOR:?}: mailbox={id}");
+        log::debug!("Local hub is gone, it has neither announced itself nor answered for {REMEMBER_LAPSED_FOR:?}: mailbox={id}");
         hubs.remove(id);
         self.publish(&hubs);
         None
@@ -465,11 +474,7 @@ impl DiscoveryBrowser {
         if hub.answered_at.is_empty() {
             log::debug!("Local hub answered at {}: mailbox={id}", answered_at[0]);
         }
-        // Answering on the network we are on now restarts the wait for its
-        // announcements, however long ago it went quiet elsewhere.
-        if hub.answered_at.is_empty() && hub.lapsed_at.is_some() {
-            hub.lapsed_at = Some(Instant::now());
-        }
+        hub.heard_from();
         hub.answered_at = answered_at;
         self.watch_lapsed(id, hub);
         self.publish(&hubs);
@@ -875,7 +880,7 @@ mod tests {
                 answered_at: vec![addr],
                 probed_addrs: [addr].into_iter().collect(),
                 awaiting_probe: Some(2),
-                lapsed_at: Some(Instant::now()),
+                quiet_since: Some(Instant::now()),
                 lapse_check: Some(1),
                 ..Default::default()
             },
@@ -901,7 +906,7 @@ mod tests {
             Hub {
                 probed_addrs: [addr].into_iter().collect(),
                 awaiting_probe: Some(1),
-                lapsed_at: Some(Instant::now() - almost_forgotten),
+                quiet_since: Some(Instant::now() - almost_forgotten),
                 ..Default::default()
             },
         );
@@ -911,6 +916,50 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         assert_eq!(h.browser.lapse_check_addrs("hub", check), Some(vec![addr]));
+    }
+
+    /// Multicast to this phone can be broken outright while the hub answers
+    /// every check.
+    #[tokio::test]
+    async fn a_lapsed_hub_that_keeps_answering_is_not_forgotten() {
+        let h = Harness::new();
+        let hub = listen().await;
+        let addr = hub.local_addr().unwrap();
+        let almost_forgotten = REMEMBER_LAPSED_FOR - Duration::from_millis(100);
+        h.browser.hubs.lock().unwrap().insert(
+            "hub".to_string(),
+            Hub {
+                answered_at: vec![addr],
+                quiet_since: Some(Instant::now() - almost_forgotten),
+                lapse_check: Some(1),
+                ..Default::default()
+            },
+        );
+
+        assert!(h.browser.lapse_check_kept("hub", 1, true));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(h.browser.lapse_check_addrs("hub", 1), Some(vec![addr]));
+    }
+
+    #[test]
+    fn a_hub_quiet_for_too_long_is_forgotten() {
+        let h = Harness::new();
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 9));
+        h.browser.hubs.lock().unwrap().insert(
+            "hub".to_string(),
+            Hub {
+                answered_at: vec![addr],
+                quiet_since: Some(Instant::now() - REMEMBER_LAPSED_FOR),
+                lapse_check: Some(1),
+                ..Default::default()
+            },
+        );
+        h.browser.publish(&h.browser.hubs.lock().unwrap());
+
+        assert_eq!(h.browser.lapse_check_addrs("hub", 1), None);
+        assert!(!h.browser.hubs.lock().unwrap().contains_key("hub"));
+        assert_eq!(*h.hubs.borrow(), BTreeMap::new());
     }
 
     #[tokio::test]
