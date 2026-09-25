@@ -98,8 +98,11 @@ impl Hub {
                 .is_none_or(|at| at.elapsed() < REMEMBER_LAPSED_FOR)
     }
 
+    /// Drops the probe it was waiting on too, so one still in flight cannot
+    /// list it again.
     fn unlist(&mut self) {
         self.lapse_check = None;
+        self.awaiting_probe = None;
         self.answered_at.clear();
         self.probed_at = None;
     }
@@ -107,11 +110,6 @@ impl Hub {
     fn needs_probe(&self, advertised: &BTreeSet<SocketAddr>) -> bool {
         if self.awaiting_probe.is_some() {
             return false;
-        }
-        // Holding off is for not re-dialling a hub that answers; one that has
-        // not is worth every sighting.
-        if self.answered_at.is_empty() {
-            return true;
         }
         match self.probed_at {
             Some(at) if self.probed_addrs == *advertised => at.elapsed() >= REPROBE_INTERVAL,
@@ -191,18 +189,17 @@ impl DiscoveryBrowser {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         hubs.retain(|_, hub| hub.worth_remembering());
-        log::debug!(
-            "Probing the {} known local hubs on the new network",
-            hubs.len()
-        );
+        let mut probed = 0;
         for (id, hub) in hubs.iter_mut() {
             // One already dialling is left to finish: it redials until the
             // route is up, and replacing it would throw its answer away.
             if hub.awaiting_probe.is_none() && !hub.probed_addrs.is_empty() {
                 let addrs = hub.probed_addrs.clone();
                 self.start_probe(id, hub, addrs);
+                probed += 1;
             }
         }
+        log::debug!("Probing {probed} known local hubs on the new network");
     }
 
     /// A probe that cannot answer blocks every later sighting of that hub until
@@ -383,20 +380,20 @@ impl DiscoveryBrowser {
             .hubs
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let hub = hubs.get_mut(id)?;
+        let hub = hubs.get(id)?;
         if hub.lapse_check != Some(check_id) {
             return None;
         }
         if hub
             .lapsed_at
-            .is_some_and(|at| at.elapsed() >= REMEMBER_LAPSED_FOR)
+            .is_none_or(|at| at.elapsed() < REMEMBER_LAPSED_FOR)
         {
-            log::debug!("Local hub is gone, it has not announced itself for {REMEMBER_LAPSED_FOR:?}: mailbox={id}");
-            hub.unlist();
-            self.publish(&hubs);
-            return None;
+            return Some(hub.answered_at.clone());
         }
-        Some(hub.answered_at.clone())
+        log::debug!("Local hub is gone, it has not announced itself for {REMEMBER_LAPSED_FOR:?}: mailbox={id}");
+        hubs.remove(id);
+        self.publish(&hubs);
+        None
     }
 
     async fn probe_hub(
@@ -508,10 +505,11 @@ fn on_a_local_subnet(ip: Ipv4Addr, subnets: &[(Ipv4Addr, u8)]) -> bool {
 }
 
 /// Dials `addr` again every [`REDIAL_INTERVAL`] without giving up on the
-/// earlier dials, so a slow handshake still gets its whole [`PROBE_TIMEOUT`].
+/// earlier dials, all within one [`PROBE_TIMEOUT`]: the first dial gets all of
+/// it, so a slow handshake still completes.
 async fn answers(addr: SocketAddr) -> bool {
-    let dials = PROBE_TIMEOUT.as_millis() / REDIAL_INTERVAL.as_millis();
-    let mut dials: FuturesUnordered<_> = (0..dials as u32)
+    let dial_count = (PROBE_TIMEOUT.as_millis() / REDIAL_INTERVAL.as_millis()).max(1) as u32;
+    let mut dials: FuturesUnordered<_> = (0..dial_count)
         .map(|n| async move {
             tokio::time::sleep(REDIAL_INTERVAL * n).await;
             dial(addr).await
@@ -534,7 +532,10 @@ async fn answers(addr: SocketAddr) -> bool {
 
 /// Whether one dial of `addr` settles if it answers, or `None` when it failed
 /// in a way a later dial may not: an address on a subnet we are on is
-/// routinely unroutable for a moment after the link comes up.
+/// routinely unroutable for a moment after the link comes up. Off our subnets
+/// a failure is final, even for a hub reached through a router: that is also
+/// what a phone that just left its Wi-Fi sees, and a lapse check still
+/// running then must drop the hub at once rather than dial out the timeout.
 async fn dial(addr: SocketAddr) -> Option<bool> {
     match tokio::net::TcpStream::connect(addr).await {
         Ok(_stream) => Some(true),
@@ -845,6 +846,45 @@ mod tests {
         assert_eq!(h.next().await, BTreeMap::new());
     }
 
+    /// A probe from before the lapse check gave up cannot speak for the hub
+    /// once it is unlisted.
+    #[tokio::test]
+    async fn a_probe_in_flight_does_not_list_again_a_hub_its_lapse_check_dropped() {
+        let h = Harness::new();
+        let addr = at(&listen().await);
+        h.browser.hubs.lock().unwrap().insert(
+            "hub".to_string(),
+            Hub {
+                answered_at: vec![addr],
+                probed_addrs: [addr].into_iter().collect(),
+                awaiting_probe: Some(2),
+                lapsed_at: Some(Instant::now()),
+                lapse_check: Some(1),
+                ..Default::default()
+            },
+        );
+
+        assert!(!h.browser.lapse_check_kept("hub", 1, false));
+        h.browser.answered("hub", 2, vec![addr], true);
+
+        assert!(h.browser.hubs.lock().unwrap()["hub"].answered_at.is_empty());
+        assert_eq!(*h.hubs.borrow(), BTreeMap::new());
+    }
+
+    #[tokio::test]
+    async fn a_goodbye_during_a_lapse_check_leaves_the_set_for_good() {
+        let mut h = Harness::new();
+        let hub = listen().await;
+        let addr = hub.local_addr().unwrap();
+        h.seen("hub", addr);
+        assert_eq!(h.next().await, hubs(&[("hub", addr)]));
+        h.expired("hub");
+
+        h.said_goodbye("hub", addr);
+        assert_eq!(h.next().await, BTreeMap::new());
+        h.unchanged().await;
+    }
+
     #[tokio::test]
     async fn a_hub_that_says_goodbye_leaves_the_set_at_once() {
         let mut h = Harness::new();
@@ -923,6 +963,7 @@ mod tests {
         // These run in parallel: another test can take the port in between,
         // and then there is nothing here to prove.
         let Ok(_hub) = TcpListener::bind(addr).await else {
+            eprintln!("port {addr} taken by a parallel test; nothing to prove");
             return;
         };
         h.browser.reprobe_known_hubs();
@@ -941,6 +982,7 @@ mod tests {
         h.expired("hub");
         assert_eq!(h.next().await, BTreeMap::new());
         let Ok(hub) = TcpListener::bind(addr).await else {
+            eprintln!("port {addr} taken by a parallel test; nothing to prove");
             return;
         };
         h.browser.reprobe_known_hubs();
