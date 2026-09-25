@@ -135,6 +135,14 @@ impl Node {
         debug!(topic = ?topic.aliased(), "import mailbox stream");
 
         let stream = Box::pin(ReceiverStream::new(mailbox_rx).map(Operation::from));
+        self.import_stream(topic, stream).await
+    }
+
+    pub(super) async fn import_stream(
+        &self,
+        topic: TopicId,
+        stream: std::pin::Pin<Box<dyn futures::Stream<Item = Operation> + Send>>,
+    ) -> anyhow::Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
             .actor_tx
@@ -195,6 +203,9 @@ impl Node {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "groups operation processing");
+                                if !node.record_if_extension(&operation).await {
+                                    continue;
+                                }
 
                                 if let Some(err) = error {
                                     // @TODO: should consider if this is the desired behavior.
@@ -242,6 +253,9 @@ impl Node {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
+                                if !node.record_if_extension(&operation).await {
+                                    continue;
+                                }
 
 
                                 // Process the operation.
@@ -289,6 +303,46 @@ impl Node {
         handle
     }
 
+    /// As the push extension, record `operation` for the app to process too,
+    /// unless the app acknowledged it already. Done before processing it, so
+    /// the record outlives the extension being killed mid-way; returns whether
+    /// to go on processing, since acknowledging an unrecorded operation would
+    /// hide it from the app for good.
+    async fn record_if_extension(&self, operation: &ProcessedOperation<Payload>) -> bool {
+        if !self.config.record_processed_operations {
+            return true;
+        }
+        let topic = TopicId::from(operation.topic());
+        let header = operation.processed().header();
+        let recorded = async {
+            let acked = self
+                .op_store
+                .acked_log_height(
+                    &topic,
+                    &DeviceId::from(operation.author()),
+                    &header.extensions.log_id,
+                )
+                .await?;
+            if acked.is_some_and(|acked| acked >= header.seq_num) {
+                return anyhow::Ok(());
+            }
+            self.local_store
+                .record_extension_processed_operation(operation.id(), topic)
+                .await
+        }
+        .await;
+        match recorded {
+            Ok(()) => true,
+            Err(err) => {
+                error!(
+                    ?err,
+                    "failed to record an operation for the app to process; leaving it unprocessed"
+                );
+                false
+            }
+        }
+    }
+
     async fn ack_operation(&self, operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
         // Mark the operation as processed so it can be awaited by
         // [`crate::testing::PollConfig::consistency`]
@@ -302,6 +356,11 @@ impl Node {
         // operation eligible for mailbox transmission (see
         // `OpStore::acked_log_height`).
         operation.ack().await?;
+        if self.config.import_recorded_operations {
+            self.local_store
+                .forget_extension_processed_operation(&operation.id())
+                .await?;
+        }
 
         if DeviceId::from(operation.author()) == self.device_id() {
             self.mailboxes

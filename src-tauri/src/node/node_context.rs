@@ -183,6 +183,8 @@ impl NodeContext {
         if self.role == NodeRole::PushNotification {
             config.stream_cursor_prefix = Some("nse".to_string());
         }
+        config.record_processed_operations = self.role == NodeRole::PushNotification;
+        config.import_recorded_operations = self.role == NodeRole::App && cfg!(target_os = "ios");
 
         if !self.p2p_enabled() {
             config = config.no_p2p();

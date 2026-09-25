@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
+use p2panda::Hash;
 use sqlx::SqlitePool;
 
 use crate::{
@@ -41,6 +42,10 @@ const MIGRATIONS: &[&str] = &[
         blob_hash BLOB NOT NULL,
         mailbox_id TEXT NOT NULL,
         PRIMARY KEY (blob_hash, mailbox_id)
+    )",
+    "CREATE TABLE IF NOT EXISTS extension_processed_operations (
+        hash BLOB PRIMARY KEY,
+        topic_id BLOB NOT NULL
     )",
 ];
 
@@ -175,6 +180,46 @@ impl LocalStore {
     /// Inbox topics this node created and advertises via its QR code.
     pub async fn get_advertised_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
         self.get_inbox_topics(InboxRole::Advertised).await
+    }
+
+    /// Record that the push extension processed `hash`, for the app to process
+    /// it too (see [`crate::NodeConfig::record_processed_operations`]).
+    pub async fn record_extension_processed_operation(
+        &self,
+        hash: Hash,
+        topic: TopicId,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO extension_processed_operations (hash, topic_id) VALUES (?, ?)",
+        )
+        .bind(hash.as_bytes().to_vec())
+        .bind(topic.as_bytes().to_vec())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn extension_processed_operations(&self) -> anyhow::Result<Vec<(Hash, TopicId)>> {
+        let rows: Vec<(Vec<u8>, Topic<kind::Untyped>)> =
+            sqlx::query_as("SELECT hash, topic_id FROM extension_processed_operations")
+                .fetch_all(&self.pool)
+                .await?;
+        rows.into_iter()
+            .map(|(hash, topic)| {
+                let hash: [u8; 32] = hash
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("stored operation hash is not 32 bytes"))?;
+                Ok((Hash::from_bytes(hash), *topic))
+            })
+            .collect()
+    }
+
+    pub async fn forget_extension_processed_operation(&self, hash: &Hash) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM extension_processed_operations WHERE hash = ?")
+            .bind(hash.as_bytes().to_vec())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Reply inbox topics this node created for a specific contact exchange and

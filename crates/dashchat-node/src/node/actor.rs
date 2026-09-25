@@ -13,6 +13,8 @@ use p2panda::streams::{
     StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
+use p2panda_auth::group::GroupCrdtError;
+use p2panda_auth::processor::GroupsProcessorError;
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
@@ -426,12 +428,17 @@ impl Actor {
             body,
         };
 
-        self.groups_processor
+        match self
+            .groups_processor
             .process(&GROUPS_STATE_ID, &topic, &operation)
             .await
-            .map_err(|err| ProcessorError::Groups(err.to_string()))?;
-
-        Ok(())
+        {
+            Ok(_) => Ok(()),
+            // Another process sharing the groups state (the iOS push extension)
+            // already applied it.
+            Err(GroupsProcessorError::Groups(GroupCrdtError::DuplicateOperation(..))) => Ok(()),
+            Err(err) => Err(ProcessorError::Groups(err.to_string())),
+        }
     }
 }
 

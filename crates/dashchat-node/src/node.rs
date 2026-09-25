@@ -120,6 +120,15 @@ pub struct NodeConfig {
     /// Whether to defer subscribing to all stored topics and replaying their
     /// backlogs until after `Node::new` returns.
     pub defer_stored_topics_initialization: bool,
+    /// Whether to record every operation this node processes, for another
+    /// node over the same store to process too. On for the iOS push extension:
+    /// whichever process fetches an operation first stores it, and mailbox
+    /// fetches and sync only ever ask for what comes after the store's log
+    /// heights, so the app is never handed it again.
+    pub record_processed_operations: bool,
+    /// Whether to import, on a resync, the operations another node over the
+    /// same store recorded as processed. On for the iOS app.
+    pub import_recorded_operations: bool,
 }
 
 impl NodeConfig {
@@ -170,6 +179,8 @@ impl NodeConfig {
             enable_message_acks: true,
             stream_cursor_prefix: None,
             defer_stored_topics_initialization: false,
+            record_processed_operations: false,
+            import_recorded_operations: false,
         }
     }
 
@@ -197,6 +208,8 @@ impl Default for NodeConfig {
             enable_message_acks: true,
             stream_cursor_prefix: None,
             defer_stored_topics_initialization: false,
+            record_processed_operations: false,
+            import_recorded_operations: false,
         }
     }
 }
@@ -2047,9 +2060,39 @@ impl Node {
     /// Re-run stored-topic initialization so the app catches up on operations
     /// another process (the iOS push extension) wrote into the shared store
     /// while the app was running: it subscribes to any newly-stored topics,
-    /// replaying their operations from the app's own un-advanced cursor.
+    /// replaying their operations from the app's own un-advanced cursor, and
+    /// imports the operations the extension recorded as processed.
     pub async fn resync(&self) -> anyhow::Result<()> {
         self.initialize_stored_topics().await
+    }
+
+    /// Import the operations the push extension processed and recorded, so
+    /// this node processes them too. They are in the shared store already, so
+    /// nothing else delivers them to it; importing processes them regardless,
+    /// and acknowledging one below this node's cursor is a no-op.
+    async fn import_extension_processed_operations(&self) -> anyhow::Result<()> {
+        let mut by_topic: HashMap<TopicId, Vec<Operation>> = HashMap::new();
+        for (hash, topic) in self.local_store.extension_processed_operations().await? {
+            // Without a body there is nothing left for the app layer to see.
+            match self.op_store.get_operation(&hash).await? {
+                Some(operation) if operation.body.is_some() => {
+                    by_topic.entry(topic).or_default().push(operation)
+                }
+                _ => {
+                    self.local_store
+                        .forget_extension_processed_operation(&hash)
+                        .await?
+                }
+            }
+        }
+        for (topic, mut operations) in by_topic {
+            operations
+                .sort_by_key(|op| (DeviceId::from(op.header.verifying_key), op.header.seq_num));
+            tracing::info!(topic = ?topic.aliased(), count = operations.len(), "importing operations the push extension processed");
+            self.import_stream(topic, Box::pin(futures::stream::iter(operations)))
+                .await?;
+        }
+        Ok(())
     }
 
     /// Initialize all stored topics.
@@ -2125,6 +2168,9 @@ impl Node {
             anyhow::bail!("{failures} topic(s) failed to initialize");
         }
 
+        if self.config.import_recorded_operations {
+            self.import_extension_processed_operations().await?;
+        }
         Ok(())
     }
 
