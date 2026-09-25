@@ -74,7 +74,7 @@ iroh-base = { git = "https://github.com/dash-chat/iroh", rev = "4e42c93504146095
 iroh-dns = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 # iroh-gossip 0.101.0 + n0-computer/iroh-gossip PR #159 (redial after a failed dial)
-iroh-gossip = { git = "https://github.com/YuniqueUnic/iroh-gossip", rev = "9eb21c0b99fab5cfca9876e949b05d2aa1fae850" }
+iroh-gossip = { git = "https://github.com/dash-chat/iroh-gossip", rev = "efc565e0e63800a77a3add0dbb97f980278e2974" }
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.

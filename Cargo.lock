@@ -5098,7 +5098,7 @@ dependencies = [
 [[package]]
 name = "iroh-gossip"
 version = "0.101.0"
-source = "git+https://github.com/YuniqueUnic/iroh-gossip?rev=9eb21c0b99fab5cfca9876e949b05d2aa1fae850#9eb21c0b99fab5cfca9876e949b05d2aa1fae850"
+source = "git+https://github.com/dash-chat/iroh-gossip?rev=efc565e0e63800a77a3add0dbb97f980278e2974#efc565e0e63800a77a3add0dbb97f980278e2974"
 dependencies = [
  "blake3",
  "bytes",
