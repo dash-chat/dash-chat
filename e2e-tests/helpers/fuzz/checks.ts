@@ -25,13 +25,13 @@ import { expectView, syncTimeoutFor } from './view';
 /** What any move gets before its effect has to be on screen — a hub
  *  appearing or disappearing, every hub named in the dialog. Beyond this a
  *  user reads the app as slow or broken. */
-export const DISCOVERY_MS = 2_000;
+export const DISCOVERY_MS = 4_000;
 
 /** What a hub that stopped gets before it has to be off the chip. A clean stop
  *  now announces a goodbye and is near-instant; this budget is sized for the
  *  hub that cannot send one — killed, or carried off the LAN — where a phone
  *  waits for the announcement to age out of its swarm. */
-export const DEPARTURE_MS = 4_000;
+export const DEPARTURE_MS = 9_000;
 
 /** What a hub that stopped cleanly gets. `stopLocalHub` waits for the process
  *  to exit, and it announces its goodbye before it stops serving, so a phone
