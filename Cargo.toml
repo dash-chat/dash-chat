@@ -74,8 +74,7 @@ p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fb
 # Dash Router LAN gossip shell. Its p2panda-core/p2panda-net come from
 # crates.io and are patched below onto the same fork the rest of the
 # workspace uses, so there is exactly one VerifyingKey type.
-# Dev-time path (the lan-router worktree); switched to a git rev before merge.
-dash-router = { path = "../dash-router-lan-router-e2e/crates/dash-router", features = ["p2panda"] }
+dash-router = { git = "https://github.com/dash-chat/dash-router", branch = "main", features = ["p2panda"] }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.5.0", default-features = false, features = [
@@ -86,8 +85,8 @@ iroh-relay = "1.4.1"
 
 [patch.crates-io]
 # dash-router depends on registry p2panda-core/p2panda-net 0.7; route them to the fork.
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-071-merge" }
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "64bc5b54" }
 # tao 0.37.1 + tauri-apps/tao#1376: forwards the URL that cold-launches the iOS
 # app, which tao drops on the scene lifecycle (dash-chat/tao branch dashchat)
 tao = { git = "https://github.com/dash-chat/tao", rev = "69ae7dba9271dc05e5746e2e7fff8997bd5c77b9" }
@@ -123,8 +122,3 @@ swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = 
 # p2panda-sync = { path = "/home/michael/work/p2panda/p2panda-sync" }
 # p2panda-discovery = { path = "/home/michael/work/p2panda/p2panda-discovery" }
 # p2panda-encryption = { path = "/home/michael/work/p2panda/p2panda-encryption" }
-
-# Dev-time: dash-router pins polestar to git, but the APIs it needs are only
-# in the local checkout so far. Remove once polestar is pushed and pinned.
-[patch."https://github.com/maackle/polestar-rs.git"]
-polestar = { path = "/home/michael/proj/polestar-rs/polestar" }

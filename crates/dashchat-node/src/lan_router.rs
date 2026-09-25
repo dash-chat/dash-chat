@@ -441,6 +441,13 @@ mod imp {
                 .await
                 .map_err(|e| anyhow!("gossip publish: {e}"))
         }
+
+        /// The node's gossip limit; the router packs its broadcasts to fit
+        /// it (less room for this envelope), so raising the node's
+        /// `GossipConfig::max_message_size` raises the router's budget too.
+        fn max_message_size(&self) -> Option<usize> {
+            Some(self.0.max_message_size())
+        }
     }
 
     pub(crate) struct Subscription(EphemeralStreamSubscription<ByteBuf>);
@@ -517,7 +524,8 @@ mod imp {
                     window_ms: params.push_debounce.as_millis() as u64,
                     max_latency_ms: params.push_max_latency.as_millis() as u64,
                 },
-                max_wire_bytes: dash_router::pack::DEFAULT_MAX_WIRE_BYTES,
+                // Derived from the ephemeral stream's gossip limit.
+                max_wire_bytes: None,
             };
             let intervals = PolicyIntervals {
                 want: IntervalPolicy::Fixed {
