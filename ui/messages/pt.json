@@ -369,5 +369,6 @@
     "testBanner": "Teste de acesso precoce",
     "feedback": "Feedback",
     "reportSent": "Relatório enviado. Obrigado!",
-    "reportQueued": "Relatório salvo. Será enviado quando voltares online."
+    "reportQueued": "Relatório salvo. Será enviado quando voltares online.",
+    "retry": "Repito"
 }
