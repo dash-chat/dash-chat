@@ -16,6 +16,7 @@
 	import { getContext } from 'svelte';
 	import type { SettingsStore } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
+	import { ensureNotificationPermission } from '$lib/utils/notifications';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
@@ -29,15 +30,7 @@
 		if (toggling) return;
 		toggling = true;
 		try {
-			const { isPermissionGranted, requestPermission } = await import(
-				'@tauri-apps/plugin-notification'
-			);
-			let granted = await isPermissionGranted();
-			if (!granted) {
-				const result = await requestPermission();
-				granted = result === 'granted';
-			}
-			if (granted) {
+			if (await ensureNotificationPermission()) {
 				await settingsStore.setNotificationsEnabled(true);
 			}
 		} catch (e) {
