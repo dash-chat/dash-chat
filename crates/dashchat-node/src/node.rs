@@ -2544,3 +2544,77 @@ mod blob_load_tests {
         assert_eq!(got, content);
     }
 }
+
+#[cfg(test)]
+mod forged_contact_request_tests {
+    use crate::contact::InboxTopic;
+    use crate::testing::*;
+    use crate::*;
+
+    /// Mallory, another scanner of Alice's shared code, publishes a later
+    /// request claiming Bobbi's agent id. Accepting Bobbi must still answer
+    /// Bobbi's own request, not the forged one.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn accepting_answers_the_requesting_device_not_a_forger() {
+        let config = NodeConfig::testing().random_network_id();
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config.clone(), "bobbi").await;
+        let mallory = TestNode::new(config, "mallory").await;
+        let bobbi_device_id = bobbi.device_id();
+        let mallory_device_id = mallory.device_id();
+        introduce_peers([&alice, &bobbi, &mallory]).await.unwrap();
+
+        let qr = alice.create_add_contact_qr_code().await.unwrap();
+        bobbi.add_contact(qr.clone()).await.unwrap();
+        PollConfig::default()
+            .wait_for(|| async {
+                match alice.lookup_contact(bobbi_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received bobbi's request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        mallory.add_contact(qr.clone()).await.unwrap();
+        let alice_inbox =
+            InboxTopic::from_nonce(&qr.device_pubkey, &qr.inbox_nonce, chrono::Utc::now());
+        mallory
+            .publish(
+                alice_inbox.topic,
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    profile: mallory.my_profile().await.unwrap().unwrap(),
+                    agent_id: bobbi.agent_id(),
+                    reply_topic: Topic::inbox(),
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+        PollConfig::default()
+            .wait_for(|| async {
+                match alice.lookup_contact(mallory_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received mallory's forged request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        alice.accept_contact(bobbi.agent_id()).await.unwrap();
+        PollConfig::seconds(20)
+            .wait_for(|| async {
+                match bobbi
+                    .get_contacts()
+                    .await
+                    .unwrap()
+                    .contains(&alice.agent_id())
+                {
+                    true => Ok(()),
+                    false => Err("alice's acceptance never reached bobbi"),
+                }
+            })
+            .await
+            .unwrap();
+    }
+}
