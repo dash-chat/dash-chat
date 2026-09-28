@@ -442,3 +442,33 @@ async fn direct_chat_is_not_acked_until_contact_accepted() {
 
     wait_for_delivered(&poll, &bobbi, chat, bobbi.device_id(), header.seq_num).await;
 }
+
+/// Both peers scan each other's code while they can't reach each other and
+/// have no mailbox, then restart: neither contact request is ever delivered,
+/// yet the direct chat syncs once they meet.
+#[tokio::test(flavor = "multi_thread")]
+async fn mutual_requests_that_never_arrive_still_ack_each_other() {
+    setup();
+
+    let poll = PollConfig::default();
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+
+    let alice_qr = alice.create_add_contact_qr_code().await.unwrap();
+    let bobbi_qr = bobbi.create_add_contact_qr_code().await.unwrap();
+    alice.add_contact(bobbi_qr).await.unwrap();
+    bobbi.add_contact(alice_qr).await.unwrap();
+
+    let alice_dir = alice.shutdown().await;
+    let bobbi_dir = bobbi.shutdown().await;
+    let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;
+    let bobbi = TestNode::new_at_path(NodeConfig::testing(), "bobbi", bobbi_dir).await;
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    let chat = alice.direct_chat_with(&bobbi);
+    let from_alice = alice.send_message_raw(chat, "Hi".into()).await.unwrap();
+    let from_bobbi = bobbi.send_message_raw(chat, "Hey".into()).await.unwrap();
+
+    wait_for_delivered(&poll, &alice, chat, alice.device_id(), from_alice.seq_num).await;
+    wait_for_delivered(&poll, &bobbi, chat, bobbi.device_id(), from_bobbi.seq_num).await;
+}

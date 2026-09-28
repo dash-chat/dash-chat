@@ -170,6 +170,9 @@ export type Agent = WebdriverIO.Browser & {
 	 *  peer-to-peer connectivity, so it syncs through mailboxes only. A spec's
 	 *  setup step: call it right after `setupAgents`, before the agents meet. */
 	disableP2p(): Promise<void>;
+	/** Undo [`disableP2p`]: turn the persisted p2p setting back on and rebuild
+	 *  the node with peer-to-peer connectivity. */
+	enableP2p(): Promise<void>;
 	/** The urls this agent asked the OS to open, once at least `count` have
 	 *  arrived. Recorded by the harness's `xdg-open` stub, so desktop only. */
 	waitForOpenedUrls(count?: number): Promise<string[]>;
@@ -354,6 +357,13 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			window.__test.disableP2p().then(done, done),
 		);
 		agent.p2p = false;
+	};
+	agent.enableP2p = async () => {
+		await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
+		await b.executeAsync((done: () => void) =>
+			window.__test.enableP2p().then(done, done),
+		);
+		agent.p2p = true;
 	};
 	agent.restart = async () => {
 		await agent.stopApp();

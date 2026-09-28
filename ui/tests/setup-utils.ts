@@ -237,6 +237,10 @@ function disableP2p(): Promise<void> {
 	return invokeAfterSetup('set_p2p_enabled', { enabled: false });
 }
 
+function enableP2p(): Promise<void> {
+	return invokeAfterSetup('set_p2p_enabled', { enabled: true });
+}
+
 /** Take every notification this app has posted off the device. */
 function clearNotifications(): Promise<void> {
 	return invokeAfterSetup('plugin:notification|remove_active');
@@ -596,6 +600,7 @@ export const testUtils = {
 	simulateUpdate,
 	hasText,
 	disableP2p,
+	enableP2p,
 	clearNotifications,
 	resetToFirstLaunch,
 	showKeyboard,
