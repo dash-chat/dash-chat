@@ -256,6 +256,15 @@ mod tests {
     }
 
     #[test]
+    fn redacts_topic_byte_array() {
+        let input = "Received notification: Op(OpNotification { topic: Topic([115, 141, 94, 24, 253, 20, 106, 114, 176, 29, 155, 223, 118, 237, 251, 242, 223, 65, 196, 109, 60, 229, 115, 151, 106, 243, 121, 82, 124, 168, 1, 2]), ";
+        assert_eq!(
+            redact(input),
+            "Received notification: Op(OpNotification { topic: [REDACTED], "
+        );
+    }
+
+    #[test]
     fn redacts_device_id() {
         let input = "from DeviceId(VerifyingKey([32, 145, 78, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]))";
         assert_eq!(redact(input), "from [REDACTED]");
