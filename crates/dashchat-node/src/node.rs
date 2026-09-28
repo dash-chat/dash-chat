@@ -47,7 +47,7 @@ use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
-    MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
+    MediaMetadata, OutgoingFile, OutgoingMedia, PendingContactRequest, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
 use tracing::error;
@@ -1104,6 +1104,38 @@ impl Node {
         Ok(agents)
     }
 
+    /// The contact request we sent from any of our devices by scanning
+    /// `device_id`'s code, whether or not their acceptance has reached us
+    /// since. The newest one: a request that expired unanswered is sent again,
+    /// and the code may carry a newer name by then.
+    pub async fn outgoing_contact_request(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<Option<PendingContactRequest>> {
+        let log_id: LogId = self.device_group_topic().into();
+        let mut newest: Option<(p2panda_core::Timestamp, PendingContactRequest)> = None;
+        for author in self.op_store.get_authors(log_id).await? {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body else { continue };
+                let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
+                    Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                if request.device_pubkey != device_id {
+                    continue;
+                }
+                if newest
+                    .as_ref()
+                    .is_none_or(|(at, _)| op.header.timestamp > *at)
+                {
+                    newest = Some((op.header.timestamp, request));
+                }
+            }
+        }
+        Ok(newest.map(|(_, request)| request))
+    }
+
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
         self.local_store.subscribed_topics().await
     }
@@ -1848,11 +1880,13 @@ impl Node {
         // device pubkey, since we don't know their agent id yet.
         self.publish(
             self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
-                device_pubkey: contact.device_pubkey,
-                profile_name: contact.profile_name,
-                direct_chat_topic_id,
-            }),
+            Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(
+                PendingContactRequest {
+                    device_pubkey: contact.device_pubkey,
+                    profile_name: contact.profile_name,
+                    direct_chat_topic_id,
+                },
+            )),
             Some(&format!(
                 "add_contact/pending({:?})",
                 contact.device_pubkey.aliased()

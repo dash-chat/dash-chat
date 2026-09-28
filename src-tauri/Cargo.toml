@@ -136,5 +136,6 @@ mailbox-local-server = { workspace = true }
 e2e-tests = ["dashchat-node/testing", "dep:tauri-plugin-wdio-webdriver"]
 
 [dev-dependencies]
+dashchat-node = { path = "../crates/dashchat-node", features = ["testing"] }
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"

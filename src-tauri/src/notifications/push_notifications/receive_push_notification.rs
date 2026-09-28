@@ -338,6 +338,10 @@ async fn handle_push_notification(
     else {
         return Ok(None);
     };
+    log::info!(
+        "Notifying about a pushed operation {}",
+        operation.header.hash()
+    );
 
     let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
         &filesystem.notified_operations_db_path(),
