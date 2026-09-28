@@ -1658,6 +1658,10 @@ impl Node {
         self.register_bootstrap_node(*device_id)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
+        self.local_store
+            .remove_requested_inbox_topics_of(device_id)
+            .await
+            .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
         // Subscribe to the contact's announcements to receive their group
         // control messages, and to our shared direct-chat topic.
         self.register_topic(Topic::announcements(agent_id))
@@ -1769,9 +1773,8 @@ impl Node {
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         // Mint a private reply inbox for this exchange and listen on it for
-        // the owner's ack. We do NOT persist the (possibly shared) advertised
-        // inbox we scanned — only the owner keeps camping on that — so other
-        // scanners of the same QR never share a return channel with us.
+        // the owner's ack, so other scanners of the same QR never share a
+        // return channel with us.
         let reply_inbox = InboxTopic {
             topic: Topic::inbox().alias_named(&format!(
                 "reply_inbox({:?},peer={})",
@@ -1811,6 +1814,17 @@ impl Node {
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        // Our request lives only on this (possibly shared) inbox, so we keep
+        // serving it across restarts — but only until the owner accepts or
+        // the code expires, not for good like the owner does.
+        // TODO: make this more private. Rejoining the inbox's gossip overlay
+        // shows us to (and syncs us the requests of) everyone else who scanned
+        // the same QR; sync the topic only with its owner's node instead.
+        self.local_store
+            .add_requested_inbox_topic(inbox_topic.clone(), contact.device_pubkey)
+            .await
+            .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
 
         // Record a pending request in our own device group so the UI can show a
         // placeholder chat until the owner's ack arrives. Keyed on the owner's
@@ -2166,6 +2180,16 @@ impl Node {
                 .await
             {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize reply inbox topic");
+                failures += 1;
+            }
+        }
+
+        self.local_store
+            .prune_expired_requested_inbox_topics(Utc::now())
+            .await?;
+        for topic in self.local_store.get_requested_inbox_topics().await? {
+            if let Err(err) = self.initialize_topic(*topic.topic).await {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize requested inbox topic");
                 failures += 1;
             }
         }

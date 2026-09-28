@@ -22,6 +22,11 @@ enum InboxRole {
     /// A private inbox we minted while scanning someone's QR, used only to
     /// receive their `ContactRequestAccept`.
     Reply = 1,
+    /// The advertised inbox of a device whose QR we scanned, where our
+    /// `ContactRequest` lives. Kept subscribed until they become a contact or
+    /// the code expires, so a request that didn't sync before a restart still
+    /// reaches them. Value 3 leaves 2 to the accepted-reply role.
+    Requested = 3,
 }
 
 const MIGRATIONS: &[&str] = &[
@@ -297,6 +302,57 @@ impl LocalStore {
         Ok(())
     }
 
+    pub async fn add_requested_inbox_topic(
+        &self,
+        inbox_topic: InboxTopic,
+        inbox_owner: DeviceId,
+    ) -> anyhow::Result<()> {
+        let nanos = inbox_topic
+            .expires_at
+            .timestamp_nanos_opt()
+            .unwrap_or(0)
+            .max(0);
+        sqlx::query(
+            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos, role, expected_ack_author) VALUES (?, ?, ?, ?)",
+        )
+        .bind(inbox_topic.topic.to_vec())
+        .bind(nanos)
+        .bind(InboxRole::Requested)
+        .bind(inbox_owner)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_requested_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
+        self.get_inbox_topics(InboxRole::Requested).await
+    }
+
+    pub async fn remove_requested_inbox_topics_of(
+        &self,
+        inbox_owner: DeviceId,
+    ) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM active_inboxes WHERE expected_ack_author = ? AND role = ?")
+            .bind(inbox_owner)
+            .bind(InboxRole::Requested)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn prune_expired_requested_inbox_topics(
+        &self,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        let nanos = now.timestamp_nanos_opt().unwrap_or(0).max(0);
+        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ? AND role = ?")
+            .bind(nanos)
+            .bind(InboxRole::Requested)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn has_pending_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
         let row: Option<(i64,)> = sqlx::query_as(
             "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ?",
@@ -538,6 +594,65 @@ mod tests {
         let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
         assert_eq!(by_mailbox.get("mbx-a").unwrap(), &vec![h2]);
         assert!(by_mailbox.get("mbx-b").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_requested_inbox_topics_end_on_expiry_or_contact() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(dir.path().join("test_requested_inbox_topics.db"))
+            .await
+            .unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
+
+        let now = Utc::now();
+        let alice = DeviceId::from(p2panda::SigningKey::from_bytes(&[1; 32]).verifying_key());
+        let carol = DeviceId::from(p2panda::SigningKey::from_bytes(&[2; 32]).verifying_key());
+        let expired = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([1; 32]),
+        };
+        let from_alice = InboxTopic {
+            expires_at: now + Duration::days(1),
+            topic: Topic::new([2; 32]),
+        };
+        let from_carol = InboxTopic {
+            expires_at: now + Duration::days(1),
+            topic: Topic::new([3; 32]),
+        };
+        store
+            .add_requested_inbox_topic(expired, alice)
+            .await
+            .unwrap();
+        store
+            .add_requested_inbox_topic(from_alice.clone(), alice)
+            .await
+            .unwrap();
+        store
+            .add_requested_inbox_topic(from_carol.clone(), carol)
+            .await
+            .unwrap();
+
+        store
+            .prune_expired_requested_inbox_topics(now)
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get_requested_inbox_topics().await.unwrap(),
+            maplit::btreeset![from_alice, from_carol.clone()]
+        );
+
+        store.remove_requested_inbox_topics_of(alice).await.unwrap();
+        assert_eq!(
+            store.get_requested_inbox_topics().await.unwrap(),
+            maplit::btreeset![from_carol]
+        );
+        assert!(
+            store
+                .get_advertised_inbox_topics()
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
