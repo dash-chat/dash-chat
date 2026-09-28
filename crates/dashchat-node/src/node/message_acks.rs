@@ -57,7 +57,8 @@ impl Node {
     }
 
     /// Whether `author` may appear in one of our acks: not blocked and — when
-    /// `accepted` is given (direct chats) — an accepted contact.
+    /// `accepted` is given (direct chats) — an accepted contact or a device
+    /// whose code we scanned.
     async fn author_may_be_acked(
         &self,
         author: DeviceId,
@@ -69,6 +70,12 @@ impl Node {
         let Some(accepted) = accepted else {
             return Ok(true);
         };
+        // Scanning their code already disclosed us to them. Waiting for their
+        // acceptance instead would leave every message stuck on "sending"
+        // whenever the handshake ops never arrive.
+        if self.has_outgoing_pending_request(author).await? {
+            return Ok(true);
+        }
         Ok(matches!(
             self.projection.lookup_contact_by_device_id(author).await?,
             Some(agent_id) if accepted.contains(&agent_id)
