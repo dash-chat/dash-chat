@@ -25,6 +25,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { ensureNotificationPermission } from '$lib/utils/notifications';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
 	import Avatar from './Avatar.svelte';
 
@@ -72,18 +73,10 @@
 		}
 	}
 
-	async function requestNotificationPermission() {
+	async function enableNotifications() {
 		if (!isMobile) return;
 		try {
-			const { isPermissionGranted, requestPermission } = await import(
-				'@tauri-apps/plugin-notification'
-			);
-			let granted = await isPermissionGranted();
-			if (!granted) {
-				const result = await requestPermission();
-				granted = result === 'granted';
-			}
-			if (granted) {
+			if (await ensureNotificationPermission()) {
 				await settingsStore.setNotificationsEnabled(true);
 			}
 		} catch (e) {
@@ -100,7 +93,7 @@
 				about: undefined,
 			});
 			await requestLocalNetworkPermission();
-			await requestNotificationPermission();
+			await enableNotifications();
 		} catch (e) {
 			console.error(e);
 			const error = e as Error;

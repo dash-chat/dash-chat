@@ -48,9 +48,9 @@
         "type": "github"
       }
     },
-    "flake-parts_3": {
+    "flake-parts_2": {
       "inputs": {
-        "nixpkgs-lib": "nixpkgs-lib_3"
+        "nixpkgs-lib": "nixpkgs-lib_2"
       },
       "locked": {
         "lastModified": 1777988971,
@@ -143,12 +143,12 @@
     "holonix": {
       "inputs": {
         "crane": "crane_2",
-        "flake-parts": "flake-parts_3",
+        "flake-parts": "flake-parts_2",
         "hc-scaffold": "hc-scaffold",
         "holochain": "holochain",
         "kitsune2": "kitsune2",
         "lair-keystore": "lair-keystore",
-        "nixpkgs": "nixpkgs_4",
+        "nixpkgs": "nixpkgs_3",
         "rust-overlay": "rust-overlay_2"
       },
       "locked": {
@@ -296,6 +296,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-chromedriver-153": {
+      "locked": {
+        "lastModified": 1790207978,
+        "narHash": "sha256-427wZ86bHGHCKGMzW6yaNoTR/qGn5VL1QtJrcdwdCjY=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "b7b88d606075b4c018385f7eccc7494d7f00cba5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "b7b88d606075b4c018385f7eccc7494d7f00cba5",
+        "type": "github"
+      }
+    },
     "nixpkgs-lib": {
       "locked": {
         "lastModified": 1782614948,
@@ -311,7 +327,7 @@
         "type": "github"
       }
     },
-    "nixpkgs-lib_3": {
+    "nixpkgs-lib_2": {
       "locked": {
         "lastModified": 1777168982,
         "narHash": "sha256-GOkGPcboWE9BmGCRMLX3worL4EMnsnG8MyKmXNeYuhQ=",
@@ -358,7 +374,7 @@
         "type": "github"
       }
     },
-    "nixpkgs_4": {
+    "nixpkgs_3": {
       "locked": {
         "lastModified": 1778430510,
         "narHash": "sha256-Ti+ZBvW6yrWWAg2szExVTwCd4qOJ3KlVr1tFHfyfi8Q=",
@@ -384,6 +400,7 @@
         "nixpkgs-chromedriver-150": "nixpkgs-chromedriver-150",
         "nixpkgs-chromedriver-151": "nixpkgs-chromedriver-151",
         "nixpkgs-chromedriver-152": "nixpkgs-chromedriver-152",
+        "nixpkgs-chromedriver-153": "nixpkgs-chromedriver-153",
         "nixpkgs-pnpm": "nixpkgs-pnpm",
         "rust-overlay": "rust-overlay",
         "tauri-plugin-holochain": "tauri-plugin-holochain"
