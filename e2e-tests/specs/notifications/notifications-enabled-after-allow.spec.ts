@@ -21,4 +21,23 @@ describe('Notifications after allowing them during profile creation', () => {
 		await agent.notificationsPage.ready();
 		await expect(agent.notificationsPage.toggleInput).toBeSelected();
 	});
+
+	it('keeps the toggle off when the permission is refused', async () => {
+		await agent.notificationsPage.toggleSwitch.click();
+		await expect(agent.notificationsPage.toggleInput).not.toBeSelected();
+		await agent.stopApp();
+		agent.denyNotificationPermission();
+		await agent.startApp();
+
+		await agent.homePage.settingsLink.click();
+		await agent.settingsPage.ready();
+		await agent.settingsPage.notificationsLink.click();
+		await agent.notificationsPage.ready();
+		await agent.notificationsPage.toggleSwitch.click();
+
+		await agent.toast.expectMessage(
+			await agent.tr('notificationsPermissionDenied'),
+		);
+		await expect(agent.notificationsPage.toggleInput).not.toBeSelected();
+	});
 });

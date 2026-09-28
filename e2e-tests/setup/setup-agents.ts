@@ -48,6 +48,7 @@ import {
 	androidWifiInfo,
 	androidWifiSsid,
 	connectAndroidWifi,
+	denyAndroidNotificationPermission,
 	disableAndroidWifi,
 	enableAndroidWifi,
 	forgetAndroidWifi,
@@ -230,6 +231,10 @@ export type Agent = WebdriverIO.Browser & {
 	 *  request shows the system dialog. Call it between [`stopApp`] and
 	 *  [`startApp`]. Android only. */
 	resetNotificationPermission(): void;
+	/** Deny the notification permission for good, so the app's requests are
+	 *  refused without a dialog. Call it between [`stopApp`] and
+	 *  [`startApp`]. Android only. */
+	denyNotificationPermission(): void;
 	/** What this agent's device has logged so far in the run, as the harness
 	 *  captured it. */
 	readLog(): string;
@@ -499,6 +504,14 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			);
 		}
 		resetAndroidNotificationPermission(deviceUdid(b));
+	};
+	agent.denyNotificationPermission = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(
+				`denyNotificationPermission needs android, got ${agent.platform}`,
+			);
+		}
+		denyAndroidNotificationPermission(deviceUdid(b));
 	};
 
 	return agent;
