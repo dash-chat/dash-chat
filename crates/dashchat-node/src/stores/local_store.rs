@@ -371,12 +371,14 @@ impl LocalStore {
         Ok(row.is_some())
     }
 
-    pub async fn has_pending_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+    pub async fn has_unexpired_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
         let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ?",
+            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ? AND expires_at_nanos >= ?",
         )
         .bind(device_id)
         .bind(InboxRole::Reply)
+        .bind(nanos)
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.is_some())
@@ -712,11 +714,27 @@ mod tests {
             requested_topics().await,
             maplit::btreeset![from_alice, from_carol.clone()]
         );
-        assert!(store.has_pending_reply_inbox_for(alice).await.unwrap());
+        assert_eq!(
+            store
+                .get_reply_inbox_topics_with_author()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        assert!(!store.has_unexpired_reply_inbox_for(alice).await.unwrap());
 
         store.remove_requested_inbox_topics_of(alice).await.unwrap();
         assert_eq!(requested_topics().await, maplit::btreeset![from_carol]);
-        assert!(store.has_pending_reply_inbox_for(alice).await.unwrap());
+        assert_eq!(
+            store
+                .get_reply_inbox_topics_with_author()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
         assert_eq!(
             store.get_advertised_inbox_topics().await.unwrap(),
             maplit::btreeset![expired_advertised]
