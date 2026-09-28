@@ -53,6 +53,7 @@ import {
 	forgetAndroidWifi,
 	isAndroidAppRunning,
 	pressAndroidHome,
+	resetAndroidNotificationPermission,
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
@@ -225,6 +226,10 @@ export type Agent = WebdriverIO.Browser & {
 	/** Kill the phone's push extension process, so the next push starts a
 	 *  fresh one. iOS only. */
 	killPushExtension(): Promise<void>;
+	/** Take the notification permission back to never asked, so the app's next
+	 *  request shows the system dialog. Call it between [`stopApp`] and
+	 *  [`startApp`]. Android only. */
+	resetNotificationPermission(): void;
 	/** What this agent's device has logged so far in the run, as the harness
 	 *  captured it. */
 	readLog(): string;
@@ -486,6 +491,14 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			throw new Error(`only iOS runs a push extension, got ${agent.platform}`);
 		}
 		killIosPushExtension(deviceUdid(b));
+	};
+	agent.resetNotificationPermission = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(
+				`resetNotificationPermission needs android, got ${agent.platform}`,
+			);
+		}
+		resetAndroidNotificationPermission(deviceUdid(b));
 	};
 
 	return agent;
