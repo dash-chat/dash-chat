@@ -250,3 +250,46 @@ async fn test_request_reaches_owner_through_mailbox_after_requester_restart() {
         .await
         .unwrap();
 }
+
+/// Bobbi's request to Alice expired unanswered. When Alice later scans Bobbi,
+/// her request must not be auto-accepted as a mutual add: Bobbi's side no
+/// longer counts his expired request as pending.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_expired_request_does_not_auto_accept_the_owners_request() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let mut config = NodeConfig::testing().random_network_id();
+    config.contact_code_expiry = chrono::Duration::seconds(1);
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
+    let alice_device_id = alice.device_id();
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    let bobbi_dir = bobbi.shutdown().await;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let bobbi = TestNode::new_at_path(config, "bobbi", bobbi_dir).await;
+
+    let qr = bobbi.create_add_contact_qr_code().await.unwrap();
+    alice.add_contact(qr).await.unwrap();
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    PollConfig::seconds(20)
+        .wait_for(|| async {
+            match bobbi.lookup_contact(alice_device_id).await.unwrap() {
+                Some(_) => Ok(()),
+                None => Err("bobbi never received alice's contact request"),
+            }
+        })
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    assert!(
+        !bobbi
+            .get_contacts()
+            .await
+            .unwrap()
+            .contains(&alice.agent_id())
+    );
+}
