@@ -38,7 +38,7 @@ tauri-plugin-audio-recorder = "=0.1.2"
 tauri-plugin-sentry-reporting = { workspace = true }
 
 tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "6163645a2c730338cadc0d9def0ff3091be0515b" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "8eec1f09322c09efa0c0e81a8fa523d3745ba035", features = [
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616", features = [
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
