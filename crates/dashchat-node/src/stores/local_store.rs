@@ -20,7 +20,9 @@ enum InboxRole {
     /// An inbox we advertise in our QR code and receive contact requests on.
     Advertised = 0,
     /// A private inbox we minted while scanning someone's QR, used only to
-    /// receive their `ContactRequestAccept`.
+    /// receive their `ContactRequestAccept`. Never pruned: a late acceptance —
+    /// possibly of an older request, after a re-scan — is matched by topic
+    /// whatever its expiry, so pruning one would strand that request.
     Reply = 1,
     /// The advertised inbox of a device whose QR we scanned, where our
     /// `ContactRequest` lives. Restored at startup until they become a contact
@@ -419,14 +421,6 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn prune_expired_advertised_inbox_topics(
-        &self,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
-        self.prune_expired_inbox_topics(InboxRole::Advertised, now)
-            .await
-    }
-
     async fn prune_expired_inbox_topics(
         &self,
         role: InboxRole,
@@ -739,59 +733,5 @@ mod tests {
             store.get_advertised_inbox_topics().await.unwrap(),
             maplit::btreeset![expired_advertised]
         );
-    }
-
-    #[tokio::test]
-    async fn test_prune_expired_advertised_inbox_topics() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_prune_inbox_topics.db"))
-            .await
-            .unwrap();
-        let store = LocalStore::new(pool.clone()).await.unwrap();
-
-        let now = Utc::now();
-        let expired = now - Duration::days(1);
-        let valid = now + Duration::days(1);
-        let more_valid = now + Duration::days(10);
-
-        let mut topics = maplit::btreeset![
-            InboxTopic {
-                expires_at: expired,
-                topic: Topic::new([1; 32]),
-            },
-            InboxTopic {
-                expires_at: valid,
-                topic: Topic::new([2; 32]),
-            },
-            InboxTopic {
-                expires_at: more_valid,
-                topic: Topic::new([3; 32]),
-            },
-        ];
-
-        for t in &topics {
-            store.add_active_inbox_topic(t.clone()).await.unwrap();
-        }
-
-        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
-        assert_eq!(loaded_topics, topics);
-
-        store
-            .prune_expired_advertised_inbox_topics(now)
-            .await
-            .unwrap();
-        topics.pop_first().unwrap();
-
-        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
-        assert_eq!(loaded_topics, topics);
-
-        store
-            .prune_expired_advertised_inbox_topics(more_valid)
-            .await
-            .unwrap();
-        topics.pop_first().unwrap();
-
-        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
-        assert_eq!(loaded_topics, topics);
     }
 }

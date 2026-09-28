@@ -1712,12 +1712,12 @@ impl Node {
         if self
             .is_accepted_contact(contact.device_pubkey)
             .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
             || self
                 .local_store
                 .has_unexpired_requested_inbox_for(contact.device_pubkey)
                 .await
-                .map_err(|e| Error::AuthorOperation(e.to_string()))?
+                .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
         {
             return Ok(AddContactResult::AlreadyRequested(direct_chat_topic_id));
         }
