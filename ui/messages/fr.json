@@ -308,7 +308,7 @@
     "replyingTo": "Répondre à {{name}}",
     "voiceMessage": "Message vocal",
     "messageDeleted": "Message supprimé",
-    "messageStatusSending": "Essayer d'envoyer",
+    "messageStatusSending": "Tentative d’envoi",
     "messageStatusMailbox": "Envoyé au serveur",
     "messageStatusDelivered": "Livré",
     "discardDraftTitle": "Je rejette l'ébauche ?",
@@ -388,6 +388,6 @@
     "fileDownloadFailed": "Le téléchargement de fichiers a échoué.",
     "contactRequestSent": "Demande de contact envoyée.",
     "errorAddContactDeviceLinkingNotSupported": "Ce code est pour lier un périphérique, sans ajouter de contact.",
-    "messageStatusUnsent": "Envoi",
+    "messageStatusUnsent": "Envoi en cours",
     "retry": "Retry"
 }
