@@ -13,15 +13,22 @@ use crate::{
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
 
-/// Distinguishes the two roles an inbox topic can play for this node.
+/// Distinguishes the roles an inbox topic can play for this node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[repr(i64)]
 enum InboxRole {
     /// An inbox we advertise in our QR code and receive contact requests on.
     Advertised = 0,
     /// A private inbox we minted while scanning someone's QR, used only to
-    /// receive their `ContactRequestAccept`.
+    /// receive their `ContactRequestAccept`. Never pruned: a late acceptance —
+    /// possibly of an older request, after a re-scan — is matched by topic
+    /// whatever its expiry, so pruning one would strand that request.
     Reply = 1,
+    /// The advertised inbox of a device whose QR we scanned, where our
+    /// `ContactRequest` lives. Restored at startup until they become a contact
+    /// or the code expires, so a request that didn't sync before a restart still
+    /// reaches them. Value 3 leaves 2 to the accepted-reply role.
+    Requested = 3,
 }
 
 const MIGRATIONS: &[&str] = &[
@@ -235,10 +242,17 @@ impl LocalStore {
     pub async fn get_reply_inbox_topics_with_author(
         &self,
     ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        self.get_inbox_topics_with_author(InboxRole::Reply).await
+    }
+
+    async fn get_inbox_topics_with_author(
+        &self,
+        role: InboxRole,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
         let rows: Vec<(Topic<kind::Untyped>, i64, DeviceId)> = sqlx::query_as(
             "SELECT topic_id, expires_at_nanos, expected_ack_author FROM active_inboxes WHERE role = ?",
         )
-        .bind(InboxRole::Reply)
+        .bind(role)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
@@ -280,6 +294,25 @@ impl LocalStore {
         inbox_topic: InboxTopic,
         expected_ack_author: DeviceId,
     ) -> anyhow::Result<()> {
+        self.add_inbox_topic_with_author(inbox_topic, InboxRole::Reply, expected_ack_author)
+            .await
+    }
+
+    pub async fn add_requested_inbox_topic(
+        &self,
+        inbox_topic: InboxTopic,
+        inbox_owner: DeviceId,
+    ) -> anyhow::Result<()> {
+        self.add_inbox_topic_with_author(inbox_topic, InboxRole::Requested, inbox_owner)
+            .await
+    }
+
+    async fn add_inbox_topic_with_author(
+        &self,
+        inbox_topic: InboxTopic,
+        role: InboxRole,
+        author: DeviceId,
+    ) -> anyhow::Result<()> {
         let nanos = inbox_topic
             .expires_at
             .timestamp_nanos_opt()
@@ -290,19 +323,66 @@ impl LocalStore {
         )
         .bind(inbox_topic.topic.to_vec())
         .bind(nanos)
-        .bind(InboxRole::Reply)
-        .bind(expected_ack_author)
+        .bind(role)
+        .bind(author)
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
-    pub async fn has_pending_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+    pub async fn get_requested_inbox_topics_with_owner(
+        &self,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        self.get_inbox_topics_with_author(InboxRole::Requested)
+            .await
+    }
+
+    pub async fn remove_requested_inbox_topics_of(
+        &self,
+        inbox_owner: DeviceId,
+    ) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM active_inboxes WHERE expected_ack_author = ? AND role = ?")
+            .bind(inbox_owner)
+            .bind(InboxRole::Requested)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn prune_expired_requested_inbox_topics(&self) -> anyhow::Result<()> {
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
+        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ? AND role = ?")
+            .bind(nanos)
+            .bind(InboxRole::Requested)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn has_unexpired_requested_inbox_for(
+        &self,
+        inbox_owner: DeviceId,
+    ) -> anyhow::Result<bool> {
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
         let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ?",
+            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ? AND expires_at_nanos >= ?",
+        )
+        .bind(inbox_owner)
+        .bind(InboxRole::Requested)
+        .bind(nanos)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.is_some())
+    }
+
+    pub async fn has_unexpired_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ? AND expires_at_nanos >= ?",
         )
         .bind(device_id)
         .bind(InboxRole::Reply)
+        .bind(nanos)
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.is_some())
@@ -340,18 +420,6 @@ impl LocalStore {
         .bind(role)
         .execute(&self.pool)
         .await?;
-        Ok(())
-    }
-
-    pub async fn prune_expired_active_inbox_topics(
-        &self,
-        expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
-        let nanos = expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
-        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ?")
-            .bind(nanos)
-            .execute(&self.pool)
-            .await?;
         Ok(())
     }
 
@@ -541,53 +609,114 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_prune_expired_active_inbox_topics() {
+    async fn test_requested_inbox_topics_end_on_expiry_or_contact() {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_prune_inbox_topics.db"))
+        let pool = create_sqlite_pool(dir.path().join("test_requested_inbox_topics.db"))
             .await
             .unwrap();
-        let store = LocalStore::new(pool.clone()).await.unwrap();
+        let store = LocalStore::new(pool).await.unwrap();
 
         let now = Utc::now();
-        let expired = now - Duration::days(1);
-        let valid = now + Duration::days(1);
-        let more_valid = now + Duration::days(10);
-
-        let mut topics = maplit::btreeset![
-            InboxTopic {
-                expires_at: expired,
-                topic: Topic::new([1; 32]),
-            },
-            InboxTopic {
-                expires_at: valid,
-                topic: Topic::new([2; 32]),
-            },
-            InboxTopic {
-                expires_at: more_valid,
-                topic: Topic::new([3; 32]),
-            },
-        ];
-
-        for t in &topics {
-            store.add_active_inbox_topic(t.clone()).await.unwrap();
-        }
-
-        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
-        assert_eq!(loaded_topics, topics);
-
-        store.prune_expired_active_inbox_topics(now).await.unwrap();
-        topics.pop_first().unwrap();
-
-        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
-        assert_eq!(loaded_topics, topics);
-
+        let alice = DeviceId::from(p2panda::SigningKey::from_bytes(&[1; 32]).verifying_key());
+        let carol = DeviceId::from(p2panda::SigningKey::from_bytes(&[2; 32]).verifying_key());
+        let expired = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([1; 32]),
+        };
+        let from_alice = InboxTopic {
+            expires_at: now + Duration::days(1),
+            topic: Topic::new([2; 32]),
+        };
+        let from_carol = InboxTopic {
+            expires_at: now + Duration::days(1),
+            topic: Topic::new([3; 32]),
+        };
         store
-            .prune_expired_active_inbox_topics(more_valid)
+            .add_requested_inbox_topic(expired, alice)
             .await
             .unwrap();
-        topics.pop_first().unwrap();
+        store
+            .add_requested_inbox_topic(from_alice.clone(), alice)
+            .await
+            .unwrap();
+        store
+            .add_requested_inbox_topic(from_carol.clone(), carol)
+            .await
+            .unwrap();
+        // The reply inbox minted for the same exchange shares the author
+        // column, and must outlive both the prune and the removal.
+        let expired_reply_to_alice = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([4; 32]),
+        };
+        store
+            .add_reply_inbox_topic(expired_reply_to_alice, alice)
+            .await
+            .unwrap();
+        let expired_advertised = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([6; 32]),
+        };
+        store
+            .add_active_inbox_topic(expired_advertised.clone())
+            .await
+            .unwrap();
+        let requested_topics = || async {
+            store
+                .get_requested_inbox_topics_with_owner()
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|(topic, _)| topic)
+                .collect::<BTreeSet<_>>()
+        };
 
-        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
-        assert_eq!(loaded_topics, topics);
+        let dave = DeviceId::from(p2panda::SigningKey::from_bytes(&[3; 32]).verifying_key());
+        let expired_to_dave = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([5; 32]),
+        };
+        store
+            .add_requested_inbox_topic(expired_to_dave, dave)
+            .await
+            .unwrap();
+        assert!(
+            store
+                .has_unexpired_requested_inbox_for(alice)
+                .await
+                .unwrap()
+        );
+        assert!(!store.has_unexpired_requested_inbox_for(dave).await.unwrap());
+
+        store.prune_expired_requested_inbox_topics().await.unwrap();
+        assert_eq!(
+            requested_topics().await,
+            maplit::btreeset![from_alice, from_carol.clone()]
+        );
+        assert_eq!(
+            store
+                .get_reply_inbox_topics_with_author()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        assert!(!store.has_unexpired_reply_inbox_for(alice).await.unwrap());
+
+        store.remove_requested_inbox_topics_of(alice).await.unwrap();
+        assert_eq!(requested_topics().await, maplit::btreeset![from_carol]);
+        assert_eq!(
+            store
+                .get_reply_inbox_topics_with_author()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store.get_advertised_inbox_topics().await.unwrap(),
+            maplit::btreeset![expired_advertised]
+        );
     }
 }
