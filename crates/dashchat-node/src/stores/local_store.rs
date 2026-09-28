@@ -24,13 +24,11 @@ enum InboxRole {
     /// possibly of an older request, after a re-scan — is matched by topic
     /// whatever its expiry, so pruning one would strand that request.
     Reply = 1,
-    // 2 is retired: 0.20.8 kept accepted reply inboxes under it (see the
-    // migration that deletes them). Don't reuse it.
     /// The advertised inbox of a device whose QR we scanned, where our
     /// `ContactRequest` lives. Restored at startup until they become a contact
     /// or the code expires, so a request that didn't sync before a restart still
     /// reaches them.
-    Requested = 3,
+    Requested = 2,
 }
 
 const MIGRATIONS: &[&str] = &[
@@ -47,7 +45,6 @@ const MIGRATIONS: &[&str] = &[
         role INTEGER NOT NULL DEFAULT 0,
         expected_ack_author BLOB NULL
     )",
-    "DELETE FROM active_inboxes WHERE role = 2",
     "CREATE TABLE IF NOT EXISTS unfetched_blob_hashes (
         blob_hash BLOB NOT NULL,
         mailbox_id TEXT NOT NULL,
