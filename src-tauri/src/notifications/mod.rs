@@ -506,6 +506,60 @@ fn stable_notification_id(id_bytes: &[u8]) -> anyhow::Result<i32> {
 mod tests {
     use super::*;
 
+    /// Someone whose code we scanned writes to us before their acceptance
+    /// has reached us. The chat already shows their message, so it must be
+    /// announced, titled with the name their code carried (DASH-CHAT-4W).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn announces_a_message_from_someone_we_scanned() {
+        use dashchat_node::testing::TestNode;
+        use dashchat_node::{AddContactResult, AsBody, NodeConfig, Profile};
+        use p2panda::operation::LogId;
+
+        let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+        let bob = TestNode::new(NodeConfig::testing(), "bob").await;
+        bob.set_profile(Profile {
+            name: "Bob".to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        })
+        .await
+        .unwrap();
+
+        // Each scans the other's code. Nothing travels between the two nodes,
+        // so neither acceptance ever arrives.
+        let alice_code = alice.create_add_contact_qr_code().await.unwrap();
+        let bob_code = bob.create_add_contact_qr_code().await.unwrap();
+        let AddContactResult::NewRequest(chat) = alice.add_contact(bob_code).await.unwrap() else {
+            panic!("alice had already asked bob");
+        };
+        let AddContactResult::NewRequest(bobs_chat) = bob.add_contact(alice_code).await.unwrap()
+        else {
+            panic!("bob had already asked alice");
+        };
+        assert_eq!(chat, bobs_chat);
+
+        let header = bob
+            .send_message(chat, "are you there?", None, None)
+            .await
+            .unwrap();
+        let op = bob
+            .op_store
+            .get_log(&bob.device_id(), &LogId::from_topic(chat.into()), None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|op| op.hash == header.hash())
+            .unwrap();
+        let payload = Payload::try_from_body(&op.body.unwrap()).unwrap();
+
+        let data = build_notification_data(&alice, chat.into(), &header, Some(&payload))
+            .await
+            .expect("bob's message is announced");
+        assert_eq!(data.title.as_deref(), Some("Bob"));
+        assert_eq!(data.body.as_deref(), Some("are you there?"));
+    }
+
     #[test]
     fn stable_notification_id_uses_first_four_bytes_little_endian() {
         let bytes = [0x01, 0x02, 0x03, 0x04, 0xff, 0xff, 0xff, 0xff];
