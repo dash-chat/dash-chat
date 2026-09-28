@@ -25,6 +25,7 @@
 	);
 
 	let toggling = $state(false);
+	let refusedEnables = $state(0);
 
 	async function enable() {
 		if (toggling) return;
@@ -34,6 +35,7 @@
 				await settingsStore.setNotificationsEnabled(true);
 			} else {
 				showToast(m.notificationsPermissionDenied(), 'error');
+				refusedEnables += 1;
 			}
 		} catch (e) {
 			console.error('Failed to enable notifications:', e);
@@ -76,11 +78,15 @@
 				<ListItem title={m.notifications()} data-testid="notifications-toggle">
 					{#snippet after()}
 						{#await $notificationsEnabled then enabled}
-							<Toggle
-								checked={enabled}
-								disabled={toggling}
-								onChange={() => (enabled ? disable() : enable())}
-							/>
+							<!-- Konsta's Toggle keeps the checked state its own click set, so a
+							     refused enable remounts it to show the stored value again. -->
+							{#key refusedEnables}
+								<Toggle
+									checked={enabled}
+									disabled={toggling}
+									onChange={() => (enabled ? disable() : enable())}
+								/>
+							{/key}
 						{/await}
 					{/snippet}
 				</ListItem>
