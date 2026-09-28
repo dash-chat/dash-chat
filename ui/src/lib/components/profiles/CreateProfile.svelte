@@ -25,7 +25,7 @@
 	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
-		isNotificationPermissionGranted,
+		getNotificationPermission,
 		requestNotificationPermission,
 	} from '$lib/utils/notifications';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
@@ -77,7 +77,7 @@
 	async function askForNotificationPermission() {
 		if (!isMobile) return;
 		try {
-			if (!(await isNotificationPermissionGranted())) {
+			if ((await getNotificationPermission()) !== 'granted') {
 				await requestNotificationPermission();
 			}
 		} catch (e) {

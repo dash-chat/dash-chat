@@ -17,7 +17,11 @@
 	import { getContext } from 'svelte';
 	import type { SettingsStore } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
-	import { isNotificationPermissionGranted } from '$lib/utils/notifications';
+	import {
+		type NotificationPermissionState,
+		getNotificationPermission,
+		requestNotificationPermission,
+	} from '$lib/utils/notifications';
 	import PermissionSettingsSheet from '$lib/components/PermissionSettingsSheet.svelte';
 
 	const theme = $derived(useTheme());
@@ -27,13 +31,25 @@
 	);
 
 	let toggling = $state(false);
-	let permissionGranted = $state<boolean | undefined>(undefined);
+	let permission = $state<NotificationPermissionState | undefined>(undefined);
 	let showSettingsSheet = $state(false);
 
 	function refreshPermission() {
-		isNotificationPermissionGranted()
-			.then(granted => (permissionGranted = granted))
+		getNotificationPermission()
+			.then(state => (permission = state))
 			.catch(e => console.error('Failed to read notification permission:', e));
+	}
+
+	async function turnOn() {
+		if (permission === 'denied') {
+			showSettingsSheet = true;
+			return;
+		}
+		try {
+			permission = await requestNotificationPermission();
+		} catch (e) {
+			console.error('Failed to read notification permission:', e);
+		}
 	}
 
 	$effect(() => {
@@ -74,7 +90,7 @@
 
 	<div class="column" style="flex: 1">
 		<div class="column center-in-desktop">
-			{#if permissionGranted === false}
+			{#if permission === 'prompt' || permission === 'denied'}
 				<div class="px-4 pt-2">
 					<div
 						class="flex flex-col gap-1 rounded-xl bg-brand-primary/10 px-4 pt-4 pb-2"
@@ -87,7 +103,7 @@
 							<Button
 								inline
 								clear
-								onClick={() => (showSettingsSheet = true)}
+								onClick={turnOn}
 								data-testid="notifications-permission-turn-on"
 							>
 								{m.notificationsTurnOn()}
@@ -102,8 +118,8 @@
 					{#snippet after()}
 						{#await $notificationsEnabled then enabled}
 							<Toggle
-								checked={enabled && permissionGranted === true}
-								disabled={toggling || permissionGranted !== true}
+								checked={enabled && permission === 'granted'}
+								disabled={toggling || permission !== 'granted'}
 								onChange={() => setEnabled(!enabled)}
 							/>
 						{/await}
