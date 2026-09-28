@@ -277,7 +277,7 @@
     "recentPhotosOpenSettings": "Paramètres ouverts",
     "block": "Bloquer",
     "unblock": "Débloquer",
-    "blockContactTitle": "Block {{name}}?",
+    "blockContactTitle": "Bloquer {{name}}?",
     "blockContactDescription": "Les gens bloqués ne pourront pas vous envoyer des messages.",
     "unblockContactTitle": "Débloquer {{name}} ?",
     "unblockContactDescription": "Vous serez en mesure de vous envoyer un message.",
