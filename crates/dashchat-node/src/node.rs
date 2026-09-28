@@ -1104,24 +1104,36 @@ impl Node {
         Ok(agents)
     }
 
-    /// The contact requests we sent by scanning someone's code, whether or not
-    /// their acceptance has reached us since.
-    pub async fn outgoing_contact_requests(&self) -> anyhow::Result<Vec<PendingContactRequest>> {
-        let log_id = self.device_group_topic().into();
-        let mut requests = vec![];
-        for op in self
-            .op_store
-            .get_log(&self.device_id(), &log_id, None)
-            .await?
-        {
-            let Some(body) = op.body else { continue };
-            if let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
-                Payload::try_from_body(&body)
-            {
-                requests.push(request);
+    /// The contact request we sent from any of our devices by scanning
+    /// `device_id`'s code, whether or not their acceptance has reached us
+    /// since. The newest one: a request that expired unanswered is sent again,
+    /// and the code may carry a newer name by then.
+    pub async fn outgoing_contact_request(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<Option<PendingContactRequest>> {
+        let log_id: LogId = self.device_group_topic().into();
+        let mut newest: Option<(p2panda_core::Timestamp, PendingContactRequest)> = None;
+        for author in self.op_store.get_authors(log_id).await? {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body else { continue };
+                let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
+                    Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                if request.device_pubkey != device_id {
+                    continue;
+                }
+                if newest
+                    .as_ref()
+                    .is_none_or(|(at, _)| op.header.timestamp > *at)
+                {
+                    newest = Some((op.header.timestamp, request));
+                }
             }
         }
-        Ok(requests)
+        Ok(newest.map(|(_, request)| request))
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {

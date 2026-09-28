@@ -226,10 +226,10 @@ async fn test_cannot_add_self_as_contact() {
     assert!(matches!(result, Err(AddContactError::CannotAddSelf)));
 }
 
-/// Every code we scan is recorded as an outgoing request, with the name it
-/// carries; being scanned records none.
+/// Every code we scan is recorded as an outgoing request to its owner, with
+/// the name it carries; being scanned records none.
 #[tokio::test(flavor = "multi_thread")]
-async fn test_outgoing_contact_requests() {
+async fn test_outgoing_contact_request() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
     let alice = TestNode::new(NodeConfig::testing(), "alice").await;
@@ -238,22 +238,36 @@ async fn test_outgoing_contact_requests() {
 
     let alice_qr = alice.create_add_contact_qr_code().await.unwrap();
     let carol_qr = carol.create_add_contact_qr_code().await.unwrap();
-    let expected = vec![
-        (alice.device_id(), alice_qr.profile_name.clone()),
-        (carol.device_id(), carol_qr.profile_name.clone()),
-    ];
+    let alice_name = alice_qr.profile_name.clone();
+    let carol_name = carol_qr.profile_name.clone();
     bobbi.add_contact(alice_qr).await.unwrap();
     bobbi.add_contact(carol_qr).await.unwrap();
 
-    let requests: Vec<_> = bobbi
-        .outgoing_contact_requests()
+    let to_alice = bobbi
+        .outgoing_contact_request(alice.device_id())
         .await
         .unwrap()
-        .into_iter()
-        .map(|request| (request.device_pubkey, request.profile_name))
-        .collect();
-    assert_eq!(requests, expected);
-    assert!(alice.outgoing_contact_requests().await.unwrap().is_empty());
+        .unwrap();
+    assert_eq!(
+        (to_alice.device_pubkey, to_alice.profile_name),
+        (alice.device_id(), alice_name)
+    );
+    let to_carol = bobbi
+        .outgoing_contact_request(carol.device_id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (to_carol.device_pubkey, to_carol.profile_name),
+        (carol.device_id(), carol_name)
+    );
+    assert_eq!(
+        alice
+            .outgoing_contact_request(bobbi.device_id())
+            .await
+            .unwrap(),
+        None
+    );
 }
 
 /// Adding the same contact a second time returns AlreadyRequested.
