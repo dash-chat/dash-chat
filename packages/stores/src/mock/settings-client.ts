@@ -35,7 +35,7 @@ export class MockSettingsClient implements ISettingsClient {
 		qr_color: null,
 		local_mailbox_enabled: false,
 		p2p_enabled: true,
-		notifications_enabled: false,
+		notifications_enabled: true,
 		background_mode_enabled: false,
 	};
 

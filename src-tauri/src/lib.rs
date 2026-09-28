@@ -101,6 +101,7 @@ pub fn run() {
                             node.notify_unfetched_blob_followup();
                         }
                     }
+                    notifications::push_notifications::resync_if_enablement_changed(&app).await;
                 })
                 .build(),
         );

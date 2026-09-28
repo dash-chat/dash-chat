@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -75,6 +76,12 @@ pub fn setup_push_notifications(
         },
     );
 
+    handle.manage(PushRegistrationSync {
+        registration_task: push_notifications_registration_task.clone(),
+        subscriptions_task: sync_topic_subscriptions_task.clone(),
+        registered_enabled: Mutex::new(None),
+    });
+
     // Re-register every time the app starts
     // This makes it so that a loss of data in the push notifications server will be recovered from
     push_notifications_registration_task.trigger();
@@ -105,6 +112,30 @@ pub fn setup_push_notifications(
     Ok(())
 }
 
+struct PushRegistrationSync {
+    registration_task: SingletonTaskWithRetries,
+    subscriptions_task: SingletonTaskWithRetries,
+    /// What the last registration run told the server, which the OS
+    /// permission can drift away from while the app is in the background.
+    registered_enabled: Mutex<Option<bool>>,
+}
+
+/// Re-sync with the push notifications server if notifications got enabled or
+/// disabled since the last registration, e.g. by the user changing the OS
+/// permission while the app was in the background.
+pub(crate) async fn resync_if_enablement_changed(handle: &AppHandle) {
+    let Some(sync) = handle.try_state::<PushRegistrationSync>() else {
+        return;
+    };
+    let enabled = are_notifications_enabled(handle).await;
+    if *sync.registered_enabled.lock().unwrap() == Some(enabled) {
+        return;
+    }
+    log::info!("Notifications enablement changed: synchronizing status with the push notifications server.");
+    sync.registration_task.trigger();
+    sync.subscriptions_task.trigger();
+}
+
 /// If notifications are currently enabled, get the FCM token and register it with the server
 /// If they're not, unregister the FCM token from the server
 async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Result<()> {
@@ -117,7 +148,11 @@ async fn update_push_notifications_registration(handle: AppHandle) -> anyhow::Re
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
     let client = handle.state::<PushNotificationsClient>();
 
-    if are_notifications_enabled(&handle).await {
+    let enabled = are_notifications_enabled(&handle).await;
+    if let Some(sync) = handle.try_state::<PushRegistrationSync>() {
+        *sync.registered_enabled.lock().unwrap() = Some(enabled);
+    }
+    if enabled {
         log::info!("Notifications are enabled: registering FCM token.");
         let h = handle.clone();
         let token = run_plugin_call(move || h.notification().register_for_push_notifications())

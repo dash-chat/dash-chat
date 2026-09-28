@@ -575,6 +575,15 @@ export function stopAndroidApp(udid: string): void {
 	);
 }
 
+/** Revoke the notification permission the session's autoGrantPermissions
+ *  granted on install. Android kills the app when it loses a permission. */
+export function revokeAndroidNotificationPermission(udid: string): void {
+	adbShell(
+		udid,
+		`pm revoke ${APP_PACKAGE} android.permission.POST_NOTIFICATIONS`,
+	);
+}
+
 /** Whether the app's main process is running. Appium's queryAppState
  *  pgrep-matches any process whose name contains the package, and webview
  *  renderer processes can linger for minutes after the main process exits, so

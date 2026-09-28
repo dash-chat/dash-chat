@@ -4,7 +4,6 @@
 	import {
 		type ContactsStore,
 		type Error,
-		type SettingsStore,
 		invokeAfterSetup,
 	} from 'dash-chat-stores';
 	import AvatarPicker from './AvatarPicker.svelte';
@@ -25,6 +24,10 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import {
+		isNotificationPermissionGranted,
+		requestNotificationPermission,
+	} from '$lib/utils/notifications';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
 	import Avatar from './Avatar.svelte';
 
@@ -37,7 +40,6 @@
 	let { onBack }: { onBack?: () => void } = $props();
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
-	const settingsStore: SettingsStore = getContext('settings-store');
 	let name = $state<string | undefined>(undefined);
 	let surname = $state<string | undefined>(undefined);
 	let avatar = $state<string | undefined>(undefined);
@@ -72,22 +74,14 @@
 		}
 	}
 
-	async function requestNotificationPermission() {
+	async function askForNotificationPermission() {
 		if (!isMobile) return;
 		try {
-			const { isPermissionGranted, requestPermission } = await import(
-				'@tauri-apps/plugin-notification'
-			);
-			let granted = await isPermissionGranted();
-			if (!granted) {
-				const result = await requestPermission();
-				granted = result === 'granted';
-			}
-			if (granted) {
-				await settingsStore.setNotificationsEnabled(true);
+			if (!(await isNotificationPermissionGranted())) {
+				await requestNotificationPermission();
 			}
 		} catch (e) {
-			console.error('Failed to setup push notifications:', e);
+			console.error('Failed to request notification permission:', e);
 		}
 	}
 
@@ -100,7 +94,7 @@
 				about: undefined,
 			});
 			await requestLocalNetworkPermission();
-			await requestNotificationPermission();
+			await askForNotificationPermission();
 		} catch (e) {
 			console.error(e);
 			const error = e as Error;

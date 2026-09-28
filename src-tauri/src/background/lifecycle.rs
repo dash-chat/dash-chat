@@ -23,6 +23,7 @@ pub(crate) async fn on_resume(app: AppHandle<Wry>) {
             log::error!("[android-lifecycle] stopService failed: {e:?}");
         }
     }
+    crate::notifications::push_notifications::resync_if_enablement_changed(&app).await;
     // Android denies network access to backgrounded apps, so the polls that
     // ran while we were away failed and left the cloud mailbox backed off,
     // with the next scheduled poll up to `stopped_interval` away. Probing

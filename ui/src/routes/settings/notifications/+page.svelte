@@ -5,6 +5,7 @@
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import {
 		BlockTitle,
+		Button,
 		List,
 		ListItem,
 		Navbar,
@@ -16,6 +17,8 @@
 	import { getContext } from 'svelte';
 	import type { SettingsStore } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
+	import { isNotificationPermissionGranted } from '$lib/utils/notifications';
+	import PermissionSettingsSheet from '$lib/components/PermissionSettingsSheet.svelte';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
@@ -24,37 +27,32 @@
 	);
 
 	let toggling = $state(false);
+	let permissionGranted = $state<boolean | undefined>(undefined);
+	let showSettingsSheet = $state(false);
 
-	async function enable() {
-		if (toggling) return;
-		toggling = true;
-		try {
-			const { isPermissionGranted, requestPermission } = await import(
-				'@tauri-apps/plugin-notification'
-			);
-			let granted = await isPermissionGranted();
-			if (!granted) {
-				const result = await requestPermission();
-				granted = result === 'granted';
-			}
-			if (granted) {
-				await settingsStore.setNotificationsEnabled(true);
-			}
-		} catch (e) {
-			console.error('Failed to enable notifications:', e);
-			showToast(m.errorUnexpected(), 'unexpected', e);
-		} finally {
-			toggling = false;
-		}
+	function refreshPermission() {
+		isNotificationPermissionGranted()
+			.then(granted => (permissionGranted = granted))
+			.catch(e => console.error('Failed to read notification permission:', e));
 	}
 
-	async function disable() {
+	$effect(() => {
+		refreshPermission();
+		const onVisibilityChange = () => {
+			if (document.visibilityState === 'visible') refreshPermission();
+		};
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		return () =>
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+	});
+
+	async function setEnabled(enabled: boolean) {
 		if (toggling) return;
 		toggling = true;
 		try {
-			await settingsStore.setNotificationsEnabled(false);
+			await settingsStore.setNotificationsEnabled(enabled);
 		} catch (e) {
-			console.error('Failed to disable notifications:', e);
+			console.error('Failed to update notifications setting:', e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		} finally {
 			toggling = false;
@@ -76,15 +74,37 @@
 
 	<div class="column" style="flex: 1">
 		<div class="column center-in-desktop">
+			{#if permissionGranted === false}
+				<div class="px-4 pt-2">
+					<div
+						class="flex flex-col gap-1 rounded-xl bg-brand-primary/10 px-4 pt-4 pb-2"
+						data-testid="notifications-permission-banner"
+					>
+						<span class="text-sm" style="color: var(--k-text-color)">
+							{m.notificationsPermissionBanner()}
+						</span>
+						<div class="flex justify-end">
+							<Button
+								inline
+								clear
+								onClick={() => (showSettingsSheet = true)}
+								data-testid="notifications-permission-turn-on"
+							>
+								{m.notificationsTurnOn()}
+							</Button>
+						</div>
+					</div>
+				</div>
+			{/if}
 			<BlockTitle>{m.messages()}</BlockTitle>
 			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 				<ListItem title={m.notifications()} data-testid="notifications-toggle">
 					{#snippet after()}
 						{#await $notificationsEnabled then enabled}
 							<Toggle
-								checked={enabled}
-								disabled={toggling}
-								onChange={() => (enabled ? disable() : enable())}
+								checked={enabled && permissionGranted === true}
+								disabled={toggling || permissionGranted !== true}
+								onChange={() => setEnabled(!enabled)}
 							/>
 						{/await}
 					{/snippet}
@@ -93,3 +113,14 @@
 		</div>
 	</div>
 </Page>
+
+<PermissionSettingsSheet
+	bind:opened={showSettingsSheet}
+	title={m.notificationsSettingsTitle()}
+	subtitle={m.notificationsSettingsSubtitle()}
+	steps={[
+		m.notificationsSettingsStep1(),
+		m.notificationsSettingsStep2(),
+		m.notificationsSettingsStep3(),
+	]}
+/>
