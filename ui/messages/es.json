@@ -389,5 +389,6 @@
     "errorAddingPhoto": "Failed to add photo. Por favor, inténtalo de nuevo.",
     "errorReceivedUnrecognizedLink": "Enlace no reconocido: {{url}}",
     "fileDownloadFailed": "La descarga de archivos falló.",
-    "messageStatusUnsent": "Enviar"
+    "messageStatusUnsent": "Enviar",
+    "retry": "Retry"
 }
