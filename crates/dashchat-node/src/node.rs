@@ -1059,6 +1059,13 @@ impl Node {
         self.projection.lookup_contact_by_device_id(device_id).await
     }
 
+    pub async fn is_accepted_contact(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        Ok(match self.lookup_contact(device_id).await? {
+            Some(agent_id) => self.accepted_contact_agent_ids().await?.contains(&agent_id),
+            None => false,
+        })
+    }
+
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
         self.projection.all_contact_agent_ids().await
     }
@@ -1696,16 +1703,21 @@ impl Node {
 
         let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
 
-        // If we're still serving a contact request to this device, don't publish
-        // a duplicate request or pending marker. Return the existing direct-chat
-        // topic id so the caller can navigate there. Once that request expired
-        // unanswered, a new scan starts a fresh exchange; the old reply inbox
-        // stays, so a late acceptance of the old request still lands.
+        // If they're already a contact, or we're still serving a contact request
+        // to this device, don't publish a duplicate request or pending marker.
+        // Return the existing direct-chat topic id so the caller can navigate
+        // there. Once a request expired unanswered, a new scan starts a fresh
+        // exchange; the old reply inbox stays, so a late acceptance of the old
+        // request still lands.
         if self
-            .local_store
-            .has_unexpired_requested_inbox_for(contact.device_pubkey)
+            .is_accepted_contact(contact.device_pubkey)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            || self
+                .local_store
+                .has_unexpired_requested_inbox_for(contact.device_pubkey)
+                .await
+                .map_err(|e| Error::AuthorOperation(e.to_string()))?
         {
             return Ok(AddContactResult::AlreadyRequested(direct_chat_topic_id));
         }
