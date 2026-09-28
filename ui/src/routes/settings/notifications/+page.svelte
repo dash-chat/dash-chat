@@ -32,6 +32,8 @@
 		try {
 			if (await ensureNotificationPermission()) {
 				await settingsStore.setNotificationsEnabled(true);
+			} else {
+				showToast(m.notificationsPermissionDenied(), 'error');
 			}
 		} catch (e) {
 			console.error('Failed to enable notifications:', e);

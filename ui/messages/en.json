@@ -264,6 +264,7 @@
 	"systemDefault": "System (default)",
 	"notifications": "Notifications",
 	"enableNotifications": "Enable notifications",
+	"notificationsPermissionDenied": "Notifications need permission to be shown. You can allow them in your device settings.",
 	"messages": "Messages",
 	"account": "Account",
 	"deleteAccount": "Delete account",
