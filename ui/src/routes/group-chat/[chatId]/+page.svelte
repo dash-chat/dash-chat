@@ -34,6 +34,7 @@
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
 		endsDeliveryStatusRun,
+		groupedEvents,
 		messagePosition,
 		scrollToMessage,
 	} from '$lib/components/messages/message-helpers';
@@ -218,13 +219,15 @@
 								<DayTag class="quiet" day={messageGroupsInDay.day} />
 							</div>
 
-							{#each messageGroupsInDay.eventsGroups as messageGroup (messageGroup[0][0])}
-								<div
-									class="column"
-									style="gap: 1px"
-									data-testid="message-group"
-								>
-									{#each messageGroup as [hash, item], i (hash)}
+							<div class="column">
+								{#each groupedEvents(messageGroupsInDay.eventsGroups) as { hash, item, group: messageGroup, indexInGroup: i } (hash)}
+									<div
+										class="column"
+										class:pt-px={i > 0}
+										class:pt-1={i === 0 &&
+											messageGroup !== messageGroupsInDay.eventsGroups[0]}
+										data-message-group={messageGroup[0][0]}
+									>
 										{#if unreadDivider.hash === hash}
 											<div
 												class="unread-divider"
@@ -305,9 +308,9 @@
 												</div>
 											{/if}
 										{/if}
-									{/each}
-								</div>
-							{/each}
+									</div>
+								{/each}
+							</div>
 						{/each}
 					{/await}
 				{/await}

@@ -1,10 +1,11 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Dialog } from 'konsta/svelte';
+	import { Dialog } from 'konsta/svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountQuestion } from '@mdi/js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import SwipeableSheet from './SwipeableSheet.svelte';
 	import SheetHandle from './SheetHandle.svelte';
 
 	interface Props {
@@ -47,10 +48,10 @@
 		</div>
 	</Dialog>
 {:else}
-	<Sheet class="pb-safe" {opened} onBackdropClick={onClose}>
+	<SwipeableSheet class="pb-safe" {opened} {onClose}>
 		<div class="flex flex-col items-center gap-6 px-6 pb-6">
 			<SheetHandle />
 			{@render content()}
 		</div>
-	</Sheet>
+	</SwipeableSheet>
 {/if}

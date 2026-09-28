@@ -13,7 +13,6 @@
  * E2E_STRESS_SEED (default random; the run logs it — re-run with the same
  * seed to reproduce a failure).
  */
-import { createProfiles } from '../helpers/flows/create-profiles';
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
 import { blockMoves } from '../helpers/fuzz/moves/block';
 import { exchangeContactMoves } from '../helpers/fuzz/moves/contacts';
@@ -49,7 +48,6 @@ describe('P2P offline stress', () => {
 		suspendMailbox();
 		mailboxSuspended = true;
 		const agents = { Alice: agent1, Bob: agent2 };
-		await createProfiles(agents);
 		fuzzer = await Fuzzer.prepare(this, { agents });
 	});
 

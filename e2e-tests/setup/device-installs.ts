@@ -16,7 +16,15 @@ const ROOT = path.resolve(__dirname, '..', '..');
 
 // Not under .dbs/e2e — onPrepare wipes that dir every run and the record
 // must survive across runs.
-const STAMP_FILE = path.join(ROOT, '.dbs', 'e2e-device-installs.json');
+/** Where the record lives. Read per call rather than once at import so a test
+ *  can point it somewhere of its own: the real file decides what a run
+ *  installs, and a `pnpm check` beside a run must not write to it. */
+function stampFile(): string {
+	return (
+		process.env.E2E_DEVICE_INSTALLS_FILE ??
+		path.join(ROOT, '.dbs', 'e2e-device-installs.json')
+	);
+}
 
 /** Hex digest of a file's content; `algo` defaults to sha256 (md5 matches the
  *  on-device `md5sum` used to compare an installed APK). */
@@ -24,25 +32,89 @@ export function hashFile(file: string, algo = 'sha256'): string {
 	return createHash(algo).update(readFileSync(file)).digest('hex');
 }
 
-/** Device udid -> sha256 of the app archive last installed on it. */
-type InstallStamps = Record<string, string>;
+/** Device udid -> what was last installed on it: the archive's sha256 and a
+ *  `marker` the caller reads back off the device (iOS passes the bundle
+ *  container path, which a new install changes). The marker is what catches an
+ *  app someone else installed over ours — a TestFlight or release build whose
+ *  bytes we never saw, which the archive hash alone cannot rule out. */
+type InstallStamp = { archive: string; marker: string };
+type InstallStamps = Record<string, InstallStamp>;
+
+/** The file as it may be found: entries from before the marker existed are a
+ *  bare hash string, and a half-written one is anything at all. */
+type StoredStamp = string | Partial<InstallStamp> | null;
 
 function readStamps(): InstallStamps {
+	let stored: Record<string, StoredStamp>;
 	try {
-		return JSON.parse(readFileSync(STAMP_FILE, 'utf8')) as InstallStamps;
+		stored = JSON.parse(readFileSync(stampFile(), 'utf8')) as Record<
+			string,
+			StoredStamp
+		>;
 	} catch {
 		return {};
 	}
+	// Both fields checked, not assumed: an entry that cannot say what is on the
+	// device is one that reinstalls.
+	return Object.fromEntries(
+		Object.entries(stored).flatMap(([udid, stamp]) =>
+			typeof stamp === 'object' &&
+			stamp !== null &&
+			typeof stamp.archive === 'string' &&
+			typeof stamp.marker === 'string'
+				? [[udid, { archive: stamp.archive, marker: stamp.marker }]]
+				: [],
+		),
+	);
 }
 
-/** Whether `udid` already has this exact `archive` installed (per the stamp). */
-export function deviceHasBuild(udid: string, archive: string): boolean {
-	return existsSync(archive) && readStamps()[udid] === hashFile(archive);
+/** Whether `udid` already has this exact `archive` installed (per the stamp).
+ *  `readMarker` reads what is installed on the device right now; it has to
+ *  match the one recorded alongside the archive. Taken as a thunk because
+ *  reading it is a round trip to the device, and a udid with no stamp — or one
+ *  stamped with different bytes — reinstalls without ever needing it. */
+export function deviceHasBuild(
+	udid: string,
+	archive: string,
+	readMarker: () => string | undefined,
+): boolean {
+	const stamp = readStamps()[udid];
+	if (stamp === undefined || !existsSync(archive)) return false;
+	if (stamp.archive !== hashFile(archive)) return false;
+	const marker = readMarker();
+	// No reading of what is installed is no answer: reinstall rather than
+	// match one absent marker against another and skip the install.
+	if (marker === undefined) return false;
+	if (stamp.marker !== marker) {
+		// The same bytes, found somewhere else. Named because the marker rests on
+		// undocumented behaviour — that iOS only moves an app's container when
+		// something reinstalls it. A run that prints this with nothing having
+		// touched the device is one where markers churn on their own, and the
+		// guard is buying reinstalls rather than catching foreign builds.
+		console.log(
+			`[install] ${udid} has this build under a different marker ` +
+				`(recorded ${stamp.marker}, found ${marker}) — reinstalling`,
+		);
+		return false;
+	}
+	return true;
 }
 
-/** Record that `archive` was installed on `udid`. */
-export function recordInstalled(udid: string, archive: string): void {
-	const stamps = { ...readStamps(), [udid]: hashFile(archive) };
-	mkdirSync(path.dirname(STAMP_FILE), { recursive: true });
-	writeFileSync(STAMP_FILE, JSON.stringify(stamps, null, '\t'));
+/** Record that `archive` was installed on `udid`, with the `marker` read back
+ *  off the device once it was. */
+export function recordInstalled(
+	udid: string,
+	archive: string,
+	marker: string | undefined,
+): void {
+	const stamps: InstallStamps = { ...readStamps() };
+	if (marker === undefined) {
+		// Nothing to compare against next run. Drop the entry rather than
+		// leave the old one describing something that is no longer installed.
+		delete stamps[udid];
+	} else {
+		stamps[udid] = { archive: hashFile(archive), marker };
+	}
+	mkdirSync(path.dirname(stampFile()), { recursive: true });
+	writeFileSync(stampFile(), JSON.stringify(stamps, null, '\t'));
 }

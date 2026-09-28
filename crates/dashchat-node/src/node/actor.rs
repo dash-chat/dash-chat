@@ -9,15 +9,18 @@ use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
-    ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture, Source,
-    StreamEvent, StreamPublisher, StreamSubscription,
+    ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
+    StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
+use p2panda_auth::group::GroupCrdtError;
+use p2panda_auth::processor::GroupsProcessorError;
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio_stream::{StreamExt, StreamMap};
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::Payload;
 use crate::stores::GROUPS_STATE_ID;
@@ -38,7 +41,7 @@ pub(crate) enum Command {
     Import {
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-        reply_tx: oneshot::Sender<Result<ExternalStreamFuture, NodeActorError>>,
+        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
     Publish {
         topic: Topic,
@@ -90,6 +93,11 @@ pub enum ProcessorEvent {
         source: Source,
         processed_tx: Option<oneshot::Sender<Result<(), ProcessorError>>>,
     },
+
+    ImportFailed {
+        topic: Topic,
+        error: ImportError,
+    },
 }
 
 /// Actor for the p2panda node.
@@ -122,10 +130,21 @@ pub struct Actor {
 
     /// Channel for forwarding all received events on to the application layer processor.
     events_tx: mpsc::UnboundedSender<ProcessorEvent>,
+
+    /// Prefix for each topic stream's ack cursor name. `None` uses p2panda's
+    /// default per-topic cursor (`"{topic}"`);
+    stream_cursor_prefix: Option<String>,
+
+    /// Import tasks spawned so `handle_import` does not block the actor loop.
+    /// Dropped on shutdown, aborting any still-parked imports.
+    import_tasks: JoinSet<()>,
 }
 
 impl Actor {
-    pub(crate) fn new(node: p2panda::Node) -> (Self, mpsc::UnboundedReceiver<ProcessorEvent>) {
+    pub(crate) fn new(
+        node: p2panda::Node,
+        stream_cursor_prefix: Option<String>,
+    ) -> (Self, mpsc::UnboundedReceiver<ProcessorEvent>) {
         let groups_processor = GroupsProcessor::new(node.store());
         // Unbounded so the actor never blocks here: the application processor
         // (the only consumer) itself sends commands to this actor and awaits the
@@ -142,6 +161,8 @@ impl Actor {
                 processed: Default::default(),
                 groups_processor,
                 events_tx,
+                stream_cursor_prefix,
+                import_tasks: JoinSet::new(),
             },
             events_rx,
         )
@@ -198,6 +219,11 @@ impl Actor {
                             warn!(?err, "actor event processing failed");
                         }
                     }
+                    Some(result) = self.import_tasks.join_next() => {
+                        if let Err(err) = result {
+                            error!(?err, "import task panicked");
+                        }
+                    }
                     else => {
                         warn!("node actor message channel closed, exiting event loop");
                         break;
@@ -209,12 +235,30 @@ impl Actor {
         Ok(message_tx)
     }
 
+    /// Open a topic stream, tracking its ack cursor under a per-topic name. With
+    /// a cursor prefix set (the iOS push extension) the name is
+    /// `"{prefix}:{topic}"`, so each topic keeps its own cursor while staying
+    /// distinct from the app's default `"{topic}"` cursor: the two processes
+    /// share one database and must not advance each other's cursors.
+    async fn open_stream(
+        &self,
+        topic: Topic,
+    ) -> Result<(StreamPublisher<Payload>, StreamSubscription<Payload>), CreateStreamError> {
+        let cursor_name = self
+            .stream_cursor_prefix
+            .as_ref()
+            .map(|prefix| format!("{prefix}:{topic}"));
+        self.inner
+            .stream_from(topic, StreamFrom::Frontier, cursor_name)
+            .await
+    }
+
     async fn handle_subscribe(&mut self, topic: Topic) -> Result<bool, NodeActorError> {
         // If we're already subscribed to this topic then just return now.
         if self.tx_map.contains_key(&topic) {
             return Ok(false);
         }
-        let (tx, rx) = self.inner.stream(topic).await?;
+        let (tx, rx) = self.open_stream(topic).await?;
         self.tx_map.insert(topic, tx);
         self.streams.insert(topic, rx);
         Ok(true)
@@ -229,20 +273,31 @@ impl Actor {
         &mut self,
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-    ) -> Result<ExternalStreamFuture, NodeActorError> {
+    ) -> Result<(), NodeActorError> {
         // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
         let tx = match self.tx_map.get(&topic) {
             Some(tx) => tx.clone(),
             None => {
-                let (tx, rx) = self.inner.stream(topic).await?;
+                let (tx, rx) = self.open_stream(topic).await?;
                 self.tx_map.insert(topic, tx.clone());
                 self.streams.insert(topic, rx);
                 tx
             }
         };
 
-        let import_fut = tx.import(stream).await?;
-        Ok(import_fut)
+        // Spawn the import consumption into a separate task so the actor loop
+        // is not blocked while the topic processor replays local operations
+        // before accepting the external stream. This keeps Publish commands and
+        // event processing responsive during backlog replay.
+        let events_tx = self.events_tx.clone();
+        self.import_tasks.spawn(async move {
+            if let Err(err) = tx.import(stream).await {
+                error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
+                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, error: err });
+            }
+        });
+
+        Ok(())
     }
 
     async fn handle_publish(
@@ -254,7 +309,7 @@ impl Actor {
         let tx = match self.tx_map.get(&topic) {
             Some(tx) => tx.clone(),
             None => {
-                let (tx, rx) = self.inner.stream(topic).await?;
+                let (tx, rx) = self.open_stream(topic).await?;
                 self.tx_map.insert(topic, tx.clone());
                 self.streams.insert(topic, rx);
                 tx
@@ -373,12 +428,17 @@ impl Actor {
             body,
         };
 
-        self.groups_processor
+        match self
+            .groups_processor
             .process(&GROUPS_STATE_ID, &topic, &operation)
             .await
-            .map_err(|err| ProcessorError::Groups(err.to_string()))?;
-
-        Ok(())
+        {
+            Ok(_) => Ok(()),
+            // Another process sharing the groups state (the iOS push extension)
+            // already applied it.
+            Err(GroupsProcessorError::Groups(GroupCrdtError::DuplicateOperation(..))) => Ok(()),
+            Err(err) => Err(ProcessorError::Groups(err.to_string())),
+        }
     }
 }
 
@@ -504,10 +564,10 @@ mod tests {
             .await
             .unwrap();
 
-        let (alice_actor, alice_events_rx) = Actor::new(alice);
+        let (alice_actor, alice_events_rx) = Actor::new(alice, None);
         let alice_actor_tx = alice_actor.spawn().await.unwrap();
 
-        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi);
+        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi, None);
         let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
 
         // Both alice and bobbi subscribe to topics a & b.
@@ -599,10 +659,10 @@ mod tests {
         let alice_id = alice.id();
         let bobbi_id = bobbi.id();
 
-        let (alice_actor, alice_events_rx) = Actor::new(alice);
+        let (alice_actor, alice_events_rx) = Actor::new(alice, None);
         let alice_actor_tx = alice_actor.spawn().await.unwrap();
 
-        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi);
+        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi, None);
         let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
 
         // Alice subscribes to topic.

@@ -178,6 +178,16 @@ function raiseMacApp(pid: number | undefined): void {
 	}
 }
 
+/** Wipe a stopped agent back to first launch. The whole agent directory
+ *  goes, not just the Rust backend's data: WebKitGTK keeps localStorage and
+ *  IndexedDB under the XDG dirs inside it, so leaving those makes an app that
+ *  starts with no account still remember what the webview stored. */
+export function clearAgentDir(slot: number): void {
+	const dataDir = agentDir(slot);
+	rmSync(dataDir, { recursive: true, force: true });
+	mkdirSync(dataDir, { recursive: true });
+}
+
 /** Where the macOS window of `slot` goes: agents side by side, so neither
  *  covers the other (see [`raiseMacApp`]). */
 export function macWindowRect(slot: number): {

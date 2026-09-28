@@ -12,9 +12,14 @@ import {
 	MAILBOX_UNANSWERED_MS,
 	UI_TIMEOUT,
 } from '../helpers/timeouts';
-import { isRemoteMailbox, mailboxLink } from '../setup/mailbox-control';
+import {
+	cutMailboxLink,
+	hangMailboxLink,
+	healMailboxLink,
+	isRemoteMailbox,
+	slowMailboxLink,
+} from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
-import type { Link } from '../setup/toxiproxy';
 
 /** Long enough for a poll to have gone through the slow link. */
 const SLOW_SETTLE_MS = 5_000;
@@ -25,7 +30,7 @@ describe('Cloud mailbox on a spotty link', function () {
 	this.timeout(300_000);
 
 	let agent: Agent;
-	let link: Link;
+	let linkOpened = false;
 
 	const chip = () => agent.groupChatPage.connectionStatusIndicator;
 	const messages = () => agent.groupChatPage.messages;
@@ -59,18 +64,18 @@ describe('Cloud mailbox on a spotty link', function () {
 	before(async function () {
 		if (isRemoteMailbox()) this.skip();
 		[agent] = await setupAgents(this, [{ platform: 'any' }]);
-		link = mailboxLink();
+		linkOpened = true;
 		await agent.createProfilePage.createProfile('Alice', 'Spotty');
 		await createGroup(agent, 'Solo Group', []);
 		await expectConnected('the chat opened', UI_TIMEOUT);
 	});
 
 	after(async () => {
-		if (link !== undefined) await link.heal();
+		if (linkOpened) await healMailboxLink();
 	});
 
 	it('stays connected and hands over a message over a slow link', async () => {
-		await link.slow();
+		await slowMailboxLink();
 		await agent.pause(SLOW_SETTLE_MS);
 		expect(await chip().status()).toBe('connected');
 		await agent.groupChatPage.composer.sendMessage('slowly does it');
@@ -78,10 +83,10 @@ describe('Cloud mailbox on a spotty link', function () {
 	});
 
 	it('reads disconnected while the link hangs, holds the message back, and hands it over once the link heals', async () => {
-		await link.hang();
+		await hangMailboxLink();
 		await expectDisconnected('the link hung', MAILBOX_HUNG_MS);
 		await sendHeldBack('while you were hanging');
-		await link.heal();
+		await healMailboxLink();
 		await expectConnected('the link healed', MAILBOX_HEALED_MS);
 		await messages().waitForMessageStatus('while you were hanging', [
 			'mailbox',
@@ -89,10 +94,10 @@ describe('Cloud mailbox on a spotty link', function () {
 	});
 
 	it('reads disconnected while connections are refused, holds the message back, and hands it over once they are accepted again', async () => {
-		await link.cut();
+		await cutMailboxLink();
 		await expectDisconnected('the link was cut', MAILBOX_UNANSWERED_MS);
 		await sendHeldBack('while you were refusing');
-		await link.heal();
+		await healMailboxLink();
 		await expectConnected('the link healed', MAILBOX_HEALED_MS);
 		await messages().waitForMessageStatus('while you were refusing', [
 			'mailbox',

@@ -9,10 +9,13 @@
  * needs a second network in E2E_WIFI_NETWORKS (see e2e-tests/.env.example)
  * and skips without one.
  *
- * Skips itself unless E2E_STRESS=1:
+ * Skips itself unless E2E_STRESS=1. Either phone platform will do — both
+ * drive their Wi-Fi through the harness:
  *   PLATFORMS=android,android E2E_STRESS=1 just e2e run p2p-network-switch
+ *   PLATFORMS=ios,ios E2E_STRESS=1 just e2e run p2p-network-switch
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { stampedLog } from '../helpers/utils';
 import {
 	isRemoteMailbox,
@@ -61,14 +64,14 @@ describe('Pure p2p sync across a network switch', function () {
 		await killMailbox();
 		mailboxKilled = true;
 		[alice, bob] = await setupAgents(this, [
-			{ platform: 'android' },
-			{ platform: 'android' },
+			{ platform: 'phone' },
+			{ platform: 'phone' },
 		]);
-		if (alice.platform === 'android-emulator') this.skip();
 		// An earlier run that died mid-case leaves a phone off the air.
 		await alice.enableWifi();
 		await bob.enableWifi();
-		await createProfilesAndExchangeContacts({ Alice: alice, Bob: bob });
+		await createProfiles({ Alice: alice, Bob: bob });
+		await exchangeContacts([alice, bob]);
 		// A round trip on the LAN before the move, so a later failure is about
 		// the return and not about p2p never having worked between these two.
 		await bob.directChatPage.composer.sendMessage('hello before leaving');

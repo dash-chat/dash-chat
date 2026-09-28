@@ -1,15 +1,14 @@
 /** Moves a device makes on its own: leaving and returning to the foreground,
  *  and stopping, starting and restarting the app. A backgrounded app keeps
- *  whatever it was showing, so it resumes there. */
+ *  whatever it was showing, so it resumes there; a killed one comes back on
+ *  the chat list, which is where the moves that kill it leave it — checking
+ *  the list on the way out is what makes sure the app has written the reads
+ *  the model credits it with before its process goes. */
+import { BACKGROUND_NETWORK_CUTOFF_MS } from '../../timeouts';
 import { type Real, at, byName, log, waitForApp } from '../agents';
-import { checkHubs } from '../checks';
+import { checkChatList, checkHubs } from '../checks';
 import type { ExpectedModel } from '../model';
 import { Move, type Moves } from './move';
-
-/** Android keeps syncing a backgrounded app for a few seconds before it cuts
- *  it off the network (measured ~5.5 s on the Xiaomi, ~10 s on the vivo), and
- *  the model counts a backgrounded agent as off the network. */
-const BACKGROUND_NETWORK_CUTOFF_MS = 15_000;
 
 /** Backgrounds an agent and leaves it backgrounded: later moves keep acting
  * through the other agents (including sending to this one), and a
@@ -80,6 +79,7 @@ class StopAppMove extends Move {
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
 		const actor = byName(real, at(m.runningNames(), this.agentIdx));
 		log(`${actor.name}: ${this.toString()}`);
+		if (m.isActive(actor.name)) await checkChatList(m, actor);
 		await actor.agent.stopApp();
 		m.stopApp(actor.name);
 	}
@@ -126,6 +126,7 @@ class RestartMove extends Move {
 	async perform(m: ExpectedModel, real: Real): Promise<void> {
 		const actor = byName(real, at(m.activeNames(), this.agentIdx));
 		log(`${actor.name}: ${this.toString()}`);
+		await checkChatList(m, actor);
 		if (actor.agent.platform === 'desktop') {
 			await actor.agent.restart();
 		} else {

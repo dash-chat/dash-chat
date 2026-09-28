@@ -9,6 +9,8 @@
  * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
  * multiset can't fulfill the requirements.
  */
+import { existsSync, readFileSync } from 'node:fs';
+
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
@@ -37,36 +39,50 @@ import { ProfilePage } from '../helpers/pages/settings/profile/profile-page';
 import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
+import { ASYNC_SCRIPT_TIMEOUT } from '../helpers/timeouts';
+import { sourceLogFile } from './agent-logger';
+import { ensurePhonesShareALan } from './phone-lan';
 import {
 	APP_PACKAGE,
 	androidHasInternet,
 	androidWifiInfo,
+	androidWifiSsid,
 	connectAndroidWifi,
+	denyAndroidNotificationPermission,
 	disableAndroidWifi,
 	enableAndroidWifi,
 	forgetAndroidWifi,
 	isAndroidAppRunning,
 	pressAndroidHome,
+	resetAndroidNotificationPermission,
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
 import {
+	clearAgentDir,
 	isAgentAppRunning,
 	killAgentApp,
 	launchAgentApp,
 	macWindowRect,
 	readOpenedUrls,
 } from './platforms/desktop';
-import { APP_STATE_NOT_RUNNING, resetIosAppState } from './platforms/ios';
+import {
+	APP_STATE_NOT_RUNNING,
+	clearIosAppData,
+	iosHasInternet,
+	killIosPushExtension,
+	resetIosAppState,
+} from './platforms/ios';
 import {
 	connectIosWifi,
 	disableIosWifi,
 	enableIosWifi,
 	forgetIosWifi,
 	iosWifiInfo,
+	iosWifiSsid,
 } from './platforms/ios-wifi';
 import { type AgentPlatformName, isMobile, platformNames } from './test-env';
-import { switchToWebview, waitForTestUtils } from './webview';
+import { deviceUdid, switchToWebview, waitForTestUtils } from './webview';
 import type { WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
@@ -200,23 +216,38 @@ export type Agent = WebdriverIO.Browser & {
 	/** The network this device is on: its SSID and IPv4 address, each ''
 	 *  while it has none. */
 	wifiInfo(): Promise<WifiInfo>;
-	/** Whether the device reaches the internet over its current network.
-	 *  Physical Android phones only; throws elsewhere. */
+	/** The SSID the device is associated with, or '' while it is on none.
+	 *  Cheaper than [`wifiInfo`], which on iOS walks into the Wi-Fi page for an
+	 *  address; this reads only what the platform says for free. */
+	wifiSsid(): Promise<string>;
+	/** Whether the phone can reach the internet. On android this is a pure adb
+	 *  probe; on iOS the answer has to come from the app's own webview, so it
+	 *  brings the app to the foreground — call it where that is harmless, or
+	 *  where what follows resets the app anyway. Physical phones only; throws
+	 *  for desktop and for an emulator, which is NAT'd off the host. */
 	hasInternet(): Promise<boolean>;
-	/** Wipe the stopped app back to first launch, with its runtime permissions
-	 *  granted again as a new session's fast reset leaves them. Android only;
-	 *  call between [`stopApp`] and [`startApp`]. */
+	/** Wipe the app back to first launch and leave it not running, to be
+	 *  called between [`stopApp`] and [`startApp`]. On android a `clearApp`
+	 *  with its runtime permissions granted again, as a new session's fast
+	 *  reset leaves them; on iOS the app's own delete_account, which means the
+	 *  app is brought up to run it and exits on its own afterwards; on desktop
+	 *  the agent's data directory, which the app is not holding open. */
 	clearAppData(): Promise<void>;
+	/** Kill the phone's push extension process, so the next push starts a
+	 *  fresh one. iOS only. */
+	killPushExtension(): Promise<void>;
+	/** Take the notification permission back to never asked, so the app's next
+	 *  request shows the system dialog. Call it between [`stopApp`] and
+	 *  [`startApp`]. Android only. */
+	resetNotificationPermission(): void;
+	/** Deny the notification permission for good, so the app's requests are
+	 *  refused without a dialog. Call it between [`stopApp`] and
+	 *  [`startApp`]. Android only. */
+	denyNotificationPermission(): void;
+	/** What this agent's device has logged so far in the run, as the harness
+	 *  captured it. */
+	readLog(): string;
 };
-
-/** The device serial this Appium session was launched against. */
-function androidUdid(b: WebdriverIO.Browser): string {
-	const udid = b.requestedCapabilities['appium:udid'];
-	if (udid === undefined) {
-		throw new Error('Android session is missing its appium:udid capability');
-	}
-	return udid;
-}
 
 /** (Re)build every page object against `b`. Called on first setup and again
  *  after a restart so the new session never reuses stale element ids. */
@@ -259,6 +290,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await window.__test.goto(p);
 		}, path);
 	};
+	agent.readLog = () => {
+		const file = sourceLogFile(`agent-${slot}`);
+		if (!existsSync(file))
+			throw new Error(`no log was captured for agent-${slot} at ${file}`);
+		return readFileSync(file, 'utf8');
+	};
 	agent.injectDeepLink = async (url: string) => {
 		await b.execute((u: string) => window.__test.handleDeepLink(u), url);
 	};
@@ -275,7 +312,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			// verified App Links association, not just the intent filter. No
 			// waitForLaunch: `am start -W` can block forever on a cold launch;
 			// callers already wait for the app via page ready()/startApp().
-			await waitForAppLinksVerified(androidUdid(b));
+			await waitForAppLinksVerified(deviceUdid(b));
 			await b.execute('mobile: deepLink', { url, waitForLaunch: false });
 		}
 	};
@@ -329,10 +366,9 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.execute(() => window.__test.enablePreviewFeatures());
 	};
 	agent.disableP2p = async () => {
-		// `set_p2p_enabled` rebuilds the node (pause + resume), a few seconds;
-		// XCUITest defaults the async-script timeout to ~0, so raise it first or
-		// `executeAsync` times out at once (desktop's driver tolerates the default).
-		await b.setTimeout({ script: 60_000 });
+		// `set_p2p_enabled` rebuilds the node (pause + resume), a few seconds,
+		// which the driver's default async-script timeout does not allow for.
+		await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
 		await b.executeAsync((done: () => void) =>
 			window.__test.disableP2p().then(done, done),
 		);
@@ -372,7 +408,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await b.terminateApp(APP_PACKAGE);
 			return;
 		}
-		stopAndroidApp(androidUdid(b));
+		stopAndroidApp(deviceUdid(b));
 	};
 	agent.backgroundApp = async () => {
 		if (agent.platform === 'desktop') {
@@ -384,7 +420,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await b.execute('mobile: backgroundApp');
 			return;
 		}
-		pressAndroidHome(androidUdid(b));
+		pressAndroidHome(deviceUdid(b));
 		// ProcessLifecycleOwner — which the lifecycle plugin observes — posts its
 		// ON_PAUSE/ON_STOP dispatch on a 700ms delay and cancels it outright if an
 		// activity resumes first, so it can tell a real backgrounding apart from a
@@ -445,11 +481,28 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	agent.wifiInfo = async () =>
 		agent.platform === 'ios'
 			? await iosWifiInfo(b)
-			: androidWifiInfo(androidUdid(b));
-	agent.hasInternet = async () => androidHasInternet(wifiUdid(agent, b));
+			: androidWifiInfo(deviceUdid(b));
+	agent.wifiSsid = async () =>
+		agent.platform === 'ios'
+			? await iosWifiSsid(b)
+			: androidWifiSsid(deviceUdid(b));
+	agent.hasInternet = async () =>
+		agent.platform === 'ios'
+			? await iosHasInternet(b)
+			: androidHasInternet(wifiUdid(agent, b));
 	agent.clearAppData = async () => {
+		if (agent.platform === 'ios') {
+			await clearIosAppData(b);
+			return;
+		}
+		if (agent.platform === 'desktop') {
+			clearAgentDir(slot);
+			return;
+		}
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
-			throw new Error(`clearAppData needs Android, got ${agent.platform}`);
+			throw new Error(
+				`clearAppData needs a phone or desktop, got ${agent.platform}`,
+			);
 		}
 		await b.execute('mobile: clearApp', { appId: APP_PACKAGE });
 		await b.execute('mobile: changePermissions', {
@@ -457,6 +510,28 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			appPackage: APP_PACKAGE,
 			action: 'grant',
 		});
+	};
+	agent.killPushExtension = async () => {
+		if (agent.platform !== 'ios') {
+			throw new Error(`only iOS runs a push extension, got ${agent.platform}`);
+		}
+		killIosPushExtension(deviceUdid(b));
+	};
+	agent.resetNotificationPermission = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(
+				`resetNotificationPermission needs android, got ${agent.platform}`,
+			);
+		}
+		resetAndroidNotificationPermission(deviceUdid(b));
+	};
+	agent.denyNotificationPermission = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(
+				`denyNotificationPermission needs android, got ${agent.platform}`,
+			);
+		}
+		denyAndroidNotificationPermission(deviceUdid(b));
 	};
 
 	return agent;
@@ -471,7 +546,7 @@ function wifiUdid(agent: Agent, b: WebdriverIO.Browser): string {
 			`Wi-Fi control needs a physical phone, got ${agent.platform}`,
 		);
 	}
-	return androidUdid(b);
+	return deviceUdid(b);
 }
 
 /** Comfortably past ProcessLifecycleOwner's 700ms background-dispatch delay, so
@@ -545,8 +620,8 @@ async function tapPoint(
 			? { x, y }
 			: null;
 	};
-	return await agent.waitUntil(
-		async () => {
+	try {
+		return await agent.waitUntil(async () => {
 			const live = await refetch(element);
 			if (live === null) return null;
 			const point = await agent.execute(centreIfTopmost, live);
@@ -560,14 +635,47 @@ async function tapPoint(
 				return null;
 			}
 			return { ...point, live };
-		},
-		{
-			timeoutMsg:
-				`${String(element.selector)} is in the page but never became the ` +
+		});
+	} catch (err) {
+		const why = err instanceof Error ? err.message : String(err);
+		throw new Error(
+			`${String(element.selector)} is in the page but never became the ` +
 				'topmost element at its own centre, so a tap there would have hit ' +
-				'whatever is covering it',
-		},
-	);
+				`${await describeCover(agent, element)} (${why})`,
+		);
+	}
+}
+
+/** What a tap at `element`'s centre would have hit instead of it. A cover is
+ *  often invisible — a backdrop a popover left behind at opacity 0 is in no
+ *  screenshot — so the failure has to name it rather than point at it. */
+async function describeCover(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+): Promise<string> {
+	const describe = (el: HTMLElement) => {
+		const rect = el.getBoundingClientRect();
+		const top = document.elementFromPoint(
+			rect.x + rect.width / 2,
+			rect.y + rect.height / 2,
+		);
+		if (top === null) return 'nothing: its centre is outside the viewport';
+		const style = window.getComputedStyle(top);
+		const testid = top.getAttribute('data-testid');
+		const klass = top.getAttribute('class');
+		const names = klass === null ? '' : klass.trim().split(/\s+/).join('.');
+		return [
+			top.tagName.toLowerCase(),
+			testid === null ? '' : `[data-testid="${testid}"]`,
+			names === '' ? '' : `.${names}`,
+			` (${style.position}, opacity ${style.opacity}, z-index ${style.zIndex})`,
+		].join('');
+	};
+	try {
+		return await agent.execute(describe, element);
+	} catch {
+		return 'something the page replaced before it could be named';
+	}
 }
 
 /** Touch (x, y) and report whether `element` actually received a click.
@@ -754,7 +862,7 @@ async function setupAgent(
 		}
 		await b.switchContext('NATIVE_APP');
 		if (platform === 'android') {
-			const udid = androidUdid(b);
+			const udid = deviceUdid(b);
 			await b.waitUntil(async () => !isAndroidAppRunning(udid), {
 				timeoutMsg: 'the app never shut itself down',
 			});
@@ -867,6 +975,7 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 	const agents = await Promise.all(
 		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1], slot)),
 	);
+	await ensurePhonesShareALan(agents);
 	return agents as { [K in keyof T]: Agent };
 }
 

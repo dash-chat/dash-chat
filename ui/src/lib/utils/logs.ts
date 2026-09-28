@@ -92,6 +92,14 @@ const ignoredErrors = [
 	...(import.meta.env.VITE_E2E === 'true' ? ['stale element reference'] : []),
 ];
 
+// A webview reused across an app restart is navigated to about:blank, and a
+// promise chain left by the page it had before can still reach the IPC, where
+// the ACL refuses a call from a URL no capability covers. Nothing is live to
+// handle it and nothing was lost.
+const isCallFromTornDownPage = (message: string) =>
+	message.includes('not allowed on window') &&
+	message.includes('URL: about:blank');
+
 const isIgnoredError = (message: string) =>
 	ignoredErrors.some(ignored => message.includes(ignored));
 
@@ -115,7 +123,9 @@ export function reportUncaughtErrors(): void {
 	});
 	window.addEventListener('unhandledrejection', event => {
 		if (isAppShuttingDown()) return;
-		console.error(`[unhandledrejection] ${describe(event.reason)}`);
+		const reason = describe(event.reason);
+		if (isCallFromTornDownPage(reason)) return;
+		console.error(`[unhandledrejection] ${reason}`);
 		showToast(m.errorUnexpected(), 'unexpected', event.reason);
 	});
 }

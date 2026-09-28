@@ -59,11 +59,8 @@
 		forwardConsoleToTauriLog,
 		reportUncaughtErrors,
 	} from '$lib/utils/logs';
-	import {
-		listenForDeepLinks,
-		handleLaunchDeepLink,
-		handleUrls,
-	} from '$lib/utils/deep-links';
+	import { handleUrls } from '$lib/utils/deep-links';
+	import { followPendingNavigations } from '$lib/utils/pending-navigations';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, type Locale, setLocale } from '$lib/paraglide/runtime';
@@ -247,12 +244,9 @@
 		);
 	});
 
-	if (isTauriEnv()) {
-		handleLaunchDeepLink(contactsStore);
-	}
 	$effect(() => {
 		if (!isTauriEnv()) return;
-		return listenForDeepLinks(contactsStore);
+		return followPendingNavigations(contactsStore);
 	});
 </script>
 

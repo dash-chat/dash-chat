@@ -1,12 +1,13 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Dialog } from 'konsta/svelte';
+	import { Dialog } from 'konsta/svelte';
 	import { fullName, type Profile } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccount, mdiAccountGroup } from '@mdi/js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from './profiles/Avatar.svelte';
+	import SwipeableSheet from './SwipeableSheet.svelte';
 	import SheetHandle from './SheetHandle.svelte';
 
 	interface Props {
@@ -57,7 +58,7 @@
 		</div>
 	</Dialog>
 {:else}
-	<Sheet class="pb-safe" {opened} onBackdropClick={onClose}>
+	<SwipeableSheet class="pb-safe" {opened} {onClose}>
 		<div
 			class="flex flex-col items-center px-6 pb-6 gap-4 max-h-[85vh] overflow-y-auto"
 			data-testid="peer-profile-sheet"
@@ -65,5 +66,5 @@
 			<SheetHandle class="shrink-0" />
 			{@render profileContent()}
 		</div>
-	</Sheet>
+	</SwipeableSheet>
 {/if}

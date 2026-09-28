@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Sheet, Dialog, List, ListItem, Button } from 'konsta/svelte';
+	import { Dialog, List, ListItem, Button } from 'konsta/svelte';
 	import { getContext } from 'svelte';
 	import { fullName, type AgentId, type MessagesStore } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
@@ -8,6 +8,7 @@
 	import { useMyAgentId } from '$lib/stores/my-agent-id';
 	import { useReactivePromises } from '$lib/stores/use-signal';
 	import Modal from '$lib/components/Modal.svelte';
+	import SwipeableSheet from '$lib/components/SwipeableSheet.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 
@@ -148,14 +149,14 @@
 				</div>
 			</Dialog>
 		{:else}
-			<Sheet class="pb-safe" opened={modal.opened} onBackdropClick={close}>
+			<SwipeableSheet class="pb-safe" opened={modal.opened} onClose={close}>
 				<div data-testid="reactions-sheet">
 					<div class="flex flex-col items-center">
 						<SheetHandle />
 					</div>
 					{@render content()}
 				</div>
-			</Sheet>
+			</SwipeableSheet>
 		{/if}
 	{/snippet}
 </Modal>

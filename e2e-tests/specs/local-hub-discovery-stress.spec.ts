@@ -15,8 +15,6 @@
  * (default random; the run logs it — re-run with the same seed to reproduce
  * a failure).
  */
-import { createProfiles } from '../helpers/flows/create-profiles';
-import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
 import { deviceMoves } from '../helpers/fuzz/moves/device';
 import { hubMoves } from '../helpers/fuzz/moves/hub';
@@ -64,11 +62,6 @@ describe('Local hub stress', function () {
 			{ platform: 'phone' },
 		]);
 		const agents = { Alice: agent1, Bob: agent2 };
-		await createProfiles(agents);
-		// The phones must meet before the first sequence walks them onto
-		// networks that cannot reach each other; `prepare` reads the contacts
-		// they end up with.
-		await exchangeContacts([agent1, agent2]);
 		fuzzer = await Fuzzer.prepare(this, {
 			agents,
 			networks: wifiNetworks(),

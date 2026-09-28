@@ -74,10 +74,16 @@ function localInfo(): MailboxInfo {
  */
 export async function mailboxWakesPhones(): Promise<boolean> {
 	if (isRemoteMailbox()) return false;
-	const info = readInfo();
-	if (info.pushNotificationsUrl === undefined) return false;
+	if (readInfo().pushNotificationsUrl === undefined) return false;
+	return await mailboxServing();
+}
+
+/** Whether the mailbox answers right now. A suspended or killed one never
+ *  does, which is how a spec that took it down is known without being asked. */
+export async function mailboxServing(): Promise<boolean> {
+	if (isRemoteMailbox()) return false;
 	try {
-		const res = await fetch(`${info.url}/health`, {
+		const res = await fetch(`${readInfo().url}/health`, {
 			signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
 		});
 		return res.ok;
@@ -86,10 +92,35 @@ export async function mailboxWakesPhones(): Promise<boolean> {
 	}
 }
 
-/** The link every agent reaches the mailbox through, to degrade and heal. */
-export function mailboxLink(): Link {
+/** Whether the link agents reach the mailbox through can be degraded: the
+ *  proxy fronts the mailbox a run spawns, never a remote environment's. */
+export function mailboxDegradable(): boolean {
+	return !isRemoteMailbox();
+}
+
+function link(): Link {
 	localInfo();
 	return new Link(MAILBOX_LINK);
+}
+
+/** Every request still answers, about a second late. */
+export function slowMailboxLink(): Promise<void> {
+	return link().slow();
+}
+
+/** Requests are accepted and then never answered. */
+export function hangMailboxLink(): Promise<void> {
+	return link().hang();
+}
+
+/** Connections are refused outright. */
+export function cutMailboxLink(): Promise<void> {
+	return link().cut();
+}
+
+/** Undo whatever degradation is in force. */
+export function healMailboxLink(): Promise<void> {
+	return link().heal();
 }
 
 function mailboxBlobsDir(): string {

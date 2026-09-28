@@ -17,7 +17,6 @@
  * (default random; the run logs it — re-run with the same seed to reproduce
  * a failure).
  */
-import { createProfiles } from '../helpers/flows/create-profiles';
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
 import { blockMoves } from '../helpers/fuzz/moves/block';
 import { cloudMoves } from '../helpers/fuzz/moves/cloud';
@@ -28,7 +27,7 @@ import { mediaMoves } from '../helpers/fuzz/moves/media';
 import { profileMoves } from '../helpers/fuzz/moves/profile';
 import { textMessageMoves } from '../helpers/fuzz/moves/text-messages';
 import { envInt } from '../helpers/utils';
-import { isRemoteMailbox, mailboxLink } from '../setup/mailbox-control';
+import { isRemoteMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Spotty cloud stress', () => {
@@ -49,8 +48,7 @@ describe('Spotty cloud stress', () => {
 		// its link is the only thing the checks measure.
 		await Promise.all([agent1.disableP2p(), agent2.disableP2p()]);
 		const agents = { Alice: agent1, Bob: agent2 };
-		await createProfiles(agents);
-		fuzzer = await Fuzzer.prepare(this, { agents, cloud: mailboxLink() });
+		fuzzer = await Fuzzer.prepare(this, { agents });
 	});
 
 	it('agents behave normally for the whole run while the cloud link flaps', async () => {

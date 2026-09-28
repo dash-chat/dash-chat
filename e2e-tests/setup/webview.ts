@@ -1,5 +1,5 @@
-/** Session-level webview helpers shared by the agent factory and the
- *  platform modules. */
+/** Session-level helpers shared by the agent factory and the platform
+ *  modules. */
 import { APP_PACKAGE } from './platforms/android';
 import type { AgentPlatformName } from './test-env';
 
@@ -50,4 +50,13 @@ export async function waitForTestUtils(
 			timeoutMsg: 'window.__test not registered',
 		},
 	);
+}
+
+/** The device serial this Appium session was launched against. */
+export function deviceUdid(b: WebdriverIO.Browser): string {
+	const udid = b.requestedCapabilities['appium:udid'];
+	if (udid === undefined) {
+		throw new Error('Appium session is missing its appium:udid capability');
+	}
+	return udid;
 }

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { Sheet, Block, Button } from 'konsta/svelte';
+	import { Block, Button } from 'konsta/svelte';
+	import SwipeableSheet from '$lib/components/SwipeableSheet.svelte';
+	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import { openAppSettings } from '@tauri-apps/plugin-barcode-scanner';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -30,9 +32,9 @@
 	}
 </script>
 
-<Sheet class="pb-safe" {opened} onBackdropClick={() => (opened = false)}>
+<SwipeableSheet class="pb-safe" {opened} onClose={() => (opened = false)}>
 	<div class="flex flex-col items-center">
-		<div class="sheet-handle"></div>
+		<SheetHandle />
 	</div>
 	<Block>
 		<div
@@ -74,7 +76,7 @@
 			</Button>
 		</div>
 	</Block>
-</Sheet>
+</SwipeableSheet>
 
 <style>
 	.step-radio {

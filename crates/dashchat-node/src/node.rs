@@ -47,9 +47,10 @@ use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
-    MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
+    MediaMetadata, OutgoingFile, OutgoingMedia, PendingContactRequest, SendMessageError,
 };
-use dashchat_utils::{NETWORK_ID, RELAY_URL};
+use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
+use tracing::error;
 
 pub use app_processing::{Notification, OpNotification, SystemNotification};
 
@@ -82,8 +83,9 @@ pub struct NodeConfig {
     /// The Node's initialization will reject any config with `enable_p2p` set to false
     /// and either `mdns_mode` or `use_relay` set to active/true.
     ///
-    /// The iroh endpoint itself
-    /// always stays up — mailbox blob/media exchange rides it and is unaffected.
+    /// On its own this keeps the iroh endpoint up — mailbox blob/media exchange
+    /// rides it. Together with [`Self::enable_blob_sync`] off, nothing needs the
+    /// endpoint and the node is spawned with no networking layer at all.
     /// (The blob fetcher does still *attempt* a direct dial to a blob's author
     /// as a fallback source, but with every discovery surface off it has no
     /// address to dial, so those attempts cannot connect.)
@@ -94,6 +96,11 @@ pub struct NodeConfig {
     /// endpoint. Only the iOS push extension disables this — it never touches
     /// media, and opening the iroh-blobs `redb` metadata store would deadlock on
     /// the exclusive single-process lock the always-on main app already holds.
+    ///
+    /// Off together with [`Self::enable_p2p`], it also drops the whole
+    /// networking layer: [`Node::iroh_endpoint`] then errors, and every surface
+    /// that dials — cloud-mailbox self-registration, the in-process mailbox
+    /// server — is unavailable.
     pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
     /// How often the followup task re-announces still-unfetched blob hashes to
@@ -107,6 +114,23 @@ pub struct NodeConfig {
     /// disables this — its short-lived background node must not author
     /// operations.
     pub enable_message_acks: bool,
+    /// A prefix for each topic's stream ack cursor name. When `None`, the node
+    /// uses p2panda's default cursor, keyed by the topic.
+    pub stream_cursor_prefix: Option<String>,
+    /// Whether to defer subscribing to all stored topics and replaying their
+    /// backlogs until after `Node::new` returns.
+    pub defer_stored_topics_initialization: bool,
+    /// Whether to record every operation this node processes that the app has
+    /// not acknowledged, for the app to process too. On for the iOS push
+    /// extension: whichever process fetches an operation first stores it, and
+    /// mailbox fetches and sync only ever ask for what comes after the store's
+    /// log heights, so the app is never handed it again. An operation the
+    /// extension stored but was killed before recording is handed to it again
+    /// by its own replay on its next launch, and recorded then.
+    pub record_processed_operations: bool,
+    /// Whether to import, on a resync, the operations another node over the
+    /// same store recorded as processed. On for the iOS app.
+    pub import_recorded_operations: bool,
 }
 
 impl NodeConfig {
@@ -155,6 +179,10 @@ impl NodeConfig {
             unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
+            stream_cursor_prefix: None,
+            defer_stored_topics_initialization: false,
+            record_processed_operations: false,
+            import_recorded_operations: false,
         }
     }
 
@@ -177,9 +205,13 @@ impl Default for NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
-            message_ack_debounce: std::time::Duration::from_secs(3),
+            unfetched_blob_followup_interval: std::time::Duration::from_secs(4),
+            message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
+            stream_cursor_prefix: None,
+            defer_stored_topics_initialization: false,
+            record_processed_operations: false,
+            import_recorded_operations: false,
         }
     }
 }
@@ -215,6 +247,7 @@ pub struct Node {
     actor_tx: mpsc::Sender<Command>,
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 
     /// All bootstrap nodes we have registered on our node.
     ///
@@ -234,7 +267,9 @@ pub struct Node {
     /// main app holds, which would otherwise deadlock the extension's node build.
     blob_sync: Option<BlobSync>,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    endpoint: p2panda::Endpoint,
+    /// `None` when p2panda was spawned with no networking layer, which happens
+    /// once nothing needs the endpoint (see [`Self::init`]).
+    endpoint: Option<p2panda::Endpoint>,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     unfetched_blob_trigger: Arc<tokio::sync::Notify>,
     unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -304,47 +339,56 @@ impl Node {
         // === p2panda node === //
 
         let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
+        // Nothing needs the iroh endpoint once p2p and blob sync are both off, so
+        // p2panda is spawned with no networking layer at all. `no_p2p` alone is not
+        // enough: mailbox media exchange dials the mailbox over iroh.
+        let no_networking = !config.enable_p2p && !config.enable_blob_sync;
+
         let mut builder = P2PandaNode::builder()
             .network_id(config.network_id)
             .signing_key(node_keys.private_key.clone())
             .database_url(&url)
-            .mdns_mode(config.mdns_mode.clone())
             // Acknowledge operations explicitly, only once application-layer
             // processing has finished (see `spawn_application_processor_task`).
             .ack_policy(p2panda::node::AckPolicy::Explicit);
 
-        if config.use_relay {
-            builder = builder.relay_url(RELAY_URL.clone());
-        }
+        if no_networking {
+            builder = builder.offline();
+        } else {
+            builder = builder.mdns_mode(config.mdns_mode.clone());
 
-        // Phones change network under a running node; the connections from before
-        // the change must die quickly so peers stop being dialled at the old address.
-        #[cfg(any(target_os = "android", target_os = "ios"))]
-        {
-            builder = builder
-                .keep_alive_interval(std::time::Duration::from_secs(1))
-                .max_idle_timeout(std::time::Duration::from_secs(3));
-        }
+            if config.use_relay {
+                builder = builder.relay_url(RELAY_URL.clone());
+            }
 
-        // With p2p disabled, run zero random-walk discovery walkers so the node
-        // never initiates discovery sessions. Otherwise, inserting a mailbox's
-        // address (a full p2panda node when run in-process) would let discovery
-        // gossip our transport info through it, leaking a direct path to peers.
-        if !config.enable_p2p {
-            builder = builder.discovery_config(DiscoveryConfig {
-                random_walkers_count: 0,
-                ..Default::default()
-            });
+            // Phones change network under a running node; the connections from before
+            // the change must die quickly so peers stop being dialled at the old address.
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                builder = builder
+                    .keep_alive_interval(std::time::Duration::from_secs(1))
+                    .max_idle_timeout(std::time::Duration::from_secs(3));
+            }
+
+            if !config.enable_p2p {
+                builder = builder.discovery_config(DiscoveryConfig {
+                    random_walkers_count: 0,
+                    ..Default::default()
+                });
+            }
         }
 
         let p2panda_node = builder.spawn().await?;
         // @TODO: the store() method is behind the "test_utils" feature flag, if we actually do
         // need access to the store then we should make this method public.
         let store = p2panda_node.store();
-        let endpoint = p2panda_node.endpoint();
+        let endpoint = match no_networking {
+            true => None,
+            false => Some(p2panda_node.endpoint()?),
+        };
 
         // Spawn node actor.
-        let (node_actor, events_rx) = Actor::new(p2panda_node);
+        let (node_actor, events_rx) = Actor::new(p2panda_node, config.stream_cursor_prefix.clone());
         let actor_tx = node_actor.spawn().await?;
 
         // === stores === //
@@ -379,6 +423,9 @@ impl Node {
         // deadlock this build. It reads the operation and builds a notification
         // from its payload only, so blob sync is skipped entirely.
         let blob_sync = if config.enable_blob_sync {
+            let endpoint = endpoint
+                .clone()
+                .context("blob sync needs an iroh endpoint")?;
             let self_endpoint = iroh::EndpointId::from_bytes(node_keys.device_id().as_bytes())?;
             let source_lookup = crate::blob_sync::MixedSourceLookup::new(
                 op_store.clone(),
@@ -399,7 +446,7 @@ impl Node {
             .await?;
             Some(
                 BlobSync::new(
-                    endpoint.clone(),
+                    endpoint,
                     filesystem.blobs_store_path(),
                     blob_fetch,
                     source_lookup,
@@ -428,6 +475,7 @@ impl Node {
             actor_tx,
             processor_cancel_tx,
             processor_handle: Default::default(),
+            stored_topics_init_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
@@ -458,8 +506,11 @@ impl Node {
 
         // === network change notifier === //
 
-        let network_change_handle =
-            crate::network_change_notifier::spawn(node.endpoint.clone(), node.mailboxes.clone());
+        let network_change_handle = crate::network_change_notifier::spawn(
+            node.endpoint.clone(),
+            node.mailboxes.clone(),
+            node.unfetched_blob_trigger.clone(),
+        );
         node.network_change_handle
             .lock()
             .await
@@ -490,7 +541,33 @@ impl Node {
 
         // === topics === //
 
-        node.initialize_stored_topics().await?;
+        if node.config.defer_stored_topics_initialization {
+            // Initialize stored topics on a background task so the node is
+            // returned immediately. This keeps app launch responsive while still ensuring all
+            // topics are eventually subscribed. Retry with backoff so transient
+            // SQLite or mailbox failures do not leave topics unsubscribed.
+            // The handle is aborted during shutdown so teardown does not race
+            // the replay.
+            let init_handle = tokio::spawn({
+                let node = node.clone();
+                async move {
+                    let _ = retry_with_backoff(
+                        None,
+                        std::time::Duration::from_secs(1),
+                        std::time::Duration::from_secs(60),
+                        "initialize_stored_topics",
+                        || async { node.initialize_stored_topics().await },
+                    )
+                    .await;
+                }
+            });
+            node.stored_topics_init_handle
+                .lock()
+                .await
+                .replace(init_handle);
+        } else {
+            node.initialize_stored_topics().await?;
+        }
 
         Ok(node)
     }
@@ -589,9 +666,14 @@ impl Node {
     }
 
     /// The underlying iroh endpoint. An in-process mailbox shares this so its
-    /// `/health` response advertises the node's dialing address.
+    /// `/health` response advertises the node's dialing address. Errors on a
+    /// node spawned with no networking layer.
     pub async fn iroh_endpoint(&self) -> Result<iroh::Endpoint> {
-        Ok(self.endpoint.endpoint().await?)
+        let endpoint = self
+            .endpoint
+            .as_ref()
+            .context("this node has no networking layer and so no iroh endpoint")?;
+        Ok(endpoint.endpoint().await?)
     }
 
     /// Add (or refresh) a peer's dialing address (relay + direct addresses) in
@@ -601,6 +683,17 @@ impl Node {
     /// any existing entry so a stale one (refused by `AddressBookDiscovery`) is
     /// refreshed and becomes dialable again.
     pub async fn insert_peer_addr(&self, addr: iroh::EndpointAddr) -> Result<()> {
+        // A node with no networking layer dials nobody, so it keeps no address
+        // book. Callers register a mailbox's address on every poll; erroring
+        // here would take the mailbox registration down with it.
+        if self.endpoint.is_none() {
+            tracing::debug!(
+                peer = %addr.id,
+                "skipping peer address: this node has no networking layer"
+            );
+            return Ok(());
+        }
+
         let (reply_tx, reply_rx) = oneshot::channel();
         self.actor_tx
             .send(Command::RegisterPeerAddr { addr, reply_tx })
@@ -981,6 +1074,13 @@ impl Node {
         self.projection.lookup_contact_by_device_id(device_id).await
     }
 
+    pub async fn is_accepted_contact(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        Ok(match self.lookup_contact(device_id).await? {
+            Some(agent_id) => self.accepted_contact_agent_ids().await?.contains(&agent_id),
+            None => false,
+        })
+    }
+
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
         self.projection.all_contact_agent_ids().await
     }
@@ -1017,6 +1117,38 @@ impl Node {
             }
         }
         Ok(agents)
+    }
+
+    /// The contact request we sent from any of our devices by scanning
+    /// `device_id`'s code, whether or not their acceptance has reached us
+    /// since. The newest one: a request that expired unanswered is sent again,
+    /// and the code may carry a newer name by then.
+    pub async fn outgoing_contact_request(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<Option<PendingContactRequest>> {
+        let log_id: LogId = self.device_group_topic().into();
+        let mut newest: Option<(p2panda_core::Timestamp, PendingContactRequest)> = None;
+        for author in self.op_store.get_authors(log_id).await? {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body else { continue };
+                let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
+                    Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                if request.device_pubkey != device_id {
+                    continue;
+                }
+                if newest
+                    .as_ref()
+                    .is_none_or(|(at, _)| op.header.timestamp > *at)
+                {
+                    newest = Some((op.header.timestamp, request));
+                }
+            }
+        }
+        Ok(newest.map(|(_, request)| request))
     }
 
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
@@ -1467,6 +1599,14 @@ impl Node {
 
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        // Stop any deferred stored-topic initialization before we tear down
+        // the actor or clear mailboxes, so it cannot race SQLite pool closure
+        // or re-insert topics into mailboxes after clear().
+        if let Some(handle) = self.stored_topics_init_handle.lock().await.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 
@@ -1534,17 +1674,20 @@ impl Node {
         self.op_store.close().await;
 
         // Holds only sockets (no file lock), so it goes last. The node keeps its
-        // own endpoint clone, so the actor drop above doesn't release it.
-        match self.endpoint.endpoint().await {
-            Ok(endpoint) => {
-                if tokio::time::timeout(std::time::Duration::from_secs(3), endpoint.close())
-                    .await
-                    .is_err()
-                {
-                    tracing::warn!("timed out closing iroh endpoint");
+        // own endpoint clone, so the actor drop above doesn't release it. A node
+        // with no networking layer never opened one.
+        if let Some(endpoint) = &self.endpoint {
+            match endpoint.endpoint().await {
+                Ok(endpoint) => {
+                    if tokio::time::timeout(std::time::Duration::from_secs(3), endpoint.close())
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("timed out closing iroh endpoint");
+                    }
                 }
+                Err(err) => tracing::warn!("failed to resolve iroh endpoint for close: {err:?}"),
             }
-            Err(err) => tracing::warn!("failed to resolve iroh endpoint for close: {err:?}"),
         }
 
         Ok(())
@@ -1553,8 +1696,9 @@ impl Node {
     /// Register the shared, idempotent state for a contact identified by their
     /// device pubkey and agent id:
     /// - register the contact as a bootstrap peer,
-    /// - subscribe to their announcements, and
-    /// - subscribe to our direct-chat topic.
+    /// - subscribe to their announcements,
+    /// - subscribe to our direct-chat topic, and
+    /// - stop restoring their inbox our own request was sent to.
     ///
     /// Safe to call repeatedly, so both the initiating `add_contact` path and the
     /// inbox request/ack handlers can call it.
@@ -1578,6 +1722,10 @@ impl Node {
         self.register_topic(self.direct_chat_topic(fake_agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.local_store
+            .remove_requested_inbox_topics_of(device_id)
+            .await
+            .map_err(|e| Error::RemoveActiveInbox(format!("{e}")))?;
         Ok(())
     }
 
@@ -1602,13 +1750,21 @@ impl Node {
 
         let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
 
-        // If we already sent this device a contact request, don't publish a
-        // duplicate request or pending marker. Return the existing direct-chat
-        // topic id so the caller can navigate there.
+        // If they're already a contact, or we're still serving a contact request
+        // to this device, don't publish a duplicate request or pending marker.
+        // Return the existing direct-chat topic id so the caller can navigate
+        // there. Once a request expired unanswered, a new scan starts a fresh
+        // exchange; the old reply inbox stays, so a late acceptance of the old
+        // request still lands.
         if self
-            .has_outgoing_pending_request(contact.device_pubkey)
+            .is_accepted_contact(contact.device_pubkey)
             .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
+            || self
+                .local_store
+                .has_unexpired_requested_inbox_for(contact.device_pubkey)
+                .await
+                .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
         {
             return Ok(AddContactResult::AlreadyRequested(direct_chat_topic_id));
         }
@@ -1680,9 +1836,8 @@ impl Node {
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         // Mint a private reply inbox for this exchange and listen on it for
-        // the owner's ack. We do NOT persist the (possibly shared) advertised
-        // inbox we scanned — only the owner keeps camping on that — so other
-        // scanners of the same QR never share a return channel with us.
+        // the owner's ack, so other scanners of the same QR never share a
+        // return channel with us.
         let reply_inbox = InboxTopic {
             topic: Topic::inbox().alias_named(&format!(
                 "reply_inbox({:?},peer={})",
@@ -1723,16 +1878,30 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        // Our request lives only on this (possibly shared) inbox, so we keep
+        // serving it across restarts — but only until the owner accepts or the
+        // first restart after the code expires, not for good like the owner does.
+        // TODO: make this more private. Rejoining the inbox's gossip overlay
+        // shows us to (and syncs us the requests of) everyone else who scanned
+        // the same QR; sync the topic only with its owner's node instead, and
+        // drop the other scanners' requests we synced meanwhile.
+        self.local_store
+            .add_requested_inbox_topic(inbox_topic.clone(), contact.device_pubkey)
+            .await
+            .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
+
         // Record a pending request in our own device group so the UI can show a
         // placeholder chat until the owner's ack arrives. Keyed on the owner's
         // device pubkey, since we don't know their agent id yet.
         self.publish(
             self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
-                device_pubkey: contact.device_pubkey,
-                profile_name: contact.profile_name,
-                direct_chat_topic_id,
-            }),
+            Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(
+                PendingContactRequest {
+                    device_pubkey: contact.device_pubkey,
+                    profile_name: contact.profile_name,
+                    direct_chat_topic_id,
+                },
+            )),
             Some(&format!(
                 "add_contact/pending({:?})",
                 contact.device_pubkey.aliased()
@@ -1793,11 +1962,12 @@ impl Node {
         // topic. This is the point at which we first disclose our profile and
         // signals that we accepted, letting them complete the exchange.
         if let Some(reply_topic) = self
-            .find_contact_request_reply_topic(agent_id)
+            .find_contact_request_reply_topic(agent_id, device_pubkey)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
         {
-            self.reply_to_contact_request(reply_topic).await?;
+            self.reply_to_contact_request(reply_topic, device_pubkey)
+                .await?;
         } else {
             tracing::warn!(
                 agent_id = ?agent_id.aliased(),
@@ -1820,53 +1990,62 @@ impl Node {
         Ok(())
     }
 
-    /// Returns true if we have an outgoing contact request recorded for
+    /// Returns true if we have an unexpired outgoing contact request to
     /// `device_pubkey` (i.e. we scanned their code and are awaiting their ack).
-    pub(crate) async fn has_outgoing_pending_request(
-        &self,
-        device_id: DeviceId,
-    ) -> anyhow::Result<bool> {
+    pub async fn has_outgoing_pending_request(&self, device_id: DeviceId) -> anyhow::Result<bool> {
         self.local_store
-            .has_pending_reply_inbox_for(device_id)
+            .has_unexpired_reply_inbox_for(device_id)
             .await
     }
 
     /// Scan our advertised inbox logs for a pending [`InboxPayload::ContactRequest`]
-    /// from `agent_id` and return its private reply topic, so [`Self::accept_contact`]
+    /// from `agent_id`'s `device_id` and return its private reply topic, so [`Self::accept_contact`]
     /// can send our acceptance there. Returns `None` if no matching request is stored.
     async fn find_contact_request_reply_topic(
         &self,
         agent_id: AgentId,
+        device_id: DeviceId,
     ) -> anyhow::Result<Option<Topic<kind::Inbox>>> {
+        // Only the requester's own log: anyone holding a shared code can publish
+        // a request claiming their agent id. A requester whose request expired
+        // unanswered can send another, with a new reply topic: answer the latest.
+        // The requester picks the reply topic, so one naming an inbox we already
+        // have would take it over: such a request is not answered.
+        let mut latest = None;
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
-            for author in self.op_store.get_authors(log_id).await? {
-                for op in self.op_store.get_log(&author, &log_id, None).await? {
-                    let Some(body) = op.body else { continue };
-                    let Ok(Payload::Inbox(InboxPayload::ContactRequest {
-                        agent_id: req_agent,
-                        reply_topic,
-                        ..
-                    })) = Payload::try_from_body(&body)
-                    else {
-                        continue;
-                    };
-                    if req_agent == agent_id {
-                        return Ok(Some(reply_topic));
-                    }
+            for op in self.op_store.get_log(&device_id, &log_id, None).await? {
+                let Some(body) = op.body else { continue };
+                let Ok(Payload::Inbox(InboxPayload::ContactRequest {
+                    agent_id: req_agent,
+                    reply_topic,
+                    ..
+                })) = Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                if req_agent == agent_id
+                    && latest
+                        .as_ref()
+                        .is_none_or(|(ts, _)| op.header.timestamp > *ts)
+                    && !self.local_store.is_known_inbox_topic(*reply_topic).await?
+                {
+                    latest = Some((op.header.timestamp, reply_topic));
                 }
             }
         }
-        Ok(None)
+        Ok(latest.map(|(_, reply_topic)| reply_topic))
     }
 
     /// Reply to an incoming contact request by sending our profile to the
     /// scanner's private reply topic, so the scanner learns it immediately over
-    /// the inbox rather than waiting for announcements sync. We subscribe to the
-    /// reply topic just long enough to publish to it.
+    /// the inbox rather than waiting for announcements sync. We stay subscribed
+    /// to the reply topic across restarts, since without a mailbox the scanner
+    /// can only sync it from us.
     pub(crate) async fn reply_to_contact_request(
         &self,
         reply_topic: Topic<kind::Inbox>,
+        requester: DeviceId,
     ) -> Result<(), Error> {
         let Some(profile) = self
             .my_profile()
@@ -1888,6 +2067,25 @@ impl Node {
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        // Only once published: a saved reply topic is no longer answered, so
+        // saving it first would leave a retry after a failed publish silent.
+        if let Err(err) = self
+            .local_store
+            .add_accepted_inbox_topic(
+                InboxTopic {
+                    topic: reply_topic,
+                    expires_at: Utc::now() + self.config.contact_code_expiry,
+                },
+                requester,
+            )
+            .await
+        {
+            tracing::warn!(
+                requester = ?requester.aliased(),
+                ?err,
+                "failed to save the accepted inbox; it won't be served after a restart"
+            );
+        }
         Ok(())
     }
 
@@ -1973,46 +2171,180 @@ impl Node {
         Ok(())
     }
 
+    /// Re-run stored-topic initialization so the app catches up on operations
+    /// another process (the iOS push extension) wrote into the shared store
+    /// while the app was running: it subscribes to any newly-stored topics,
+    /// replaying their operations from the app's own un-advanced cursor, and
+    /// imports the operations the extension recorded as processed.
+    pub async fn resync(&self) -> anyhow::Result<()> {
+        self.initialize_stored_topics().await
+    }
+
+    /// Import the operations the push extension processed and recorded, so
+    /// this node processes them too. They are in the shared store already, so
+    /// nothing else delivers them to it; importing processes them regardless,
+    /// and acknowledging one below this node's cursor is a no-op. A freshly
+    /// opened stream replays the ones above the cursor as well, which is
+    /// harmless: processing an operation twice is idempotent.
+    async fn import_extension_processed_operations(&self) -> anyhow::Result<()> {
+        if !self.config.import_recorded_operations {
+            return Ok(());
+        }
+        let mut by_topic: HashMap<TopicId, Vec<Operation>> = HashMap::new();
+        for (hash, topic) in self.local_store.extension_processed_operations().await? {
+            // Without a body there is nothing left for the app layer to see.
+            match self.op_store.get_operation(&hash).await? {
+                Some(operation) if operation.body.is_some() => {
+                    by_topic.entry(topic).or_default().push(operation)
+                }
+                _ => {
+                    if let Err(err) = self
+                        .local_store
+                        .forget_extension_processed_operation(&hash)
+                        .await
+                    {
+                        tracing::warn!(
+                            ?err,
+                            "failed to forget an operation the push extension recorded"
+                        );
+                    }
+                }
+            }
+        }
+        let mut failures = 0usize;
+        for (topic, mut operations) in by_topic {
+            operations
+                .sort_by_key(|op| (DeviceId::from(op.header.verifying_key), op.header.seq_num));
+            // The race e2e spec matches on this line.
+            tracing::info!(topic = ?topic.aliased(), count = operations.len(), "importing operations the push extension processed");
+            if let Err(err) = self
+                .import_stream(topic, Box::pin(futures::stream::iter(operations)))
+                .await
+            {
+                error!(topic = ?topic.aliased(), ?err, "failed to import the operations the push extension processed");
+                failures += 1;
+            }
+        }
+        if failures > 0 {
+            anyhow::bail!("{failures} topic(s) failed to import");
+        }
+        Ok(())
+    }
+
+    /// Initialize all stored topics.
+    ///
+    /// Failures loading the topic lists from `local_store` and the announcements
+    /// topic initialization are propagated, causing the caller to retry the
+    /// whole call. Once the lists are loaded, per-topic failures in the loops
+    /// are logged and skipped so one bad topic does not starve the rest; the
+    /// function returns an error at the end if any of those loops failed, so
+    /// the deferred init retry path will re-run it.
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+        let mut failures = 0usize;
+
         self.initialize_topic(
             *Topic::announcements(self.agent_id())
                 .alias_named(&format!("announce({:?})", self.agent_id().aliased())),
         )
         .await?;
 
-        for topic in self.local_store.get_advertised_inbox_topics().await?.iter() {
-            self.initialize_topic(
-                *topic
-                    .topic
-                    .clone()
-                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
-            )
-            .await?;
+        let advertised_inbox_topics = self.local_store.get_advertised_inbox_topics().await?;
+        for topic in advertised_inbox_topics.iter() {
+            if let Err(err) = self
+                .initialize_topic(
+                    *topic
+                        .topic
+                        .clone()
+                        .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
+                )
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize advertised inbox topic");
+                failures += 1;
+            }
         }
 
-        for (topic, peer_device) in self
+        let reply_inbox_topics = self
             .local_store
             .get_reply_inbox_topics_with_author()
-            .await?
-            .iter()
-        {
-            self.initialize_topic(*topic.topic.clone().alias_named(&format!(
-                "reply_inbox({:?},peer={})",
-                self.device_id().aliased(),
-                &hex::encode(&peer_device.as_bytes()[..4])
-            )))
             .await?;
+        for (topic, peer_device) in reply_inbox_topics.iter() {
+            if let Err(err) = self
+                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                    "reply_inbox({:?},peer={})",
+                    self.device_id().aliased(),
+                    &hex::encode(&peer_device.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize reply inbox topic");
+                failures += 1;
+            }
         }
 
-        for topic in self.local_store.subscribed_topics().await?.iter() {
-            self.initialize_topic(*topic).await?;
+        self.local_store
+            .prune_expired_requested_inbox_topics()
+            .await?;
+        for (topic, owner) in self
+            .local_store
+            .get_requested_inbox_topics_with_owner()
+            .await?
+        {
+            if let Err(err) = self
+                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                    "requested_inbox(peer={})",
+                    &hex::encode(&owner.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize requested inbox topic");
+                failures += 1;
+            }
+        }
+
+        self.local_store
+            .prune_expired_accepted_inbox_topics()
+            .await?;
+        for (topic, requester) in self
+            .local_store
+            .get_accepted_inbox_topics_with_requester()
+            .await?
+        {
+            if let Err(err) = self
+                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                    "accepted_inbox(peer={})",
+                    &hex::encode(&requester.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize accepted inbox topic");
+                failures += 1;
+            }
+        }
+
+        let subscribed_topics = self.local_store.subscribed_topics().await?;
+        for topic in subscribed_topics.iter() {
+            if let Err(err) = self.initialize_topic(*topic).await {
+                error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed topic");
+                failures += 1;
+            }
         }
 
         // @TODO: I had to add this so that the device group topic is subscribed to when we later
         // attempt to publish operations to it.
-        self.initialize_topic(self.device_group_topic().into())
-            .await?;
+        if let Err(err) = self
+            .initialize_topic(self.device_group_topic().into())
+            .await
+        {
+            error!(?err, "failed to initialize device group topic");
+            failures += 1;
+        }
 
+        self.import_extension_processed_operations().await?;
+
+        if failures > 0 {
+            anyhow::bail!("{failures} topic(s) failed to initialize");
+        }
         Ok(())
     }
 
@@ -2260,6 +2592,13 @@ impl mailbox_client::BlobReader for NodeBlobReader {
             .ok_or_else(|| anyhow::anyhow!("blob sync disabled"))?;
         Ok(blob_sync.blobs.get_bytes(hash).await?)
     }
+
+    async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
+        match &self.blob_sync {
+            Some(blob_sync) => blob_sync.blobs.has(hash).await.unwrap_or(false),
+            None => false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2351,5 +2690,130 @@ mod blob_load_tests {
             .await
             .unwrap();
         assert_eq!(got, content);
+    }
+}
+
+#[cfg(test)]
+mod forged_contact_request_tests {
+    use crate::contact::InboxTopic;
+    use crate::testing::*;
+    use crate::*;
+
+    /// Mallory, another scanner of Alice's shared code, publishes a later
+    /// request claiming Bobbi's agent id. Accepting Bobbi must still answer
+    /// Bobbi's own request, not the forged one.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn accepting_answers_the_requesting_device_not_a_forger() {
+        let config = NodeConfig::testing().random_network_id();
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config.clone(), "bobbi").await;
+        let mallory = TestNode::new(config, "mallory").await;
+        let bobbi_device_id = bobbi.device_id();
+        let mallory_device_id = mallory.device_id();
+        introduce_peers([&alice, &bobbi, &mallory]).await.unwrap();
+
+        let qr = alice.create_add_contact_qr_code().await.unwrap();
+        bobbi.add_contact(qr.clone()).await.unwrap();
+        PollConfig::default()
+            .wait_for(|| async {
+                match alice.lookup_contact(bobbi_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received bobbi's request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        mallory.add_contact(qr.clone()).await.unwrap();
+        let alice_inbox =
+            InboxTopic::from_nonce(&qr.device_pubkey, &qr.inbox_nonce, chrono::Utc::now());
+        mallory
+            .publish(
+                alice_inbox.topic,
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    profile: mallory.my_profile().await.unwrap().unwrap(),
+                    agent_id: bobbi.agent_id(),
+                    reply_topic: Topic::inbox(),
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+        PollConfig::default()
+            .wait_for(|| async {
+                match alice.lookup_contact(mallory_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received mallory's forged request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        alice.accept_contact(bobbi.agent_id()).await.unwrap();
+        PollConfig::seconds(20)
+            .wait_for(|| async {
+                match bobbi
+                    .get_contacts()
+                    .await
+                    .unwrap()
+                    .contains(&alice.agent_id())
+                {
+                    true => Ok(()),
+                    false => Err("alice's acceptance never reached bobbi"),
+                }
+            })
+            .await
+            .unwrap();
+    }
+
+    /// Mallory, a scanner of Alice's shared code, names Alice's own advertised
+    /// inbox as the reply topic. Accepting Mallory must leave that inbox
+    /// advertised, or every other scanner's request on it is dropped.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn accepting_keeps_our_inbox_named_as_reply_topic() {
+        let config = NodeConfig::testing().random_network_id();
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let mallory = TestNode::new(config, "mallory").await;
+        let mallory_device_id = mallory.device_id();
+        introduce_peers([&alice, &mallory]).await.unwrap();
+
+        let qr = alice.create_add_contact_qr_code().await.unwrap();
+        let alice_inbox =
+            InboxTopic::from_nonce(&qr.device_pubkey, &qr.inbox_nonce, chrono::Utc::now());
+        mallory.initialize_topic(*alice_inbox.topic).await.unwrap();
+        mallory
+            .publish(
+                alice_inbox.topic,
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    profile: mallory.my_profile().await.unwrap().unwrap(),
+                    agent_id: mallory.agent_id(),
+                    reply_topic: alice_inbox.topic,
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+        PollConfig::seconds(20)
+            .wait_for(|| async {
+                match alice.lookup_contact(mallory_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received mallory's request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        alice.accept_contact(mallory.agent_id()).await.unwrap();
+
+        let advertised = alice
+            .local_store
+            .get_advertised_inbox_topics()
+            .await
+            .unwrap();
+        assert!(
+            advertised
+                .iter()
+                .any(|inbox| inbox.topic == alice_inbox.topic)
+        );
     }
 }

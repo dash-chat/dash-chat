@@ -8,7 +8,7 @@ use crate::outbox::entry::{self, Entry, State};
 /// Matches the mailbox-server's blob cleanup window.
 pub(crate) const MAX_AGE: Duration = Duration::from_secs(60 * 60 * 24 * 7);
 pub(crate) const MAX_ENTRIES: usize = 100;
-pub(crate) const MAX_BYTES: u64 = 10 * 1024 * 1024;
+pub(crate) const MAX_BYTES: u64 = 60 * 1024 * 1024;
 
 /// The entries to drop, oldest first: everything past the age limit, then
 /// however many more it takes to fit within the count and size caps.

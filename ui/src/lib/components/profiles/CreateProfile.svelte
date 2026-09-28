@@ -1,7 +1,12 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { getContext } from 'svelte';
-	import type { ContactsStore, Error, SettingsStore } from 'dash-chat-stores';
+	import {
+		type ContactsStore,
+		type Error,
+		type SettingsStore,
+		invokeAfterSetup,
+	} from 'dash-chat-stores';
 	import AvatarPicker from './AvatarPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
@@ -20,8 +25,15 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
+	import { ensureNotificationPermission } from '$lib/utils/notifications';
 	import { mdiCamera, mdiAccount } from '@mdi/js';
 	import Avatar from './Avatar.svelte';
+
+	type PermissionState =
+		| 'granted'
+		| 'denied'
+		| 'prompt'
+		| 'promptWithRationale';
 
 	let { onBack }: { onBack?: () => void } = $props();
 
@@ -47,18 +59,24 @@
 		showPicker = false;
 	}
 
-	async function requestNotificationPermission() {
+	async function requestLocalNetworkPermission() {
 		if (!isMobile) return;
 		try {
-			const { isPermissionGranted, requestPermission } = await import(
-				'@tauri-apps/plugin-notification'
-			);
-			let granted = await isPermissionGranted();
-			if (!granted) {
-				const result = await requestPermission();
-				granted = result === 'granted';
+			const { localNetwork } = await invokeAfterSetup<{
+				localNetwork: PermissionState;
+			}>('plugin:network-interfaces|check_permissions');
+			if (localNetwork !== 'granted') {
+				await invokeAfterSetup('plugin:network-interfaces|request_permissions');
 			}
-			if (granted) {
+		} catch (e) {
+			console.error('Failed to request local network permission:', e);
+		}
+	}
+
+	async function enableNotifications() {
+		if (!isMobile) return;
+		try {
+			if (await ensureNotificationPermission()) {
 				await settingsStore.setNotificationsEnabled(true);
 			}
 		} catch (e) {
@@ -74,7 +92,8 @@
 				avatar,
 				about: undefined,
 			});
-			await requestNotificationPermission();
+			await requestLocalNetworkPermission();
+			await enableNotifications();
 		} catch (e) {
 			console.error(e);
 			const error = e as Error;
