@@ -206,6 +206,19 @@ describe('BlobStore.progress', () => {
 		assert.deepEqual(again, [{ bytes: 800, complete: true, stalled: false }]);
 	});
 
+	it('does not poll a complete blob again when subscribed to again', async () => {
+		client.set('h1', 800, true);
+		const first: BlobState[] = [];
+		const unsub = subscribe(store, 'h1', first);
+		await until(() => first.length > 0, 'the first snapshot');
+		unsub();
+		await sleep(POLL_MS * 3);
+		const before = client.polls.length;
+		unsubs.push(subscribe(store, 'h1', []));
+		await sleep(POLL_MS * 5);
+		assert.equal(client.polls.length, before);
+	});
+
 	it('flags a stall, then polls slowly until a retry', async () => {
 		client.set('h1', 0);
 		const seen: BlobState[] = [];

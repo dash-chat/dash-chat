@@ -30,9 +30,9 @@ export class BlobStore {
 	/** The hashes the latest poll asked about; what a test reads to check
 	 * that only the blobs on screen are polled. */
 	lastPolled: Hash[] = [];
-	/** One tracker per blob asked about, outliving its subscription so a blob
-	 * scrolled away and back keeps its stall clock and last state; pruned once
-	 * the blob is complete and nothing shows it. */
+	/** One tracker per blob asked about, kept for the session so a blob
+	 * scrolled away and back keeps its stall clock and last state, and a
+	 * complete one is never asked about again. */
 	private trackers = new Map<Hash, BlobProgressTracker>();
 	private subscribers = new Map<Hash, Publish>();
 	private timer: ReturnType<typeof setTimeout> | undefined;
@@ -67,8 +67,6 @@ export class BlobStore {
 				return () => {
 					if (this.subscribers.get(hash) === publish)
 						this.subscribers.delete(hash);
-					if (this.trackers.get(hash)?.state?.complete === true)
-						this.trackers.delete(hash);
 				};
 			}),
 	);
