@@ -22,6 +22,10 @@ enum InboxRole {
     /// A private inbox we minted while scanning someone's QR, used only to
     /// receive their `ContactRequestAccept`.
     Reply = 1,
+    /// A requester's private reply inbox that we published our
+    /// `ContactRequestAccept` into. Kept subscribed across restarts so a
+    /// requester that only reaches us directly can still sync it from us.
+    Accepted = 2,
 }
 
 const MIGRATIONS: &[&str] = &[
@@ -273,6 +277,14 @@ impl LocalStore {
     pub async fn add_active_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
         self.add_inbox_topic(inbox_topic, InboxRole::Advertised)
             .await
+    }
+
+    pub async fn get_accepted_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
+        self.get_inbox_topics(InboxRole::Accepted).await
+    }
+
+    pub async fn add_accepted_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
+        self.add_inbox_topic(inbox_topic, InboxRole::Accepted).await
     }
 
     pub async fn add_reply_inbox_topic(

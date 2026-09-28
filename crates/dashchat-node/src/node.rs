@@ -1948,8 +1948,9 @@ impl Node {
 
     /// Reply to an incoming contact request by sending our profile to the
     /// scanner's private reply topic, so the scanner learns it immediately over
-    /// the inbox rather than waiting for announcements sync. We subscribe to the
-    /// reply topic just long enough to publish to it.
+    /// the inbox rather than waiting for announcements sync. We stay subscribed
+    /// to the reply topic across restarts, since without a mailbox the scanner
+    /// can only sync it from us.
     pub(crate) async fn reply_to_contact_request(
         &self,
         reply_topic: Topic<kind::Inbox>,
@@ -1964,6 +1965,13 @@ impl Node {
         self.initialize_topic(*reply_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.local_store
+            .add_accepted_inbox_topic(InboxTopic {
+                topic: reply_topic,
+                expires_at: Utc::now() + self.config.contact_code_expiry,
+            })
+            .await
+            .map_err(|e| Error::AddActiveInbox(e.to_string()))?;
         self.publish(
             reply_topic,
             Payload::Inbox(InboxPayload::ContactRequestAccept {
@@ -2166,6 +2174,13 @@ impl Node {
                 .await
             {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize reply inbox topic");
+                failures += 1;
+            }
+        }
+
+        for topic in self.local_store.get_accepted_inbox_topics().await? {
+            if let Err(err) = self.initialize_topic(*topic.topic).await {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize accepted inbox topic");
                 failures += 1;
             }
         }
