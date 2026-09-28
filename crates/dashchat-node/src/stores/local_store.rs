@@ -363,6 +363,22 @@ impl LocalStore {
         Ok(())
     }
 
+    pub async fn has_unexpired_requested_inbox_for(
+        &self,
+        inbox_owner: DeviceId,
+    ) -> anyhow::Result<bool> {
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ? AND expires_at_nanos >= ?",
+        )
+        .bind(inbox_owner)
+        .bind(InboxRole::Requested)
+        .bind(nanos)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.is_some())
+    }
+
     pub async fn has_pending_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
         let row: Option<(i64,)> = sqlx::query_as(
             "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ?",
@@ -660,6 +676,23 @@ mod tests {
                 .map(|(topic, _)| topic)
                 .collect::<BTreeSet<_>>()
         };
+
+        let dave = DeviceId::from(p2panda::SigningKey::from_bytes(&[3; 32]).verifying_key());
+        let expired_to_dave = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([5; 32]),
+        };
+        store
+            .add_requested_inbox_topic(expired_to_dave, dave)
+            .await
+            .unwrap();
+        assert!(
+            store
+                .has_unexpired_requested_inbox_for(alice)
+                .await
+                .unwrap()
+        );
+        assert!(!store.has_unexpired_requested_inbox_for(dave).await.unwrap());
 
         store
             .prune_expired_requested_inbox_topics(now)

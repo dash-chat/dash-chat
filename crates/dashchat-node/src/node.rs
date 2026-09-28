@@ -1696,11 +1696,14 @@ impl Node {
 
         let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
 
-        // If we already sent this device a contact request, don't publish a
-        // duplicate request or pending marker. Return the existing direct-chat
-        // topic id so the caller can navigate there.
+        // If we're still serving a contact request to this device, don't publish
+        // a duplicate request or pending marker. Return the existing direct-chat
+        // topic id so the caller can navigate there. Once that request expired
+        // unanswered, a new scan starts a fresh exchange; the old reply inbox
+        // stays, so a late acceptance of the old request still lands.
         if self
-            .has_outgoing_pending_request(contact.device_pubkey)
+            .local_store
+            .has_unexpired_requested_inbox_for(contact.device_pubkey)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
         {
