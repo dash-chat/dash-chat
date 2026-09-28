@@ -575,12 +575,15 @@ export function stopAndroidApp(udid: string): void {
 	);
 }
 
-/** Revoke the notification permission the session's autoGrantPermissions
- *  granted on install. Android kills the app when it loses a permission. */
-export function revokeAndroidNotificationPermission(udid: string): void {
+/** Put the notification permission the session's autoGrantPermissions
+ *  granted back to never asked, so the app's next request shows the system
+ *  dialog. Android kills the app when it loses a permission. */
+export function resetAndroidNotificationPermission(udid: string): void {
+	const permission = 'android.permission.POST_NOTIFICATIONS';
+	adbShell(udid, `pm revoke ${APP_PACKAGE} ${permission}`);
 	adbShell(
 		udid,
-		`pm revoke ${APP_PACKAGE} android.permission.POST_NOTIFICATIONS`,
+		`pm clear-permission-flags ${APP_PACKAGE} ${permission} user-set user-fixed`,
 	);
 }
 

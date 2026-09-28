@@ -1,3 +1,4 @@
+import { PermissionDialog } from '../../helpers/components/permission-dialog';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Notifications settings follow the OS permission', () => {
@@ -19,9 +20,9 @@ describe('Notifications settings follow the OS permission', () => {
 		await expect(agent.notificationsPage.permissionBanner).not.toBeDisplayed();
 	});
 
-	it('shows the banner and a disabled toggle once the permission is revoked', async () => {
+	it('asks for the permission from the banner while it was never requested', async () => {
 		await agent.stopApp();
-		agent.revokeNotificationPermission();
+		agent.resetNotificationPermission();
 		await agent.startApp();
 
 		await agent.homePage.settingsLink.click();
@@ -32,5 +33,11 @@ describe('Notifications settings follow the OS permission', () => {
 		await expect(agent.notificationsPage.permissionBanner).toBeDisplayed();
 		await expect(agent.notificationsPage.toggleInput).not.toBeSelected();
 		await expect(agent.notificationsPage.toggleInput).toBeDisabled();
+
+		await agent.notificationsPage.turnOnButton.click();
+		await new PermissionDialog(agent).allow();
+
+		await expect(agent.notificationsPage.toggleInput).toBeSelected();
+		await expect(agent.notificationsPage.permissionBanner).not.toBeDisplayed();
 	});
 });
