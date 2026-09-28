@@ -76,6 +76,14 @@ textarea {
 	user-select: text;
 }
 
+/* WebAwesome's native styles give fields a transitioning focus outline, but
+   Konsta only hides it while focused, so it flashes blue on blur. */
+input,
+textarea,
+select {
+	outline: none;
+}
+
 .column {
 	display: flex;
 	flex-direction: column;

@@ -1059,6 +1059,13 @@ impl Node {
         self.projection.lookup_contact_by_device_id(device_id).await
     }
 
+    pub async fn is_accepted_contact(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        Ok(match self.lookup_contact(device_id).await? {
+            Some(agent_id) => self.accepted_contact_agent_ids().await?.contains(&agent_id),
+            None => false,
+        })
+    }
+
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
         self.projection.all_contact_agent_ids().await
     }
@@ -1642,8 +1649,9 @@ impl Node {
     /// Register the shared, idempotent state for a contact identified by their
     /// device pubkey and agent id:
     /// - register the contact as a bootstrap peer,
-    /// - subscribe to their announcements, and
-    /// - subscribe to our direct-chat topic.
+    /// - subscribe to their announcements,
+    /// - subscribe to our direct-chat topic, and
+    /// - stop restoring their inbox our own request was sent to.
     ///
     /// Safe to call repeatedly, so both the initiating `add_contact` path and the
     /// inbox request/ack handlers can call it.
@@ -1667,6 +1675,10 @@ impl Node {
         self.register_topic(self.direct_chat_topic(fake_agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.local_store
+            .remove_requested_inbox_topics_of(device_id)
+            .await
+            .map_err(|e| Error::RemoveActiveInbox(format!("{e}")))?;
         Ok(())
     }
 
@@ -1691,13 +1703,21 @@ impl Node {
 
         let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
 
-        // If we already sent this device a contact request, don't publish a
-        // duplicate request or pending marker. Return the existing direct-chat
-        // topic id so the caller can navigate there.
+        // If they're already a contact, or we're still serving a contact request
+        // to this device, don't publish a duplicate request or pending marker.
+        // Return the existing direct-chat topic id so the caller can navigate
+        // there. Once a request expired unanswered, a new scan starts a fresh
+        // exchange; the old reply inbox stays, so a late acceptance of the old
+        // request still lands.
         if self
-            .has_outgoing_pending_request(contact.device_pubkey)
+            .is_accepted_contact(contact.device_pubkey)
             .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
+            || self
+                .local_store
+                .has_unexpired_requested_inbox_for(contact.device_pubkey)
+                .await
+                .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
         {
             return Ok(AddContactResult::AlreadyRequested(direct_chat_topic_id));
         }
@@ -1769,9 +1789,8 @@ impl Node {
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         // Mint a private reply inbox for this exchange and listen on it for
-        // the owner's ack. We do NOT persist the (possibly shared) advertised
-        // inbox we scanned — only the owner keeps camping on that — so other
-        // scanners of the same QR never share a return channel with us.
+        // the owner's ack, so other scanners of the same QR never share a
+        // return channel with us.
         let reply_inbox = InboxTopic {
             topic: Topic::inbox().alias_named(&format!(
                 "reply_inbox({:?},peer={})",
@@ -1811,6 +1830,18 @@ impl Node {
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        // Our request lives only on this (possibly shared) inbox, so we keep
+        // serving it across restarts — but only until the owner accepts or the
+        // first restart after the code expires, not for good like the owner does.
+        // TODO: make this more private. Rejoining the inbox's gossip overlay
+        // shows us to (and syncs us the requests of) everyone else who scanned
+        // the same QR; sync the topic only with its owner's node instead, and
+        // drop the other scanners' requests we synced meanwhile.
+        self.local_store
+            .add_requested_inbox_topic(inbox_topic.clone(), contact.device_pubkey)
+            .await
+            .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
 
         // Record a pending request in our own device group so the UI can show a
         // placeholder chat until the owner's ack arrives. Keyed on the owner's
@@ -1882,11 +1913,12 @@ impl Node {
         // topic. This is the point at which we first disclose our profile and
         // signals that we accepted, letting them complete the exchange.
         if let Some(reply_topic) = self
-            .find_contact_request_reply_topic(agent_id)
+            .find_contact_request_reply_topic(agent_id, device_pubkey)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
         {
-            self.reply_to_contact_request(reply_topic).await?;
+            self.reply_to_contact_request(reply_topic, device_pubkey)
+                .await?;
         } else {
             tracing::warn!(
                 agent_id = ?agent_id.aliased(),
@@ -1909,50 +1941,62 @@ impl Node {
         Ok(())
     }
 
-    /// Returns true if we have an outgoing contact request recorded for
+    /// Returns true if we have an unexpired outgoing contact request to
     /// `device_pubkey` (i.e. we scanned their code and are awaiting their ack).
     pub async fn has_outgoing_pending_request(&self, device_id: DeviceId) -> anyhow::Result<bool> {
         self.local_store
-            .has_pending_reply_inbox_for(device_id)
+            .has_unexpired_reply_inbox_for(device_id)
             .await
     }
 
     /// Scan our advertised inbox logs for a pending [`InboxPayload::ContactRequest`]
-    /// from `agent_id` and return its private reply topic, so [`Self::accept_contact`]
+    /// from `agent_id`'s `device_id` and return its private reply topic, so [`Self::accept_contact`]
     /// can send our acceptance there. Returns `None` if no matching request is stored.
     async fn find_contact_request_reply_topic(
         &self,
         agent_id: AgentId,
+        device_id: DeviceId,
     ) -> anyhow::Result<Option<Topic<kind::Inbox>>> {
+        // Only the requester's own log: anyone holding a shared code can publish
+        // a request claiming their agent id. A requester whose request expired
+        // unanswered can send another, with a new reply topic: answer the latest.
+        // The requester picks the reply topic, so one naming an inbox we already
+        // have would take it over: such a request is not answered.
+        let mut latest = None;
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
-            for author in self.op_store.get_authors(log_id).await? {
-                for op in self.op_store.get_log(&author, &log_id, None).await? {
-                    let Some(body) = op.body else { continue };
-                    let Ok(Payload::Inbox(InboxPayload::ContactRequest {
-                        agent_id: req_agent,
-                        reply_topic,
-                        ..
-                    })) = Payload::try_from_body(&body)
-                    else {
-                        continue;
-                    };
-                    if req_agent == agent_id {
-                        return Ok(Some(reply_topic));
-                    }
+            for op in self.op_store.get_log(&device_id, &log_id, None).await? {
+                let Some(body) = op.body else { continue };
+                let Ok(Payload::Inbox(InboxPayload::ContactRequest {
+                    agent_id: req_agent,
+                    reply_topic,
+                    ..
+                })) = Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                if req_agent == agent_id
+                    && latest
+                        .as_ref()
+                        .is_none_or(|(ts, _)| op.header.timestamp > *ts)
+                    && !self.local_store.is_known_inbox_topic(*reply_topic).await?
+                {
+                    latest = Some((op.header.timestamp, reply_topic));
                 }
             }
         }
-        Ok(None)
+        Ok(latest.map(|(_, reply_topic)| reply_topic))
     }
 
     /// Reply to an incoming contact request by sending our profile to the
     /// scanner's private reply topic, so the scanner learns it immediately over
-    /// the inbox rather than waiting for announcements sync. We subscribe to the
-    /// reply topic just long enough to publish to it.
+    /// the inbox rather than waiting for announcements sync. We stay subscribed
+    /// to the reply topic across restarts, since without a mailbox the scanner
+    /// can only sync it from us.
     pub(crate) async fn reply_to_contact_request(
         &self,
         reply_topic: Topic<kind::Inbox>,
+        requester: DeviceId,
     ) -> Result<(), Error> {
         let Some(profile) = self
             .my_profile()
@@ -1974,6 +2018,25 @@ impl Node {
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        // Only once published: a saved reply topic is no longer answered, so
+        // saving it first would leave a retry after a failed publish silent.
+        if let Err(err) = self
+            .local_store
+            .add_accepted_inbox_topic(
+                InboxTopic {
+                    topic: reply_topic,
+                    expires_at: Utc::now() + self.config.contact_code_expiry,
+                },
+                requester,
+            )
+            .await
+        {
+            tracing::warn!(
+                requester = ?requester.aliased(),
+                ?err,
+                "failed to save the accepted inbox; it won't be served after a restart"
+            );
+        }
         Ok(())
     }
 
@@ -2166,6 +2229,46 @@ impl Node {
                 .await
             {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize reply inbox topic");
+                failures += 1;
+            }
+        }
+
+        self.local_store
+            .prune_expired_requested_inbox_topics()
+            .await?;
+        for (topic, owner) in self
+            .local_store
+            .get_requested_inbox_topics_with_owner()
+            .await?
+        {
+            if let Err(err) = self
+                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                    "requested_inbox(peer={})",
+                    &hex::encode(&owner.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize requested inbox topic");
+                failures += 1;
+            }
+        }
+
+        self.local_store
+            .prune_expired_accepted_inbox_topics()
+            .await?;
+        for (topic, requester) in self
+            .local_store
+            .get_accepted_inbox_topics_with_requester()
+            .await?
+        {
+            if let Err(err) = self
+                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                    "accepted_inbox(peer={})",
+                    &hex::encode(&requester.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize accepted inbox topic");
                 failures += 1;
             }
         }
@@ -2484,5 +2587,130 @@ mod blob_load_tests {
             .await
             .unwrap();
         assert_eq!(got, content);
+    }
+}
+
+#[cfg(test)]
+mod forged_contact_request_tests {
+    use crate::contact::InboxTopic;
+    use crate::testing::*;
+    use crate::*;
+
+    /// Mallory, another scanner of Alice's shared code, publishes a later
+    /// request claiming Bobbi's agent id. Accepting Bobbi must still answer
+    /// Bobbi's own request, not the forged one.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn accepting_answers_the_requesting_device_not_a_forger() {
+        let config = NodeConfig::testing().random_network_id();
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config.clone(), "bobbi").await;
+        let mallory = TestNode::new(config, "mallory").await;
+        let bobbi_device_id = bobbi.device_id();
+        let mallory_device_id = mallory.device_id();
+        introduce_peers([&alice, &bobbi, &mallory]).await.unwrap();
+
+        let qr = alice.create_add_contact_qr_code().await.unwrap();
+        bobbi.add_contact(qr.clone()).await.unwrap();
+        PollConfig::default()
+            .wait_for(|| async {
+                match alice.lookup_contact(bobbi_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received bobbi's request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        mallory.add_contact(qr.clone()).await.unwrap();
+        let alice_inbox =
+            InboxTopic::from_nonce(&qr.device_pubkey, &qr.inbox_nonce, chrono::Utc::now());
+        mallory
+            .publish(
+                alice_inbox.topic,
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    profile: mallory.my_profile().await.unwrap().unwrap(),
+                    agent_id: bobbi.agent_id(),
+                    reply_topic: Topic::inbox(),
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+        PollConfig::default()
+            .wait_for(|| async {
+                match alice.lookup_contact(mallory_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received mallory's forged request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        alice.accept_contact(bobbi.agent_id()).await.unwrap();
+        PollConfig::seconds(20)
+            .wait_for(|| async {
+                match bobbi
+                    .get_contacts()
+                    .await
+                    .unwrap()
+                    .contains(&alice.agent_id())
+                {
+                    true => Ok(()),
+                    false => Err("alice's acceptance never reached bobbi"),
+                }
+            })
+            .await
+            .unwrap();
+    }
+
+    /// Mallory, a scanner of Alice's shared code, names Alice's own advertised
+    /// inbox as the reply topic. Accepting Mallory must leave that inbox
+    /// advertised, or every other scanner's request on it is dropped.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn accepting_keeps_our_inbox_named_as_reply_topic() {
+        let config = NodeConfig::testing().random_network_id();
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let mallory = TestNode::new(config, "mallory").await;
+        let mallory_device_id = mallory.device_id();
+        introduce_peers([&alice, &mallory]).await.unwrap();
+
+        let qr = alice.create_add_contact_qr_code().await.unwrap();
+        let alice_inbox =
+            InboxTopic::from_nonce(&qr.device_pubkey, &qr.inbox_nonce, chrono::Utc::now());
+        mallory.initialize_topic(*alice_inbox.topic).await.unwrap();
+        mallory
+            .publish(
+                alice_inbox.topic,
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    profile: mallory.my_profile().await.unwrap().unwrap(),
+                    agent_id: mallory.agent_id(),
+                    reply_topic: alice_inbox.topic,
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+        PollConfig::seconds(20)
+            .wait_for(|| async {
+                match alice.lookup_contact(mallory_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received mallory's request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        alice.accept_contact(mallory.agent_id()).await.unwrap();
+
+        let advertised = alice
+            .local_store
+            .get_advertised_inbox_topics()
+            .await
+            .unwrap();
+        assert!(
+            advertised
+                .iter()
+                .any(|inbox| inbox.topic == alice_inbox.topic)
+        );
     }
 }
