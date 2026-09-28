@@ -25,7 +25,7 @@ mod report;
 mod reports_table;
 mod server_key;
 mod store_blips;
-#[cfg(feature = "test_utils")]
+#[cfg(feature = "testing_routes")]
 mod testing;
 mod watermark;
 mod watermarks_table;
@@ -110,8 +110,10 @@ pub fn parse_network_id(hex: &str) -> Result<NetworkId, hex::FromHexError> {
 /// and `blob_throttle` configure the standalone [`BlobSync`] built when
 /// `blob_sync` is `None`: its provider serves blob bytes no faster than
 /// `blob_throttle` bytes per second, and is built to be throttled at all only
-/// when one is given, or in a `test_utils` build, whose `/testing/blob-throttle`
-/// route sets it at runtime.
+/// when one is given, or in a `testing_routes` build, whose
+/// `/testing/blob-throttle` route sets it at runtime. A caller that passes its
+/// own `blob_sync` owns that provider's throttling, so `blob_throttle` has
+/// nothing to configure and is ignored.
 ///
 /// Takes the socket already bound, so whoever reserved the port holds it until
 /// this takes over and a failure to bind is theirs to report.
@@ -133,12 +135,19 @@ pub async fn spawn_server(
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
     let blob_sync = match blob_sync {
-        Some(blob_sync) => blob_sync,
+        Some(blob_sync) => {
+            if blob_throttle.is_some() {
+                tracing::warn!(
+                    "Ignoring blob throttle: this server shares an in-process node's blob provider"
+                );
+            }
+            blob_sync
+        }
         None => {
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            let throttle = (cfg!(feature = "test_utils") || blob_throttle.is_some())
+            let throttle = (cfg!(feature = "testing_routes") || blob_throttle.is_some())
                 .then(|| blob_sync::BlobThrottle::new(blob_throttle));
             if let Some(bytes_per_sec) = blob_throttle {
                 tracing::warn!("Blob provider throttled to {bytes_per_sec} bytes/s");
@@ -246,7 +255,7 @@ pub fn create_app(
         .route("/report", post(report::report));
     // Unauthenticated and able to slow every blob this server serves, so
     // only an e2e run's mailbox may have it.
-    #[cfg(feature = "test_utils")]
+    #[cfg(feature = "testing_routes")]
     let router = router.route("/testing/blob-throttle", post(testing::set_blob_throttle));
     router
         .layer(CorsLayer::permissive())

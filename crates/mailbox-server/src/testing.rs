@@ -1,5 +1,5 @@
 //! Routes only an e2e run's mailbox exposes, to shape what it does to a
-//! client. Registered by `create_app` under the `test_utils` feature.
+//! client. Registered by `create_app` under the `testing_routes` feature.
 
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;

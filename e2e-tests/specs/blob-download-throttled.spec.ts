@@ -10,7 +10,8 @@
  * in for the link going away. Both agents run without p2p, so the mailbox is
  * the only place the blob can come from.
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../helpers/timeouts';
 import {
 	isRemoteMailbox,
@@ -36,16 +37,57 @@ describe('Blob download over a slow cloud link', function () {
 
 	let agent1: Agent;
 	let agent2: Agent;
+	let throttled = false;
 
 	const messages = () => agent2.directChatPage.messages;
 
-	/** Bytes of `name` the receiver holds, read off its progress ring; 0 while
-	 * the ring is still indeterminate. */
-	async function receivedBytes(name: string): Promise<number> {
-		const value = await messages()
-			.fileProgressRing(name)
-			.getAttribute('aria-valuenow');
-		return value === null ? 0 : Number(value);
+	/** What the receiver's progress ring reports for `name`: the bytes it
+	 * holds, or no figure at all — the ring drops its value while it is still
+	 * indeterminate, and again once it goes stalled, where it is a retry
+	 * affordance rather than a progressbar. */
+	async function readProgress(
+		name: string,
+	): Promise<{ bytes: number | null; stalled: boolean }> {
+		const ring = messages().fileProgressRing(name);
+		const [value, stalled] = await Promise.all([
+			ring.getAttribute('aria-valuenow'),
+			ring.getAttribute('data-stalled'),
+		]);
+		return {
+			bytes: value === null ? null : Number(value),
+			stalled: stalled === 'true',
+		};
+	}
+
+	/** The bytes the ring reports, failing when it reports no figure — which
+	 * is not the same as reporting zero bytes. */
+	async function requireBytes(name: string): Promise<number> {
+		const { bytes, stalled } = await readProgress(name);
+		if (bytes === null) {
+			throw new Error(
+				stalled
+					? `${name} download stalled`
+					: `${name} progress ring shows no figure`,
+			);
+		}
+		return bytes;
+	}
+
+	/** Wait until the ring reports more than `bytes`. A ring reporting no
+	 * figure has not got there yet, so a download that stalls before it
+	 * resumes keeps the wait alive rather than failing it. */
+	async function waitForBytesAbove(
+		name: string,
+		bytes: number,
+		timeoutMsg: string,
+	): Promise<void> {
+		await agent2.waitUntil(
+			async () => {
+				const now = (await readProgress(name)).bytes;
+				return now !== null && now > bytes;
+			},
+			{ timeout: MEDIA_SYNC_TIMEOUT, timeoutMsg },
+		);
 	}
 
 	/** The sender streams the bytes to the mailbox after publishing the
@@ -55,20 +97,17 @@ describe('Blob download over a slow cloud link', function () {
 		await messages()
 			.fileProgressRing(name)
 			.waitForDisplayed({ timeout: SYNC_TIMEOUT });
-		await agent2.waitUntil(async () => (await receivedBytes(name)) > 0, {
-			timeout: MEDIA_SYNC_TIMEOUT,
-			timeoutMsg: `no byte of ${name} arrived`,
-		});
+		await waitForBytesAbove(name, 0, `no byte of ${name} arrived`);
 	}
 
 	/** No reading may show fewer bytes than the one before it, and the last
 	 * must show more than the first. */
 	async function expectClimbing(name: string, readings: number): Promise<void> {
-		const first = await receivedBytes(name);
+		const first = await requireBytes(name);
 		let last = first;
 		for (let i = 0; i < readings; i++) {
 			await agent2.pause(READING_INTERVAL_MS);
-			const now = await receivedBytes(name);
+			const now = await requireBytes(name);
 			if (now < last) {
 				throw new Error(
 					`reading ${i + 1}: ${name} fell to ${now} bytes (was ${last})`,
@@ -80,6 +119,22 @@ describe('Blob download over a slow cloud link', function () {
 			throw new Error(
 				`${name} stayed at ${first} bytes over ${readings} readings`,
 			);
+		}
+	}
+
+	/** Take the mailbox away for a moment, and answer with the bytes the
+	 * receiver held throughout. Nothing fabricates progress locally: with the
+	 * only source stopped, the reading is the bytes on disk and stays put. */
+	async function bytesHeldWhileMailboxAway(name: string): Promise<number> {
+		suspendMailbox();
+		try {
+			await agent2.pause(IN_FLIGHT_SETTLE_MS);
+			const held = await requireBytes(name);
+			await agent2.pause(AWAY_MS);
+			expect(await requireBytes(name)).toBe(held);
+			return held;
+		} finally {
+			resumeMailbox();
 		}
 	}
 
@@ -102,12 +157,16 @@ describe('Blob download over a slow cloud link', function () {
 			{ platform: 'any' },
 		]);
 		await Promise.all([agent1.disableP2p(), agent2.disableP2p()]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 		await setMailboxBlobThrottle(THROTTLE_BYTES_PER_SEC);
+		throttled = true;
 	});
 
+	// Mocha runs this even when `before` skipped the suite or threw, and the
+	// throttle helper is unavailable against a remote mailbox.
 	after(async () => {
-		await setMailboxBlobThrottle(null);
+		if (throttled) await setMailboxBlobThrottle(null);
 	});
 
 	it('climbs the progress ring while the mailbox serves slowly', async () => {
@@ -124,18 +183,16 @@ describe('Blob download over a slow cloud link', function () {
 		await waitForDownloadStarted('flaky.bin');
 		await expectClimbing('flaky.bin', 2);
 
-		// Nothing fabricates progress locally: with the only source stopped,
-		// the reading is the bytes on disk and stays put.
-		suspendMailbox();
-		try {
-			await agent2.pause(IN_FLIGHT_SETTLE_MS);
-			const held = await receivedBytes('flaky.bin');
-			await agent2.pause(AWAY_MS);
-			expect(await receivedBytes('flaky.bin')).toBe(held);
-		} finally {
-			resumeMailbox();
-		}
+		const held = await bytesHeldWhileMailboxAway('flaky.bin');
 
+		// The blob fetch loop retries on its own schedule, not on the
+		// mailbox's return, so the climb is measured from the first byte that
+		// proves the download picked up again.
+		await waitForBytesAbove(
+			'flaky.bin',
+			held,
+			'flaky.bin did not resume after the mailbox came back',
+		);
 		await expectClimbing('flaky.bin', CLIMBING_READINGS);
 		await expectComplete('flaky.bin');
 	});

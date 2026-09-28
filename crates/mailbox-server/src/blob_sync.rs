@@ -229,15 +229,15 @@ pub struct BlobSync {
     peer_addr_registry: PeerAddrRegistry,
     /// `Some` only when this server's provider was built to intercept its
     /// chunks: a standalone server started with a throttle, or any server of
-    /// a `test_utils` build. A shared (in-process) provider is the node's and
-    /// is never throttled.
+    /// a `testing_routes` build. A shared (in-process) provider is the node's
+    /// and is never throttled.
     throttle: Option<BlobThrottle>,
 }
 
 /// Bytes per second a server's blob provider releases to a downloader, or
 /// `None` for no cap. For watching a slow download: `mailbox-server
 /// --blob-throttle` sets it for a dev run, and an e2e spec sets it over the
-/// `test_utils`-only `/testing/blob-throttle` route.
+/// `testing_routes`-only `/testing/blob-throttle` route.
 #[derive(Clone, Default)]
 pub struct BlobThrottle(Arc<std::sync::Mutex<Option<u64>>>);
 
@@ -252,15 +252,18 @@ impl BlobThrottle {
         *self.0.lock().unwrap()
     }
 
-    /// A budget below one byte per second would hold a chunk forever, so it
-    /// is raised to one.
+    /// A budget of zero would divide by zero below, so it is raised to one.
+    /// Both entry points reject zero already; this only keeps the arithmetic
+    /// total.
     pub fn set(&self, bytes_per_sec: Option<u64>) {
         *self.0.lock().unwrap() = bytes_per_sec.map(|b| b.max(1));
     }
 
     /// The provider events sender whose throttle decisions this budget
-    /// answers: each chunk is held back for as long as the budget says, in
-    /// order per request, so a request's transfer runs at about the budget.
+    /// answers: each chunk is held back for as long as the budget says. A
+    /// request's writer waits for its own decision before offering the next
+    /// chunk, so answering each decision in its own task lets concurrent
+    /// requests wait side by side and each transfer run at about the budget.
     fn provider_events(&self) -> EventSender {
         let mask = EventMask {
             throttle: ThrottleMode::Intercept,
@@ -273,11 +276,14 @@ impl BlobThrottle {
                 let ProviderMessage::Throttle(msg) = msg else {
                     continue;
                 };
-                if let Some(bytes_per_sec) = this.bytes_per_sec() {
-                    let secs = msg.inner.size as f64 / bytes_per_sec as f64;
-                    tokio::time::sleep(Duration::from_secs_f64(secs)).await;
-                }
-                msg.tx.send(Ok(())).await.ok();
+                let budget = this.bytes_per_sec();
+                tokio::spawn(async move {
+                    if let Some(bytes_per_sec) = budget {
+                        let secs = msg.inner.size as f64 / bytes_per_sec as f64;
+                        tokio::time::sleep(Duration::from_secs_f64(secs)).await;
+                    }
+                    msg.tx.send(Ok(())).await.ok();
+                });
             }
         });
         events
@@ -303,7 +309,7 @@ impl BlobSync {
     /// [`Self::new`], with a provider that answers to `throttle` when one is
     /// given. Intercepting costs an async hop per chunk served, so a server
     /// that will never be throttled is built without one.
-    pub async fn new_with_throttle(
+    pub(crate) async fn new_with_throttle(
         secret_key: iroh::SecretKey,
         root: PathBuf,
         relay_url: Option<iroh::RelayUrl>,
@@ -630,26 +636,78 @@ mod tests {
         );
     }
 
-    /// Lifting the throttle lets the next transfer run at full speed.
+    /// Lifting a throttle that is in force lets the rest of the transfer run
+    /// at full speed: 512 KiB at 32 KiB/s is 16 seconds of holding back, so
+    /// finishing well inside that is only possible once the cap is gone —
+    /// however long the handshake before it took.
     #[tokio::test(flavor = "multi_thread")]
     async fn lifting_the_throttle_restores_full_speed() {
         let provider = crate::test_utils::test_blob_sync().await;
         let fetcher = crate::test_utils::test_blob_sync().await;
         let hash = provider
-            .store_pushed_blob(vec![2u8; 64 * 1024].into())
+            .store_pushed_blob(vec![2u8; 512 * 1024].into())
             .await
             .unwrap();
-        provider.set_blob_throttle(Some(1024)).unwrap();
-        provider.set_blob_throttle(None).unwrap();
+        provider.set_blob_throttle(Some(32 * 1024)).unwrap();
         fetcher.add_peer_addr(provider.endpoint_addr());
+        let source = provider.endpoint_id();
 
         let started = tokio::time::Instant::now();
-        let fetched = fetcher
-            .try_fetch(hash, vec![provider.endpoint_id()], Duration::from_secs(30))
-            .await;
+        let fetch = tokio::spawn(async move {
+            fetcher
+                .try_fetch(hash, vec![source], Duration::from_secs(30))
+                .await
+        });
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        provider.set_blob_throttle(None).unwrap();
+        let fetched = fetch.await.unwrap();
+        let elapsed = started.elapsed();
 
         assert!(fetched, "blob was not fetched");
-        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(
+            elapsed < Duration::from_secs(12),
+            "fetched in {elapsed:?}, as slow as the lifted throttle would have been"
+        );
+    }
+
+    /// The budget is per request, not a server-wide allowance concurrent
+    /// downloads share: two 128 KiB transfers at 64 KiB/s take about the two
+    /// seconds one of them does, not the four a shared budget would.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn concurrent_transfers_each_get_the_whole_budget() {
+        let provider = crate::test_utils::test_blob_sync().await;
+        let hashes = futures::future::join_all((1u8..=2).map(|fill| {
+            let provider = provider.clone();
+            async move {
+                provider
+                    .store_pushed_blob(vec![fill; 128 * 1024].into())
+                    .await
+                    .unwrap()
+            }
+        }))
+        .await;
+        provider.set_blob_throttle(Some(64 * 1024)).unwrap();
+
+        let started = tokio::time::Instant::now();
+        let fetched = futures::future::join_all(hashes.into_iter().map(|hash| {
+            let addr = provider.endpoint_addr();
+            let source = provider.endpoint_id();
+            async move {
+                let fetcher = crate::test_utils::test_blob_sync().await;
+                fetcher.add_peer_addr(addr);
+                fetcher
+                    .try_fetch(hash, vec![source], Duration::from_secs(30))
+                    .await
+            }
+        }))
+        .await;
+        let elapsed = started.elapsed();
+
+        assert!(fetched.iter().all(|f| *f), "a blob was not fetched");
+        assert!(
+            elapsed < Duration::from_secs(3),
+            "both took {elapsed:?}, as if they shared one budget"
+        );
     }
 
     #[test]

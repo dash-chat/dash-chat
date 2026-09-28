@@ -26,23 +26,40 @@ const ROOT = path.resolve(__dirname, '..', '..');
 /** The link the mailbox's public port is, on the run's toxiproxy. */
 export const MAILBOX_LINK = 'cloud-mailbox';
 
+/** The mailbox feature its `/testing/*` routes (see mailbox-control.ts) live
+ *  behind, which only an e2e run's mailbox is built with. */
+export const MAILBOX_TESTING_FEATURE = 'testing_routes';
+
 /** Log file the spawned server's stdout/stderr are appended to. */
 export function mailboxLogFile(dbPath: string): string {
 	return path.join(path.dirname(dbPath), 'mailbox.log');
 }
 
-/** Run `cargo build -p <package>...`, resolving when the binaries are built.
+export interface CargoBuild {
+	name: string;
+	features?: string[];
+}
+
+/** Build each of `builds` with cargo, resolving when every binary is built.
  *  The hub binary bakes the run's network id in, and the mailbox the e2e
- *  relay, like the app does. The mailbox's testing routes (see
- *  mailbox-control.ts) only exist behind its `test_utils` feature, so the e2e
- *  build turns it on. */
-export function buildCargoPackages(packages: string[]): Promise<void> {
-	const args = [
-		'build',
-		...packages.flatMap(name => ['-p', name]),
-		'--features',
-		'mailbox-server/test_utils',
-	];
+ *  relay, like the app does.
+ *
+ *  One invocation per build, because cargo unifies features across every
+ *  package a single invocation names: building the mailbox and the hub
+ *  together would turn the mailbox's testing routes on for the hub too, and
+ *  the hub is the binary that goes out on real Wi-Fi networks. One package
+ *  per invocation is also what lets `features` be bare names: the
+ *  `<package>/<feature>` form silently enables nothing on the package being
+ *  built, leaving a binary without the feature and no warning about it. */
+export async function buildCargoPackages(builds: CargoBuild[]): Promise<void> {
+	for (const build of builds) {
+		await buildCargoPackage(build);
+	}
+}
+
+function buildCargoPackage({ name, features }: CargoBuild): Promise<void> {
+	const args = ['build', '-p', name];
+	if (features !== undefined) args.push('--features', features.join(','));
 	return new Promise<void>((resolve, reject) => {
 		const proc = spawn('cargo', args, {
 			cwd: ROOT,
@@ -74,7 +91,8 @@ export function spawnMailboxServer(
 	if (!existsSync(bin)) {
 		throw new Error(
 			`${bin} not found — run the suite via 'just e2e' (which builds ` +
-				`it) or 'cargo build -p mailbox-server'`,
+				`it) or 'cargo build -p mailbox-server --features ` +
+				`${MAILBOX_TESTING_FEATURE}'`,
 		);
 	}
 	// stdout/stderr go to a file, not pipes: the server's tracing output is on
