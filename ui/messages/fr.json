@@ -282,7 +282,7 @@
     "unblockContactTitle": "Débloquer {{name}} ?",
     "unblockContactDescription": "Vous pourrez vous envoyer des messages.",
     "blocked": "Bloqué",
-    "contactMenu": "Contact menu",
+    "contactMenu": "Menu de contact",
     "contactBlockedToast": "{{name}} a été bloqué.",
     "contactUnblockedToast": "{{name}} a été débloqué.",
     "report": "Rapport",
