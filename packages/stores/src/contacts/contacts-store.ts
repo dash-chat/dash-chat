@@ -300,7 +300,9 @@ export class ContactsStore {
 			(await this.outgoingContactRequests()).map(o => o.devicePubkey),
 		);
 
-		const contactRequests: ContactRequest[] = [];
+		// A requester whose earlier request expired unanswered can send another,
+		// so keep only the latest request per agent.
+		const latestByAgent: Record<AgentId, ContactRequest> = {};
 
 		for (let i = 0; i < allLogs.length; i++) {
 			const topicId = activeInboxTopics[i];
@@ -329,19 +331,26 @@ export class ContactsStore {
 					)
 						continue;
 
-					contactRequests.push({
+					const existing = latestByAgent[agentId];
+					if (
+						existing !== undefined &&
+						existing.timestamp >= operation.header.timestamp
+					)
+						continue;
+
+					latestByAgent[agentId] = {
 						profile,
 						agentId,
 						devicePubkey: operation.header.verifying_key,
 						chatId: await this.directChatId(operation.header.verifying_key),
 						topicId,
 						timestamp: operation.header.timestamp,
-					});
+					};
 				}
 			}
 		}
 
-		return contactRequests;
+		return Object.values(latestByAgent);
 	});
 
 	/** Get a profile from inbox contact requests for a given agent, regardless of acceptance status. */
