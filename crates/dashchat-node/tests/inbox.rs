@@ -131,3 +131,40 @@ async fn test_p2p_request_survives_requester_restart() {
             .is_empty()
     );
 }
+
+/// Bobbi's request expires before it ever syncs. Scanning a fresh code from
+/// Alice must start a new exchange, not report the dead one as already sent.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_expired_unsynced_request_can_be_sent_again() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let mut config = NodeConfig::testing().random_network_id();
+    config.contact_code_expiry = chrono::Duration::seconds(1);
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
+    let bobbi_device_id = bobbi.device_id();
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    let bobbi_dir = bobbi.shutdown().await;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let bobbi = TestNode::new_at_path(config, "bobbi", bobbi_dir).await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    assert!(matches!(
+        bobbi.add_contact(qr).await.unwrap(),
+        AddContactResult::NewRequest(_)
+    ));
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    PollConfig::seconds(20)
+        .wait_for(|| async {
+            match alice.lookup_contact(bobbi_device_id).await.unwrap() {
+                Some(_) => Ok(()),
+                None => Err("alice never received bobbi's second contact request"),
+            }
+        })
+        .await
+        .unwrap();
+}
