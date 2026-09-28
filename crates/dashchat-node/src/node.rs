@@ -1917,7 +1917,8 @@ impl Node {
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
         {
-            self.reply_to_contact_request(reply_topic).await?;
+            self.reply_to_contact_request(reply_topic, device_pubkey)
+                .await?;
         } else {
             tracing::warn!(
                 agent_id = ?agent_id.aliased(),
@@ -1992,6 +1993,7 @@ impl Node {
     pub(crate) async fn reply_to_contact_request(
         &self,
         reply_topic: Topic<kind::Inbox>,
+        requester: DeviceId,
     ) -> Result<(), Error> {
         let Some(profile) = self
             .my_profile()
@@ -2000,16 +2002,38 @@ impl Node {
         else {
             return Ok(());
         };
+        if self
+            .local_store
+            .is_inbox_topic_in_another_role(*reply_topic)
+            .await
+            .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
+        {
+            tracing::warn!(
+                requester = ?requester.aliased(),
+                "not replying to a contact request whose reply topic is one of our inboxes"
+            );
+            return Ok(());
+        }
         self.initialize_topic(*reply_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-        self.local_store
-            .add_accepted_inbox_topic(InboxTopic {
-                topic: reply_topic,
-                expires_at: Utc::now() + self.config.contact_code_expiry,
-            })
+        if let Err(err) = self
+            .local_store
+            .add_accepted_inbox_topic(
+                InboxTopic {
+                    topic: reply_topic,
+                    expires_at: Utc::now() + self.config.contact_code_expiry,
+                },
+                requester,
+            )
             .await
-            .map_err(|e| Error::AddActiveInbox(e.to_string()))?;
+        {
+            tracing::warn!(
+                requester = ?requester.aliased(),
+                ?err,
+                "failed to save the accepted inbox; it won't be served after a restart"
+            );
+        }
         self.publish(
             reply_topic,
             Payload::Inbox(InboxPayload::ContactRequestAccept {
@@ -2236,8 +2260,21 @@ impl Node {
             }
         }
 
-        for topic in self.local_store.get_accepted_inbox_topics().await? {
-            if let Err(err) = self.initialize_topic(*topic.topic).await {
+        self.local_store
+            .prune_expired_accepted_inbox_topics()
+            .await?;
+        for (topic, requester) in self
+            .local_store
+            .get_accepted_inbox_topics_with_requester()
+            .await?
+        {
+            if let Err(err) = self
+                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                    "accepted_inbox(peer={})",
+                    &hex::encode(&requester.as_bytes()[..4])
+                )))
+                .await
+            {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize accepted inbox topic");
                 failures += 1;
             }

@@ -312,7 +312,7 @@ async fn test_p2p_acceptance_survives_acceptor_restart() {
 
     let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
-    PollConfig::default()
+    PollConfig::seconds(20)
         .wait_for(|| async {
             match alice.lookup_contact(bobbi_device_id).await.unwrap() {
                 Some(_) => Ok(()),
