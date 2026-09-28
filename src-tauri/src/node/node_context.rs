@@ -163,7 +163,6 @@ impl NodeContext {
             // ALPN is hashed with the network id, so foreign connections are
             // rejected at protocol negotiation.
             config.network_id = e2e_network_id();
-            config.message_ack_debounce = std::time::Duration::from_millis(300);
             config
         } else {
             dashchat_node::NodeConfig::default()
