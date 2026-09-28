@@ -309,15 +309,11 @@ impl LocalStore {
             .await
     }
 
-    /// Whether `topic` already serves us in a role other than `Accepted`: a
-    /// requester naming it as their reply topic must not take it over.
-    pub async fn is_inbox_topic_in_another_role(&self, topic: TopicId) -> anyhow::Result<bool> {
-        let row: Option<(i64,)> =
-            sqlx::query_as("SELECT 1 FROM active_inboxes WHERE topic_id = ? AND role != ?")
-                .bind(topic.as_bytes().to_vec())
-                .bind(InboxRole::Accepted)
-                .fetch_optional(&self.pool)
-                .await?;
+    pub async fn is_known_inbox_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM active_inboxes WHERE topic_id = ?")
+            .bind(topic.as_bytes().to_vec())
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.is_some())
     }
 
@@ -774,19 +770,7 @@ mod tests {
                 .get_accepted_inbox_topics_with_requester()
                 .await
                 .unwrap(),
-            vec![(expired_accepted_from_alice.clone(), alice)]
-        );
-        assert!(
-            store
-                .is_inbox_topic_in_another_role(*expired_advertised.topic)
-                .await
-                .unwrap()
-        );
-        assert!(
-            !store
-                .is_inbox_topic_in_another_role(*expired_accepted_from_alice.topic)
-                .await
-                .unwrap()
+            vec![(expired_accepted_from_alice, alice)]
         );
 
         store.prune_expired_accepted_inbox_topics().await.unwrap();

@@ -1960,6 +1960,8 @@ impl Node {
         // Only the requester's own log: anyone holding a shared code can publish
         // a request claiming their agent id. A requester whose request expired
         // unanswered can send another, with a new reply topic: answer the latest.
+        // The requester picks the reply topic, so one naming an inbox we already
+        // have would take it over: such a request is not answered.
         let mut latest = None;
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
@@ -1977,6 +1979,7 @@ impl Node {
                     && latest
                         .as_ref()
                         .is_none_or(|(ts, _)| op.header.timestamp > *ts)
+                    && !self.local_store.is_known_inbox_topic(*reply_topic).await?
                 {
                     latest = Some((op.header.timestamp, reply_topic));
                 }
@@ -2002,21 +2005,21 @@ impl Node {
         else {
             return Ok(());
         };
-        if self
-            .local_store
-            .is_inbox_topic_in_another_role(*reply_topic)
-            .await
-            .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
-        {
-            tracing::warn!(
-                requester = ?requester.aliased(),
-                "not replying to a contact request whose reply topic is one of our inboxes"
-            );
-            return Ok(());
-        }
         self.initialize_topic(*reply_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.publish(
+            reply_topic,
+            Payload::Inbox(InboxPayload::ContactRequestAccept {
+                profile,
+                agent_id: self.agent_id(),
+            }),
+            Some("reply_to_contact_request"),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        // Only once published: a saved reply topic is no longer answered, so
+        // saving it first would leave a retry after a failed publish silent.
         if let Err(err) = self
             .local_store
             .add_accepted_inbox_topic(
@@ -2034,16 +2037,6 @@ impl Node {
                 "failed to save the accepted inbox; it won't be served after a restart"
             );
         }
-        self.publish(
-            reply_topic,
-            Payload::Inbox(InboxPayload::ContactRequestAccept {
-                profile,
-                agent_id: self.agent_id(),
-            }),
-            Some("reply_to_contact_request"),
-        )
-        .await
-        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
         Ok(())
     }
 
