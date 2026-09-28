@@ -2209,7 +2209,7 @@ impl Node {
         }
 
         self.local_store
-            .prune_expired_requested_inbox_topics(Utc::now())
+            .prune_expired_requested_inbox_topics()
             .await?;
         for (topic, owner) in self
             .local_store

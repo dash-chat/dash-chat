@@ -349,12 +349,14 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn prune_expired_requested_inbox_topics(
-        &self,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
-        self.prune_expired_inbox_topics(InboxRole::Requested, now)
-            .await
+    pub async fn prune_expired_requested_inbox_topics(&self) -> anyhow::Result<()> {
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
+        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ? AND role = ?")
+            .bind(nanos)
+            .bind(InboxRole::Requested)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     pub async fn has_unexpired_requested_inbox_for(
@@ -418,20 +420,6 @@ impl LocalStore {
         .bind(role)
         .execute(&self.pool)
         .await?;
-        Ok(())
-    }
-
-    async fn prune_expired_inbox_topics(
-        &self,
-        role: InboxRole,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
-        let nanos = now.timestamp_nanos_opt().unwrap_or(0).max(0);
-        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ? AND role = ?")
-            .bind(nanos)
-            .bind(role)
-            .execute(&self.pool)
-            .await?;
         Ok(())
     }
 
@@ -700,10 +688,7 @@ mod tests {
         );
         assert!(!store.has_unexpired_requested_inbox_for(dave).await.unwrap());
 
-        store
-            .prune_expired_requested_inbox_topics(now)
-            .await
-            .unwrap();
+        store.prune_expired_requested_inbox_topics().await.unwrap();
         assert_eq!(
             requested_topics().await,
             maplit::btreeset![from_alice, from_carol.clone()]
