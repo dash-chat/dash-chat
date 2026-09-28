@@ -546,7 +546,7 @@
 		--toggle-duration: 150ms;
 		--toggle-ease: cubic-bezier(0.4, 0, 0.2, 1);
 		width: var(--toggle-width);
-		overflow: hidden;
+		overflow-x: clip;
 		transition:
 			opacity var(--toggle-duration) var(--toggle-ease),
 			transform var(--toggle-duration) var(--toggle-ease),

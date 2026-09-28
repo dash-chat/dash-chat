@@ -206,7 +206,7 @@ impl Default for NodeConfig {
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
             unfetched_blob_followup_interval: std::time::Duration::from_secs(4),
-            message_ack_debounce: std::time::Duration::from_secs(3),
+            message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
             defer_stored_topics_initialization: false,
