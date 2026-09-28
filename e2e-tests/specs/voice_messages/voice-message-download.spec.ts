@@ -3,7 +3,8 @@
  * wrapped in a progress ring, a tap while it is still downloading is answered
  * with a toast, and once the blob lands the ring goes away and the note plays.
  */
-import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { createProfiles } from '../../helpers/flows/create-profiles';
+import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -16,7 +17,8 @@ describe('Voice message download progress', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('shows a progress ring on the receiver until the voice blob arrives', async () => {
