@@ -24,10 +24,15 @@ enum InboxRole {
     /// possibly of an older request, after a re-scan — is matched by topic
     /// whatever its expiry, so pruning one would strand that request.
     Reply = 1,
+    /// A requester's private reply inbox that we published our
+    /// `ContactRequestAccept` into. Kept subscribed across restarts until the
+    /// code expires, so a requester that only reaches us directly can still
+    /// sync it from us.
+    Accepted = 2,
     /// The advertised inbox of a device whose QR we scanned, where our
     /// `ContactRequest` lives. Restored at startup until they become a contact
     /// or the code expires, so a request that didn't sync before a restart still
-    /// reaches them. Value 3 leaves 2 to the accepted-reply role.
+    /// reaches them.
     Requested = 3,
 }
 
@@ -289,6 +294,29 @@ impl LocalStore {
             .await
     }
 
+    pub async fn get_accepted_inbox_topics_with_requester(
+        &self,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        self.get_inbox_topics_with_author(InboxRole::Accepted).await
+    }
+
+    pub async fn add_accepted_inbox_topic(
+        &self,
+        inbox_topic: InboxTopic,
+        requester: DeviceId,
+    ) -> anyhow::Result<()> {
+        self.add_inbox_topic_with_author(inbox_topic, InboxRole::Accepted, requester)
+            .await
+    }
+
+    pub async fn is_known_inbox_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM active_inboxes WHERE topic_id = ?")
+            .bind(topic.as_bytes().to_vec())
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
+    }
+
     pub async fn add_reply_inbox_topic(
         &self,
         inbox_topic: InboxTopic,
@@ -350,10 +378,18 @@ impl LocalStore {
     }
 
     pub async fn prune_expired_requested_inbox_topics(&self) -> anyhow::Result<()> {
+        self.prune_expired_inbox_topics(InboxRole::Requested).await
+    }
+
+    pub async fn prune_expired_accepted_inbox_topics(&self) -> anyhow::Result<()> {
+        self.prune_expired_inbox_topics(InboxRole::Accepted).await
+    }
+
+    async fn prune_expired_inbox_topics(&self, role: InboxRole) -> anyhow::Result<()> {
         let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
         sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ? AND role = ?")
             .bind(nanos)
-            .bind(InboxRole::Requested)
+            .bind(role)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -661,6 +697,14 @@ mod tests {
             .add_active_inbox_topic(expired_advertised.clone())
             .await
             .unwrap();
+        let expired_accepted_from_alice = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([7; 32]),
+        };
+        store
+            .add_accepted_inbox_topic(expired_accepted_from_alice.clone(), alice)
+            .await
+            .unwrap();
         let requested_topics = || async {
             store
                 .get_requested_inbox_topics_with_owner()
@@ -705,6 +749,38 @@ mod tests {
         assert!(!store.has_unexpired_reply_inbox_for(alice).await.unwrap());
 
         store.remove_requested_inbox_topics_of(alice).await.unwrap();
+        assert_eq!(
+            requested_topics().await,
+            maplit::btreeset![from_carol.clone()]
+        );
+        assert_eq!(
+            store
+                .get_reply_inbox_topics_with_author()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store.get_advertised_inbox_topics().await.unwrap(),
+            maplit::btreeset![expired_advertised.clone()]
+        );
+        assert_eq!(
+            store
+                .get_accepted_inbox_topics_with_requester()
+                .await
+                .unwrap(),
+            vec![(expired_accepted_from_alice, alice)]
+        );
+
+        store.prune_expired_accepted_inbox_topics().await.unwrap();
+        assert!(
+            store
+                .get_accepted_inbox_topics_with_requester()
+                .await
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(requested_topics().await, maplit::btreeset![from_carol]);
         assert_eq!(
             store
