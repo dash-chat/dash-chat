@@ -189,6 +189,18 @@ describe('Offline UX', () => {
 				await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 			});
 
+			it('the chat list navbar shows the "local" chip too', async () => {
+				await agent1.directChatPage.back.click();
+				await agent1.homePage.ready();
+				await agent1.waitUntil(
+					async () =>
+						(await agent1.homePage.connectionStatusIndicator.status()) ===
+						'local',
+				);
+
+				await agent1.homePage.openChat('Bob');
+			});
+
 			it('a new message advances to the "mailbox" icon once the local mailbox holds it', async () => {
 				await agent1.directChatPage.composer.sendMessage('local hello');
 				await agent1.directChatPage.messages.waitForMessageStatus(

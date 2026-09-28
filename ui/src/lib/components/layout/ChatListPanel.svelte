@@ -12,6 +12,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { pushState } from '$app/navigation';
 	import Avatar from '../profiles/Avatar.svelte';
+	import ConnectionStatusIndicator from '../connection/ConnectionStatusIndicator.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
@@ -33,6 +34,7 @@
 		{/snippet}
 
 		{#snippet right()}
+			<ConnectionStatusIndicator />
 			<Link
 				iconOnly
 				onClick={() => {
