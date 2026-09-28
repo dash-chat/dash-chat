@@ -280,7 +280,7 @@
     "blockContactTitle": "Bloquer {{name}}?",
     "blockContactDescription": "Les gens bloqués ne pourront pas vous envoyer des messages.",
     "unblockContactTitle": "Débloquer {{name}} ?",
-    "unblockContactDescription": "Vous serez en mesure de vous envoyer un message.",
+    "unblockContactDescription": "Vous pourrez vous envoyer des messages.",
     "blocked": "Bloqué",
     "contactMenu": "Contact menu",
     "contactBlockedToast": "{{name}} a été bloqué.",
