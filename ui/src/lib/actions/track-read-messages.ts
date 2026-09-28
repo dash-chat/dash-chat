@@ -58,6 +58,7 @@ export function createReadMessagesTracker(
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let retryDelay = debounceMs;
 	let destroyed = false;
+	let flushedOnce = false;
 
 	const flush = () => {
 		if (destroyed || visible.size === 0) return;
@@ -84,6 +85,10 @@ export function createReadMessagesTracker(
 			if (id !== undefined) visible.add(id);
 		}
 		clearTimeout(timer);
+		if (!flushedOnce) {
+			flushedOnce = true;
+			flush();
+		}
 		timer = setTimeout(flush, debounceMs);
 	});
 

@@ -170,8 +170,8 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
 }
 
 /// While bobbi's fetch loop downloads alice's photo, `blob_progress` snapshots
-/// never report fewer bytes than the one before, and the last reports the blob
-/// complete at its full size.
+/// never report fewer bytes than the one before, at least one catches the
+/// download part-way, and the last reports the blob complete at its full size.
 #[tokio::test(flavor = "multi_thread")]
 async fn blob_progress_snapshots_climb_to_completion() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
@@ -243,6 +243,10 @@ async fn blob_progress_snapshots_climb_to_completion() {
             "bytes must not decrease: {snapshots:?}"
         );
     }
+    assert!(
+        snapshots.iter().any(|s| s.bytes > 0 && s.bytes < size),
+        "no snapshot caught the download part-way: {snapshots:?}"
+    );
     let last = snapshots.last().unwrap();
     assert_eq!(last.bytes, size);
     assert_eq!(last.hash, hash);

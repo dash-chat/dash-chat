@@ -2,15 +2,26 @@ import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import type { Hash } from '../p2panda/types';
 import type { IBlobClient } from './blob-client';
-import { BlobProgressTracker, type BlobState } from './blob-progress-tracker';
+import {
+	BLOB_STALL_INTERVAL_MS,
+	BlobProgressTracker,
+	type BlobState,
+} from './blob-progress-tracker';
 
 /** How often the backend is asked about the blobs still downloading. */
 export const BLOB_POLL_INTERVAL_MS = 500;
 
-interface Entry {
-	tracker: BlobProgressTracker;
-	publish: (state: BlobState) => void;
+/** How often it is asked once every download on screen has stalled: nothing
+ * is moving, so a slower look costs nothing in responsiveness. */
+export const BLOB_STALLED_POLL_INTERVAL_MS = 5_000;
+
+export interface BlobStoreTiming {
+	pollMs: number;
+	stalledPollMs: number;
+	stallMs: number;
 }
+
+type Publish = (state: BlobState) => void;
 
 /** Download state of the blobs currently on screen. Only blobs with a live
  * `progress` subscription are polled, all of them in one request per tick, and
@@ -19,51 +30,83 @@ export class BlobStore {
 	/** The hashes the latest poll asked about; what a test reads to check
 	 * that only the blobs on screen are polled. */
 	lastPolled: Hash[] = [];
-	private entries = new Map<Hash, Entry>();
+	/** One tracker per blob asked about, kept for the session so a blob
+	 * scrolled away and back keeps its stall clock and last state, and a
+	 * complete one is never asked about again. */
+	private trackers = new Map<Hash, BlobProgressTracker>();
+	private subscribers = new Map<Hash, Publish>();
 	private timer: ReturnType<typeof setTimeout> | undefined;
 	private polling = false;
 	private pollAgainSoon = false;
 
 	constructor(
 		public client: IBlobClient,
-		private pollMs: number = BLOB_POLL_INTERVAL_MS,
+		private timing: BlobStoreTiming = {
+			pollMs: BLOB_POLL_INTERVAL_MS,
+			stalledPollMs: BLOB_STALLED_POLL_INTERVAL_MS,
+			stallMs: BLOB_STALL_INTERVAL_MS,
+		},
 	) {}
 
 	/** Bytes of one blob present locally, whether it is complete, and whether
 	 * its download has stalled. The total size comes from the attachment's own
 	 * metadata. Pending until the first snapshot resolves, so a caller can tell
 	 * "unknown" from "0 bytes" and never show a ring on a blob it has not asked
-	 * about. */
+	 * about; a blob the node returns no row for stays pending and is not asked
+	 * about again. */
 	progress = reactive(
 		(hash: Hash): ReactivePromise<BlobState> =>
 			relay(state => {
-				const entry: Entry = {
-					tracker: new BlobProgressTracker(),
-					publish: next => {
-						if (!sameState(state.value, next)) state.value = next;
-					},
+				const known = this.trackers.get(hash)?.state;
+				if (known !== undefined) state.value = known;
+				const publish: Publish = next => {
+					if (!sameState(state.value, next)) state.value = next;
 				};
-				this.entries.set(hash, entry);
+				this.subscribers.set(hash, publish);
 				this.schedule(0);
 				return () => {
-					if (this.entries.get(hash) === entry) this.entries.delete(hash);
+					if (this.subscribers.get(hash) === publish)
+						this.subscribers.delete(hash);
 				};
 			}),
 	);
 
-	/** Clear a blob's stalled flag after the user re-attempted its download. */
+	/** The user tapped a blob that is still downloading: ask the node to fetch
+	 * it now, clear its stalled flag, and look again at once. */
 	retry(hash: Hash): void {
-		const entry = this.entries.get(hash);
-		const next = entry?.tracker.retry();
-		if (entry !== undefined && next !== undefined) entry.publish(next);
+		this.client
+			.fetchBlobNow(hash)
+			.catch(e => console.error('blob fetch request failed', e));
+		const next = this.trackers.get(hash)?.retry();
+		if (next !== undefined) this.subscribers.get(hash)?.(next);
+		this.schedule(0);
 	}
 
-	private incompleteHashes(): Hash[] {
-		const hashes: Hash[] = [];
-		this.entries.forEach((entry, hash) => {
-			if (entry.tracker.state?.complete !== true) hashes.push(hash);
+	private trackerFor(hash: Hash): BlobProgressTracker {
+		let tracker = this.trackers.get(hash);
+		if (tracker === undefined) {
+			tracker = new BlobProgressTracker(this.timing.stallMs);
+			this.trackers.set(hash, tracker);
+		}
+		return tracker;
+	}
+
+	private incompleteSubscribers(): Map<Hash, Publish> {
+		const incomplete = new Map<Hash, Publish>();
+		this.subscribers.forEach((publish, hash) => {
+			if (this.trackers.get(hash)?.state?.complete !== true)
+				incomplete.set(hash, publish);
 		});
-		return hashes;
+		return incomplete;
+	}
+
+	private everyDownloadStalled(): boolean {
+		const incomplete = this.incompleteSubscribers();
+		let stalled = incomplete.size > 0;
+		incomplete.forEach((_, hash) => {
+			if (this.trackers.get(hash)?.state?.stalled !== true) stalled = false;
+		});
+		return stalled;
 	}
 
 	private schedule(ms: number): void {
@@ -82,16 +125,21 @@ export class BlobStore {
 	}
 
 	private async poll(): Promise<void> {
-		const hashes = this.incompleteHashes();
-		if (hashes.length === 0) return;
+		const polled = this.incompleteSubscribers();
+		if (polled.size === 0) return;
 		this.polling = true;
-		this.lastPolled = hashes;
+		this.lastPolled = Array.from(polled.keys());
 		try {
-			const snapshots = await this.client.getBlobProgress(hashes);
+			const snapshots = await this.client.getBlobProgress(this.lastPolled);
 			for (const snapshot of snapshots) {
-				const entry = this.entries.get(snapshot.hash);
-				if (entry !== undefined) entry.publish(entry.tracker.apply(snapshot));
+				const state = this.trackerFor(snapshot.hash).apply(snapshot);
+				this.subscribers.get(snapshot.hash)?.(state);
+				polled.delete(snapshot.hash);
 			}
+			polled.forEach((publish, hash) => {
+				if (this.subscribers.get(hash) === publish)
+					this.subscribers.delete(hash);
+			});
 		} catch (e) {
 			console.error('blob progress poll failed', e);
 		} finally {
@@ -99,7 +147,10 @@ export class BlobStore {
 		}
 		const soon = this.pollAgainSoon;
 		this.pollAgainSoon = false;
-		this.schedule(soon ? 0 : this.pollMs);
+		if (soon) this.schedule(0);
+		else if (this.everyDownloadStalled())
+			this.schedule(this.timing.stalledPollMs);
+		else this.schedule(this.timing.pollMs);
 	}
 }
 

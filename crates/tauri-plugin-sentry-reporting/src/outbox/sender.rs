@@ -5,6 +5,7 @@
 //! outbox needs that answer to know what to delete, so it does the POST itself.
 
 use std::future::Future;
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,9 +13,14 @@ use reqwest::StatusCode;
 use sentry::types::Dsn;
 use sentry::Envelope;
 
+use crate::outbox::blocking;
+
 pub(crate) const USER_AGENT: &str = concat!("dash-chat/", env!("CARGO_PKG_VERSION"));
 const CONTENT_TYPE: &str = "application/x-sentry-envelope";
-const TIMEOUT: Duration = Duration::from_secs(30);
+const BASE_TIMEOUT: Duration = Duration::from_secs(30);
+/// A slow mobile uplink (~256 kbps). A full-log report is megabytes even
+/// gzipped, and a fixed limit would time it out, and retry it, forever there.
+const UPLOAD_BYTES_PER_SEC: u64 = 32 * 1024;
 /// Short, so the offline case — the whole point of the outbox — reaches the
 /// "saved for later" answer without a long stall.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -50,11 +56,18 @@ impl HttpSender {
 
 impl EnvelopeSender for HttpSender {
     async fn post(&self, envelope: &Envelope) -> Delivery {
-        let mut body = Vec::new();
-        if let Err(err) = envelope.to_writer(&mut body) {
+        let mut serialized = Vec::new();
+        if let Err(err) = envelope.to_writer(&mut serialized) {
             log::warn!("sentry-reporting: an entry could not be serialized: {err}");
             return Delivery::Rejected { status: None };
         }
+        let body = match blocking(move || gzipped(&serialized)).await {
+            Ok(body) => body,
+            Err(err) => {
+                log::warn!("sentry-reporting: an entry could not be compressed: {err}");
+                return Delivery::Rejected { status: None };
+            }
+        };
 
         let response = self
             .client
@@ -64,7 +77,8 @@ impl EnvelopeSender for HttpSender {
                 self.dsn.to_auth(Some(USER_AGENT)).to_string(),
             )
             .header(reqwest::header::CONTENT_TYPE, CONTENT_TYPE)
-            .timeout(TIMEOUT)
+            .header(reqwest::header::CONTENT_ENCODING, "gzip")
+            .timeout(timeout_for(body.len()))
             .body(body)
             .send()
             .await;
@@ -79,11 +93,30 @@ impl EnvelopeSender for HttpSender {
     }
 }
 
+/// Reports carry tens of MB of log text, which compresses about tenfold even
+/// at the fastest level; the slower levels buy little on text this redundant.
+fn gzipped(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder.write_all(bytes)?;
+    encoder.finish()
+}
+
+fn timeout_for(body_len: usize) -> Duration {
+    BASE_TIMEOUT + Duration::from_secs(body_len as u64 / UPLOAD_BYTES_PER_SEC)
+}
+
 fn classify(status: StatusCode, retry_after: Option<Duration>) -> Delivery {
     if status.is_success() {
         Delivery::Delivered
     } else if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
         Delivery::Retry { after: retry_after }
+    } else if status == StatusCode::PAYLOAD_TOO_LARGE {
+        log::error!(
+            "sentry-reporting: a report was too large for Sentry and is dropped; the attached log tail needs a lower cap"
+        );
+        Delivery::Rejected {
+            status: Some(status),
+        }
     } else {
         log::warn!("sentry-reporting: a report was rejected with {status}");
         Delivery::Rejected {
@@ -131,6 +164,7 @@ pub(crate) fn webpki_roots_client() -> reqwest::Client {
 mod tests {
     use super::*;
 
+    use std::io::Read;
     use std::net::SocketAddr;
 
     use sentry::protocol::Event;
@@ -203,6 +237,15 @@ mod tests {
             .unwrap()
     }
 
+    #[test]
+    fn the_timeout_grows_with_the_upload() {
+        assert_eq!(timeout_for(0), BASE_TIMEOUT);
+        assert_eq!(
+            timeout_for(2 * 1024 * 1024),
+            BASE_TIMEOUT + Duration::from_secs(64)
+        );
+    }
+
     #[tokio::test]
     async fn a_successful_post_is_delivered() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -232,7 +275,15 @@ mod tests {
             header_value(&request.head, "content-type").unwrap(),
             CONTENT_TYPE
         );
-        assert_eq!(request.body, expected_body);
+        assert_eq!(
+            header_value(&request.head, "content-encoding").unwrap(),
+            "gzip"
+        );
+        let mut body = Vec::new();
+        flate2::read::GzDecoder::new(request.body.as_slice())
+            .read_to_end(&mut body)
+            .unwrap();
+        assert_eq!(body, expected_body);
     }
 
     #[tokio::test]

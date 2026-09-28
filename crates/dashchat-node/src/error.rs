@@ -20,6 +20,9 @@ pub enum Error {
     #[error("Failed to add active inbox: {0}")]
     AddActiveInbox(String),
 
+    #[error("Failed to remove active inbox: {0}")]
+    RemoveActiveInbox(String),
+
     #[error("Failed to get active inboxes: {0}")]
     GetActiveInboxes(String),
 }

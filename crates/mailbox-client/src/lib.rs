@@ -166,6 +166,7 @@ pub trait UnfetchedBlobTracker: Send + Sync + 'static {
 #[async_trait::async_trait]
 pub trait BlobReader: Send + Sync + 'static {
     async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes>;
+    async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool;
 }
 
 /// No-op tracker for tests and contexts that don't persist unfetched blobs.

@@ -1,8 +1,9 @@
+import type { RecordedVoiceMessage } from '../../../ui/tests/setup-utils';
 import type { Agent } from '../../setup/setup-agents';
 import { TINY_PNG_BYTES } from '../images';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
-import { SYNC_TIMEOUT } from '../timeouts';
+import { ASYNC_SCRIPT_TIMEOUT, SYNC_TIMEOUT } from '../timeouts';
 import { RecentPhotosStrip } from './recent-photos-strip';
 
 /** The shared message composer (text area + attachments) used by both
@@ -21,7 +22,11 @@ export class Composer extends TestHelper {
 	discardDraftDialog = this.el(tid('composer-discard-draft-dialog'));
 	discardDraftCancel = this.el(tid('composer-discard-draft-cancel'));
 	discardDraftConfirm = this.el(tid('composer-discard-draft-confirm'));
-	attachButton = this.el(tid('message-input-attach'));
+	// Material keeps a second attach button inside the input, hidden (under
+	// aria-hidden) while there is no draft.
+	attachButton = this.el(
+		`${tid('message-input-attach')}:not([aria-hidden="true"] *)`,
+	);
 	cameraButton = this.el(tid('message-input-camera'));
 	/** Only rendered while the composer holds no content, so its absence is how
 	 *  a staged draft shows up in the DOM. */
@@ -202,7 +207,7 @@ export class Composer extends TestHelper {
 		// composer empty, and `send()` then falls through to Enter — which types
 		// a newline on mobile rather than sending — so the spec would fail much
 		// later on a missing message instead of here on a missing draft.
-		await this.voiceRecordButton.waitForExist({
+		await this.voiceRecordButton.waitForDisplayed({
 			reverse: true,
 			timeoutMsg: 'Injected voice draft never landed in the composer',
 		});
@@ -210,17 +215,42 @@ export class Composer extends TestHelper {
 
 	/** Injects a WAV through the real `transcode_voice_message` command, so the
 	 * draft is genuine Ogg/Opus. Returns facts about the transcode to assert on. */
-	async recordRealVoiceMessage(durationMs = 1000): Promise<{
-		isOgg: boolean;
-		opusBytes: number;
-		wavBytes: number;
-		durationMs: number;
-	}> {
+	async recordRealVoiceMessage(
+		durationMs = 1000,
+	): Promise<RecordedVoiceMessage> {
 		await this.messageInput.waitForExist();
-		return this.agent.execute(
-			(ms: number) => window.__test.injectRecordedVoiceMessage(ms),
+		// XCUITest does not await a promise returned from `execute`, so the
+		// transcode's facts come back with every field undefined while the
+		// injection itself still happens. Hand them to `executeAsync`'s callback
+		// instead, with a script timeout the transcode fits in.
+		await this.agent.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
+		// Both paths settle: a rejection is exactly what this helper exists to
+		// report, and left unsettled it surfaces a minute later as a script
+		// timeout naming nothing.
+		const result = await this.agent.executeAsync<
+			RecordedVoiceMessage | { failed: string },
+			[number]
+		>(
+			(ms, done) =>
+				void window.__test
+					.injectRecordedVoiceMessage(ms)
+					.then(done, err => done({ failed: String(err) })),
 			durationMs,
 		);
+		// The driver handing back something other than what the script returned
+		// is the very quirk above, and `in` on a primitive throws naming
+		// nothing — which is the failure this is here to avoid.
+		if (
+			typeof result !== 'object' ||
+			result === null ||
+			Array.isArray(result)
+		) {
+			throw new Error(
+				`the driver returned no transcode result (${String(result)})`,
+			);
+		}
+		if ('failed' in result) throw new Error(result.failed);
+		return result;
 	}
 
 	/** Paste a single synthesized PNG named `${label}.png` into the composer. */
@@ -254,10 +284,7 @@ export class Composer extends TestHelper {
 	}
 
 	/** Type `text` and send it the way a user on this platform does — see
-	 * `send()`. An operation arriving in the type→send window re-renders the
-	 * composer and can swallow the keydown, so if the textarea hasn't cleared,
-	 * send once more — the send() `sending` guard makes the retry a no-op when
-	 * the first send is merely slow. */
+	 * `send()`. */
 	async sendMessage(text: string): Promise<void> {
 		// In direct chats the composer only mounts once the chat leaves the
 		// pending state, which depends on the peer's profile syncing
@@ -265,6 +292,16 @@ export class Composer extends TestHelper {
 		await this.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
 		await this.typeInto(tid('message-input-textarea'), text);
 		await this.agent.pause(50);
+		await this.sendAndWaitForClear(text);
+	}
+
+	/** Send what the composer holds and wait for the textarea to clear,
+	 * sending once more if it has not: an operation arriving in the type→send
+	 * window re-renders the composer and can swallow the keydown, and on a
+	 * phone a tap aimed at the send button can land while the keyboard is
+	 * still animating and miss it. The send() `sending` guard makes the retry
+	 * a no-op when the first send is merely slow. */
+	async sendAndWaitForClear(text: string): Promise<void> {
 		await this.send();
 		try {
 			await this.agent.waitUntil(

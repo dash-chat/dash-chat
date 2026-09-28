@@ -112,9 +112,12 @@ pub fn parse_network_id(hex: &str) -> Result<NetworkId, hex::FromHexError> {
 /// `blob_throttle` bytes per second, and is built to be throttled at all only
 /// when one is given, or in a `test_utils` build, whose `/testing/blob-throttle`
 /// route sets it at runtime.
+///
+/// Takes the socket already bound, so whoever reserved the port holds it until
+/// this takes over and a failure to bind is theirs to report.
 pub async fn spawn_server(
     db_path: PathBuf,
-    addr: String,
+    listener: tokio::net::TcpListener,
     push_notifications_url: Option<String>,
     blob_sync: Option<BlobSync>,
     relay_url: Option<iroh::RelayUrl>,
@@ -159,7 +162,6 @@ pub async fn spawn_server(
     let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
     let app = create_app(db_arc, push_client, Arc::clone(&push_tasks), blob_sync);
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
     let addr = listener.local_addr()?;
 
     tracing::info!("Mailbox server listening on {}", addr);

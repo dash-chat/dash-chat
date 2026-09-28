@@ -45,12 +45,14 @@
 
 	// Photo messages fix the bubble width to the media box (Signal model:
 	// captions, quotes and sender names wrap at the image width, so the image
-	// is never narrower than the bubble). Collages are 300px wide.
+	// is never narrower than the bubble). Collages are 300px wide. The media
+	// bleeds into the bubble's padding, so a sibling capped at the media's own
+	// width would widen the bubble past the image; the cap drops that padding.
 	const mediaCapStyle = $derived(
 		photos.length === 1
-			? `max-width: ${timelineImageBox(photos[0]).width}px;`
+			? `max-width: calc(${timelineImageBox(photos[0]).width}px - 1rem);`
 			: photos.length > 1
-				? 'max-width: 300px;'
+				? 'max-width: calc(300px - 1rem);'
 				: '',
 	);
 
@@ -122,7 +124,7 @@
 
 <style>
 	.sender-name {
-		margin-inline: 0.25rem;
+		padding-inline: 0.25rem;
 		margin-bottom: 0.125rem;
 		font-size: 0.875rem;
 		font-weight: 600;

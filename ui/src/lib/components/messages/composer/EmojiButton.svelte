@@ -13,6 +13,6 @@
 </script>
 
 <IconButton {onClick} label={m.emoji()} testid="message-input-emoji">
-	<wa-icon class="text-[22px]" src={wrapPathInSvg(mdiEmoticonHappyOutline)}
+	<wa-icon style="font-size: 26px" src={wrapPathInSvg(mdiEmoticonHappyOutline)}
 	></wa-icon>
 </IconButton>

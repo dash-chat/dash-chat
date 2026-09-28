@@ -58,32 +58,48 @@
 		}
 	}
 
+	let heightAnimation: Animation | undefined;
+
 	// Follow every value change, not just typing: the composer also writes it
 	// programmatically (starting/cancelling an edit, sending, picking an emoji),
 	// and a stale inline height leaves the pill stuck at its previous size.
 	$effect(() => {
 		value;
+		const before = textarea.getBoundingClientRect().height;
 		textarea.style.height = 'auto';
 		textarea.style.height = textarea.scrollHeight + 'px';
+		if (theme !== 'ios') return;
+		const after = textarea.getBoundingClientRect().height;
+		if (before === after) return;
+		// A CSS transition can't do this: resetting to `auto` to measure lands the
+		// element on the new height before the final write, so there is nothing
+		// left to interpolate. Replay it from the old height instead.
+		heightAnimation?.cancel();
+		heightAnimation = textarea.animate(
+			[{ height: `${before}px` }, { height: `${after}px` }],
+			{ duration: 250, easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)' },
+		);
 	});
 </script>
 
 <div
-	class="input-container flex min-h-[42px] min-w-0 flex-1 flex-col justify-center {theme ===
+	class="input-container flex min-w-0 flex-1 flex-col justify-center {theme ===
 	'ios'
-		? 'input-container-border bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-		: 'bg-incoming-surface'}"
+		? 'input-container-border min-h-[42px] bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+		: 'min-h-[44px] bg-incoming-surface'}"
 	{onpaste}
 >
 	{@render banner?.()}
 
-	<div class="flex w-full items-center">
+	<div class="relative flex w-full items-end" class:pe-1={after}>
 		{@render before?.()}
 
 		<textarea
 			class:ms-4={!before}
+			class:me-4={!after}
+			class:me-2={after}
 			class:blanked={hidden}
-			class="message-textarea me-2"
+			class="message-textarea self-center"
 			data-testid="message-input-textarea"
 			{placeholder}
 			bind:value

@@ -16,16 +16,45 @@ const ROOT = path.resolve(__dirname, '..', '..');
 
 /** Run one of the root `e2e:build:*` scripts through turbo with the baked
  *  env. `env` must be the full child environment (turbo runs in loose env
- *  mode; only the vars listed in the task's `env` key affect the hash). */
-export function runTurboBuild(task: string, env: NodeJS.ProcessEnv): void {
+ *  mode; only the vars listed in the task's `env` key affect the hash).
+ *  Returns whether the build ran: on a cache hit the artifacts are last
+ *  build's, which is what the sources say they should be, and nothing a
+ *  packaging step could have got wrong happened this time. */
+export function runTurboBuild(task: string, env: NodeJS.ProcessEnv): boolean {
+	const turboEnv = {
+		...env,
+		TURBO_TELEMETRY_DISABLED: '1',
+		TURBO_UI: 'false',
+	};
 	const force = (process.env.E2E_FORCE_BUILD ?? '') !== '' ? ' --force' : '';
+	const willRun = force !== '' || cacheStatus(task, turboEnv) !== 'HIT';
 	execSync(`pnpm exec turbo run ${task} --output-logs=new-only${force}`, {
 		cwd: ROOT,
 		stdio: 'inherit',
-		env: {
-			...env,
-			TURBO_TELEMETRY_DISABLED: '1',
-			TURBO_UI: 'false',
-		},
+		env: turboEnv,
 	});
+	return willRun;
+}
+
+interface TurboDryRun {
+	tasks?: { cache?: { status?: string } }[];
+}
+
+/** What turbo says it would do with `task`, asked before doing it: its own
+ *  run output only says so once the build is over. */
+function cacheStatus(task: string, env: NodeJS.ProcessEnv): string | null {
+	try {
+		const dry: TurboDryRun = JSON.parse(
+			execSync(`pnpm exec turbo run ${task} --dry=json`, {
+				cwd: ROOT,
+				encoding: 'utf8',
+				env,
+			}),
+		);
+		return dry.tasks?.[0]?.cache?.status ?? null;
+	} catch {
+		// Never let asking stop the build: an unreadable answer just means the
+		// APK is checked as if it had been built.
+		return null;
+	}
 }

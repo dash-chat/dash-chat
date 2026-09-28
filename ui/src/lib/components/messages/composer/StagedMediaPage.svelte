@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { Sheet, Block } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiArrowRight } from '@mdi/js';
@@ -16,7 +15,7 @@
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
-	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import EmojiPickerSheet from '$lib/components/messages/EmojiPickerSheet.svelte';
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 
@@ -150,23 +149,14 @@
 		</div>
 	</div>
 
-	<Sheet
-		class="pb-safe text-lg"
+	<EmojiPickerSheet
 		opened={showEmojiPicker}
-		onBackdropClick={() => (showEmojiPicker = false)}
-	>
-		<div class="flex flex-col items-center">
-			<div class="sheet-handle"></div>
-		</div>
-		<Block>
-			<EmojiPickerWrapper
-				onEmojiSelected={emoji => {
-					value += emoji;
-					showEmojiPicker = false;
-				}}
-			></EmojiPickerWrapper>
-		</Block>
-	</Sheet>
+		onClose={() => (showEmojiPicker = false)}
+		onEmojiSelected={emoji => {
+			value += emoji;
+			showEmojiPicker = false;
+		}}
+	/>
 </div>
 
 <style>

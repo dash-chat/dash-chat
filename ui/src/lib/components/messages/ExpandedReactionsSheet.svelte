@@ -1,18 +1,21 @@
 <script lang="ts">
 	import { condenseReactions } from '$lib/utils/emojis';
-	import { Sheet, Block, Button, Chip } from 'konsta/svelte';
+	import { Block, Button, Chip } from 'konsta/svelte';
 	import { type Message, hasBody } from 'dash-chat-stores';
-	import SheetHandle from '$lib/components/SheetHandle.svelte';
-	import EmojiPickerWrapper from './EmojiPickerWrapper.svelte';
+	import EmojiPickerSheet from './EmojiPickerSheet.svelte';
 	import { useMyAgentId } from '$lib/stores/my-agent-id';
 
 	interface Props {
 		message: Message;
 		opened: boolean;
 		onReact: (emoji: string) => void;
+		onClose: () => void;
+		backdrop: boolean;
+		onSearchFocus?: () => void;
 	}
 
-	let { message, opened, onReact }: Props = $props();
+	let { message, opened, onReact, onClose, backdrop, onSearchFocus }: Props =
+		$props();
 
 	const myAgentId = useMyAgentId();
 
@@ -24,10 +27,13 @@
 	);
 </script>
 
-<Sheet class="pb-safe text-lg" {opened} backdrop={false}>
-	<div class="flex flex-col items-center">
-		<SheetHandle />
-	</div>
+<EmojiPickerSheet
+	{opened}
+	{onClose}
+	{onSearchFocus}
+	{backdrop}
+	onEmojiSelected={onReact}
+>
 	{#if condensed.length > 0}
 		<Block>
 			{#each condensed as reaction}
@@ -46,7 +52,4 @@
 			{/each}
 		</Block>
 	{/if}
-	<Block>
-		<EmojiPickerWrapper onEmojiSelected={onReact}></EmojiPickerWrapper>
-	</Block>
-</Sheet>
+</EmojiPickerSheet>

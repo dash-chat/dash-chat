@@ -19,6 +19,7 @@
 	} = $props();
 
 	const isWhite = $derived(color === '#ffffff');
+	const qrColor = $derived(isWhite ? '#000000' : color);
 </script>
 
 <Card class="qr-card qr-code-card p-4 pb-0" style="background-color: {color}">
@@ -27,7 +28,10 @@
 			class="column w-full p-3"
 			style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
 		>
-			<wa-qr-code {value} size="180" fill={isWhite ? '#000000' : color}
+			<wa-qr-code
+				{value}
+				size="180"
+				style="color: {qrColor}; --corner-color: {qrColor}"
 			></wa-qr-code>
 		</div>
 

@@ -75,9 +75,16 @@ impl TestMailbox {
             let signal = async move {
                 let _ = stop_signal_rx.await;
             };
+            let listener = match tokio::net::TcpListener::bind(addr).await {
+                Ok(listener) => listener,
+                Err(e) => {
+                    tracing::error!("Local test mailbox server could not bind: {e:?}");
+                    return;
+                }
+            };
             if let Err(e) = mailbox_server::spawn_server(
                 db_path,
-                addr,
+                listener,
                 None,
                 None,
                 None,

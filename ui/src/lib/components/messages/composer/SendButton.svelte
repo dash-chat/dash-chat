@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { Preloader } from 'konsta/svelte';
+	import { Preloader, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCheck, mdiSend } from '@mdi/js';
@@ -18,6 +18,8 @@
 		testid = 'message-input-send',
 	}: Props = $props();
 
+	const theme = $derived(useTheme());
+
 	let loading = $state(false);
 
 	async function handleClick() {
@@ -33,7 +35,10 @@
 
 <button
 	type="button"
-	class="send-button flex h-[42px] w-[42px] shrink-0 items-center justify-center p-0"
+	class="send-button flex shrink-0 items-center justify-center p-0 {theme ===
+	'ios'
+		? 'h-[42px] w-[42px]'
+		: 'h-10 w-10'}"
 	data-testid={testid}
 	onclick={handleClick}
 	disabled={loading}

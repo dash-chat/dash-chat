@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.20.1"
+version = "0.20.7"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -22,7 +22,7 @@ sentry-types = "0.42"
 [dependencies]
 tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
 
-tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "1145bd4c3ccf4c09c667f3c54afa4e72d53988cb" }
+tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "347505a15d1607529d1426fe126274a9082e27a9" }
 tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
@@ -37,12 +37,13 @@ tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
 tauri-plugin-audio-recorder = "=0.1.2"
 tauri-plugin-sentry-reporting = { workspace = true }
 
-tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "a86d8cf2ea998eba7f93dc6b53674fdb77d3def5" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "29867d696371de6cc315fbb0db9820e288b4124c", features = [
+tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "6163645a2c730338cadc0d9def0ff3091be0515b" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616", features = [
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
+network-watch = { workspace = true }
 # Discovery runs on every platform; only the hub server itself is desktop-only.
 local-hub-discovery = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }
@@ -111,14 +112,14 @@ tauri-plugin-android-fs = { version = "=28.4.0" }
 tauri-plugin-medialibrary = "=0.13"
 tauri-plugin-background-service = "1.0"
 # Holds the MulticastLock mDNS discovery needs to hear hub announcements.
-tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "05a06951ae93f4b3197cb45366520fdffb84611c" }
+tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "90f383f32c74ab28b79be51bf5e6088644b2226c" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"
 # Fork: adds `limit`/`offset` (newest-first) to requestAlbumMedias and a
 # `requestMediasByIds` fetch-by-id command, so the recent-photos strip and
 # tap-to-send no longer render the entire album.
-tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "ec723636ddf248dd6542e02fb2e83d91d1da36c9" }
+tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "034dafd0a591fce73d4fe865e216cc3e225236c5" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
@@ -135,5 +136,6 @@ mailbox-local-server = { workspace = true }
 e2e-tests = ["dashchat-node/testing", "dep:tauri-plugin-wdio-webdriver"]
 
 [dev-dependencies]
+dashchat-node = { path = "../crates/dashchat-node", features = ["testing"] }
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"

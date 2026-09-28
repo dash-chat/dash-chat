@@ -14,6 +14,12 @@ export const SYNC_TIMEOUT = 60_000;
  *  is slower still than op sync on cold CI runners. */
 export const MEDIA_SYNC_TIMEOUT = 120_000;
 
+/** Android keeps syncing a backgrounded app for a few seconds before it cuts
+ *  it off the network (measured ~5.5s on the Xiaomi, ~10s on the vivo), so
+ *  anything that wants a backgrounded agent to really be off the air waits
+ *  this out first. */
+export const BACKGROUND_NETWORK_CUTOFF_MS = 15_000;
+
 /** What the app gets to tell the user the cloud mailbox stopped answering:
  *  the chip flips on the second consecutive failure, and each poll starts
  *  2.5 s after the previous one completed, so two intervals plus the time a
@@ -35,3 +41,12 @@ export const MAILBOX_HEALED_MS = 4_000;
  *  before the whole burst has landed passes on a chat that is about to tear
  *  the element down. */
 export const RENDER_SETTLE_WINDOW = 5_000;
+
+/** What the async-script timeout is raised to before any `executeAsync`.
+ *  XCUITest defaults it to ~0, so a script that does real work — rebuilding
+ *  the node, transcoding audio, reaching the network — times out at once
+ *  unless a caller raises it (desktop's driver tolerates the default). One
+ *  value, since whoever raises it last decides for the callers after it: a
+ *  site that picked a smaller one would silently lower the ceiling under
+ *  them. */
+export const ASYNC_SCRIPT_TIMEOUT = 60_000;

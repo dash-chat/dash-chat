@@ -4,7 +4,8 @@
  * that only one of them fits in the viewport at a time, and whichever one is
  * scrolled into view is the only blob the receiver polls.
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
@@ -21,7 +22,8 @@ describe('Blob progress polls only the attachments on screen', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	after(async () => {
@@ -48,7 +50,7 @@ describe('Blob progress polls only the attachments on screen', () => {
 			.photoProgressRing('bottom')
 			.waitForDisplayed({ timeout: SYNC_TIMEOUT });
 
-		await messages.photoCell('bottom').scrollIntoView({ block: 'center' });
+		await messages.scrollPhotoIntoView('bottom');
 		expect(
 			await messages.photoCell('top').isDisplayed({ withinViewport: true }),
 		).toBe(false);
@@ -58,7 +60,7 @@ describe('Blob progress polls only the attachments on screen', () => {
 		);
 		const [bottomHash] = await agent2.blobPolledHashes();
 
-		await messages.photoCell('top').scrollIntoView({ block: 'center' });
+		await messages.scrollPhotoIntoView('top');
 		expect(
 			await messages.photoCell('bottom').isDisplayed({ withinViewport: true }),
 		).toBe(false);

@@ -37,8 +37,10 @@
 		extractCodeFromDeepLink,
 	} from '$lib/deep-links/add-contact';
 	import { defaultQrColor } from '$lib/utils/qrcode';
+	import { withTimeout } from '$lib/utils/timeout';
 	import SelectColor from './SelectColor.svelte';
 	import QrCodeCard from '$lib/components/QrCodeCard.svelte';
+	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import QrActionButtons from '$lib/components/contacts/QrActionButtons.svelte';
 	import QrLinkSheet from '$lib/components/contacts/QrLinkSheet.svelte';
 	import QrCodeScanner from '$lib/components/contacts/QrCodeScanner.svelte';
@@ -53,16 +55,32 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const settingsStore: SettingsStore = getContext('settings-store');
 
-	let myCode = contactsStore.client.createContactCode();
-	let myName = getMyName();
-	let myDeepLink = myCode.then(code => {
-		const link = toDeepLink(code);
-		if (link === null) {
-			console.error('toDeepLink returned null for code', code);
-			showToast(m.errorUnexpected(), 'error');
+	const CREATE_CONTACT_CODE_TIMEOUT_MS = 5_000;
+
+	let myName = $state(getMyName());
+	let myDeepLink = $state(createMyDeepLink());
+
+	async function createMyDeepLink(): Promise<string> {
+		try {
+			const code = await withTimeout(
+				contactsStore.client.createContactCode(),
+				CREATE_CONTACT_CODE_TIMEOUT_MS,
+			);
+			const link = toDeepLink(code);
+			if (link === null) {
+				throw new Error('toDeepLink returned null');
+			}
+			return link;
+		} catch (e) {
+			console.error('Failed to create contact link', e);
+			throw e;
 		}
-		return link;
-	});
+	}
+
+	function reloadMyDeepLink() {
+		myName = getMyName();
+		myDeepLink = createMyDeepLink();
+	}
 
 	let tab = $state<TabName>('code');
 	let scannerRef: QrCodeScanner | null = $state(null);
@@ -135,14 +153,12 @@
 	{#await Promise.all([myDeepLink, myName])}
 		<Preloader />
 	{:then [deepLink, name]}
-		{#if deepLink !== null}
-			<SelectColor
-				qrCodeValue={deepLink}
-				qrCodeLabel={name}
-				qrColor={colorForPicker}
-				onClose={() => (colorPickerOpen = false)}
-			/>
-		{/if}
+		<SelectColor
+			qrCodeValue={deepLink}
+			qrCodeLabel={name}
+			qrColor={colorForPicker}
+			onClose={() => (colorPickerOpen = false)}
+		/>
 	{:catch}
 		<!-- -->
 	{/await}
@@ -226,100 +242,99 @@
 		</Navbar>
 
 		{#if tab === 'code'}
-			{#await Promise.all([myDeepLink, myName])}
+			{#await Promise.all([myDeepLink, myName, $qrColor])}
 				<div
 					class="column"
 					style="height: 100%; align-items: center; justify-content: center"
 				>
 					<Preloader />
 				</div>
-			{:then [deepLink, name]}
-				{#if deepLink !== null}
-					{#await $qrColor then savedColor}
-						{@const color = savedColor ?? defaultQrColor()}
-						<div class="column" style="flex:1">
-							<div class="column center-in-desktop gap-4 mx-4 mt-4">
-								<QrCodeCard
-									value={deepLink}
-									label={name}
-									{color}
-									copyButtonTestId="add-contact-copy-btn"
-								/>
-
-								<QrActionButtons
-									onLink={() => {
-										linkSheetOpen = true;
-									}}
-									onShare={() => shareCode(deepLink)}
-									onSave={() => saveCode(deepLink, color)}
-									onUpload={() => uploaderRef?.trigger()}
-									onOpenColorPicker={openColorPicker}
-								/>
-
-								<QrLinkSheet
-									opened={linkSheetOpen}
-									link={deepLink}
-									onClose={() => (linkSheetOpen = false)}
-								/>
-
-								{#if !isMobile}
-									<BorderedBox
-										class="row w-full items-center gap-3"
-										data-testid="add-contact-copy-link-box"
-									>
-										<IconButton
-											icon={mdiContentCopy}
-											label={m.copy()}
-											testid="add-contact-copy-link-btn"
-											onClick={() => void copyLinkToClipboard(deepLink)}
-											class="shrink-0"
-										/>
-										<span class="break-all text-start text-sm">{deepLink}</span>
-									</BorderedBox>
-								{/if}
-
-								<span
-									class="mx-6 mb-2 text-center quiet"
-									style="font-size: 13px">{m.shareCodeWarning()}</span
-								>
-
-								{#if import.meta.env.DEV}
-									<div class="column w-full gap-2">
-										<List
-											nested
-											strongIos
-											inset={isWideScreen.value || theme === 'ios'}
-										>
-											<ListInput
-												floatingLabel
-												label="Paste code (dev only)"
-												type="text"
-												outline
-												data-testid="add-contact-code-input"
-												value={pastedCode}
-												onInput={(e: Event) =>
-													(pastedCode = (e.target as HTMLInputElement).value)}
-											/>
-										</List>
-										<Button
-											rounded
-											disabled={pastedCode.trim() === ''}
-											data-testid="add-contact-code-submit"
-											onClick={() => void submitPastedCode()}
-											>{m.addContact()}</Button
-										>
-									</div>
-								{/if}
-							</div>
-						</div>
-						<QrCodeUploader
-							bind:this={uploaderRef}
-							onSelectImage={receiveDeepLink}
+			{:then [deepLink, name, savedColor]}
+				{@const color = savedColor ?? defaultQrColor()}
+				<div class="column" style="flex:1">
+					<div class="column center-in-desktop gap-4 mx-4 mt-4">
+						<QrCodeCard
+							value={deepLink}
+							label={name}
+							{color}
+							copyButtonTestId="add-contact-copy-btn"
 						/>
-					{/await}
-				{/if}
-			{:catch}
-				<!-- -->
+
+						<QrActionButtons
+							onLink={() => {
+								linkSheetOpen = true;
+							}}
+							onShare={() => shareCode(deepLink)}
+							onSave={() => saveCode(deepLink, color)}
+							onUpload={() => uploaderRef?.trigger()}
+							onOpenColorPicker={openColorPicker}
+						/>
+
+						<QrLinkSheet
+							opened={linkSheetOpen}
+							link={deepLink}
+							onClose={() => (linkSheetOpen = false)}
+						/>
+
+						{#if !isMobile}
+							<BorderedBox
+								class="row w-full items-center gap-3"
+								data-testid="add-contact-copy-link-box"
+							>
+								<IconButton
+									icon={mdiContentCopy}
+									label={m.copy()}
+									testid="add-contact-copy-link-btn"
+									onClick={() => void copyLinkToClipboard(deepLink)}
+									class="shrink-0"
+								/>
+								<span class="break-all text-start text-sm">{deepLink}</span>
+							</BorderedBox>
+						{/if}
+
+						<span class="mx-6 mb-2 text-center quiet" style="font-size: 13px"
+							>{m.shareCodeWarning()}</span
+						>
+
+						{#if import.meta.env.DEV}
+							<div class="column w-full gap-2">
+								<List
+									nested
+									strongIos
+									inset={isWideScreen.value || theme === 'ios'}
+								>
+									<ListInput
+										floatingLabel
+										label="Paste code (dev only)"
+										type="text"
+										outline
+										data-testid="add-contact-code-input"
+										value={pastedCode}
+										onInput={(e: Event) =>
+											(pastedCode = (e.target as HTMLInputElement).value)}
+									/>
+								</List>
+								<Button
+									rounded
+									disabled={pastedCode.trim() === ''}
+									data-testid="add-contact-code-submit"
+									onClick={() => void submitPastedCode()}
+									>{m.addContact()}</Button
+								>
+							</div>
+						{/if}
+					</div>
+				</div>
+				<QrCodeUploader
+					bind:this={uploaderRef}
+					onSelectImage={receiveDeepLink}
+				/>
+			{:catch error}
+				<ErrorPlaceholder
+					message={m.errorCreateContactCode()}
+					{error}
+					onRetry={reloadMyDeepLink}
+				/>
 			{/await}
 		{:else if tab === 'scan'}
 			<QrCodeScanner bind:this={scannerRef} onSelectImage={receiveDeepLink} />

@@ -6,4 +6,6 @@ export class MockBlobClient implements IBlobClient {
 	async getBlobProgress(hashes: Hash[]): Promise<BlobProgress[]> {
 		return hashes.map(hash => ({ hash, bytes: 0, complete: true }));
 	}
+
+	async fetchBlobNow(): Promise<void> {}
 }

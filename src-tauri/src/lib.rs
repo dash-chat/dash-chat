@@ -14,6 +14,7 @@ mod mailbox;
 mod media_drop;
 mod node;
 mod notifications;
+mod pending_navigations;
 mod redaction;
 mod sentry;
 mod settings;
@@ -93,6 +94,11 @@ pub fn run() {
                     {
                         if let Err(err) = app_node_manager.resume(&app).await {
                             log::error!("Failed to rebuild node on foreground: {err:?}");
+                        }
+                        // Uploads cut off while we were away go out again now.
+                        mailbox_client::toy::restart_uploads();
+                        if let Ok(node) = app_node_manager.get().await {
+                            node.notify_unfetched_blob_followup();
                         }
                     }
                 })
@@ -188,7 +194,9 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::media::save_blob_to_cache,
             commands::media::get_blob_progress,
+            commands::media::fetch_blob_now,
             commands::voice::transcode_voice_message,
+            pending_navigations::take_pending_navigations,
             #[cfg(feature = "e2e-tests")]
             commands::testing::set_blob_fetch_paused,
         ])
@@ -238,6 +246,8 @@ pub fn run() {
                     log::error!("Failed to register deep links: {err:?}");
                 }
             }
+
+            pending_navigations::setup(app.handle());
 
             let handle = app.handle().clone();
 

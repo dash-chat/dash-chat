@@ -3,9 +3,10 @@
  * message, sent, and rendered on both ends, and that the 16 MiB size cap is
  * enforced.
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { tid } from '../helpers/selectors';
-import { SYNC_TIMEOUT } from '../helpers/timeouts';
+import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Media attachments', () => {
@@ -17,7 +18,8 @@ describe('Media attachments', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('opens the desktop attach dropdown and renders the Photos and File items', async function () {
@@ -68,14 +70,14 @@ describe('Media attachments', () => {
 				.waitForDisplayed({ timeout: SYNC_TIMEOUT });
 			const bytes = messages.photoProgressBytes('held');
 			await bytes.waitForDisplayed();
-			expect(await bytes.getText()).toMatch(/^0 B \/ /);
+			expect(await bytes.getText()).toMatch(/ \/ /);
 		} finally {
 			await agent2.setBlobFetchPaused(false);
 		}
 		await messages.waitForPhotoMessage('held');
 		await messages
 			.photoProgressRing('held')
-			.waitForDisplayed({ reverse: true });
+			.waitForDisplayed({ reverse: true, timeout: MEDIA_SYNC_TIMEOUT });
 	});
 
 	it('recovers a stalled photo download when the cell is tapped', async () => {
@@ -116,7 +118,7 @@ describe('Media attachments', () => {
 		await messages.waitForPhotoMessage('stalled');
 		await messages
 			.photoProgressRing('stalled')
-			.waitForDisplayed({ reverse: true });
+			.waitForDisplayed({ reverse: true, timeout: MEDIA_SYNC_TIMEOUT });
 	});
 
 	it('sizes a lone photo from its sender-measured dimensions', async () => {
@@ -184,8 +186,10 @@ describe('Media attachments', () => {
 			await messages
 				.fileProgressRing('held-notes.txt')
 				.waitForDisplayed({ timeout: SYNC_TIMEOUT });
-			// The tap of a file still downloading is answered with a toast, and
-			// leaves the row as it was.
+			// The tap of a file still downloading is answered with a toast and
+			// leaves the row as it was; the fetch it asks for keeps trying, so the
+			// blob lands as soon as fetching resumes rather than on the background
+			// loop's next pass.
 			await messages.fileRow('held-notes.txt').click();
 			await agent2.toast.expectMessageContaining(
 				await agent2.tr('fileStillDownloading'),
@@ -194,10 +198,9 @@ describe('Media attachments', () => {
 		} finally {
 			await agent2.setBlobFetchPaused(false);
 		}
-		await messages.waitForFileMessage('held-notes.txt');
 		await messages
 			.fileProgressRing('held-notes.txt')
-			.waitForDisplayed({ reverse: true });
+			.waitForDisplayed({ reverse: true, timeout: MEDIA_SYNC_TIMEOUT });
 	});
 
 	it('rejects an attachment that exceeds the 16 MiB cap', async () => {

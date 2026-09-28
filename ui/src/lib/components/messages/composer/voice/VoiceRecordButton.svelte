@@ -26,9 +26,9 @@
      underneath the recording bar. While locked, the send button renders in the
      composer's trailing slot instead (where the attach button sits). -->
 {#if voice.view === 'locked'}
-	<!-- Holds the mic's place inside the pill: without a 42px child the hidden
-	     input pill collapses by 2px, and the locked bar sizes to it. -->
-	<div class="h-[42px] w-[42px] shrink-0"></div>
+	<!-- Holds the mic's place inside the pill while the send button takes over
+	     the composer's trailing slot. -->
+	<div class="h-10 w-10 shrink-0"></div>
 {:else if voice.view !== 'desktop'}
 	<div class="visible relative shrink-0 {hold ? 'z-30' : ''}">
 		{#if hold}
@@ -46,19 +46,23 @@
 		{/if}
 
 		<IconButton
-			icon={mdiMicrophone}
 			label={m.voiceRecordHint()}
 			testid="message-input-voice-record"
 			loading={voice.phase === 'requesting' && !isMobile}
-			iconClass={hold ? 'text-2xl text-white' : undefined}
-			class="!h-[42px] !w-[42px] shrink-0 touch-none {hold
-				? '!bg-red-500 !opacity-100'
-				: ''}"
+			class="shrink-0 touch-none {hold ? '!bg-red-500 !opacity-100' : ''}"
 			onPointerDown={voice.onPointerDown}
 			onPointerMove={voice.onPointerMove}
 			onPointerUp={voice.onPointerUp}
 			onPointerCancel={voice.onPointerCancel}
-		/>
+		>
+			<!-- The path sits at y 2-21 of its 24-unit viewBox, so it needs half a
+			     unit down to be optically centred. -->
+			<wa-icon
+				class={hold ? 'text-white' : ''}
+				style="font-size: 26px; transform: translateY(calc(0.5em / 24))"
+				src={wrapPathInSvg(mdiMicrophone)}
+			></wa-icon>
+		</IconButton>
 	</div>
 {/if}
 

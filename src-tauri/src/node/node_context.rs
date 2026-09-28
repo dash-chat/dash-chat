@@ -163,7 +163,6 @@ impl NodeContext {
             // ALPN is hashed with the network id, so foreign connections are
             // rejected at protocol negotiation.
             config.network_id = e2e_network_id();
-            config.message_ack_debounce = std::time::Duration::from_millis(300);
             config
         } else {
             dashchat_node::NodeConfig::default()
@@ -173,6 +172,26 @@ impl NodeContext {
         // operations to build notifications; it must not author any.
         config.enable_message_acks = self.role == NodeRole::App;
 
+        // The push extension shares the app's database. On p2panda's default
+        // per-topic cursor, whichever process fetches an operation first stops
+        // the other from ever seeing it, so an invite processed by the extension
+        // never subscribes the running app to the new topic. A private cursor
+        // prefix keeps the extension's cursors per-topic yet distinct from the
+        // app's default cursors, so the app independently processes every
+        // operation.
+        if self.role == NodeRole::PushNotification {
+            config.stream_cursor_prefix = Some("nse".to_string());
+        }
+        // Only on iOS do the extension and the app run at the same time over
+        // one store, so only there can the extension store an operation the
+        // running app then never gets; elsewhere a background node runs only
+        // while the app does not, and the app's replay at startup covers it.
+        let shares_store_with_running_app = cfg!(target_os = "ios");
+        config.record_processed_operations =
+            self.role == NodeRole::PushNotification && shares_store_with_running_app;
+        config.import_recorded_operations =
+            self.role == NodeRole::App && shares_store_with_running_app;
+
         if !self.p2p_enabled() {
             config = config.no_p2p();
         }
@@ -180,6 +199,9 @@ impl NodeContext {
         if !self.role.blob_sync_enabled() {
             config = config.no_blob_sync();
         }
+
+        // The main app builds the node in Tauri setup; defer backlog replay to keep launch responsive.
+        config.defer_stored_topics_initialization = self.role == NodeRole::App;
 
         config
     }
@@ -196,6 +218,18 @@ mod tests {
             topic_subscribed_tx: None,
             app_handle: None,
         }
+    }
+
+    // With p2p and blob sync both off, nothing needs the iroh endpoint and
+    // p2panda is spawned without one. The iOS push extension must not open a
+    // second endpoint under the app's key: it takes over the app's relay
+    // session and kills the running app's networking actors.
+    #[test]
+    fn the_push_extension_needs_no_iroh_endpoint() {
+        let config = NodeContext::for_push_notifications().node_config();
+        assert!(!config.enable_p2p);
+        assert!(!config.enable_blob_sync);
+        assert!(app_context().node_config().enable_blob_sync);
     }
 
     #[test]

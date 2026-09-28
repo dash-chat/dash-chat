@@ -18,6 +18,7 @@
 		"background-service:allow-start",
 		"background-service:allow-stop",
 		"background-service:allow-is-running",
-		"background-service:allow-get-service-state"
+		"background-service:allow-get-service-state",
+		"network-interfaces:default"
 	]
 }

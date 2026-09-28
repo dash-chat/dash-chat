@@ -4,7 +4,7 @@
 	import { formatDuration } from '$lib/utils/time';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
-	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { useBlobProgress } from '$lib/stores/use-blob-progress.svelte';
 	import { onScreen } from '$lib/utils/on-screen';
 	import { VoicePlayer } from './voice-player.svelte';
 	import VoicePlayButton from './VoicePlayButton.svelte';
@@ -20,21 +20,22 @@
 
 	const blobStore: BlobStore = getContext('blob-store');
 	let visible = $state(false);
-	const download = $derived(
-		visible ? useReactiveValue(blobStore.progress, voice.hash) : undefined,
+	const hash = $derived(voice.hash);
+	const progress = useBlobProgress(
+		blobStore,
+		() => hash,
+		() => visible,
 	);
 
 	const peaks = $derived(Array.from(voice.waveform, v => v / 255));
 
-	// Playing fetches the blob through the scheme handler, which asks the node
-	// for it right away, so a tap on a stalled note is also its retry.
+	// A tap on a note still downloading asks the node for it now and says so;
+	// playback waits for a tap once the blob has landed.
 	function onPlayClick() {
-		if ($download !== undefined && !$download.complete) {
-			if (!$download.stalled) {
-				showToast(m.fileStillDownloading());
-				return;
-			}
-			blobStore.retry(voice.hash);
+		if (progress.current !== undefined && !progress.current.complete) {
+			blobStore.retry(hash);
+			showToast(m.fileStillDownloading());
+			return;
 		}
 		void player.toggle();
 	}
@@ -62,7 +63,7 @@
 			paused={player.paused}
 			loading={player.loading}
 			onclick={onPlayClick}
-			download={$download}
+			download={progress.current}
 			totalBytes={voice.size}
 		/>
 

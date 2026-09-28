@@ -85,10 +85,10 @@
 
 <div class="flex w-full items-center gap-2" data-testid="voice-desktop-bar">
 	<div
-		class="flex min-h-[42px] min-w-0 flex-1 items-center gap-3 rounded-[22px] ps-3 pe-3 {theme ===
+		class="flex min-w-0 flex-1 items-center gap-3 rounded-[22px] ps-3 pe-3 {theme ===
 		'ios'
-			? 'border border-[var(--k-hairline-color)] bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-			: 'bg-incoming-surface'}"
+			? 'min-h-[40px] border border-[var(--k-hairline-color)] bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+			: 'min-h-[44px] bg-incoming-surface'}"
 	>
 		<RecordingIndicator elapsedMs={voice.elapsedMs} micSize={18} />
 

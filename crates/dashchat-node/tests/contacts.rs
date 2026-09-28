@@ -226,6 +226,50 @@ async fn test_cannot_add_self_as_contact() {
     assert!(matches!(result, Err(AddContactError::CannotAddSelf)));
 }
 
+/// Every code we scan is recorded as an outgoing request to its owner, with
+/// the name it carries; being scanned records none.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_outgoing_contact_request() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+    let carol = TestNode::new(NodeConfig::testing(), "carol").await;
+
+    let alice_qr = alice.create_add_contact_qr_code().await.unwrap();
+    let carol_qr = carol.create_add_contact_qr_code().await.unwrap();
+    let alice_name = alice_qr.profile_name.clone();
+    let carol_name = carol_qr.profile_name.clone();
+    bobbi.add_contact(alice_qr).await.unwrap();
+    bobbi.add_contact(carol_qr).await.unwrap();
+
+    let to_alice = bobbi
+        .outgoing_contact_request(alice.device_id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (to_alice.device_pubkey, to_alice.profile_name),
+        (alice.device_id(), alice_name)
+    );
+    let to_carol = bobbi
+        .outgoing_contact_request(carol.device_id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (to_carol.device_pubkey, to_carol.profile_name),
+        (carol.device_id(), carol_name)
+    );
+    assert_eq!(
+        alice
+            .outgoing_contact_request(bobbi.device_id())
+            .await
+            .unwrap(),
+        None
+    );
+}
+
 /// Adding the same contact a second time returns AlreadyRequested.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_duplicate_contact_request_is_idempotent() {

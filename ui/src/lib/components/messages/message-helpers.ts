@@ -74,6 +74,30 @@ export function messagePosition(
 	return 'middle';
 }
 
+export interface GroupedEvent<T> {
+	hash: Hash;
+	item: T;
+	group: Array<[Hash, T]>;
+	indexInGroup: number;
+}
+
+/** A day's groups as one list of events, each still knowing its group, so the
+ * list can be keyed by event hash alone: keying rows under their group would
+ * re-mount every row of a group whenever a late arrival or a deletion changes
+ * which event starts it. */
+export function groupedEvents<T>(
+	eventsGroups: Array<Array<[Hash, T]>>,
+): Array<GroupedEvent<T>> {
+	return eventsGroups.flatMap(group =>
+		group.map(([hash, item], indexInGroup) => ({
+			hash,
+			item,
+			group,
+			indexInGroup,
+		})),
+	);
+}
+
 const SENDER_COLOR_COUNT = 12;
 
 export function senderColor(authorId: string): string {

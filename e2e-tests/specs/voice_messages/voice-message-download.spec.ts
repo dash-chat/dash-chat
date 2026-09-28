@@ -3,8 +3,9 @@
  * wrapped in a progress ring, a tap while it is still downloading is answered
  * with a toast, and once the blob lands the ring goes away and the note plays.
  */
-import { createProfilesAndExchangeContacts } from '../../helpers/flows/exchange-contacts';
-import { SYNC_TIMEOUT } from '../../helpers/timeouts';
+import { createProfiles } from '../../helpers/flows/create-profiles';
+import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { MEDIA_SYNC_TIMEOUT, SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Voice message download progress', () => {
@@ -16,7 +17,8 @@ describe('Voice message download progress', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('shows a progress ring on the receiver until the voice blob arrives', async () => {
@@ -40,7 +42,7 @@ describe('Voice message download progress', () => {
 		}
 		await messages
 			.voiceProgressRing()
-			.waitForDisplayed({ reverse: true, timeout: SYNC_TIMEOUT });
+			.waitForDisplayed({ reverse: true, timeout: MEDIA_SYNC_TIMEOUT });
 		await messages.voicePlayButton.click();
 		await agent2.waitUntil(async () => (await messages.voiceProgress()) > 0.1, {
 			timeoutMsg: 'Waveform progress did not advance during playback',

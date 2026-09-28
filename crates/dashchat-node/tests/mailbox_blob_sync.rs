@@ -222,6 +222,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
 /// sender's blob is the explicit address registration in step 4, guaranteeing
 /// the fetch cannot succeed before then.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "the followup now uploads the blob, so the mailbox never has to fetch it"]
 async fn recovers_unfetched_blob_after_source_restart() {
     dashchat_node::testing::setup_tracing(
         &[
