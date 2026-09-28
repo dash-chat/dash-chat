@@ -1955,6 +1955,9 @@ impl Node {
         &self,
         agent_id: AgentId,
     ) -> anyhow::Result<Option<Topic<kind::Inbox>>> {
+        // A requester whose request expired unanswered can send another, with a
+        // new reply topic: answer the latest one.
+        let mut latest = None;
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
             for author in self.op_store.get_authors(log_id).await? {
@@ -1968,13 +1971,17 @@ impl Node {
                     else {
                         continue;
                     };
-                    if req_agent == agent_id {
-                        return Ok(Some(reply_topic));
+                    if req_agent == agent_id
+                        && latest
+                            .as_ref()
+                            .is_none_or(|(ts, _)| op.header.timestamp > *ts)
+                    {
+                        latest = Some((op.header.timestamp, reply_topic));
                     }
                 }
             }
         }
-        Ok(None)
+        Ok(latest.map(|(_, reply_topic)| reply_topic))
     }
 
     /// Reply to an incoming contact request by sending our profile to the

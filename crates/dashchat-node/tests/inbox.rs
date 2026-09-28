@@ -214,3 +214,39 @@ async fn test_rescanning_an_accepted_contact_sends_no_request() {
         AddContactResult::AlreadyRequested(_)
     ));
 }
+
+/// Bobbi scans Alice's code with no internet, then restarts once a mailbox is
+/// reachable. The two never meet directly, so the request must reach Alice
+/// through the mailbox.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_request_reaches_owner_through_mailbox_after_requester_restart() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing().random_network_id();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
+    let bobbi_device_id = bobbi.device_id();
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    let bobbi_dir = bobbi.shutdown().await;
+    let _bobbi = TestNode::new_at_path(config, "bobbi", bobbi_dir)
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    PollConfig::seconds(20)
+        .wait_for(|| async {
+            match alice.lookup_contact(bobbi_device_id).await.unwrap() {
+                Some(_) => Ok(()),
+                None => Err("alice never received bobbi's contact request"),
+            }
+        })
+        .await
+        .unwrap();
+}

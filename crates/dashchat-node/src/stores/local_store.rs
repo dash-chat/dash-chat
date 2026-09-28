@@ -351,13 +351,8 @@ impl LocalStore {
         &self,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let nanos = now.timestamp_nanos_opt().unwrap_or(0).max(0);
-        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ? AND role = ?")
-            .bind(nanos)
-            .bind(InboxRole::Requested)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        self.prune_expired_inbox_topics(InboxRole::Requested, now)
+            .await
     }
 
     pub async fn has_unexpired_requested_inbox_for(
@@ -422,13 +417,23 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn prune_expired_active_inbox_topics(
+    pub async fn prune_expired_advertised_inbox_topics(
         &self,
-        expires_at: DateTime<Utc>,
+        now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let nanos = expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
-        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ?")
+        self.prune_expired_inbox_topics(InboxRole::Advertised, now)
+            .await
+    }
+
+    async fn prune_expired_inbox_topics(
+        &self,
+        role: InboxRole,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        let nanos = now.timestamp_nanos_opt().unwrap_or(0).max(0);
+        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ? AND role = ?")
             .bind(nanos)
+            .bind(role)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -664,6 +669,14 @@ mod tests {
             .add_reply_inbox_topic(expired_reply_to_alice, alice)
             .await
             .unwrap();
+        let expired_advertised = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([6; 32]),
+        };
+        store
+            .add_active_inbox_topic(expired_advertised.clone())
+            .await
+            .unwrap();
         let requested_topics = || async {
             store
                 .get_requested_inbox_topics_with_owner()
@@ -704,17 +717,14 @@ mod tests {
         store.remove_requested_inbox_topics_of(alice).await.unwrap();
         assert_eq!(requested_topics().await, maplit::btreeset![from_carol]);
         assert!(store.has_pending_reply_inbox_for(alice).await.unwrap());
-        assert!(
-            store
-                .get_advertised_inbox_topics()
-                .await
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            store.get_advertised_inbox_topics().await.unwrap(),
+            maplit::btreeset![expired_advertised]
         );
     }
 
     #[tokio::test]
-    async fn test_prune_expired_active_inbox_topics() {
+    async fn test_prune_expired_advertised_inbox_topics() {
         let dir = tempfile::tempdir().unwrap();
         let pool = create_sqlite_pool(dir.path().join("test_prune_inbox_topics.db"))
             .await
@@ -748,14 +758,17 @@ mod tests {
         let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
 
-        store.prune_expired_active_inbox_topics(now).await.unwrap();
+        store
+            .prune_expired_advertised_inbox_topics(now)
+            .await
+            .unwrap();
         topics.pop_first().unwrap();
 
         let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
         assert_eq!(loaded_topics, topics);
 
         store
-            .prune_expired_active_inbox_topics(more_valid)
+            .prune_expired_advertised_inbox_topics(more_valid)
             .await
             .unwrap();
         topics.pop_first().unwrap();
