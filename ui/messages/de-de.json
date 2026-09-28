@@ -273,7 +273,7 @@
     "attachPhotos": "Fotos",
     "attachFile": "Datei",
     "attachMenu": "Anhang",
-    "gallery": "Gallerie",
+    "gallery": "Fotos",
     "removeAttachment": "Entfernen",
     "addMoreAttachments": "Weiteren Anhang hinzufügen",
     "removeAllAttachments": "Alle Anhänge entfernen",
@@ -386,5 +386,6 @@
     "errorReceivedUnrecognizedLink": "Nicht erkannter Link erhalten: {{url}}",
     "contactRequestSent": "Kontaktanfrage gesendet.",
     "errorAddContactDeviceLinkingNotSupported": "Dieser Code dient dazu, ein Gerät zu verknüpfen, keinen Kontakt hinzuzufügen.",
-    "messageStatusUnsent": "Senden"
+    "messageStatusUnsent": "Senden",
+    "retry": "Wiederkehr"
 }
