@@ -635,13 +635,9 @@ impl Node {
                 let all_advertised_topics = self.local_store.get_advertised_inbox_topics().await?;
                 let is_advertised_topic =
                     all_advertised_topics.iter().any(|it| *it.topic == topic_id);
-                let is_reply = self
-                    .local_store
-                    .get_reply_inbox_topics()
-                    .await?
-                    .iter()
-                    .any(|it| *it.topic == topic_id);
-                if !is_advertised_topic && !is_reply {
+                let is_direct_chat_with_author = topic_id
+                    == TopicId::from(self.direct_chat_topic(crate::FakeAgentId::from(author)));
+                if !is_advertised_topic && !is_direct_chat_with_author {
                     // not for me (e.g. another scanner's request on a shared
                     // advertised inbox we only synced as an intermediary): ignore.
                     return Ok(());
@@ -686,24 +682,14 @@ impl Node {
                         }
                     }
                     InboxPayload::ContactRequestAccept { agent_id, .. } => {
-                        // The op must arrive on our private reply topic and be
-                        // signed by the device whose QR we scanned. Verifying
-                        // Verifying author == expected_ack_author prevents a
-                        // third party from injecting a spoofed ack with
-                        // an attacker-chosen agent_id/profile.
-                        if is_reply && !matches!(source, Source::LocalStore) {
-                            let expected = self
-                                .local_store
-                                .get_reply_inbox_expected_ack_author(topic_id)
-                                .await?;
-                            if expected.as_ref() != Some(&author) {
-                                tracing::warn!(
-                                    ?author,
-                                    ?expected,
-                                    "ContactRequestAccept author does not match expected; ignoring"
-                                );
-                                return Ok(());
-                            }
+                        // It must arrive in our direct chat with its author,
+                        // and we must have scanned the author's code: nobody
+                        // else can inject an acceptance carrying their own
+                        // agent id and profile.
+                        if is_direct_chat_with_author
+                            && !matches!(source, Source::LocalStore)
+                            && self.has_scanned_code_of(author).await?
+                        {
                             self.establish_contact(author, *agent_id).await?;
 
                             let node = self.clone();
