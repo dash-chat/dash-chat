@@ -8,6 +8,10 @@ import { personalTopicFor } from '../topics';
 import { AnnouncementPayload, ChatId, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
 
+// Must match `NodeConfig::contact_code_expiry`: past it the node no longer
+// treats our request as pending, so the peer's request isn't auto-accepted.
+const CONTACT_CODE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+
 export interface ContactRequest {
 	profile: Profile;
 	agentId: AgentId;
@@ -297,7 +301,9 @@ export class ContactsStore {
 		const contacts = await this.contactsAgentIds();
 		const rejectedMap = await this.rejectedContactRequests();
 		const outgoingDevices = new Set(
-			(await this.outgoingContactRequests()).map(o => o.devicePubkey),
+			(await this.outgoingContactRequests())
+				.filter(o => Date.now() - o.timestamp < CONTACT_CODE_EXPIRY_MS)
+				.map(o => o.devicePubkey),
 		);
 
 		// A requester whose earlier request expired unanswered can send another,
