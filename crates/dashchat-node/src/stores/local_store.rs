@@ -23,8 +23,8 @@ enum InboxRole {
     /// receive their `ContactRequestAccept`.
     Reply = 1,
     /// The advertised inbox of a device whose QR we scanned, where our
-    /// `ContactRequest` lives. Kept subscribed until they become a contact or
-    /// the code expires, so a request that didn't sync before a restart still
+    /// `ContactRequest` lives. Restored at startup until they become a contact
+    /// or the code expires, so a request that didn't sync before a restart still
     /// reaches them. Value 3 leaves 2 to the accepted-reply role.
     Requested = 3,
 }
@@ -240,10 +240,17 @@ impl LocalStore {
     pub async fn get_reply_inbox_topics_with_author(
         &self,
     ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        self.get_inbox_topics_with_author(InboxRole::Reply).await
+    }
+
+    async fn get_inbox_topics_with_author(
+        &self,
+        role: InboxRole,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
         let rows: Vec<(Topic<kind::Untyped>, i64, DeviceId)> = sqlx::query_as(
             "SELECT topic_id, expires_at_nanos, expected_ack_author FROM active_inboxes WHERE role = ?",
         )
-        .bind(InboxRole::Reply)
+        .bind(role)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
@@ -324,8 +331,11 @@ impl LocalStore {
         Ok(())
     }
 
-    pub async fn get_requested_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
-        self.get_inbox_topics(InboxRole::Requested).await
+    pub async fn get_requested_inbox_topics_with_owner(
+        &self,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        self.get_inbox_topics_with_author(InboxRole::Requested)
+            .await
     }
 
     pub async fn remove_requested_inbox_topics_of(
@@ -631,21 +641,39 @@ mod tests {
             .add_requested_inbox_topic(from_carol.clone(), carol)
             .await
             .unwrap();
+        // The reply inbox minted for the same exchange shares the author
+        // column, and must outlive both the prune and the removal.
+        let expired_reply_to_alice = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([4; 32]),
+        };
+        store
+            .add_reply_inbox_topic(expired_reply_to_alice, alice)
+            .await
+            .unwrap();
+        let requested_topics = || async {
+            store
+                .get_requested_inbox_topics_with_owner()
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|(topic, _)| topic)
+                .collect::<BTreeSet<_>>()
+        };
 
         store
             .prune_expired_requested_inbox_topics(now)
             .await
             .unwrap();
         assert_eq!(
-            store.get_requested_inbox_topics().await.unwrap(),
+            requested_topics().await,
             maplit::btreeset![from_alice, from_carol.clone()]
         );
+        assert!(store.has_pending_reply_inbox_for(alice).await.unwrap());
 
         store.remove_requested_inbox_topics_of(alice).await.unwrap();
-        assert_eq!(
-            store.get_requested_inbox_topics().await.unwrap(),
-            maplit::btreeset![from_carol]
-        );
+        assert_eq!(requested_topics().await, maplit::btreeset![from_carol]);
+        assert!(store.has_pending_reply_inbox_for(alice).await.unwrap());
         assert!(
             store
                 .get_advertised_inbox_topics()

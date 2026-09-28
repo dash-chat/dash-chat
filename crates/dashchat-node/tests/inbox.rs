@@ -106,4 +106,28 @@ async fn test_p2p_request_survives_requester_restart() {
         })
         .await
         .unwrap();
+
+    alice.accept_contact(bobbi.agent_id()).await.unwrap();
+    PollConfig::seconds(20)
+        .wait_for(|| async {
+            match bobbi
+                .get_contacts()
+                .await
+                .unwrap()
+                .contains(&alice.agent_id())
+            {
+                true => Ok(()),
+                false => Err("bobbi never became alice's contact"),
+            }
+        })
+        .await
+        .unwrap();
+    assert!(
+        bobbi
+            .local_store
+            .get_requested_inbox_topics_with_owner()
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

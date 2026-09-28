@@ -1642,8 +1642,9 @@ impl Node {
     /// Register the shared, idempotent state for a contact identified by their
     /// device pubkey and agent id:
     /// - register the contact as a bootstrap peer,
-    /// - subscribe to their announcements, and
-    /// - subscribe to our direct-chat topic.
+    /// - subscribe to their announcements,
+    /// - subscribe to our direct-chat topic, and
+    /// - stop restoring their inbox our own request was sent to.
     ///
     /// Safe to call repeatedly, so both the initiating `add_contact` path and the
     /// inbox request/ack handlers can call it.
@@ -1658,10 +1659,6 @@ impl Node {
         self.register_bootstrap_node(*device_id)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
-        self.local_store
-            .remove_requested_inbox_topics_of(device_id)
-            .await
-            .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
         // Subscribe to the contact's announcements to receive their group
         // control messages, and to our shared direct-chat topic.
         self.register_topic(Topic::announcements(agent_id))
@@ -1671,6 +1668,10 @@ impl Node {
         self.register_topic(self.direct_chat_topic(fake_agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        self.local_store
+            .remove_requested_inbox_topics_of(device_id)
+            .await
+            .map_err(|e| Error::RemoveActiveInbox(format!("{e}")))?;
         Ok(())
     }
 
@@ -1816,11 +1817,12 @@ impl Node {
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
         // Our request lives only on this (possibly shared) inbox, so we keep
-        // serving it across restarts — but only until the owner accepts or
-        // the code expires, not for good like the owner does.
+        // serving it across restarts — but only until the owner accepts or the
+        // first restart after the code expires, not for good like the owner does.
         // TODO: make this more private. Rejoining the inbox's gossip overlay
         // shows us to (and syncs us the requests of) everyone else who scanned
-        // the same QR; sync the topic only with its owner's node instead.
+        // the same QR; sync the topic only with its owner's node instead, and
+        // drop the other scanners' requests we synced meanwhile.
         self.local_store
             .add_requested_inbox_topic(inbox_topic.clone(), contact.device_pubkey)
             .await
@@ -2187,8 +2189,18 @@ impl Node {
         self.local_store
             .prune_expired_requested_inbox_topics(Utc::now())
             .await?;
-        for topic in self.local_store.get_requested_inbox_topics().await? {
-            if let Err(err) = self.initialize_topic(*topic.topic).await {
+        for (topic, owner) in self
+            .local_store
+            .get_requested_inbox_topics_with_owner()
+            .await?
+        {
+            if let Err(err) = self
+                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                    "requested_inbox(peer={})",
+                    &hex::encode(&owner.as_bytes()[..4])
+                )))
+                .await
+            {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize requested inbox topic");
                 failures += 1;
             }
