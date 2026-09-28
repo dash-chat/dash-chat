@@ -363,5 +363,6 @@
     "fileDownloadFailed": "文件下载失败.",
     "contactRequestSent": "发出联系请求.",
     "errorAddContactDeviceLinkingNotSupported": "该法典将装置连接起来,而不是增加联系.",
-    "messageStatusUnsent": "贷款"
+    "messageStatusUnsent": "贷款",
+    "retry": "学历"
 }
