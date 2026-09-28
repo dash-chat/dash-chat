@@ -388,5 +388,6 @@
     "fileDownloadFailed": "Le téléchargement de fichiers a échoué.",
     "contactRequestSent": "Demande de contact envoyée.",
     "errorAddContactDeviceLinkingNotSupported": "Ce code est pour lier un périphérique, sans ajouter de contact.",
-    "messageStatusUnsent": "Envoi"
+    "messageStatusUnsent": "Envoi",
+    "retry": "Retry"
 }
