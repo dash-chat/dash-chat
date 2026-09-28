@@ -77,3 +77,55 @@ async fn test_p2p_inbox_2() {
         .await
         .unwrap();
 }
+
+/// Bobbi scans Alice's code on a LAN without internet and leaves before Alice
+/// accepts; Alice's app is then backgrounded, which on iOS rebuilds her node.
+/// When they meet again Bobbi must still learn he was accepted, or Alice never
+/// becomes his contact.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_p2p_acceptance_survives_acceptor_restart() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing().random_network_id();
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
+    let bobbi_agent_id = bobbi.agent_id();
+    let bobbi_device_id = bobbi.device_id();
+
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    PollConfig::default()
+        .wait_for(|| async {
+            match alice.lookup_contact(bobbi_device_id).await.unwrap() {
+                Some(_) => Ok(()),
+                None => Err("alice hasn't received bobbi's request yet"),
+            }
+        })
+        .await
+        .unwrap();
+
+    let bobbi_dir = bobbi.shutdown().await;
+    alice.accept_contact(bobbi_agent_id).await.unwrap();
+    let alice_dir = alice.shutdown().await;
+
+    let alice = TestNode::new_at_path(config.clone(), "alice", alice_dir).await;
+    let bobbi = TestNode::new_at_path(config, "bobbi", bobbi_dir).await;
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    PollConfig::seconds(20)
+        .wait_for(|| async {
+            match bobbi
+                .get_contacts()
+                .await
+                .unwrap()
+                .contains(&alice.agent_id())
+            {
+                true => Ok(()),
+                false => Err("bobbi never learned that alice accepted"),
+            }
+        })
+        .await
+        .unwrap();
+}
