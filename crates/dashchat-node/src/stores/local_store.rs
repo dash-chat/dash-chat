@@ -13,7 +13,7 @@ use crate::{
 const PRIVATE_KEY_KEY: &str = "private_key";
 const AGENT_ID_KEY: &str = "agent_id";
 
-/// Distinguishes the two roles an inbox topic can play for this node.
+/// Distinguishes the roles an inbox topic can play for this node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[repr(i64)]
 enum InboxRole {

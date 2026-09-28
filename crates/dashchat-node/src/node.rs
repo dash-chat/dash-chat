@@ -1913,7 +1913,7 @@ impl Node {
         // topic. This is the point at which we first disclose our profile and
         // signals that we accepted, letting them complete the exchange.
         if let Some(reply_topic) = self
-            .find_contact_request_reply_topic(agent_id)
+            .find_contact_request_reply_topic(agent_id, device_pubkey)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
         {
@@ -1949,35 +1949,35 @@ impl Node {
     }
 
     /// Scan our advertised inbox logs for a pending [`InboxPayload::ContactRequest`]
-    /// from `agent_id` and return its private reply topic, so [`Self::accept_contact`]
+    /// from `agent_id`'s `device_id` and return its private reply topic, so [`Self::accept_contact`]
     /// can send our acceptance there. Returns `None` if no matching request is stored.
     async fn find_contact_request_reply_topic(
         &self,
         agent_id: AgentId,
+        device_id: DeviceId,
     ) -> anyhow::Result<Option<Topic<kind::Inbox>>> {
-        // A requester whose request expired unanswered can send another, with a
-        // new reply topic: answer the latest one.
+        // Only the requester's own log: anyone holding a shared code can publish
+        // a request claiming their agent id. A requester whose request expired
+        // unanswered can send another, with a new reply topic: answer the latest.
         let mut latest = None;
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
-            for author in self.op_store.get_authors(log_id).await? {
-                for op in self.op_store.get_log(&author, &log_id, None).await? {
-                    let Some(body) = op.body else { continue };
-                    let Ok(Payload::Inbox(InboxPayload::ContactRequest {
-                        agent_id: req_agent,
-                        reply_topic,
-                        ..
-                    })) = Payload::try_from_body(&body)
-                    else {
-                        continue;
-                    };
-                    if req_agent == agent_id
-                        && latest
-                            .as_ref()
-                            .is_none_or(|(ts, _)| op.header.timestamp > *ts)
-                    {
-                        latest = Some((op.header.timestamp, reply_topic));
-                    }
+            for op in self.op_store.get_log(&device_id, &log_id, None).await? {
+                let Some(body) = op.body else { continue };
+                let Ok(Payload::Inbox(InboxPayload::ContactRequest {
+                    agent_id: req_agent,
+                    reply_topic,
+                    ..
+                })) = Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                if req_agent == agent_id
+                    && latest
+                        .as_ref()
+                        .is_none_or(|(ts, _)| op.header.timestamp > *ts)
+                {
+                    latest = Some((op.header.timestamp, reply_topic));
                 }
             }
         }
