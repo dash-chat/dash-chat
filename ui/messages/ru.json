@@ -371,5 +371,6 @@
     "feedback": "Отзывы",
     "reportSent": "Сообщение отправлено. Спасибо!",
     "reportQueued": "Отчет сохранен. Он будет отправлен, когда вы вернетесь в интернет.",
-    "messageStatusUnsent": "Отправка"
+    "messageStatusUnsent": "Отправка",
+    "retry": "Retry"
 }
