@@ -24,10 +24,14 @@ enum InboxRole {
     /// possibly of an older request, after a re-scan — is matched by topic
     /// whatever its expiry, so pruning one would strand that request.
     Reply = 1,
+    /// A requester's private reply inbox that we published our
+    /// `ContactRequestAccept` into. Kept subscribed across restarts so a
+    /// requester that only reaches us directly can still sync it from us.
+    Accepted = 2,
     /// The advertised inbox of a device whose QR we scanned, where our
     /// `ContactRequest` lives. Restored at startup until they become a contact
     /// or the code expires, so a request that didn't sync before a restart still
-    /// reaches them. Value 3 leaves 2 to the accepted-reply role.
+    /// reaches them.
     Requested = 3,
 }
 
@@ -287,6 +291,14 @@ impl LocalStore {
     pub async fn add_active_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
         self.add_inbox_topic(inbox_topic, InboxRole::Advertised)
             .await
+    }
+
+    pub async fn get_accepted_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
+        self.get_inbox_topics(InboxRole::Accepted).await
+    }
+
+    pub async fn add_accepted_inbox_topic(&self, inbox_topic: InboxTopic) -> anyhow::Result<()> {
+        self.add_inbox_topic(inbox_topic, InboxRole::Accepted).await
     }
 
     pub async fn add_reply_inbox_topic(
