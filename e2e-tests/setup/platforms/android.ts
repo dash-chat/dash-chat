@@ -575,6 +575,29 @@ export function stopAndroidApp(udid: string): void {
 	);
 }
 
+/** Put the notification permission the session's autoGrantPermissions
+ *  granted back to never asked, so the app's next request shows the system
+ *  dialog. Android kills the app when it loses a permission. */
+export function resetAndroidNotificationPermission(udid: string): void {
+	const permission = 'android.permission.POST_NOTIFICATIONS';
+	adbShell(udid, `pm revoke ${APP_PACKAGE} ${permission}`);
+	adbShell(
+		udid,
+		`pm clear-permission-flags ${APP_PACKAGE} ${permission} user-set user-fixed`,
+	);
+}
+
+/** Deny the notification permission for good, as two refusals in the system
+ *  dialog do: the app's next request is refused without showing a dialog. */
+export function denyAndroidNotificationPermission(udid: string): void {
+	const permission = 'android.permission.POST_NOTIFICATIONS';
+	adbShell(udid, `pm revoke ${APP_PACKAGE} ${permission}`);
+	adbShell(
+		udid,
+		`pm set-permission-flags ${APP_PACKAGE} ${permission} user-set user-fixed`,
+	);
+}
+
 /** Whether the app's main process is running. Appium's queryAppState
  *  pgrep-matches any process whose name contains the package, and webview
  *  renderer processes can linger for minutes after the main process exits, so
