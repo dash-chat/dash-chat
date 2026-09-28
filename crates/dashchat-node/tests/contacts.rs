@@ -226,6 +226,36 @@ async fn test_cannot_add_self_as_contact() {
     assert!(matches!(result, Err(AddContactError::CannotAddSelf)));
 }
 
+/// Every code we scan is recorded as an outgoing request, with the name it
+/// carries; being scanned records none.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_outgoing_contact_requests() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+    let carol = TestNode::new(NodeConfig::testing(), "carol").await;
+
+    let alice_qr = alice.create_add_contact_qr_code().await.unwrap();
+    let carol_qr = carol.create_add_contact_qr_code().await.unwrap();
+    let expected = vec![
+        (alice.device_id(), alice_qr.profile_name.clone()),
+        (carol.device_id(), carol_qr.profile_name.clone()),
+    ];
+    bobbi.add_contact(alice_qr).await.unwrap();
+    bobbi.add_contact(carol_qr).await.unwrap();
+
+    let requests: Vec<_> = bobbi
+        .outgoing_contact_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|request| (request.device_pubkey, request.profile_name))
+        .collect();
+    assert_eq!(requests, expected);
+    assert!(alice.outgoing_contact_requests().await.unwrap().is_empty());
+}
+
 /// Adding the same contact a second time returns AlreadyRequested.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_duplicate_contact_request_is_idempotent() {

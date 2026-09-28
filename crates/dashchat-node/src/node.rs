@@ -47,7 +47,7 @@ use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
-    MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
+    MediaMetadata, OutgoingFile, OutgoingMedia, PendingContactRequest, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
 use tracing::error;
@@ -1104,6 +1104,26 @@ impl Node {
         Ok(agents)
     }
 
+    /// The contact requests we sent by scanning someone's code, whether or not
+    /// their acceptance has reached us since.
+    pub async fn outgoing_contact_requests(&self) -> anyhow::Result<Vec<PendingContactRequest>> {
+        let log_id = self.device_group_topic().into();
+        let mut requests = vec![];
+        for op in self
+            .op_store
+            .get_log(&self.device_id(), &log_id, None)
+            .await?
+        {
+            let Some(body) = op.body else { continue };
+            if let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
+                Payload::try_from_body(&body)
+            {
+                requests.push(request);
+            }
+        }
+        Ok(requests)
+    }
+
     pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
         self.local_store.subscribed_topics().await
     }
@@ -1848,11 +1868,13 @@ impl Node {
         // device pubkey, since we don't know their agent id yet.
         self.publish(
             self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
-                device_pubkey: contact.device_pubkey,
-                profile_name: contact.profile_name,
-                direct_chat_topic_id,
-            }),
+            Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(
+                PendingContactRequest {
+                    device_pubkey: contact.device_pubkey,
+                    profile_name: contact.profile_name,
+                    direct_chat_topic_id,
+                },
+            )),
             Some(&format!(
                 "add_contact/pending({:?})",
                 contact.device_pubkey.aliased()

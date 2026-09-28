@@ -7,7 +7,8 @@ pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
 use dashchat_node::{
-    ChatId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic, TopicId,
+    AgentId, ChatId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic,
+    TopicId,
 };
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
@@ -85,6 +86,7 @@ pub(crate) async fn show_sync_notification(
         }
     }
 
+    log::info!("Notifying about a synced operation");
     let h = app_handle.clone();
     match run_plugin_call(move || show_notification_from_data(&h, data)).await {
         Ok(Ok(())) => {}
@@ -240,18 +242,23 @@ async fn chat_message_notification(
 
     let is_direct_chat =
         *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic;
-    if is_direct_chat {
-        let accepted = match node.accepted_contact_agent_ids().await {
-            Ok(accepted) => accepted,
+    let mut qr_code_name = None;
+    if is_direct_chat && !is_accepted_contact(node, sender_agent_id).await {
+        // Someone whose code we scanned writes to a chat that already shows
+        // their messages, while their acceptance may still be on its way:
+        // without a mailbox it only arrives once both devices meet again.
+        let requests = match node.outgoing_contact_requests().await {
+            Ok(requests) => requests,
             Err(err) => {
-                log::error!("Failed to load accepted contacts: {err:?}");
+                log::error!("Failed to load our outgoing contact requests: {err:?}");
                 return None;
             }
         };
-        if !sender_agent_id.is_some_and(|agent_id| accepted.contains(&agent_id)) {
-            return None;
-        }
-    } else if !is_member_of(node, topic).await {
+        let request = requests
+            .into_iter()
+            .find(|request| request.device_pubkey == sender_device_id)?;
+        qr_code_name = Some(request.profile_name).filter(|name| !name.is_empty());
+    } else if !is_direct_chat && !is_member_of(node, topic).await {
         return None;
     }
 
@@ -261,7 +268,10 @@ async fn chat_message_notification(
         None
     };
 
-    let sender_name = sender_profile.as_ref().map(|p| p.name.clone());
+    let sender_name = sender_profile
+        .as_ref()
+        .map(|p| p.name.clone())
+        .or(qr_code_name);
     let sender_avatar = sender_profile
         .and_then(|p| p.avatar)
         .filter(|s| s.starts_with("data:image/"));
@@ -337,6 +347,19 @@ async fn chat_message_notification(
     }
 
     Some(data)
+}
+
+async fn is_accepted_contact(node: &Node, agent_id: Option<AgentId>) -> bool {
+    let Some(agent_id) = agent_id else {
+        return false;
+    };
+    match node.accepted_contact_agent_ids().await {
+        Ok(accepted) => accepted.contains(&agent_id),
+        Err(err) => {
+            log::error!("Failed to load accepted contacts: {err:?}");
+            false
+        }
+    }
 }
 
 /// Whether we are still in the group `topic` names. Leaving one does not stop
