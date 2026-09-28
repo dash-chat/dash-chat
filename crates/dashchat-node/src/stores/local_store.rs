@@ -292,27 +292,24 @@ impl LocalStore {
         inbox_topic: InboxTopic,
         expected_ack_author: DeviceId,
     ) -> anyhow::Result<()> {
-        let nanos = inbox_topic
-            .expires_at
-            .timestamp_nanos_opt()
-            .unwrap_or(0)
-            .max(0);
-        sqlx::query(
-            "INSERT OR REPLACE INTO active_inboxes (topic_id, expires_at_nanos, role, expected_ack_author) VALUES (?, ?, ?, ?)",
-        )
-        .bind(inbox_topic.topic.to_vec())
-        .bind(nanos)
-        .bind(InboxRole::Reply)
-        .bind(expected_ack_author)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        self.add_inbox_topic_with_author(inbox_topic, InboxRole::Reply, expected_ack_author)
+            .await
     }
 
     pub async fn add_requested_inbox_topic(
         &self,
         inbox_topic: InboxTopic,
         inbox_owner: DeviceId,
+    ) -> anyhow::Result<()> {
+        self.add_inbox_topic_with_author(inbox_topic, InboxRole::Requested, inbox_owner)
+            .await
+    }
+
+    async fn add_inbox_topic_with_author(
+        &self,
+        inbox_topic: InboxTopic,
+        role: InboxRole,
+        author: DeviceId,
     ) -> anyhow::Result<()> {
         let nanos = inbox_topic
             .expires_at
@@ -324,8 +321,8 @@ impl LocalStore {
         )
         .bind(inbox_topic.topic.to_vec())
         .bind(nanos)
-        .bind(InboxRole::Requested)
-        .bind(inbox_owner)
+        .bind(role)
+        .bind(author)
         .execute(&self.pool)
         .await?;
         Ok(())
