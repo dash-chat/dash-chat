@@ -168,3 +168,49 @@ async fn test_expired_unsynced_request_can_be_sent_again() {
         .await
         .unwrap();
 }
+
+/// Scanning the code of someone who is already a contact must not send them
+/// another contact request.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_rescanning_an_accepted_contact_sends_no_request() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing().random_network_id();
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config, "bobbi").await;
+    let bobbi_device_id = bobbi.device_id();
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    PollConfig::default()
+        .wait_for(|| async {
+            match alice.lookup_contact(bobbi_device_id).await.unwrap() {
+                Some(_) => Ok(()),
+                None => Err("alice hasn't received bobbi's request yet"),
+            }
+        })
+        .await
+        .unwrap();
+    alice.accept_contact(bobbi.agent_id()).await.unwrap();
+    PollConfig::seconds(20)
+        .wait_for(|| async {
+            match bobbi
+                .get_contacts()
+                .await
+                .unwrap()
+                .contains(&alice.agent_id())
+            {
+                true => Ok(()),
+                false => Err("bobbi never became alice's contact"),
+            }
+        })
+        .await
+        .unwrap();
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    assert!(matches!(
+        bobbi.add_contact(qr).await.unwrap(),
+        AddContactResult::AlreadyRequested(_)
+    ));
+}
