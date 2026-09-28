@@ -17,6 +17,7 @@
 	const theme = $derived(useTheme());
 
 	let getStartedVisible = $state(true);
+	let bottomOverlayHeight = $state(0);
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 
@@ -62,11 +63,17 @@
 
 	<div class={theme === 'ios' ? 'mt-4' : ''}></div>
 
-	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
+	<div
+		class="flex min-h-[70vh] flex-col"
+		style="padding-block-end: {bottomOverlayHeight}px"
+	>
+		<AllChats class="flex flex-1 flex-col"></AllChats>
+	</div>
 
 	{#if !isWideScreen.value}
 		<div
 			class="flex flex-col fixed bottom-4 inset-x-0 z-10 pb-safe pointer-events-none"
+			bind:clientHeight={bottomOverlayHeight}
 		>
 			{#if theme == 'material'}
 				{#await $chatSummaries then chats}
