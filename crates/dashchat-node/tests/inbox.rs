@@ -77,3 +77,33 @@ async fn test_p2p_inbox_2() {
         .await
         .unwrap();
 }
+
+/// Bobbi scans Alice's code while they can't reach each other and restarts
+/// before they ever sync. When they meet again Alice must still get the
+/// request, or she never learns Bobbi exists.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_p2p_request_survives_requester_restart() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing().random_network_id();
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config.clone(), "bobbi").await;
+    let bobbi_device_id = bobbi.device_id();
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    let bobbi_dir = bobbi.shutdown().await;
+    let bobbi = TestNode::new_at_path(config, "bobbi", bobbi_dir).await;
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    PollConfig::seconds(20)
+        .wait_for(|| async {
+            match alice.lookup_contact(bobbi_device_id).await.unwrap() {
+                Some(_) => Ok(()),
+                None => Err("alice never received bobbi's contact request"),
+            }
+        })
+        .await
+        .unwrap();
+}
