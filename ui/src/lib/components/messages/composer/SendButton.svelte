@@ -9,12 +9,14 @@
 		onSend: () => Promise<boolean>;
 		/** Show a checkmark (save edit) instead of the send arrow. */
 		editing?: boolean;
+		disabled?: boolean;
 		testid?: string;
 	}
 
 	let {
 		onSend,
 		editing = false,
+		disabled = false,
 		testid = 'message-input-send',
 	}: Props = $props();
 
@@ -39,9 +41,10 @@
 	'ios'
 		? 'h-[42px] w-[42px]'
 		: 'h-10 w-10'}"
+	class:opacity-50={disabled}
 	data-testid={testid}
 	onclick={handleClick}
-	disabled={loading}
+	disabled={loading || disabled}
 	aria-label={editing ? m.save() : m.send()}
 >
 	{#if loading}
@@ -73,7 +76,7 @@
 		cursor: default;
 	}
 
-	.send-button:hover {
+	.send-button:not(:disabled):hover {
 		filter: brightness(1.1);
 	}
 
