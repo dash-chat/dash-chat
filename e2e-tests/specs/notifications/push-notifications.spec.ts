@@ -32,6 +32,8 @@ describe('Push notifications (real device, end-to-end)', () => {
 	let sender: Agent;
 	let notifications: NotificationHelper;
 	let receiverLink: string;
+	// In the receiver's language: its notifications are what gets read.
+	let newContactRequest: string;
 
 	before(async function () {
 		if (!pushTestingEnabled()) this.skip();
@@ -55,6 +57,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 	it('creates profiles; the receiver shares its contact link', async () => {
 		await receiver.createProfilePage.createProfile('Rex', 'Test');
 		await sender.createProfilePage.createProfile('Sam', 'Test');
+		newContactRequest = await receiver.tr('newContactRequest');
 
 		await navigateToAddContact(receiver);
 		receiverLink = await receiver.addContactPage.getAddContactLink();
@@ -71,8 +74,10 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await sender.addContactPage.enterAddContactLink(receiverLink);
 		await sender.directChatPage.ready();
 
-		const text = await notifications.waitForAppNotification();
-		expect(text).toContain('Sam');
+		await expect(notifications).toHaveDelivered({
+			title: newContactRequest,
+			body: 'Sam',
+		});
 
 		// A requester can write into the direct chat before the receiver accepts
 		// them, and until it does nothing of theirs may reach the shade. The
@@ -82,13 +87,11 @@ describe('Push notifications (real device, end-to-end)', () => {
 		const preAcceptMessage = `hi PUSH_PREACCEPT_${Date.now()}`;
 		await sender.directChatPage.composer.sendMessage(preAcceptMessage);
 		await receiver.pause(15_000);
-		expect(await notifications.waitForAppNotification()).not.toContain(
-			preAcceptMessage,
-		);
+		await expect(notifications).not.toHaveDelivered({ body: preAcceptMessage });
 
 		// Tap by the title: OEM shades (MIUI) render only the title while the
 		// notification is collapsed, so the body text is not a tappable anchor.
-		await notifications.tapNotification('New contact request');
+		await notifications.tapNotification(newContactRequest);
 		await notifications.returnToApp();
 		await receiver.directChatPage.ready();
 		await expect(receiver.directChatPage.peerName).toHaveText(
@@ -115,13 +118,15 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await sender.addContactPage.enterAddContactLink(receiverLink);
 		await sender.directChatPage.ready();
 
-		const text = await notifications.waitForAppNotification();
-		expect(text).toContain('Zoe');
+		await expect(notifications).toHaveDelivered({
+			title: newContactRequest,
+			body: 'Zoe',
+		});
 
 		// The receiver was backgrounded while sitting on Sam's chat — staying
 		// there instead of switching to Zoe's chat is the regression this
 		// assertion guards against.
-		await notifications.tapNotification('New contact request');
+		await notifications.tapNotification(newContactRequest);
 		await notifications.returnToApp();
 		await receiver.directChatPage.ready();
 		await expect(receiver.directChatPage.peerName).toHaveText(
@@ -141,8 +146,10 @@ describe('Push notifications (real device, end-to-end)', () => {
 
 		await sender.directChatPage.composer.sendMessage(message);
 
-		const text = await notifications.waitForAppNotification();
-		expect(text).toContain(marker);
+		await expect(notifications).toHaveDelivered({
+			title: 'Zoe',
+			body: message,
+		});
 
 		await notifications.tapNotification('Zoe');
 		await notifications.returnToApp();
@@ -166,8 +173,10 @@ describe('Push notifications (real device, end-to-end)', () => {
 
 		await sender.directChatPage.composer.sendMessage(message);
 
-		const text = await notifications.waitForAppNotification();
-		expect(text).toContain(marker);
+		await expect(notifications).toHaveDelivered({
+			title: 'Zoe',
+			body: message,
+		});
 
 		await notifications.tapNotification('Zoe');
 		await notifications.returnToApp();
@@ -193,7 +202,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await receiver.stopApp();
 
 		await sender.directChatPage.composer.sendMessage(shadeMessage);
-		await notifications.waitForNotification(shadeMarker);
+		await expect(notifications).toHaveDelivered({ body: shadeMessage });
 
 		// A contact request from a fresh identity must reach the killed app as
 		// a push: the inbox topic has to be FCM-subscribed like any chat topic,
@@ -206,8 +215,11 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await sender.addContactPage.enterAddContactLink(receiverLink);
 		await sender.directChatPage.ready();
 
-		await notifications.waitForNotification('Ben');
-		await notifications.tapNotification('New contact request');
+		await expect(notifications).toHaveDelivered({
+			title: newContactRequest,
+			body: 'Ben',
+		});
+		await notifications.tapNotification(newContactRequest);
 		await notifications.returnToApp();
 		await receiver.directChatPage.ready();
 		await expect(receiver.directChatPage.peerName).toHaveText(
@@ -220,7 +232,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 		// route in the launch intent — the state where the launch route can
 		// shadow the tapped notification's route. Zoe's parked notification
 		// must still switch to her chat.
-		await notifications.waitForNotification(shadeMarker);
+		await expect(notifications).toHaveDelivered({ body: shadeMessage });
 		await notifications.tapNotification('Zoe');
 		await notifications.returnToApp();
 		await receiver.directChatPage.ready();

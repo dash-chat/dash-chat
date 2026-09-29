@@ -99,64 +99,22 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 		return udid as string;
 	}
 
-	private notificationTexts(): string[] {
-		return this.notifications().flatMap(n => n.texts);
-	}
-
 	private notifications(): DeliveredNotification[] {
 		return dashChatNotifications(
 			adbShell(this.udid(), 'dumpsys notification --noredact'),
 		);
 	}
 
-	delivered(): Promise<DeliveredNotification[]> {
-		return Promise.resolve(this.notifications());
+	/** Reads the notification service, which disturbs nothing on screen. */
+	protected withNotificationUi<T>(
+		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
+	): Promise<T> {
+		return fn(() => Promise.resolve(this.notifications()));
 	}
 
 	/** A back-key press closes the shade (and is harmless when it is closed). */
 	protected async dismissNotificationUi(): Promise<void> {
 		await this.agent.back();
-	}
-
-	waitForNotification(textIncludes: string, timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.agent.openNotifications();
-			let texts: string[] = [];
-			await this.agent.waitUntil(
-				() => {
-					texts = this.notificationTexts();
-					return texts.some(t => t.includes(textIncludes));
-				},
-				{
-					timeout,
-					timeoutMsg: `No notification containing "${textIncludes}" arrived within ${timeout}ms`,
-				},
-			);
-			return texts.join('\n');
-		});
-	}
-
-	waitForAppNotification(timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.agent.openNotifications();
-			// Wait on the notification service, not on shade elements: MIUI
-			// renders MessagingStyle notifications without any element matching
-			// the app name, so a shade-based wait never fires for chat messages.
-			let texts: string[] = [];
-			await this.agent.waitUntil(
-				() => {
-					texts = this.notificationTexts();
-					return texts.length > 0;
-				},
-				{
-					timeout,
-					timeoutMsg: `No ${APP_NAME} notification arrived within ${timeout}ms`,
-				},
-			);
-			return texts.join('\n');
-		});
 	}
 
 	/** Bring the entry containing `textIncludes` into the shade's view tree.

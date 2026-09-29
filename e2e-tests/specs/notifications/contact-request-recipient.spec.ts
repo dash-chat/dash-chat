@@ -76,11 +76,9 @@ describe('Contact requests reach only the device they were sent to', () => {
 		// Grace wrote to Bob's inbox before Rex's, and Rex syncs both, so once
 		// the request addressed to Rex is on the shade the other one has had
 		// its chance.
-		await notifications.waitForNotification('Grace');
-
-		const delivered = await notifications.delivered();
-		expect(delivered.map(n => n.texts.join(' | '))).toEqual([
-			expect.stringContaining('Grace'),
-		]);
+		const shown = await notifications.waitForDelivered(all =>
+			all.some(n => n.body === 'Grace'),
+		);
+		expect(shown.map(n => n.body)).toEqual(['Grace']);
 	});
 });

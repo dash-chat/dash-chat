@@ -35,24 +35,13 @@ describe('Cold start after a push backlog', () => {
 		await rex.pause(5_000);
 		await rex.stopApp();
 
-		// Sent with Notification Center open: the pushes then land in its list
-		// instead of as banners, which a backlog this long keeps on screen long
-		// enough to block pulling Notification Center down afterwards.
 		const marker = `BACKLOG_${Date.now()}`;
-		await notifications.readingDelivered(async read => {
-			for (let i = 1; i < BACKLOG; i++) {
-				await sam.directChatPage.composer.sendMessage(`backlog ${i}`);
-			}
-			await sam.directChatPage.composer.sendMessage(`last ${marker}`);
-			await rex.waitUntil(
-				async () =>
-					(await read()).some(n => n.texts.some(t => t.includes(marker))),
-				{
-					timeout: 60_000,
-					timeoutMsg: `No notification containing "${marker}" arrived`,
-				},
-			);
-		});
+		const last = `last ${marker}`;
+		for (let i = 1; i < BACKLOG; i++) {
+			await sam.directChatPage.composer.sendMessage(`backlog ${i}`);
+		}
+		await sam.directChatPage.composer.sendMessage(last);
+		await expect(notifications).toHaveDelivered({ body: last });
 
 		await rex.startApp();
 		await rex.homePage.ready();

@@ -6,10 +6,11 @@
  * `expectNotifications` asserts every device whose notifications a run reads;
  * `expectHubs` and `expectCloud` assert the connection chip.
  */
-import type {
-	DeliveredNotification,
-	NotificationContent,
-} from '../components/notifications/notification-helper';
+import {
+	type DeliveredNotification,
+	type NotificationContent,
+	describeContent,
+} from '../components/notifications/content';
 import type { ChatRow } from '../pages/home-page';
 import { MAILBOX_HEALED_MS } from '../timeouts';
 import {
@@ -26,7 +27,6 @@ import {
 	type ExpectedChat,
 	type ExpectedModel,
 	type NotificationView,
-	describeContent,
 } from './model';
 import { expectView, syncTimeoutFor } from './view';
 
@@ -47,12 +47,6 @@ export const DEPARTURE_MS = 9_000;
  *  working would still meet [`DEPARTURE_MS`] on the lapse alone, so only this
  *  budget can tell the two apart. */
 export const GOODBYE_MS = 3_000;
-
-/** What a notification gets to travel before it has to be on the device:
- *  the op reaches the mailbox, which tells the push server, which goes
- *  through FCM to the device — or, for an app still on the network, the
- *  sync path. */
-const NOTIFICATION_TIMEOUT = 60_000;
 
 /** Check every device whose notifications the run reads against the model:
  *  one notification per chat with messages its app was not on screen for,
@@ -76,33 +70,25 @@ async function expectShade(m: ExpectedModel, sa: StressAgent): Promise<void> {
 	const helper = notificationsOf(sa);
 	const expected = m.expectedNotifications(sa.name);
 	const generic = sa.notificationTexts?.generic ?? null;
-	let missing: NotificationView[] = [];
-	let extra: DeliveredNotification[] = [];
-	let delivered: DeliveredNotification[] = [];
+	const matched = (shown: DeliveredNotification[]) =>
+		matchNotifications(expected, besidesGeneric(shown, generic));
+	let delivered: DeliveredNotification[];
 	try {
-		await helper.readingDelivered(read =>
-			sa.agent.waitUntil(
-				async () => {
-					delivered = await read();
-					({ missing, extra } = matchNotifications(
-						expected,
-						besidesGeneric(delivered, generic),
-					));
-					return missing.length === 0 && extra.length === 0;
-				},
-				{ timeout: NOTIFICATION_TIMEOUT },
-			),
-		);
+		delivered = await helper.waitForDelivered(shown => {
+			const { missing, extra } = matched(shown);
+			return missing.length === 0 && extra.length === 0;
+		});
 	} catch (err) {
-		const problems = [
-			...missing.map(n => `never showed "${describeExpected(n)}"`),
-			...extra.map(d => `shows "${describeContent(d)}", which it cannot know`),
-		];
-		if (problems.length === 0) {
-			throw new Error(
-				`${sa.name}'s notifications could not be read: ${String(err)}`,
-			);
-		}
+		throw new Error(
+			`${sa.name}'s notifications could not be read: ${String(err)}`,
+		);
+	}
+	const { missing, extra } = matched(delivered);
+	const problems = [
+		...missing.map(n => `never showed "${describeExpected(n)}"`),
+		...extra.map(d => `shows "${describeContent(d)}", which it cannot know`),
+	];
+	if (problems.length > 0) {
 		// Everything the device holds, generic ones included: matching drops
 		// those, so without them a shade that showed the wrong thing and one
 		// that showed nothing read identically here.

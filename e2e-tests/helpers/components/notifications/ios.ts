@@ -31,11 +31,9 @@ const OPEN_TIMEOUT = 10_000;
  * the top of the screen, which takes a pull from the top edge for itself. */
 const BANNER = 'name == "NotificationShortLookView"';
 
-/** What a banner gets to leave on its own: about 8s, measured. */
-const BANNER_TIMEOUT = 15_000;
-
-/** Pulls to try before giving up: another banner can land just as one left. */
-const PULL_ATTEMPTS = 3;
+/** What the banners get to stop in: a backlog of pushes keeps them coming for
+ * as long as it takes to arrive, and another can land just as one left. */
+const BANNERS_TIMEOUT = 5 * 60_000;
 
 /** Parse a cell's label. Only the first separators are structural: a body of
  * its own may contain commas, so it is whatever follows them. */
@@ -75,13 +73,14 @@ export class IosNotifications extends AppiumNotificationHelper {
 	private async openNotificationCenter(): Promise<void> {
 		const { width, height } = await this.agent.getWindowSize();
 		const x = Math.round(width / 2);
-		for (let attempt = 0; attempt < PULL_ATTEMPTS; attempt++) {
+		const deadline = Date.now() + BANNERS_TIMEOUT;
+		while (Date.now() < deadline) {
 			if (await this.agent.isLocked()) return;
 			// Outside Notification Center, every short-look view is a banner.
 			await this.agent.$(`-ios predicate string:${BANNER}`).waitForExist({
 				reverse: true,
-				timeout: BANNER_TIMEOUT,
-				timeoutMsg: 'A notification banner never left the top of the screen',
+				timeout: Math.max(deadline - Date.now(), 1),
+				timeoutMsg: 'Notification banners never stopped showing',
 			});
 			await this.swipe(x, 2, x, Math.round(height * 0.7));
 			const opened = await this.agent
@@ -160,7 +159,7 @@ export class IosNotifications extends AppiumNotificationHelper {
 	}
 
 	/** The cells Notification Center is showing. Expects it open and the
-	 * driver in the native context, which [`readingDelivered`] arranges. */
+	 * driver in the native context, which [`withNotificationUi`] arranges. */
 	private async readCells(): Promise<DeliveredNotification[]> {
 		const labels = await this.cellLabels();
 		return labels
@@ -208,7 +207,7 @@ export class IosNotifications extends AppiumNotificationHelper {
 	 * with it one clearing of the route the app resumes onto, rather than one
 	 * per read. An app that was not on screen is left off it: resuming it
 	 * would undo the very state the read is there to check. */
-	readingDelivered<T>(
+	protected withNotificationUi<T>(
 		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
 	): Promise<T> {
 		return this.restoringWebviewOnFailure(async () => {
@@ -222,42 +221,11 @@ export class IosNotifications extends AppiumNotificationHelper {
 		});
 	}
 
-	delivered(): Promise<DeliveredNotification[]> {
-		return this.readingDelivered(read => read());
-	}
-
 	/** Through the app itself: Notification Center on the lock screen has no
 	 * clear-all, only a swipe per notification. */
 	async clear(): Promise<void> {
 		await this.restoreWebview();
 		await this.agent.execute(() => window.__test.clearNotifications());
-	}
-
-	waitForNotification(textIncludes: string, timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.openNotificationCenter();
-			const cell = await this.waitForCell(
-				textIncludes,
-				timeout,
-				`No notification containing "${textIncludes}" arrived within ${timeout}ms`,
-			);
-			return (await cell.getAttribute('label')) ?? '';
-		});
-	}
-
-	waitForAppNotification(timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.openNotificationCenter();
-			await this.agent.$(`-ios predicate string:${OUR_CELLS}`).waitForExist({
-				timeout,
-				timeoutMsg: `No notification of ours arrived within ${timeout}ms`,
-			});
-			// Every one, not just the newest: a caller asserting on content sees
-			// what else was there when its assertion fails.
-			return (await this.cellLabels()).join('\n');
-		});
 	}
 
 	tapNotification(textIncludes: string): Promise<void> {

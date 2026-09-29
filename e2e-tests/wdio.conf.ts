@@ -14,6 +14,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { notificationMatchers } from './helpers/components/notifications/matchers';
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
 import { claimAllWhenFreeSync, release } from './setup/claims';
 import {
@@ -299,6 +300,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	 * assertion that genuinely needs longer opts in with `{ wait: UI_TIMEOUT }`. */
 	before() {
 		setOptions({ wait: RENDER_SETTLE_WINDOW });
+		expect.extend(notificationMatchers);
 	},
 
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes
