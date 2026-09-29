@@ -391,7 +391,7 @@
 		use:renderAboveKeyboard
 	>
 		{#if !editing && !isMobile}
-			<StagedAttachments bind:media onFiles={stage} />
+			<StagedAttachments bind:media {addingMore} onAddMore={addMore} />
 		{/if}
 
 		<div class="m-2 relative">
@@ -453,12 +453,12 @@
 							class:ios-send-hidden={!drafting}
 							aria-hidden={!drafting}
 						>
-							<SendButton onSend={send} />
+							<SendButton onSend={send} disabled={addingMore} />
 						</div>
 					{:else}
 						<div class="toggle-slot shrink-0">
 							<div class="toggle-child" class:toggle-hidden={!drafting}>
-								<SendButton onSend={send} />
+								<SendButton onSend={send} disabled={addingMore} />
 							</div>
 							<div class="toggle-child" class:toggle-hidden={drafting}>
 								<StandaloneAttachButton
@@ -498,7 +498,7 @@
 		bind:media
 		bind:value
 		{destinationName}
-		sendDisabled={addingMore}
+		{addingMore}
 		onSend={async () => {
 			const keepFocus = document.activeElement instanceof HTMLTextAreaElement;
 			const sent = await send();
