@@ -51,10 +51,22 @@ export async function readNotificationTexts(
 	sa: StressAgent,
 ): Promise<NotificationTexts | null> {
 	if (sa.notifications === null) return null;
-	const [generic, unnamedSender, voice] = await Promise.all([
+	const [
+		generic,
+		unnamedSender,
+		voice,
+		newContactRequest,
+		newGroup,
+		addedYouTemplate,
+		addedToAGroup,
+	] = await Promise.all([
 		sa.agent.tr('youHaveANewMessage'),
 		sa.agent.tr('newMessage'),
 		sa.agent.tr('voiceMessage'),
+		sa.agent.tr('newContactRequest'),
+		sa.agent.tr('newGroup'),
+		sa.agent.tr('someoneAddedYouToTheGroup', { name: NAME_SLOT }),
+		sa.agent.tr('someoneAddedYouToTheGroupNoName'),
 	]);
 	const photos: Record<number, string> = {};
 	for (const count of PHOTO_COUNTS) {
@@ -63,8 +75,21 @@ export async function readNotificationTexts(
 				? await sa.agent.tr('photo')
 				: await sa.agent.tr('photosCount', { count });
 	}
-	return { generic, unnamedSender, photos, voice };
+	return {
+		generic,
+		unnamedSender,
+		photos,
+		voice,
+		newContactRequest,
+		newGroup,
+		addedYouToTheGroup: name => addedYouTemplate.replace(NAME_SLOT, () => name),
+		addedToAGroup,
+	};
 }
+
+/** Stands in for a name while a message is read once, to be filled in with
+ *  each real one later. */
+const NAME_SLOT = '\u0000name\u0000';
 
 /** A hub identity: its db, key and port survive its process, so bringing it
  * up on another network is the same hub moving, as a deployed one would. */
