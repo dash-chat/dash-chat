@@ -45,7 +45,7 @@ function parseCell(label: string): DeliveredNotification | null {
 	if (parts.length < 3) return null;
 	const title = parts[2];
 	const body = parts.slice(3).join(', ');
-	return { title, texts: body === '' ? [title] : [title, body] };
+	return { title, body, texts: body === '' ? [title] : [title, body] };
 }
 
 /** Appium's app state for an app that owns the screen. */
