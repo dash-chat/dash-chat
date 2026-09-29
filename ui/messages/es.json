@@ -390,5 +390,6 @@
     "errorReceivedUnrecognizedLink": "Se recibió un enlace no reconocido: {{url}}",
     "fileDownloadFailed": "No se pudo descargar el archivo.",
     "messageStatusUnsent": "Enviar",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "notificationsPermissionDenied": "Las notificaciones necesitan permiso para ser mostradas. Puede permitirlos en la configuración de su dispositivo."
 }
