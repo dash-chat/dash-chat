@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
-use dashchat_node::{AsBody, Payload, TopicId};
+use dashchat_node::{AsBody, ChatId, ChatPayload, DeviceId, Node, Payload, TopicId};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
 use p2panda::operation::LogId;
+use p2panda_core::Hash;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
@@ -304,20 +305,24 @@ async fn handle_push_notification(
         None => None,
     };
 
-    let Some(data) = notifications::build_notification_data(
+    let pushed = notifications::build_notification_data(
         &node,
         topic_id,
         &operation.header,
         payload.as_ref(),
     )
-    .await
-    else {
-        return Ok(None);
+    .await;
+    let (data, notified) = match (pushed, payload.as_ref()) {
+        (Some(data), _) => (data, operation.header.hash()),
+        (None, Some(Payload::Chat(ChatPayload::JoinGroup { chat_id }))) => {
+            match invitation_notification(&node, device_id, *chat_id, deadline).await {
+                Some(found) => found,
+                None => return Ok(None),
+            }
+        }
+        (None, _) => return Ok(None),
     };
-    log::info!(
-        "Notifying about a pushed operation {}",
-        operation.header.hash()
-    );
+    log::info!("Notifying about a pushed operation {notified}");
 
     let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
         &filesystem.notified_operations_db_path(),
@@ -325,7 +330,7 @@ async fn handle_push_notification(
     .await
     .context("failed to open notified operations store")?;
     match notified_operations_store
-        .record_notified_operation(operation.header.hash())
+        .record_notified_operation(notified)
         .await
     {
         Ok(false) => {
@@ -339,4 +344,67 @@ async fn handle_push_notification(
     }
 
     Ok(Some(data))
+}
+
+/// Being added to a group reaches us as a JoinGroup in the direct chat with
+/// whoever added us: of the two topics, that is the only one we are subscribed
+/// to. The announcement is built from their operation on the group's own
+/// topic, which the node fetches once it has taken the JoinGroup in. Returns
+/// it with the hash of that operation, so the app does not announce it again
+/// when it syncs it later.
+async fn invitation_notification(
+    node: &Node,
+    inviter: DeviceId,
+    chat_id: ChatId,
+    deadline: tokio::time::Instant,
+) -> Option<(NotificationData, Hash)> {
+    while tokio::time::Instant::now() < deadline {
+        if let Some(found) = added_us_notification(node, inviter, chat_id).await {
+            return Some(found);
+        }
+        tokio::time::sleep(OP_POLL_INTERVAL).await;
+    }
+    log::warn!(
+        "The operation adding us to {} did not arrive in time; announcing nothing",
+        chat_id.to_hex()
+    );
+    None
+}
+
+/// The announcement of `inviter`'s operation on `chat_id` that adds us, once
+/// the node holds it.
+async fn added_us_notification(
+    node: &Node,
+    inviter: DeviceId,
+    chat_id: ChatId,
+) -> Option<(NotificationData, Hash)> {
+    let log = match node
+        .op_store
+        .get_log(&inviter, &LogId::from_topic(*chat_id), None)
+        .await
+    {
+        Ok(log) => log,
+        Err(err) => {
+            log::error!("Failed to read the log of {}: {err:?}", chat_id.to_hex());
+            return None;
+        }
+    };
+    for operation in &log {
+        let payload = match operation.body.as_ref().map(Payload::try_from_body) {
+            None => None,
+            Some(Ok(payload @ Payload::GroupControl(_))) => Some(payload),
+            Some(_) => continue,
+        };
+        let data = notifications::build_notification_data(
+            node,
+            *chat_id,
+            &operation.header,
+            payload.as_ref(),
+        )
+        .await;
+        if let Some(data) = data {
+            return Some((data, operation.header.hash()));
+        }
+    }
+    None
 }
