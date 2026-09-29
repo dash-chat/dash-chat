@@ -25,6 +25,8 @@ mod report;
 mod reports_table;
 mod server_key;
 mod store_blips;
+#[cfg(feature = "testing_routes")]
+mod testing;
 mod watermark;
 mod watermarks_table;
 
@@ -104,9 +106,14 @@ pub fn parse_network_id(hex: &str) -> Result<NetworkId, hex::FromHexError> {
     hex::FromHex::from_hex(hex)
 }
 
-/// Run the mailbox server on `listener` until `signal` resolves. `relay_url`
-/// and `network_id` configure the standalone [`BlobSync`] built when
-/// `blob_sync` is `None`.
+/// Run the mailbox server until `signal` resolves. `relay_url`, `network_id`
+/// and `blob_throttle` configure the standalone [`BlobSync`] built when
+/// `blob_sync` is `None`: its provider serves blob bytes no faster than
+/// `blob_throttle` bytes per second, and is built to be throttled at all only
+/// when one is given, or in a `testing_routes` build, whose
+/// `/testing/blob-throttle` route sets it at runtime. A caller that passes its
+/// own `blob_sync` owns that provider's throttling, so `blob_throttle` has
+/// nothing to configure and is ignored.
 ///
 /// Takes the socket already bound, so whoever reserved the port holds it until
 /// this takes over and a failure to bind is theirs to report.
@@ -117,6 +124,7 @@ pub async fn spawn_server(
     blob_sync: Option<BlobSync>,
     relay_url: Option<iroh::RelayUrl>,
     network_id: NetworkId,
+    blob_throttle: Option<u64>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db = init_db(db_path.clone())?;
@@ -127,12 +135,25 @@ pub async fn spawn_server(
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
     let blob_sync = match blob_sync {
-        Some(blob_sync) => blob_sync,
+        Some(blob_sync) => {
+            if blob_throttle.is_some() {
+                tracing::warn!(
+                    "Ignoring blob throttle: this server shares an in-process node's blob provider"
+                );
+            }
+            blob_sync
+        }
         None => {
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root, relay_url, network_id).await?
+            let throttle = (cfg!(feature = "testing_routes") || blob_throttle.is_some())
+                .then(|| blob_sync::BlobThrottle::new(blob_throttle));
+            if let Some(bytes_per_sec) = blob_throttle {
+                tracing::warn!("Blob provider throttled to {bytes_per_sec} bytes/s");
+            }
+            BlobSync::new_with_throttle(secret_key, blobs_root, relay_url, network_id, throttle)
+                .await?
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
@@ -221,7 +242,7 @@ pub fn create_app(
         blob_sync,
     };
 
-    Router::new()
+    let router = Router::new()
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
         .route(
@@ -231,7 +252,12 @@ pub fn create_app(
         .route("/blobs/upload", post(register_hashes::upload_blob))
         .route("/blips/get", post(get_blips_for_topics))
         .route("/peers/register", post(register_peer::register_peer))
-        .route("/report", post(report::report))
+        .route("/report", post(report::report));
+    // Unauthenticated and able to slow every blob this server serves, so
+    // only an e2e run's mailbox may have it.
+    #[cfg(feature = "testing_routes")]
+    let router = router.route("/testing/blob-throttle", post(testing::set_blob_throttle));
+    router
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))

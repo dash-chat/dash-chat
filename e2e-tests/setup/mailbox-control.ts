@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
 	MAILBOX_LINK,
+	MAILBOX_TESTING_FEATURE,
 	spawnMailboxServer,
 	waitForMailboxReady,
 } from './mailbox-server';
@@ -101,6 +102,33 @@ export function mailboxDegradable(): boolean {
 function link(): Link {
 	localInfo();
 	return new Link(MAILBOX_LINK);
+}
+
+/**
+ * Cap the bytes per second the mailbox serves blobs at, or lift the cap with
+ * `null`. Blobs travel over iroh's QUIC link rather than the mailbox's HTTP
+ * port, so the toxiproxy link cannot slow them; the mailbox throttles its own
+ * blob provider instead (its `/testing/blob-throttle` route, which only an
+ * e2e mailbox has, built with `MAILBOX_TESTING_FEATURE`).
+ */
+export async function setMailboxBlobThrottle(
+	bytesPerSec: number | null,
+): Promise<void> {
+	const { url } = localInfo();
+	const res = await fetch(`${url}/testing/blob-throttle`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ bytes_per_sec: bytesPerSec }),
+	});
+	if (res.status === 404) {
+		throw new Error(
+			`no /testing/blob-throttle route on the mailbox: it was built ` +
+				`without '--features ${MAILBOX_TESTING_FEATURE}'`,
+		);
+	}
+	if (!res.ok) {
+		throw new Error(`mailbox blob throttle request failed: ${res.status}`);
+	}
 }
 
 /** Every request still answers, about a second late. */

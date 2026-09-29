@@ -5,7 +5,7 @@ use redb::Database;
 use tempfile::NamedTempFile;
 use tokio::task::JoinSet;
 
-use crate::{create_app, BlobSync, BLIPS_TABLE, WATERMARKS_TABLE};
+use crate::{blob_sync::BlobThrottle, create_app, BlobSync, BLIPS_TABLE, WATERMARKS_TABLE};
 
 pub const LONG_AGO: Duration = Duration::from_hours(100 * 24); // 100 days
 
@@ -26,11 +26,12 @@ pub fn create_test_db() -> (Database, NamedTempFile) {
 pub async fn test_blob_sync() -> BlobSync {
     let dir = tempfile::tempdir().expect("tempdir");
     let key = iroh::SecretKey::generate();
-    let bs = BlobSync::new(
+    let bs = BlobSync::new_with_throttle(
         key,
         dir.path().to_path_buf(),
         None,
         *dashchat_utils::NETWORK_ID,
+        Some(BlobThrottle::default()),
     )
     .await
     .expect("blob sync");

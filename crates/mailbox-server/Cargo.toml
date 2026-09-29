@@ -38,7 +38,10 @@ iroh-blobs = "0.103.0"
 hex = "0.4"
 
 [features]
-test_utils = ["dep:axum-test", "dep:tempfile"]
+# The `/testing/*` routes an e2e run's mailbox exposes. Split from test_utils
+# so an e2e binary gets the routes without the test harness behind it.
+testing_routes = []
+test_utils = ["testing_routes", "dep:axum-test", "dep:tempfile"]
 
 [dependencies.axum-test]
 version = "18"

@@ -77,6 +77,7 @@ pub async fn spawn_standalone_mailbox() -> StandaloneMailbox {
             None,
             None,
             *dashchat_utils::NETWORK_ID,
+            None,
             signal,
         )
         .await
