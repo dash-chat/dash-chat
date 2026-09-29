@@ -74,6 +74,7 @@
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
 	let sending = false;
+	let picking = $state(false);
 
 	let showMediaPanel = $state(false);
 
@@ -169,7 +170,7 @@
 		// Guard against concurrent sends: the button shows a spinner, but the
 		// Enter-key path goes straight here, so hammering Enter during a slow
 		// send would otherwise fire multiple store.sendMessage calls.
-		if (!hasContent || sending) return false;
+		if (!hasContent || sending || picking) return false;
 		sending = true;
 		const message = value;
 		const draft = media;
@@ -240,12 +241,15 @@
 	}
 
 	async function addMore() {
+		picking = true;
 		try {
 			const files = await pickMedia('image', true);
 			if (files && files.length > 0) stage(files);
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to pick files', e);
+		} finally {
+			picking = false;
 		}
 	}
 
@@ -494,6 +498,7 @@
 		bind:media
 		bind:value
 		{destinationName}
+		sendDisabled={picking}
 		onSend={async () => {
 			const keepFocus = document.activeElement instanceof HTMLTextAreaElement;
 			const sent = await send();

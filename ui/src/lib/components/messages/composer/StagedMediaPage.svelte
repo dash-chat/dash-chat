@@ -24,6 +24,7 @@
 		value?: string;
 		/** Name of the chat the media will be sent to, shown in the header. */
 		destinationName?: string;
+		sendDisabled?: boolean;
 		onSend: () => Promise<boolean>;
 		onAddMore: () => void;
 		onClose: () => void;
@@ -33,6 +34,7 @@
 		media = $bindable(),
 		value = $bindable(''),
 		destinationName,
+		sendDisabled = false,
 		onSend,
 		onAddMore,
 		onClose,
@@ -145,7 +147,7 @@
 				{onSend}
 				before={isIos ? undefined : emojiButton}
 			/>
-			<SendButton {onSend} />
+			<SendButton {onSend} disabled={sendDisabled} />
 		</div>
 	</div>
 
