@@ -1,6 +1,7 @@
 [profile.release]
 opt-level = 3
-panic = "abort"
+# Why not "abort": see crates/panic-policy/src/lib.rs.
+panic = "unwind"
 lto = "fat"
 codegen-units = 1
 # inherits = "release"
@@ -24,6 +25,7 @@ tracing = "0.1"
 
 dashchat-compat = { path = "crates/dashchat-compat" }
 dashchat-utils = { path = "crates/dashchat-utils" }
+panic-policy = { path = "crates/panic-policy" }
 network-watch = { path = "crates/network-watch" }
 mailbox-client = { path = "crates/mailbox-client" }
 opus-transcode = { path = "crates/opus-transcode" }

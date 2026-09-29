@@ -37,6 +37,7 @@ pub(crate) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    panic_policy::install_panic_hook();
     crate::utils::install_crypto_provider();
 
     filesystem::init_data_dir();

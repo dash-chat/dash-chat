@@ -45,6 +45,8 @@ pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
+    panic_policy::install_panic_hook();
+
     // iOS never sets `APP_HANDLE` because the NSE runs in a separate process.
     #[cfg(target_os = "android")]
     let main_app_alive = crate::APP_HANDLE.get().is_some();
@@ -70,8 +72,6 @@ pub fn receive_push_notification(
                     .level_filter(log::LevelFilter::Debug)
                     .init();
             }
-            // Now that the logger is initialized, route panics through it.
-            crate::utils::install_panic_hook();
         });
         crate::i18n::init_i18n();
     }

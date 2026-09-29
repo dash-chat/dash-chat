@@ -11,6 +11,7 @@ name = "mailbox-server"
 path = "src/main.rs"
 
 [dependencies]
+panic-policy = { workspace = true }
 axum = { version = "0.8", features = ["json"] }
 bytes = { workspace = true }
 futures = "0.3"

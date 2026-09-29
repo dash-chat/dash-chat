@@ -19,6 +19,7 @@ use jni::JavaVM;
 /// Called by the JVM when the native library is loaded.
 #[no_mangle]
 pub extern "C" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _reserved: *mut std::ffi::c_void) -> jint {
+    panic_policy::install_panic_hook();
     if let Err(err) = init_ndk_context(vm) {
         // Don't propagate: a panic here would abort library loading. iroh will
         // surface its own error later if the context is genuinely missing.

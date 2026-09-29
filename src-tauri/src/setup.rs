@@ -213,8 +213,6 @@ fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
         .targets(targets)
         .build();
 
-    crate::utils::install_panic_hook();
-
     let error_reporting_dir = fs.error_reporting_dir();
     if let Some(config) = crate::sentry::config(fs.logs_dir(), error_reporting_dir.clone()) {
         std::fs::create_dir_all(&error_reporting_dir)?;

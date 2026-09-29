@@ -40,3 +40,30 @@ jobs:
 
       - name: Test
         run: cargo nextest run
+
+  # The panic policy is a release-profile property that only a release-built
+  # binary on an Apple target can exercise; nextest builds debug on Linux.
+  panic-policy-release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # See ios-build.yaml: the homebrew shims would otherwise shadow rustup.
+      - name: Remove broken homebrew rust shims
+        run: rm -f /opt/homebrew/bin/cargo /opt/homebrew/bin/rustc /opt/homebrew/bin/rustup /opt/homebrew/bin/rustup-init
+
+      # An explicit toolchain makes the action skip rust-toolchain.toml, whose
+      # Android and iOS targets this host-only test never uses.
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.94.0
+          rustflags: ''
+
+      - name: Cache Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Test the release panic policy
+        run: cargo test --release -p panic-policy

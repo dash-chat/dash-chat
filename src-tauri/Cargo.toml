@@ -48,6 +48,7 @@ network-watch = { workspace = true }
 local-hub-discovery = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }
 dashchat-utils = { workspace = true }
+panic-policy = { workspace = true }
 opus-transcode = { workspace = true }
 
 p2panda = { workspace = true }

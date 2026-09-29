@@ -11,6 +11,7 @@ name = "mailbox-local-server"
 path = "src/main.rs"
 
 [dependencies]
+panic-policy = { workspace = true }
 dashchat-utils = { workspace = true }
 local-hub-discovery = { workspace = true }
 mailbox-server = { workspace = true }
