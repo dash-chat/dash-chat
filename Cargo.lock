@@ -5612,6 +5612,7 @@ dependencies = [
  "local-hub-discovery",
  "log",
  "mailbox-server",
+ "openssl-sys",
  "panic-policy",
  "tempfile",
  "tokio",
