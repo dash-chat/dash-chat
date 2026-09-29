@@ -1,24 +1,29 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiImage, mdiFile } from '@mdi/js';
-	import { type LoadFiles, pickMedia } from '$lib/utils/media';
 	import LabelledIconButton from '$lib/components/contacts/LabelledIconButton.svelte';
+	import type { RecentPhoto } from '$lib/utils/recent-photos';
 	import RecentPhotosStrip from './RecentPhotosStrip.svelte';
 
 	interface Props {
-		onPick: (load: LoadFiles) => Promise<void>;
+		loadingMedia: boolean;
+		onPickPhotos: () => void;
+		onPickFile: () => void;
+		onAddRecent: (photo: RecentPhoto) => Promise<void>;
 		onPickerOpen: () => void;
 	}
 
-	let { onPick, onPickerOpen }: Props = $props();
+	let {
+		loadingMedia,
+		onPickPhotos,
+		onPickFile,
+		onAddRecent,
+		onPickerOpen,
+	}: Props = $props();
 
-	async function pick(mode: 'image' | 'document', multiple: boolean) {
+	function pick(onPick: () => void) {
 		onPickerOpen();
-		try {
-			await onPick(() => pickMedia(mode, multiple));
-		} catch (e) {
-			console.error('Failed to pick files', e);
-		}
+		onPick();
 	}
 </script>
 
@@ -27,20 +32,22 @@
 	data-testid="message-input-media-panel"
 >
 	<div class="min-h-0 flex-1">
-		<RecentPhotosStrip {onPick} />
+		<RecentPhotosStrip {loadingMedia} onAdd={onAddRecent} />
 	</div>
 	<div class="flex gap-5 px-5 pt-1" style="justify-content: space-evenly">
 		<LabelledIconButton
 			label={m.gallery()}
 			icon={mdiImage}
 			testId="message-input-attach-photos"
-			onClick={() => pick('image', true)}
+			disabled={loadingMedia}
+			onClick={() => pick(onPickPhotos)}
 		/>
 		<LabelledIconButton
 			label={m.attachFile()}
 			icon={mdiFile}
 			testId="message-input-attach-file"
-			onClick={() => pick('document', false)}
+			disabled={loadingMedia}
+			onClick={() => pick(onPickFile)}
 		/>
 	</div>
 </div>

@@ -5,25 +5,20 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiImage, mdiFile } from '@mdi/js';
-	import { type LoadFiles, PHOTO_ACCEPT } from '$lib/utils/media';
-	import { pickFiles } from '$lib/utils/files';
 	import StandaloneAttachButton from './StandaloneAttachButton.svelte';
 
 	interface Props {
-		onPick: (load: LoadFiles) => Promise<void>;
+		onPickPhotos: () => void;
+		onPickFile: () => void;
 	}
 
-	let { onPick }: Props = $props();
+	let { onPickPhotos, onPickFile }: Props = $props();
 
 	let open = $state(false);
 
-	function pick(accept: string | undefined, multiple: boolean) {
-		onPick(() => pickFiles({ accept, multiple }));
-	}
-
 	function onSelect(event: CustomEvent<{ item: { value: string } }>) {
-		if (event.detail.item.value === 'photos') pick(PHOTO_ACCEPT, true);
-		else if (event.detail.item.value === 'file') pick(undefined, false);
+		if (event.detail.item.value === 'photos') onPickPhotos();
+		else if (event.detail.item.value === 'file') onPickFile();
 	}
 </script>
 

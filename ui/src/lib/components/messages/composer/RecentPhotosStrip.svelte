@@ -11,7 +11,6 @@
 	import { Button, Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
-	import type { LoadFiles } from '$lib/utils/media';
 	import { openAppSettings } from '@tauri-apps/plugin-barcode-scanner';
 	import { isIos, isAndroid } from '$lib/utils/environment';
 	import { objectUrl } from '$lib/actions/object-url';
@@ -23,16 +22,16 @@
 		cachedRecentPhotos,
 		getRecentPhotosPermission,
 		listRecentPhotos,
-		loadRecentPhotoFile,
 		recentPhotosSupported,
 		requestRecentPhotosPermission,
 	} from '$lib/utils/recent-photos';
 
 	interface Props {
-		onPick: (load: LoadFiles) => Promise<void>;
+		loadingMedia: boolean;
+		onAdd: (photo: RecentPhoto) => Promise<void>;
 	}
 
-	let { onPick }: Props = $props();
+	let { loadingMedia, onAdd }: Props = $props();
 
 	let permission = $state<RecentPhotosPermission | undefined>(undefined);
 	let photos = $state<RecentPhoto[]>([]);
@@ -115,10 +114,7 @@
 	async function add(photo: RecentPhoto) {
 		loadingId = photo.id;
 		try {
-			await onPick(async () => [await loadRecentPhotoFile(photo)]);
-		} catch (e) {
-			console.error('Failed to load photo', e);
-			showToast(m.errorAddingPhoto(), 'error');
+			await onAdd(photo);
 		} finally {
 			loadingId = undefined;
 		}
@@ -135,6 +131,7 @@
 				type="button"
 				class="recent-tile relative aspect-square h-full shrink-0 overflow-hidden"
 				data-testid="message-input-recent-photo-{i}"
+				disabled={loadingMedia}
 				onclick={() => add(photo)}
 			>
 				<img

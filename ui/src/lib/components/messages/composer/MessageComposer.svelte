@@ -9,7 +9,6 @@
 	import {
 		type DraftMedia,
 		type IngestError,
-		type LoadFiles,
 		capturePhoto,
 		draftToMedia,
 		ingestFiles,
@@ -32,6 +31,10 @@
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import BelowKeyboardSurface from '$lib/components/BelowKeyboardSurface.svelte';
 	import { showToast } from '$lib/utils/toasts';
+	import {
+		type RecentPhoto,
+		loadRecentPhotoFile,
+	} from '$lib/utils/recent-photos';
 	import EmojiPickerSheet from '$lib/components/messages/EmojiPickerSheet.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
@@ -171,7 +174,8 @@
 		// Guard against concurrent sends: the button shows a spinner, but the
 		// Enter-key path goes straight here, so hammering Enter during a slow
 		// send would otherwise fire multiple store.sendMessage calls.
-		if (!hasContent || sending || loadingMedia) return false;
+		if (!hasContent || sending) return false;
+		if (loadingMedia && media?.kind !== 'voice_note') return false;
 		sending = true;
 		const message = value;
 		const draft = media;
@@ -226,7 +230,9 @@
 		}
 	}
 
-	async function stageWhenLoaded(load: LoadFiles) {
+	async function stageWhenLoaded(
+		load: () => Promise<FileList | File[] | null>,
+	) {
 		if (loadingMedia) return;
 		loadingMedia = true;
 		try {
@@ -237,12 +243,34 @@
 		}
 	}
 
-	function stageFromPanel(load: LoadFiles) {
-		return stageWhenLoaded(async () => {
-			const files = await load();
-			showMediaPanel = false;
-			return files;
-		});
+	async function pickAndStage(mode: 'image' | 'document', multiple: boolean) {
+		try {
+			await stageWhenLoaded(() => pickMedia(mode, multiple));
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to pick files', e);
+		}
+	}
+
+	function pickPhotos() {
+		return pickAndStage('image', true);
+	}
+
+	function pickFile() {
+		return pickAndStage('document', false);
+	}
+
+	async function addRecentPhoto(photo: RecentPhoto) {
+		try {
+			await stageWhenLoaded(async () => {
+				const file = await loadRecentPhotoFile(photo);
+				showMediaPanel = false;
+				return [file];
+			});
+		} catch (e) {
+			console.error('Failed to load photo', e);
+			showToast(m.errorAddingPhoto(), 'error');
+		}
 	}
 
 	async function captureFromCamera() {
@@ -254,15 +282,6 @@
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to capture photo', e);
-		}
-	}
-
-	async function addMore() {
-		try {
-			await stageWhenLoaded(() => pickMedia('image', true));
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to pick files', e);
 		}
 	}
 
@@ -404,7 +423,7 @@
 		use:renderAboveKeyboard
 	>
 		{#if !editing && !isMobile}
-			<StagedAttachments bind:media {loadingMedia} onAddMore={addMore} />
+			<StagedAttachments bind:media {loadingMedia} onAddMore={pickPhotos} />
 		{/if}
 
 		<div class="m-2 relative">
@@ -490,7 +509,7 @@
 					>
 						<VoiceRecordButton {voice} />
 					</div>
-					<AttachMenuButton onPick={stageWhenLoaded} />
+					<AttachMenuButton onPickPhotos={pickPhotos} onPickFile={pickFile} />
 				{/if}
 			</div>
 		</div>
@@ -499,7 +518,10 @@
 	{#if isMobile}
 		<BelowKeyboardSurface open={showMediaPanel} class="bg-page-surface z-20">
 			<MediaPanel
-				onPick={stageFromPanel}
+				{loadingMedia}
+				onPickPhotos={pickPhotos}
+				onPickFile={pickFile}
+				onAddRecent={addRecentPhoto}
 				onPickerOpen={() => (showMediaPanel = false)}
 			/>
 		</BelowKeyboardSurface>
@@ -525,7 +547,7 @@
 			}
 			return sent;
 		}}
-		onAddMore={addMore}
+		onAddMore={pickPhotos}
 		onClose={() => history.back()}
 	/>
 {/if}
