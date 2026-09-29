@@ -59,4 +59,20 @@ describe('Group invite while the app is stopped', () => {
 		expect(shown.map(n => n.body)).toContain(body);
 		expect(titles).toContain(shown.find(n => n.body === body)?.title);
 	});
+
+	it('announces a message posted in that group while the app is still stopped', async () => {
+		const text = `after the invite ${Date.now()}`;
+		await sender.groupChatPage.composer.sendMessage(text);
+
+		const shown = await notifications.readingDelivered(read =>
+			receiver
+				.waitUntil(async () => {
+					const all = await read();
+					return all.some(n => n.body === text) ? all : false;
+				})
+				.catch(() => read()),
+		);
+		expect(shown.map(n => n.body)).toContain(text);
+		expect(shown.find(n => n.body === text)?.title).toBe('Sam');
+	});
 });
