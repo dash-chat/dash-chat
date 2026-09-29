@@ -75,4 +75,34 @@ describe('Group invite while the app is stopped', () => {
 		expect(shown.map(n => n.body)).toContain(text);
 		expect(shown.find(n => n.body === text)?.title).toBe('Sam');
 	});
+
+	it('announces being added back after being removed while the app is still stopped', async () => {
+		const body = await sender.tr('someoneAddedYouToTheGroup', { name: 'Sam' });
+
+		await sender.groupChatPage.infoLink.click();
+		await sender.groupInfoPage.ready();
+		await sender.groupInfoPage.memberItem('Rex').click();
+		await sender.groupInfoPage.removeMemberButton.click();
+		await sender.groupInfoPage.removeMemberConfirmButton.click();
+		await sender.groupInfoPage
+			.memberItem('Rex')
+			.waitForExist({ reverse: true });
+		await sender.groupInfoPage.addMembersLink.click();
+		await sender.addMembersPage.ready();
+		await sender.addMembersPage.addContactByName('Rex');
+		await sender.addMembersPage.addButton.click();
+
+		// The first add's announcement is still in the shade.
+		const invitesShown = (all: { body: string }[]) =>
+			all.filter(n => n.body === body).length;
+		const shown = await notifications.readingDelivered(read =>
+			receiver
+				.waitUntil(async () => {
+					const all = await read();
+					return invitesShown(all) === 2 ? all : false;
+				})
+				.catch(() => read()),
+		);
+		expect(invitesShown(shown)).toBe(2);
+	});
 });
