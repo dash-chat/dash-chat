@@ -11,11 +11,11 @@
 
 	interface Props {
 		media: DraftMedia | undefined;
-		addingMore: boolean;
+		loadingMedia: boolean;
 		onAddMore: () => void;
 	}
 
-	let { media = $bindable(), addingMore, onAddMore }: Props = $props();
+	let { media = $bindable(), loadingMedia, onAddMore }: Props = $props();
 
 	const showClearAll = $derived(
 		media?.kind === 'photos' && media.items.length > 1,
@@ -67,7 +67,7 @@
 						class="add-more flex h-[120px] w-[120px] shrink-0 items-center justify-center"
 						data-testid="message-input-add-more"
 						aria-label={m.addMoreAttachments()}
-						disabled={addingMore}
+						disabled={loadingMedia}
 						onclick={onAddMore}
 					>
 						<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>

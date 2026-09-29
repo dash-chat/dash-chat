@@ -13,7 +13,7 @@
 		media: DraftMedia | undefined;
 		/** Index of the currently shown photo. */
 		index?: number;
-		addingMore: boolean;
+		loadingMedia: boolean;
 		onAddMore: () => void;
 		/** Called when the last photo is removed and nothing remains to show. */
 		onClose: () => void;
@@ -22,7 +22,7 @@
 	let {
 		media = $bindable(),
 		index = $bindable(0),
-		addingMore,
+		loadingMedia,
 		onAddMore,
 		onClose,
 	}: Props = $props();
@@ -92,10 +92,10 @@
 			<IconButton
 				icon={mdiPlusBoxOutline}
 				onClick={onAddMore}
-				disabled={addingMore}
+				disabled={loadingMedia}
 				label={m.addMoreAttachments()}
 				testid="staged-media-add-more"
-				class="shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
+				class="shrink-0 !bg-[#3a3a3c] !opacity-100 enabled:hover:!bg-[#4a4a4c] disabled:!opacity-50"
 			/>
 		</div>
 	{/if}

@@ -56,6 +56,8 @@ export const MAX_STAGED_PHOTOS = 32;
 
 export type IngestError = 'tooMany' | 'filesWithPhotos' | 'oneFileAtATime';
 
+export type LoadFiles = () => Promise<FileList | File[] | null>;
+
 export interface IngestResult {
 	media: DraftMedia | undefined;
 	error?: IngestError;

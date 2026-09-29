@@ -24,7 +24,7 @@
 		value?: string;
 		/** Name of the chat the media will be sent to, shown in the header. */
 		destinationName?: string;
-		addingMore: boolean;
+		loadingMedia: boolean;
 		onSend: () => Promise<boolean>;
 		onAddMore: () => void;
 		onClose: () => void;
@@ -34,7 +34,7 @@
 		media = $bindable(),
 		value = $bindable(''),
 		destinationName,
-		addingMore,
+		loadingMedia,
 		onSend,
 		onAddMore,
 		onClose,
@@ -141,7 +141,7 @@
 			<StagedPhotosStrip
 				bind:media
 				bind:index
-				{addingMore}
+				{loadingMedia}
 				{onAddMore}
 				{onClose}
 			/>
@@ -153,7 +153,7 @@
 				{onSend}
 				before={isIos ? undefined : emojiButton}
 			/>
-			<SendButton {onSend} disabled={addingMore} />
+			<SendButton {onSend} disabled={loadingMedia} />
 		</div>
 	</div>
 
