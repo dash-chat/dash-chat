@@ -370,5 +370,6 @@
     "feedback": "Feedback",
     "reportSent": "Relatório enviado. Obrigado!",
     "reportQueued": "Relatório salvo. Será enviado quando voltares online.",
-    "retry": "Repito"
+    "retry": "Repito",
+    "notificationsPermissionDenied": "As notificações precisam de permissão para ser mostrada. Você pode permitir que eles em suas configurações do dispositivo."
 }
