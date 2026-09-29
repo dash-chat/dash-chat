@@ -9,6 +9,7 @@ mod device_info;
 mod error;
 mod filesystem;
 mod i18n;
+mod logger;
 mod mailbox;
 #[cfg(desktop)]
 mod media_drop;

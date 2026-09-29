@@ -59,8 +59,11 @@ pub fn receive_push_notification(
         crate::utils::install_crypto_provider();
 
         #[cfg(target_os = "android")]
-        ANDROID_LOGS_ONCE.call_once(|| unsafe {
-            setup_android_logs();
+        ANDROID_LOGS_ONCE.call_once(|| {
+            unsafe { setup_android_logs() };
+            if let Err(err) = crate::logger::android::install_push_logger(&context.data_dir) {
+                eprintln!("Failed to install the push process's logger: {err:?}");
+            }
         });
         #[cfg(target_os = "ios")]
         IOS_LOGGER_ONCE.call_once(|| {
@@ -109,9 +112,6 @@ pub fn receive_push_notification(
 
 #[cfg(target_os = "ios")]
 fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
-    use log::Log;
-    use tauri_plugin_log::fern;
-
     let fs = FileSystem::from_app_root_dir(data_dir.to_path_buf())?;
     let logs_dir = fs.app_root_dir().join("logs-nse");
     std::fs::create_dir_all(&logs_dir)?;
@@ -128,31 +128,7 @@ fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
         }
     }
 
-    let os_logger = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
-        .level_filter(log::LevelFilter::Debug);
-
-    fern::Dispatch::new()
-        .format(crate::setup::format_record)
-        .level(log::LevelFilter::Warn)
-        .level_for("dashchat_node", log::LevelFilter::Debug)
-        .level_for("dashchat_utils", log::LevelFilter::Debug)
-        .level_for("mailbox_client", log::LevelFilter::Debug)
-        .level_for("mailbox_server", log::LevelFilter::Debug)
-        .level_for("mailbox_local_server", log::LevelFilter::Debug)
-        .level_for("local_hub_discovery", log::LevelFilter::Debug)
-        .level_for("tauri_app_lib", log::LevelFilter::Debug)
-        .chain(fern::log_file(&log_path)?)
-        .chain(fern::Output::call(move |record| {
-            os_logger.log(record);
-        }))
-        .apply()?;
-
-    // `apply()` sets the global max level to the dispatch's base level (Warn),
-    // which would silence Debug/Info on the os_log target. Keep the unified
-    // log channel verbose for on-device debugging.
-    log::set_max_level(log::LevelFilter::Debug);
-
-    Ok(())
+    crate::logger::ios::install_push_extension_logger(&log_path)
 }
 
 async fn handle_push_notifications_with_fallback_messages(

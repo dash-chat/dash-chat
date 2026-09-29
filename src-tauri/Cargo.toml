@@ -106,6 +106,8 @@ tauri-plugin-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-life
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 ndk-sys = "0.6"
+# Logcat, as `tauri-plugin-log` writes it, for a process a push started.
+android_logger = "0.15"
 # Saves photos to the shared gallery (MediaStore).
 tauri-plugin-android-fs = { version = "=28.4.0" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos
