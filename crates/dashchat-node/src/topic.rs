@@ -341,7 +341,7 @@ impl<'de, K: TopicKind> Deserialize<'de> for Topic<K> {
 mod tests {
     use super::*;
 
-    use mailbox_client::toy;
+    use mailbox_client::backends::toy;
 
     const TOPIC_BYTES: [u8; 32] = [0xab; 32];
     const TOPIC_HEX: &str = "abababababababababababababababababababababababababababababababab";

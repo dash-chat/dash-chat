@@ -1,4 +1,7 @@
-use super::*;
+use crate::{
+    FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient, MailboxId, MailboxItem,
+    OptionalItemTraits, PublishResponse,
+};
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -182,7 +185,7 @@ where
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::testing::Msg;
+    use crate::{FetchTopicResponse, testing::Msg};
 
     use super::*;
 

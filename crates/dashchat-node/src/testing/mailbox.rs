@@ -1,7 +1,7 @@
 use mailbox_client::{
     FetchRequest, FetchResponse, MailboxClient, MailboxId, PublishResponse,
-    mem::{MemMailbox, MemMailboxClient},
-    toy::ToyMailboxClient,
+    backends::mem::{MemMailbox, MemMailboxClient},
+    backends::toy::ToyMailboxClient,
 };
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -134,7 +134,7 @@ impl TestMailbox {
             Self::Mem(mb) => node.mailboxes.register(mb.client()).await,
             Self::Cloud { url } => register_served_mailbox(node, url).await,
             Self::Local(local) => {
-                mailbox_client::toy::wait_for_mailbox_health(&local.url).await;
+                mailbox_client::backends::toy::wait_for_mailbox_health(&local.url).await;
                 register_served_mailbox(node, &local.url).await;
             }
         }

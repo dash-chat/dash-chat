@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::toy::ToyMailboxClient;
+use mailbox_client::backends::toy::ToyMailboxClient;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn mailbox_late_join() {

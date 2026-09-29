@@ -63,7 +63,8 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         let reader = node.blob_reader();
         let mut held = Vec::new();
         for hash in hashes {
-            if mailbox_client::toy::upload_due(&url, hash) && reader.has_blob(hash).await {
+            if mailbox_client::backends::toy::upload_due(&url, hash) && reader.has_blob(hash).await
+            {
                 held.push(hash);
             }
         }
@@ -77,14 +78,15 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         }
         // Upload again too: the upload that followed these blobs' message may
         // have been cut off, and the mailbox can't fetch from a phone it can't dial.
-        let client =
-            mailbox_client::toy::ToyMailboxClient::<crate::mailbox::MailboxOperation>::new(
-                mailbox_id.clone(),
-                url,
-                self_endpoint,
-                node.unfetched_blob_tracker(),
-            )
-            .with_blob_reader(reader);
+        let client = mailbox_client::backends::toy::ToyMailboxClient::<
+            crate::mailbox::MailboxOperation,
+        >::new(
+            mailbox_id.clone(),
+            url,
+            self_endpoint,
+            node.unfetched_blob_tracker(),
+        )
+        .with_blob_reader(reader);
         if let Err(err) = client.store_blobs(held).await {
             tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
         }

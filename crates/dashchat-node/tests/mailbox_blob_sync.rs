@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::toy::ToyMailboxClient;
+use mailbox_client::backends::toy::ToyMailboxClient;
 
 mod common;
 
@@ -271,7 +271,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
     .await
     .unwrap();
     let url = server.url.clone();
-    mailbox_client::toy::wait_for_mailbox_health(&url).await;
+    mailbox_client::backends::toy::wait_for_mailbox_health(&url).await;
 
     // Sender (alice) and a contact (bobbi). Bobbi only exists so alice has a
     // direct chat to send media into; he stays offline for the whole media

@@ -1,10 +1,15 @@
+use once_cell::sync::Lazy;
+use serde::{Serialize, de::DeserializeOwned};
 use std::collections::{BTreeMap, HashMap};
 
 use mailbox_server::{
     Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest, StoreBlipsResponse,
 };
 
-use super::*;
+use crate::{
+    FetchRequest, FetchResponse, FetchTopicResponse, HTTP_CLIENT, ItemTraits, MailboxClient,
+    MailboxId, MailboxItem, PublishResponse,
+};
 
 /// Trait bounds the toy client requires of an item's `Topic` and `Author` types.
 ///
@@ -608,7 +613,7 @@ mod tests {
         });
         let base_url = format!("http://{addr}");
 
-        let already = crate::toy::send_register_hashes(
+        let already = send_register_hashes(
             &base_url,
             vec![h_stored, h_new],
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
