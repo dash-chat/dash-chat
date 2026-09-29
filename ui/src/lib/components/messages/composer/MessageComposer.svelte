@@ -13,6 +13,7 @@
 		draftToMedia,
 		ingestFiles,
 		pickMedia,
+		startPreparingPhotos,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
@@ -218,6 +219,9 @@
 	function stage(files: FileList | File[]) {
 		const result = ingestFiles(media, Array.from(files));
 		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
+		if (result.media?.kind === 'photos') {
+			startPreparingPhotos(result.media.items);
+		}
 		media = result.media;
 		if (isMobile && media && !page.state.stagedMedia) {
 			pushState('', { stagedMedia: true });
