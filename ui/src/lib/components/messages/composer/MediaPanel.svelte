@@ -20,11 +20,6 @@
 		onAddRecent,
 		onPickerOpen,
 	}: Props = $props();
-
-	function pick(onPick: () => void) {
-		onPickerOpen();
-		onPick();
-	}
 </script>
 
 <div
@@ -40,14 +35,20 @@
 			icon={mdiImage}
 			testId="message-input-attach-photos"
 			disabled={loadingMedia}
-			onClick={() => pick(onPickPhotos)}
+			onClick={() => {
+				onPickerOpen();
+				onPickPhotos();
+			}}
 		/>
 		<LabelledIconButton
 			label={m.attachFile()}
 			icon={mdiFile}
 			testId="message-input-attach-file"
 			disabled={loadingMedia}
-			onClick={() => pick(onPickFile)}
+			onClick={() => {
+				onPickerOpen();
+				onPickFile();
+			}}
 		/>
 	</div>
 </div>

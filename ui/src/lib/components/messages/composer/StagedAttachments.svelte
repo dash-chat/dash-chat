@@ -101,6 +101,7 @@
 	}
 	.add-more:disabled {
 		cursor: default;
+		opacity: 0.3;
 	}
 	.add-more:not(:disabled):hover {
 		opacity: 0.9;

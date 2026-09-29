@@ -394,7 +394,7 @@
 				: '--toggle-hidden-width: 2.5rem; --toggle-hidden-transform: scaleX(0.5)'}"
 			aria-hidden={drafting}
 		>
-			<CameraButton onClick={captureFromCamera} />
+			<CameraButton onClick={captureFromCamera} disabled={loadingMedia} />
 			<VoiceRecordButton {voice} />
 		</div>
 	{/if}
