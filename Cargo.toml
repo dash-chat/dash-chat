@@ -72,6 +72,9 @@ iroh-gossip = { git = "https://github.com/dash-chat/iroh-gossip", rev = "efc565e
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
 tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616" }
+# swarm-discovery 0.6.3 + a non-fatal default-interface multicast join, so a
+# hub on a host without a default route (an offline hotspot) can still start
+swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = "1cf4c14c67b60bf8c020b5cc002fd7f438492199" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
