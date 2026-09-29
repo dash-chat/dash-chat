@@ -369,11 +369,6 @@ export function iosWifiInfo(b: WebdriverIO.Browser): Promise<WifiInfo> {
 	return inWebview(b, () => readWifiInfo(b));
 }
 
-/** The lab networks the app has added, in range or not. */
-export function iosAddedSsids(b: WebdriverIO.Browser): Promise<string[]> {
-	return inWebview(b, () => readAddedSsids(b));
-}
-
 /** Drop every lab network the app added; the device leaves it if it is on
  *  one. Resolves at once, without waiting for where it lands. */
 export function forgetIosWifi(b: WebdriverIO.Browser): Promise<void> {
