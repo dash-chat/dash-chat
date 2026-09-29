@@ -387,5 +387,6 @@
     "contactRequestSent": "Kontaktanfrage gesendet.",
     "errorAddContactDeviceLinkingNotSupported": "Dieser Code dient dazu, ein Gerät zu verknüpfen, keinen Kontakt hinzuzufügen.",
     "messageStatusUnsent": "Senden",
-    "retry": "Wiederkehr"
+    "retry": "Wiederkehr",
+    "notificationsPermissionDenied": "Notifications benötigen die Erlaubnis, angezeigt zu werden. Sie können sie in Ihren Geräteeinstellungen zulassen."
 }
