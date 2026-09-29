@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { describeContent } from '../components/notifications/content.ts';
-import { ExpectedModel, type NotificationTexts } from './model.ts';
+import {
+	ExpectedModel,
+	HOME_NETWORK,
+	type NotificationTexts,
+	newModel,
+} from './model.ts';
 
 /** The wording the app puts in a notification it cannot fully name, as the
  *  English catalogue has it. */
@@ -1409,4 +1414,20 @@ test('a request is announced only on the device it was sent to', () => {
 	m.propagate();
 	assert.deepEqual(showing(m, A), []);
 	assert.deepEqual(showing(m, B), [`New contact request | ${C}`]);
+});
+
+test('a run with lab networks also has the home one, which no lab may be named', () => {
+	const real = {
+		agents: [],
+		networks: [{ ssid: 'lab-a' }],
+		cloudUsable: true,
+		cloudDegradable: false,
+		push: false,
+	};
+	assert.deepEqual(newModel(real).networkNames(), [HOME_NETWORK, 'lab-a']);
+	assert.equal(newModel({ ...real, networks: [] }).homeNetwork(), null);
+	assert.throws(
+		() => newModel({ ...real, networks: [{ ssid: HOME_NETWORK }] }),
+		new RegExp(HOME_NETWORK),
+	);
 });

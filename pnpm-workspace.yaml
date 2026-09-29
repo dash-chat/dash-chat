@@ -14,6 +14,7 @@ allowBuilds:
   geckodriver: true
   # Builds dist-js via its `prepare` script when installed from the git fork.
   "@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/034dafd0a591fce73d4fe865e216cc3e225236c5": true
+  tauri-plugin-network-interfaces-api@https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/9c50b47eab93202a55f0374fe9c70bb2016c8a2f: true
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d: true
   tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a86d8cf2ea998eba7f93dc6b53674fdb77d3def5: true
   appium: true

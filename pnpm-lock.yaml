@@ -266,6 +266,9 @@ importers:
       tauri-plugin-background-service:
         specifier: ^1.0.0
         version: 1.0.0
+      tauri-plugin-network-interfaces-api:
+        specifier: github:dash-chat/tauri-plugin-network-interfaces#9c50b47eab93202a55f0374fe9c70bb2016c8a2f
+        version: https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/9c50b47eab93202a55f0374fe9c70bb2016c8a2f
       tauri-plugin-system-theme:
         specifier: github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d
         version: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d(signalium@3.0.1(patch_hash=1b98b8fc84b8e5d35451ca4c1766447cf362069bd4cf3b8917e1d529cf67d302))
@@ -5661,6 +5664,10 @@ packages:
 
   tauri-plugin-background-service@1.0.0:
     resolution: {integrity: sha512-i3ANk6SLyTGInXJNQez1VrgnDYqlCptVtgjMO2neZQbH3lYnwKH9cfXKMAsqotTEAE/dTseCove+ielnuUQ2hg==}
+
+  tauri-plugin-network-interfaces-api@https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/9c50b47eab93202a55f0374fe9c70bb2016c8a2f:
+    resolution: {gitHosted: true, integrity: sha512-qhsjby+PzhtZ2GRVtqGjnd+4O6r4G7kq/DVDN7CrpSSjVWlWN6mP+H7RKfv5qvcudBBvQvIXGxr+i2PrtfNvNQ==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/9c50b47eab93202a55f0374fe9c70bb2016c8a2f}
+    version: 0.1.0
 
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d:
     resolution: {gitHosted: true, integrity: sha512-SH/YsIdzSpG6yed/qiJdzipcWVP0y34uCmfS5st/zr3rpBKj1pthIgedvZUko9f7SK3LGQyuOSTjzHj+wk1M5A==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d}
@@ -12117,6 +12124,10 @@ snapshots:
   tauri-plugin-background-service@1.0.0:
     dependencies:
       '@tauri-apps/api': 2.11.0
+
+  tauri-plugin-network-interfaces-api@https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/9c50b47eab93202a55f0374fe9c70bb2016c8a2f:
+    dependencies:
+      '@tauri-apps/api': 2.11.1
 
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d(signalium@3.0.1(patch_hash=1b98b8fc84b8e5d35451ca4c1766447cf362069bd4cf3b8917e1d529cf67d302)):
     dependencies:

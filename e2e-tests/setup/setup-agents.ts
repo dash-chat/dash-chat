@@ -41,18 +41,18 @@ import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import { ASYNC_SCRIPT_TIMEOUT } from '../helpers/timeouts';
 import { sourceLogFile } from './agent-logger';
-import { ensurePhonesShareALan } from './phone-lan';
+import { convergePhoneNetworks } from './phone-lan';
 import {
 	APP_PACKAGE,
 	androidHasInternet,
 	androidWifiInfo,
-	androidWifiSsid,
-	connectAndroidWifi,
 	denyAndroidNotificationPermission,
 	disableAndroidWifi,
 	enableAndroidWifi,
 	forgetAndroidWifi,
 	isAndroidAppRunning,
+	joinAndroidWifi,
+	leaveAndroidWifi,
 	pressAndroidHome,
 	resetAndroidNotificationPermission,
 	stopAndroidApp,
@@ -74,14 +74,19 @@ import {
 	resetIosAppState,
 } from './platforms/ios';
 import {
-	connectIosWifi,
 	disableIosWifi,
 	enableIosWifi,
 	forgetIosWifi,
 	iosWifiInfo,
-	iosWifiSsid,
+	joinIosWifi,
+	leaveIosWifi,
 } from './platforms/ios-wifi';
-import { type AgentPlatformName, isMobile, platformNames } from './test-env';
+import {
+	type AgentPlatformName,
+	isMobile,
+	labSsids,
+	platformNames,
+} from './test-env';
 import { deviceUdid, switchToWebview, waitForTestUtils } from './webview';
 import type { WifiInfo } from './wifi';
 
@@ -182,21 +187,29 @@ export type Agent = WebdriverIO.Browser & {
 	/** Turn Wi-Fi off, leaving the app foregrounded. Physical phones only:
 	 *  Android through adb, with the app on screen throughout; iOS through the
 	 *  Settings app, which takes the app off screen for the duration and puts
-	 *  it back, as a user changing networks does. Same for the rest of the
-	 *  Wi-Fi controls. */
+	 *  it back, as a user changing networks does. Same for turning it on; the
+	 *  lab networks are handled through the app on iOS. */
 	disableWifi(): Promise<void>;
 	/** Turn Wi-Fi on and resolve once the device holds a routable IPv4 address
 	 *  again, returning it: the supplicant lands on whichever saved network
 	 *  scores best, so callers check it is the one they expect. */
 	enableWifi(): Promise<string>;
-	/** Join `ssid` (an empty `passphrase` means an open network), saving it on
-	 *  the device if it is new, and resolve with the IPv4 address obtained on
-	 *  it. */
-	connectWifi(ssid: string, passphrase: string): Promise<string>;
-	/** Forget `ssid`, which drops it if it is the current network, and resolve
-	 *  with the IPv4 address the device is on once it has settled on another
-	 *  saved network. */
-	forgetWifi(ssid: string): Promise<string>;
+	/** Join the lab network `ssid` (an empty `passphrase` means an open
+	 *  network) and resolve with the IPv4 address obtained on it. It becomes
+	 *  the one lab network saved on the device: any other is forgotten once
+	 *  the device is on this one, so a killed run can strand a phone on at
+	 *  most the network it was on. iOS goes through the app (the
+	 *  network-interfaces plugin), with the app on screen throughout; Android
+	 *  through adb. */
+	joinWifi(ssid: string, passphrase: string): Promise<string>;
+	/** Forget every lab network with the radio on, and resolve with where the
+	 *  device is once it has settled on a network of its own — whichever the
+	 *  user saved, whose name the harness never needs. */
+	leaveWifi(): Promise<WifiInfo>;
+	/** Forget every lab network without waiting for where the device lands:
+	 *  what a move that is about to turn the radio off does first, so nothing
+	 *  of the run's is saved while it is off. */
+	forgetWifi(): Promise<void>;
 	/** Drop and restore Wi-Fi and resolve once the device holds a routable
 	 *  IPv4 address again. Physical phones only; throws elsewhere, since no
 	 *  other platform can lose its LAN without also losing the driver session.
@@ -204,13 +217,13 @@ export type Agent = WebdriverIO.Browser & {
 	 *  reassociation from a jump to a different SSID, which would invalidate
 	 *  any discovery measurement taken after it. */
 	cycleWifi(downMs: number): Promise<string>;
-	/** The network this device is on: its SSID and IPv4 address, each ''
-	 *  while it has none. */
+	/** The network this device is on: its IPv4 address and the LAN it is on,
+	 *  '' while it has none, and its SSID where the platform tells an app —
+	 *  on iOS only for a lab network, which the app added itself; on the
+	 *  user's own network it reads ''. On iOS the reading is the app's, so
+	 *  it brings the app to the foreground if it is not — call it where that
+	 *  is harmless, as with [`hasInternet`]. Same for the lab operations. */
 	wifiInfo(): Promise<WifiInfo>;
-	/** The SSID the device is associated with, or '' while it is on none.
-	 *  Cheaper than [`wifiInfo`], which on iOS walks into the Wi-Fi page for an
-	 *  address; this reads only what the platform says for free. */
-	wifiSsid(): Promise<string>;
 	/** Whether the phone can reach the internet. On android this is a pure adb
 	 *  probe; on iOS the answer has to come from the app's own webview, so it
 	 *  brings the app to the foreground — call it where that is harmless, or
@@ -445,24 +458,31 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await enableIosWifi(b)
 			: await enableAndroidWifi(wifiUdid(agent, b));
-	const connectWifiOnce = async (ssid: string, passphrase: string) =>
+	const joinWifiOnce = async (ssid: string, passphrase: string) =>
 		agent.platform === 'ios'
-			? await connectIosWifi(b, ssid, passphrase)
-			: await connectAndroidWifi(wifiUdid(agent, b), ssid, passphrase);
-	agent.connectWifi = async (ssid: string, passphrase: string) => {
+			? await joinIosWifi(b, ssid, passphrase)
+			: await joinAndroidWifi(wifiUdid(agent, b), ssid, passphrase, labSsids());
+	agent.joinWifi = async (ssid: string, passphrase: string) => {
 		// A phone sometimes fails to associate with an access point it was just
 		// on; one more try keeps that radio hiccup from failing the spec.
 		try {
-			return await connectWifiOnce(ssid, passphrase);
+			return await joinWifiOnce(ssid, passphrase);
 		} catch (err) {
 			console.warn(`failed to join ${ssid}, retrying: ${String(err)}`);
-			return await connectWifiOnce(ssid, passphrase);
+			return await joinWifiOnce(ssid, passphrase);
 		}
 	};
-	agent.forgetWifi = async (ssid: string) =>
+	agent.leaveWifi = async () =>
 		agent.platform === 'ios'
-			? await forgetIosWifi(b, ssid)
-			: await forgetAndroidWifi(wifiUdid(agent, b), ssid);
+			? await leaveIosWifi(b)
+			: await leaveAndroidWifi(wifiUdid(agent, b), labSsids());
+	agent.forgetWifi = async () => {
+		if (agent.platform === 'ios') {
+			await forgetIosWifi(b);
+			return;
+		}
+		forgetAndroidWifi(wifiUdid(agent, b), labSsids());
+	};
 	agent.cycleWifi = async (downMs: number) => {
 		await agent.disableWifi();
 		await b.pause(downMs);
@@ -472,10 +492,6 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await iosWifiInfo(b)
 			: androidWifiInfo(deviceUdid(b));
-	agent.wifiSsid = async () =>
-		agent.platform === 'ios'
-			? await iosWifiSsid(b)
-			: androidWifiSsid(deviceUdid(b));
 	agent.hasInternet = async () =>
 		agent.platform === 'ios'
 			? await iosHasInternet(b)
@@ -965,7 +981,7 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 	const agents = await Promise.all(
 		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1], slot)),
 	);
-	await ensurePhonesShareALan(agents);
+	await convergePhoneNetworks(agents);
 	return agents as { [K in keyof T]: Agent };
 }
 

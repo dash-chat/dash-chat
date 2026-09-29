@@ -102,6 +102,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
 tauri-plugin-view = "0.0.5"
 tauri-plugin-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-lifecycle", rev = "27e2776" }
+tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "9c50b47eab93202a55f0374fe9c70bb2016c8a2f" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
@@ -114,8 +115,6 @@ tauri-plugin-android-fs = { version = "=28.4.0" }
 # strip. JS bindings ship as `@universalappfactory/tauri-plugin-medialibrary`.
 tauri-plugin-medialibrary = "=0.13"
 tauri-plugin-background-service = "1.0"
-# Holds the MulticastLock mDNS discovery needs to hear hub announcements.
-tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "90f383f32c74ab28b79be51bf5e6088644b2226c" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"
@@ -136,7 +135,12 @@ mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
 
 [features]
-e2e-tests = ["dashchat-node/testing", "mailbox-client/e2e-test-ca", "dep:tauri-plugin-wdio-webdriver"]
+e2e-tests = [
+  "dashchat-node/testing",
+  "mailbox-client/e2e-test-ca",
+  "dep:tauri-plugin-wdio-webdriver",
+  "tauri-plugin-network-interfaces/wifi-control",
+]
 
 [dev-dependencies]
 dashchat-node = { path = "../crates/dashchat-node", features = ["testing"] }

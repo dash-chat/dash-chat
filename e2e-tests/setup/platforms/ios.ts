@@ -369,7 +369,7 @@ async function wipeIosAppData(b: WebdriverIO.Browser): Promise<void> {
 }
 
 /** Bring the app to the foreground and attach to its webview. */
-async function attachToIosApp(b: WebdriverIO.Browser): Promise<void> {
+export async function attachToIosApp(b: WebdriverIO.Browser): Promise<void> {
 	await b.activateApp(APP_BUNDLE_ID);
 	await switchToWebview(b, 'ios');
 	await waitForTestUtils(b);

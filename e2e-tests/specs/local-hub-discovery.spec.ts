@@ -75,12 +75,14 @@ describe('Local hub discovery', function () {
 	}
 
 	/** The supplicant picks whatever saved network scores best; elsewhere the
-	 *  hub is reached over another LAN and the move proves nothing. */
-	async function expectBackOn(ssid: string): Promise<void> {
-		const { ssid: now } = await agent.wifiInfo();
-		if (now !== ssid) {
+	 *  hub is reached over another LAN and the move proves nothing. The
+	 *  network's name is not something every platform tells an app, so the
+	 *  LAN the address came back on stands in for it. */
+	async function expectBackOn(network: string): Promise<void> {
+		const now = await agent.wifiInfo();
+		if (now.network !== network) {
 			throw new Error(
-				`the phone came back on "${now}", not "${ssid}"; re-run with the host's network scoring best`,
+				`the phone came back on ${now.network} at ${now.address}, not on ${network}; re-run with the host's network scoring best`,
 			);
 		}
 	}
@@ -173,11 +175,11 @@ describe('Local hub discovery', function () {
 
 	it('shows the hub again within 4 seconds of the phone rejoining the LAN', async function () {
 		if (!agent.isMobile) this.skip();
-		const { ssid } = await agent.wifiInfo();
+		const { network } = await agent.wifiInfo();
 		await agent.disableWifi();
 		await expectNoHub('the phone left the LAN');
 		await agent.enableWifi();
-		await expectBackOn(ssid);
+		await expectBackOn(network);
 		await expectLocal('rejoining the LAN');
 	});
 
@@ -191,28 +193,27 @@ describe('Local hub discovery', function () {
 
 	it('shows the hub again after a Wi-Fi bounce', async function () {
 		if (!agent.isMobile) this.skip();
-		const { ssid } = await agent.wifiInfo();
+		const { network } = await agent.wifiInfo();
 		await agent.cycleWifi(WIFI_DOWN_MS);
-		await expectBackOn(ssid);
+		await expectBackOn(network);
 		await expectLocal('Wi-Fi came back');
 	});
 
 	it('shows the hub when its host joins the LAN the phone is already on', async function () {
 		if (!agent.isMobile) this.skip();
-		const { ssid } = await agent.wifiInfo();
-		const network = wifiNetworks().find(n => n.ssid !== ssid);
+		const [network] = wifiNetworks();
 		if (network === undefined) this.skip();
 		const device = wifiDevice();
 		if (device === null) throw new Error('the host has no Wi-Fi card');
 		assertInRange(device, [network.ssid]);
 		try {
-			await agent.connectWifi(network.ssid, network.passphrase);
+			await agent.joinWifi(network.ssid, network.passphrase);
 			await expectNoHub('the phone moved to a LAN the hub is not on');
 			await joinWifi(device, network.ssid, network.passphrase);
 			await expectLocal("the hub's host joined the phone's LAN");
 		} finally {
 			await leaveWifi(network.ssid);
-			await agent.forgetWifi(network.ssid);
+			await agent.leaveWifi();
 		}
 	});
 });

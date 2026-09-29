@@ -61,13 +61,14 @@ export function remoteMailboxUrl(): string | null {
 	return url;
 }
 
+/** A lab network: one a run walks phones and hubs onto and off. The network
+ *  the phones and host are on otherwise is never listed, named or joined by
+ *  the harness — it is whatever a device falls back to with no lab network
+ *  saved. */
 export interface WifiNetwork {
 	ssid: string;
 	/** '' for an open network. */
 	passphrase: string;
-	/** The host's own LAN rather than a lab one: the phones and the host are
-	 *  on it to begin with, and a run never leaves, forgets or deletes it. */
-	home: boolean;
 }
 
 /** One `ssid` or `ssid:passphrase` entry; a bare `ssid` is an open network.
@@ -79,17 +80,20 @@ function parseNetwork(entry: string): WifiNetwork {
 			`E2E_WIFI_NETWORKS entry '${entry.trim()}' is not 'ssid' or 'ssid:passphrase'`,
 		);
 	}
-	return { ssid: parts[0], passphrase: parts[1] ?? '', home: false };
+	return { ssid: parts[0], passphrase: parts[1] ?? '' };
 }
 
 /**
  * The Wi-Fi networks a run may walk phones and hubs through, from
  * E2E_WIFI_NETWORKS as `ssid:passphrase,ssid:passphrase` in the order moves
- * index them; empty when unset. Which of them, if any, is the run's home
- * network is read off the phones when the run starts.
+ * index them; empty when unset. Lab networks only: see [`WifiNetwork`].
  */
 export function wifiNetworks(): WifiNetwork[] {
 	const raw = process.env.E2E_WIFI_NETWORKS;
 	if (raw === undefined || raw.trim() === '') return [];
 	return raw.split(',').map(parseNetwork);
+}
+
+export function labSsids(): string[] {
+	return wifiNetworks().map(n => n.ssid);
 }

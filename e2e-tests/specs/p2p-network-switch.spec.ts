@@ -23,7 +23,7 @@ import {
 	restartMailbox,
 } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
-import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
+import { wifiNetworks } from '../setup/test-env';
 
 const AWAY_MS = 60_000;
 /** Past the peer's QUIC idle timeout on every old session, so the return
@@ -56,7 +56,7 @@ describe('Pure p2p sync across a network switch', function () {
 	let alice: Agent;
 	let bob: Agent;
 	let mailboxKilled = false;
-	let otherNetwork: WifiNetwork | undefined;
+	let onLab = false;
 
 	before(async function () {
 		if (process.env.E2E_STRESS !== '1') this.skip();
@@ -67,9 +67,6 @@ describe('Pure p2p sync across a network switch', function () {
 			{ platform: 'phone' },
 			{ platform: 'phone' },
 		]);
-		// An earlier run that died mid-case leaves a phone off the air.
-		await alice.enableWifi();
-		await bob.enableWifi();
 		await createProfiles({ Alice: alice, Bob: bob });
 		await exchangeContacts([alice, bob]);
 		// A round trip on the LAN before the move, so a later failure is about
@@ -79,9 +76,9 @@ describe('Pure p2p sync across a network switch', function () {
 	});
 
 	after(async () => {
-		if (otherNetwork !== undefined) {
-			await alice.forgetWifi(otherNetwork.ssid);
-			await bob.forgetWifi(otherNetwork.ssid);
+		if (onLab) {
+			await alice.leaveWifi();
+			await bob.leaveWifi();
 		}
 		if (mailboxKilled) await restartMailbox();
 	});
@@ -180,13 +177,13 @@ describe('Pure p2p sync across a network switch', function () {
 	});
 
 	it('receives a message the peer sent once both phones had moved to another Wi-Fi network', async function () {
-		const home = (await alice.wifiInfo()).ssid;
-		otherNetwork = wifiNetworks().find(n => n.ssid !== home);
-		if (otherNetwork === undefined) this.skip();
+		const [lab] = wifiNetworks();
+		if (lab === undefined) this.skip();
 		const text = 'sent once we had both moved network';
-		await alice.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
-		await bob.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
-		stampedLog(`both phones on ${otherNetwork.ssid}`);
+		onLab = true;
+		await alice.joinWifi(lab.ssid, lab.passphrase);
+		await bob.joinWifi(lab.ssid, lab.passphrase);
+		stampedLog(`both phones on ${lab.ssid}`);
 		await bob.directChatPage.composer.sendMessage(text);
 		await expectArrival(alice, text, Date.now());
 	});

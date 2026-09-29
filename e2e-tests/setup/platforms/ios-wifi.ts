@@ -1,28 +1,31 @@
 /**
- * Wi-Fi control for a physical iPhone, driven through the Settings app over
- * the XCUITest session: iOS has no shell to script the supplicant from, so
- * the harness taps what a user would. Every operation takes the app off
- * screen for its duration and puts it back — as a user changing networks
- * does — while the session itself rides usbmux and never notices the LAN
- * going away. The Settings labels are matched in English, so the device has
- * to be set to it.
+ * Wi-Fi control for a physical iPhone. Lab networks — the ones a run joins,
+ * leaves and forgets — go through the app itself: the network-interfaces
+ * plugin's `wifi-control` commands (`NEHotspotConfiguration`), reached over
+ * `window.__test.wifi`, which join and forget in seconds with the app on
+ * screen throughout and list exactly the networks the app added, in range or
+ * not. The radio is the one thing iOS gives no app an API for, so turning it
+ * off and on is driven through the Settings app over the XCUITest session,
+ * tapping what a user would: that takes the app off screen for the duration
+ * and puts it back, as a user changing networks does, while the session
+ * itself rides usbmux and never notices the LAN going away. The Settings
+ * labels are matched in English, so the device has to be set to it.
  */
+import { ASYNC_SCRIPT_TIMEOUT } from '../../helpers/timeouts';
 import { switchToWebview } from '../webview';
-import { WIFI_REASSOCIATE_MS, type WifiInfo, waitForWifi } from '../wifi';
-import { APP_BUNDLE_ID, APP_STATE_FOREGROUND } from './ios';
+import {
+	WIFI_REASSOCIATE_MS,
+	type WifiInfo,
+	networkOf,
+	waitForWifi,
+} from '../wifi';
+import { APP_BUNDLE_ID, APP_STATE_FOREGROUND, attachToIosApp } from './ios';
 
 const SETTINGS_BUNDLE_ID = 'com.apple.Preferences';
-
-/** How long a saved network gets to join without asking for its password
- *  before the join is taken to be waiting on one. */
-const PASSWORD_SHEET_MS = 5_000;
 
 /** How long a tapped "More Info" gets to push the network's info page before
  *  the tap is taken to have missed. */
 const INFO_PAGE_MS = 5_000;
-
-/** How long the Wi-Fi list gets to show a network in range. */
-const NETWORK_LIST_MS = 10_000;
 
 /** How many times a tap that shows no effect is repeated. */
 const TAP_ATTEMPTS = 3;
@@ -30,10 +33,6 @@ const TAP_ATTEMPTS = 3;
 /** How long a tap gets to show its effect before it is taken to have missed:
  *  a switch flipping, or a tapped network starting to associate. */
 const TAP_TOOK_MS = 5_000;
-
-/** How long a tapped network gets to associate before the tap is repeated;
- *  a WPA2 association plus DHCP on a busy AP takes well under this. */
-const ASSOCIATE_MS = 20_000;
 
 /** What the root screen's Wi-Fi row names instead of an SSID. */
 const NO_NETWORK_LABELS = ['Off', 'Not Connected'];
@@ -70,14 +69,6 @@ class SettingsApp {
 	private backButton() {
 		return this.b.$(
 			classChain('**/XCUIElementTypeNavigationBar/XCUIElementTypeButton[1]'),
-		);
-	}
-
-	private networkRow(ssid: string) {
-		return this.b.$(
-			classChain(
-				`**/XCUIElementTypeCell[\`name BEGINSWITH ${quoted(`${ssid},`)}\`]`,
-			),
 		);
 	}
 
@@ -124,43 +115,6 @@ class SettingsApp {
 		throw new Error(`the Wi-Fi switch never turned ${on ? 'on' : 'off'}`);
 	}
 
-	/** Wi-Fi page: tap `ssid` in the list once the scan shows it, and answer
-	 *  the password sheet if one comes up. */
-	async join(ssid: string, passphrase: string): Promise<void> {
-		const row = this.networkRow(ssid);
-		await row.waitForExist({
-			timeout: WIFI_REASSOCIATE_MS,
-			timeoutMsg: `"${ssid}" never appeared in the Wi-Fi list within ${WIFI_REASSOCIATE_MS / 1_000}s; is it in range?`,
-		});
-		await row.click();
-		const password = this.b.$(
-			classChain('**/XCUIElementTypeSecureTextField[`name == "Password"`]'),
-		);
-		try {
-			await password.waitForExist({ timeout: PASSWORD_SHEET_MS });
-		} catch {
-			return;
-		}
-		await password.click();
-		await password.setValue(passphrase);
-		// The sheet's own bar is the last one on screen; Join is its last button.
-		const join = this.b.$(
-			classChain(
-				'**/XCUIElementTypeNavigationBar[-1]/XCUIElementTypeButton[-1]',
-			),
-		);
-		await join.waitForEnabled();
-		await join.click();
-		// The sheet stays up over the page's own bar while iOS tries the
-		// network, and goes away once it has joined; a wrong password leaves it
-		// up, behind an alert the session auto-accepts.
-		await password.waitForExist({
-			reverse: true,
-			timeout: WIFI_REASSOCIATE_MS,
-			timeoutMsg: `"${ssid}" was still asking for its password ${WIFI_REASSOCIATE_MS / 1_000}s after it was entered; are the credentials right?`,
-		});
-	}
-
 	private infoPageBar(ssid: string) {
 		return this.b.$(
 			classChain(
@@ -178,15 +132,6 @@ class SettingsApp {
 				`**/XCUIElementTypeCell[\`name BEGINSWITH ${quoted(`${ssid},`)}\`]/**/XCUIElementTypeButton[\`name == "More Info"\`]`,
 			),
 		);
-	}
-
-	/** Wi-Fi page: whether `ssid` is listed, once the scan has had time to
-	 *  show it. */
-	async lists(ssid: string): Promise<boolean> {
-		return await this.networkRow(ssid)
-			.waitForExist({ timeout: NETWORK_LIST_MS })
-			.then(() => true)
-			.catch(() => false);
 	}
 
 	/** Wi-Fi page -> `ssid`'s info page. The list re-renders as scans come in,
@@ -219,31 +164,6 @@ class SettingsApp {
 		);
 		if (!(await value.isExisting())) return '';
 		return (await value.getAttribute('value')) ?? '';
-	}
-
-	/** Info page -> Wi-Fi page, forgetting the network if it was saved. */
-	async forget(): Promise<void> {
-		const forget = this.b.$(
-			classChain(
-				'**/XCUIElementTypeStaticText[`name == "Forget This Network"`]',
-			),
-		);
-		if (await forget.isExisting()) {
-			await forget.click();
-			const confirm = this.b.$(
-				classChain('**/XCUIElementTypeButton[`name == "Forget"`]'),
-			);
-			// The session auto-accepts alerts, which may already have answered it.
-			try {
-				await confirm.waitForExist({ timeout: PASSWORD_SHEET_MS });
-				await confirm.click();
-			} catch {
-				/* accepted for us */
-			}
-		} else {
-			await this.backButton().click();
-		}
-		await this.wifiSwitch().waitForExist();
 	}
 }
 
@@ -278,7 +198,7 @@ async function walkBackToRoot(
 /** Whatever system alert is sitting over Settings — a network that could not
  *  be joined, a password that was wrong. Read only: the session's
  *  `autoAcceptAlerts` capability runs WDA's alert monitor, which taps the
- *  default button on these as they appear (see `forget()` above), so answering
+ *  default button on these as they appear, so answering
  *  one here would be a second policy on the same alert with no say in which
  *  lands first. This exists to name what is on screen when Settings is stuck. */
 async function readSystemAlert(b: WebdriverIO.Browser): Promise<string | null> {
@@ -356,92 +276,221 @@ async function waitForAddressOn(
 	);
 }
 
-/** The SSID the device is associated with, or '' while it is on none. Reads
- *  the Settings root row only, without descending into the Wi-Fi page, so it
- *  costs one shallow Settings round trip rather than the several
- *  [`iosWifiInfo`] needs for an address. */
-export function iosWifiSsid(b: WebdriverIO.Browser): Promise<string> {
-	return inSettings(b, settings => settings.ssid());
+/** Run `body` with the app on screen and the session in its webview, where
+ *  `window.__test` lives — the fuzz restores networks between sequences
+ *  with apps stopped or backgrounded, and a Settings operation leaves the
+ *  session wherever it found it — and with an async-script timeout the
+ *  plugin's calls fit in: an iOS session starts with none, and
+ *  `executeAsync` gives up at once under it. */
+async function inWebview<T>(
+	b: WebdriverIO.Browser,
+	body: () => Promise<T>,
+): Promise<T> {
+	const state = Number(
+		await b.execute('mobile: queryAppState', { bundleId: APP_BUNDLE_ID }),
+	);
+	if (state !== APP_STATE_FOREGROUND) {
+		await attachToIosApp(b);
+	} else {
+		const context = await b.getContext();
+		const contextId = typeof context === 'string' ? context : context.id;
+		if (!contextId.startsWith('WEBVIEW')) await switchToWebview(b, 'ios');
+	}
+	await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
+	return await body();
 }
 
+/** What a plugin call answers through `executeAsync`: its value, or its
+ *  error, since a rejection would otherwise never call back and the script
+ *  would time out with no word of why. One optional-field shape rather than
+ *  a union, which the driver's typing of the callback cannot infer. */
+type Reply<T> = { ok?: T; err?: string };
+
+function unwrap<T>(reply: Reply<T>, what: string): T {
+	if (reply.err !== undefined) throw new Error(`${what}: ${reply.err}`);
+	return reply.ok as T;
+}
+
+/** The interface as the app reads it, for a session already in the webview:
+ *  the address for free, the SSID only for a network the app added itself —
+ *  a lab network — since iOS hides every other SSID from an app. */
+async function readWifiInfo(b: WebdriverIO.Browser): Promise<WifiInfo> {
+	const { ssid, address, prefixLength } = unwrap(
+		await b.executeAsync(
+			(
+				done: (
+					r: Reply<{ ssid: string; address: string; prefixLength: number }>,
+				) => void,
+			) => {
+				window.__test.wifi.current().then(
+					ok => done({ ok }),
+					e => done({ err: String(e) }),
+				);
+			},
+		),
+		'reading the Wi-Fi interface',
+	);
+	return { ssid, address, network: networkOf(address, prefixLength) };
+}
+
+async function readAddedSsids(b: WebdriverIO.Browser): Promise<string[]> {
+	return unwrap(
+		await b.executeAsync((done: (r: Reply<string[]>) => void) => {
+			window.__test.wifi.addedSsids().then(
+				r => done({ ok: r.ssids }),
+				e => done({ err: String(e) }),
+			);
+		}),
+		'listing the added networks',
+	);
+}
+
+async function forgetSsid(b: WebdriverIO.Browser, ssid: string): Promise<void> {
+	unwrap(
+		await b.executeAsync((ssid: string, done: (r: Reply<null>) => void) => {
+			window.__test.wifi.forget(ssid).then(
+				() => done({ ok: null }),
+				e => done({ err: String(e) }),
+			);
+		}, ssid),
+		`forgetting "${ssid}"`,
+	);
+}
+
+/** Drop every lab network the app added but `keep`. */
+async function forgetAdded(b: WebdriverIO.Browser, keep = ''): Promise<void> {
+	for (const ssid of await readAddedSsids(b)) {
+		if (ssid !== keep) await forgetSsid(b, ssid);
+	}
+}
+
+/** The network the device is on; see [`readWifiInfo`]. */
 export function iosWifiInfo(b: WebdriverIO.Browser): Promise<WifiInfo> {
+	return inWebview(b, () => readWifiInfo(b));
+}
+
+/** The lab networks the app has added, in range or not. */
+export function iosAddedSsids(b: WebdriverIO.Browser): Promise<string[]> {
+	return inWebview(b, () => readAddedSsids(b));
+}
+
+/** Drop every lab network the app added; the device leaves it if it is on
+ *  one. Resolves at once, without waiting for where it lands. */
+export function forgetIosWifi(b: WebdriverIO.Browser): Promise<void> {
+	return inWebview(b, () => forgetAdded(b));
+}
+
+/** Turn the radio on without waiting for where it lands: what a join asks
+ *  of a device that holds no address, since the join itself decides where
+ *  it goes. A no-op when the radio is on already. */
+function radioOn(b: WebdriverIO.Browser): Promise<void> {
 	return inSettings(b, async settings => {
-		const ssid = await settings.ssid();
-		if (ssid === '') return { ssid, address: '' };
 		await settings.openWifi();
-		await settings.openInfo(ssid);
-		return { ssid, address: await settings.ipAddress() };
+		await settings.setWifi(true);
 	});
 }
 
-/** Root: whether the device associates with `ssid` within `ms`. */
-async function associatedWithin(
-	settings: SettingsApp,
+/** How often the join request is looked in on. */
+const JOIN_POLL_MS = 500;
+
+/** Answer the "join this network?" alert iOS puts up for a join request as
+ *  it comes, and resolve with the request's outcome once it has one. Both
+ *  are watched together: the alert may come late on a busy device, the
+ *  session's own alert monitor may take it first, and while it is up every
+ *  webview command is refused as blocked by a modal. */
+async function settleJoinRequest(
+	b: WebdriverIO.Browser,
 	ssid: string,
-	ms: number,
-): Promise<boolean> {
-	const deadline = Date.now() + ms;
+): Promise<string> {
+	const deadline = Date.now() + WIFI_REASSOCIATE_MS;
 	while (Date.now() < deadline) {
-		if ((await settings.ssid()) === ssid) return true;
-		await new Promise(resolve => setTimeout(resolve, 1_000));
+		await b.switchContext('NATIVE_APP');
+		if (await b.$(classChain('**/XCUIElementTypeAlert')).isExisting()) {
+			try {
+				await b.acceptAlert();
+			} catch {
+				/* taken by the alert monitor in between */
+			}
+		}
+		await switchToWebview(b, 'ios');
+		try {
+			const outcome = await b.execute(
+				(ssid: string) => window.__test.wifi.requestJoinOutcome(ssid),
+				ssid,
+			);
+			if (outcome !== null) return outcome;
+		} catch {
+			/* the alert came up in between; the next round answers it */
+		}
+		await b.pause(JOIN_POLL_MS);
 	}
-	return false;
+	throw new Error(
+		`joining "${ssid}" was still going ${WIFI_REASSOCIATE_MS / 1_000}s later`,
+	);
 }
 
-/** Join `ssid` (an empty `passphrase` means an open network), saving it on
- *  the device if it is new, and resolve with the IPv4 address obtained on it.
- *  The tap on the network's row now and then does not take, so it is
- *  repeated while the device does not associate. */
-export function connectIosWifi(
+/** Join `ssid` (an empty `passphrase` means an open network) as the app's
+ *  one lab network — any other the app added is dropped once the device is
+ *  on this one — and resolve with the IPv4 address obtained on it. A device
+ *  already associated with it is only waited for: iOS refuses a request for
+ *  the network it is on. The request is started and left running, its alert
+ *  answered natively, and its outcome read back: awaiting it from the
+ *  webview would have the driver retry the blocked call and iOS refuse the
+ *  second request. */
+export function joinIosWifi(
 	b: WebdriverIO.Browser,
 	ssid: string,
 	passphrase: string,
 ): Promise<string> {
-	return inSettings(b, async settings => {
-		for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
-			if ((await settings.ssid()) === ssid) break;
-			await settings.openWifi();
-			await settings.setWifi(true);
-			await settings.join(ssid, passphrase);
-			await settings.backToRoot();
-			if (await associatedWithin(settings, ssid, ASSOCIATE_MS)) break;
-			if (attempt === TAP_ATTEMPTS) {
-				throw new Error(
-					`device never associated with "${ssid}" after ${TAP_ATTEMPTS} joins; is it in range, and are the credentials right?`,
-				);
-			}
+	return inWebview(b, async () => {
+		const before = await readWifiInfo(b);
+		if (before.ssid === ssid) {
+			await forgetAdded(b, ssid);
+			return await waitForWifi(
+				async () => (await readWifiInfo(b)).address,
+				`device never obtained an address ${WIFI_REASSOCIATE_MS / 1_000}s after associating with "${ssid}"`,
+			);
 		}
-		return await waitForAddressOn(settings, ssid);
+		if (before.address === '') await radioOn(b);
+		await b.execute(
+			(ssid: string, passphrase: string) =>
+				window.__test.wifi.startRequestJoin(ssid, passphrase),
+			ssid,
+			passphrase,
+		);
+		const outcome = await settleJoinRequest(b, ssid);
+		if (outcome !== 'ok') throw new Error(`joining "${ssid}": ${outcome}`);
+		await forgetAdded(b, ssid);
+		return (await readWifiInfo(b)).address;
 	});
 }
 
-/** Forget `ssid`, which drops the association if that is the current one,
- *  and resolve with the IPv4 address the device is on once it has settled on
- *  another saved network. A network not in range is not listed and cannot be
- *  forgotten; it is left alone. */
-export function forgetIosWifi(
-	b: WebdriverIO.Browser,
-	ssid: string,
-): Promise<string> {
-	return inSettings(b, async settings => {
-		await settings.openWifi();
-		if (!(await settings.lists(ssid))) {
-			console.log(`[wifi] "${ssid}" is not in range; nothing to forget`);
-			await settings.backToRoot();
-			const current = await settings.ssid();
-			return current === '' ? '' : await waitForAddressOn(settings, current);
+/** Drop every lab network the app added and resolve with where the device
+ *  is once it has settled on a network of its own — whichever the user
+ *  saved; the harness never learns its name. A device on a lab network is
+ *  waited for until it holds an address on another LAN: the SSID reads ''
+ *  the moment the configuration is gone, before the association drops, and
+ *  a lab network serves a subnet of its own (see `.env.example`). One on no
+ *  lab network keeps what it has, and one off the air gets its radio turned
+ *  on. */
+export function leaveIosWifi(b: WebdriverIO.Browser): Promise<WifiInfo> {
+	return inWebview(b, async () => {
+		const before = await readWifiInfo(b);
+		await forgetAdded(b);
+		if (before.ssid === '') {
+			if (before.address === '') await enableIosWifi(b);
+			return await readWifiInfo(b);
 		}
-		await settings.openInfo(ssid);
-		await settings.forget();
-		await settings.backToRoot();
-		const other = await waitForWifi(
+		await waitForWifi(
 			async () => {
-				const current = await settings.ssid();
-				return current === ssid ? '' : current;
+				const { ssid, network } = await readWifiInfo(b);
+				return ssid === '' && network !== '' && network !== before.network
+					? network
+					: '';
 			},
-			`device never settled on another network ${WIFI_REASSOCIATE_MS / 1_000}s after forgetting "${ssid}"`,
+			`device never settled on a network of its own ${WIFI_REASSOCIATE_MS / 1_000}s after leaving "${before.ssid}"`,
 		);
-		return await waitForAddressOn(settings, other);
+		return await readWifiInfo(b);
 	});
 }
 

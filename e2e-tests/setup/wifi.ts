@@ -5,11 +5,28 @@
 export const WIFI_REASSOCIATE_MS = 90_000;
 
 export interface WifiInfo {
-	/** The SSID the device is associated with, or '' while it is on none. */
+	/** The SSID the device is associated with, or '' while it is on none, or
+	 *  where the platform keeps it from the harness. */
 	ssid: string;
 	/** The device's IPv4 address on its Wi-Fi interface, or '' while it has
 	 *  none. */
 	address: string;
+	/** The LAN that address is on, as `a.b.c.d/n` with the host bits cleared;
+	 *  '' while there is no address. Two devices on one LAN read the same. */
+	network: string;
+}
+
+/** The LAN `address` is on under a `prefixLength`-bit mask, as
+ *  `a.b.c.d/n`; '' when either says there is no address. */
+export function networkOf(address: string, prefixLength: number): string {
+	if (address === '' || !(prefixLength > 0)) return '';
+	const bits = address
+		.split('.')
+		.map(Number)
+		.reduce((acc, octet) => ((acc << 8) | octet) >>> 0, 0);
+	const mask = (0xffffffff << (32 - prefixLength)) >>> 0;
+	const base = (bits & mask) >>> 0;
+	return `${base >>> 24}.${(base >>> 16) & 255}.${(base >>> 8) & 255}.${base & 255}/${prefixLength}`;
 }
 
 /** How often the Wi-Fi state is re-read while waiting for it: callers time
