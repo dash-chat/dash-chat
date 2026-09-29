@@ -10,3 +10,4 @@ export * from './tombstone-client.js';
 export * from './message-ack-client.js';
 export * from './mailbox-tracker-store.js';
 export * from './seed-demo-data.js';
+export * from './blob-client.js';

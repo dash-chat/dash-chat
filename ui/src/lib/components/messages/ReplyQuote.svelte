@@ -91,6 +91,7 @@
 					item={thumbnail}
 					alt={m.photo()}
 					imgClass="h-full w-full object-cover"
+					compact
 				/>
 			</span>
 		{/if}

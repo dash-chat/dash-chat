@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
-	import type { FileAttachment } from 'dash-chat-stores';
+	import { getContext, type Snippet } from 'svelte';
+	import type { BlobStore, FileAttachment } from 'dash-chat-stores';
 	import {
 		formatFileSize,
 		mediaSize,
@@ -8,6 +8,9 @@
 		BlobLoadError,
 	} from '$lib/utils/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
+	import BlobProgressRing from '$lib/components/BlobProgressRing.svelte';
+	import { useBlobProgress } from '$lib/stores/use-blob-progress.svelte';
+	import { onScreen } from '$lib/utils/on-screen';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
 	import { Preloader } from 'konsta/svelte';
@@ -21,11 +24,32 @@
 
 	let { file, metadata }: Props = $props();
 
-	let downloading = $state(false);
+	const blobStore: BlobStore = getContext('blob-store');
+	let visible = $state(false);
+	const hash = $derived(file.hash);
+	const progress = useBlobProgress(
+		blobStore,
+		() => hash,
+		() => visible,
+	);
+	const downloading = $derived(
+		progress.current !== undefined && !progress.current.complete
+			? progress.current
+			: undefined,
+	);
 
+	let saving = $state(false);
+
+	// A tap on a file still downloading asks the node for it now and says so;
+	// the save itself waits for a tap once the blob has landed.
 	async function handleSave() {
-		if (downloading) return;
-		downloading = true;
+		if (saving) return;
+		if (downloading !== undefined) {
+			blobStore.retry(hash);
+			showToast(m.fileStillDownloading());
+			return;
+		}
+		saving = true;
 		try {
 			if (await saveFileAttachment(file)) showToast(m.fileSaved());
 		} catch (e) {
@@ -34,7 +58,7 @@
 			else showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error(e);
 		} finally {
-			downloading = false;
+			saving = false;
 		}
 	}
 </script>
@@ -44,12 +68,20 @@
 	class="flex w-full cursor-pointer items-center border-none bg-transparent px-1 py-0.5 text-start text-inherit"
 	data-testid="message-attachment-file"
 	onclick={handleSave}
+	{@attach onScreen(v => (visible = v))}
 >
 	<div
 		class="me-2.5 flex h-10 w-8 shrink-0 items-center justify-center"
 		data-testid="message-attachment-file-icon"
 	>
-		{#if downloading}
+		{#if downloading !== undefined}
+			<BlobProgressRing
+				bytes={downloading.bytes}
+				total={mediaSize(file)}
+				stalled={downloading.stalled}
+				size={32}
+			/>
+		{:else if saving}
 			<Preloader class="h-6 w-6" />
 		{:else}
 			<ExtensionSheet name={file.name} />
@@ -60,7 +92,13 @@
 			class="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap"
 			>{file.name}</span
 		>
-		<span class="text-xs opacity-70">{formatFileSize(mediaSize(file))}</span>
+		<span class="text-xs opacity-70" data-testid="message-attachment-file-size">
+			{#if downloading !== undefined}
+				{formatFileSize(downloading.bytes)} / {formatFileSize(mediaSize(file))}
+			{:else}
+				{formatFileSize(mediaSize(file))}
+			{/if}
+		</span>
 	</div>
 	{#if metadata}
 		<div

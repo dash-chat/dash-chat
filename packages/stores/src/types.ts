@@ -54,6 +54,7 @@ export interface FileAttachment {
 export interface VoiceNote {
 	hash: Hash;
 	mime_type: string;
+	size: number;
 	duration_ms: number;
 	waveform: Uint8Array;
 }
@@ -158,6 +159,7 @@ export function mediaBundleToAttachment(
 			kind: 'voice_note',
 			voice_note: {
 				mime_type: voiceNote.mime_type,
+				size: voiceNote.size,
 				duration_ms: voiceNote.duration_ms,
 				waveform: voiceNote.waveform,
 				hash: voiceNote.hash,

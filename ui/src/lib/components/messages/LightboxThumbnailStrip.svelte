@@ -55,6 +55,7 @@
 				alt={p.name}
 				imgClass="block h-full w-full object-cover"
 				lazy
+				compact
 			/>
 		</button>
 	{/each}

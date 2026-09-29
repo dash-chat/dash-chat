@@ -168,3 +168,86 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         "restarted node should re-queue the stored media blob for its chat topic, got {topics:?}",
     );
 }
+
+/// While bobbi's fetch loop downloads alice's photo, `blob_progress` snapshots
+/// never report fewer bytes than the one before, at least one catches the
+/// download part-way, and the last reports the blob complete at its full size.
+#[tokio::test(flavor = "multi_thread")]
+async fn blob_progress_snapshots_climb_to_completion() {
+    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
+
+    let config = NodeConfig::testing();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    let mut photo_bytes = vec![0u8; 4 << 20];
+    rand::fill(&mut photo_bytes[..]);
+    let size = photo_bytes.len() as u64;
+    let media = OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
+            data: photo_bytes,
+            name: "pic.png".into(),
+            mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
+        }],
+    };
+    alice
+        .send_message(chat, "progress", Some(media), None)
+        .await
+        .unwrap();
+    let hash = alice
+        .get_messages(chat)
+        .await
+        .unwrap()
+        .into_iter()
+        .find_map(|m| m.content.media().cloned())
+        .expect("alice's copy of the message carries media")
+        .first()
+        .expect("one media item")
+        .hash()
+        .to_string();
+
+    let started = std::time::Instant::now();
+    let mut snapshots = vec![];
+    loop {
+        let snap = bobbi.blob_progress(vec![hash.clone()]).await.unwrap();
+        assert_eq!(snap.len(), 1);
+        let complete = snap[0].complete;
+        snapshots.push(snap.into_iter().next().unwrap());
+        if complete {
+            break;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "blob never completed: {snapshots:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+    }
+    for pair in snapshots.windows(2) {
+        assert!(
+            pair[1].bytes >= pair[0].bytes,
+            "bytes must not decrease: {snapshots:?}"
+        );
+    }
+    assert!(
+        snapshots.iter().any(|s| s.bytes > 0 && s.bytes < size),
+        "no snapshot caught the download part-way: {snapshots:?}"
+    );
+    let last = snapshots.last().unwrap();
+    assert_eq!(last.bytes, size);
+    assert_eq!(last.hash, hash);
+}

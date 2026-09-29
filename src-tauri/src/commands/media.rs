@@ -48,3 +48,27 @@ fn sanitized_file_name(name: &str) -> String {
         .unwrap_or("attachment")
         .to_string()
 }
+
+/// How much of each blob is in the local store, for attachments on screen.
+#[tauri::command]
+pub async fn get_blob_progress(
+    hashes: Vec<String>,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<Vec<dashchat_node::BlobProgress>, String> {
+    let node = app_node_manager.get().await?;
+    node.blob_progress(hashes)
+        .await
+        .map_err(|e| format!("Failed to read blob progress: {e:?}"))
+}
+
+/// Fetch a blob now rather than on the background loop's next pass: what a
+/// tap on an attachment that is still downloading asks for.
+#[tauri::command]
+pub async fn fetch_blob_now(
+    hash: String,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<(), String> {
+    let node = app_node_manager.get().await?;
+    node.fetch_blob_now(&hash)
+        .map_err(|e| format!("Failed to fetch blob {hash}: {e:?}"))
+}

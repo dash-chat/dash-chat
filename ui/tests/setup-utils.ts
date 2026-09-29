@@ -9,7 +9,7 @@
  */
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
-import { invokeAfterSetup } from 'dash-chat-stores';
+import { BLOB_STALL_INTERVAL_MS, invokeAfterSetup } from 'dash-chat-stores';
 
 import type { m } from '../src/lib/paraglide/messages.js';
 
@@ -237,6 +237,14 @@ function disableP2p(): Promise<void> {
 	return invokeAfterSetup('set_p2p_enabled', { enabled: false });
 }
 
+/** Pause or resume this agent's blob fetching, background loop and on-demand
+ * alike, so a spec can observe an attachment's downloading state. Backed by the
+ * `set_blob_fetch_paused` command (only registered under `e2e-tests`). */
+function setBlobFetchPaused(paused: boolean): Promise<void> {
+	return invokeAfterSetup('set_blob_fetch_paused', { paused });
+}
+
+/** Reset the app to first-launch state: clear web storage, then run the real
 /** Take every notification this app has posted off the device. */
 function clearNotifications(): Promise<void> {
 	return invokeAfterSetup('plugin:notification|remove_active');
@@ -596,6 +604,10 @@ export const testUtils = {
 	simulateUpdate,
 	hasText,
 	disableP2p,
+	setBlobFetchPaused,
+	/** How long a download must sit without progress before its ring reports
+	 * a stall; a spec waits this long before expecting the retry affordance. */
+	blobStallIntervalMs: BLOB_STALL_INTERVAL_MS,
 	clearNotifications,
 	resetToFirstLaunch,
 	showKeyboard,
@@ -643,6 +655,12 @@ export const testUtils = {
 			'handleDeepLink called before registerTestUtils provided the callback',
 		);
 	},
+	/** The blob hashes the store's latest progress poll asked about. */
+	blobPolledHashes: (): string[] => {
+		throw new Error(
+			'blobPolledHashes called before registerTestUtils provided the callback',
+		);
+	},
 };
 
 declare global {
@@ -657,6 +675,7 @@ export function registerTestUtils(
 	messages?: Messages,
 	enablePreviewFeatures?: () => void,
 	handleDeepLink?: (url: string) => void,
+	blobPolledHashes?: () => string[],
 ) {
 	window.__test = testUtils;
 	if (enablePreviewFeatures) {
@@ -664,6 +683,9 @@ export function registerTestUtils(
 	}
 	if (handleDeepLink) {
 		testUtils.handleDeepLink = handleDeepLink;
+	}
+	if (blobPolledHashes) {
+		testUtils.blobPolledHashes = blobPolledHashes;
 	}
 	if (goto) {
 		testUtils.goto = goto;
