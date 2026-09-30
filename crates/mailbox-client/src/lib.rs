@@ -30,11 +30,13 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .timeout(Duration::from_secs(20));
     // The e2e mailbox serves TLS so that a degraded link slows the handshake,
     // which the connect timeout covers, as a real network does.
+    // `Certificate::from_pem` panics on iOS, where native-tls only reads DER;
+    // the bundle parser decodes the PEM itself.
     #[cfg(feature = "e2e-test-ca")]
-    let builder = builder.add_root_certificate(
-        reqwest::Certificate::from_pem(include_bytes!("../e2e-test-ca/ca.pem"))
-            .expect("e2e test CA is valid PEM"),
-    );
+    let builder = reqwest::Certificate::from_pem_bundle(include_bytes!("../e2e-test-ca/ca.pem"))
+        .expect("e2e test CA is valid PEM")
+        .into_iter()
+        .fold(builder, reqwest::ClientBuilder::add_root_certificate);
     builder.build().expect("Failed to build HTTP client")
 });
 
