@@ -32,6 +32,21 @@ impl std::str::FromStr for DeviceId {
     }
 }
 
+impl mailbox_client::MailboxKey for DeviceId {
+    fn to_mailbox_key(&self) -> String {
+        hex::encode(self.as_bytes())
+    }
+
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
+        let bytes =
+            hex::decode(key).map_err(|e| anyhow::anyhow!("invalid device id mailbox key: {e}"))?;
+        let array: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("device id mailbox key must be 32 bytes"))?;
+        Ok(DeviceId::from(VerifyingKey::from_bytes(&array)?))
+    }
+}
+
 /// The ID for an "agent" which may control multiple devices.
 #[derive(
     Clone,
@@ -119,5 +134,21 @@ impl sqlx::Decode<'_, Sqlite> for AgentId {
         let bytes = <Vec<u8> as sqlx::Decode<Sqlite>>::decode(value)?;
         let arr: [u8; 32] = bytes.try_into().map_err(|_| "AgentId is not 32 bytes")?;
         Ok(AgentId(ActorId::from_bytes(&arr)?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mailbox_client::MailboxKey;
+    use p2panda::SigningKey;
+
+    use super::*;
+
+    #[test]
+    fn device_id_round_trips_through_mailbox_key() {
+        let device_id = DeviceId::from(SigningKey::from_bytes(&[0xcd; 32]).verifying_key());
+        let key = device_id.to_mailbox_key();
+        assert_eq!(key, hex::encode(device_id.as_bytes()));
+        assert_eq!(DeviceId::from_mailbox_key(&key).unwrap(), device_id);
     }
 }

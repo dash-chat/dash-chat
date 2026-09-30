@@ -140,12 +140,22 @@ impl<T> ItemTraits for T where
 {
 }
 
+/// How a `Topic` or `Author` maps to a stable string key for addressing a mailbox.
+pub trait MailboxKey:
+    Copy + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync
+{
+    fn to_mailbox_key(&self) -> String;
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error>
+    where
+        Self: Sized;
+}
+
 pub trait MailboxItem:
     Clone + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync + 'static
 {
     type Hash: ItemTraits;
-    type Author: ItemTraits;
-    type Topic: ItemTraits;
+    type Author: MailboxKey;
+    type Topic: MailboxKey;
 
     fn seq_num(&self) -> SeqNum;
     fn hash(&self) -> Self::Hash;
@@ -186,4 +196,36 @@ pub struct NoopUnfetchedBlobTracker;
 impl UnfetchedBlobTracker for NoopUnfetchedBlobTracker {
     async fn record(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
     async fn remove(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
+}
+
+impl MailboxKey for p2panda_core::Topic {
+    fn to_mailbox_key(&self) -> String {
+        hex::encode(self.as_bytes())
+    }
+
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
+        let bytes =
+            hex::decode(key).map_err(|e| anyhow::anyhow!("invalid topic mailbox key: {e}"))?;
+        let array: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("topic mailbox key must be 32 bytes"))?;
+        Ok(array.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn topic_id_round_trips_through_mailbox_key() {
+        let bytes = [0xab; 32];
+        let topic = p2panda_core::Topic::from(bytes);
+        let key = topic.to_mailbox_key();
+        assert_eq!(
+            key,
+            "abababababababababababababababababababababababababababababababab"
+        );
+        assert_eq!(p2panda_core::Topic::from_mailbox_key(&key).unwrap(), topic);
+    }
 }

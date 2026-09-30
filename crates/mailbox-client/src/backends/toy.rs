@@ -1,5 +1,4 @@
 use once_cell::sync::Lazy;
-use serde::{Serialize, de::DeserializeOwned};
 use std::collections::{BTreeMap, HashMap};
 
 use mailbox_server::{
@@ -7,21 +6,9 @@ use mailbox_server::{
 };
 
 use crate::{
-    FetchRequest, FetchResponse, FetchTopicResponse, HTTP_CLIENT, ItemTraits, MailboxClient,
-    MailboxId, MailboxItem, PublishResponse,
+    FetchRequest, FetchResponse, FetchTopicResponse, HTTP_CLIENT, MailboxClient, MailboxId,
+    MailboxItem, MailboxKey, PublishResponse,
 };
-
-/// Trait bounds the toy client requires of an item's `Topic` and `Author` types.
-///
-/// CONTRACT: the `Serialize`/`Deserialize` impls of these types MUST round-trip
-/// through a single JSON string (e.g. `serializer.collect_str(&hex)`). The toy
-/// client encodes topic/author ids as HTTP map keys via [`stringify`], which
-/// strips the surrounding quotes; a `Serialize` impl that emits anything other
-/// than a JSON string (an array, object, or number) silently produces a
-/// malformed key. `dashchat-node` pins this for the real `TopicId`/`DeviceId`
-/// types via its `serializes_as_json_string_for_mailbox_key` tests.
-pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
-impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
 
 /// Client-side timeout for a single blob upload, larger than the default HTTP
 /// timeout because a blob can be big.
@@ -336,11 +323,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
 }
 
 #[async_trait::async_trait]
-impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item>
-where
-    Item::Topic: ToyItemTraits,
-    Item::Author: ToyItemTraits,
-{
+impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
     fn id(&self) -> MailboxId {
         self.id.clone()
     }
@@ -490,27 +473,21 @@ where
     }
 }
 
-impl<Item: MailboxItem> ToyMailboxClient<Item>
-where
-    Item::Topic: ToyItemTraits,
-    Item::Author: ToyItemTraits,
-{
+impl<Item: MailboxItem> ToyMailboxClient<Item> {
     fn encode_topic_id(topic_id: &Item::Topic) -> String {
-        stringify(topic_id)
+        topic_id.to_mailbox_key()
     }
 
     fn device_id_to_log_id(device_id: &Item::Author) -> String {
-        stringify(device_id)
+        device_id.to_mailbox_key()
     }
 
     fn log_id_from_string(s: &str) -> Result<Item::Topic, anyhow::Error> {
-        let topic: Item::Topic = unstringify(s)?;
-        Ok(topic)
+        Item::Topic::from_mailbox_key(s)
     }
 
     fn device_id_from_string(s: &str) -> Result<Item::Author, anyhow::Error> {
-        let author: Item::Author = unstringify(s)?;
-        Ok(author)
+        Item::Author::from_mailbox_key(s)
     }
 
     fn serialize_operation(item: &Item) -> Result<Blip, anyhow::Error> {
@@ -521,18 +498,6 @@ where
     fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
         Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
     }
-}
-
-pub fn stringify(value: impl Serialize) -> String {
-    serde_json::to_string(&value)
-        .expect("value is JSON-serializable")
-        .trim_matches('"')
-        .to_string()
-}
-
-pub fn unstringify<T: DeserializeOwned>(s: &str) -> Result<T, anyhow::Error> {
-    serde_json::from_str(&format!("\"{}\"", s))
-        .map_err(|e| anyhow::anyhow!("Failed to unstringify: {}", e))
 }
 
 /// Poll the mailbox `/health` endpoint until it responds, confirming the server
@@ -552,41 +517,7 @@ pub async fn wait_for_mailbox_health(url: &str) {
 
 #[cfg(test)]
 mod tests {
-    use serde::Deserialize;
-
     use super::*;
-
-    #[derive(Debug, PartialEq)]
-    struct Abecedarian(u8);
-
-    impl Serialize for Abecedarian {
-        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            serializer.serialize_str(&format!(
-                "{}",
-                "abcdefghijklmnopqrstuvwxyz"
-                    .chars()
-                    .take(self.0 as usize)
-                    .collect::<String>()
-            ))
-        }
-    }
-
-    impl<'de> Deserialize<'de> for Abecedarian {
-        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            let s = String::deserialize(deserializer)?;
-            let value = s.chars().count() as u8;
-            Ok(Abecedarian(value))
-        }
-    }
-
-    #[test]
-    fn test_stringify_unstringify() {
-        let topic = Abecedarian(10);
-        let topic_str = stringify(&topic);
-        assert_eq!(topic_str, "abcdefghij");
-        let topic_unstr = unstringify(&topic_str).unwrap();
-        assert_eq!(topic, topic_unstr);
-    }
 
     #[tokio::test]
     async fn register_hashes_records_not_stored_and_removes_already_stored() {
