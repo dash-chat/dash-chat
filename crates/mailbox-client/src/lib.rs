@@ -26,8 +26,8 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     // several seconds, so the connect budget matches Signal's 15 s. The total
     // covers the connect too.
     let builder = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10));
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(20));
     // The e2e mailbox serves TLS so that a degraded link slows the handshake,
     // which the connect timeout covers, as a real network does.
     #[cfg(feature = "e2e-test-ca")]
