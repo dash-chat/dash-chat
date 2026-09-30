@@ -34,7 +34,7 @@ import {
 } from './setup/mailbox-server';
 import { CHECKOUT_CLAIM } from './setup/network-id';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
-import { DesktopPlatform } from './setup/platforms/desktop';
+import { DesktopPlatform, buildDesktopApp } from './setup/platforms/desktop';
 import { IosPlatform, clearIosAppData } from './setup/platforms/ios';
 import type { AgentPlatform } from './setup/platforms/platform';
 import {
@@ -269,6 +269,12 @@ export const config: WebdriverIO.MultiremoteConfig = {
 					logger: mailboxLogger,
 					port: mailboxPort,
 				} = await startLocalMailboxServer(pushUrl));
+			}
+
+			// Stress specs launch short-lived desktop visitors even when every
+			// agent is a phone.
+			if (desktop === null && process.env.E2E_STRESS === '1') {
+				buildDesktopApp();
 			}
 
 			for (const platform of platforms) {

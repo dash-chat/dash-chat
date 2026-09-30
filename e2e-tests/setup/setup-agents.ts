@@ -445,10 +445,20 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await enableIosWifi(b)
 			: await enableAndroidWifi(wifiUdid(agent, b));
-	agent.connectWifi = async (ssid: string, passphrase: string) =>
+	const connectWifiOnce = async (ssid: string, passphrase: string) =>
 		agent.platform === 'ios'
 			? await connectIosWifi(b, ssid, passphrase)
 			: await connectAndroidWifi(wifiUdid(agent, b), ssid, passphrase);
+	agent.connectWifi = async (ssid: string, passphrase: string) => {
+		// A phone sometimes fails to associate with an access point it was just
+		// on; one more try keeps that radio hiccup from failing the spec.
+		try {
+			return await connectWifiOnce(ssid, passphrase);
+		} catch (err) {
+			console.warn(`failed to join ${ssid}, retrying: ${String(err)}`);
+			return await connectWifiOnce(ssid, passphrase);
+		}
+	};
 	agent.forgetWifi = async (ssid: string) =>
 		agent.platform === 'ios'
 			? await forgetIosWifi(b, ssid)
@@ -719,7 +729,7 @@ type PointerType = 'touch' | 'mouse';
  *  which never reaches a handler on a child (a Konsta list item's link), while
  *  a pointer action is dispatched at the point's innermost element and
  *  bubbles up like a real click. */
-function tapWebElementsAtTheirRect(
+export function tapWebElementsAtTheirRect(
 	agent: WebdriverIO.Browser,
 	pointerType: PointerType,
 ): void {

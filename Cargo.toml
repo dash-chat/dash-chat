@@ -37,17 +37,19 @@ reporting = { path = "crates/reporting" }
 
 # `dashchat-offline-node` plus one commit: SQLite transactions begin with
 # BEGIN IMMEDIATE, so the app and the iOS push extension sharing one database
-# file stop refusing each other's writes with "database is locked".
-p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors", features = [
+# file stop refusing each other's writes with "database is locked". On top: nodes
+# found over mDNS are discovered right away, and sync forgets ended sessions,
+# skips duplicate ones and backs off from nodes whose sessions keep failing.
+p2panda ={ git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors", features = [
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority", features = [
   "test_utils",
 ] }
 
@@ -90,4 +92,3 @@ swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = 
 # p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
