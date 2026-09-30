@@ -20,7 +20,7 @@ impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {
 
 /// Client-side timeout for a single blob upload, larger than the default HTTP
 /// timeout because a blob can be big.
-const UPLOAD_BLOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const UPLOAD_BLOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// The slowest uplink an upload is given time to finish over, so a big blob
 /// from a phone on a weak connection isn't cut off by [`UPLOAD_BLOB_TIMEOUT`].
 const SLOWEST_UPLINK_BYTES_PER_SEC: f64 = 32.0 * 1024.0;

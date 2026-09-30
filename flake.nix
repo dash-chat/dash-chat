@@ -136,6 +136,7 @@
             pkgs.cargo-nextest
             pkgs.doctl
             pkgs.toxiproxy
+            pkgs.stunnel
           ]
           ++ lib.optionals pkgs.stdenv.isLinux [
             pkgs.mold

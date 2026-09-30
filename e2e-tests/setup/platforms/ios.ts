@@ -569,7 +569,7 @@ export class IosPlatform implements AgentPlatform {
 		// host still holds before each session.
 		process.env._WDIO_IOS_HOST_IP = hostIp;
 		const bakedEnv: Record<string, string> = {
-			MAILBOX_URL: `http://${hostIp}:${mailboxPort}`,
+			MAILBOX_URL: `https://${hostIp}:${mailboxPort}`,
 		};
 		if (pushPort !== null) {
 			bakedEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://${hostIp}:${pushPort}`;

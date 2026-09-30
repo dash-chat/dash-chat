@@ -136,7 +136,7 @@ mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
 
 [features]
-e2e-tests = ["dashchat-node/testing", "dep:tauri-plugin-wdio-webdriver"]
+e2e-tests = ["dashchat-node/testing", "mailbox-client/e2e-test-ca", "dep:tauri-plugin-wdio-webdriver"]
 
 [dev-dependencies]
 dashchat-node = { path = "../crates/dashchat-node", features = ["testing"] }

@@ -57,7 +57,7 @@ export function remoteMailboxUrl(): string | null {
 	if (url === undefined || url === '') return null;
 	// In local mode onPrepare exports the spawned server's own URL, and worker
 	// processes inherit it — that's not a remote mailbox.
-	if (/^http:\/\/localhost:\d+\/?$/.test(url)) return null;
+	if (/^https:\/\/localhost:\d+\/?$/.test(url)) return null;
 	return url;
 }
 

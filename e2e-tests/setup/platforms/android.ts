@@ -737,7 +737,7 @@ export function enableAndroidWifi(udid: string): Promise<string> {
  * through Appium (UiAutomator2) sessions that land directly in the app's
  * webview context, so specs and page objects work exactly as on desktop.
  *
- * The e2e APK is built with MAILBOX_URL=http://127.0.0.1:3200 baked in;
+ * The e2e APK is built with MAILBOX_URL=https://127.0.0.1:3200 baked in;
  * onPrepare bridges each device's loopback port 3200 to the host's mailbox
  * server via `adb reverse`.
  */
@@ -826,7 +826,7 @@ export class AndroidPlatform implements AgentPlatform {
 			ctx.mailboxPort === null
 				? remoteBakedEnv()
 				: {
-						MAILBOX_URL: `http://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
+						MAILBOX_URL: `https://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
 						...(ctx.pushPort !== null
 							? {
 									PUSH_NOTIFICATIONS_SERVER_URL: `http://127.0.0.1:${DEVICE_PUSH_PORT}`,

@@ -121,9 +121,11 @@ let pushServer: ChildProcess | undefined;
 let pushLogger: ChildProcess | undefined;
 let toxiproxy: ChildProcess | undefined;
 let toxiproxyLogger: ChildProcess | undefined;
+let mailboxTls: ChildProcess | undefined;
+let mailboxTlsLogger: ChildProcess | undefined;
 
 async function teardown() {
-	for (const server of [mailboxServer, pushServer, toxiproxy]) {
+	for (const server of [mailboxServer, mailboxTls, pushServer, toxiproxy]) {
 		if (server?.pid) {
 			// Negative PID = signal the entire detached process group.
 			try {
@@ -139,6 +141,7 @@ async function teardown() {
 	mailboxLogger?.kill();
 	pushLogger?.kill();
 	toxiproxyLogger?.kill();
+	mailboxTlsLogger?.kill();
 	release(CHECKOUT_CLAIM);
 }
 
@@ -268,6 +271,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				({
 					proc: mailboxServer,
 					logger: mailboxLogger,
+					tls: mailboxTls,
+					tlsLogger: mailboxTlsLogger,
 					port: mailboxPort,
 				} = await startLocalMailboxServer(pushUrl));
 			}
