@@ -541,6 +541,160 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn publish_and_fetch_round_trip_msg_keys() {
+        use std::collections::BTreeMap;
+        use std::sync::{Arc, Mutex};
+
+        let stored: Arc<
+            Mutex<BTreeMap<String, BTreeMap<String, BTreeMap<u64, mailbox_server::Blip>>>>,
+        > = Arc::new(Mutex::new(BTreeMap::new()));
+        let stored_in_store = stored.clone();
+        let stored_in_get = stored.clone();
+
+        let app = axum::Router::new()
+            .route(
+                "/blips/store",
+                axum::routing::post(
+                    move |axum::Json(req): axum::Json<mailbox_server::StoreBlipsRequest>| async move {
+                        let mut stored = stored_in_store.lock().unwrap();
+                        let mut watermarks: BTreeMap<String, BTreeMap<String, Option<u64>>> =
+                            BTreeMap::new();
+                        for (topic, authors) in req.blips {
+                            let topic_entry = stored.entry(topic.clone()).or_default();
+                            let mut topic_watermarks: BTreeMap<String, Option<u64>> =
+                                BTreeMap::new();
+                            for (author, seqs) in authors {
+                                let author_entry = topic_entry.entry(author.clone()).or_default();
+                                let mut seqs_vec: Vec<u64> = seqs.keys().copied().collect();
+                                for (seq, blip) in seqs {
+                                    author_entry.insert(seq, blip);
+                                }
+                                seqs_vec.sort();
+                                let watermark = seqs_vec
+                                    .iter()
+                                    .enumerate()
+                                    .take_while(|(i, seq)| **seq == *i as u64)
+                                    .map(|(_, seq)| seq)
+                                    .copied()
+                                    .last();
+                                topic_watermarks.insert(author, watermark);
+                            }
+                            watermarks.insert(topic, topic_watermarks);
+                        }
+                        axum::Json(mailbox_server::StoreBlipsResponse { watermarks })
+                    },
+                ),
+            )
+            .route(
+                "/blips/get",
+                axum::routing::post(
+                    move |axum::Json(req): axum::Json<mailbox_server::GetBlipsRequest>| async move {
+                        let stored = stored_in_get.lock().unwrap();
+                        let mut blips_by_topic: BTreeMap<
+                            String,
+                            mailbox_server::GetBlipsForTopicResponse,
+                        > = BTreeMap::new();
+                        for (topic, authors) in req.topics {
+                            let mut topic_blips: BTreeMap<String, BTreeMap<u64, mailbox_server::Blip>> =
+                                BTreeMap::new();
+                            let mut missing: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+                            if let Some(topic_entry) = stored.get(&topic) {
+                                for (author, min_seq) in authors {
+                                    if let Some(author_entry) = topic_entry.get(&author) {
+                                        let filtered: BTreeMap<u64, mailbox_server::Blip> =
+                                            author_entry
+                                                .iter()
+                                                .filter(|(seq, _)| **seq > min_seq)
+                                                .map(|(seq, blip)| (*seq, blip.clone()))
+                                                .collect();
+                                        topic_blips.insert(author, filtered);
+                                    } else {
+                                        missing.insert(author, Vec::new());
+                                    }
+                                }
+                            } else {
+                                for (author, _) in authors {
+                                    missing.insert(author, Vec::new());
+                                }
+                            }
+                            blips_by_topic.insert(
+                                topic,
+                                mailbox_server::GetBlipsForTopicResponse {
+                                    blips: topic_blips,
+                                    missing,
+                                },
+                            );
+                        }
+                        axum::Json(mailbox_server::GetBlipsResponse { blips_by_topic })
+                    },
+                ),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let client = ToyMailboxClient::<crate::testing::Msg>::new(
+            "mbx".to_string(),
+            base_url,
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
+        );
+
+        let msgs = vec![
+            crate::testing::Msg {
+                topic: 42,
+                author: 'a',
+                seq: 0,
+            },
+            crate::testing::Msg {
+                topic: 42,
+                author: 'a',
+                seq: 1,
+            },
+            crate::testing::Msg {
+                topic: 42,
+                author: 'b',
+                seq: 0,
+            },
+        ];
+        client.publish(msgs.clone()).await.unwrap();
+
+        // The keys were encoded as bare strings, not JSON arrays/objects.
+        let stored = stored.lock().unwrap();
+        assert_eq!(stored.keys().collect::<Vec<_>>(), vec!["42"]);
+        let author_keys: std::collections::BTreeSet<&str> =
+            stored["42"].keys().map(|s| s.as_str()).collect();
+        assert_eq!(author_keys, ["a", "b"].iter().copied().collect());
+        drop(stored);
+
+        // Fetch back the items above the reported local height.
+        let request = FetchRequest(BTreeMap::from([(
+            42u8,
+            BTreeMap::from([('a', 0u64), ('b', 0u64)]),
+        )]));
+        let response = client.fetch(request).await.unwrap();
+
+        let topic_response = response.0.get(&42).expect("topic 42");
+        let author_a_seqs: Vec<u64> = topic_response
+            .items
+            .iter()
+            .filter(|m| m.author() == 'a')
+            .map(|m| m.seq_num())
+            .collect();
+        let author_b_seqs: Vec<u64> = topic_response
+            .items
+            .iter()
+            .filter(|m| m.author() == 'b')
+            .map(|m| m.seq_num())
+            .collect();
+        assert_eq!(author_a_seqs, vec![1]);
+        assert!(author_b_seqs.is_empty());
+    }
+
+    #[tokio::test]
     async fn upload_blob_posts_raw_bytes() {
         use std::sync::{Arc, Mutex};
 
