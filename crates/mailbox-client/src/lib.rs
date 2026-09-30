@@ -228,4 +228,20 @@ mod tests {
         );
         assert_eq!(p2panda_core::Topic::from_mailbox_key(&key).unwrap(), topic);
     }
+
+    #[test]
+    fn topic_id_from_mailbox_key_rejects_non_hex() {
+        assert!(p2panda_core::Topic::from_mailbox_key("not-hex").is_err());
+    }
+
+    #[test]
+    fn topic_id_from_mailbox_key_rejects_wrong_length() {
+        assert!(p2panda_core::Topic::from_mailbox_key("ab").is_err());
+        assert!(
+            p2panda_core::Topic::from_mailbox_key(
+                "ababababababababababababababababababababababababababababababababcd"
+            )
+            .is_err()
+        );
+    }
 }

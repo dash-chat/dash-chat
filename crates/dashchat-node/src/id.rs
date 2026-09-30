@@ -144,11 +144,42 @@ mod tests {
 
     use super::*;
 
+    // Hex-encoded verifying key for SigningKey::from_bytes(&[0xcd; 32]).
+    // Ed25519 clamping means the public key is NOT 0xcd...cd.
+    const DEVICE_HEX: &str = "fc947730f49eb01427a66e050733294d9e520e545c7a27125a780634e0860a27";
+
     #[test]
     fn device_id_round_trips_through_mailbox_key() {
         let device_id = DeviceId::from(SigningKey::from_bytes(&[0xcd; 32]).verifying_key());
         let key = device_id.to_mailbox_key();
-        assert_eq!(key, hex::encode(device_id.as_bytes()));
+        assert_eq!(key, DEVICE_HEX);
         assert_eq!(DeviceId::from_mailbox_key(&key).unwrap(), device_id);
+    }
+
+    #[test]
+    fn device_id_from_mailbox_key_rejects_non_hex() {
+        assert!(DeviceId::from_mailbox_key("not-hex").is_err());
+    }
+
+    #[test]
+    fn device_id_from_mailbox_key_rejects_wrong_length() {
+        assert!(DeviceId::from_mailbox_key("cd").is_err());
+        assert!(
+            DeviceId::from_mailbox_key(
+                "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn device_id_from_mailbox_key_rejects_invalid_curve_point() {
+        // 32 valid hex bytes that do not form a valid Ed25519 public key.
+        assert!(
+            DeviceId::from_mailbox_key(
+                "0000000000000000000000000000000000000000000000000000000000000001"
+            )
+            .is_err()
+        );
     }
 }
