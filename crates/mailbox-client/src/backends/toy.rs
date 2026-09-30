@@ -344,8 +344,8 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
             ops.iter().flat_map(|op| op.blob_hashes()).collect();
 
         for op in ops {
-            let topic_id = Self::encode_topic_id(&op.topic());
-            let log_id = Self::device_id_to_log_id(&op.author());
+            let topic_id = op.topic().to_mailbox_key();
+            let log_id = op.author().to_mailbox_key();
             let seq_num = op.seq_num();
             let blip = Self::serialize_operation(&op)?;
 
@@ -374,9 +374,9 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
 
             let mut result = PublishResponse::default();
             for (topic_str, authors) in response.watermarks {
-                let topic = Self::log_id_from_string(&topic_str)?;
+                let topic = Item::Topic::from_mailbox_key(&topic_str)?;
                 for (author_str, watermark) in authors {
-                    let author = Self::device_id_from_string(&author_str)?;
+                    let author = Item::Author::from_mailbox_key(&author_str)?;
                     result.0.entry(topic).or_default().insert(author, watermark);
                 }
             }
@@ -414,16 +414,15 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         // Convert FetchRequest to GetBlipsRequest
         let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
-        for (log_id, authors) in request.0.iter() {
-            let topic_id = Self::encode_topic_id(log_id);
-            let mut log_map: BTreeMap<String, u64> = BTreeMap::new();
+        for (topic, authors) in request.0.iter() {
+            let topic_id = topic.to_mailbox_key();
+            let mut author_map: BTreeMap<String, u64> = BTreeMap::new();
 
-            for (device_id, height) in authors.iter() {
-                let server_log_id = Self::device_id_to_log_id(device_id);
-                log_map.insert(server_log_id, *height);
+            for (author, height) in authors.iter() {
+                author_map.insert(author.to_mailbox_key(), *height);
             }
 
-            topics.insert(topic_id, log_map);
+            topics.insert(topic_id, author_map);
         }
 
         let get_request = GetBlipsRequest { topics };
@@ -449,7 +448,7 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
 
         for (topic_id_str, topic_response) in response.blips_by_topic {
-            let log_id = Self::log_id_from_string(&topic_id_str)?;
+            let topic = Item::Topic::from_mailbox_key(&topic_id_str)?;
 
             // Deserialize blips to operations
             let mut items = Vec::new();
@@ -462,11 +461,11 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
             // Convert missing map
             let mut missing: HashMap<Item::Author, Vec<u64>> = HashMap::new();
             for (author_str, seq_nums) in topic_response.missing {
-                let device_id = Self::device_id_from_string(&author_str)?;
-                missing.insert(device_id, seq_nums);
+                let author = Item::Author::from_mailbox_key(&author_str)?;
+                missing.insert(author, seq_nums);
             }
 
-            result.insert(log_id, FetchTopicResponse { items, missing });
+            result.insert(topic, FetchTopicResponse { items, missing });
         }
 
         Ok(FetchResponse(result))
@@ -474,22 +473,6 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
 }
 
 impl<Item: MailboxItem> ToyMailboxClient<Item> {
-    fn encode_topic_id(topic_id: &Item::Topic) -> String {
-        topic_id.to_mailbox_key()
-    }
-
-    fn device_id_to_log_id(device_id: &Item::Author) -> String {
-        device_id.to_mailbox_key()
-    }
-
-    fn log_id_from_string(s: &str) -> Result<Item::Topic, anyhow::Error> {
-        Item::Topic::from_mailbox_key(s)
-    }
-
-    fn device_id_from_string(s: &str) -> Result<Item::Author, anyhow::Error> {
-        Item::Author::from_mailbox_key(s)
-    }
-
     fn serialize_operation(item: &Item) -> Result<Blip, anyhow::Error> {
         let bytes = p2panda_core::cbor::encode_cbor(item)?;
         Ok(Blip::new(bytes))
