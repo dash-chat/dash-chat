@@ -32,18 +32,20 @@ impl std::str::FromStr for DeviceId {
     }
 }
 
+impl DeviceId {
+    /// Hex-encoded bytes of the underlying verifying key.
+    pub fn to_hex(&self) -> String {
+        self.0.to_hex()
+    }
+}
+
 impl mailbox_client::MailboxKey for DeviceId {
     fn to_mailbox_key(&self) -> String {
-        hex::encode(self.as_bytes())
+        self.to_hex()
     }
 
     fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
-        let bytes =
-            hex::decode(key).map_err(|e| anyhow::anyhow!("invalid device id mailbox key: {e}"))?;
-        let array: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("device id mailbox key must be 32 bytes"))?;
-        Ok(DeviceId::from(VerifyingKey::from_bytes(&array)?))
+        Ok(key.parse()?)
     }
 }
 

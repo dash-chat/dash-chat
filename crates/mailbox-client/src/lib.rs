@@ -148,9 +148,10 @@ impl<T> ItemTraits for T where
 /// mailbox-server (`mailbox-server`) places additional constraints on keys:
 /// they must not contain `:` or NUL, and topic keys used for push notifications
 /// must pass a 64-character lowercase-hex validation (`validate_hex32`). The
-/// production implementations in this crate satisfy those constraints; test-only
-/// fixtures (e.g. `u8`/`char` for `crate::testing::Msg`) are intentionally
-/// minimal and are not sent to a real mailbox.
+/// production implementations (`TopicId` below and `DeviceId` in `dashchat-node`)
+/// satisfy those constraints; test-only fixtures (e.g. `u8`/`char` for
+/// `crate::testing::Msg`) are intentionally minimal and are not sent to a real
+/// mailbox.
 pub trait MailboxKey: ItemTraits {
     fn to_mailbox_key(&self) -> String;
     fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error>;
@@ -206,16 +207,11 @@ impl UnfetchedBlobTracker for NoopUnfetchedBlobTracker {
 
 impl MailboxKey for p2panda_core::Topic {
     fn to_mailbox_key(&self) -> String {
-        hex::encode(self.as_bytes())
+        self.to_hex()
     }
 
     fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
-        let bytes =
-            hex::decode(key).map_err(|e| anyhow::anyhow!("invalid topic mailbox key: {e}"))?;
-        let array: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("topic mailbox key must be 32 bytes"))?;
-        Ok(array.into())
+        Ok(key.parse()?)
     }
 }
 
