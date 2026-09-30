@@ -198,7 +198,7 @@
     "memberAddedToGroup": "{{admin}} ajouté {{name}}.",
     "youAddedMember": "Vous avez ajouté {{name}}.",
     "someoneAddedYouToTheGroup": "{{name}} vous a ajouté au groupe.",
-    "someoneAddedYouToTheGroupNoName": "Vous avez été ajouté à un groupe.",
+    "someoneAddedYouToTheGroupNoName": "Vous avez été ajouté au groupe.",
     "someoneRemovedYouFromTheGroup": "{{name}} vous a retiré du groupe.",
     "someoneRemovedYouFromTheGroupNoName": "Vous avez été retiré d'un groupe.",
     "someoneMadeYouAnAdmin": "{{name}} vous a fait un administrateur.",
