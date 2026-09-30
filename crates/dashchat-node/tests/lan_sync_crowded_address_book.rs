@@ -249,11 +249,10 @@ async fn await_delivery(receiver: &TestNode, topic: DirectChatId, text: &str, si
 async fn fill_with_unreachable_peers(node: &TestNode, count: usize) {
     for i in 0..count {
         let node_id = SigningKey::generate().verifying_key();
-        let addr = iroh::EndpointAddr::new(p2panda_net::utils::from_verifying_key(node_id))
-            .with_ip_addr(SocketAddr::from((
-                Ipv4Addr::new(192, 0, 2, (i % 254 + 1) as u8),
-                4433,
-            )));
+        let addr =
+            iroh::EndpointAddr::new(p2panda_net::utils::from_verifying_key(node_id)).with_ip_addr(
+                SocketAddr::from((Ipv4Addr::new(192, 0, 2, (i % 254 + 1) as u8), 4433)),
+            );
         node.insert_peer_addr(addr).await.unwrap();
     }
 }
