@@ -500,21 +500,6 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     }
 }
 
-/// Poll the mailbox `/health` endpoint until it responds, confirming the server
-/// is listening before clients try to use it.
-pub async fn wait_for_mailbox_health(url: &str) {
-    let health = format!("{url}/health");
-    for _ in 0..100 {
-        if let Ok(resp) = crate::HTTP_CLIENT.get(&health).send().await {
-            if resp.status().is_success() {
-                return;
-            }
-        }
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    }
-    panic!("mailbox /health never became ready at {health}");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
