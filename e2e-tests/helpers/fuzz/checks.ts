@@ -6,7 +6,11 @@
  * `expectNotifications` asserts every device whose notifications a run reads;
  * `expectHubs` and `expectCloud` assert the connection chip.
  */
-import type { DeliveredNotification } from '../components/notifications';
+import {
+	type DeliveredNotification,
+	type NotificationContent,
+	describeContent,
+} from '../components/notifications/content';
 import type { ChatRow } from '../pages/home-page';
 import { MAILBOX_HEALED_MS } from '../timeouts';
 import {
@@ -19,7 +23,11 @@ import {
 	notificationsOf,
 	openChatRow,
 } from './agents';
-import type { ExpectedChat, ExpectedModel, NotificationView } from './model';
+import {
+	type ExpectedChat,
+	type ExpectedModel,
+	type NotificationView,
+} from './model';
 import { expectView, syncTimeoutFor } from './view';
 
 /** What any move gets before its effect has to be on screen — a hub
@@ -39,12 +47,6 @@ export const DEPARTURE_MS = 9_000;
  *  working would still meet [`DEPARTURE_MS`] on the lapse alone, so only this
  *  budget can tell the two apart. */
 export const GOODBYE_MS = 3_000;
-
-/** What a notification gets to travel before it has to be on the device:
- *  the op reaches the mailbox, which tells the push server, which goes
- *  through FCM to the device — or, for an app still on the network, the
- *  sync path. */
-const NOTIFICATION_TIMEOUT = 60_000;
 
 /** Check every device whose notifications the run reads against the model:
  *  one notification per chat with messages its app was not on screen for,
@@ -68,42 +70,32 @@ async function expectShade(m: ExpectedModel, sa: StressAgent): Promise<void> {
 	const helper = notificationsOf(sa);
 	const expected = m.expectedNotifications(sa.name);
 	const generic = sa.notificationTexts?.generic ?? null;
-	let missing: NotificationView[] = [];
-	let extra: DeliveredNotification[] = [];
-	let delivered: DeliveredNotification[] = [];
+	const matched = (shown: DeliveredNotification[]) =>
+		matchNotifications(expected, besidesGeneric(shown, generic));
+	let delivered: DeliveredNotification[];
 	try {
-		await helper.readingDelivered(read =>
-			sa.agent.waitUntil(
-				async () => {
-					delivered = await read();
-					({ missing, extra } = matchNotifications(
-						expected,
-						besidesGeneric(delivered, generic),
-					));
-					return missing.length === 0 && extra.length === 0;
-				},
-				{ timeout: NOTIFICATION_TIMEOUT },
-			),
-		);
+		delivered = await helper.waitForDelivered(shown => {
+			const { missing, extra } = matched(shown);
+			return missing.length === 0 && extra.length === 0;
+		});
 	} catch (err) {
-		const problems = [
-			...missing.map(n => `never showed "${describeExpected(n)}"`),
-			...extra.map(
-				d => `shows "${d.title}: ${d.texts.join(' | ')}", which it cannot know`,
-			),
-		];
-		if (problems.length === 0) {
-			throw new Error(
-				`${sa.name}'s notifications could not be read: ${String(err)}`,
-			);
-		}
+		throw new Error(
+			`${sa.name}'s notifications could not be read: ${String(err)}`,
+		);
+	}
+	const { missing, extra } = matched(delivered);
+	const problems = [
+		...missing.map(n => `never showed "${describeExpected(n)}"`),
+		...extra.map(d => `shows "${describeContent(d)}", which it cannot know`),
+	];
+	if (problems.length > 0) {
 		// Everything the device holds, generic ones included: matching drops
 		// those, so without them a shade that showed the wrong thing and one
 		// that showed nothing read identically here.
 		const shade =
 			delivered.length === 0
 				? 'nothing'
-				: delivered.map(d => `"${d.title}: ${d.texts.join(' | ')}"`).join(', ');
+				: delivered.map(d => `"${describeContent(d)}"`).join(', ');
 		// What the model was waiting for, even when that is nothing: an empty
 		// list says it credited this agent with no operation at all, which is a
 		// different fault from one whose wording failed to match.
@@ -126,29 +118,42 @@ async function expectShade(m: ExpectedModel, sa: StressAgent): Promise<void> {
 
 /**
  * Pair every notification the model says the device has posted with one it is
- * really holding: it must carry everything the entry names, and one of the
- * messages that arrived unread where there are several — a chat's entry is
- * rewritten by each arrival, and which one it ends up reading depends on the
- * order a healed link delivered them in. What is left over on either side is
- * missing, or is an entry the device must not have: one already read, or one
- * from a sender who sent nothing.
+ * really holding, showing exactly one of the contents the model allows for
+ * it. Two entries may allow the same content — a group's placeholder title
+ * stands in for any group whose name has yet to arrive — so an entry that took
+ * a notification gives it up when another can only have that one. What is left
+ * over on either side is missing, or is an entry the device must not have: one
+ * already read, or one from a sender who sent nothing.
  */
 function matchNotifications(
 	expected: NotificationView[],
 	delivered: DeliveredNotification[],
 ): { missing: NotificationView[]; extra: DeliveredNotification[] } {
-	const extra = [...delivered];
-	const missing: NotificationView[] = [];
-	for (const e of expected) {
-		const i = extra.findIndex(
-			d =>
-				e.shows.every(text => carries(d, text)) &&
-				(e.oneOf.length === 0 || e.oneOf.some(text => carries(d, text))),
-		);
-		if (i === -1) missing.push(e);
-		else extra.splice(i, 1);
-	}
+	const pairedWith: (NotificationView | null)[] = delivered.map(() => null);
+	const pair = (e: NotificationView, tried: Set<number>): boolean =>
+		delivered.some((d, i) => {
+			if (tried.has(i) || !e.oneOf.some(c => shows(d, c))) return false;
+			tried.add(i);
+			const other = pairedWith[i];
+			if (other !== null && !pair(other, tried)) return false;
+			pairedWith[i] = e;
+			return true;
+		});
+	const missing = expected.filter(e => !pair(e, new Set()));
+	const extra = delivered.filter((_, i) => pairedWith[i] === null);
 	return { missing, extra };
+}
+
+function shows(
+	notification: DeliveredNotification,
+	content: NotificationContent,
+): boolean {
+	return (
+		notification.title === content.title &&
+		notification.body === content.body &&
+		(notification.conversation === undefined ||
+			notification.conversation === content.conversation)
+	);
 }
 
 /** What the device holds, less the fallback the app posts when it is woken
@@ -160,17 +165,11 @@ function besidesGeneric(
 	generic: string | null,
 ): DeliveredNotification[] {
 	if (generic === null) return delivered;
-	return delivered.filter(d => !carries(d, generic));
-}
-
-function carries(notification: DeliveredNotification, text: string): boolean {
-	return notification.texts.some(shown => shown.includes(text));
+	return delivered.filter(d => d.title !== generic);
 }
 
 function describeExpected(notification: NotificationView): string {
-	const shows = notification.shows.join(': ');
-	if (notification.oneOf.length === 0) return shows;
-	return `${shows}: one of ${notification.oneOf.join(', ')}`;
+	return notification.oneOf.map(describeContent).join(' or ');
 }
 
 /** Get `sa` to its chat list, check every badge there, then open `chat` and

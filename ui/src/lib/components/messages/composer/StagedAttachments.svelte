@@ -3,11 +3,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiPlus } from '@mdi/js';
-	import {
-		type DraftMedia,
-		MAX_STAGED_PHOTOS,
-		pickMedia,
-	} from '$lib/utils/media';
+	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import StagedThumb from './StagedThumb.svelte';
@@ -15,25 +11,15 @@
 
 	interface Props {
 		media: DraftMedia | undefined;
-		/** Stage files picked from the "add more" tile (handled by the composer,
-		 * which owns the ingest rules and error toasts). */
-		onFiles: (files: File[]) => void;
+		loadingMedia: boolean;
+		onAddMore: () => void;
 	}
 
-	let { media = $bindable(), onFiles }: Props = $props();
+	let { media = $bindable(), loadingMedia, onAddMore }: Props = $props();
 
 	const showClearAll = $derived(
 		media?.kind === 'photos' && media.items.length > 1,
 	);
-
-	async function addMore() {
-		try {
-			const files = await pickMedia('image', true);
-			if (files && files.length > 0) onFiles(files);
-		} catch (e) {
-			console.error('Failed to pick files', e);
-		}
-	}
 
 	function clear() {
 		media = undefined;
@@ -81,7 +67,8 @@
 						class="add-more flex h-[120px] w-[120px] shrink-0 items-center justify-center"
 						data-testid="message-input-add-more"
 						aria-label={m.addMoreAttachments()}
-						onclick={addMore}
+						disabled={loadingMedia}
+						onclick={onAddMore}
 					>
 						<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
 					</button>
@@ -112,7 +99,11 @@
 		opacity: 0.6;
 		transition: opacity 0.15s ease;
 	}
-	.add-more:hover {
+	.add-more:disabled {
+		cursor: default;
+		opacity: 0.3;
+	}
+	.add-more:not(:disabled):hover {
 		opacity: 0.9;
 	}
 	.add-more :global(wa-icon) {

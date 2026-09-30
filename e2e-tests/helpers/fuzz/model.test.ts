@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { describeContent } from '../components/notifications/content.ts';
 import { ExpectedModel, type NotificationTexts } from './model.ts';
 
 /** The wording the app puts in a notification it cannot fully name, as the
@@ -10,6 +11,10 @@ const TEXTS: NotificationTexts = {
 	unnamedSender: 'New message',
 	photos: { 1: 'Photo', 2: '2 photos', 3: '3 photos' },
 	voice: 'Voice message',
+	newContactRequest: 'New contact request',
+	newGroup: 'New group',
+	addedYouToTheGroup: name => `${name} added you to the group.`,
+	addedToAGroup: 'You were added to a group.',
 };
 
 /** A phone, whose notifications a run reads. */
@@ -474,7 +479,7 @@ test('a push reaches a phone that is away, and is read when it is back', () => {
 	// The push wakes its app, which fetches the message and announces it —
 	// there is just no screen to read it on until it comes back.
 	assert.equal(m.propagate().has(B), false);
-	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`]);
 	m.foreground(B);
 	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
 });
@@ -496,7 +501,7 @@ test('a push wakes a stopped phone, and nothing wakes a stopped desktop', () => 
 	m.addMessage(m.directChat(A, C), A, 'text', 'sm-2');
 	m.propagate();
 	assert.equal(m.knows(B).has('message:sm-1'), true);
-	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`]);
 	assert.equal(m.knows(C).has('message:sm-2'), false);
 });
 
@@ -505,14 +510,14 @@ test('a push wakes a stopped phone, and nothing wakes a stopped desktop', () => 
 function showing(m: ExpectedModel, name: string): string[] {
 	return m
 		.expectedNotifications(name)
-		.map(n => [...n.shows, ...n.oneOf].join(': '));
+		.map(n => n.oneOf.map(describeContent).join(' or '));
 }
 
 test('a contact request notifies the agent it was sent to', () => {
 	const m = sameLan(A, B);
 	m.recordAdded(A, B);
 	m.propagate();
-	assert.deepEqual(showing(m, B), [A]);
+	assert.deepEqual(showing(m, B), [`New contact request | ${A}`]);
 	assert.deepEqual(showing(m, A), []);
 });
 
@@ -521,7 +526,7 @@ test('a contact request reaches a phone that is away', () => {
 	m.background(B);
 	m.recordAdded(A, B);
 	m.propagate();
-	assert.deepEqual(showing(m, B), [A]);
+	assert.deepEqual(showing(m, B), [`New contact request | ${A}`]);
 });
 
 test('a contact request is announced under the name it was sent with', () => {
@@ -529,7 +534,7 @@ test('a contact request is announced under the name it was sent with', () => {
 	m.updateProfile(A, 'person-01');
 	m.recordAdded(A, B);
 	m.propagate();
-	assert.deepEqual(showing(m, B), ['person-01']);
+	assert.deepEqual(showing(m, B), ['New contact request | person-01']);
 });
 
 test('opening the chat clears the request it was sent in', () => {
@@ -546,11 +551,30 @@ test('a group invite notifies the member it names, after whoever added them', ()
 	m.propagate();
 	const group = m.addGroup(A, [B], 'group-001');
 	m.propagate();
-	// "<A> added you to the group": the title is the group's name only once
-	// the op naming it has arrived too, so only the adder is asserted.
-	assert.deepEqual(showing(m, B), [A]);
+	// The title is the group's name only once the op naming it has arrived
+	// too, which may come after the invite.
+	assert.deepEqual(showing(m, B), [
+		`group-001 | ${A} added you to the group. or New group | ${A} added you to the group.`,
+	]);
 	m.openedChat(B, group);
 	assert.deepEqual(showing(m, B), []);
+});
+
+test('a group message is told apart from the invite of the one who sent it', () => {
+	const m = new ExpectedModel([desktop(A), phone(B)], [], true, true, true);
+	contacts(m, A, B);
+	m.propagate();
+	m.background(B);
+	const group = m.addGroup(A, [B], 'group-001');
+	m.setGroupInfo(group, 'renamed-01', 'about-01');
+	m.addMessage(group, A, 'text', 'sm-1');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [
+		`group-001 | ${A} added you to the group. or New group | ${A} added you to the group.`,
+		// The rename and the message come from different authors, so either
+		// may be processed first.
+		`group-001 › ${A} | sm-1 or New group › ${A} | sm-1 or renamed-01 › ${A} | sm-1`,
+	]);
 });
 
 test('being put back in a group notifies again, the removal having said nothing', () => {
@@ -566,7 +590,9 @@ test('being put back in a group notifies again, the removal having said nothing'
 	assert.deepEqual(showing(m, B), []);
 	m.addGroupMember(group, A, B);
 	m.propagate();
-	assert.deepEqual(showing(m, B), [A]);
+	assert.deepEqual(showing(m, B), [
+		`group-001 | ${A} added you to the group. or New group | ${A} added you to the group.`,
+	]);
 });
 
 test('a message notifies everyone in its chat but its sender', () => {
@@ -576,7 +602,7 @@ test('a message notifies everyone in its chat but its sender', () => {
 	const chat = m.directChat(A, B);
 	m.addMessage(chat, A, 'text', 'sm-1');
 	m.propagate();
-	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`]);
 	assert.deepEqual(showing(m, A), []);
 });
 
@@ -592,7 +618,7 @@ test('a message notifies nobody until it reaches them', () => {
 	assert.deepEqual(showing(m, B), []);
 	m.setCloudUsable(true);
 	m.propagate();
-	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`]);
 });
 
 test('a photo says who sent it, a file what it is called', () => {
@@ -604,12 +630,14 @@ test('a photo says who sent it, a file what it is called', () => {
 	m.propagate();
 	// A caption-less photo is announced by the placeholder the app shows for
 	// it, which names the kind of message rather than the message.
-	assert.deepEqual(showing(m, B), [`${A}: ${TEXTS.photos[1]}`]);
+	assert.deepEqual(showing(m, B), [`${A} | 📷 ${TEXTS.photos[1]}`]);
 	m.addMessage(chat, A, 'file', 'sm-2');
 	m.propagate();
 	// Both arrived unread into the one entry the chat has, so it reads
 	// whichever of them the app ended up showing.
-	assert.deepEqual(showing(m, B), [`${A}: ${TEXTS.photos[1]}: sm-2`]);
+	assert.deepEqual(showing(m, B), [
+		`${A} | 📷 ${TEXTS.photos[1]} or ${A} | 📎 sm-2.txt`,
+	]);
 });
 
 test('several photos in one message are announced as several', () => {
@@ -619,14 +647,14 @@ test('several photos in one message are announced as several', () => {
 	const chat = m.directChat(A, B);
 	m.addMessage(chat, A, 'photo', 'ph-3', undefined, 3);
 	m.propagate();
-	assert.deepEqual(showing(m, B), [`${A}: ${TEXTS.photos[3]}`]);
+	assert.deepEqual(showing(m, B), [`${A} | 📷 ${TEXTS.photos[3]}`]);
 });
 
 test('accepting a request tells the agent that sent it nothing', () => {
 	const m = sameLan(A, B);
 	m.recordAdded(A, B);
 	m.propagate();
-	assert.deepEqual(showing(m, B), [A]);
+	assert.deepEqual(showing(m, B), [`New contact request | ${A}`]);
 	m.recordAdded(B, A);
 	m.propagate();
 	// A learns it has a chat by having one, not by being interrupted.
@@ -658,7 +686,7 @@ test('a chat collapses into one notification, carrying one of its messages', () 
 	m.propagate();
 	// One entry, and what it reads is whichever of them the device wrote
 	// into it last.
-	assert.deepEqual(showing(m, B), [`${A}: sm-1: sm-2`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-1 or ${A} | sm-2`]);
 	m.openedChat(B, chat);
 	assert.deepEqual(showing(m, B), []);
 });
@@ -683,7 +711,7 @@ test('an app away from the foreground is notified for the chat it was left on', 
 	m.background(B);
 	m.addMessage(chat, A, 'text', 'sm-1');
 	m.propagate();
-	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`]);
 });
 
 test('coming back to the front clears the chat the app returns to', () => {
@@ -710,7 +738,7 @@ test('a stopped app comes back on the chat list, not on what it was showing', ()
 	assert.equal(m.viewingChat(B), null);
 	m.addMessage(chat, A, 'text', 'sm-1');
 	m.propagate();
-	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`]);
 });
 
 test('what a stopped app missed is caught up quietly, not announced', () => {
@@ -734,7 +762,7 @@ test('what a stopped app missed is caught up quietly, not announced', () => {
 	// What arrives once it is back is announced as usual.
 	m.addMessage(chat, A, 'text', 'sm-2');
 	m.propagate();
-	assert.deepEqual(showing(m, B), [`${A}: sm-2`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-2`]);
 });
 
 test('foregrounding an app already on screen silences nothing', () => {
@@ -749,7 +777,7 @@ test('foregrounding an app already on screen silences nothing', () => {
 	// that never left (checks.ts). It must not swallow what is in flight.
 	m.foreground(B);
 	m.propagate();
-	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`]);
 });
 
 test('a message in a chat an agent is not in notifies it of nothing', () => {
@@ -851,7 +879,7 @@ test('the run carries on from what it found, notifying for its own messages', ()
 	m.background(B);
 	m.addMessage(chat, A, 'text', 'sm-1');
 	m.propagate();
-	assert.deepEqual(showing(m, B), [`${A}: sm-1`]);
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`]);
 	m.foreground(B);
 	m.propagate();
 	assert.deepEqual(
@@ -1083,7 +1111,7 @@ test('a notification names its sender the way the device knows them', () => {
 	m.propagate();
 	m.addMessage(chat, A, 'text', 'sm-1');
 	m.propagate();
-	assert.deepEqual(showing(m, B), [`${named}: sm-1`]);
+	assert.deepEqual(showing(m, B), [`${named} | sm-1`]);
 });
 
 test('a renamed peer is still a peer whose profile has arrived', () => {
@@ -1379,12 +1407,6 @@ test('a request is announced only on the device it was sent to', () => {
 	m.propagate();
 	m.recordAdded(C, B);
 	m.propagate();
-	assert.deepEqual(
-		m.expectedNotifications(A).map(n => n.shows),
-		[],
-	);
-	assert.deepEqual(
-		m.expectedNotifications(B).map(n => n.shows),
-		[[C]],
-	);
+	assert.deepEqual(showing(m, A), []);
+	assert.deepEqual(showing(m, B), [`New contact request | ${C}`]);
 });

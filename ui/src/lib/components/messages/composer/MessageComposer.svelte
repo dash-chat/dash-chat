@@ -13,6 +13,7 @@
 		draftToMedia,
 		ingestFiles,
 		pickMedia,
+		startPreparingPhotos,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
@@ -31,6 +32,10 @@
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import BelowKeyboardSurface from '$lib/components/BelowKeyboardSurface.svelte';
 	import { showToast } from '$lib/utils/toasts';
+	import {
+		type RecentPhoto,
+		loadRecentPhotoFile,
+	} from '$lib/utils/recent-photos';
 	import EmojiPickerSheet from '$lib/components/messages/EmojiPickerSheet.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
@@ -74,6 +79,7 @@
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
 	let sending = false;
+	let loadingMedia = $state(false);
 
 	let showMediaPanel = $state(false);
 
@@ -170,6 +176,7 @@
 		// Enter-key path goes straight here, so hammering Enter during a slow
 		// send would otherwise fire multiple store.sendMessage calls.
 		if (!hasContent || sending) return false;
+		if (loadingMedia && media?.kind !== 'voice_note') return false;
 		sending = true;
 		const message = value;
 		const draft = media;
@@ -218,34 +225,67 @@
 	function stage(files: FileList | File[]) {
 		const result = ingestFiles(media, Array.from(files));
 		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
+		if (result.media?.kind === 'photos') {
+			startPreparingPhotos(result.media.items);
+		}
 		media = result.media;
 		if (isMobile && media && !page.state.stagedMedia) {
 			pushState('', { stagedMedia: true });
 		}
 	}
 
-	function stageFromPanel(files: File[]) {
-		showMediaPanel = false;
-		stage(files);
+	async function stageWhenLoaded(
+		load: () => Promise<FileList | File[] | null>,
+	) {
+		if (loadingMedia) return;
+		loadingMedia = true;
+		try {
+			const files = await load();
+			if (files && files.length > 0) stage(files);
+		} finally {
+			loadingMedia = false;
+		}
+	}
+
+	async function pickAndStage(mode: 'image' | 'document', multiple: boolean) {
+		try {
+			await stageWhenLoaded(() => pickMedia(mode, multiple));
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to pick files', e);
+		}
+	}
+
+	function pickPhotos() {
+		return pickAndStage('image', true);
+	}
+
+	function pickFile() {
+		return pickAndStage('document', false);
+	}
+
+	async function addRecentPhoto(photo: RecentPhoto) {
+		try {
+			await stageWhenLoaded(async () => {
+				const file = await loadRecentPhotoFile(photo);
+				showMediaPanel = false;
+				return [file];
+			});
+		} catch (e) {
+			console.error('Failed to load photo', e);
+			showToast(m.errorAddingPhoto(), 'error');
+		}
 	}
 
 	async function captureFromCamera() {
 		try {
-			const file = await capturePhoto();
-			if (file) stage([file]);
+			await stageWhenLoaded(async () => {
+				const file = await capturePhoto();
+				return file ? [file] : null;
+			});
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to capture photo', e);
-		}
-	}
-
-	async function addMore() {
-		try {
-			const files = await pickMedia('image', true);
-			if (files && files.length > 0) stage(files);
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to pick files', e);
 		}
 	}
 
@@ -358,7 +398,7 @@
 				: '--toggle-hidden-width: 2.5rem; --toggle-hidden-transform: scaleX(0.5)'}"
 			aria-hidden={drafting}
 		>
-			<CameraButton onClick={captureFromCamera} />
+			<CameraButton onClick={captureFromCamera} disabled={loadingMedia} />
 			<VoiceRecordButton {voice} />
 		</div>
 	{/if}
@@ -387,7 +427,7 @@
 		use:renderAboveKeyboard
 	>
 		{#if !editing && !isMobile}
-			<StagedAttachments bind:media onFiles={stage} />
+			<StagedAttachments bind:media {loadingMedia} onAddMore={pickPhotos} />
 		{/if}
 
 		<div class="m-2 relative">
@@ -449,12 +489,12 @@
 							class:ios-send-hidden={!drafting}
 							aria-hidden={!drafting}
 						>
-							<SendButton onSend={send} />
+							<SendButton onSend={send} disabled={loadingMedia} />
 						</div>
 					{:else}
 						<div class="toggle-slot shrink-0">
 							<div class="toggle-child" class:toggle-hidden={!drafting}>
-								<SendButton onSend={send} />
+								<SendButton onSend={send} disabled={loadingMedia} />
 							</div>
 							<div class="toggle-child" class:toggle-hidden={drafting}>
 								<StandaloneAttachButton
@@ -473,7 +513,7 @@
 					>
 						<VoiceRecordButton {voice} />
 					</div>
-					<AttachMenuButton onFiles={stage} />
+					<AttachMenuButton onPickPhotos={pickPhotos} onPickFile={pickFile} />
 				{/if}
 			</div>
 		</div>
@@ -482,7 +522,10 @@
 	{#if isMobile}
 		<BelowKeyboardSurface open={showMediaPanel} class="bg-page-surface z-20">
 			<MediaPanel
-				onFiles={stageFromPanel}
+				{loadingMedia}
+				onPickPhotos={pickPhotos}
+				onPickFile={pickFile}
+				onAddRecent={addRecentPhoto}
 				onPickerOpen={() => (showMediaPanel = false)}
 			/>
 		</BelowKeyboardSurface>
@@ -494,6 +537,7 @@
 		bind:media
 		bind:value
 		{destinationName}
+		{loadingMedia}
 		onSend={async () => {
 			const keepFocus = document.activeElement instanceof HTMLTextAreaElement;
 			const sent = await send();
@@ -507,7 +551,7 @@
 			}
 			return sent;
 		}}
-		onAddMore={addMore}
+		onAddMore={pickPhotos}
 		onClose={() => history.back()}
 	/>
 {/if}

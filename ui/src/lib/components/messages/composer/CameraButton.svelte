@@ -7,12 +7,18 @@
 
 	interface Props {
 		onClick: () => void;
+		disabled?: boolean;
 	}
 
-	let { onClick }: Props = $props();
+	let { onClick, disabled = false }: Props = $props();
 </script>
 
-<IconButton {onClick} label={m.camera()} testid="message-input-camera">
+<IconButton
+	{onClick}
+	{disabled}
+	label={m.camera()}
+	testid="message-input-camera"
+>
 	<!-- The path sits at y 2-20 of its 24-unit viewBox, so it needs a unit down
 	     to be optically centred. -->
 	<wa-icon

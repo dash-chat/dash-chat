@@ -3,25 +3,28 @@
  * and Android read notifications differently (SpringBoard cells vs the
  * notification shade), so a factory picks the implementation by platform.
  */
-/** One notification the OS is holding, as its content shows it. */
-export interface DeliveredNotification {
-	/** Its title — for a chat message, the sender's name. */
-	title: string;
-	/** Every string it shows, title and body included. */
-	texts: string[];
+import type { DeliveredNotification } from './content';
+
+export type { DeliveredNotification, NotificationContent } from './content';
+
+/** What a notification gets to travel before it has to be on the device: the
+ *  op reaches the mailbox, which tells the push server, which goes through FCM
+ *  to the device — or, for an app still on the network, the sync path. */
+export const DELIVERY_TIMEOUT = 60_000;
+
+export interface WaitForDeliveredOptions {
+	timeout?: number;
 }
 
 export interface NotificationHelper {
-	/** Every notification of this app the OS currently holds. */
-	delivered(): Promise<DeliveredNotification[]>;
-	/** Read what the OS holds, repeatedly, for as long as `fn` runs. Android
-	 * reads the notification service directly, so a read disturbs nothing;
-	 * iOS has to open Notification Center, which takes the app off screen and
-	 * clears the route it resumes onto — so it opens once here and closes at
-	 * the end, and a poll loop costs one resume rather than one per read. */
-	readingDelivered<T>(
-		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
-	): Promise<T>;
+	/** Read what the OS holds until `until` holds of it or the timeout passes,
+	 *  and return the last read either way. iOS has to open Notification Center
+	 *  to read, which takes the app off screen and clears the route it resumes
+	 *  onto, so it opens once for the whole wait. */
+	waitForDelivered(
+		until: (shown: DeliveredNotification[]) => boolean,
+		options?: WaitForDeliveredOptions,
+	): Promise<DeliveredNotification[]>;
 	/** Take every notification this app has posted off the device. The OS
 	 * keeps them across an app data reset, so a run that reads notifications
 	 * starts from nothing rather than from what an earlier run left. */
@@ -31,14 +34,6 @@ export interface NotificationHelper {
 	 * reading has to go through the notification UI; a caller that tracks
 	 * what the device is showing has to fold that clearing in. */
 	readonly readingResumesApp: boolean;
-	/** Wait for a delivered notification whose text contains `textIncludes`;
-	 * returns its full text (title + body). */
-	waitForNotification(textIncludes: string, timeout?: number): Promise<string>;
-	/** Wait for any notification from this app and return its full text — for
-	 * asserting *what* was delivered. Matching on the expected content instead
-	 * would make a wrong body (the generic "You have a new message" fallback)
-	 * indistinguishable from no delivery at all: both just time out. */
-	waitForAppNotification(timeout?: number): Promise<string>;
 	/** Tap the matching notification. */
 	tapNotification(textIncludes: string): Promise<void>;
 	/** Return to the app's webview context. */
@@ -140,13 +135,34 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 
 	readonly readingResumesApp: boolean = false;
 
-	/** Reading disturbs nothing, so `fn` gets [`delivered`] as it stands.
-	 * Overridden where a read has to open the notification UI. */
-	readingDelivered<T>(
-		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
-	): Promise<T> {
-		return fn(() => this.delivered());
+	async waitForDelivered(
+		until: (shown: DeliveredNotification[]) => boolean,
+		{ timeout = DELIVERY_TIMEOUT }: WaitForDeliveredOptions = {},
+	): Promise<DeliveredNotification[]> {
+		return this.withNotificationUi(async read => {
+			let shown: DeliveredNotification[] = [];
+			const holds = await this.agent
+				.waitUntil(
+					async () => {
+						shown = await read();
+						return until(shown);
+					},
+					{ timeout },
+				)
+				.then(
+					() => true,
+					() => false,
+				);
+			// A failed read is no answer: only a timeout returns the last read.
+			if (!holds) shown = await read();
+			return shown;
+		});
 	}
+
+	/** Run `fn` with a way to read what the OS holds, for as long as it runs. */
+	protected abstract withNotificationUi<T>(
+		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
+	): Promise<T>;
 
 	/** Close the platform's notification UI (shade / Notification Center). */
 	protected abstract dismissNotificationUi(): Promise<void>;
@@ -177,11 +193,5 @@ export abstract class AppiumNotificationHelper implements NotificationHelper {
 		}
 	}
 
-	abstract delivered(): Promise<DeliveredNotification[]>;
-	abstract waitForNotification(
-		textIncludes: string,
-		timeout?: number,
-	): Promise<string>;
-	abstract waitForAppNotification(timeout?: number): Promise<string>;
 	abstract tapNotification(textIncludes: string): Promise<void>;
 }

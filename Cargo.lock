@@ -2038,6 +2038,7 @@ dependencies = [
 name = "dash-chat"
 version = "0.20.10"
 dependencies = [
+ "android_logger",
  "anyhow",
  "app_dirs2",
  "async-trait",

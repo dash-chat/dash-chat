@@ -160,21 +160,42 @@ export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	return media;
 }
 
+const preparedPhotos = new WeakMap<File, Promise<OutgoingPhoto>>();
+
+// One at a time, so a burst of staged photos doesn't hog the main thread while
+// the user is still composing.
+export async function startPreparingPhotos(files: File[]): Promise<void> {
+	for (const file of files) {
+		// A failure resurfaces when the send retries this photo.
+		await preparePhoto(file).catch(() => {});
+	}
+}
+
+function preparePhoto(file: File): Promise<OutgoingPhoto> {
+	let prepared = preparedPhotos.get(file);
+	if (!prepared) {
+		prepared = buildPhoto(file);
+		prepared.catch(() => preparedPhotos.delete(file));
+		preparedPhotos.set(file, prepared);
+	}
+	return prepared;
+}
+
+async function buildPhoto(file: File): Promise<OutgoingPhoto> {
+	const compressed = await compressImage(file);
+	const { width, height } = await imageDimensions(compressed);
+	return {
+		data: new Uint8Array(await compressed.arrayBuffer()),
+		name: compressed.name,
+		mime_type: compressed.type || 'application/octet-stream',
+		width,
+		height,
+	};
+}
+
 async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	if (draft.kind === 'photos') {
-		const photos: OutgoingPhoto[] = await Promise.all(
-			draft.items.map(async file => {
-				const compressed = await compressImage(file);
-				const { width, height } = await imageDimensions(compressed);
-				return {
-					data: new Uint8Array(await compressed.arrayBuffer()),
-					name: compressed.name,
-					mime_type: compressed.type || 'application/octet-stream',
-					width,
-					height,
-				};
-			}),
-		);
+		const photos = await Promise.all(draft.items.map(preparePhoto));
 		return { kind: 'photos', photos };
 	}
 	if (draft.kind === 'voice_note') {

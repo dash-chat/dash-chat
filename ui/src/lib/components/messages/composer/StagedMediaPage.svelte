@@ -24,6 +24,7 @@
 		value?: string;
 		/** Name of the chat the media will be sent to, shown in the header. */
 		destinationName?: string;
+		loadingMedia: boolean;
 		onSend: () => Promise<boolean>;
 		onAddMore: () => void;
 		onClose: () => void;
@@ -33,6 +34,7 @@
 		media = $bindable(),
 		value = $bindable(''),
 		destinationName,
+		loadingMedia,
 		onSend,
 		onAddMore,
 		onClose,
@@ -136,7 +138,13 @@
 		use:keepKeyboardOpen
 	>
 		{#if media?.kind === 'photos'}
-			<StagedPhotosStrip bind:media bind:index {onAddMore} {onClose} />
+			<StagedPhotosStrip
+				bind:media
+				bind:index
+				{loadingMedia}
+				{onAddMore}
+				{onClose}
+			/>
 		{/if}
 		<div class="row gap-3 px-4 pt-3 pb-3" style="align-items: center;">
 			<MessageInput
@@ -145,7 +153,7 @@
 				{onSend}
 				before={isIos ? undefined : emojiButton}
 			/>
-			<SendButton {onSend} />
+			<SendButton {onSend} disabled={loadingMedia} />
 		</div>
 	</div>
 

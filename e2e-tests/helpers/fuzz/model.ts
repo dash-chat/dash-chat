@@ -7,6 +7,7 @@
  * from what it knows. It holds only names and expected state, never browser
  * handles: `check(model)` must stay pure.
  */
+import type { NotificationContent } from '../components/notifications/content';
 
 export type MessageKind = 'text' | 'photo' | 'file' | 'voice';
 export type OpId = string;
@@ -80,13 +81,13 @@ export interface NotificationView {
 	/** The chat a tap must land on, or null for one whose chat the agent
 	 * cannot open yet — a contact request from someone it has not added back. */
 	opens: ExpectedChat | null;
-	/** Strings the device must be showing for it. */
-	shows: string[];
-	/** Strings of which the device must be showing at least one: a chat's
-	 * entry carries a message of the ones that arrived unread, and which it
-	 * is depends on the order a healed link delivered them in. Empty when
-	 * there is nothing to choose between. */
-	oneOf: string[];
+	/** What a tap finds it by. */
+	tapText: string;
+	/** The contents the device may be showing for it, of which it must show
+	 * exactly one: a chat's entry carries one of the messages that arrived
+	 * unread, and which it is depends on the order a healed link delivered
+	 * them in. */
+	oneOf: NotificationContent[];
 }
 
 export interface ExpectedHub {
@@ -210,19 +211,13 @@ function profileOp(agent: string, version: number): OpId {
 	return `profile:${agent}:${version}`;
 }
 
-/** The strings a message notification's body is sure to carry: a text
- * message's text, and a file's name, which the placeholder standing in for it
- * spells out. A photo or a voice note gets a placeholder that names a kind,
- * not which one it is. */
-function bodyOf(
-	message: ExpectedMessage,
-	texts: NotificationTexts | null,
-): string[] {
-	if (message.kind === 'text' || message.kind === 'file')
-		return [message.label];
-	if (texts === null) return [];
-	if (message.kind === 'voice') return [texts.voice];
-	return [texts.photos[message.photos ?? 1]];
+/** A message notification's body: a text message's text, or the placeholder
+ * standing in for a caption-less attachment. */
+function bodyOf(message: ExpectedMessage, texts: NotificationTexts): string {
+	if (message.kind === 'text') return message.label;
+	if (message.kind === 'file') return `📎 ${message.label}.txt`;
+	if (message.kind === 'voice') return `🎤 ${texts.voice}`;
+	return `📷 ${texts.photos[message.photos ?? 1]}`;
 }
 
 /** The number a name ends in, so adopting `group-003` stops a run minting
@@ -282,6 +277,14 @@ export interface NotificationTexts {
 	photos: Record<number, string>;
 	/** The body a voice note gets, less its emoji. */
 	voice: string;
+	/** The title of a contact request. */
+	newContactRequest: string;
+	/** The name a group goes by before its name has arrived. */
+	newGroup: string;
+	/** The body of being added to a group by `name`. */
+	addedYouToTheGroup: (name: string) => string;
+	/** The body of being added to a group by someone not yet named. */
+	addedToAGroup: string;
 }
 
 export class ExpectedModel {
@@ -1015,15 +1018,22 @@ export class ExpectedModel {
 	 *  the one their contact request carried while that is all it has, or null
 	 *  while it has neither and only their key to go on. */
 	displayName(viewer: string, who: string): string | null {
+		const name = this.profileName(viewer, who);
+		if (name !== null) return name;
+		const request = requestOp(who, viewer);
+		if (!this.knows(viewer).has(request)) return null;
+		return this.requestNames.get(request) ?? null;
+	}
+
+	/** The name in the last profile of `who`'s to reach `viewer`, or null
+	 *  while none has. */
+	private profileName(viewer: string, who: string): string | null {
 		const known = this.knows(viewer);
 		let name: string | null = null;
 		for (const op of this.profiles.get(who) ?? []) {
 			if (op.kind === 'profile' && known.has(op.id)) name = op.name;
 		}
-		if (name !== null) return name;
-		const request = requestOp(who, viewer);
-		if (!known.has(request)) return null;
-		return this.requestNames.get(request) ?? null;
+		return name;
 	}
 
 	/** Whether `viewer` has any profile of `who`. */
@@ -1655,13 +1665,24 @@ export class ExpectedModel {
 		holder: string,
 		op: Op,
 	): (NotificationView & { id: string }) | null {
+		const texts = this.textsFor(holder);
+		if (texts === null) return null;
 		if (op.kind === 'message') {
+			const { chat, sender } = op.message;
+			const title = this.displayName(holder, sender) ?? texts.unnamedSender;
+			const body = bodyOf(op.message, texts);
+			const conversations =
+				chat.kind === 'group' ? this.groupTitles(chat, texts) : [null];
 			return {
-				id: `chat:${chatTopic(op.message.chat)}`,
-				route: chatTopic(op.message.chat),
-				opens: op.message.chat,
-				shows: this.nameShown(holder, op.message.sender),
-				oneOf: bodyOf(op.message, this.textsFor(holder)),
+				id: `chat:${chatTopic(chat)}`,
+				route: chatTopic(chat),
+				opens: chat,
+				tapText: title,
+				oneOf: conversations.map(conversation => ({
+					title,
+					body,
+					conversation,
+				})),
 			};
 		}
 		if (op.kind === 'request') {
@@ -1673,38 +1694,51 @@ export class ExpectedModel {
 			// way, but it answers a request they already made rather than
 			// making one: they learn they have a chat by having one.
 			if (this.added.has(`${op.to}>${op.from}`)) return null;
-			// "New contact request / <name>", the name taken from the profile
-			// the request carries rather than from what the device knows.
+			// The name taken from the profile the request carries rather than
+			// from what the device knows.
 			return {
 				id: op.id,
 				route: directTopic(op.from, op.to),
 				opens: this.directChatOrNull(op.from, op.to),
-				shows: [op.name],
-				oneOf: [],
+				tapText: op.name,
+				oneOf: [
+					{ title: texts.newContactRequest, body: op.name, conversation: null },
+				],
 			};
 		}
 		if (op.kind === 'group') {
-			// "<who> added you to the group", under a title that is the group's
-			// name only once its name op has arrived too.
+			// Unlike a message's sender, the app names whoever added it from
+			// their profile alone, never from a request they sent.
+			const by = this.profileName(holder, op.by);
+			const body =
+				by === null ? texts.addedToAGroup : texts.addedYouToTheGroup(by);
 			return {
 				id: op.id,
 				route: chatTopic(op.chat),
 				opens: op.chat,
-				shows: this.nameShown(holder, op.by),
-				oneOf: [],
+				tapText: by ?? texts.addedToAGroup,
+				oneOf: this.groupTitles(op.chat, texts).map(title => ({
+					title,
+					body,
+					conversation: null,
+				})),
 			};
 		}
 		return null;
 	}
 
-	/** `who`'s name, as far as a notification on `holder`'s device carries it:
-	 *  the app has only their key until their profile arrives, and falls back
-	 *  to wording that names nobody. */
-	private nameShown(holder: string, who: string): string[] {
-		const name = this.displayName(holder, who);
-		if (name !== null) return [name];
-		const texts = this.textsFor(holder);
-		return texts === null ? [] : [texts.unnamedSender];
+	/** What an app may title `chat` by in a notification: any name it has had
+	 *  so far, or its placeholder while none has arrived. A rename and what is
+	 *  being announced come from different authors, so a device may process
+	 *  them in either order. */
+	private groupTitles(chat: ExpectedChat, texts: NotificationTexts): string[] {
+		const names = [chat.name, texts.newGroup];
+		for (const op of this.opsByTopic.get(chatTopic(chat)) ?? []) {
+			if (op.kind === 'groupInfo' && !names.includes(op.name)) {
+				names.push(op.name);
+			}
+		}
+		return names;
 	}
 
 	/** The wording `holder`'s app uses, or null for an agent the run does not
