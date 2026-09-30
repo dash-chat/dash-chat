@@ -4,13 +4,17 @@ use std::collections::HashMap;
 const MIN_UPLOAD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5);
 const MAX_UPLOAD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
-/// Upload attempts by mailbox URL and blob, so an upload that is still crawling
-/// out isn't started a second time over the same uplink, and one the mailbox
-/// keeps refusing isn't resent in full on every followup pass.
-static UPLOADS: Lazy<std::sync::Mutex<HashMap<(String, iroh_blobs::Hash), UploadAttempt>>> =
-    Lazy::new(Default::default);
+/// Process-global scheduler instance used by the free-function shims while the
+/// orchestrator does not yet own one explicitly.
+static SCHEDULER: Lazy<BlobUploadScheduler> = Lazy::new(BlobUploadScheduler::new);
 
-static NEXT_UPLOAD_CLAIM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Tracks in-flight blob uploads and retry backoffs so an upload still crawling
+/// out isn't started a second time, and one the mailbox keeps refusing isn't
+/// resent in full on every followup pass.
+pub struct BlobUploadScheduler {
+    uploads: std::sync::Mutex<HashMap<(String, iroh_blobs::Hash), UploadAttempt>>,
+    next_claim: std::sync::atomic::AtomicU64,
+}
 
 enum UploadAttempt {
     InFlight {
@@ -23,60 +27,112 @@ enum UploadAttempt {
     },
 }
 
+impl BlobUploadScheduler {
+    pub fn new() -> Self {
+        Self {
+            uploads: std::sync::Mutex::new(HashMap::new()),
+            next_claim: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    /// Mark an upload of `hash` to `base_url` in flight if it may start now,
+    /// returning the claim to release it with.
+    pub fn claim_upload(&self, base_url: &str, hash: iroh_blobs::Hash) -> Option<u64> {
+        let key = (base_url.to_string(), hash);
+        let mut uploads = self.uploads.lock().unwrap();
+        let backoff = match uploads.get(&key) {
+            Some(UploadAttempt::InFlight { .. }) => return None,
+            Some(UploadAttempt::Failed { retry_at, .. })
+                if *retry_at > std::time::Instant::now() =>
+            {
+                return None;
+            }
+            Some(UploadAttempt::Failed { backoff, .. }) => *backoff,
+            None => std::time::Duration::ZERO,
+        };
+        let claim = self
+            .next_claim
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        uploads.insert(key, UploadAttempt::InFlight { claim, backoff });
+        Some(claim)
+    }
+
+    /// Whether an upload of `hash` to `base_url` would start now: it is neither
+    /// in flight nor waiting out a backoff.
+    pub fn upload_due(&self, base_url: &str, hash: iroh_blobs::Hash) -> bool {
+        match self
+            .uploads
+            .lock()
+            .unwrap()
+            .get(&(base_url.to_string(), hash))
+        {
+            Some(UploadAttempt::InFlight { .. }) => false,
+            Some(UploadAttempt::Failed { retry_at, .. }) => *retry_at <= std::time::Instant::now(),
+            None => true,
+        }
+    }
+
+    /// Let every upload go out again at once, for when the network has changed:
+    /// failed ones stop waiting out their backoff, and ones in flight are
+    /// presumed cut off along with the old network (or frozen while the app was
+    /// away).
+    pub fn restart_uploads(&self) {
+        self.uploads.lock().unwrap().clear();
+    }
+
+    /// Release `claim`; after a failure the next attempt waits out a backoff
+    /// that doubles with each consecutive failure. A claim a restart has since
+    /// replaced is ignored, so a stale upload ending late can't overwrite its
+    /// successor.
+    pub fn finish_upload(
+        &self,
+        base_url: &str,
+        hash: iroh_blobs::Hash,
+        claim: u64,
+        succeeded: bool,
+    ) {
+        let key = (base_url.to_string(), hash);
+        let mut uploads = self.uploads.lock().unwrap();
+        let backoff = match uploads.get(&key) {
+            Some(UploadAttempt::InFlight {
+                claim: current,
+                backoff,
+            }) if *current == claim => *backoff,
+            _ => return,
+        };
+        uploads.remove(&key);
+        if !succeeded {
+            let backoff = (backoff * 2).clamp(MIN_UPLOAD_BACKOFF, MAX_UPLOAD_BACKOFF);
+            let retry_at = std::time::Instant::now() + backoff;
+            uploads.insert(key, UploadAttempt::Failed { retry_at, backoff });
+        }
+    }
+}
+
 /// Mark an upload of `hash` to `base_url` in flight if it may start now,
 /// returning the claim to release it with.
 pub(crate) fn claim_upload(base_url: &str, hash: iroh_blobs::Hash) -> Option<u64> {
-    let key = (base_url.to_string(), hash);
-    let mut uploads = UPLOADS.lock().unwrap();
-    let backoff = match uploads.get(&key) {
-        Some(UploadAttempt::InFlight { .. }) => return None,
-        Some(UploadAttempt::Failed { retry_at, .. }) if *retry_at > std::time::Instant::now() => {
-            return None;
-        }
-        Some(UploadAttempt::Failed { backoff, .. }) => *backoff,
-        None => std::time::Duration::ZERO,
-    };
-    let claim = NEXT_UPLOAD_CLAIM.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    uploads.insert(key, UploadAttempt::InFlight { claim, backoff });
-    Some(claim)
+    SCHEDULER.claim_upload(base_url, hash)
 }
 
 /// Whether an upload of `hash` to `base_url` would start now: it is neither in
 /// flight nor waiting out a backoff.
 pub fn upload_due(base_url: &str, hash: iroh_blobs::Hash) -> bool {
-    match UPLOADS.lock().unwrap().get(&(base_url.to_string(), hash)) {
-        Some(UploadAttempt::InFlight { .. }) => false,
-        Some(UploadAttempt::Failed { retry_at, .. }) => *retry_at <= std::time::Instant::now(),
-        None => true,
-    }
+    SCHEDULER.upload_due(base_url, hash)
 }
 
 /// Let every upload go out again at once, for when the network has changed:
 /// failed ones stop waiting out their backoff, and ones in flight are presumed
 /// cut off along with the old network (or frozen while the app was away).
 pub fn restart_uploads() {
-    UPLOADS.lock().unwrap().clear();
+    SCHEDULER.restart_uploads();
 }
 
 /// Release `claim`; after a failure the next attempt waits out a backoff that
 /// doubles with each consecutive failure. A claim a restart has since replaced
 /// is ignored, so a stale upload ending late can't overwrite its successor.
 pub(crate) fn finish_upload(base_url: &str, hash: iroh_blobs::Hash, claim: u64, succeeded: bool) {
-    let key = (base_url.to_string(), hash);
-    let mut uploads = UPLOADS.lock().unwrap();
-    let backoff = match uploads.get(&key) {
-        Some(UploadAttempt::InFlight {
-            claim: current,
-            backoff,
-        }) if *current == claim => *backoff,
-        _ => return,
-    };
-    uploads.remove(&key);
-    if !succeeded {
-        let backoff = (backoff * 2).clamp(MIN_UPLOAD_BACKOFF, MAX_UPLOAD_BACKOFF);
-        let retry_at = std::time::Instant::now() + backoff;
-        uploads.insert(key, UploadAttempt::Failed { retry_at, backoff });
-    }
+    SCHEDULER.finish_upload(base_url, hash, claim, succeeded);
 }
 
 #[cfg(test)]
