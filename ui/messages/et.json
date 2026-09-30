@@ -282,7 +282,7 @@
     "attachPhotos": "Fotod",
     "attachFile": "Fail",
     "attachMenu": "Lisa manuseks",
-    "gallery": "Galerii",
+    "gallery": "Fotod",
     "removeAttachment": "Eemalda",
     "addMoreAttachments": "Lisa veel üks manus",
     "removeAllAttachments": "Eemalda kõik manused",
@@ -393,5 +393,7 @@
     "feedbackUnavailable": "Tagasiside saatmine pole rakenduse selles versioonis toetatud.",
     "dontSend": "Ära saada",
     "crashReportExplanation": "Rakenduse kokkujooksmise üksikasjade ja veaotsingulogide edastamine aitaks meil seda viga parandada. Enne saatmist eemaldatakse isiklik teave ja sõnumid.",
-    "blockedContactBanner": "Kas lubad kasutajal **{{name}}** saata sulle sõnumeid ning jagada temaga oma nime ja fotot? Kuni sa blokeerimis ei lõpeta, siis sa sõnumeid ei saa."
+    "blockedContactBanner": "Kas lubad kasutajal **{{name}}** saata sulle sõnumeid ning jagada temaga oma nime ja fotot? Kuni sa blokeerimis ei lõpeta, siis sa sõnumeid ei saa.",
+    "notificationsPermissionDenied": "Teavituste toimimine eeldab vastavate õiguste olemasolu. Saad selle lubada seadistustest.",
+    "retry": "Proovi uuesti"
 }
