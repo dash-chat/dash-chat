@@ -502,52 +502,24 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
     use super::*;
 
-    #[tokio::test]
-    async fn register_hashes_records_not_stored_and_removes_already_stored() {
-        // Server that reports h_stored as already stored, h_new as not.
-        let h_stored = iroh_blobs::Hash::new([1; 32]);
-        let h_new = iroh_blobs::Hash::new([2; 32]);
-        let app = axum::Router::new().route(
-            "/blobs/register-hashes",
-            axum::routing::post(
-                move |axum::Json(req): axum::Json<mailbox_server::RegisterHashesRequest>| async move {
-                    let already_stored: Vec<_> = req
-                        .blob_hashes
-                        .into_iter()
-                        .filter(|h| *h == h_stored)
-                        .collect();
-                    axum::Json(mailbox_server::RegisterHashesResponse { already_stored })
-                },
-            ),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        let base_url = format!("http://{addr}");
+    type StoredBlips = BTreeMap<String, BTreeMap<String, BTreeMap<u64, mailbox_server::Blip>>>;
 
-        let already = send_register_hashes(
-            &base_url,
-            vec![h_stored, h_new],
-            iroh::SecretKey::from_bytes(&[3; 32]).public(),
-            false,
-        )
-        .await
-        .unwrap();
-        assert_eq!(already, vec![h_stored]);
+    fn msg(topic: u8, author: char, seq: u64) -> crate::testing::Msg {
+        crate::testing::Msg { topic, author, seq }
     }
 
-    #[tokio::test]
-    async fn publish_and_fetch_round_trip_msg_keys() {
-        use std::collections::BTreeMap;
-        use std::sync::{Arc, Mutex};
-
-        let stored: Arc<
-            Mutex<BTreeMap<String, BTreeMap<String, BTreeMap<u64, mailbox_server::Blip>>>>,
-        > = Arc::new(Mutex::new(BTreeMap::new()));
+    /// Spawn a fake mailbox server on a free port. It only stores blips and
+    /// echoes them back, plus computes simple contiguous watermarks; the
+    /// `missing` vector is always empty because callers only need to verify
+    /// that topic/author keys encode and decode correctly through the toy
+    /// client. Returns the server's base URL and shared storage.
+    async fn spawn_fake_mailbox_server() -> (String, Arc<Mutex<StoredBlips>>) {
+        let stored: Arc<Mutex<StoredBlips>> = Arc::new(Mutex::new(BTreeMap::new()));
         let stored_in_store = stored.clone();
         let stored_in_get = stored.clone();
 
@@ -565,13 +537,11 @@ mod tests {
                                 BTreeMap::new();
                             for (author, seqs) in authors {
                                 let author_entry = topic_entry.entry(author.clone()).or_default();
-                                let mut seqs_vec: Vec<u64> = seqs.keys().copied().collect();
-                                for (seq, blip) in seqs {
-                                    author_entry.insert(seq, blip);
+                                for (seq, blip) in &seqs {
+                                    author_entry.insert(*seq, blip.clone());
                                 }
-                                seqs_vec.sort();
-                                let watermark = seqs_vec
-                                    .iter()
+                                let watermark = seqs
+                                    .keys()
                                     .enumerate()
                                     .take_while(|(i, seq)| **seq == *i as u64)
                                     .map(|(_, seq)| seq)
@@ -635,6 +605,48 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         let base_url = format!("http://{addr}");
+        (base_url, stored)
+    }
+
+    #[tokio::test]
+    async fn register_hashes_records_not_stored_and_removes_already_stored() {
+        // Server that reports h_stored as already stored, h_new as not.
+        let h_stored = iroh_blobs::Hash::new([1; 32]);
+        let h_new = iroh_blobs::Hash::new([2; 32]);
+        let app = axum::Router::new().route(
+            "/blobs/register-hashes",
+            axum::routing::post(
+                move |axum::Json(req): axum::Json<mailbox_server::RegisterHashesRequest>| async move {
+                    let already_stored: Vec<_> = req
+                        .blob_hashes
+                        .into_iter()
+                        .filter(|h| *h == h_stored)
+                        .collect();
+                    axum::Json(mailbox_server::RegisterHashesResponse { already_stored })
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let already = send_register_hashes(
+            &base_url,
+            vec![h_stored, h_new],
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(already, vec![h_stored]);
+    }
+
+    #[tokio::test]
+    async fn publish_and_fetch_round_trip_msg_keys() {
+        let (base_url, stored) = spawn_fake_mailbox_server().await;
 
         let client = ToyMailboxClient::<crate::testing::Msg>::new(
             "mbx".to_string(),
@@ -643,24 +655,15 @@ mod tests {
             std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
         );
 
-        let msgs = vec![
-            crate::testing::Msg {
-                topic: 42,
-                author: 'a',
-                seq: 0,
-            },
-            crate::testing::Msg {
-                topic: 42,
-                author: 'a',
-                seq: 1,
-            },
-            crate::testing::Msg {
-                topic: 42,
-                author: 'b',
-                seq: 0,
-            },
-        ];
-        client.publish(msgs.clone()).await.unwrap();
+        let response = client
+            .publish(vec![msg(42, 'a', 0), msg(42, 'a', 1), msg(42, 'b', 0)])
+            .await
+            .unwrap();
+
+        // The watermark response decoded the string keys back to Msg's Topic
+        // and Author types.
+        assert_eq!(response.watermark(&42, &'a'), Some(1));
+        assert_eq!(response.watermark(&42, &'b'), Some(0));
 
         // The keys were encoded as bare strings, not JSON arrays/objects.
         let stored = stored.lock().unwrap();
