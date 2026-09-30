@@ -389,5 +389,6 @@
     "contactRequestSent": "Demande de contact envoyée.",
     "errorAddContactDeviceLinkingNotSupported": "Ce code est pour lier un périphérique, sans ajouter de contact.",
     "messageStatusUnsent": "Envoi en cours",
-    "retry": "Retry"
+    "retry": "Retry",
+    "notificationsPermissionDenied": "Les notifications doivent être autorisées. Vous pouvez les autoriser dans les paramètres de votre appareil."
 }
