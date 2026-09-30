@@ -52,7 +52,7 @@ pub(crate) fn spawn(
             }
             tracing::info!("network-change notifier: probing mailboxes");
             mailboxes.probe_all().await;
-            mailbox_client::backends::toy::restart_uploads();
+            mailbox_client::upload_scheduler::restart_uploads();
             unfetched_blob_trigger.notify_one();
             if let Some(endpoint) = &endpoint {
                 notify_iroh(endpoint).await;

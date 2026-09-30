@@ -97,7 +97,7 @@ pub fn run() {
                             log::error!("Failed to rebuild node on foreground: {err:?}");
                         }
                         // Uploads cut off while we were away go out again now.
-                        mailbox_client::backends::toy::restart_uploads();
+                        mailbox_client::upload_scheduler::restart_uploads();
                         if let Ok(node) = app_node_manager.get().await {
                             node.notify_unfetched_blob_followup();
                         }
