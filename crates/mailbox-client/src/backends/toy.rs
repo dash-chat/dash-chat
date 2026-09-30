@@ -126,7 +126,7 @@ fn classify_upload_error(err: reqwest::Error) -> UploadError {
 /// its fetch backstop by its own fixed grace window and lets that upload land
 /// first without a duplicate transfer; pass `false` to have the mailbox fetch
 /// immediately (no upload is coming).
-pub(self) async fn send_register_hashes(
+async fn send_register_hashes(
     base_url: &str,
     hashes: Vec<iroh_blobs::Hash>,
     sender_pubkey: iroh::EndpointId,
