@@ -554,6 +554,15 @@ const TAP_SETTLE_MS = 100;
 /** How many times to re-tap an element whose tap never reached the page. */
 const TAP_ATTEMPTS = 3;
 
+/** How long a busy page gets to turn a touch into its click before the tap
+ *  counts as dropped. Asked any sooner, a click that is merely late reads as
+ *  a miss, and the retry waits on an element the first tap has already
+ *  navigated away from. */
+const CLICK_DISPATCH_MS = 3_000;
+
+/** How often the page is asked whether the click has fired yet. */
+const CLICK_POLL_MS = 100;
+
 /** A fresh handle for `element`, resolved again through the same parent chain
  *  it was originally found by, or null if it is no longer in the page. */
 async function refetch(
@@ -676,7 +685,8 @@ async function describeCover(
  *  round trip takes most of a second, so a page that moves in between leaves
  *  the tap landing on something else — which still fires a click, just not the
  *  one that was asked for. The flag lives on documentElement because a click
- *  that lands usually starts a navigation and takes the element with it. */
+ *  that lands usually starts a navigation and takes the element with it, and
+ *  it records a click anywhere so that the wait for it ends on the first one. */
 async function clickReachedElement(
 	agent: WebdriverIO.Browser,
 	element: WebdriverIO.Element,
@@ -690,9 +700,11 @@ async function clickReachedElement(
 			'click',
 			event => {
 				const target = event.target;
-				if (target instanceof Node && (el === target || el.contains(target))) {
-					document.documentElement.dataset.e2eClick = 'seen';
-				}
+				const onTarget =
+					target instanceof Node && (el === target || el.contains(target));
+				document.documentElement.dataset.e2eClick = onTarget
+					? 'seen'
+					: 'missed';
 			},
 			{ once: true, capture: true },
 		);
@@ -704,9 +716,28 @@ async function clickReachedElement(
 		.pause(TAP_HOLD_MS)
 		.up()
 		.perform();
-	return await agent.execute(
-		() => document.documentElement.dataset.e2eClick === 'seen',
-	);
+	const tappedAt = Date.now();
+	let polls = 0;
+	try {
+		const outcome = await agent.waitUntil(
+			() => {
+				polls++;
+				return agent.execute(
+					() => document.documentElement.dataset.e2eClick ?? null,
+				);
+			},
+			{ timeout: CLICK_DISPATCH_MS, interval: CLICK_POLL_MS },
+		);
+		if (polls > 1 || outcome !== 'seen') {
+			console.log(
+				`[tap-timing] ${outcome} on poll ${polls}, ${Date.now() - tappedAt}ms after the touch`,
+			);
+		}
+		return outcome === 'seen';
+	} catch {
+		console.log(`[tap-timing] no click in ${Date.now() - tappedAt}ms`);
+		return false;
+	}
 }
 
 type PointerType = 'touch' | 'mouse';
