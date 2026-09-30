@@ -140,14 +140,20 @@ impl<T> ItemTraits for T where
 {
 }
 
-/// How a `Topic` or `Author` maps to a stable string key for addressing a mailbox.
-pub trait MailboxKey:
-    Copy + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync
-{
+/// How a `Topic` or `Author` maps to a string key for addressing a log inside
+/// a mailbox.
+///
+/// This key is persisted server-side and shared across client versions, so the
+/// encoding for any type already in production must never change. The concrete
+/// mailbox-server (`mailbox-server`) places additional constraints on keys:
+/// they must not contain `:` or NUL, and topic keys used for push notifications
+/// must pass a 64-character lowercase-hex validation (`validate_hex32`). The
+/// production implementations in this crate satisfy those constraints; test-only
+/// fixtures (e.g. `u8`/`char` for `crate::testing::Msg`) are intentionally
+/// minimal and are not sent to a real mailbox.
+pub trait MailboxKey: ItemTraits {
     fn to_mailbox_key(&self) -> String;
-    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error>
-    where
-        Self: Sized;
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error>;
 }
 
 pub trait MailboxItem:
