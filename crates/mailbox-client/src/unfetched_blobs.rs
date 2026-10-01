@@ -54,7 +54,7 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
 
         let mut held = Vec::new();
         for hash in hashes {
-            if crate::upload_scheduler::upload_due(&url, hash) && source.has_blob(hash).await {
+            if mailboxes.upload_due(&mailbox_id, hash).await && source.has_blob(hash).await {
                 held.push(hash);
             }
         }
@@ -69,7 +69,10 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
         // Upload again too: the upload that followed these blobs' message may
         // have been cut off, and the mailbox can't fetch from a phone it can't dial.
         let client = tracked.client().await;
-        if let Err(err) = client.push_blobs(held, reader.clone(), tracker.clone()).await {
+        if let Err(err) = client
+            .push_blobs(held, reader.clone(), tracker.clone())
+            .await
+        {
             tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
         }
     }

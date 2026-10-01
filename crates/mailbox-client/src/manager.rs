@@ -526,13 +526,13 @@ where
         let Some(url) = tracked.client().await.url() else {
             return false;
         };
-        crate::upload_scheduler::upload_due(&url, hash)
+        crate::upload_scheduler::SCHEDULER.upload_due(&url, hash)
     }
 
     /// Network changed or app resumed: clear in-flight claims and backoffs so
     /// uploads can start again immediately.
     pub fn reset_uploads(&self) {
-        crate::upload_scheduler::restart_uploads();
+        crate::upload_scheduler::SCHEDULER.restart_uploads();
     }
 
     /// Reconcile unfetched blobs across all registered mailboxes.
