@@ -1,7 +1,8 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use mailbox_client::{MailboxId, UnfetchedBlobTracker};
+use mailbox_client::{BlobSource, MailboxId, UnfetchedBlobTracker};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
@@ -42,54 +43,50 @@ impl UnfetchedBlobTracker for LocalStoreBlobTracker {
     }
 }
 
+struct NodeBlobSource {
+    node: Node,
+}
+
+impl NodeBlobSource {
+    fn new(node: Node) -> Arc<dyn BlobSource> {
+        Arc::new(Self { node })
+    }
+}
+
+#[async_trait::async_trait]
+impl BlobSource for NodeBlobSource {
+    async fn unfetched_blobs_by_mailbox(&self) -> BTreeMap<MailboxId, Vec<iroh_blobs::Hash>> {
+        match self.node.local_store.unfetched_blobs_by_mailbox().await {
+            Ok(m) => m,
+            Err(err) => {
+                tracing::error!(?err, "failed to read unfetched blobs");
+                BTreeMap::new()
+            }
+        }
+    }
+
+    async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
+        self.node.blob_reader().has_blob(hash).await
+    }
+
+    async fn prepare_upload_to(&self, url: &str) {
+        if let Err(err) = self.node.register_with_mailbox(url).await {
+            tracing::warn!(?err, "failed to refresh our address on the mailbox");
+        }
+    }
+}
+
 /// One reconciliation pass: for every mailbox with unfetched blobs that is still
 /// tracked, re-announce its hashes and drop the ones it reports already stored.
 pub async fn followup_unfetched_blobs_once(node: &Node) {
-    let by_mailbox = match node.local_store.unfetched_blobs_by_mailbox().await {
-        Ok(m) => m,
-        Err(err) => {
-            tracing::error!(?err, "failed to read unfetched blobs");
-            return;
-        }
-    };
-    let self_endpoint = node.endpoint_id();
-    for (mailbox_id, hashes) in by_mailbox {
-        let Some(tracked) = node.mailboxes.tracked_mailbox(&mailbox_id).await else {
-            continue; // mailbox not currently registered; retry when it returns
-        };
-        let Some(url) = tracked.client().await.url() else {
-            continue; // non-HTTP mailbox (e.g. in-memory test mailbox)
-        };
-        let reader = node.blob_reader();
-        let mut held = Vec::new();
-        for hash in hashes {
-            if node.mailboxes.upload_due(&mailbox_id, hash).await && reader.has_blob(hash).await {
-                held.push(hash);
-            }
-        }
-        if held.is_empty() {
-            continue; // nothing to upload now: in flight, backing off, or not fetched yet
-        }
-        // Our address changes with the network, and the mailbox fetches from us
-        // with the last one we gave it.
-        if let Err(err) = node.register_with_mailbox(&url).await {
-            tracing::warn!(?err, mailbox = %mailbox_id, "failed to refresh our address on the mailbox");
-        }
-        // Upload again too: the upload that followed these blobs' message may
-        // have been cut off, and the mailbox can't fetch from a phone it can't dial.
-        let client = mailbox_client::backends::toy::ToyMailboxClient::<
-            crate::mailbox::MailboxOperation,
-        >::new(
-            mailbox_id.clone(),
-            url,
-            self_endpoint,
+    node.mailboxes
+        .reconcile_unfetched_blobs(
+            NodeBlobSource::new(node.clone()),
+            node.blob_reader(),
             node.unfetched_blob_tracker(),
+            node.endpoint_id(),
         )
-        .with_blob_reader(reader);
-        if let Err(err) = client.store_blobs(held).await {
-            tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
-        }
-    }
+        .await;
 }
 
 /// Spawn the loop that runs `followup_unfetched_blobs_once` on `interval` and
