@@ -1,6 +1,9 @@
+import { type UnsubscribeFunction } from 'emittery';
+
 import { AgentId, DeviceId } from '../p2panda/types';
 import { ChatId, GroupInfo } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
+import { onSystemEvent } from '../utils/system-events';
 
 export interface GroupMember {
 	agentId: AgentId;
@@ -10,6 +13,11 @@ export interface GroupMember {
 
 export interface IGroupChatClient {
 	getMembers(chatId: ChatId): Promise<GroupMember[]>;
+	/** `chatId`'s members changed, here or in the iOS push extension. */
+	onGroupMembersChanged(
+		chatId: ChatId,
+		handler: () => void,
+	): UnsubscribeFunction;
 	addMember(chatId: ChatId, member: AgentId): Promise<void>;
 	removeMember(chatId: ChatId, member: AgentId): Promise<void>;
 
@@ -51,4 +59,15 @@ export class GroupChatClient implements IGroupChatClient {
 	}
 
 	async deleteGroup(): Promise<void> {}
+
+	onGroupMembersChanged(
+		chatId: ChatId,
+		handler: () => void,
+	): UnsubscribeFunction {
+		// Its creation sets the member list too, for a store that already
+		// existed when the group's own operations arrived.
+		return onSystemEvent(['GroupMembersChanged', 'GroupChatAdded'], event => {
+			if (event.payload.chat_id === chatId) handler();
+		});
+	}
 }

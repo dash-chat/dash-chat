@@ -9,6 +9,9 @@ export class MockGroupChatClient implements IGroupChatClient {
 	async getMembers(_chatId: ChatId): Promise<GroupMember[]> {
 		return [];
 	}
+	onGroupMembersChanged(): () => void {
+		return () => {};
+	}
 	async addMember(_chatId: ChatId, _member: AgentId): Promise<void> {}
 	async removeMember(_chatId: ChatId, _member: AgentId): Promise<void> {}
 	async promoteToAdministrator(

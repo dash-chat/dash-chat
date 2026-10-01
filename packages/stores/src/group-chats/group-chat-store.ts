@@ -25,7 +25,6 @@ import {
 	EventWithProvenance,
 	groupEventsInDays,
 } from '../utils/group-events-in-days';
-import { pollForChanges } from '../utils/polling-required';
 import { type IGroupChatClient } from './group-chat-client';
 
 export type ChatEvent =
@@ -63,18 +62,9 @@ export class GroupChatStore {
 			messagesClient,
 			reactive(async () => !(await this.me()).member),
 		);
-		this.logsStore.logsClient.onNewOperation((topicId, op) => {
-			if (topicId === this.chatId && op.header.auth) {
-				this.membersVersion.value++;
-			}
+		this.client.onGroupMembersChanged(this.chatId, () => {
+			this.membersVersion.value++;
 		});
-
-		// On iOS the notification channel above never fires for ops the push
-		// extension ingests into the shared store, so poll the members too.
-		pollForChanges(
-			() => this.client.getMembers(this.chatId),
-			() => this.membersVersion.value++,
-		);
 	}
 
 	info = reactive(async () => {

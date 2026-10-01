@@ -649,3 +649,84 @@ async fn test_non_admin_cannot_remove_admin() {
     )
     .await;
 }
+
+/// Joining a group announces it, and a membership change announces that: the
+/// group list and member list in the UI refresh from these alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_events() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let cammy = make_node(&mailbox, "cammy").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&cammy)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    let added = bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n {
+                Notification::System(SystemNotification::GroupChatAdded { chat_id }) => {
+                    Some(*chat_id)
+                }
+                _ => None,
+            },
+        )
+        .await
+        .expect("bobbi is told the group chat was added");
+    assert_eq!(added, chat_id);
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    alice
+        .add_group_member(chat_id, *cammy.device_id(), Access::write())
+        .await
+        .unwrap();
+
+    let changed = bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n {
+                Notification::System(SystemNotification::GroupMembersChanged { chat_id }) => {
+                    Some(*chat_id)
+                }
+                _ => None,
+            },
+        )
+        .await
+        .expect("bobbi is told the members changed");
+    assert_eq!(changed, chat_id);
+}
