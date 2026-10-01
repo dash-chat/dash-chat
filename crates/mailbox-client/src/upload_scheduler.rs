@@ -1,14 +1,7 @@
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 const MIN_UPLOAD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5);
 const MAX_UPLOAD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5 * 60);
-
-/// Process-global scheduler instance used by the free-function shims while the
-/// orchestrator does not yet own one explicitly.
-pub(crate) static SCHEDULER: Lazy<Arc<BlobUploadScheduler>> =
-    Lazy::new(|| Arc::new(BlobUploadScheduler::new()));
 
 /// Tracks in-flight blob uploads and retry backoffs so an upload still crawling
 /// out isn't started a second time, and one the mailbox keeps refusing isn't
@@ -111,12 +104,6 @@ impl BlobUploadScheduler {
     }
 }
 
-/// Mark an upload of `hash` to `base_url` in flight if it may start now,
-/// returning the claim to release it with.
-pub(crate) fn claim_upload(base_url: &str, hash: iroh_blobs::Hash) -> Option<u64> {
-    SCHEDULER.claim_upload(base_url, hash)
-}
-
 /// Lifecycle callbacks used by blob upload tasks to coordinate with a shared
 /// upload scheduler without depending on its concrete type.
 pub trait BlobUploadLifecycle: Send + Sync + 'static {
@@ -126,13 +113,7 @@ pub trait BlobUploadLifecycle: Send + Sync + 'static {
 
     /// Release `claim`; `succeeded` determines whether the next attempt must
     /// wait out a backoff.
-    fn finish_upload(
-        &self,
-        base_url: &str,
-        hash: iroh_blobs::Hash,
-        claim: u64,
-        succeeded: bool,
-    );
+    fn finish_upload(&self, base_url: &str, hash: iroh_blobs::Hash, claim: u64, succeeded: bool);
 }
 
 impl BlobUploadLifecycle for BlobUploadScheduler {
@@ -140,13 +121,7 @@ impl BlobUploadLifecycle for BlobUploadScheduler {
         self.claim_upload(base_url, hash)
     }
 
-    fn finish_upload(
-        &self,
-        base_url: &str,
-        hash: iroh_blobs::Hash,
-        claim: u64,
-        succeeded: bool,
-    ) {
+    fn finish_upload(&self, base_url: &str, hash: iroh_blobs::Hash, claim: u64, succeeded: bool) {
         self.finish_upload(base_url, hash, claim, succeeded);
     }
 }
@@ -157,36 +132,40 @@ mod tests {
 
     #[test]
     fn an_upload_is_not_restarted_while_in_flight_or_backing_off() {
+        let scheduler = BlobUploadScheduler::new();
         let base_url = "http://claim-test";
         let hash = iroh_blobs::Hash::new(b"claim-test");
 
-        let claim = claim_upload(base_url, hash).unwrap();
-        assert!(claim_upload(base_url, hash).is_none(), "already in flight");
-
-        SCHEDULER.finish_upload(base_url, hash, claim, false);
-        assert!(!SCHEDULER.upload_due(base_url, hash));
+        let claim = scheduler.claim_upload(base_url, hash).unwrap();
         assert!(
-            claim_upload(base_url, hash).is_none(),
+            scheduler.claim_upload(base_url, hash).is_none(),
+            "already in flight"
+        );
+
+        scheduler.finish_upload(base_url, hash, claim, false);
+        assert!(!scheduler.upload_due(base_url, hash));
+        assert!(
+            scheduler.claim_upload(base_url, hash).is_none(),
             "backing off after a failure"
         );
 
-        SCHEDULER.restart_uploads();
+        scheduler.restart_uploads();
         assert!(
-            SCHEDULER.upload_due(base_url, hash),
+            scheduler.upload_due(base_url, hash),
             "a network change ends the backoff"
         );
-        let stale = claim_upload(base_url, hash).unwrap();
-        SCHEDULER.restart_uploads();
-        let fresh = claim_upload(base_url, hash).unwrap();
-        SCHEDULER.finish_upload(base_url, hash, stale, false);
+        let stale = scheduler.claim_upload(base_url, hash).unwrap();
+        scheduler.restart_uploads();
+        let fresh = scheduler.claim_upload(base_url, hash).unwrap();
+        scheduler.finish_upload(base_url, hash, stale, false);
         assert!(
-            !SCHEDULER.upload_due(base_url, hash),
+            !scheduler.upload_due(base_url, hash),
             "a stale claim can't release its successor"
         );
 
-        SCHEDULER.finish_upload(base_url, hash, fresh, true);
+        scheduler.finish_upload(base_url, hash, fresh, true);
         assert!(
-            claim_upload(base_url, hash).is_some(),
+            scheduler.claim_upload(base_url, hash).is_some(),
             "a success leaves no backoff"
         );
     }

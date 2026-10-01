@@ -6,8 +6,8 @@ use mailbox_server::{
 };
 
 use crate::{
-    FetchRequest, FetchResponse, FetchTopicResponse, HTTP_CLIENT, MailboxClient, MailboxId,
-    MailboxItem, MailboxKey, PublishResponse,
+    BlobUploadLifecycle, FetchRequest, FetchResponse, FetchTopicResponse, HTTP_CLIENT,
+    MailboxClient, MailboxId, MailboxItem, MailboxKey, PublishResponse,
 };
 
 /// Client-side timeout for a single blob upload, larger than the default HTTP
@@ -100,6 +100,36 @@ async fn upload_blob(base_url: &str, bytes: bytes::Bytes) -> Result<(), UploadEr
     Ok(())
 }
 
+/// Stand-in lifecycle used when a `ToyMailboxClient` is exercised before being
+/// registered with a `Mailboxes` owner. Every claim succeeds and finishes are
+/// ignored, so uploads proceed without coordination.
+struct NoopUploadLifecycle;
+
+impl BlobUploadLifecycle for NoopUploadLifecycle {
+    fn claim_upload(&self, base_url: &str, hash: iroh_blobs::Hash) -> Option<u64> {
+        tracing::warn!(
+            %base_url,
+            %hash,
+            "blob upload lifecycle not configured; upload will not be coordinated"
+        );
+        Some(0)
+    }
+
+    fn finish_upload(
+        &self,
+        base_url: &str,
+        hash: iroh_blobs::Hash,
+        _claim: u64,
+        _succeeded: bool,
+    ) {
+        tracing::warn!(
+            %base_url,
+            %hash,
+            "blob upload lifecycle not configured; finish ignored"
+        );
+    }
+}
+
 /// A client for the toy mailbox server.
 #[derive(Clone)]
 pub struct ToyMailboxClient<Item: MailboxItem> {
@@ -108,6 +138,7 @@ pub struct ToyMailboxClient<Item: MailboxItem> {
     sender_pubkey: iroh::EndpointId,
     tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
     blob_reader: Option<std::sync::Arc<dyn crate::BlobReader>>,
+    lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>,
     phantom: std::marker::PhantomData<Item>,
 }
 
@@ -124,6 +155,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
             sender_pubkey,
             tracker,
             blob_reader: None,
+            lifecycle: std::sync::Arc::new(NoopUploadLifecycle),
             phantom: std::marker::PhantomData,
         }
     }
@@ -135,6 +167,14 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     pub fn with_blob_reader(mut self, blob_reader: std::sync::Arc<dyn crate::BlobReader>) -> Self {
         self.blob_reader = Some(blob_reader);
         self
+    }
+
+    /// Attach the shared upload lifecycle; called by `Mailboxes::register`.
+    pub fn set_upload_lifecycle(
+        &mut self,
+        lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>,
+    ) {
+        self.lifecycle = lifecycle;
     }
 
     /// Announce blob hashes to the mailbox and reconcile the unfetched tracker,
@@ -151,7 +191,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
             hashes,
             self.blob_reader.clone(),
             self.tracker.clone(),
-            crate::upload_scheduler::SCHEDULER.clone() as Arc<dyn crate::BlobUploadLifecycle>,
+            self.lifecycle.clone(),
         )
         .await
     }
@@ -341,13 +381,8 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         reader: Arc<dyn crate::BlobReader>,
         tracker: Arc<dyn crate::UnfetchedBlobTracker>,
     ) -> Result<(), anyhow::Error> {
-        self.store_blobs_with(
-            hashes,
-            Some(reader),
-            tracker,
-            crate::upload_scheduler::SCHEDULER.clone() as Arc<dyn crate::BlobUploadLifecycle>,
-        )
-        .await
+        self.store_blobs_with(hashes, Some(reader), tracker, self.lifecycle.clone())
+            .await
     }
 
     async fn report(&self, request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
