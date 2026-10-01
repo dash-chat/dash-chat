@@ -6,7 +6,7 @@ const MAX_UPLOAD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5
 
 /// Process-global scheduler instance used by the free-function shims while the
 /// orchestrator does not yet own one explicitly.
-static SCHEDULER: Lazy<BlobUploadScheduler> = Lazy::new(BlobUploadScheduler::new);
+pub(crate) static SCHEDULER: Lazy<BlobUploadScheduler> = Lazy::new(BlobUploadScheduler::new);
 
 /// Tracks in-flight blob uploads and retry backoffs so an upload still crawling
 /// out isn't started a second time, and one the mailbox keeps refusing isn't
@@ -115,19 +115,6 @@ pub(crate) fn claim_upload(base_url: &str, hash: iroh_blobs::Hash) -> Option<u64
     SCHEDULER.claim_upload(base_url, hash)
 }
 
-/// Whether an upload of `hash` to `base_url` would start now: it is neither in
-/// flight nor waiting out a backoff.
-pub fn upload_due(base_url: &str, hash: iroh_blobs::Hash) -> bool {
-    SCHEDULER.upload_due(base_url, hash)
-}
-
-/// Let every upload go out again at once, for when the network has changed:
-/// failed ones stop waiting out their backoff, and ones in flight are presumed
-/// cut off along with the old network (or frozen while the app was away).
-pub fn restart_uploads() {
-    SCHEDULER.restart_uploads();
-}
-
 /// Release `claim`; after a failure the next attempt waits out a backoff that
 /// doubles with each consecutive failure. A claim a restart has since replaced
 /// is ignored, so a stale upload ending late can't overwrite its successor.
@@ -148,23 +135,23 @@ mod tests {
         assert!(claim_upload(base_url, hash).is_none(), "already in flight");
 
         finish_upload(base_url, hash, claim, false);
-        assert!(!upload_due(base_url, hash));
+        assert!(!SCHEDULER.upload_due(base_url, hash));
         assert!(
             claim_upload(base_url, hash).is_none(),
             "backing off after a failure"
         );
 
-        restart_uploads();
+        SCHEDULER.restart_uploads();
         assert!(
-            upload_due(base_url, hash),
+            SCHEDULER.upload_due(base_url, hash),
             "a network change ends the backoff"
         );
         let stale = claim_upload(base_url, hash).unwrap();
-        restart_uploads();
+        SCHEDULER.restart_uploads();
         let fresh = claim_upload(base_url, hash).unwrap();
         finish_upload(base_url, hash, stale, false);
         assert!(
-            !upload_due(base_url, hash),
+            !SCHEDULER.upload_due(base_url, hash),
             "a stale claim can't release its successor"
         );
 
