@@ -5,6 +5,10 @@ use crate::{
     manager::Mailboxes, store::MailboxStore,
 };
 
+// `reconcile_unfetched_blobs` currently lives in its own file because the blob
+// followup path is not yet cleanly separated from node concerns. This is a
+// marker so future refactors return here.
+
 /// Source of blob-upload work from the node that owns the blobs.
 ///
 /// This trait is the boundary between `mailbox-client` (which knows which
@@ -26,15 +30,14 @@ pub trait BlobSource: Send + Sync + 'static {
 /// One reconciliation pass: for every mailbox with unfetched blobs that is still
 /// tracked, re-announce its hashes and drop the ones it reports already stored.
 ///
-/// This is a transitional home for the followup logic; it still constructs a
-/// concrete `ToyMailboxClient` per mailbox because the generic `MailboxClient`
-/// trait does not yet expose blob upload.
+/// This is a transitional home for the followup logic; it delegates blob upload
+/// to the registered `MailboxClient` via `push_blobs`.
 pub async fn reconcile_unfetched_blobs<Item, Store>(
     mailboxes: &Mailboxes<Item, Store>,
     source: Arc<dyn BlobSource>,
     reader: Arc<dyn BlobReader>,
     tracker: Arc<dyn UnfetchedBlobTracker>,
-    endpoint_id: iroh::EndpointId,
+    _endpoint_id: iroh::EndpointId,
 ) where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
@@ -65,14 +68,8 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
 
         // Upload again too: the upload that followed these blobs' message may
         // have been cut off, and the mailbox can't fetch from a phone it can't dial.
-        let client = crate::backends::toy::ToyMailboxClient::<Item>::new(
-            mailbox_id.clone(),
-            url,
-            endpoint_id,
-            tracker.clone(),
-        )
-        .with_blob_reader(reader.clone());
-        if let Err(err) = client.store_blobs(held).await {
+        let client = tracked.client().await;
+        if let Err(err) = client.push_blobs(held, reader.clone(), tracker.clone()).await {
             tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
         }
     }
