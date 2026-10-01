@@ -37,8 +37,9 @@ use aliased::Aliasing;
 use p2panda::operation::LogId;
 use p2panda::{SigningKey, VerifyingKey};
 use p2panda_spaces::ActorId;
+use p2panda_store::{SqliteStore, topics::TopicStore};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
+use sqlx::{Sqlite, encode::IsNull, error::BoxDynError};
 
 pub trait TopicKind:
     Default
@@ -117,6 +118,28 @@ pub mod kind {
 
 pub type TopicId = p2panda::Topic;
 
+/// The single topic an application log belongs to, or `None` if the log has no association yet.
+///
+/// Application logs are keyed per space (`log_id = digest(space_id ++ "space_application/v1")`),
+/// so an `(author, log_id)` pair resolves to exactly one topic. Control logs are not: the member
+/// control log id is a constant shared by every space, so this is only valid for application
+/// operations.
+pub async fn resolve_application_topic(
+    store: &SqliteStore,
+    author: &VerifyingKey,
+    log_id: &LogId,
+) -> anyhow::Result<Option<TopicId>> {
+    let mut topics: Vec<TopicId> = store.resolve_topics(author, log_id).await?;
+    anyhow::ensure!(
+        topics.len() <= 1,
+        "application log resolved to {} topics, expected at most one. author: {:?}, log: {:?}",
+        topics.len(),
+        author.aliased(),
+        log_id.aliased(),
+    );
+    Ok(topics.pop())
+}
+
 // -- SQLite encoding for TopicId --
 
 impl<K: TopicKind> sqlx::Type<Sqlite> for Topic<K> {
@@ -126,7 +149,10 @@ impl<K: TopicKind> sqlx::Type<Sqlite> for Topic<K> {
 }
 
 impl<K: TopicKind> sqlx::Encode<'_, Sqlite> for Topic<K> {
-    fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <Sqlite as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<IsNull, BoxDynError> {
         <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.to_vec(), buf)
     }
 }
@@ -167,8 +193,6 @@ pub struct Topic<K: TopicKind> {
 
     kind: PhantomData<K>,
 }
-
-impl<K: TopicKind> p2panda_spaces::traits::SpaceId for Topic<K> {}
 
 impl<K: TopicKind> Topic<K> {
     pub(crate) fn new(id: [u8; 32]) -> Self {
