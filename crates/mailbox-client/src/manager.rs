@@ -535,6 +535,28 @@ where
         crate::upload_scheduler::restart_uploads();
     }
 
+    /// Reconcile unfetched blobs across all registered mailboxes.
+    ///
+    /// For every mailbox that still has unfetched blobs recorded by `source`,
+    /// re-announce the hashes the node currently holds and push any bytes the
+    /// mailbox lacks.
+    pub async fn reconcile_unfetched_blobs(
+        &self,
+        source: Arc<dyn crate::unfetched_blobs::BlobSource>,
+        reader: Arc<dyn crate::BlobReader>,
+        tracker: Arc<dyn crate::UnfetchedBlobTracker>,
+        endpoint_id: iroh::EndpointId,
+    ) {
+        crate::unfetched_blobs::reconcile_unfetched_blobs(
+            self,
+            source,
+            reader,
+            tracker,
+            endpoint_id,
+        )
+        .await;
+    }
+
     /// Nudge the poll loop to check for the next mailbox to poll.
     pub fn nudge_poll_loop(&self) {
         self.nudge.notify_one();
