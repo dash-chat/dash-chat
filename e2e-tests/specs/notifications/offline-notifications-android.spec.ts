@@ -61,8 +61,7 @@ describe.skip('Offline notifications on Android (background sync)', () => {
 		await sender.directChatPage.composer.sendMessage(message);
 
 		// The backgrounded Android node should sync the op and surface a notification.
-		const text = await notifications.waitForNotification(marker);
-		expect(text).toContain(marker);
+		await expect(notifications).toHaveDelivered({ body: message });
 
 		// Tap the notification and verify we return to the chat with the message.
 		await notifications.tapNotification(marker);

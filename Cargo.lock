@@ -2036,7 +2036,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.20.9"
+version = "0.20.11"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -5613,6 +5613,7 @@ dependencies = [
  "local-hub-discovery",
  "log",
  "mailbox-server",
+ "openssl-sys",
  "panic-policy",
  "tempfile",
  "tokio",
@@ -7337,7 +7338,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -7358,7 +7359,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "p2panda-core",
  "p2panda-store",
@@ -7375,7 +7376,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "blake3",
  "ciborium",
@@ -7390,7 +7391,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7405,7 +7406,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -7428,7 +7429,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -7456,7 +7457,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7470,7 +7471,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "p2panda-core",
  "rand 0.10.2",
@@ -7484,7 +7485,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "futures-core",
  "p2panda-core",
@@ -7497,7 +7498,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.6.1"
-source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-named-stream-cursors#5d68a2802d3cff6c77fdf2aef3bd57d84bd8e96c"
+source = "git+https://github.com/dash-chat/p2panda?branch=dashchat-lan-priority#fa15712cabf8499c014e499e36101773f3bed645"
 dependencies = [
  "futures",
  "futures-util",
@@ -10282,8 +10283,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "swarm-discovery"
 version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b4877f20f064de34b77d79237c9caa37c393590af8ef5a2f3253d59be5a338b"
+source = "git+https://github.com/dash-chat/swarm-discovery?rev=1cf4c14c67b60bf8c020b5cc002fd7f438492199#1cf4c14c67b60bf8c020b5cc002fd7f438492199"
 dependencies = [
  "acto",
  "hickory-proto",

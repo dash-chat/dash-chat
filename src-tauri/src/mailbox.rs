@@ -192,7 +192,7 @@ async fn hand_over_our_addr(
         // comes back at the address it left from.
         handed_over.retain(|id, _| current.contains_key(id));
         // Together, not in turn: a hub that answers a probe but stalls on HTTP
-        // would otherwise hold up every hub behind it for two 10s timeouts.
+        // would otherwise hold up every hub behind it for two request timeouts.
         let done = futures::future::join_all(
             hubs_missing_our_addr(&current, &handed_over)
                 .into_iter()

@@ -14,6 +14,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { notificationMatchers } from './helpers/components/notifications/matchers';
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
 import { claimAllWhenFreeSync, release } from './setup/claims';
 import {
@@ -34,7 +35,7 @@ import {
 } from './setup/mailbox-server';
 import { CHECKOUT_CLAIM } from './setup/network-id';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
-import { DesktopPlatform } from './setup/platforms/desktop';
+import { DesktopPlatform, buildDesktopApp } from './setup/platforms/desktop';
 import { IosPlatform, clearIosAppData } from './setup/platforms/ios';
 import type { AgentPlatform } from './setup/platforms/platform';
 import {
@@ -120,9 +121,11 @@ let pushServer: ChildProcess | undefined;
 let pushLogger: ChildProcess | undefined;
 let toxiproxy: ChildProcess | undefined;
 let toxiproxyLogger: ChildProcess | undefined;
+let mailboxTls: ChildProcess | undefined;
+let mailboxTlsLogger: ChildProcess | undefined;
 
 async function teardown() {
-	for (const server of [mailboxServer, pushServer, toxiproxy]) {
+	for (const server of [mailboxServer, mailboxTls, pushServer, toxiproxy]) {
 		if (server?.pid) {
 			// Negative PID = signal the entire detached process group.
 			try {
@@ -138,6 +141,7 @@ async function teardown() {
 	mailboxLogger?.kill();
 	pushLogger?.kill();
 	toxiproxyLogger?.kill();
+	mailboxTlsLogger?.kill();
 	release(CHECKOUT_CLAIM);
 }
 
@@ -267,8 +271,16 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				({
 					proc: mailboxServer,
 					logger: mailboxLogger,
+					tls: mailboxTls,
+					tlsLogger: mailboxTlsLogger,
 					port: mailboxPort,
 				} = await startLocalMailboxServer(pushUrl));
+			}
+
+			// Stress specs launch short-lived desktop visitors even when every
+			// agent is a phone.
+			if (desktop === null && process.env.E2E_STRESS === '1') {
+				buildDesktopApp();
 			}
 
 			for (const platform of platforms) {
@@ -299,6 +311,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	 * assertion that genuinely needs longer opts in with `{ wait: UI_TIMEOUT }`. */
 	before() {
 		setOptions({ wait: RENDER_SETTLE_WINDOW });
+		expect.extend(notificationMatchers);
 	},
 
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes

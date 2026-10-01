@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import {
-	ExpectedModel,
-	type NotificationTexts,
-	describeContent,
-} from './model.ts';
+import { describeContent } from '../components/notifications/content.ts';
+import { ExpectedModel, type NotificationTexts } from './model.ts';
 
 /** The wording the app puts in a notification it cannot fully name, as the
  *  English catalogue has it. */

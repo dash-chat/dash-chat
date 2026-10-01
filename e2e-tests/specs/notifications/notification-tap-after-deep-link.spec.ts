@@ -52,7 +52,10 @@ describe('Notification tap after opening the app from a deep link', () => {
 		await notifications.clear();
 		const message = `hi DEEPLINK_TAP_${Date.now()}`;
 		await sender.groupChatPage.composer.sendMessage(message);
-		await notifications.waitForNotification(message);
+		await expect(notifications).toHaveDelivered({
+			title: 'Sam',
+			body: message,
+		});
 
 		await notifications.tapNotification('Sam');
 		await notifications.returnToApp();

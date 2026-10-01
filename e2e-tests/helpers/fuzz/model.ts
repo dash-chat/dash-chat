@@ -7,7 +7,7 @@
  * from what it knows. It holds only names and expected state, never browser
  * handles: `check(model)` must stay pure.
  */
-import type { NotificationContent } from '../components/notifications/notification-helper';
+import type { NotificationContent } from '../components/notifications/content';
 
 export type MessageKind = 'text' | 'photo' | 'file' | 'voice';
 export type OpId = string;
@@ -88,15 +88,6 @@ export interface NotificationView {
 	 * unread, and which it is depends on the order a healed link delivered
 	 * them in. */
 	oneOf: NotificationContent[];
-}
-
-/** `content` as a failure prints it. */
-export function describeContent(content: NotificationContent): string {
-	const title =
-		content.conversation === null || content.conversation === undefined
-			? content.title
-			: `${content.conversation} › ${content.title}`;
-	return `${title} | ${content.body}`;
 }
 
 export interface ExpectedHub {

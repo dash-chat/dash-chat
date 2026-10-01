@@ -107,9 +107,10 @@ export function killLeftoverMailboxServers() {
 	killOursBuiltFrom('mailbox-server');
 	killOursBuiltFrom('mailbox-local-server');
 	killOursBuiltFrom('push-notifications-server');
-	// Not built here: startToxiproxy stamps this checkout's `.dbs` into its
-	// environment instead.
+	// Not built here: startToxiproxy and startMailboxTls stamp this checkout's
+	// `.dbs` into their environments instead.
 	killOursNamed('toxiproxy-server');
+	killOursNamed('stunnel');
 }
 
 /** Kill any process listening on the given TCP ports. */

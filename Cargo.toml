@@ -37,17 +37,19 @@ reporting = { path = "crates/reporting" }
 
 # `dashchat-offline-node` plus one commit: SQLite transactions begin with
 # BEGIN IMMEDIATE, so the app and the iOS push extension sharing one database
-# file stop refusing each other's writes with "database is locked".
-p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors", features = [
+# file stop refusing each other's writes with "database is locked". On top: nodes
+# found over mDNS are discovered right away, and sync forgets ended sessions,
+# skips duplicate ones and backs off from nodes whose sessions keep failing.
+p2panda ={ git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority", features = [
   "processor",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-named-stream-cursors", features = [
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-lan-priority", features = [
   "test_utils",
 ] }
 
@@ -72,6 +74,9 @@ iroh-gossip = { git = "https://github.com/dash-chat/iroh-gossip", rev = "efc565e
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
 tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616" }
+# swarm-discovery 0.6.3 + a non-fatal default-interface multicast join, so a
+# hub on a host without a default route (an offline hotspot) can still start
+swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = "1cf4c14c67b60bf8c020b5cc002fd7f438492199" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
@@ -87,4 +92,3 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 # p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }

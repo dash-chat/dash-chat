@@ -23,7 +23,9 @@ async fn check_response(resp: reqwest::Response) -> anyhow::Result<()> {
 impl PushNotificationsClient {
     pub fn new(base_url: String) -> Result<Self, reqwest::Error> {
         let http = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(5))
+            // As the mailbox client's: setting up a connection on a loaded
+            // mobile network alone can take several seconds.
+            .connect_timeout(std::time::Duration::from_secs(15))
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
         Ok(Self { base_url, http })

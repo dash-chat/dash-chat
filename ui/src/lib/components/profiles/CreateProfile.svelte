@@ -10,7 +10,7 @@
 	import AvatarPicker from './AvatarPicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { showToast } from '$lib/utils/toasts';
-	import { isIos, isMobile } from '$lib/utils/environment';
+	import { isAndroid, isIos, isMobile } from '$lib/utils/environment';
 	import {
 		Page,
 		Button,
@@ -60,7 +60,7 @@
 	}
 
 	async function requestLocalNetworkPermission() {
-		if (!isMobile) return;
+		if (!isAndroid) return;
 		try {
 			const { localNetwork } = await invokeAfterSetup<{
 				localNetwork: PermissionState;

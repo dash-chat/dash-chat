@@ -44,7 +44,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
  *  WebDriver for WKWebView exists. */
 const MACOS = process.platform === 'darwin';
 
-const APP_BINARY = path.join(ROOT, 'target', 'debug', 'dash-chat');
+export const APP_BINARY = path.join(ROOT, 'target', 'debug', 'dash-chat');
 
 interface DesktopAgent {
 	slot: number;
@@ -52,8 +52,12 @@ interface DesktopAgent {
 	logger?: ChildProcess | null;
 }
 
+export function e2eDataDir(name: string): string {
+	return path.join(ROOT, '.dbs', 'e2e', name);
+}
+
 function agentDir(slot: number): string {
-	return path.join(ROOT, '.dbs', 'e2e', `agent-${slot}`);
+	return e2eDataDir(`agent-${slot}`);
 }
 
 function agentPort(slot: number): number {
@@ -118,6 +122,18 @@ const WEBKITGTK_ENV: Record<string, string> = {
 	WEBKIT_DISABLE_DMABUF_RENDERER: '1',
 };
 
+export function buildDesktopApp(): void {
+	runTurboBuild(
+		'e2e:build:desktop',
+		envWithoutWdioLoader({
+			VITE_E2E: 'true',
+			CARGO_PROFILE_DEV_DEBUG: '0',
+			E2E_NETWORK_ID,
+			E2E_RELAY_URL,
+		}),
+	);
+}
+
 /** Launch the e2e build at `binary` against `dataDir`, with the harness's
  *  environment and `env` on top, and resolve once the WebDriver server it
  *  embeds is listening on `port`. */
@@ -143,7 +159,12 @@ export async function launchDesktopApp(
 			...env,
 		},
 	});
-	await waitForPortListening(port);
+	try {
+		await waitForPortListening(port);
+	} catch (e) {
+		await killAndWait(app);
+		throw e;
+	}
 	if (MACOS) raiseMacApp(app.pid);
 	return app;
 }
@@ -234,15 +255,7 @@ export class DesktopPlatform implements AgentPlatform {
 	}
 
 	async onPrepare() {
-		runTurboBuild(
-			'e2e:build:desktop',
-			envWithoutWdioLoader({
-				VITE_E2E: 'true',
-				CARGO_PROFILE_DEV_DEBUG: '0',
-				E2E_NETWORK_ID,
-				E2E_RELAY_URL,
-			}),
-		);
+		buildDesktopApp();
 		// Kill any leftover processes from previous interrupted runs.
 		killAllE2EProcesses();
 		killPortHolders(this.ports);
