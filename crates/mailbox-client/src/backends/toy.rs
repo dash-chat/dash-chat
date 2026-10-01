@@ -147,8 +147,13 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     /// scoped to `not_stored`, so we never re-upload blobs the mailbox already
     /// holds.
     pub async fn store_blobs(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
-        self.store_blobs_with(hashes, self.blob_reader.clone(), self.tracker.clone())
-            .await
+        self.store_blobs_with(
+            hashes,
+            self.blob_reader.clone(),
+            self.tracker.clone(),
+            crate::upload_scheduler::SCHEDULER.clone() as Arc<dyn crate::BlobUploadLifecycle>,
+        )
+        .await
     }
 
     async fn store_blobs_with(
@@ -156,6 +161,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         mut hashes: Vec<iroh_blobs::Hash>,
         reader: Option<Arc<dyn crate::BlobReader>>,
         tracker: Arc<dyn crate::UnfetchedBlobTracker>,
+        lifecycle: Arc<dyn crate::BlobUploadLifecycle>,
     ) -> anyhow::Result<()> {
         if hashes.is_empty() {
             return Ok(());
@@ -188,7 +194,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
             .collect();
         tracker.record(&self.id, &not_stored).await;
         tracker.remove(&self.id, &already_stored).await;
-        self.spawn_blob_upload_with(reader, tracker, not_stored);
+        self.spawn_blob_upload_with(reader, tracker, lifecycle, not_stored);
         Ok(())
     }
 
@@ -201,14 +207,11 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     /// we stop — the remaining blobs stay queued for the mailbox's fetch backstop
     /// rather than burning through the batch against a dead endpoint. No-op when
     /// no blob reader is configured.
-    fn spawn_blob_upload(&self, hashes: Vec<iroh_blobs::Hash>) {
-        self.spawn_blob_upload_with(self.blob_reader.clone(), self.tracker.clone(), hashes);
-    }
-
     fn spawn_blob_upload_with(
         &self,
         reader: Option<Arc<dyn crate::BlobReader>>,
         tracker: Arc<dyn crate::UnfetchedBlobTracker>,
+        lifecycle: Arc<dyn crate::BlobUploadLifecycle>,
         hashes: Vec<iroh_blobs::Hash>,
     ) {
         let Some(reader) = reader else {
@@ -218,12 +221,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         // task hasn't reached yet alongside it over the same uplink.
         let claimed: Vec<(iroh_blobs::Hash, u64)> = hashes
             .into_iter()
-            .filter_map(|hash| {
-                Some((
-                    hash,
-                    crate::upload_scheduler::claim_upload(&self.base_url, hash)?,
-                ))
-            })
+            .filter_map(|hash| Some((hash, lifecycle.claim_upload(&self.base_url, hash)?)))
             .collect();
         if claimed.is_empty() {
             return;
@@ -237,7 +235,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
                     Ok(bytes) => bytes,
                     Err(err) => {
                         tracing::warn!(%hash, ?err, "failed to read blob for upload; relying on announce");
-                        crate::upload_scheduler::finish_upload(&base_url, hash, claim, false);
+                        lifecycle.finish_upload(&base_url, hash, claim, false);
                         continue;
                     }
                 };
@@ -247,17 +245,17 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
                     Ok(()) => {
                         tracing::info!(%hash, size, "uploaded blob");
                         tracker.remove(&id, &[hash]).await;
-                        crate::upload_scheduler::finish_upload(&base_url, hash, claim, true);
+                        lifecycle.finish_upload(&base_url, hash, claim, true);
                     }
                     Err(UploadError::Blob(err)) => {
                         tracing::warn!(%hash, ?err, "blob upload failed; relying on announce");
-                        crate::upload_scheduler::finish_upload(&base_url, hash, claim, false);
+                        lifecycle.finish_upload(&base_url, hash, claim, false);
                     }
                     Err(UploadError::MailboxUnavailable(err)) => {
                         tracing::warn!(%hash, ?err, "mailbox unreachable; aborting remaining uploads, relying on announce/fetch backstop");
-                        crate::upload_scheduler::finish_upload(&base_url, hash, claim, false);
+                        lifecycle.finish_upload(&base_url, hash, claim, false);
                         claimed.by_ref().for_each(|(hash, claim)| {
-                            crate::upload_scheduler::finish_upload(&base_url, hash, claim, false)
+                            lifecycle.finish_upload(&base_url, hash, claim, false)
                         });
                         break;
                     }
@@ -343,7 +341,13 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         reader: Arc<dyn crate::BlobReader>,
         tracker: Arc<dyn crate::UnfetchedBlobTracker>,
     ) -> Result<(), anyhow::Error> {
-        self.store_blobs_with(hashes, Some(reader), tracker).await
+        self.store_blobs_with(
+            hashes,
+            Some(reader),
+            tracker,
+            crate::upload_scheduler::SCHEDULER.clone() as Arc<dyn crate::BlobUploadLifecycle>,
+        )
+        .await
     }
 
     async fn report(&self, request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
