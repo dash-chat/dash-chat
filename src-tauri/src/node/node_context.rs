@@ -87,10 +87,12 @@ impl NodeContext {
     /// Context used when handling push-notifications in a limited time window with the app closed:
     /// no P2P, no blob sync, and no app-lifetime channels.
     #[cfg_attr(not(mobile), allow(dead_code))]
-    pub fn for_push_notifications() -> Self {
+    pub fn for_push_notifications(
+        notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
+    ) -> Self {
         Self {
             role: NodeRole::PushNotification,
-            notification_tx: None,
+            notification_tx,
             topic_subscribed_tx: None,
             app_handle: None,
         }
@@ -226,7 +228,7 @@ mod tests {
     // session and kills the running app's networking actors.
     #[test]
     fn the_push_extension_needs_no_iroh_endpoint() {
-        let config = NodeContext::for_push_notifications().node_config();
+        let config = NodeContext::for_push_notifications(None).node_config();
         assert!(!config.enable_p2p);
         assert!(!config.enable_blob_sync);
         assert!(app_context().node_config().enable_blob_sync);
@@ -236,7 +238,7 @@ mod tests {
     fn p2p_follows_the_role() {
         assert!(app_context().node_config().enable_p2p);
         assert!(
-            !NodeContext::for_push_notifications()
+            !NodeContext::for_push_notifications(None)
                 .node_config()
                 .enable_p2p
         );

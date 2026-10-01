@@ -268,6 +268,9 @@ export interface DeleteForMePayload {
 export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
 
 export type SystemEvent =
+	| { type: 'GroupChatAdded'; payload: { chat_id: ChatId } }
+	| { type: 'GroupMembersChanged'; payload: { chat_id: ChatId } }
+	| { type: 'AgentsIntroduced'; payload: { agents: Record<DeviceId, AgentId> } }
 	| {
 			type: 'Tombstones';
 			payload: {

@@ -401,10 +401,15 @@ impl OpProjection {
             Payload::Chat(ChatPayload::MessageAck { acks }) => {
                 let mut delivered = BTreeMap::new();
                 for (acked_author, acked) in acks {
-                    let changed = self
-                        .record_message_ack(topic, author, *acked_author, *acked)
+                    self.record_message_ack(topic, author, *acked_author, *acked)
                         .await?;
-                    if changed && self.ack_counts_as_delivered(author, *acked_author).await? {
+                    // Announced even when the store already held it; only an ack
+                    // behind the recorded one is skipped.
+                    let current = self
+                        .recorded_message_ack(topic, author, *acked_author)
+                        .await?
+                        == Some(acked.seq);
+                    if current && self.ack_counts_as_delivered(author, *acked_author).await? {
                         delivered.insert(*acked_author, *acked);
                     }
                 }
@@ -418,7 +423,9 @@ impl OpProjection {
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
                 }
-                None
+                Some(SystemNotification::AgentsIntroduced {
+                    agents: agents.clone(),
+                })
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
@@ -502,7 +509,9 @@ impl OpProjection {
             | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
-                None
+                Some(SystemNotification::AgentsIntroduced {
+                    agents: BTreeMap::from([(author, *agent_id)]),
+                })
             }
 
             // We define group chats as topics which contain a CreateGroup that makes at least
@@ -513,19 +522,21 @@ impl OpProjection {
             //
             // TODO: this needs to be much more clearly defined, see https://hackmd.io/1S2xtZfXTo6N5WinzCnqWw
             Payload::GroupControl(GroupsArgs { action, .. }) => {
+                let chat_id = ChatId::from_topic_id(topic)?;
                 match action {
                     GroupAction::Create { initial_members } => {
-                        for (_, access) in initial_members {
-                            if *access == p2panda_auth::Access::manage() {
-                                self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
-                                    .await?;
-                                break;
-                            }
+                        let has_admin = initial_members
+                            .iter()
+                            .any(|(_, access)| *access == p2panda_auth::Access::manage());
+                        if has_admin {
+                            self.mark_group_as_group_chat(chat_id).await?;
+                            Some(SystemNotification::GroupChatAdded { chat_id })
+                        } else {
+                            None
                         }
                     }
-                    _ => (),
-                };
-                None
+                    _ => Some(SystemNotification::GroupMembersChanged { chat_id }),
+                }
             }
 
             _ => {
@@ -769,16 +780,15 @@ impl OpProjection {
     }
 
     /// Fold one [`ChatPayload::MessageAck`] entry into the per-acker ack map.
-    /// Monotonic upsert like [`Self::record_chat_log_head`]. Returns whether
-    /// the stored state changed.
+    /// Monotonic upsert like [`Self::record_chat_log_head`].
     async fn record_message_ack(
         &self,
         topic: TopicId,
         acker: DeviceId,
         author: DeviceId,
         acked: AckedOp,
-    ) -> anyhow::Result<bool> {
-        let result = sqlx::query(
+    ) -> anyhow::Result<()> {
+        sqlx::query(
             "INSERT INTO message_acks (topic_id, acker_device_id, author_device_id, seq_num, op_hash)
              VALUES (?, ?, ?, ?, ?)
              ON CONFLICT (topic_id, acker_device_id, author_device_id) DO UPDATE SET
@@ -793,7 +803,26 @@ impl OpProjection {
         .bind(acked.hash.as_bytes().to_vec())
         .execute(&self.pool)
         .await?;
-        Ok(result.rows_affected() > 0)
+        Ok(())
+    }
+
+    /// The seq `acker` has acknowledged of `author`'s log, if any.
+    async fn recorded_message_ack(
+        &self,
+        topic: TopicId,
+        acker: DeviceId,
+        author: DeviceId,
+    ) -> anyhow::Result<Option<u64>> {
+        let seq: Option<i64> = sqlx::query_scalar(
+            "SELECT seq_num FROM message_acks
+             WHERE topic_id = ? AND acker_device_id = ? AND author_device_id = ?",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(acker)
+        .bind(author)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(seq.map(|seq| seq as u64))
     }
 
     /// Record an operation hash in the per-topic tombstone set with the reason
@@ -989,57 +1018,39 @@ mod tests {
         assert_eq!(db.ack_topic_ids().await.unwrap(), vec![topic]);
     }
 
-    /// `record_message_ack` reports whether stored state changed, folding
-    /// monotonically per (acker, author).
+    /// `record_message_ack` folds monotonically per (acker, author);
+    /// `recorded_message_ack` reads the fold.
     #[tokio::test]
     async fn test_record_message_ack_change_detection() {
         let db = projection().await;
         let topic = *Topic::<kind::Untyped>::new([1; 32]);
         let (acker, author) = (device(10), device(20));
-
-        let acked = AckedOp {
-            hash: Hash::digest(b"a"),
-            seq: 2,
+        let recorded = || db.recorded_message_ack(topic, acker, author);
+        let ack = |label: &[u8], seq: u64| AckedOp {
+            hash: Hash::digest(label),
+            seq,
         };
-        assert!(
-            db.record_message_ack(topic, acker, author, acked)
-                .await
-                .unwrap()
-        );
-        // Replay of the same ack: no change.
-        assert!(
-            !db.record_message_ack(topic, acker, author, acked)
-                .await
-                .unwrap()
-        );
+
+        assert_eq!(recorded().await.unwrap(), None);
+        db.record_message_ack(topic, acker, author, ack(b"a", 2))
+            .await
+            .unwrap();
+        assert_eq!(recorded().await.unwrap(), Some(2));
+        // Replay of the same ack: the fold stays.
+        db.record_message_ack(topic, acker, author, ack(b"a", 2))
+            .await
+            .unwrap();
+        assert_eq!(recorded().await.unwrap(), Some(2));
         // An older ack never regresses the fold.
-        assert!(
-            !db.record_message_ack(
-                topic,
-                acker,
-                author,
-                AckedOp {
-                    hash: Hash::digest(b"old"),
-                    seq: 1,
-                }
-            )
+        db.record_message_ack(topic, acker, author, ack(b"old", 1))
             .await
-            .unwrap()
-        );
+            .unwrap();
+        assert_eq!(recorded().await.unwrap(), Some(2));
         // A newer one advances it.
-        assert!(
-            db.record_message_ack(
-                topic,
-                acker,
-                author,
-                AckedOp {
-                    hash: Hash::digest(b"new"),
-                    seq: 7,
-                }
-            )
+        db.record_message_ack(topic, acker, author, ack(b"new", 7))
             .await
-            .unwrap()
-        );
+            .unwrap();
+        assert_eq!(recorded().await.unwrap(), Some(7));
     }
 
     /// `ack_delta` is the per-author gap between the latest processed non-ack

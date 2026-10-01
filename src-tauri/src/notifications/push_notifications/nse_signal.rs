@@ -3,15 +3,16 @@
 //!
 //! The app and the NSE are separate processes sharing one SQLite database. When
 //! the NSE ingests an operation the app never sees it (whoever fetches first
-//! wins), so the NSE posts this notification after processing to let the app
-//! react.
+//! wins), so the NSE's node posts this notification for every operation it
+//! processes and the app imports what the NSE recorded.
 
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
-use tokio::sync::Notify;
+use dashchat_node::Notification;
+use tokio::sync::{mpsc, Notify};
 
 use crate::node::{node_slot, NodeRole};
 
@@ -76,9 +77,27 @@ fn cf_string(value: &str) -> CFStringRef {
     unsafe { CFStringCreateWithCString(std::ptr::null(), c.as_ptr(), CF_STRING_ENCODING_UTF8) }
 }
 
-/// Post the "NSE did process an operation" Darwin notification. Called from the
-/// NSE process after it finishes ingesting an operation.
-pub fn post_nse_did_process() {
+/// Where the NSE's node reports the operations it processes: each one nudges
+/// the app, which imports what the extension recorded. The push handler is
+/// not the place to nudge from: a group the extension joins has its
+/// operations fetched and processed by the node after the handler returned.
+pub fn nudge_on_processed_operations() -> mpsc::Sender<Notification> {
+    static TX: LazyLock<mpsc::Sender<Notification>> = LazyLock::new(|| {
+        let (tx, mut rx) = mpsc::channel::<Notification>(256);
+        tauri::async_runtime::spawn(async move {
+            while rx.recv().await.is_some() {
+                // One post per burst: the app debounces nudges anyway.
+                while rx.try_recv().is_ok() {}
+                post_nse_did_process();
+            }
+        });
+        tx
+    });
+    TX.clone()
+}
+
+/// Post the "NSE did process an operation" Darwin notification.
+fn post_nse_did_process() {
     let name = cf_string(NSE_DID_PROCESS_NAME);
     unsafe {
         let center = CFNotificationCenterGetDarwinNotifyCenter();
