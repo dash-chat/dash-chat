@@ -5,6 +5,11 @@ import { ChatId, GroupInfo } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 import { onSystemEvent } from '../utils/system-events';
 
+export interface GroupDevice {
+	deviceId: DeviceId;
+	isAdmin: boolean;
+}
+
 export interface GroupMember {
 	agentId: AgentId;
 	deviceIds: DeviceId[];
@@ -12,7 +17,8 @@ export interface GroupMember {
 }
 
 export interface IGroupChatClient {
-	getMembers(chatId: ChatId): Promise<GroupMember[]>;
+	/** The devices in the group; their agents come from the contacts store. */
+	getMembers(chatId: ChatId): Promise<GroupDevice[]>;
 	/** `chatId`'s members changed, here or in the iOS push extension. */
 	onGroupMembersChanged(
 		chatId: ChatId,
@@ -31,7 +37,7 @@ export interface IGroupChatClient {
 }
 
 export class GroupChatClient implements IGroupChatClient {
-	async getMembers(chatId: ChatId): Promise<GroupMember[]> {
+	async getMembers(chatId: ChatId): Promise<GroupDevice[]> {
 		return invokeAfterSetup('get_group_members', { chatId });
 	}
 

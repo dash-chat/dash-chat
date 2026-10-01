@@ -1,7 +1,10 @@
+import { type UnsubscribeFunction } from 'emittery';
+
 import { LogsClient, waitForOperation } from '../p2panda/logs-client';
 import { AgentId, DeviceId, type TopicId } from '../p2panda/types';
 import { ChatId, Payload } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
+import { onSystemEvent } from '../utils/system-events';
 
 export type AddContactResult =
 	| { kind: 'NewRequest'; chatId: ChatId }
@@ -28,6 +31,12 @@ export interface IContactsClient {
 	// Resolve the agent id recorded for a device pubkey, if the contact is
 	// established. Undefined while an outgoing request is still pending.
 	agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined>;
+
+	/** Devices were introduced as belonging to agents, here or in the iOS
+	 * push extension. */
+	onAgentsIntroduced(
+		handler: (agents: Record<DeviceId, AgentId>) => void,
+	): UnsubscribeFunction;
 
 	// The direct-chat topic id shared with the peer device.
 	directChatId(devicePubkey: DeviceId): Promise<ChatId>;
@@ -98,6 +107,14 @@ export class ContactsClient implements IContactsClient {
 			(await invokeAfterSetup<AgentId | null>('agent_for_device', {
 				devicePubkey,
 			})) ?? undefined
+		);
+	}
+
+	onAgentsIntroduced(
+		handler: (agents: Record<DeviceId, AgentId>) => void,
+	): UnsubscribeFunction {
+		return onSystemEvent('AgentsIntroduced', event =>
+			handler(event.payload.agents),
 		);
 	}
 

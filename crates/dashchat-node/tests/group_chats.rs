@@ -729,4 +729,21 @@ async fn test_group_events() {
         .await
         .expect("bobbi is told the members changed");
     assert_eq!(changed, chat_id);
+
+    let introduced = bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n {
+                Notification::System(SystemNotification::AgentsIntroduced { agents }) => {
+                    agents.get(&(*cammy.device_id()).into()).copied()
+                }
+                _ => None,
+            },
+        )
+        .await
+        .expect("bobbi is told which agent the added device belongs to");
+    assert_eq!(introduced, cammy.agent_id());
 }

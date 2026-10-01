@@ -405,7 +405,7 @@ impl OpProjection {
                         .await?;
                     // The current ack is announced whether this operation set it or
                     // the push extension did before: the webview listens to this
-                    // process. A stale one is not.
+                    // process. Only an ack behind the recorded one is skipped.
                     let current = self
                         .recorded_message_ack(topic, author, *acked_author)
                         .await?
@@ -424,7 +424,9 @@ impl OpProjection {
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
                 }
-                None
+                Some(SystemNotification::AgentsIntroduced {
+                    agents: agents.clone(),
+                })
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {

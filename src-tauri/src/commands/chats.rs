@@ -13,9 +13,8 @@ use crate::node::AppNodeManager;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct GroupMember {
-    pub agent_id: AgentId,
-    pub device_ids: Vec<DeviceId>,
+pub struct GroupDevice {
+    pub device_id: DeviceId,
     pub is_admin: bool,
 }
 
@@ -192,39 +191,19 @@ pub async fn get_group_chats(
 pub async fn get_group_members(
     chat_id: ChatId,
     app_node_manager: State<'_, AppNodeManager>,
-) -> Result<Vec<GroupMember>, String> {
+) -> Result<Vec<GroupDevice>, String> {
     let node = app_node_manager.get().await?;
     let members = node
         .get_group_members(chat_id)
         .await
         .map_err(|e| format!("Failed to get group members: {e:?}"))?;
-    let my_device_id = node.device_id();
-    let my_agent_id = node.agent_id();
-    let mut grouped: std::collections::BTreeMap<AgentId, GroupMember> =
-        std::collections::BTreeMap::new();
-    for (device_id, access) in members {
-        let agent_id = if device_id == my_device_id {
-            my_agent_id
-        } else {
-            node.projection
-                .lookup_contact_by_device_id(device_id)
-                .await
-                .map_err(|e| format!("Failed to lookup contact: {e:?}"))?
-                .unwrap_or_else(|| {
-                    AgentId::from_bytes(device_id.as_bytes())
-                        .expect("DeviceId is a valid 32-byte key")
-                })
-        };
-        let is_admin = access.level >= AccessLevel::Manage;
-        let entry = grouped.entry(agent_id).or_insert_with(|| GroupMember {
-            agent_id,
-            device_ids: Vec::new(),
-            is_admin: false,
-        });
-        entry.device_ids.push(device_id);
-        entry.is_admin |= is_admin;
-    }
-    Ok(grouped.into_values().collect())
+    Ok(members
+        .into_iter()
+        .map(|(device_id, access)| GroupDevice {
+            device_id,
+            is_admin: access.level >= AccessLevel::Manage,
+        })
+        .collect())
 }
 
 #[tauri::command]

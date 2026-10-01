@@ -25,7 +25,7 @@ import {
 	EventWithProvenance,
 	groupEventsInDays,
 } from '../utils/group-events-in-days';
-import { type IGroupChatClient } from './group-chat-client';
+import { type GroupMember, type IGroupChatClient } from './group-chat-client';
 
 export type ChatEvent =
 	| { kind: 'message'; message: Message }
@@ -211,9 +211,24 @@ export class GroupChatStore {
 			: bestAuth;
 	});
 
-	membersData = reactive(async () => {
+	/** The group's devices grouped by agent. A device nobody has introduced
+	 * yet stands in for its agent until an introduction names it. */
+	membersData = reactive(async (): Promise<GroupMember[]> => {
 		void this.membersVersion.value;
-		return await this.client.getMembers(this.chatId);
+		const devices = await this.client.getMembers(this.chatId);
+		const grouped: Record<AgentId, GroupMember> = {};
+		for (const { deviceId, isAdmin } of devices) {
+			const agentId =
+				(await this.contactsStore.agentForDevice(deviceId)) ?? deviceId;
+			const member = (grouped[agentId] ??= {
+				agentId,
+				deviceIds: [],
+				isAdmin: false,
+			});
+			member.deviceIds.push(deviceId);
+			member.isAdmin ||= isAdmin;
+		}
+		return Object.values(grouped);
 	});
 
 	me = reactive(async () => {
