@@ -478,9 +478,7 @@ impl OpProjection {
             Payload::DeviceGroup(p) => match p {
                 DeviceGroupPayload::AddContact { agent_id, .. } => {
                     self.save_agent_mapping(author, *agent_id).await?;
-                    Some(SystemNotification::AgentsIntroduced {
-                        agents: BTreeMap::from([(author, *agent_id)]),
-                    })
+                    None
                 }
                 DeviceGroupPayload::BlockAgent(agent_id) => {
                     self.block_agent(*agent_id).await?;
