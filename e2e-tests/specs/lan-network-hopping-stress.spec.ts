@@ -18,7 +18,7 @@
  *
  * Skips itself unless E2E_STRESS=1, two networks are configured (see
  * e2e-tests/.env.example) and the mailbox link can be cut. Run it with:
- *   PLATFORMS=android,android E2E_STRESS=1 just e2e run lan-network-hopping-stress
+ *   PHONES=android,android E2E_STRESS=1 just e2e run lan-network-hopping-stress
  *
  * Tunables: E2E_HOP_TOURS (how many times to walk every network, default 1).
  */
@@ -33,7 +33,6 @@ import {
 } from '../helpers/flows/lan-sync';
 import { envInt } from '../helpers/utils';
 import { mailboxDegradable } from '../setup/mailbox-control';
-import { ensurePhonesShareALan } from '../setup/phone-lan';
 import { setupAgents } from '../setup/setup-agents';
 import { wifiNetworks } from '../setup/test-env';
 
@@ -65,11 +64,6 @@ describe('LAN sync while hopping networks', function () {
 		await exchangeContacts([agent1, agent2]);
 	});
 
-	after(async () => {
-		if (alice === undefined) return;
-		await ensurePhonesShareALan([alice.agent, bob.agent]);
-	});
-
 	it('syncs on every network, apart and reunited', async () => {
 		let visitors = 0;
 		for (let tour = 1; tour <= TOURS; tour++) {
@@ -83,15 +77,15 @@ describe('LAN sync while hopping networks', function () {
 
 				await withMailboxCut(async () => {
 					await Promise.all([
-						alice.agent.connectWifi(here.ssid, here.passphrase),
-						bob.agent.connectWifi(here.ssid, here.passphrase),
+						alice.agent.joinWifi(here.ssid, here.passphrase),
+						bob.agent.joinWifi(here.ssid, here.passphrase),
 					]);
 					await expectSyncBothWays(alice, bob, `together on ${step}`);
 
-					await alice.agent.connectWifi(next.ssid, next.passphrase);
+					await alice.agent.joinWifi(next.ssid, next.passphrase);
 					const stranded = `Sent from ${next.ssid} before Bob came (${step})`;
 					await send(alice, bob, stranded);
-					await bob.agent.connectWifi(next.ssid, next.passphrase);
+					await bob.agent.joinWifi(next.ssid, next.passphrase);
 					await bob.agent.directChatPage.messages.waitForMessage(stranded);
 					await expectSyncBothWays(
 						alice,
@@ -102,7 +96,7 @@ describe('LAN sync while hopping networks', function () {
 					await bob.agent.disableWifi();
 					const missed = `Sent while Bob was off Wi-Fi (${step})`;
 					await send(alice, bob, missed);
-					await bob.agent.connectWifi(next.ssid, next.passphrase);
+					await bob.agent.joinWifi(next.ssid, next.passphrase);
 					await bob.agent.directChatPage.messages.waitForMessage(missed);
 				});
 				console.log(`[lan-network-hopping] ${step} synced`);

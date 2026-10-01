@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { startAgentLogger } from './agent-logger';
 import { allocatePreferredPort } from './allocate-port';
 import { PUSH_PREFERRED_PORT } from './network-id';
-import { isMobile, platformNames } from './test-env';
+import { phonePlatforms } from './test-env';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -48,7 +48,7 @@ function serviceAccountKeyPath(): string {
 /** Whether the real-device push spec + push server should run: a
  * service-account key present AND a mobile agent to receive the pushes. */
 export function pushTestingEnabled(): boolean {
-	return existsSync(serviceAccountKeyPath()) && platformNames().some(isMobile);
+	return existsSync(serviceAccountKeyPath()) && phonePlatforms().length > 0;
 }
 
 /** Absolute path to the Firebase service-account key, or null when none is

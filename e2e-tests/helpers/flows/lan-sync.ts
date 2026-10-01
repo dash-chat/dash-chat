@@ -1,6 +1,6 @@
-import { launchEphemeralAgent } from '../../setup/ephemeral-agent';
 import { cutMailboxLink, healMailboxLink } from '../../setup/mailbox-control';
-import type { Agent } from '../../setup/setup-agents';
+import { discardDesktopAgent } from '../../setup/platforms/desktop';
+import { type Agent, setupDesktopAgent } from '../../setup/setup-agents';
 import { exchangeContacts } from './exchange-contacts';
 
 export interface NamedAgent {
@@ -19,7 +19,7 @@ export async function meetVisitor(
 	round: number,
 	hosts: NamedAgent[],
 ): Promise<void> {
-	const visitor = await launchEphemeralAgent();
+	const visitor = await setupDesktopAgent();
 	try {
 		await visitor.agent.createProfilePage.createProfile(`Visitor ${round}`);
 		for (const host of hosts) {
@@ -31,7 +31,7 @@ export async function meetVisitor(
 			greeting,
 		);
 	} finally {
-		await visitor.kill();
+		await discardDesktopAgent(visitor.slot);
 	}
 }
 

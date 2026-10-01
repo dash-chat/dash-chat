@@ -7,16 +7,12 @@
  *
  * Needs two physical phones without mobile data, and a network in
  * E2E_WIFI_NETWORKS other than the one the phones are on; skips otherwise:
- *   PLATFORMS=android,android just e2e run p2p-offline-lan
- *   PLATFORMS=ios,ios just e2e run p2p-offline-lan
+ *   PHONES=android,android just e2e run p2p-offline-lan
+ *   PHONES=ios,ios just e2e run p2p-offline-lan
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import {
-	isRemoteMailbox,
-	killMailbox,
-	restartMailbox,
-} from '../setup/mailbox-control';
+import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
 
@@ -40,8 +36,6 @@ async function relaunchOn(agent: Agent, network: WifiNetwork): Promise<void> {
 describe('P2P sync on a LAN with no internet', () => {
 	let alice: Agent;
 	let bob: Agent;
-	let offline: WifiNetwork | undefined;
-	let mailboxKilled = false;
 
 	before(async function () {
 		if (isRemoteMailbox()) this.skip();
@@ -64,20 +58,10 @@ describe('P2P sync on a LAN with no internet', () => {
 		}
 		const [network] = wifiNetworks();
 		if (network === undefined) this.skip();
-		offline = network;
 		await killMailbox();
-		mailboxKilled = true;
 		await Promise.all([alice, bob].map(agent => relaunchOn(agent, network)));
 		await createProfiles({ Alice: alice, Bob: bob });
 		await exchangeContacts([alice, bob]);
-	});
-
-	after(async () => {
-		if (offline !== undefined) {
-			await alice.leaveWifi();
-			await bob.leaveWifi();
-		}
-		if (mailboxKilled) await restartMailbox();
 	});
 
 	it('syncs a text message Alice → Bob', async () => {

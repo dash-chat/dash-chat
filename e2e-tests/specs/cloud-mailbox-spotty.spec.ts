@@ -30,7 +30,6 @@ describe('Cloud mailbox on a spotty link', function () {
 	this.timeout(300_000);
 
 	let agent: Agent;
-	let linkOpened = false;
 
 	const chip = () => agent.groupChatPage.connectionStatusIndicator;
 	const messages = () => agent.groupChatPage.messages;
@@ -64,14 +63,9 @@ describe('Cloud mailbox on a spotty link', function () {
 	before(async function () {
 		if (isRemoteMailbox()) this.skip();
 		[agent] = await setupAgents(this, [{ platform: 'any' }]);
-		linkOpened = true;
 		await agent.createProfilePage.createProfile('Alice', 'Spotty');
 		await createGroup(agent, 'Solo Group', []);
 		await expectConnected('the chat opened', UI_TIMEOUT);
-	});
-
-	after(async () => {
-		if (linkOpened) await healMailboxLink();
 	});
 
 	it('stays connected and hands over a message over a slow link', async () => {

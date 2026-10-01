@@ -5,9 +5,9 @@ set dotenv-load
 
 # run the full e2e suite (the harness builds what the agent combo needs
 # first). Set E2E_SPEC_FILE_RETRIES to rerun failing spec files (defaults to
-# 0, or 1 in CI). The PLATFORMS env var lists the agents to launch as an
-# unordered multiset of platforms (default `desktop,desktop`): desktop,
-# android (physical device), android-emulator (booted automatically), or ios
+# 0, or 1 in CI). Specs get desktop agents by default; the PHONES env var
+# lists the phones to drive as well, as an unordered multiset of android
+# (physical device), android-emulator (booted automatically), or ios
 # (connected iPhone). Set E2E_STRESS=1 to include the stress specs that
 # otherwise skip themselves.
 [default]

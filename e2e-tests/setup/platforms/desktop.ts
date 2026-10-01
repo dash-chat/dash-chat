@@ -13,15 +13,12 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { remote } from 'webdriverio';
 
+import { UI_TIMEOUT } from '../../helpers/timeouts';
 import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
-import {
-	killAllE2EProcesses,
-	killAndWait,
-	killPortHolders,
-	pidsNamedWithEnv,
-} from '../cleanup';
+import { killAllE2EProcesses, killAndWait, pidsNamedWithEnv } from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { E2E_RELAY_URL } from '../relay';
@@ -31,7 +28,6 @@ import {
 	waitForPortFree,
 	waitForPortListening,
 } from '../wait-for-port';
-import type { AgentPlatform } from './platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -46,18 +42,8 @@ const MACOS = process.platform === 'darwin';
 
 export const APP_BINARY = path.join(ROOT, 'target', 'debug', 'dash-chat');
 
-interface DesktopAgent {
-	slot: number;
-	port: number;
-	logger?: ChildProcess | null;
-}
-
-export function e2eDataDir(name: string): string {
-	return path.join(ROOT, '.dbs', 'e2e', name);
-}
-
 function agentDir(slot: number): string {
-	return e2eDataDir(`agent-${slot}`);
+	return path.join(ROOT, '.dbs', 'e2e', `agent-${slot}`);
 }
 
 function agentPort(slot: number): number {
@@ -111,6 +97,8 @@ export async function isAgentAppRunning(slot: number): Promise<boolean> {
 
 /** The apps this worker launched, by slot. */
 const launched = new Map<number, ChildProcess>();
+/** The echo of each launched agent's log, by slot. */
+const loggers = new Map<number, ChildProcess>();
 
 /** WebKitGTK kept off the paths that hang under a driver. */
 const WEBKITGTK_ENV: Record<string, string> = {
@@ -229,94 +217,48 @@ export function readOpenedUrls(slot: number): string[] {
 		.filter(line => line !== '');
 }
 
-/** Agents running the desktop binary, one app process per slot. */
-export class DesktopPlatform implements AgentPlatform {
-	private agents: DesktopAgent[];
+/** Launch a desktop agent on `slot` from first launch — a fresh data dir,
+ *  its log echoed — and open a WebDriver session to it. */
+export async function launchDesktopAgent(
+	slot: number,
+): Promise<WebdriverIO.Browser> {
+	clearAgentDir(slot);
+	// tauri-plugin-log names the file after productName (tauri.conf.json).
+	loggers.set(
+		slot,
+		startAgentLogger(
+			`agent-${slot}`,
+			path.join(agentDir(slot), 'logs', 'Dash Chat.log'),
+		),
+	);
+	await launchAgentApp(slot);
+	return await remote({
+		hostname: '127.0.0.1',
+		port: agentPort(slot),
+		capabilities: {
+			platformName: MACOS ? 'mac' : 'linux',
+		} as WebdriverIO.Capabilities,
+		logLevel: 'warn',
+		waitforTimeout: UI_TIMEOUT,
+	});
+}
 
-	constructor(readonly slots: number[]) {
-		this.agents = slots.map(slot => ({
-			slot,
-			port: agentPort(slot),
-		}));
-	}
+/** Kill one desktop agent's app and log echo, and delete what it stored. */
+export async function discardDesktopAgent(slot: number): Promise<void> {
+	await killAgentApp(slot);
+	launched.delete(slot);
+	loggers.get(slot)?.kill();
+	loggers.delete(slot);
+	rmSync(agentDir(slot), { recursive: true, force: true });
+}
 
-	private get ports(): number[] {
-		return this.agents.map(a => a.port);
-	}
-
-	remoteOptions(slot: number) {
-		const agent = this.agents.find(a => a.slot === slot)!;
-		return {
-			port: agent.port,
-			capabilities: {
-				platformName: MACOS ? 'mac' : 'linux',
-			} as WebdriverIO.Capabilities,
-		};
-	}
-
-	async onPrepare() {
-		buildDesktopApp();
-		// Kill any leftover processes from previous interrupted runs.
-		killAllE2EProcesses();
-		killPortHolders(this.ports);
-	}
-
-	async beforeSession() {
-		// Force-kill any leftover processes from the previous session.
-		await this.killLaunched();
-		killAllE2EProcesses();
-		// Kill anything still holding our specific ports (handles orphaned
-		// dash-chat processes that inherited a listening socket).
-		killPortHolders(this.ports);
-		// Wait for ports to be fully released after SIGKILL.
-		await Promise.all(this.ports.map(p => waitForPortFree(p)));
-
-		for (const agent of this.agents) {
-			// Clean all agent data for a fresh start (important for
-			// specFileRetries). Must remove the entire agent directory, not just
-			// the Rust backend data, because WebKitGTK stores
-			// localStorage/IndexedDB under the XDG dirs (.local/share/, .config/,
-			// .cache/) inside the agent directory.
-			const dataDir = agentDir(agent.slot);
-			try {
-				rmSync(dataDir, { recursive: true, force: true });
-			} catch {
-				/* ignore */
-			}
-			mkdirSync(dataDir, { recursive: true });
-
-			// tauri-plugin-log names the file after productName (tauri.conf.json).
-			agent.logger = startAgentLogger(
-				`agent-${agent.slot}`,
-				path.join(dataDir, 'logs', 'Dash Chat.log'),
-			);
-
-			await launchAgentApp(agent.slot);
-		}
-	}
-
-	async afterSession() {
-		// SIGKILL the apps launched here and wait for exit to free ports.
-		await this.killLaunched();
-		// Kill orphaned dash-chat E2E instances and anything holding our ports.
-		killAllE2EProcesses();
-		killPortHolders(this.ports);
-		for (const agent of this.agents) {
-			agent.logger?.kill();
-			agent.logger = null;
-		}
-	}
-
-	async onComplete() {
-		await this.killLaunched();
-		killAllE2EProcesses();
-		killPortHolders(this.ports);
-		for (const agent of this.agents) {
-			agent.logger?.kill();
-		}
-	}
-
-	private async killLaunched(): Promise<void> {
-		await Promise.all(this.agents.map(a => killAndWait(launched.get(a.slot))));
-	}
+/** Kill every desktop agent this worker launched, and any app process still
+ *  running on this checkout's data dirs, such as one an app restarted itself
+ *  into. */
+export async function stopDesktopAgents(): Promise<void> {
+	await Promise.all([...launched.values()].map(app => killAndWait(app)));
+	launched.clear();
+	killAllE2EProcesses();
+	for (const logger of loggers.values()) logger.kill();
+	loggers.clear();
 }

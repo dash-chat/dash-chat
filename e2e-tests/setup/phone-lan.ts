@@ -1,13 +1,13 @@
 /** What every spec that drives phones needs before it starts: every phone on
  *  a network of its own, all of them on the same one, with internet. A run
  *  that was killed skips its own teardown, so it can leave a phone off Wi-Fi
- *  or parked on a lab network the fuzz walked it onto, and the next spec then
+ *  or parked on a test network the fuzz walked it onto, and the next spec then
  *  fails somewhere far from the cause. This drives the phones there from any
  *  starting state instead of asserting they were left there. */
-import { execFileSync } from 'node:child_process';
-
+import { leaveTestNetworks } from './host-wifi';
 import type { Agent } from './setup-agents';
-import type { WifiInfo } from './wifi';
+import { testNetworkSsids } from './test-env';
+import { type WifiInfo, reachableFromHost } from './wifi';
 
 /** The phones a run can put on a network: physical devices only. An emulator
  *  has no real radio — its "Wi-Fi" is the NAT its own AVD provides, so every
@@ -18,16 +18,19 @@ function drivesWifi(agent: Agent): boolean {
 }
 
 /**
- * Put every phone on a network of its own and check they share it. Every lab
- * network saved on a phone is forgotten, so the supplicant falls back to the
- * network the user saved; a phone left off the air gets its radio turned
- * back on. Then every phone must hold an address, all on one subnet — two
- * phones on different LANs cannot see each other, which no spec that syncs
- * between them can survive, and which is far cheaper to say here than to
- * diagnose from a sync timeout later — and the host must reach every phone,
- * since two networks can serve the same subnet.
+ * Put the host's card back on its usual network, then every phone on the
+ * network the host is on. The card goes first, so a test network is never
+ * the host's. Each phone forgets every test network, then every other network
+ * it lands on that is clearly not the host's; one that may be the host's is
+ * kept, and a phone left off the air gets its radio turned back on. Then
+ * all of them must be on one subnet — two phones on different LANs cannot
+ * see each other, which no spec that syncs between them can survive, and
+ * which is far cheaper to say here than to diagnose from a sync timeout
+ * later — and the host must reach every phone, since two networks can serve
+ * the same subnet.
  */
-export async function convergePhoneNetworks(agents: Agent[]): Promise<void> {
+export async function convergeNetworks(agents: Agent[]): Promise<void> {
+	await leaveTestNetworks(testNetworkSsids());
 	const phones = agents.filter(drivesWifi);
 	if (phones.length === 0) return;
 	// Each phone's radio is its own; doing them at once costs one association
@@ -59,31 +62,14 @@ export async function convergePhoneNetworks(agents: Agent[]): Promise<void> {
 	}
 }
 
-/** Get one phone onto a network of its own — lab networks forgotten, radio
- *  on — and answer with where it is; a failure names the phone. */
+/** Get one phone onto the host's LAN and answer with where it is; a failure
+ *  names the phone. */
 async function onOwnNetwork(agent: Agent, index: number): Promise<WifiInfo> {
 	try {
 		return await agent.leaveWifi();
 	} catch (err) {
 		throw new Error(`${label(agent, index)}: ${String(err)}`);
 	}
-}
-
-/** Whether one ping from the host reaches `address`, given three tries:
- *  a phone that has just associated can miss the first. */
-function reachableFromHost(address: string): boolean {
-	for (let attempt = 1; attempt <= 3; attempt++) {
-		try {
-			execFileSync('ping', ['-c', '1', address], {
-				stdio: 'ignore',
-				timeout: 3_000,
-			});
-			return true;
-		} catch {
-			/* no answer yet */
-		}
-	}
-	return false;
 }
 
 function label(agent: Agent, index: number): string {

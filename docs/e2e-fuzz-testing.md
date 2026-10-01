@@ -4,7 +4,7 @@ The fuzzer drives the real app through the e2e harness with random sequences of 
 
 Everything lives under `e2e-tests/helpers/fuzz/`. The property-testing machinery is [fast-check](https://fast-check.dev/) model-based testing (`fc.commands` / `fc.asyncModelRun`); the specs never touch it directly.
 
-Real devices (physical phones, emulators, Wi-Fi lab) are covered in [e2e-real-devices.md](./e2e-real-devices.md).
+Real devices (physical phones, emulators, Wi-Fi test networks) are covered in [e2e-real-devices.md](./e2e-real-devices.md).
 
 ## Using it from a spec
 
@@ -90,7 +90,7 @@ It seeds **nothing**: a spec that needs contacts up front exchanges them itself 
 | `soak({ moves, length, seed? })` | one of exactly `length` moves | no | the app under ordinary use for a while |
 | `replay(moves)` | the given list, once | no | reproduce a report |
 
-Before every sequence the network side is reset (`resetNetworks`): hubs parked and off any lab LAN, phones foregrounded, on their home page and with Wi-Fi off. Chats and messages are **not** reset: they carry over as they do on the devices, and so does what the model says each agent knows. After the run `teardown` parks the hubs and puts the host card and the phones back on their usual networks, forgetting every lab network.
+Before every sequence the network side is reset (`resetNetworks`): hubs parked and off any test network, phones foregrounded, on their home page and with Wi-Fi off. Chats and messages are **not** reset: they carry over as they do on the devices, and so does what the model says each agent knows. After the run `teardown` parks the hubs and puts the host card and the phones back on their usual networks, forgetting every test network.
 
 ### Moves
 
@@ -125,7 +125,7 @@ Hub and network moves end with their own chip assertion (`checkHubs*` / `expectH
 - Notifications are posted when an op **arrives** and cleared by `openedChat` / `openedDirectChat` / `foreground`. A message, a contact request and being added to a group are announced; nothing else is.
 - Unread counts follow the same arrival rule: a message counts on its chat's row unless the agent sent it or its app is showing that chat, and `openedChat` / `openedDirectChat` / `foreground` read the whole chat at once, as entering it does on the device (`markSeenAndEarlierAsRead` marks the latest visible message and everything before it). An app away from the foreground is showing nothing, so what lands counts even for the chat it was left on. `unreadCount(agent, chat)` is what `expectChatList` asserts.
 - Names and membership are per viewer — `displayName(viewer, who)`, `groupInfo(chat, viewer)`, `membersFor(chat, viewer)` — so a move reads a row, a picker or a member list by what that agent's device calls it. A group is identified by `ExpectedChat.id`, never by its name.
-- Networks: an agent is on at most one LAN (`agentJoin`/`agentLeave`); an agent away from the foreground is on none, and only a push reaches it. Every hub is wherever the host's Wi-Fi card is: the lab LAN it joined, or the home LAN while the card is on none. `expectedHubs(agent)` is the number of running hubs on the agent's LAN.
+- Networks: an agent is on at most one LAN (`agentJoin`/`agentLeave`); an agent away from the foreground is on none, and only a push reaches it. Every hub is wherever the host's Wi-Fi card is: the test network it joined, or the home LAN while the card is on none. `expectedHubs(agent)` is the number of running hubs on the agent's LAN.
 - Without networks everyone is one component: every running agent syncs with every other.
 
 The model has its own unit tests: `pnpm --filter dash-chat-e2e test:fuzz-model` (also part of `pnpm check`). Change the model, add a case there first.
@@ -144,7 +144,7 @@ The model has its own unit tests: `pnpm --filter dash-chat-e2e test:fuzz-model` 
 
 ### Real
 
-`Real` (`agents.ts`) is the driveable side: the `StressAgent`s (agent + name + collected contact link + the notification helper of a run that reads devices), the configured networks with the home one marked, the host's Wi-Fi device, the lab SSID the card is currently on (`hubsNetwork`), and the hubs created so far (`HubReal`: name, port, process or null). A hub keeps its db, key and port across stops, so starting it again is the same hub coming back, and moving the card is the same hub moving LAN, as a deployed one would.
+`Real` (`agents.ts`) is the driveable side: the `StressAgent`s (agent + name + collected contact link + the notification helper of a run that reads devices), the configured networks with the home one marked, the host's Wi-Fi device, the test network the card is currently on (`hubsNetwork`), and the hubs created so far (`HubReal`: name, port, process or null). A hub keeps its db, key and port across stops, so starting it again is the same hub coming back, and moving the card is the same hub moving LAN, as a deployed one would.
 
 Hubs are `mailbox-local-server` processes spawned by `setup/local-hub.ts` on the host, so **all hubs share one location**: the host's card. `hubJoin`/`hubLeave` move every hub at once, and at most `MAX_HUBS` (2) exist per run.
 
@@ -173,7 +173,7 @@ Hubs are `mailbox-local-server` processes spawned by `setup/local-hub.ts` on the
 
 ## Gotchas
 
-- **Emulators are NAT'd** off the host: no lab network can reach them, so a spec that passes networks must skip itself if any agent is an emulator. Desktop cannot lose its LAN without losing its driver session either. Network moves are physical-phone only.
+- **Emulators are NAT'd** off the host: no test network can reach them, so a spec that passes networks must skip itself if any agent is an emulator. Desktop cannot lose its LAN without losing its driver session either. Network moves are physical-phone only.
 - **Suspend vs kill**: suspending the mailbox (`SIGSTOP`) makes connections hang, killing it makes them refused. Kill it for any run that reads the connection chip: a network change wakes the mailbox pollers, which count a suspended cloud as connected until their polls time out, hiding the chip for any hub found meanwhile.
 - **Restart on mobile** is stop + activate inside the same Appium session, not `reloadSession`: a new session fast-resets the app (`pm clear`) and wipes the profile.
 - **iOS Wi-Fi** is driven through the Settings app, which takes the app off screen for the duration; the Settings labels are matched in English.
@@ -200,7 +200,7 @@ Both skip themselves unless `E2E_STRESS=1` (which `just e2e run <name>` and `jus
 
 ```bash
 just e2e run p2p-stress
-PLATFORMS=android,android just e2e run p2p-stress
-PLATFORMS=android,android just e2e run local-hub-discovery-stress
-E2E_STRESS_SEED=1234567 PLATFORMS=android,android just e2e run local-hub-discovery-stress
+PHONES=android,android just e2e run p2p-stress
+PHONES=android,android just e2e run local-hub-discovery-stress
+E2E_STRESS_SEED=1234567 PHONES=android,android just e2e run local-hub-discovery-stress
 ```

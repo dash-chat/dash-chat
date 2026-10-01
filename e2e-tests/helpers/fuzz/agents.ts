@@ -104,13 +104,13 @@ export interface HubReal {
  * tear down whatever a run leaves behind. */
 export interface Real {
 	agents: StressAgent[];
-	/** The lab networks, in the order moves index them. The network every
+	/** The test networks, in the order moves index them. The network every
 	 * device falls back to with none of them saved is never among them. */
 	networks: WifiNetwork[];
 	/** The host's Wi-Fi card, null when it has none or no network is
 	 * configured. */
 	hubsDevice: string | null;
-	/** The lab SSID the card is on, null while it is on its usual network.
+	/** The test network the card is on, null while it is on its usual network.
 	 * Where every hub is today: a later slice with a card (or a machine) per
 	 * hub replaces this with a location on `HubReal`. */
 	hubsNetwork: string | null;

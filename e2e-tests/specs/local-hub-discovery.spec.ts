@@ -17,23 +17,14 @@ import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group
 import { DEPARTURE_MS, DISCOVERY_MS, GOODBYE_MS } from '../helpers/fuzz/checks';
 import { MDNS_RECORD_TTL_S } from '../helpers/fuzz/moves/network';
 import { UI_TIMEOUT } from '../helpers/timeouts';
-import {
-	assertInRange,
-	joinWifi,
-	leaveWifi,
-	wifiDevice,
-} from '../setup/host-wifi';
+import { assertInRange, joinWifi, wifiDevice } from '../setup/host-wifi';
 import {
 	type LocalHub,
 	restartLocalHub,
 	spawnLocalHub,
 	stopLocalHub,
 } from '../setup/local-hub';
-import {
-	isRemoteMailbox,
-	killMailbox,
-	restartMailbox,
-} from '../setup/mailbox-control';
+import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 import { wifiNetworks } from '../setup/test-env';
 
@@ -52,7 +43,6 @@ describe('Local hub discovery', function () {
 
 	let agent: Agent;
 	let hub: LocalHub;
-	let mailboxKilled = false;
 
 	const chip = () => agent.groupChatPage.connectionStatusIndicator;
 
@@ -74,26 +64,12 @@ describe('Local hub discovery', function () {
 		);
 	}
 
-	/** The supplicant picks whatever saved network scores best; elsewhere the
-	 *  hub is reached over another LAN and the move proves nothing. The
-	 *  network's name is not something every platform tells an app, so the
-	 *  LAN the address came back on stands in for it. */
-	async function expectBackOn(network: string): Promise<void> {
-		const now = await agent.wifiInfo();
-		if (now.network !== network) {
-			throw new Error(
-				`the phone came back on ${now.network} at ${now.address}, not on ${network}; re-run with the host's network scoring best`,
-			);
-		}
-	}
-
 	before(async function () {
 		if (isRemoteMailbox()) this.skip();
 		[agent] = await setupAgents(this, [{ platform: 'any' }]);
 		// An emulator is NAT'd off the host's LAN, so no hub can reach it.
 		if (agent.platform === 'android-emulator') this.skip();
 		await killMailbox();
-		mailboxKilled = true;
 		await agent.createProfilePage.createProfile('Alice', 'Hub');
 		await createGroup(agent, 'Solo Group', []);
 		await chip().waitForStatus(
@@ -102,11 +78,6 @@ describe('Local hub discovery', function () {
 			'the chip showed a hub before the spec started one, so the LAN is ' +
 				'not clean and the run would prove nothing',
 		);
-	});
-
-	after(async () => {
-		if (hub !== undefined) await stopLocalHub(hub);
-		if (mailboxKilled) await restartMailbox();
 	});
 
 	it('shows a hub within 4 seconds of it starting', async () => {
@@ -175,11 +146,9 @@ describe('Local hub discovery', function () {
 
 	it('shows the hub again within 4 seconds of the phone rejoining the LAN', async function () {
 		if (!agent.isMobile) this.skip();
-		const { network } = await agent.wifiInfo();
 		await agent.disableWifi();
 		await expectNoHub('the phone left the LAN');
 		await agent.enableWifi();
-		await expectBackOn(network);
 		await expectLocal('rejoining the LAN');
 	});
 
@@ -193,9 +162,7 @@ describe('Local hub discovery', function () {
 
 	it('shows the hub again after a Wi-Fi bounce', async function () {
 		if (!agent.isMobile) this.skip();
-		const { network } = await agent.wifiInfo();
 		await agent.cycleWifi(WIFI_DOWN_MS);
-		await expectBackOn(network);
 		await expectLocal('Wi-Fi came back');
 	});
 
@@ -206,14 +173,9 @@ describe('Local hub discovery', function () {
 		const device = wifiDevice();
 		if (device === null) throw new Error('the host has no Wi-Fi card');
 		assertInRange(device, [network.ssid]);
-		try {
-			await agent.joinWifi(network.ssid, network.passphrase);
-			await expectNoHub('the phone moved to a LAN the hub is not on');
-			await joinWifi(device, network.ssid, network.passphrase);
-			await expectLocal("the hub's host joined the phone's LAN");
-		} finally {
-			await leaveWifi(network.ssid);
-			await agent.leaveWifi();
-		}
+		await agent.joinWifi(network.ssid, network.passphrase);
+		await expectNoHub('the phone moved to a LAN the hub is not on');
+		await joinWifi(device, network.ssid, network.passphrase);
+		await expectLocal("the hub's host joined the phone's LAN");
 	});
 });

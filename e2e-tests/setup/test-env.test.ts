@@ -25,10 +25,10 @@ test('no networks when unset or blank', () => {
 });
 
 test('networks keep their order and allow open ones', () => {
-	assert.deepEqual(withEnv('lab-a:pw1, lab-b:, lab-c', wifiNetworks), [
-		{ ssid: 'lab-a', passphrase: 'pw1' },
-		{ ssid: 'lab-b', passphrase: '' },
-		{ ssid: 'lab-c', passphrase: '' },
+	assert.deepEqual(withEnv('test-a:pw1, test-b:, test-c', wifiNetworks), [
+		{ ssid: 'test-a', passphrase: 'pw1' },
+		{ ssid: 'test-b', passphrase: '' },
+		{ ssid: 'test-c', passphrase: '' },
 	]);
 });
 

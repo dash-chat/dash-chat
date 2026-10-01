@@ -1,5 +1,5 @@
 /**
- * Wi-Fi control for a physical iPhone. Lab networks — the ones a run joins,
+ * Wi-Fi control for a physical iPhone. Test networks — the ones a run joins,
  * leaves and forgets — go through the app itself: the network-interfaces
  * plugin's `wifi-control` commands (`NEHotspotConfiguration`), reached over
  * `window.__test.wifi`, which join and forget in seconds with the app on
@@ -16,6 +16,7 @@ import { switchToWebview } from '../webview';
 import {
 	WIFI_REASSOCIATE_MS,
 	type WifiInfo,
+	hostNetworkVerdict,
 	networkOf,
 	waitForWifi,
 } from '../wifi';
@@ -152,6 +153,24 @@ class SettingsApp {
 			},
 			{ timeoutMsg: `the info page of "${ssid}" never opened` },
 		);
+	}
+
+	/** Info page -> Wi-Fi page, with the network forgotten. iOS asks before
+	 *  forgetting; the session's alert monitor may answer that first. */
+	async forget(ssid: string): Promise<void> {
+		await this.b.$('~Forget This Network').click();
+		const confirm = this.b.$(
+			classChain('**/XCUIElementTypeButton[`label == "Forget"`]'),
+		);
+		if (
+			await confirm.waitForExist({ timeout: TAP_TOOK_MS }).catch(() => false)
+		) {
+			await confirm.click();
+		}
+		await this.infoPageBar(ssid).waitForExist({
+			reverse: true,
+			timeoutMsg: `"${ssid}" was never forgotten`,
+		});
 	}
 
 	/** Info page: the IPv4 address, '' while the network has not handed one
@@ -313,7 +332,7 @@ function unwrap<T>(reply: Reply<T>, what: string): T {
 
 /** The interface as the app reads it, for a session already in the webview:
  *  the address for free, the SSID only for a network the app added itself —
- *  a lab network — since iOS hides every other SSID from an app. */
+ *  a test network — since iOS hides every other SSID from an app. */
 async function readWifiInfo(b: WebdriverIO.Browser): Promise<WifiInfo> {
 	const { ssid, address, prefixLength } = unwrap(
 		await b.executeAsync(
@@ -357,7 +376,7 @@ async function forgetSsid(b: WebdriverIO.Browser, ssid: string): Promise<void> {
 	);
 }
 
-/** Drop every lab network the app added but `keep`. */
+/** Drop every test network the app added but `keep`. */
 async function forgetAdded(b: WebdriverIO.Browser, keep = ''): Promise<void> {
 	for (const ssid of await readAddedSsids(b)) {
 		if (ssid !== keep) await forgetSsid(b, ssid);
@@ -369,7 +388,7 @@ export function iosWifiInfo(b: WebdriverIO.Browser): Promise<WifiInfo> {
 	return inWebview(b, () => readWifiInfo(b));
 }
 
-/** Drop every lab network the app added; the device leaves it if it is on
+/** Drop every test network the app added; the device leaves it if it is on
  *  one. Resolves at once, without waiting for where it lands. */
 export function forgetIosWifi(b: WebdriverIO.Browser): Promise<void> {
 	return inWebview(b, () => forgetAdded(b));
@@ -425,7 +444,7 @@ async function settleJoinRequest(
 }
 
 /** Join `ssid` (an empty `passphrase` means an open network) as the app's
- *  one lab network — any other the app added is dropped once the device is
+ *  one test network — any other the app added is dropped once the device is
  *  on this one — and resolve with the IPv4 address obtained on it. A device
  *  already associated with it is only waited for: iOS refuses a request for
  *  the network it is on. The request is started and left running, its alert
@@ -456,37 +475,98 @@ export function joinIosWifi(
 		const outcome = await settleJoinRequest(b, ssid);
 		if (outcome !== 'ok') throw new Error(`joining "${ssid}": ${outcome}`);
 		await forgetAdded(b, ssid);
-		return (await readWifiInfo(b)).address;
+		// The request reports success on association, before DHCP has handed
+		// out an address.
+		return await waitForWifi(
+			async () => {
+				const info = await readWifiInfo(b);
+				return info.ssid === ssid ? info.address : '';
+			},
+			`device never obtained an address ${WIFI_REASSOCIATE_MS / 1_000}s after joining "${ssid}"`,
+		);
 	});
 }
 
-/** Drop every lab network the app added and resolve with where the device
- *  is once it has settled on a network of its own — whichever the user
- *  saved; the harness never learns its name. A device on a lab network is
- *  waited for until it holds an address on another LAN: the SSID reads ''
- *  the moment the configuration is gone, before the association drops, and
- *  a lab network serves a subnet of its own (see `.env.example`). One on no
- *  lab network keeps what it has, and one off the air gets its radio turned
- *  on. */
-export function leaveIosWifi(b: WebdriverIO.Browser): Promise<WifiInfo> {
-	return inWebview(b, async () => {
+/** Get the device onto the network the host is on from wherever it is. The
+ *  test networks the app added go first, through the app; a device that is
+ *  then on the host's network is done, without opening Settings. Anything
+ *  else — off the air, on a test network joined through Settings, on any other
+ *  network the user saved — is put right in Settings: radio on, and every
+ *  network it lands on that is a test network, or clearly not the host's,
+ *  forgotten in turn. */
+export async function leaveIosWifi(
+	b: WebdriverIO.Browser,
+	testNetworks: string[],
+): Promise<WifiInfo> {
+	const here = await inWebview(b, async () => {
 		const before = await readWifiInfo(b);
 		await forgetAdded(b);
-		if (before.ssid === '') {
-			if (before.address === '') await enableIosWifi(b);
-			return await readWifiInfo(b);
+		// The SSID reads '' the moment the configuration is gone, before the
+		// association drops, so the address has to have changed too.
+		if (before.ssid !== '') {
+			await waitForWifi(
+				async () => {
+					const { ssid, address } = await readWifiInfo(b);
+					return ssid === '' && address !== '' && address !== before.address
+						? address
+						: '';
+				},
+				`device never left "${before.ssid}" ${WIFI_REASSOCIATE_MS / 1_000}s after forgetting it`,
+			);
 		}
-		await waitForWifi(
-			async () => {
-				const { ssid, network } = await readWifiInfo(b);
-				return ssid === '' && network !== '' && network !== before.network
-					? network
-					: '';
-			},
-			`device never settled on a network of its own ${WIFI_REASSOCIATE_MS / 1_000}s after leaving "${before.ssid}"`,
-		);
 		return await readWifiInfo(b);
 	});
+	if (hostNetworkVerdict(here.address) === 'host') return here;
+	await inSettings(b, settings =>
+		forgetUntilOnHostNetwork(settings, testNetworks),
+	);
+	return await iosWifiInfo(b);
+}
+
+/** Root -> root, on the network the host is on: radio on, then every network
+ *  the device lands on that is one of `testNetworks`, or clearly not the
+ *  host's, is forgotten and the next one waited for. It stops on the first
+ *  that may be the host's, which is never forgotten. */
+async function forgetUntilOnHostNetwork(
+	settings: SettingsApp,
+	testNetworks: string[],
+): Promise<void> {
+	let left = '';
+	for (;;) {
+		const ssid = await landedOn(settings, left);
+		await settings.openWifi();
+		await settings.openInfo(ssid);
+		const forget =
+			testNetworks.includes(ssid) ||
+			hostNetworkVerdict(
+				await waitForWifi(
+					() => settings.ipAddress(),
+					`device never obtained an address on "${ssid}" within ${WIFI_REASSOCIATE_MS / 1_000}s`,
+				),
+			) === 'elsewhere';
+		if (forget) await settings.forget(ssid);
+		await settings.backToRoot();
+		if (!forget) return;
+		left = ssid;
+	}
+}
+
+/** Root: the network the device has joined other than `left`, turning the
+ *  radio on first if it is off. */
+async function landedOn(settings: SettingsApp, left: string): Promise<string> {
+	if ((await settings.ssid()) === '') {
+		await settings.openWifi();
+		await settings.setWifi(true);
+		await settings.backToRoot();
+	}
+	return await waitForWifi(
+		async () => {
+			const ssid = await settings.ssid();
+			return ssid !== left ? ssid : '';
+		},
+		`device joined no network the host can reach within ${WIFI_REASSOCIATE_MS / 1_000}s; ` +
+			"save the host's Wi-Fi on it once by hand",
+	);
 }
 
 export function disableIosWifi(b: WebdriverIO.Browser): Promise<void> {

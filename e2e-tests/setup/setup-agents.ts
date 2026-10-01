@@ -6,8 +6,8 @@
  * page-object instances
  * (`agent.homePage`, `agent.directChatPage`, …) and a small set of agent-level
  * helpers that proxy to the browser-side test registry (`agent.tr`,
- * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
- * multiset can't fulfill the requirements.
+ * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PHONES
+ * multiset can't fulfill the requirements only a phone can.
  */
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -41,7 +41,7 @@ import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import { ASYNC_SCRIPT_TIMEOUT } from '../helpers/timeouts';
 import { sourceLogFile } from './agent-logger';
-import { convergePhoneNetworks } from './phone-lan';
+import { convergeNetworks } from './phone-lan';
 import {
 	APP_PACKAGE,
 	androidHasInternet,
@@ -60,9 +60,11 @@ import {
 } from './platforms/android';
 import {
 	clearAgentDir,
+	discardDesktopAgent,
 	isAgentAppRunning,
 	killAgentApp,
 	launchAgentApp,
+	launchDesktopAgent,
 	macWindowRect,
 	readOpenedUrls,
 } from './platforms/desktop';
@@ -83,12 +85,13 @@ import {
 } from './platforms/ios-wifi';
 import {
 	type AgentPlatformName,
+	type PhonePlatformName,
 	isMobile,
-	labSsids,
-	platformNames,
+	phonePlatforms,
+	testNetworkSsids,
 } from './test-env';
 import { deviceUdid, switchToWebview, waitForTestUtils } from './webview';
-import type { WifiInfo } from './wifi';
+import { WIFI_REASSOCIATE_MS, type WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
@@ -188,25 +191,26 @@ export type Agent = WebdriverIO.Browser & {
 	 *  Android through adb, with the app on screen throughout; iOS through the
 	 *  Settings app, which takes the app off screen for the duration and puts
 	 *  it back, as a user changing networks does. Same for turning it on; the
-	 *  lab networks are handled through the app on iOS. */
+	 *  test networks are handled through the app on iOS. */
 	disableWifi(): Promise<void>;
 	/** Turn Wi-Fi on and resolve once the device holds a routable IPv4 address
 	 *  again, returning it: the supplicant lands on whichever saved network
 	 *  scores best, so callers check it is the one they expect. */
 	enableWifi(): Promise<string>;
-	/** Join the lab network `ssid` (an empty `passphrase` means an open
+	/** Join the test network `ssid` (an empty `passphrase` means an open
 	 *  network) and resolve with the IPv4 address obtained on it. It becomes
-	 *  the one lab network saved on the device: any other is forgotten once
+	 *  the one test network saved on the device: any other is forgotten once
 	 *  the device is on this one, so a killed run can strand a phone on at
 	 *  most the network it was on. iOS goes through the app (the
 	 *  network-interfaces plugin), with the app on screen throughout; Android
 	 *  through adb. */
 	joinWifi(ssid: string, passphrase: string): Promise<string>;
-	/** Forget every lab network with the radio on, and resolve with where the
-	 *  device is once it has settled on a network of its own — whichever the
-	 *  user saved, whose name the harness never needs. */
+	/** Get onto the host's LAN from wherever the device is: radio on, every
+	 *  test network forgotten, then every network it lands on that is clearly
+	 *  not the host's forgotten in turn (on Android, every other saved network
+	 *  too once it is surely on the host's). Resolves with where it settled. */
 	leaveWifi(): Promise<WifiInfo>;
-	/** Forget every lab network without waiting for where the device lands:
+	/** Forget every test network without waiting for where the device lands:
 	 *  what a move that is about to turn the radio off does first, so nothing
 	 *  of the run's is saved while it is off. */
 	forgetWifi(): Promise<void>;
@@ -219,10 +223,10 @@ export type Agent = WebdriverIO.Browser & {
 	cycleWifi(downMs: number): Promise<string>;
 	/** The network this device is on: its IPv4 address and the LAN it is on,
 	 *  '' while it has none, and its SSID where the platform tells an app —
-	 *  on iOS only for a lab network, which the app added itself; on the
+	 *  on iOS only for a test network, which the app added itself; on the
 	 *  user's own network it reads ''. On iOS the reading is the app's, so
 	 *  it brings the app to the foreground if it is not — call it where that
-	 *  is harmless, as with [`hasInternet`]. Same for the lab operations. */
+	 *  is harmless, as with [`hasInternet`]. Same for the test-network operations. */
 	wifiInfo(): Promise<WifiInfo>;
 	/** Whether the phone can reach the internet. On android this is a pure adb
 	 *  probe; on iOS the answer has to come from the app's own webview, so it
@@ -461,7 +465,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	const joinWifiOnce = async (ssid: string, passphrase: string) =>
 		agent.platform === 'ios'
 			? await joinIosWifi(b, ssid, passphrase)
-			: await joinAndroidWifi(wifiUdid(agent, b), ssid, passphrase, labSsids());
+			: await joinAndroidWifi(
+					wifiUdid(agent, b),
+					ssid,
+					passphrase,
+					testNetworkSsids(),
+				);
 	agent.joinWifi = async (ssid: string, passphrase: string) => {
 		// A phone sometimes fails to associate with an access point it was just
 		// on; one more try keeps that radio hiccup from failing the spec.
@@ -474,14 +483,14 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 	};
 	agent.leaveWifi = async () =>
 		agent.platform === 'ios'
-			? await leaveIosWifi(b)
-			: await leaveAndroidWifi(wifiUdid(agent, b), labSsids());
+			? await leaveIosWifi(b, testNetworkSsids())
+			: await leaveAndroidWifi(wifiUdid(agent, b), testNetworkSsids());
 	agent.forgetWifi = async () => {
 		if (agent.platform === 'ios') {
 			await forgetIosWifi(b);
 			return;
 		}
-		forgetAndroidWifi(wifiUdid(agent, b), labSsids());
+		forgetAndroidWifi(wifiUdid(agent, b), testNetworkSsids());
 	};
 	agent.cycleWifi = async (downMs: number) => {
 		await agent.disableWifi();
@@ -819,15 +828,14 @@ function skipSessionDeleteOnceAppIsGone(
 	);
 }
 
-/** Build an agent by capability name and wait for window.__test to be ready.
+/** Build an agent on session `b` and wait for window.__test to be ready.
  *  Defaults to narrow (mobile) layout so back buttons and FABs render — review
  *  checks switch to wide explicitly when they need the desktop two-panel UI. */
 async function setupAgent(
-	agentName: string,
+	b: WebdriverIO.Browser,
 	platform: AgentPlatformName,
 	slot: number,
 ): Promise<Agent> {
-	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
 	if (platform === 'ios') {
 		// Each spec file gets fresh sessions but not a fresh install, so state
@@ -887,7 +895,7 @@ async function setupAgent(
 				urls = readOpenedUrls(slot);
 				return urls.length >= count;
 			},
-			{ timeoutMsg: `${agentName} never asked the OS to open ${count} url(s)` },
+			{ timeoutMsg: `agent${slot} never asked the OS to open ${count} url(s)` },
 		);
 		return urls;
 	};
@@ -940,31 +948,67 @@ function specificity(requirement: PlatformRequirement): number {
 	return 3;
 }
 
-/** Assign each requirement a distinct launched slot — narrowest requirements
- *  first so broader ones take the leftovers, ascending slot order for
- *  determinism — or null when the launched platforms can't fulfill them all. */
-function matchSlots(
+/** Assign each requirement a distinct phone slot when a phone fulfills it,
+ *  or null for a desktop agent — narrowest requirements first so broader ones
+ *  take the leftover phones, ascending slot order for determinism — or null
+ *  overall when a requirement only a phone fulfills finds none. */
+function assignPhones(
 	requirements: readonly PlatformRequirement[],
-	platforms: AgentPlatformName[],
-): number[] | null {
-	const free = platforms.map((platform, i) => ({ slot: i + 1, platform }));
-	const slots: number[] = [];
+	phones: PhonePlatformName[],
+): (number | null)[] | null {
+	const free = phones.map((platform, i) => ({ slot: i + 1, platform }));
+	const slots: (number | null)[] = [];
 	const order = [...requirements.keys()].sort(
 		(a, b) => specificity(requirements[b]) - specificity(requirements[a]),
 	);
 	for (const i of order) {
 		const j = free.findIndex(f => fulfills(requirements[i], f.platform));
-		if (j === -1) return null;
-		slots[i] = free[j].slot;
-		free.splice(j, 1);
+		if (j !== -1) {
+			slots[i] = free[j].slot;
+			free.splice(j, 1);
+		} else if (fulfills(requirements[i], 'desktop')) {
+			slots[i] = null;
+		} else {
+			return null;
+		}
 	}
 	return slots;
 }
 
+let desktopsLaunched = 0;
+
+/** Launch one more desktop agent, on the next slot past every phone's. */
+export async function setupDesktopAgent(): Promise<{
+	agent: Agent;
+	slot: number;
+}> {
+	desktopsLaunched += 1;
+	const slot = phonePlatforms().length + desktopsLaunched;
+	try {
+		const agent = await setupAgent(
+			await launchDesktopAgent(slot),
+			'desktop',
+			slot,
+		);
+		return { agent, slot };
+	} catch (e) {
+		// A leftover app would keep advertising over mDNS and skew the rest of the run.
+		await discardDesktopAgent(slot);
+		throw e;
+	}
+}
+
+/** The agents `setupAgents` built for this spec file. */
+export const specAgents: Agent[] = [];
+
+/** Room for every phone to work through every network it has to forget on
+ *  the way back, each waited out up to WIFI_REASSOCIATE_MS. */
+const PHONES_BACK_MS = 5 * WIFI_REASSOCIATE_MS;
+
 /**
- * Build one agent per requirement, matched against the unordered PLATFORMS
- * multiset (a 'desktop' requirement gets a desktop agent no matter its
- * position in PLATFORMS), skipping the suite when no assignment exists. Call
+ * Build one agent per requirement: on a phone from the unordered PHONES
+ * multiset when one fulfills it, on a desktop app launched for it otherwise.
+ * Skips the suite when a requirement only a phone fulfills finds none. Call
  * from a `before(async function () { ... })` hook (not an arrow function —
  * `this` must be the mocha context so the suite can be skipped).
  */
@@ -972,16 +1016,35 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 	ctx: Mocha.Context,
 	requirements: T,
 ): Promise<{ [K in keyof T]: Agent }> {
-	const platforms = platformNames();
-	const slots = matchSlots(
+	const phones = phonePlatforms();
+	const slots = assignPhones(
 		requirements.map(r => r.platform),
-		platforms,
+		phones,
 	);
 	if (slots === null) ctx.skip();
 	const agents = await Promise.all(
-		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1], slot)),
+		slots.map(async slot =>
+			slot === null
+				? (await setupDesktopAgent()).agent
+				: await setupAgent(
+						browser.getInstance(`agent${slot}`),
+						phones[slot - 1],
+						slot,
+					),
+		),
 	);
-	await convergePhoneNetworks(agents);
+	specAgents.push(...agents);
+	await convergeNetworks(agents);
+	// However the suite ends, its phones go back on the host's LAN: an iPhone
+	// left on a test network would get the next run's build installed with no
+	// internet to verify it.
+	ctx.test?.parent?.afterAll(
+		'put the phones back on the host LAN',
+		function (this: Mocha.Context) {
+			this.timeout(PHONES_BACK_MS);
+			return convergeNetworks(agents);
+		},
+	);
 	return agents as { [K in keyof T]: Agent };
 }
 

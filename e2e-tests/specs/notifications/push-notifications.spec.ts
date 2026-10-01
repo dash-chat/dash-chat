@@ -46,14 +46,6 @@ describe('Push notifications (real device, end-to-end)', () => {
 		notifications = notificationHelperFor(receiver);
 	});
 
-	afterEach(async function () {
-		// A failure between native-context helper calls (e.g. a content
-		// assertion after a successful wait) leaves the receiver's driver in
-		// NATIVE_APP; restore it so one failure doesn't cascade CSS errors
-		// into every following test.
-		if (this.currentTest?.state === 'failed') await notifications.recover();
-	});
-
 	it('creates profiles; the receiver shares its contact link', async () => {
 		await receiver.createProfilePage.createProfile('Rex', 'Test');
 		await sender.createProfilePage.createProfile('Sam', 'Test');

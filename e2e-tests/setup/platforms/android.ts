@@ -27,6 +27,7 @@ import { runTurboBuild } from '../turbo-build';
 import {
 	WIFI_REASSOCIATE_MS,
 	type WifiInfo,
+	hostNetworkVerdict,
 	networkOf,
 	waitForWifi,
 } from '../wifi';
@@ -720,47 +721,77 @@ export function forgetAndroidWifi(udid: string, ssids: string[]): void {
 	}
 }
 
-/** Join `ssid` as the one lab network saved on the device — every other of
- *  `labs` is forgotten once it is on — and resolve with the IPv4 address
+/** Join `ssid` as the one test network saved on the device — every other of
+ *  `testNetworks` is forgotten once it is on — and resolve with the IPv4 address
  *  obtained on it. */
 export async function joinAndroidWifi(
 	udid: string,
 	ssid: string,
 	passphrase: string,
-	labs: string[],
+	testNetworks: string[],
 ): Promise<string> {
 	const address = await connectAndroidWifi(udid, ssid, passphrase);
 	forgetAndroidWifi(
 		udid,
-		labs.filter(lab => lab !== ssid),
+		testNetworks.filter(other => other !== ssid),
 	);
 	return address;
 }
 
-/** Forget every lab network with the radio on, and resolve with where the
- *  device is once it has settled on a network of its own — whichever the
- *  user saved; the harness never learns its name. Settled means associated
- *  with a network that is no lab and holding an address on it: the SSID
- *  reads as gone before the interface drops a lab address, so neither alone
- *  says the device has moved on. */
+/** Get the device onto the network the host is on from wherever it is: radio
+ *  on, every one of `testNetworks` forgotten, and then every other network it
+ *  lands on that is clearly not the host's forgotten in turn. Once it is
+ *  surely on the host's network every other saved network goes too, so all it
+ *  can ever fall back to is that one; while that is unsure nothing more is
+ *  forgotten, and the caller's reachability check names the network. */
 export async function leaveAndroidWifi(
 	udid: string,
-	labs: string[],
+	testNetworks: string[],
 ): Promise<WifiInfo> {
-	const lab = new Set(labs);
-	// Forgotten before the radio comes on, or a radio that was off could pick
-	// a lab network up again in between.
-	forgetAndroidWifi(udid, labs);
 	adbShell(udid, 'svc wifi enable');
+	forgetAndroidWifi(udid, testNetworks);
+	let left: WifiInfo | null = null;
+	for (;;) {
+		const info = await settledAndroidWifi(udid, left);
+		const verdict = hostNetworkVerdict(info.address);
+		if (verdict === 'host') forgetAndroidWifiExcept(udid, info.ssid);
+		if (verdict !== 'elsewhere') return info;
+		forgetAndroidWifi(udid, [info.ssid]);
+		left = info;
+	}
+}
+
+/** Where the device is once it is associated and holds an address, on a
+ *  network other than `left`: the SSID changes before the interface drops
+ *  the old address, so both have to have moved on. */
+async function settledAndroidWifi(
+	udid: string,
+	left: WifiInfo | null,
+): Promise<WifiInfo> {
 	await waitForWifi(
 		() => {
-			const ssid = androidWifiSsid(udid);
-			if (ssid === '' || lab.has(ssid)) return '';
-			return androidWifiAddress(udid);
+			const { ssid, address } = androidWifiInfo(udid);
+			if (ssid === '' || address === '') return '';
+			if (left !== null && (ssid === left.ssid || address === left.address)) {
+				return '';
+			}
+			return ssid;
 		},
-		`device never settled on a network of its own ${WIFI_REASSOCIATE_MS / 1_000}s after forgetting the lab networks`,
+		`device settled on no network the host can reach within ${WIFI_REASSOCIATE_MS / 1_000}s; ` +
+			"save the host's Wi-Fi on it once by hand",
 	);
 	return androidWifiInfo(udid);
+}
+
+/** Forget every saved network but `keep`. A network is listed once per
+ *  security type it accepts, so its id can come up twice. */
+function forgetAndroidWifiExcept(udid: string, keep: string): void {
+	const ids = new Set<string>();
+	for (const line of adbShell(udid, 'cmd wifi list-networks').split('\n')) {
+		const match = line.match(/^(\d+)\s+(.+?)\s+\S+\s*$/);
+		if (match !== null && match[2] !== keep) ids.add(match[1]);
+	}
+	for (const id of ids) adbShell(udid, `cmd wifi forget-network ${id}`);
 }
 
 /** Turn Wi-Fi off and resolve once the device holds no Wi-Fi address: the

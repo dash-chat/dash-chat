@@ -11,17 +11,13 @@
  *
  * Skips itself unless E2E_STRESS=1. Either phone platform will do — both
  * drive their Wi-Fi through the harness:
- *   PLATFORMS=android,android E2E_STRESS=1 just e2e run p2p-network-switch
- *   PLATFORMS=ios,ios E2E_STRESS=1 just e2e run p2p-network-switch
+ *   PHONES=android,android E2E_STRESS=1 just e2e run p2p-network-switch
+ *   PHONES=ios,ios E2E_STRESS=1 just e2e run p2p-network-switch
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { stampedLog } from '../helpers/utils';
-import {
-	isRemoteMailbox,
-	killMailbox,
-	restartMailbox,
-} from '../setup/mailbox-control';
+import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 import { wifiNetworks } from '../setup/test-env';
 
@@ -55,14 +51,11 @@ describe('Pure p2p sync across a network switch', function () {
 
 	let alice: Agent;
 	let bob: Agent;
-	let mailboxKilled = false;
-	let onLab = false;
 
 	before(async function () {
 		if (process.env.E2E_STRESS !== '1') this.skip();
 		if (isRemoteMailbox()) this.skip();
 		await killMailbox();
-		mailboxKilled = true;
 		[alice, bob] = await setupAgents(this, [
 			{ platform: 'phone' },
 			{ platform: 'phone' },
@@ -73,14 +66,6 @@ describe('Pure p2p sync across a network switch', function () {
 		// the return and not about p2p never having worked between these two.
 		await bob.directChatPage.composer.sendMessage('hello before leaving');
 		await expectArrival(alice, 'hello before leaving', Date.now());
-	});
-
-	after(async () => {
-		if (onLab) {
-			await alice.leaveWifi();
-			await bob.leaveWifi();
-		}
-		if (mailboxKilled) await restartMailbox();
 	});
 
 	it('receives a message the peer sent while it was off Wi-Fi, once back on the LAN', async () => {
@@ -177,13 +162,12 @@ describe('Pure p2p sync across a network switch', function () {
 	});
 
 	it('receives a message the peer sent once both phones had moved to another Wi-Fi network', async function () {
-		const [lab] = wifiNetworks();
-		if (lab === undefined) this.skip();
+		const [network] = wifiNetworks();
+		if (network === undefined) this.skip();
 		const text = 'sent once we had both moved network';
-		onLab = true;
-		await alice.joinWifi(lab.ssid, lab.passphrase);
-		await bob.joinWifi(lab.ssid, lab.passphrase);
-		stampedLog(`both phones on ${lab.ssid}`);
+		await alice.joinWifi(network.ssid, network.passphrase);
+		await bob.joinWifi(network.ssid, network.passphrase);
+		stampedLog(`both phones on ${network.ssid}`);
 		await bob.directChatPage.composer.sendMessage(text);
 		await expectArrival(alice, text, Date.now());
 	});

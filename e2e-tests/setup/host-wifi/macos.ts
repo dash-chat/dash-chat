@@ -1,5 +1,5 @@
 /** `networksetup` does the joining; the card is put back on its usual
- *  network by forgetting the lab network and cycling its power, after which
+ *  network by forgetting the test network and cycling its power, after which
  *  it autoconnects on its own. macOS does not let a shell read which network
  *  the card is on, so nothing here ever asks — and only a network this
  *  process joined is ever forgotten, so the usual one cannot be. */
@@ -110,6 +110,12 @@ async function waitForNoAddress(device: string): Promise<void> {
 export const macos: HostWifi = {
 	wifiDevice,
 	visibleNetworks,
+
+	// macOS will not say which network the card is on, so only the networks
+	// this process joined are known; a run killed while on one leaves it be.
+	joinedTestNetworks(ssids) {
+		return ssids.filter(ssid => joinedNetworks.has(ssid));
+	},
 
 	async joinWifi(device, ssid, passphrase) {
 		// The card scans for the network itself, but a scan right after

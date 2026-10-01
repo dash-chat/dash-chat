@@ -17,7 +17,7 @@ import {
 	mailboxServing,
 	mailboxWakesPhones,
 } from '../../setup/mailbox-control';
-import { convergePhoneNetworks } from '../../setup/phone-lan';
+import { convergeNetworks } from '../../setup/phone-lan';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
 import type { RenderedMessage } from '../components/messages';
@@ -118,7 +118,7 @@ export class Fuzzer {
 	 * Building the world is the fuzzer's because `search` does it again for
 	 * every sequence: only a world that can be rebuilt can be shrunk against.
 	 *
-	 * The network the phones and the host fall back to with no lab network
+	 * The network the phones and the host fall back to with no test network
 	 * saved is the run's home one: phones may walk back onto it, and the
 	 * hubs are on it whenever the card is. It is never named or joined.
 	 * A spec prepares once, from its `before` hook — whose context `ctx` is,
@@ -164,18 +164,6 @@ export class Fuzzer {
 					'networks are configured but the host has no Wi-Fi card',
 				);
 			}
-			await leaveHostLabs(real);
-			// However the run ends: a search that fails partway leaves every
-			// phone wherever `resetAgent` last put it, which is off Wi-Fi, and
-			// the host's card on a lab network. Nothing else puts them back,
-			// so every later run on these devices starts off the air.
-			// `eachTest` above only reaches tests, so this hook would inherit
-			// whatever the suite allows — too little, and the phones are left
-			// off the air by the very hook that exists to put them back.
-			suite.afterAll('restore networks', function (this: Mocha.Context) {
-				this.timeout(FUZZ_TEST_TIMEOUT_MS);
-				return restoreNetworks(real);
-			});
 			assertInRange(
 				real.hubsDevice,
 				real.networks.map(n => n.ssid),
@@ -361,23 +349,10 @@ export class Fuzzer {
 	}
 }
 
-/** The host's card off every lab network. A card that will not leave one
- *  is logged rather than thrown, so the phones still get put back. */
-async function leaveHostLabs(real: Real): Promise<void> {
-	for (const network of real.networks) {
-		try {
-			await leaveWifi(network.ssid);
-		} catch (err) {
-			console.log(`[wifi] host card: ${String(err)}`);
-		}
-	}
-}
-
-/** The host's card off every lab network, and every phone on a network of
- *  its own — the same convergence every phone spec starts from. */
-async function restoreNetworks(real: Real): Promise<void> {
-	await leaveHostLabs(real);
-	await convergePhoneNetworks(real.agents.map(sa => sa.agent));
+/** The host's card and every phone back on the host's usual network — what
+ *  a sequence starts from. */
+function restoreNetworks(real: Real): Promise<void> {
+	return convergeNetworks(real.agents.map(sa => sa.agent));
 }
 
 /** Drive every agent to where moves expect it. Each drives its own session

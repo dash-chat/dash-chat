@@ -60,8 +60,8 @@ function withCloud(...names: string[]): ExpectedModel {
 	return new ExpectedModel(names.map(phone), [], true, true, true);
 }
 
-const N1 = 'lab-a';
-const N2 = 'lab-b';
+const N1 = 'test-a';
+const N2 = 'test-b';
 const HOME = 'office';
 
 function lans(networks: string[], ...names: string[]): ExpectedModel {
@@ -361,7 +361,7 @@ test('propagateShared unions everyone as one LAN, whatever the topology', () => 
 	assert.equal(m.knowsProfile(B, A), true);
 });
 
-test('running hubs follow the card, at home while it is on no lab LAN', () => {
+test('running hubs follow the card, at home while it is on no test network', () => {
 	const m = lansWithHome([N1], A, B);
 	const hub = m.createHub();
 	m.agentJoin(A, HOME);
@@ -1416,15 +1416,15 @@ test('a request is announced only on the device it was sent to', () => {
 	assert.deepEqual(showing(m, B), [`New contact request | ${C}`]);
 });
 
-test('a run with lab networks also has the home one, which no lab may be named', () => {
+test('a run with test networks also has the home one, which no test network may be named', () => {
 	const real = {
 		agents: [],
-		networks: [{ ssid: 'lab-a' }],
+		networks: [{ ssid: 'test-a' }],
 		cloudUsable: true,
 		cloudDegradable: false,
 		push: false,
 	};
-	assert.deepEqual(newModel(real).networkNames(), [HOME_NETWORK, 'lab-a']);
+	assert.deepEqual(newModel(real).networkNames(), [HOME_NETWORK, 'test-a']);
 	assert.equal(newModel({ ...real, networks: [] }).homeNetwork(), null);
 	assert.throws(
 		() => newModel({ ...real, networks: [{ ssid: HOME_NETWORK }] }),

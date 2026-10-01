@@ -1,11 +1,11 @@
 # Setting Up Real Devices for E2E Tests
 
-`PLATFORMS` lists the agents to launch (default `desktop,desktop`): `desktop` (Linux only), `android` (USB phone), `android-emulator`, or `ios` (macOS only, USB iPhone).
+Specs get desktop agents (Linux or macOS) by default. `PHONES` lists the phones to drive as well: `android` (USB phone), `android-emulator`, or `ios` (macOS only, USB iPhone). Each agent a spec asks for goes to a phone when one fits, and to a desktop otherwise.
 
 ```bash
-PLATFORMS=android,android just e2e run send-messages
-PLATFORMS=android,desktop just e2e run send-messages
-PLATFORMS=ios,ios just e2e run send-messages
+PHONES=android,android just e2e run send-messages
+PHONES=android just e2e run send-messages
+PHONES=ios,ios just e2e run send-messages
 ```
 
 Run one suite at a time per host: the devices, the pinned Appium/adb/mailbox ports and the host Wi-Fi card are shared.
@@ -42,12 +42,12 @@ Wi-Fi specs (`local-hub-discovery*`, `p2p-network-switch`) drive the phone with 
 
 `idevice_id -l` order decides the agent slots. Pin with `IOS_UDID1` / `IOS_UDID2`. Two-agent specs need two iPhones, since desktop cannot run on the Mac.
 
-## Wi-Fi lab
+## Wi-Fi test networks
 
 Specs that move phones and hubs between networks need real access points, listed in a gitignored `e2e-tests/.env` (see `e2e-tests/.env.example`):
 
 ```
-E2E_WIFI_NETWORKS=dash-lab-a:passphraseA,dash-lab-b:passphraseB
+E2E_WIFI_NETWORKS=dash-test-a:passphraseA,dash-test-b:passphraseB
 ```
 
-Each access point serves DHCP on its own subnet, uses WPA2-PSK or no security, and needs no upstream. The phones and the host start on the same network; the host's Wi-Fi card joins the lab networks during a run (NetworkManager on Linux, `networksetup` on macOS) while the host keeps its wired link. Unset, every network move stays out of the runs.
+Each access point serves DHCP on its own subnet, uses WPA2-PSK or no security, and needs no upstream. The phones and the host start on the same network; the host's Wi-Fi card joins the test networks during a run (NetworkManager on Linux, `networksetup` on macOS) while the host keeps its wired link. Unset, every network move stays out of the runs.

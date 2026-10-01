@@ -8,7 +8,7 @@
  *
  * Skips itself unless E2E_STRESS=1 and E2E_WIFI_NETWORKS names at least one
  * network (see e2e-tests/.env.example). Run it with:
- *   PLATFORMS=android,android just e2e run local-hub-discovery-stress
+ *   PHONES=android,android just e2e run local-hub-discovery-stress
  *
  * Tunables: E2E_STRESS_ATTEMPTS (sequences to try, default 20),
  * E2E_STRESS_COMMANDS (moves per sequence, default 15), E2E_STRESS_SEED
@@ -21,11 +21,7 @@ import { hubMoves } from '../helpers/fuzz/moves/hub';
 import { MDNS_RECORD_TTL_S, networkMoves } from '../helpers/fuzz/moves/network';
 import { sleepMove } from '../helpers/fuzz/moves/sleep';
 import { envInt } from '../helpers/utils';
-import {
-	isRemoteMailbox,
-	killMailbox,
-	restartMailbox,
-} from '../setup/mailbox-control';
+import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 import { wifiNetworks } from '../setup/test-env';
 
@@ -42,7 +38,6 @@ describe('Local hub stress', function () {
 	let agent1: Agent;
 	let agent2: Agent;
 	let fuzzer: Fuzzer;
-	let mailboxKilled = false;
 
 	before(async function () {
 		if (process.env.E2E_STRESS !== '1') this.skip();
@@ -54,7 +49,6 @@ describe('Local hub stress', function () {
 		// and a suspended cloud then counts as connected until its polls time
 		// out again, hiding the chip for any hub found meanwhile.
 		await killMailbox();
-		mailboxKilled = true;
 		// Only a physical phone can change network without losing its driver
 		// session, and an emulator is NAT'd off the host besides.
 		[agent1, agent2] = await setupAgents(this, [
@@ -66,10 +60,6 @@ describe('Local hub stress', function () {
 			agents,
 			networks: wifiNetworks(),
 		});
-	});
-
-	after(async () => {
-		if (mailboxKilled) await restartMailbox();
 	});
 
 	it('phones show exactly the hubs on their LAN through every move', async () => {

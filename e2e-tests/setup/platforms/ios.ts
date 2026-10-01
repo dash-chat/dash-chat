@@ -535,7 +535,7 @@ export class IosPlatform implements AgentPlatform {
 				// connected iPhone isn't in the team profile yet.
 				'appium:allowProvisioningDeviceRegistration': true,
 				'appium:updatedWDABundleId': WDA_BUNDLE_ID,
-				// Per-slot DerivedData: a two-device run (PLATFORMS=ios,ios) starts both
+				// Per-slot DerivedData: a two-device run (PHONES=ios,ios) starts both
 				// sessions at once, and two xcodebuilds sharing one DerivedData collide
 				// (WDA "xcodebuild failed with code 65"). Same reason as the per-slot
 				// ports above.

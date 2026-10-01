@@ -17,8 +17,7 @@
  * Needs a physical Android receiver (its notifications are read through
  * dumpsys) and a Firebase service-account key, and skips itself unless
  * E2E_STRESS=1:
- *   PLATFORMS=android,desktop,desktop,desktop,desktop,desktop,desktop,desktop,desktop \
- *     just e2e run push-routing-stress
+ *   PHONES=android just e2e run push-routing-stress
  *
  * Tunables: E2E_STRESS_ATTEMPTS (sequences to try, default 20),
  * E2E_STRESS_COMMANDS (moves per sequence, default 15), E2E_STRESS_SEED
