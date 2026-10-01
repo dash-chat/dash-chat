@@ -77,6 +77,20 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     async fn report(&self, _request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
         Ok(())
     }
+
+    /// Push unfetched blob bytes to the mailbox, best-effort.
+    ///
+    /// The default no-op covers in-memory/test mailboxes that do not store
+    /// blobs. Implementations should announce the hashes to the mailbox and
+    /// stream the bytes for the ones it lacks.
+    async fn push_blobs(
+        &self,
+        _hashes: Vec<iroh_blobs::Hash>,
+        _reader: Arc<dyn BlobReader>,
+        _tracker: Arc<dyn UnfetchedBlobTracker>,
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
