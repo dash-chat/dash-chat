@@ -517,6 +517,24 @@ where
             .collect())
     }
 
+    /// Whether an upload of `hash` to the given registered mailbox would start
+    /// now: not in flight and not backing off.
+    pub async fn upload_due(&self, mailbox_id: &MailboxId, hash: iroh_blobs::Hash) -> bool {
+        let Some(tracked) = self.tracked_mailbox(mailbox_id).await else {
+            return false;
+        };
+        let Some(url) = tracked.client().await.url() else {
+            return false;
+        };
+        crate::upload_scheduler::upload_due(&url, hash)
+    }
+
+    /// Network changed or app resumed: clear in-flight claims and backoffs so
+    /// uploads can start again immediately.
+    pub fn reset_uploads(&self) {
+        crate::upload_scheduler::restart_uploads();
+    }
+
     /// Nudge the poll loop to check for the next mailbox to poll.
     pub fn nudge_poll_loop(&self) {
         self.nudge.notify_one();

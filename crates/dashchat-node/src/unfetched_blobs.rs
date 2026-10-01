@@ -63,8 +63,7 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
         let reader = node.blob_reader();
         let mut held = Vec::new();
         for hash in hashes {
-            if mailbox_client::upload_scheduler::upload_due(&url, hash) && reader.has_blob(hash).await
-            {
+            if node.mailboxes.upload_due(&mailbox_id, hash).await && reader.has_blob(hash).await {
                 held.push(hash);
             }
         }
