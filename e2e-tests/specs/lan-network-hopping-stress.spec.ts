@@ -4,21 +4,22 @@
  * are gone for good.
  *
  * For every network in E2E_WIFI_NETWORKS, in order:
- *   1. a short-lived desktop visitor becomes a contact of both phones over
- *      the mailbox and is killed, leaving one more dead entry in each address
- *      book;
+ *   1. back on the host's network, a short-lived desktop visitor becomes a
+ *      contact of both phones over the mailbox and is killed, leaving one
+ *      more dead entry in each address book;
  *   2. both phones join the network and sync both ways;
  *   3. Alice moves on to the next network and writes to Bob, who can't be
  *      reached;
  *   4. Bob follows her there and must receive it, then they sync both ways;
  *   5. Bob drops off Wi-Fi, Alice writes again, and Bob must receive it once
  *      he is back.
- * The mailbox link is cut throughout 2–5: the phones reach it over USB, not
- * Wi-Fi, so only a direct connection on a shared LAN can carry anything.
+ * The mailbox link is cut throughout 2–5, so only a direct connection on a
+ * shared LAN can carry anything.
  *
  * Skips itself unless E2E_STRESS=1, two networks are configured (see
  * e2e-tests/.env.example) and the mailbox link can be cut. Run it with:
  *   PHONES=android,android E2E_STRESS=1 just e2e run lan-network-hopping-stress
+ *   PHONES=ios,ios E2E_STRESS=1 just e2e run lan-network-hopping-stress
  *
  * Tunables: E2E_HOP_TOURS (how many times to walk every network, default 1).
  */
@@ -72,6 +73,9 @@ describe('LAN sync while hopping networks', function () {
 				const next = networks[(i + 1) % networks.length];
 				const step = `tour ${tour}, ${here.ssid}`;
 
+				// An iPhone reaches the mailbox over the host's Wi-Fi, which a test
+				// network is not.
+				await Promise.all([alice.agent.leaveWifi(), bob.agent.leaveWifi()]);
 				visitors++;
 				await meetVisitor(visitors, [alice, bob]);
 

@@ -1,5 +1,16 @@
-import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { readFileSync, rmSync } from 'node:fs';
+import {
+	type ChildProcess,
+	execFileSync,
+	execSync,
+	spawn,
+} from 'node:child_process';
+import {
+	existsSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+} from 'node:fs';
 import { networkInterfaces, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -480,11 +491,49 @@ function startSyslogLogger(agent: string, udid: string): ChildProcess | null {
  * sessions that land directly in the app's WKWebView context, so specs and page
  * objects work exactly as on desktop and Android.
  */
+/** What iOS says when it will not launch a developer-signed app because it
+ *  cannot check the developer certificate online. */
+const UNTRUSTED_CERTIFICATE = 'Developer App Certificate is not trusted';
+
+/** Whether a WebDriverAgent launch on `slot` since `since` was refused for
+ *  an untrusted developer certificate, as its Xcode test results record. */
+function wdaRefusedCertificate(slot: number, since: number): boolean {
+	const results = path.join(E2E_DIR, '.appium', `wda-${slot}`, 'Logs', 'Test');
+	if (!existsSync(results)) return false;
+	return readdirSync(results)
+		.filter(name => name.endsWith('.xcresult'))
+		.map(name => path.join(results, name))
+		.filter(result => statSync(result).mtimeMs >= since)
+		.some(result => xcresultMentions(result, UNTRUSTED_CERTIFICATE));
+}
+
+function xcresultMentions(result: string, text: string): boolean {
+	try {
+		return execFileSync(
+			'xcrun',
+			[
+				'xcresulttool',
+				'get',
+				'object',
+				'--legacy',
+				'--format',
+				'json',
+				'--path',
+				result,
+			],
+			{ encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+		).includes(text);
+	} catch {
+		return false;
+	}
+}
+
 export class IosPlatform implements AgentPlatform {
 	readonly slots: number[];
 	readonly appiumPort: number;
 	private udids: Map<number, string>;
 	private loggers = new Map<number, ChildProcess>();
+	private readonly startedAt = Date.now();
 
 	constructor(slots: number[]) {
 		assertIosToolsAvailable();
@@ -663,6 +712,16 @@ export class IosPlatform implements AgentPlatform {
 		for (const udid of this.udids.values()) {
 			killStaleSyslogLoggers(udid);
 			release(udid);
+		}
+		for (const [slot, udid] of this.udids) {
+			if (!wdaRefusedCertificate(slot, this.startedAt)) continue;
+			console.error(
+				`[ios] ${udid} would not launch WebDriverAgent: ${UNTRUSTED_CERTIFICATE}. ` +
+					'iOS checks it online, so the phone is likely on a Wi-Fi network ' +
+					'with no internet, such as a test network an interrupted run left ' +
+					'it on. Put it back on your Wi-Fi by hand, and trust the developer ' +
+					'in Settings > General > VPN & Device Management if it asks.',
+			);
 		}
 	}
 }

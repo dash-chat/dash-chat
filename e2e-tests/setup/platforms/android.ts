@@ -127,8 +127,8 @@ function captureAndroidDevShellEnv(): NodeJS.ProcessEnv {
 	return env;
 }
 
-// The appium server is spawned by @wdio/appium-service with this process's
-// env, and its uiautomator2 driver locates adb through PATH/ANDROID_HOME —
+// The appium server is spawned by startAppium (setup/appium-server.ts) with
+// this process's env, and its uiautomator2 driver locates adb through PATH/ANDROID_HOME —
 // the one part of the captured shell env that must land in process.env.
 function applyAppiumServerEnv() {
 	for (const key of ['PATH', 'ANDROID_HOME', 'ANDROID_SDK_ROOT']) {

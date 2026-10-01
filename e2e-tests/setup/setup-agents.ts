@@ -9,6 +9,7 @@
  * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PHONES
  * multiset can't fulfill the requirements only a phone can.
  */
+import { asyncExitHook } from 'exit-hook';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
@@ -41,7 +42,7 @@ import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import { ASYNC_SCRIPT_TIMEOUT } from '../helpers/timeouts';
 import { sourceLogFile } from './agent-logger';
-import { convergeNetworks } from './phone-lan';
+import { convergeNetworks, forgetTestNetworks } from './phone-lan';
 import {
 	APP_PACKAGE,
 	androidHasInternet,
@@ -1005,6 +1006,30 @@ export const specAgents: Agent[] = [];
  *  the way back, each waited out up to WIFI_REASSOCIATE_MS. */
 const PHONES_BACK_MS = 5 * WIFI_REASSOCIATE_MS;
 
+/** The exit codes exit-hook reports for SIGINT and SIGTERM. */
+const SIGNAL_EXIT_CODES = [130, 143];
+
+let signalHookRegistered = false;
+
+/** On Ctrl-C the suite's afterAll never runs, and wdio kills the worker 5s
+ *  later: time to forget the test networks, not to wait for the phones to
+ *  land. An iPhone left on one cannot verify its developer certificate
+ *  offline, and then no session, and so no harness, can reach it again. The
+ *  hook joins wdio's own exit-hook, which waits for it; registered in the
+ *  worker only, since a launcher hook would end the launcher at once. */
+function forgetTestNetworksOnSignal(): void {
+	if (signalHookRegistered) return;
+	signalHookRegistered = true;
+	asyncExitHook(
+		async exitCode => {
+			if (SIGNAL_EXIT_CODES.includes(exitCode)) {
+				await forgetTestNetworks(specAgents);
+			}
+		},
+		{ wait: 4_500 },
+	);
+}
+
 /**
  * Build one agent per requirement: on a phone from the unordered PHONES
  * multiset when one fulfills it, on a desktop app launched for it otherwise.
@@ -1034,6 +1059,7 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 		),
 	);
 	specAgents.push(...agents);
+	forgetTestNetworksOnSignal();
 	await convergeNetworks(agents);
 	// However the suite ends, its phones go back on the host's LAN: an iPhone
 	// left on a test network would get the next run's build installed with no

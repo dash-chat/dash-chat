@@ -62,6 +62,14 @@ export async function convergeNetworks(agents: Agent[]): Promise<void> {
 	}
 }
 
+/** Drop every test network from every phone without waiting for where it
+ *  lands: each falls back to the Wi-Fi its user saved on its own. */
+export async function forgetTestNetworks(agents: Agent[]): Promise<void> {
+	await Promise.allSettled(
+		agents.filter(drivesWifi).map(agent => agent.forgetWifi()),
+	);
+}
+
 /** Get one phone onto the host's LAN and answer with where it is; a failure
  *  names the phone. */
 async function onOwnNetwork(agent: Agent, index: number): Promise<WifiInfo> {

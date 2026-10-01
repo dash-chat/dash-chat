@@ -17,6 +17,7 @@ import { AndroidNotifications } from './helpers/components/notifications/android
 import { IosNotifications } from './helpers/components/notifications/ios';
 import { notificationMatchers } from './helpers/components/notifications/matchers';
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
+import { startAppium } from './setup/appium-server';
 import { claimAllWhenFreeSync, release } from './setup/claims';
 import {
 	killAllE2EProcesses,
@@ -132,11 +133,18 @@ let pushServer: ChildProcess | undefined;
 let pushLogger: ChildProcess | undefined;
 let toxiproxy: ChildProcess | undefined;
 let toxiproxyLogger: ChildProcess | undefined;
+let appium: ChildProcess | undefined;
 let mailboxTls: ChildProcess | undefined;
 let mailboxTlsLogger: ChildProcess | undefined;
 
 async function teardown() {
-	for (const server of [mailboxServer, mailboxTls, pushServer, toxiproxy]) {
+	for (const server of [
+		mailboxServer,
+		mailboxTls,
+		pushServer,
+		toxiproxy,
+		appium,
+	]) {
 		if (server?.pid) {
 			// Negative PID = signal the entire detached process group.
 			try {
@@ -206,24 +214,6 @@ export const config: WebdriverIO.MultiremoteConfig = {
 
 	capabilities: sessionEntries(),
 
-	// The appium server's own log only reaches the console as truncated warnings,
-	// so keep the full one on disk — device-side failures (usbmux timeouts, WDA
-	// signing) are only diagnosable from it.
-	services:
-		appiumPort !== null
-			? [
-					[
-						'appium',
-						{
-							args: {
-								port: appiumPort,
-								log: path.join(ROOT, '.dbs', 'e2e', 'appium.log'),
-							},
-						},
-					],
-				]
-			: [],
-
 	logLevel: 'warn',
 	waitforTimeout: UI_TIMEOUT,
 	// Android session creation installs the APK and boots UiAutomator2 — slow.
@@ -271,8 +261,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			} catch {
 				// ignore
 			}
-			// The appium service starts right after this hook and writes its log
-			// here, so the directory has to exist before the first server does.
+			// Appium writes its log here, so the directory has to exist before
+			// the first server does.
 			mkdirSync(dataDir, { recursive: true });
 
 			// When MAILBOX_URL names a deployment environment, run against its
@@ -316,6 +306,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			for (const platform of platforms) {
 				await platform.onPrepare({ mailboxPort, pushPort });
 			}
+			if (appiumPort !== null) appium = await startAppium(appiumPort);
 		} catch (err) {
 			console.error('onPrepare failed, aborting run:', err);
 			// process.exit skips onComplete — tear down the already-started

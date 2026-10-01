@@ -66,6 +66,10 @@ importers:
         version: 4.5.14(@types/node@24.10.0)(lightningcss@1.30.2)
 
   e2e-tests:
+    dependencies:
+      exit-hook:
+        specifier: ^4.0.0
+        version: 4.0.0
     devDependencies:
       '@types/node':
         specifier: ^24.10.0
@@ -73,9 +77,6 @@ importers:
       '@types/qrcode':
         specifier: ^1.5.5
         version: 1.5.6
-      '@wdio/appium-service':
-        specifier: ^9.29.1
-        version: 9.29.1(supports-color@8.1.1)
       '@wdio/cli':
         specifier: ^9.29.1
         version: 9.29.1(@types/node@24.10.0)(expect-webdriverio@5.7.0)(supports-color@8.1.1)
@@ -2377,11 +2378,6 @@ packages:
   '@vscode/l10n@0.0.18':
     resolution: {integrity: sha512-KYSIHVmslkaCDyw013pphY+d7x1qV8IZupYfeIfzNA+nsaWHbn5uPuQRvdRFsa9zFzGeudPuoGoZ1Op4jrJXIQ==}
 
-  '@wdio/appium-service@9.29.1':
-    resolution: {integrity: sha512-nxdWEm8Oy6mffz2cB+heKM7xaGkBFeVp9ZIRVe0lJvDZRUC/+9ji7F/yugDdxCsgyJZIT5lFWaurpegbob5r5A==}
-    engines: {node: '>=18.20.0'}
-    hasBin: true
-
   '@wdio/cli@9.29.1':
     resolution: {integrity: sha512-MjRHdM5mGuibhwv+pu8rJD1Pxl6JVj4Pvy9stuj/SjbTqWRxjLauLd3i7+tIMdmrK0ajGO0n249HT8vS8Mh0Dg==}
     engines: {node: '>=18.20.0'}
@@ -2445,10 +2441,6 @@ packages:
 
   '@wdio/reporter@9.24.0':
     resolution: {integrity: sha512-0VrEX2uzjrFCHb6fNQDrQe6X7xuQbXUJhy5CGhMZghnPegW0OnKguwUy/vVKJE0HEDMOrR8djteefxJVfOOZpw==}
-    engines: {node: '>=18.20.0'}
-
-  '@wdio/reporter@9.29.1':
-    resolution: {integrity: sha512-CKAcVy9BGwvufokMcl3H+yNcvD11Klku/1BPz8bKSRv7/KzueXR06s1cPbJH3tv9r9zxPErxgdVMpulN8I0qAg==}
     engines: {node: '>=18.20.0'}
 
   '@wdio/reporter@9.30.1':
@@ -2931,9 +2923,6 @@ packages:
   chalk@5.6.2:
     resolution: {integrity: sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==}
     engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
-
-  change-case@5.4.4:
-    resolution: {integrity: sha512-HRQyTk2/YPEkt9TnUPbOpr64Uw3KOicFWPVBb+xiHvd6eBx/qPr9xqfBFDT8P2vWsvvz4jbEkfDe71W3VyNu2w==}
 
   chardet@2.1.1:
     resolution: {integrity: sha512-PsezH1rqdV9VvyNhxxOW32/d75r01NY7TQCmOqomRo15ZSOKbpTFVsfjghxo6JloQUCGnH4k1LGu0R4yCLlWQQ==}
@@ -8268,29 +8257,6 @@ snapshots:
 
   '@vscode/l10n@0.0.18': {}
 
-  '@wdio/appium-service@9.29.1(supports-color@8.1.1)':
-    dependencies:
-      '@wdio/config': 9.29.1(supports-color@8.1.1)
-      '@wdio/logger': 9.29.1
-      '@wdio/reporter': 9.29.1
-      '@wdio/types': 9.29.1
-      '@wdio/utils': 9.29.1(supports-color@8.1.1)
-      '@xmldom/xmldom': 0.9.10
-      change-case: 5.4.4
-      get-port: 7.1.0
-      import-meta-resolve: 4.2.0
-      tree-kill: 1.2.2
-      webdriverio: 9.29.1(supports-color@8.1.1)
-      xpath: 0.0.34
-    transitivePeerDependencies:
-      - bare-abort-controller
-      - bare-buffer
-      - bufferutil
-      - puppeteer-core
-      - react-native-b4a
-      - supports-color
-      - utf-8-validate
-
   '@wdio/cli@9.29.1(@types/node@24.10.0)(expect-webdriverio@5.7.0)(supports-color@8.1.1)':
     dependencies:
       '@vitest/snapshot': 2.1.9
@@ -8441,14 +8407,6 @@ snapshots:
       '@types/node': 20.19.34
       '@wdio/logger': 9.18.0
       '@wdio/types': 9.24.0
-      diff: 8.0.3
-      object-inspect: 1.13.3
-
-  '@wdio/reporter@9.29.1':
-    dependencies:
-      '@types/node': 20.19.34
-      '@wdio/logger': 9.29.1
-      '@wdio/types': 9.29.1
       diff: 8.0.3
       object-inspect: 1.13.3
 
@@ -9068,8 +9026,6 @@ snapshots:
       supports-color: 7.2.0
 
   chalk@5.6.2: {}
-
-  change-case@5.4.4: {}
 
   chardet@2.1.1: {}
 
