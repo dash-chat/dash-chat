@@ -57,7 +57,7 @@ format:
 
 # typecheck every TS package and the rust workspace
 check:
-    cargo check --workspace
+    cargo check --workspace --all-targets
     pnpm -r --if-present check
 
 # regenerate paraglide message exports from source translation files

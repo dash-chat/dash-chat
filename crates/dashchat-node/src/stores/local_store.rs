@@ -1,7 +1,10 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
-use p2panda::Hash;
+use p2panda::{Credentials, Hash};
+use p2panda_core::cbor::{decode_cbor, encode_cbor};
+use p2panda_encryption::Rng;
+use p2panda_encryption::crypto::x25519::SecretKey;
 use sqlx::SqlitePool;
 
 use crate::{
@@ -11,6 +14,7 @@ use crate::{
 };
 
 const PRIVATE_KEY_KEY: &str = "private_key";
+const IDENTITY_SECRET_KEY: &str = "identity_secret";
 const AGENT_ID_KEY: &str = "agent_id";
 
 /// Distinguishes the roles an inbox topic can play for this node.
@@ -70,12 +74,19 @@ fn bytes32(bytes: Vec<u8>, column: &str) -> anyhow::Result<[u8; 32]> {
 #[derive(Clone, Debug)]
 pub struct NodeKeys {
     pub private_key: SigningKey,
+    /// X25519 secret used for key agreement in p2panda-encryption. Paired with
+    /// `private_key` it forms this device's p2panda [`Credentials`].
+    pub identity_secret: SecretKey,
     pub agent_id: AgentId,
 }
 
 impl NodeKeys {
     pub fn device_id(&self) -> DeviceId {
         DeviceId::from(self.private_key.verifying_key())
+    }
+
+    pub fn credentials(&self) -> Credentials {
+        Credentials::from_keys(self.private_key.clone(), self.identity_secret.clone())
     }
 }
 
@@ -91,7 +102,7 @@ pub struct LocalStore {
 impl LocalStore {
     pub async fn new(pool: SqlitePool) -> anyhow::Result<Self> {
         for sql in MIGRATIONS {
-            sqlx::query(sql).execute(&pool).await?;
+            sqlx::query(*sql).execute(&pool).await?;
         }
 
         let store = Self { pool };
@@ -121,6 +132,11 @@ impl LocalStore {
                 .execute(&mut *tx)
                 .await?;
             sqlx::query("INSERT INTO identity (key, value) VALUES (?, ?)")
+                .bind(IDENTITY_SECRET_KEY)
+                .bind(encode_cbor(&SecretKey::from_rng(&Rng::default())?)?)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO identity (key, value) VALUES (?, ?)")
                 .bind(AGENT_ID_KEY)
                 .bind(agent_id.as_bytes().to_vec())
                 .execute(&mut *tx)
@@ -133,6 +149,7 @@ impl LocalStore {
     pub async fn node_keys(&self) -> anyhow::Result<NodeKeys> {
         Ok(NodeKeys {
             private_key: self.private_key().await?,
+            identity_secret: self.identity_secret().await?,
             agent_id: self.agent_id().await?,
         })
     }
@@ -175,6 +192,15 @@ impl LocalStore {
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Private key field not found"))?;
         let arr: [u8; 32] = bytes32(bytes, "identity.private_key")?;
         Ok(SigningKey::from_bytes(&arr))
+    }
+
+    pub async fn identity_secret(&self) -> anyhow::Result<SecretKey> {
+        let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT value FROM identity WHERE key = ?")
+            .bind(IDENTITY_SECRET_KEY)
+            .fetch_optional(&self.pool)
+            .await?;
+        let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Identity secret field not found"))?;
+        Ok(decode_cbor(bytes.as_slice())?)
     }
 
     pub async fn device_id(&self) -> anyhow::Result<DeviceId> {
