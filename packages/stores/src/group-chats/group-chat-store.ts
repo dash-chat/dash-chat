@@ -27,12 +27,6 @@ import {
 } from '../utils/group-events-in-days';
 import { type IGroupChatClient } from './group-chat-client';
 
-export interface GroupMember {
-	agentId: AgentId;
-	deviceIds: DeviceId[];
-	isAdmin: boolean;
-}
-
 export type ChatEvent =
 	| { kind: 'message'; message: Message }
 	| { kind: 'control'; event: GroupControlEvent };
@@ -70,6 +64,13 @@ export class GroupChatStore {
 		);
 		this.client.onGroupMembersChanged(this.chatId, () => {
 			this.membersVersion.value++;
+		});
+		// Members are grouped by agent, so a device introduced after it joined
+		// regroups them.
+		this.contactsStore.client.onAgentsIntroduced(async agents => {
+			if (await this.hasAnyDevice(Object.keys(agents))) {
+				this.membersVersion.value++;
+			}
 		});
 	}
 
@@ -217,27 +218,17 @@ export class GroupChatStore {
 			: bestAuth;
 	});
 
-	/** The group's devices grouped by agent. A device nobody has introduced
-	 * yet stands in for its agent until an introduction names it. */
-	membersData = reactive(async (): Promise<GroupMember[]> => {
+	membersData = reactive(async () => {
 		void this.membersVersion.value;
-		const devices = await this.client.getMembers(this.chatId);
-		const agents = await this.contactsStore.agentsForDevices(
-			new Set(devices.map(device => device.deviceId)),
-		);
-		const grouped: Record<AgentId, GroupMember> = {};
-		for (const { deviceId, isAdmin } of devices) {
-			const agentId = agents[deviceId] ?? deviceId;
-			const member = (grouped[agentId] ??= {
-				agentId,
-				deviceIds: [],
-				isAdmin: false,
-			});
-			member.deviceIds.push(deviceId);
-			member.isAdmin ||= isAdmin;
-		}
-		return Object.values(grouped);
+		return await this.client.getMembers(this.chatId);
 	});
+
+	private async hasAnyDevice(deviceIds: DeviceId[]): Promise<boolean> {
+		const members = await this.membersData();
+		return members.some(member =>
+			member.deviceIds.some(deviceId => deviceIds.includes(deviceId)),
+		);
+	}
 
 	me = reactive(async () => {
 		const myAgentId = await this.contactsStore.myAgentId();

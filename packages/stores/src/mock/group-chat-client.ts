@@ -1,12 +1,12 @@
 import type {
-	GroupDevice,
+	GroupMember,
 	IGroupChatClient,
 } from '../group-chats/group-chat-client';
 import type { AgentId } from '../p2panda/types';
 import type { ChatId, GroupInfo } from '../types';
 
 export class MockGroupChatClient implements IGroupChatClient {
-	async getMembers(_chatId: ChatId): Promise<GroupDevice[]> {
+	async getMembers(_chatId: ChatId): Promise<GroupMember[]> {
 		return [];
 	}
 	onGroupMembersChanged(): () => void {

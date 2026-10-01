@@ -5,14 +5,14 @@ import { ChatId, GroupInfo } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
 import { onSystemEvent } from '../utils/system-events';
 
-export interface GroupDevice {
-	deviceId: DeviceId;
+export interface GroupMember {
+	agentId: AgentId;
+	deviceIds: DeviceId[];
 	isAdmin: boolean;
 }
 
 export interface IGroupChatClient {
-	/** The devices in the group; their agents come from the contacts store. */
-	getMembers(chatId: ChatId): Promise<GroupDevice[]>;
+	getMembers(chatId: ChatId): Promise<GroupMember[]>;
 	/** `chatId`'s members changed. */
 	onGroupMembersChanged(
 		chatId: ChatId,
@@ -31,7 +31,7 @@ export interface IGroupChatClient {
 }
 
 export class GroupChatClient implements IGroupChatClient {
-	async getMembers(chatId: ChatId): Promise<GroupDevice[]> {
+	async getMembers(chatId: ChatId): Promise<GroupMember[]> {
 		return invokeAfterSetup('get_group_members', { chatId });
 	}
 
