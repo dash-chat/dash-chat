@@ -32,8 +32,7 @@ export interface IContactsClient {
 	// established. Undefined while an outgoing request is still pending.
 	agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined>;
 
-	/** Devices were introduced as belonging to agents, here or in the iOS
-	 * push extension. */
+	/** Devices were introduced as belonging to agents. */
 	onAgentsIntroduced(
 		handler: (agents: Record<DeviceId, AgentId>) => void,
 	): UnsubscribeFunction;

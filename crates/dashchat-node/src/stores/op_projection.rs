@@ -403,9 +403,8 @@ impl OpProjection {
                 for (acked_author, acked) in acks {
                     self.record_message_ack(topic, author, *acked_author, *acked)
                         .await?;
-                    // The current ack is announced whether this operation set it or
-                    // the push extension did before: the webview listens to this
-                    // process. Only an ack behind the recorded one is skipped.
+                    // Announced even when the store already held it; only an ack
+                    // behind the recorded one is skipped.
                     let current = self
                         .recorded_message_ack(topic, author, *acked_author)
                         .await?
@@ -532,8 +531,6 @@ impl OpProjection {
                             .iter()
                             .any(|(_, access)| *access == p2panda_auth::Access::manage());
                         if has_admin {
-                            // Announced even when the push extension marked it first:
-                            // this process is the one the webview listens to.
                             self.mark_group_as_group_chat(chat_id).await?;
                             Some(SystemNotification::GroupChatAdded { chat_id })
                         } else {

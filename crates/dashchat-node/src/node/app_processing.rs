@@ -53,7 +53,7 @@ pub struct OpNotification {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum SystemNotification {
-    /// A chat became a group chat (its group was created with an admin).
+    /// A group chat was added (its group was created with an admin).
     GroupChatAdded { chat_id: ChatId },
     /// Members of a group chat were added, removed, promoted or demoted.
     GroupMembersChanged { chat_id: ChatId },

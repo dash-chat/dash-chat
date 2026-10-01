@@ -13,7 +13,7 @@ export interface GroupDevice {
 export interface IGroupChatClient {
 	/** The devices in the group; their agents come from the contacts store. */
 	getMembers(chatId: ChatId): Promise<GroupDevice[]>;
-	/** `chatId`'s members changed, here or in the iOS push extension. */
+	/** `chatId`'s members changed. */
 	onGroupMembersChanged(
 		chatId: ChatId,
 		handler: () => void,

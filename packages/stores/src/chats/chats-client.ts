@@ -9,7 +9,7 @@ export interface IChatsClient {
 	createGroup(initialMembers: VerifyingKey[]): Promise<ChatId>;
 	getGroupChats(): Promise<Array<ChatId>>;
 	markMessagesRead(chatId: ChatId, messageHashes: Hash[]): Promise<void>;
-	/** A chat became a group chat, here or in the iOS push extension. */
+	/** A group chat was added. */
 	onGroupChatAdded(handler: (chatId: ChatId) => void): UnsubscribeFunction;
 }
 
