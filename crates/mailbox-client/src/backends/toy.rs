@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use mailbox_server::{
     Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest, StoreBlipsResponse,
@@ -145,13 +146,23 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     /// batch of large blobs never stalls this per-mailbox publish iteration, and
     /// scoped to `not_stored`, so we never re-upload blobs the mailbox already
     /// holds.
-    pub async fn store_blobs(&self, mut hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
+    pub async fn store_blobs(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
+        self.store_blobs_with(hashes, self.blob_reader.clone(), self.tracker.clone())
+            .await
+    }
+
+    async fn store_blobs_with(
+        &self,
+        mut hashes: Vec<iroh_blobs::Hash>,
+        reader: Option<Arc<dyn crate::BlobReader>>,
+        tracker: Arc<dyn crate::UnfetchedBlobTracker>,
+    ) -> anyhow::Result<()> {
         if hashes.is_empty() {
             return Ok(());
         }
         // A forwarded op's blob this device hasn't fetched is left out: the
         // mailbox would dial us for bytes we don't have.
-        if let Some(reader) = &self.blob_reader {
+        if let Some(reader) = &reader {
             let mut held = Vec::new();
             for hash in hashes {
                 if reader.has_blob(hash).await {
@@ -163,7 +174,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         // Tell the mailbox to defer its fetch backstop only when we can actually
         // stream the bytes; a reader-less client never uploads, so the mailbox
         // should fetch from us right away.
-        let expect_upload = self.blob_reader.is_some();
+        let expect_upload = reader.is_some();
         let already_stored = send_register_hashes(
             &self.base_url,
             hashes.clone(),
@@ -175,9 +186,9 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
             .into_iter()
             .filter(|h| !already_stored.contains(h))
             .collect();
-        self.tracker.record(&self.id, &not_stored).await;
-        self.tracker.remove(&self.id, &already_stored).await;
-        self.spawn_blob_upload(not_stored);
+        tracker.record(&self.id, &not_stored).await;
+        tracker.remove(&self.id, &already_stored).await;
+        self.spawn_blob_upload_with(reader, tracker, not_stored);
         Ok(())
     }
 
@@ -191,7 +202,16 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     /// rather than burning through the batch against a dead endpoint. No-op when
     /// no blob reader is configured.
     fn spawn_blob_upload(&self, hashes: Vec<iroh_blobs::Hash>) {
-        let Some(reader) = self.blob_reader.clone() else {
+        self.spawn_blob_upload_with(self.blob_reader.clone(), self.tracker.clone(), hashes);
+    }
+
+    fn spawn_blob_upload_with(
+        &self,
+        reader: Option<Arc<dyn crate::BlobReader>>,
+        tracker: Arc<dyn crate::UnfetchedBlobTracker>,
+        hashes: Vec<iroh_blobs::Hash>,
+    ) {
+        let Some(reader) = reader else {
             return;
         };
         // Claimed up front, so a later followup pass doesn't start the ones this
@@ -210,7 +230,6 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         }
         let base_url = self.base_url.clone();
         let id = self.id.clone();
-        let tracker = self.tracker.clone();
         tokio::spawn(async move {
             let mut claimed = claimed.into_iter();
             while let Some((hash, claim)) = claimed.next() {
@@ -316,6 +335,15 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
                 body
             ))
         }
+    }
+
+    async fn push_blobs(
+        &self,
+        hashes: Vec<iroh_blobs::Hash>,
+        reader: Arc<dyn crate::BlobReader>,
+        tracker: Arc<dyn crate::UnfetchedBlobTracker>,
+    ) -> Result<(), anyhow::Error> {
+        self.store_blobs_with(hashes, Some(reader), tracker).await
     }
 
     async fn report(&self, request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
