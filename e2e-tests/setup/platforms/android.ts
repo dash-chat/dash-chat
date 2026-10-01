@@ -385,12 +385,22 @@ function startLogcatLogger(agent: string, udid: string): ChildProcess {
  *  would resolve to the browser instead of the app. */
 export async function waitForAppLinksVerified(udid: string): Promise<void> {
 	const deadline = Date.now() + 30_000;
+	let reverifying = false;
 	for (;;) {
 		const out = execSync(
 			`adb -s ${udid} shell pm get-app-links ${APP_PACKAGE}`,
 			{ encoding: 'utf8', timeout: 10_000, env: androidEnv },
 		);
 		if (/:\s*verified/.test(out)) return;
+		// The check Android runs at install can fail and is not retried for a
+		// long while, leaving the domain stuck in a verifier-defined state (1024).
+		if (!reverifying) {
+			execSync(
+				`adb -s ${udid} shell pm verify-app-links --re-verify ${APP_PACKAGE}`,
+				{ timeout: 10_000, env: androidEnv },
+			);
+			reverifying = true;
+		}
 		if (Date.now() > deadline) {
 			throw new Error(
 				`App Links for ${APP_PACKAGE} never became verified:\n${out}`,
