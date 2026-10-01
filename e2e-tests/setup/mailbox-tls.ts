@@ -32,6 +32,8 @@ import { waitForPortListening } from './wait-for-port';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 const CA_DIR = path.join(ROOT, 'crates', 'mailbox-client', 'e2e-test-ca');
+// The app's e2e build embeds the same certificate as `ca.der` next to it
+// (`openssl x509 -in ca.pem -outform der`); regenerate both together.
 const CA_CERT = path.join(CA_DIR, 'ca.pem');
 const CA_KEY = path.join(CA_DIR, 'ca-key.pem');
 const RUN_DIR = path.join(ROOT, '.dbs', 'e2e', 'mailbox-tls');
