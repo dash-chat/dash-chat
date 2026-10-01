@@ -10,12 +10,6 @@ export interface GroupDevice {
 	isAdmin: boolean;
 }
 
-export interface GroupMember {
-	agentId: AgentId;
-	deviceIds: DeviceId[];
-	isAdmin: boolean;
-}
-
 export interface IGroupChatClient {
 	/** The devices in the group; their agents come from the contacts store. */
 	getMembers(chatId: ChatId): Promise<GroupDevice[]>;

@@ -479,7 +479,9 @@ impl OpProjection {
             Payload::DeviceGroup(p) => match p {
                 DeviceGroupPayload::AddContact { agent_id, .. } => {
                     self.save_agent_mapping(author, *agent_id).await?;
-                    None
+                    Some(SystemNotification::AgentsIntroduced {
+                        agents: BTreeMap::from([(author, *agent_id)]),
+                    })
                 }
                 DeviceGroupPayload::BlockAgent(agent_id) => {
                     self.block_agent(*agent_id).await?;
@@ -510,7 +512,9 @@ impl OpProjection {
             | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
-                None
+                Some(SystemNotification::AgentsIntroduced {
+                    agents: BTreeMap::from([(author, *agent_id)]),
+                })
             }
 
             // We define group chats as topics which contain a CreateGroup that makes at least
