@@ -29,9 +29,8 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(20));
     // The e2e mailbox serves TLS so that a degraded link slows the handshake,
-    // which the connect timeout covers, as a real network does. DER rather
-    // than the PEM the harness uses: native-tls only parses PEM on macOS and
-    // panics on iOS.
+    // which the connect timeout covers, as a real network does. DER because
+    // native-tls only parses PEM on macOS and panics on iOS.
     #[cfg(feature = "e2e-test-ca")]
     let builder = builder.add_root_certificate(
         reqwest::Certificate::from_der(include_bytes!("../e2e-test-ca/ca.der"))
