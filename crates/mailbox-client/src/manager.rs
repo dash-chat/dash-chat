@@ -364,6 +364,7 @@ where
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    scheduler: Arc<crate::upload_scheduler::BlobUploadScheduler>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
 }
@@ -386,6 +387,7 @@ where
             topics: Arc::new(Mutex::new(Default::default())),
             store,
             sync_tracker,
+            scheduler: Arc::new(crate::upload_scheduler::BlobUploadScheduler::new()),
             config,
             nudge: Arc::new(Notify::new()),
         }
@@ -409,9 +411,10 @@ where
         self.mailboxes.lock().await.get(id).cloned()
     }
 
-    pub async fn register(&self, mailbox: impl MailboxClient<Item>) {
+    pub async fn register(&self, mut mailbox: impl MailboxClient<Item>) {
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
+        mailbox.set_upload_lifecycle(self.scheduler.clone());
         let id = mailbox.id();
         let new_client: Arc<dyn MailboxClient<Item>> = Arc::new(mailbox);
 
@@ -526,13 +529,13 @@ where
         let Some(url) = tracked.client().await.url() else {
             return false;
         };
-        crate::upload_scheduler::SCHEDULER.upload_due(&url, hash)
+        self.scheduler.upload_due(&url, hash)
     }
 
     /// Network changed or app resumed: clear in-flight claims and backoffs so
     /// uploads can start again immediately.
     pub fn reset_uploads(&self) {
-        crate::upload_scheduler::SCHEDULER.restart_uploads();
+        self.scheduler.restart_uploads();
     }
 
     /// Reconcile unfetched blobs across all registered mailboxes.

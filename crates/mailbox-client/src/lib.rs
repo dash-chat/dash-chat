@@ -52,6 +52,11 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
         None
     }
 
+    /// Attach the shared upload scheduler (or a no-op stand-in) so blob uploads
+    /// can claim and release lifecycle slots. The default no-op covers backends
+    /// that do not upload blobs and test clients built before registration.
+    fn set_upload_lifecycle(&mut self, _lifecycle: Arc<dyn BlobUploadLifecycle>) {}
+
     /// Publish operations to the mailbox during topic sync.
     /// Different mailbox implementations have different semantics for this,
     /// for instance separate storage for logs vs blobs.
