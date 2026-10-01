@@ -1,12 +1,14 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 const MIN_UPLOAD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5);
 const MAX_UPLOAD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 /// Process-global scheduler instance used by the free-function shims while the
 /// orchestrator does not yet own one explicitly.
-pub(crate) static SCHEDULER: Lazy<BlobUploadScheduler> = Lazy::new(BlobUploadScheduler::new);
+pub(crate) static SCHEDULER: Lazy<Arc<BlobUploadScheduler>> =
+    Lazy::new(|| Arc::new(BlobUploadScheduler::new()));
 
 /// Tracks in-flight blob uploads and retry backoffs so an upload still crawling
 /// out isn't started a second time, and one the mailbox keeps refusing isn't
@@ -115,11 +117,38 @@ pub(crate) fn claim_upload(base_url: &str, hash: iroh_blobs::Hash) -> Option<u64
     SCHEDULER.claim_upload(base_url, hash)
 }
 
-/// Release `claim`; after a failure the next attempt waits out a backoff that
-/// doubles with each consecutive failure. A claim a restart has since replaced
-/// is ignored, so a stale upload ending late can't overwrite its successor.
-pub(crate) fn finish_upload(base_url: &str, hash: iroh_blobs::Hash, claim: u64, succeeded: bool) {
-    SCHEDULER.finish_upload(base_url, hash, claim, succeeded);
+/// Lifecycle callbacks used by blob upload tasks to coordinate with a shared
+/// upload scheduler without depending on its concrete type.
+pub trait BlobUploadLifecycle: Send + Sync + 'static {
+    /// Mark an upload of `hash` to `base_url` in flight if it may start now,
+    /// returning a claim to release it with.
+    fn claim_upload(&self, base_url: &str, hash: iroh_blobs::Hash) -> Option<u64>;
+
+    /// Release `claim`; `succeeded` determines whether the next attempt must
+    /// wait out a backoff.
+    fn finish_upload(
+        &self,
+        base_url: &str,
+        hash: iroh_blobs::Hash,
+        claim: u64,
+        succeeded: bool,
+    );
+}
+
+impl BlobUploadLifecycle for BlobUploadScheduler {
+    fn claim_upload(&self, base_url: &str, hash: iroh_blobs::Hash) -> Option<u64> {
+        self.claim_upload(base_url, hash)
+    }
+
+    fn finish_upload(
+        &self,
+        base_url: &str,
+        hash: iroh_blobs::Hash,
+        claim: u64,
+        succeeded: bool,
+    ) {
+        self.finish_upload(base_url, hash, claim, succeeded);
+    }
 }
 
 #[cfg(test)]
@@ -134,7 +163,7 @@ mod tests {
         let claim = claim_upload(base_url, hash).unwrap();
         assert!(claim_upload(base_url, hash).is_none(), "already in flight");
 
-        finish_upload(base_url, hash, claim, false);
+        SCHEDULER.finish_upload(base_url, hash, claim, false);
         assert!(!SCHEDULER.upload_due(base_url, hash));
         assert!(
             claim_upload(base_url, hash).is_none(),
@@ -149,13 +178,13 @@ mod tests {
         let stale = claim_upload(base_url, hash).unwrap();
         SCHEDULER.restart_uploads();
         let fresh = claim_upload(base_url, hash).unwrap();
-        finish_upload(base_url, hash, stale, false);
+        SCHEDULER.finish_upload(base_url, hash, stale, false);
         assert!(
             !SCHEDULER.upload_due(base_url, hash),
             "a stale claim can't release its successor"
         );
 
-        finish_upload(base_url, hash, fresh, true);
+        SCHEDULER.finish_upload(base_url, hash, fresh, true);
         assert!(
             claim_upload(base_url, hash).is_some(),
             "a success leaves no backoff"

@@ -6,6 +6,7 @@ pub mod unfetched_blobs;
 pub mod upload_scheduler;
 
 pub use unfetched_blobs::BlobSource;
+pub use upload_scheduler::BlobUploadLifecycle;
 
 pub use mailbox_server::RegisterPeerRequest;
 
