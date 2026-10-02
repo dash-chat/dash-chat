@@ -100,6 +100,9 @@ describe('Reply quotes of a non-contact member met during catch-up', function ()
 		}
 
 		await viewer.agent.startApp();
+		await viewer.agent.homePage
+			.chatListItem('mygroup')
+			.waitForExist({ timeout: SYNC_TIMEOUT });
 		await viewer.agent.homePage.chatListItem('mygroup').click();
 		await viewer.agent.groupChatPage.ready();
 

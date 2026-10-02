@@ -193,7 +193,13 @@ function raiseMacApp(pid: number | undefined): void {
  *  starts with no account still remember what the webview stored. */
 export function clearAgentDir(slot: number): void {
 	const dataDir = agentDir(slot);
-	rmSync(dataDir, { recursive: true, force: true });
+	// A just-killed agent's WebKit helpers can still be writing into it.
+	rmSync(dataDir, {
+		recursive: true,
+		force: true,
+		maxRetries: 10,
+		retryDelay: 100,
+	});
 	mkdirSync(dataDir, { recursive: true });
 }
 
