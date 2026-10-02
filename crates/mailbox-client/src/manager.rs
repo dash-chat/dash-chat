@@ -1238,6 +1238,23 @@ mod tests {
         }
     }
 
+    /// Blob reader that claims to have a blob but always fails to read it.
+    struct FailingBlobReader {
+        hash: iroh_blobs::Hash,
+    }
+
+    #[async_trait::async_trait]
+    impl BlobReader for FailingBlobReader {
+        async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+            assert_eq!(hash, self.hash);
+            Err(anyhow::anyhow!("simulated read failure"))
+        }
+
+        async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
+            hash == self.hash
+        }
+    }
+
     // -- MailboxTracker unit tests --
 
     #[tokio::test]
@@ -1248,8 +1265,14 @@ mod tests {
 
         let mailboxes = test_mailboxes(test_config());
         let id: MailboxId = "test-mbx".into();
-        let data = bytes::Bytes::from_static(b"coordinated blob");
-        let hash = iroh_blobs::Hash::new(&data);
+        let hash = iroh_blobs::Hash::new(b"coordinated blob");
+
+        // Reader used to build the client and to satisfy `has_blob` during
+        // `push_blobs`.
+        let reader = Arc::new(StubBlobReader {
+            hash,
+            bytes: bytes::Bytes::from_static(b"coordinated blob"),
+        });
 
         let client = ToyMailboxClient::<Msg>::new(
             id.clone(),
@@ -1257,9 +1280,14 @@ mod tests {
             iroh::SecretKey::generate().public(),
             Arc::new(crate::NoopUnfetchedBlobTracker),
         )
-        .with_blob_reader(Arc::new(StubBlobReader { hash, bytes: data }));
+        .with_blob_reader(reader.clone());
 
         mailboxes.register(client).await;
+
+        // A reader that fails to read the bytes makes the spawned upload finish
+        // with `succeeded = false`, leaving the hash on a deterministic retry
+        // backoff.
+        let failing_reader: Arc<dyn BlobReader> = Arc::new(FailingBlobReader { hash });
 
         let registered = mailboxes.tracked_mailbox(&id).await.unwrap();
         registered
@@ -1267,10 +1295,7 @@ mod tests {
             .await
             .push_blobs(
                 vec![hash],
-                Arc::new(StubBlobReader {
-                    hash,
-                    bytes: bytes::Bytes::new(),
-                }),
+                failing_reader,
                 Arc::new(crate::NoopUnfetchedBlobTracker),
             )
             .await
