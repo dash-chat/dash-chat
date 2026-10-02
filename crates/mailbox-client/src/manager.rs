@@ -411,10 +411,9 @@ where
         self.mailboxes.lock().await.get(id).cloned()
     }
 
-    pub async fn register(&self, mut mailbox: impl MailboxClient<Item>) {
+    pub async fn register(&self, mailbox: impl MailboxClient<Item>) {
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.
-        mailbox.set_upload_lifecycle(self.scheduler.clone());
         let id = mailbox.id();
         let new_client: Arc<dyn MailboxClient<Item>> = Arc::new(mailbox);
 
@@ -537,6 +536,12 @@ where
     /// mailbox URL.
     pub fn upload_due_at(&self, url: &str, hash: iroh_blobs::Hash) -> bool {
         self.scheduler.upload_due(url, hash)
+    }
+
+    /// Access the shared blob upload scheduler so callers can wire it into a
+    /// `ToyMailboxClient` before registration.
+    pub fn upload_scheduler(&self) -> Arc<crate::upload_scheduler::BlobUploadScheduler> {
+        self.scheduler.clone()
     }
 
     /// Network changed or app resumed: clear in-flight claims and backoffs so
@@ -1279,6 +1284,7 @@ mod tests {
             url,
             iroh::SecretKey::generate().public(),
             Arc::new(crate::NoopUnfetchedBlobTracker),
+            mailboxes.upload_scheduler(),
         )
         .with_blob_reader(reader.clone());
 

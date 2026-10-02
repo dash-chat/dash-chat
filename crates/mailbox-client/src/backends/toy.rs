@@ -100,30 +100,6 @@ async fn upload_blob(base_url: &str, bytes: bytes::Bytes) -> Result<(), UploadEr
     Ok(())
 }
 
-/// Stand-in lifecycle used when a `ToyMailboxClient` is exercised before being
-/// registered with a `Mailboxes` owner. Every claim succeeds and finishes are
-/// ignored, so uploads proceed without coordination.
-struct NoopUploadLifecycle;
-
-impl BlobUploadLifecycle for NoopUploadLifecycle {
-    fn claim_upload(&self, base_url: &str, hash: iroh_blobs::Hash) -> Option<u64> {
-        tracing::warn!(
-            %base_url,
-            %hash,
-            "blob upload lifecycle not configured; upload will not be coordinated"
-        );
-        Some(0)
-    }
-
-    fn finish_upload(&self, base_url: &str, hash: iroh_blobs::Hash, _claim: u64, _succeeded: bool) {
-        tracing::warn!(
-            %base_url,
-            %hash,
-            "blob upload lifecycle not configured; finish ignored"
-        );
-    }
-}
-
 /// A client for the toy mailbox server.
 #[derive(Clone)]
 pub struct ToyMailboxClient<Item: MailboxItem> {
@@ -142,6 +118,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         base_url: impl Into<String>,
         sender_pubkey: iroh::EndpointId,
         tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
+        lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>,
     ) -> Self {
         Self {
             id,
@@ -149,7 +126,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
             sender_pubkey,
             tracker,
             blob_reader: None,
-            lifecycle: std::sync::Arc::new(NoopUploadLifecycle),
+            lifecycle,
             phantom: std::marker::PhantomData,
         }
     }
@@ -299,10 +276,6 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
 
     fn url(&self) -> Option<String> {
         Some(self.base_url.clone())
-    }
-
-    fn set_upload_lifecycle(&mut self, lifecycle: Arc<dyn BlobUploadLifecycle>) {
-        self.lifecycle = lifecycle;
     }
 
     async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error> {
@@ -619,6 +592,7 @@ mod tests {
             base_url,
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
             std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
+            crate::testing::noop_upload_lifecycle(),
         );
 
         let response = client
@@ -784,6 +758,7 @@ mod tests {
             base_url,
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
             std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
+            crate::testing::noop_upload_lifecycle(),
         )
         .with_blob_reader(std::sync::Arc::new(StubReader(data.clone())));
 
