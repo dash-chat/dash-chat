@@ -298,3 +298,79 @@ fn photo() -> OutgoingMedia {
         }],
     }
 }
+
+/// Bobbi's acknowledgement of Alice's message reaches Alice's extension
+/// first, which records the ack in the store they share. Alice's app, once
+/// it processes the recorded operation, still announces the message as
+/// delivered: the ack is the current one, and the webview only hears the app.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_ack_the_extension_recorded_first_is_still_announced() {
+    let config = NodeConfig::testing().no_p2p();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    // Alice's app is running but not syncing, so the ack can only reach its
+    // store through the extension.
+    let alice = TestNode::new_at_path(app_config(), "alice", alice.shutdown().await).await;
+    let header = alice.send_message_raw(chat, "Hello".into()).await.unwrap();
+
+    let extension = TestNode::new_at_path(extension_config(), "alice-extension", alice.store_dir())
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            extension
+                .projection
+                .delivered_acks(chat.into())
+                .await
+                .unwrap()
+                .get(&alice.device_id())
+                .is_some_and(|acked| acked.seq == header.seq_num)
+                .then_some(())
+                .ok_or("the extension has not recorded bobbi's ack")
+        })
+        .await
+        .unwrap();
+    extension.shutdown().await;
+
+    alice.resync().await.unwrap();
+
+    let acks = alice
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n {
+                Notification::System(SystemNotification::MessageAcks { topic, acks })
+                    if *topic == chat.into() =>
+                {
+                    Some(acks.clone())
+                }
+                _ => None,
+            },
+        )
+        .await
+        .expect("alice's app announces the ack the extension recorded first");
+    assert_eq!(
+        acks.get(&alice.device_id()),
+        Some(&AckedOp {
+            hash: header.hash(),
+            seq: header.seq_num,
+        })
+    );
+}

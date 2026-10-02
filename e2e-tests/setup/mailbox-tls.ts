@@ -11,6 +11,7 @@ import {
 	execSync,
 	spawn,
 } from 'node:child_process';
+import { X509Certificate } from 'node:crypto';
 import {
 	closeSync,
 	mkdirSync,
@@ -32,7 +33,11 @@ import { waitForPortListening } from './wait-for-port';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 const CA_DIR = path.join(ROOT, 'crates', 'mailbox-client', 'e2e-test-ca');
-const CA_CERT = path.join(CA_DIR, 'ca.pem');
+// DER because the app's e2e build embeds this file and native-tls only parses
+// PEM on macOS; the PEM openssl and node want is derived from it.
+const CA_CERT_PEM = new X509Certificate(
+	readFileSync(path.join(CA_DIR, 'ca.der')),
+).toString();
 const CA_KEY = path.join(CA_DIR, 'ca-key.pem');
 const RUN_DIR = path.join(ROOT, '.dbs', 'e2e', 'mailbox-tls');
 
@@ -81,6 +86,8 @@ function issueServerCertificate(): { cert: string; key: string } {
 			'extendedKeyUsage=serverAuth',
 		].join('\n'),
 	);
+	const caCert = path.join(RUN_DIR, 'ca.pem');
+	writeFileSync(caCert, CA_CERT_PEM);
 	openssl(['ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', key]);
 	openssl(['req', '-new', '-key', key, '-subj', '/CN=localhost', '-out', csr]);
 	openssl([
@@ -89,7 +96,7 @@ function issueServerCertificate(): { cert: string; key: string } {
 		'-in',
 		csr,
 		'-CA',
-		CA_CERT,
+		caCert,
 		'-CAkey',
 		CA_KEY,
 		// A random serial: `-CAcreateserial` would write a serial file next to the
@@ -170,7 +177,7 @@ export function mailboxAnswers(
 	return new Promise(resolve => {
 		const request = client.get(
 			`${url}/health`,
-			{ ca: readFileSync(CA_CERT), timeout: timeoutMs },
+			{ ca: CA_CERT_PEM, timeout: timeoutMs },
 			response => {
 				response.resume();
 				const status = response.statusCode ?? 0;

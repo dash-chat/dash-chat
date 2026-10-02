@@ -1,8 +1,8 @@
-import { listen } from '@tauri-apps/api/event';
 import { UnsubscribeFunction } from 'emittery';
 
-import { ChatId, MessageAcks, SystemEvent } from '../types';
+import { ChatId, MessageAcks } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
+import { onSystemEvent } from '../utils/system-events';
 
 export interface IMessageAckClient {
 	getMessageAcks(chatId: ChatId): Promise<MessageAcks>;
@@ -21,16 +21,8 @@ export class MessageAckClient implements IMessageAckClient {
 		chatId: ChatId,
 		handler: (acks: MessageAcks) => void,
 	): UnsubscribeFunction {
-		let unsubs: (() => void) | undefined;
-		listen('dashchat://system-event', e => {
-			const event = e.payload as SystemEvent;
-			if (event.type !== 'MessageAcks') return;
-			if (event.payload.topic !== chatId) return;
-			handler(event.payload.acks);
-		}).then(u => (unsubs = u));
-
-		return () => {
-			if (unsubs) unsubs();
-		};
+		return onSystemEvent('MessageAcks', event => {
+			if (event.payload.topic === chatId) handler(event.payload.acks);
+		});
 	}
 }

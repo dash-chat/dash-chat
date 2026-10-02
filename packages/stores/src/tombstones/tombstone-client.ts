@@ -1,9 +1,9 @@
-import { listen } from '@tauri-apps/api/event';
 import { UnsubscribeFunction } from 'emittery';
 
 import { Hash } from '../p2panda/types';
-import { ChatId, SystemEvent, Tombstone, TombstoneReason } from '../types';
+import { ChatId, Tombstone, TombstoneReason } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
+import { onSystemEvent } from '../utils/system-events';
 
 export interface ITombstoneClient {
 	getTombstones(chatId: ChatId): Promise<Record<Hash, TombstoneReason>>;
@@ -22,18 +22,11 @@ export class TombstoneClient implements ITombstoneClient {
 		chatId: ChatId,
 		handler: (tombstone: Tombstone) => void,
 	): UnsubscribeFunction {
-		let unsubs: (() => void) | undefined;
-		listen('dashchat://system-event', e => {
-			const event = e.payload as SystemEvent;
-			if (event.type !== 'Tombstones') return;
+		return onSystemEvent('Tombstones', event => {
 			if (event.payload.topic !== chatId) return;
 			event.payload.hashes.forEach(hash => {
 				handler({ hash, reason: event.payload.reason });
 			});
-		}).then(u => (unsubs = u));
-
-		return () => {
-			if (unsubs) unsubs();
-		};
+		});
 	}
 }

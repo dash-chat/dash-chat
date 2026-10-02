@@ -74,9 +74,9 @@ export class ContactsStore {
 				};
 				state.setPromise(fetchAgent());
 
-				return this.logsStore.logsClient.onNewOperation((_topicId, op) => {
+				return this.client.onAgentsIntroduced(agents => {
 					if (state.value !== undefined) return;
-					if (!introducesDevice(op, deviceId)) return;
+					if (!(deviceId in agents)) return;
 					state.setPromise(fetchAgent());
 				});
 			}),
@@ -459,16 +459,5 @@ export class ContactsStore {
 					(entry): entry is ContactWithProfile => entry.profile !== undefined,
 				);
 		},
-	);
-}
-
-function introducesDevice(
-	op: SimplifiedOperation<Payload>,
-	deviceId: DeviceId,
-): boolean {
-	return (
-		op.body?.type === 'Chat' &&
-		op.body.payload.type === 'IntroduceAgents' &&
-		deviceId in op.body.payload.payload.agents
 	);
 }

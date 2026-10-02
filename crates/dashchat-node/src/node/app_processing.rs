@@ -53,6 +53,12 @@ pub struct OpNotification {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum SystemNotification {
+    /// A group chat was added (its group was created with an admin).
+    GroupChatAdded { chat_id: ChatId },
+    /// Members of a group chat were added, removed, promoted or demoted.
+    GroupMembersChanged { chat_id: ChatId },
+    /// Devices were introduced as belonging to agents.
+    AgentsIntroduced { agents: BTreeMap<DeviceId, AgentId> },
     /// A new tombstone has been created.
     Tombstones {
         topic: TopicId,
@@ -437,7 +443,11 @@ impl Node {
             .await
         {
             // Continue processing.
-            Ok(_) => (),
+            Ok(event) => {
+                if let Some(event) = event {
+                    self.notify_system_event(event).await?;
+                }
+            }
 
             // Don't process but allow the log to proceed.
             Err(ProjectionError::InvalidOp(msg)) => {

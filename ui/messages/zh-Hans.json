@@ -364,5 +364,6 @@
     "contactRequestSent": "发出联系请求.",
     "errorAddContactDeviceLinkingNotSupported": "该法典将装置连接起来,而不是增加联系.",
     "messageStatusUnsent": "贷款",
-    "retry": "学历"
+    "retry": "学历",
+    "notificationsPermissionDenied": "通知需要出示许可。 你可以在你的装置环境中允许他们."
 }

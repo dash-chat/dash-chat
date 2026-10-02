@@ -147,10 +147,6 @@ async fn handle_push_notifications_with_fallback_messages(
                     "Successfully processed push notification, no actual notification needs to be shown.",
                 );
             }
-            // Nudge the main app to resync over the shared database (it may never
-            // see the operation this process just ingested).
-            #[cfg(target_os = "ios")]
-            super::nse_signal::post_nse_did_process();
             result
         }
         Err(err) => {
@@ -232,9 +228,13 @@ async fn handle_push_notification(
         app_data_dir
     );
 
+    #[cfg(target_os = "ios")]
+    let notification_tx = Some(super::nse_signal::nudge_on_processed_operations());
+    #[cfg(not(target_os = "ios"))]
+    let notification_tx = None;
     let acquired = node_slot::get_node_for_push_notification(
         app_data_dir,
-        NodeContext::for_push_notifications(),
+        NodeContext::for_push_notifications(notification_tx),
     )
     .await
     .context("failed to get node")?;
