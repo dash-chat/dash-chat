@@ -1053,7 +1053,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        backends::mem::MemMailbox,
+        BlobReader,
+        backends::{mem::MemMailbox, toy::ToyMailboxClient},
         testing::{DummyStore, MemStore, Msg},
     };
 
@@ -1219,7 +1220,65 @@ mod tests {
             .unwrap()
     }
 
+    /// Blob reader that always reports it has a single fixed blob and returns
+    /// its bytes.
+    struct StubBlobReader {
+        hash: iroh_blobs::Hash,
+        bytes: bytes::Bytes,
+    }
+
+    #[async_trait::async_trait]
+    impl BlobReader for StubBlobReader {
+        async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+            assert_eq!(hash, self.hash);
+            Ok(self.bytes.clone())
+        }
+
+        async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
+            hash == self.hash
+        }
+    }
+
     // -- MailboxTracker unit tests --
+
+    #[tokio::test]
+    async fn register_attaches_upload_scheduler_to_toy_client() {
+        let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
+        let url = server.server_address().unwrap().to_string();
+        let url = url.trim_end_matches('/').to_string();
+
+        let mailboxes = test_mailboxes(test_config());
+        let id: MailboxId = "test-mbx".into();
+        let data = bytes::Bytes::from_static(b"coordinated blob");
+        let hash = iroh_blobs::Hash::new(&data);
+
+        let client = ToyMailboxClient::<Msg>::new(
+            id.clone(),
+            url,
+            iroh::SecretKey::generate().public(),
+            Arc::new(crate::NoopUnfetchedBlobTracker),
+        )
+        .with_blob_reader(Arc::new(StubBlobReader { hash, bytes: data }));
+
+        mailboxes.register(client).await;
+
+        let registered = mailboxes.tracked_mailbox(&id).await.unwrap();
+        registered
+            .client()
+            .await
+            .push_blobs(
+                vec![hash],
+                Arc::new(StubBlobReader { hash, bytes: bytes::Bytes::new() }),
+                Arc::new(crate::NoopUnfetchedBlobTracker),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            !mailboxes.upload_due(&id, hash).await,
+            "registered toy client must share Mailboxes' upload scheduler"
+        );
+    }
 
     #[tokio::test(start_paused = true)]
     async fn tracker_starts_active() {

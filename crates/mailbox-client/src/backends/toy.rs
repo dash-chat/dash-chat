@@ -163,11 +163,6 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         self
     }
 
-    /// Attach the shared upload lifecycle; called by `Mailboxes::register`.
-    pub fn set_upload_lifecycle(&mut self, lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>) {
-        self.lifecycle = lifecycle;
-    }
-
     /// Announce blob hashes to the mailbox and reconcile the unfetched tracker,
     /// then push the bytes the mailbox still needs in a detached best-effort task.
     ///
@@ -304,6 +299,10 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
 
     fn url(&self) -> Option<String> {
         Some(self.base_url.clone())
+    }
+
+    fn set_upload_lifecycle(&mut self, lifecycle: Arc<dyn BlobUploadLifecycle>) {
+        self.lifecycle = lifecycle;
     }
 
     async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error> {
