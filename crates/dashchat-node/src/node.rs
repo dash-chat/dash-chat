@@ -43,7 +43,7 @@ use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
-use crate::topic::{Topic, TopicId, kind};
+use crate::topic::{Topic, TopicId};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
@@ -1943,24 +1943,9 @@ impl Node {
             })?;
         self.establish_contact(device_pubkey, agent_id).await?;
 
-        // Reply to the requester with our profile over their private reply
-        // topic. This is the point at which we first disclose our profile and
-        // signals that we accepted, letting them complete the exchange.
-        if let Some(reply_topic) = self
-            .find_contact_request_reply_topic(agent_id, device_pubkey)
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?
-        {
-            self.reply_to_contact_request(reply_topic, device_pubkey)
-                .await?;
-        } else {
-            tracing::warn!(
-                agent_id = ?agent_id.aliased(),
-                "accepted contact but found no request to reply to"
-            );
-        }
-
         let fake_agent_id = FakeAgentId::from(device_pubkey);
+        self.send_contact_request_accept(fake_agent_id).await?;
+
         self.publish_add_contact(agent_id, self.direct_chat_topic(fake_agent_id))
             .await?;
 
@@ -1983,55 +1968,23 @@ impl Node {
             .await
     }
 
-    /// Scan our advertised inbox logs for a pending [`InboxPayload::ContactRequest`]
-    /// from `agent_id`'s `device_id` and return its private reply topic, so [`Self::accept_contact`]
-    /// can send our acceptance there. Returns `None` if no matching request is stored.
-    async fn find_contact_request_reply_topic(
-        &self,
-        agent_id: AgentId,
-        device_id: DeviceId,
-    ) -> anyhow::Result<Option<Topic<kind::Inbox>>> {
-        // Only the requester's own log: anyone holding a shared code can publish
-        // a request claiming their agent id. A requester whose request expired
-        // unanswered can send another, with a new reply topic: answer the latest.
-        // The requester picks the reply topic, so one naming an inbox we already
-        // have would take it over: such a request is not answered.
-        let mut latest = None;
-        for inbox in self.local_store.get_advertised_inbox_topics().await? {
-            let log_id = LogId::from_topic(*inbox.topic);
-            for op in self.op_store.get_log(&device_id, &log_id, None).await? {
-                let Some(body) = op.body else { continue };
-                let Ok(Payload::Inbox(InboxPayload::ContactRequest {
-                    agent_id: req_agent,
-                    reply_topic,
-                    ..
-                })) = Payload::try_from_body(&body)
-                else {
-                    continue;
-                };
-                if req_agent == agent_id
-                    && latest
-                        .as_ref()
-                        .is_none_or(|(ts, _)| op.header.timestamp > *ts)
-                    && !self.local_store.is_known_inbox_topic(*reply_topic).await?
-                {
-                    latest = Some((op.header.timestamp, reply_topic));
-                }
-            }
-        }
-        Ok(latest.map(|(_, reply_topic)| reply_topic))
+    /// Whether we ever scanned `device_id`'s code, expired or not: an
+    /// acceptance of that request still counts when it comes late.
+    pub(crate) async fn has_scanned_code_of(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        Ok(self
+            .local_store
+            .get_reply_inbox_topics_with_author()
+            .await?
+            .iter()
+            .any(|(_, scanned)| *scanned == device_id))
     }
 
-    /// Reply to an incoming contact request by sending our profile to the
-    /// scanner's private reply topic, so the scanner learns it immediately over
-    /// the inbox rather than waiting for announcements sync. We stay subscribed
-    /// to the reply topic across restarts, since without a mailbox the scanner
-    /// can only sync it from us.
-    pub(crate) async fn reply_to_contact_request(
-        &self,
-        reply_topic: Topic<kind::Inbox>,
-        requester: DeviceId,
-    ) -> Result<(), Error> {
+    /// Tell the requester we accepted, disclosing our profile for the first
+    /// time. It goes into our direct chat rather than a topic the requester
+    /// chose: both sides restore the direct chat at every startup, so the
+    /// requester still gets it after we restart, and it can't be aimed at any
+    /// other topic.
+    async fn send_contact_request_accept(&self, requester: FakeAgentId) -> Result<(), Error> {
         let Some(profile) = self
             .my_profile()
             .await
@@ -2039,38 +1992,16 @@ impl Node {
         else {
             return Ok(());
         };
-        self.initialize_topic(*reply_topic)
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.publish(
-            reply_topic,
+            self.direct_chat_topic(requester),
             Payload::Inbox(InboxPayload::ContactRequestAccept {
                 profile,
                 agent_id: self.agent_id(),
             }),
-            Some("reply_to_contact_request"),
+            Some("send_contact_request_accept"),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
-        // Only once published: a saved reply topic is no longer answered, so
-        // saving it first would leave a retry after a failed publish silent.
-        if let Err(err) = self
-            .local_store
-            .add_accepted_inbox_topic(
-                InboxTopic {
-                    topic: reply_topic,
-                    expires_at: Utc::now() + self.config.contact_code_expiry,
-                },
-                requester,
-            )
-            .await
-        {
-            tracing::warn!(
-                requester = ?requester.aliased(),
-                ?err,
-                "failed to save the accepted inbox; it won't be served after a restart"
-            );
-        }
         Ok(())
     }
 
@@ -2283,26 +2214,6 @@ impl Node {
                 .await
             {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize requested inbox topic");
-                failures += 1;
-            }
-        }
-
-        self.local_store
-            .prune_expired_accepted_inbox_topics()
-            .await?;
-        for (topic, requester) in self
-            .local_store
-            .get_accepted_inbox_topics_with_requester()
-            .await?
-        {
-            if let Err(err) = self
-                .initialize_topic(*topic.topic.clone().alias_named(&format!(
-                    "accepted_inbox(peer={})",
-                    &hex::encode(&requester.as_bytes()[..4])
-                )))
-                .await
-            {
-                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize accepted inbox topic");
                 failures += 1;
             }
         }
