@@ -554,6 +554,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-rx"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a82c1a761cd7b772912fd2500f2c0a850c0c72f5f66543038393ac6cfaa3659a"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "async-signal"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2041,6 +2051,7 @@ dependencies = [
  "android_logger",
  "anyhow",
  "app_dirs2",
+ "async-rx",
  "async-trait",
  "chrono",
  "dashchat-node",
@@ -2060,7 +2071,7 @@ dependencies = [
  "mailbox-client",
  "mailbox-local-server",
  "mailbox-server",
- "nanoid 0.4.0",
+ "nanoid 0.5.0",
  "ndk-sys 0.6.0+11769913",
  "netdev 0.43.0",
  "network-watch",
@@ -2106,6 +2117,7 @@ dependencies = [
  "tauri-plugin-sentry-reporting",
  "tauri-plugin-sharekit",
  "tauri-plugin-single-instance",
+ "tauri-plugin-subscriptions",
  "tauri-plugin-system-theme",
  "tauri-plugin-updater",
  "tauri-plugin-view",
@@ -2115,6 +2127,7 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "url2",
  "uuid",
@@ -6549,7 +6562,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 2.0.2",
+ "proc-macro-crate 3.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -11224,6 +11237,30 @@ dependencies = [
  "tracing",
  "windows-sys 0.60.2",
  "zbus 5.19.0",
+]
+
+[[package]]
+name = "tauri-plugin-subscriptions"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-subscriptions?rev=885a779f88d2622b4d4c1a839d5d28bc8dcac52e#885a779f88d2622b4d4c1a839d5d28bc8dcac52e"
+dependencies = [
+ "futures",
+ "log",
+ "serde",
+ "tauri",
+ "tauri-plugin-subscriptions-macros",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "tauri-plugin-subscriptions-macros"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-subscriptions?rev=885a779f88d2622b4d4c1a839d5d28bc8dcac52e#885a779f88d2622b4d4c1a839d5d28bc8dcac52e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

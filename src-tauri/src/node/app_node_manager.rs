@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use dashchat_node::{Node, Notification};
 use p2panda_core::{cbor::encode_cbor, Body};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 
 use crate::commands::logs::simplify;
 use crate::node::node_context::{NodeContext, NodeRole};
@@ -19,7 +19,7 @@ use crate::notifications::NotifiedOperationsStore;
 /// (releasing every lock) and [`resume`](Self::resume) rebuilds a fresh one on
 /// foreground, all while the managed `AppNodeManager` itself stays put. The
 /// `Node` lives solely in `node_slot` — which also serializes build/teardown and
-/// owns the generation counter — so this type holds no node state of its own. On
+/// publishes every swap — so this type holds no node state of its own. On
 /// desktop the node is built once and never paused.
 #[derive(Clone)]
 pub struct AppNodeManager {
@@ -107,12 +107,6 @@ impl AppNodeManager {
         self.notified_operations_store.clone()
     }
 
-    /// A receiver that fires whenever the node is swapped (paused or rebuilt), so
-    /// a long-lived per-node subscription can re-bind to the current node.
-    pub fn subscribe_generation(&self) -> watch::Receiver<u64> {
-        node_slot::subscribe_generation()
-    }
-
     /// Tear the node down and release all SQLite locks, so iOS can suspend the
     /// app cleanly or a rebuild can start from nothing. Idempotent;
     /// `node_slot::clear` holds the lifecycle lock for the whole teardown so a
@@ -144,7 +138,7 @@ impl AppNodeManager {
         // resume just re-adopts the live node. A freshly built one already
         // spawned its cloud-mailbox registration retry in `AppNode::new`
         // (cancelled by the slot's teardown on the next pause), and the slot
-        // bumps the generation on a fresh build so forwarders re-bind.
+        // publishes it so subscriptions switch to it.
         let context = self.app_context(app);
         node_slot::get_or_build_node(&self.data_path, context).await?;
 

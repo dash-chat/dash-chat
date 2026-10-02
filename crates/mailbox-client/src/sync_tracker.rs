@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     marker::PhantomData,
     path::Path,
     sync::Arc,
@@ -39,13 +39,15 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
 pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, u64>>;
 
+/// One log's watermarks across mailboxes: `mailbox -> highest seq num it holds`.
+pub type LogSyncState = BTreeMap<MailboxId, u64>;
+
 /// Persistent, watch-based tracker for what each mailbox has acknowledged syncing.
 /// SQLite-backed (or in-memory for tests), with watch channels layered on top so
 /// callers can subscribe to live updates.
 pub struct MailboxSyncTracker<T, A> {
     inner: SyncBackend,
-    all_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
-    per_mailbox: Mutex<HashMap<MailboxId, watch::Sender<MailboxSyncState<T, A>>>>,
+    per_log: Mutex<HashMap<(T, A), watch::Sender<LogSyncState>>>,
     _phantom: PhantomData<fn() -> (T, A)>,
 }
 
@@ -81,12 +83,9 @@ where
         let pool = SqlitePoolOptions::new().connect_with(opts).await?;
         sqlx::query(SCHEMA).execute(&pool).await?;
 
-        let initial_ids = load_all_ids_sqlite(&pool).await?;
-        let (all_ids_tx, _) = watch::channel(initial_ids);
         Ok(Self {
             inner: SyncBackend::Sqlite(pool),
-            all_ids_tx,
-            per_mailbox: Mutex::new(HashMap::new()),
+            per_log: Mutex::new(HashMap::new()),
             _phantom: PhantomData,
         })
     }
@@ -94,11 +93,9 @@ where
     /// In-memory variant for tests that need to avoid sqlx's pool internals
     /// (e.g. tokio mock-time tests where the pool's acquire_timeout would fire).
     pub fn in_memory() -> Self {
-        let (all_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
             inner: SyncBackend::Mem(Arc::new(Mutex::new(MemRows::default()))),
-            all_ids_tx,
-            per_mailbox: Mutex::new(HashMap::new()),
+            per_log: Mutex::new(HashMap::new()),
             _phantom: PhantomData,
         }
     }
@@ -109,31 +106,28 @@ where
         }
     }
 
-    /// Subscribe to the set of mailbox ids that have ever recorded sync state.
-    pub fn all_mailbox_ids(&self) -> watch::Receiver<BTreeSet<MailboxId>> {
-        self.all_ids_tx.subscribe()
-    }
-
-    /// Subscribe to per-mailbox sync watermarks. Lazily creates the watch on
-    /// first call, seeded from persisted state.
-    pub async fn sync_state(
+    /// Subscribe to one log's watermarks across mailboxes. Lazily creates the
+    /// watch on first call, seeded from persisted state.
+    pub async fn sync_state_for_log(
         &self,
-        mailbox: &MailboxId,
-    ) -> anyhow::Result<watch::Receiver<MailboxSyncState<T, A>>> {
-        let mut per_mailbox = self.per_mailbox.lock().await;
-        if let Some(tx) = per_mailbox.get(mailbox) {
+        topic: &T,
+        author: &A,
+    ) -> anyhow::Result<watch::Receiver<LogSyncState>> {
+        let mut per_log = self.per_log.lock().await;
+        let log = (topic.clone(), author.clone());
+        if let Some(tx) = per_log.get(&log) {
             return Ok(tx.subscribe());
         }
-        let initial = self.get_all_for_mailbox(mailbox).await?;
+        let initial = self.get_synced_for_log(topic, author).await?;
         let (tx, rx) = watch::channel(initial);
-        per_mailbox.insert(mailbox.clone(), tx);
+        per_log.insert(log, tx);
         Ok(rx)
     }
 
     /// Record a batch of `(topic, author, seq)` watermarks for one mailbox in
     /// a single SQL statement (multi-row INSERT with upsert). Updates the
-    /// per-mailbox sync-state watch (if subscribed) and the all-ids watch
-    /// when a new mailbox is observed.
+    /// watches of the logs that are subscribed, and drops the watches nobody
+    /// subscribes to anymore.
     pub async fn record_synced(
         &self,
         mailbox: &MailboxId,
@@ -187,29 +181,18 @@ where
             }
         }
 
-        self.all_ids_tx
-            .send_if_modified(|ids| ids.insert(mailbox.clone()));
-
-        let per_mailbox = self.per_mailbox.lock().await;
-        if let Some(tx) = per_mailbox.get(mailbox) {
-            tx.send_if_modified(|state| {
-                let mut changed = false;
-                for (t, a, s) in entries {
-                    let map = state.entry(t.clone()).or_default();
-                    match map.get_mut(a) {
-                        Some(entry) if *s > *entry => {
-                            *entry = *s;
-                            changed = true;
-                        }
-                        None => {
-                            map.insert(a.clone(), *s);
-                            changed = true;
-                        }
-                        _ => {}
+        let mut per_log = self.per_log.lock().await;
+        per_log.retain(|_, tx| tx.receiver_count() > 0);
+        for (t, a, s) in entries {
+            if let Some(tx) = per_log.get(&(t.clone(), a.clone())) {
+                tx.send_if_modified(|state| {
+                    let advanced = state.get(mailbox).is_none_or(|held| s > held);
+                    if advanced {
+                        state.insert(mailbox.clone(), *s);
                     }
-                }
-                changed
-            });
+                    advanced
+                });
+            }
         }
 
         Ok(())
@@ -446,17 +429,11 @@ where
                 rows.statuses.remove(mailbox);
             }
         }
-        self.all_ids_tx.send_if_modified(|ids| ids.remove(mailbox));
-        self.per_mailbox.lock().await.remove(mailbox);
+        for tx in self.per_log.lock().await.values() {
+            tx.send_if_modified(|state| state.remove(mailbox).is_some());
+        }
         Ok(())
     }
-}
-
-async fn load_all_ids_sqlite(pool: &SqlitePool) -> anyhow::Result<BTreeSet<MailboxId>> {
-    let rows: Vec<(String,)> = sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state")
-        .fetch_all(pool)
-        .await?;
-    Ok(rows.into_iter().map(|(m,)| m).collect())
 }
 
 fn encode<T: Serialize>(value: &T) -> anyhow::Result<Vec<u8>> {
@@ -682,42 +659,8 @@ mod tests {
             Some(10),
         );
 
-        let ids = store.all_mailbox_ids().borrow().clone();
-        assert!(ids.contains("mb1"));
-        assert!(ids.contains("mb2"));
-    }
-
-    #[tokio::test]
-    async fn all_mailbox_ids_watch_updates_on_record_synced_and_drop() {
-        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::in_memory();
-        let mut rx = store.all_mailbox_ids();
-        assert!(rx.borrow().is_empty());
-
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 1)])
-            .await
-            .unwrap();
-        rx.changed().await.unwrap();
-        assert!(rx.borrow().contains("mb1"));
-
-        store
-            .record_synced(&"mb2".into(), &[(7u8, 'a', 1)])
-            .await
-            .unwrap();
-        rx.changed().await.unwrap();
-        assert!(rx.borrow().contains("mb2"));
-
-        // Re-recording for an existing mailbox should NOT bump the watch.
-        store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 2)])
-            .await
-            .unwrap();
-        assert!(!rx.has_changed().unwrap());
-
-        store.drop_mailbox(&"mb1".into()).await.unwrap();
-        rx.changed().await.unwrap();
-        assert!(!rx.borrow().contains("mb1"));
-        assert!(rx.borrow().contains("mb2"));
+        let for_log = store.sync_state_for_log(&8u8, &'c').await.unwrap();
+        assert_eq!(*for_log.borrow(), BTreeMap::from([("mb2".to_string(), 5)]));
     }
 
     async fn record_status_round_trip_impl(b: Backend) {
@@ -812,26 +755,41 @@ mod tests {
     async fn record_url_round_trip_mem() {
         record_url_round_trip_impl(Backend::Mem).await;
     }
-    #[tokio::test]
-    async fn sync_state_watch_updates_on_record_synced() {
-        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::in_memory();
-        let mut rx = store.sync_state(&"mb1".into()).await.unwrap();
-        assert!(rx.borrow().is_empty());
 
+    #[tokio::test]
+    async fn sync_state_for_log_watch_updates_only_on_changes_to_its_log() {
+        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::in_memory();
         store
             .record_synced(&"mb1".into(), &[(7u8, 'a', 3)])
             .await
             .unwrap();
-        rx.changed().await.unwrap();
-        assert_eq!(rx.borrow().get(&7u8).and_then(|m| m.get(&'a')), Some(&3));
+        let mut rx = store.sync_state_for_log(&7u8, &'a').await.unwrap();
+        assert_eq!(
+            *rx.borrow_and_update(),
+            BTreeMap::from([("mb1".to_string(), 3)])
+        );
 
+        // Another log and a stale watermark leave this log's watch untouched.
         store
-            .record_synced(&"mb1".into(), &[(7u8, 'a', 5), (8u8, 'b', 1)])
+            .record_synced(&"mb1".into(), &[(8u8, 'b', 1), (7u8, 'a', 2)])
             .await
             .unwrap();
-        rx.changed().await.unwrap();
-        let snap = rx.borrow().clone();
-        assert_eq!(snap.get(&7u8).and_then(|m| m.get(&'a')), Some(&5));
-        assert_eq!(snap.get(&8u8).and_then(|m| m.get(&'b')), Some(&1));
+        assert!(!rx.has_changed().unwrap());
+
+        store
+            .record_synced(&"mb2".into(), &[(7u8, 'a', 5)])
+            .await
+            .unwrap();
+        assert!(rx.has_changed().unwrap());
+        assert_eq!(
+            *rx.borrow_and_update(),
+            BTreeMap::from([("mb1".to_string(), 3), ("mb2".to_string(), 5)])
+        );
+
+        store.drop_mailbox(&"mb1".into()).await.unwrap();
+        assert_eq!(
+            *rx.borrow_and_update(),
+            BTreeMap::from([("mb2".to_string(), 5)])
+        );
     }
 }

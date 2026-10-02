@@ -1,5 +1,3 @@
-import type { DeviceId, TopicId } from '../p2panda/types';
-
 export type MailboxId = string;
 
 export type SyncStatus = 'Active' | 'Degraded' | 'Stopped';
@@ -17,6 +15,3 @@ export interface LastError {
 	at: string;
 	message: string;
 }
-
-/// Synced-up-to sequence number per (topic, author), shaped as `topic → author → seq`.
-export type MailboxSyncState = Record<TopicId, Record<DeviceId, number>>;
