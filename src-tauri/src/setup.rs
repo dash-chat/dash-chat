@@ -18,7 +18,7 @@ pub(crate) async fn track_cloud_mailbox(node: &Node) -> anyhow::Result<String> {
     // known only by id and is not dialable.
     node.insert_peer_addr(health.endpoint_addr).await?;
     if !node.mailboxes.is_tracked(&health.mailbox_id).await {
-        let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
+        let mailbox_client = mailbox_client::backends::toy::ToyMailboxClient::new(
             health.mailbox_id,
             mailbox_url.clone(),
             node.endpoint_id(),

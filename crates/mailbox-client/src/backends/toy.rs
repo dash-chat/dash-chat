@@ -1,22 +1,14 @@
+use once_cell::sync::Lazy;
 use std::collections::{BTreeMap, HashMap};
 
 use mailbox_server::{
     Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest, StoreBlipsResponse,
 };
 
-use super::*;
-
-/// Trait bounds the toy client requires of an item's `Topic` and `Author` types.
-///
-/// CONTRACT: the `Serialize`/`Deserialize` impls of these types MUST round-trip
-/// through a single JSON string (e.g. `serializer.collect_str(&hex)`). The toy
-/// client encodes topic/author ids as HTTP map keys via [`stringify`], which
-/// strips the surrounding quotes; a `Serialize` impl that emits anything other
-/// than a JSON string (an array, object, or number) silently produces a
-/// malformed key. `dashchat-node` pins this for the real `TopicId`/`DeviceId`
-/// types via its `serializes_as_json_string_for_mailbox_key` tests.
-pub trait ToyItemTraits: ItemTraits + Serialize + DeserializeOwned {}
-impl<T> ToyItemTraits for T where T: ItemTraits + Serialize + DeserializeOwned {}
+use crate::{
+    FetchRequest, FetchResponse, FetchTopicResponse, HTTP_CLIENT, MailboxClient, MailboxId,
+    MailboxItem, MailboxKey, PublishResponse,
+};
 
 /// Client-side timeout for a single blob upload, larger than the default HTTP
 /// timeout because a blob can be big.
@@ -134,7 +126,7 @@ fn classify_upload_error(err: reqwest::Error) -> UploadError {
 /// its fetch backstop by its own fixed grace window and lets that upload land
 /// first without a duplicate transfer; pass `false` to have the mailbox fetch
 /// immediately (no upload is coming).
-pub async fn send_register_hashes(
+async fn send_register_hashes(
     base_url: &str,
     hashes: Vec<iroh_blobs::Hash>,
     sender_pubkey: iroh::EndpointId,
@@ -331,11 +323,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
 }
 
 #[async_trait::async_trait]
-impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item>
-where
-    Item::Topic: ToyItemTraits,
-    Item::Author: ToyItemTraits,
-{
+impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
     fn id(&self) -> MailboxId {
         self.id.clone()
     }
@@ -356,8 +344,8 @@ where
             ops.iter().flat_map(|op| op.blob_hashes()).collect();
 
         for op in ops {
-            let topic_id = Self::encode_topic_id(&op.topic());
-            let log_id = Self::device_id_to_log_id(&op.author());
+            let topic_id = op.topic().to_mailbox_key();
+            let log_id = op.author().to_mailbox_key();
             let seq_num = op.seq_num();
             let blip = Self::serialize_operation(&op)?;
 
@@ -386,9 +374,9 @@ where
 
             let mut result = PublishResponse::default();
             for (topic_str, authors) in response.watermarks {
-                let topic = Self::log_id_from_string(&topic_str)?;
+                let topic = Item::Topic::from_mailbox_key(&topic_str)?;
                 for (author_str, watermark) in authors {
-                    let author = Self::device_id_from_string(&author_str)?;
+                    let author = Item::Author::from_mailbox_key(&author_str)?;
                     result.0.entry(topic).or_default().insert(author, watermark);
                 }
             }
@@ -426,16 +414,15 @@ where
         // Convert FetchRequest to GetBlipsRequest
         let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
 
-        for (log_id, authors) in request.0.iter() {
-            let topic_id = Self::encode_topic_id(log_id);
-            let mut log_map: BTreeMap<String, u64> = BTreeMap::new();
+        for (topic, authors) in request.0.iter() {
+            let topic_id = topic.to_mailbox_key();
+            let mut author_map: BTreeMap<String, u64> = BTreeMap::new();
 
-            for (device_id, height) in authors.iter() {
-                let server_log_id = Self::device_id_to_log_id(device_id);
-                log_map.insert(server_log_id, *height);
+            for (author, height) in authors.iter() {
+                author_map.insert(author.to_mailbox_key(), *height);
             }
 
-            topics.insert(topic_id, log_map);
+            topics.insert(topic_id, author_map);
         }
 
         let get_request = GetBlipsRequest { topics };
@@ -461,7 +448,7 @@ where
         let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
 
         for (topic_id_str, topic_response) in response.blips_by_topic {
-            let log_id = Self::log_id_from_string(&topic_id_str)?;
+            let topic = Item::Topic::from_mailbox_key(&topic_id_str)?;
 
             // Deserialize blips to operations
             let mut items = Vec::new();
@@ -474,40 +461,18 @@ where
             // Convert missing map
             let mut missing: HashMap<Item::Author, Vec<u64>> = HashMap::new();
             for (author_str, seq_nums) in topic_response.missing {
-                let device_id = Self::device_id_from_string(&author_str)?;
-                missing.insert(device_id, seq_nums);
+                let author = Item::Author::from_mailbox_key(&author_str)?;
+                missing.insert(author, seq_nums);
             }
 
-            result.insert(log_id, FetchTopicResponse { items, missing });
+            result.insert(topic, FetchTopicResponse { items, missing });
         }
 
         Ok(FetchResponse(result))
     }
 }
 
-impl<Item: MailboxItem> ToyMailboxClient<Item>
-where
-    Item::Topic: ToyItemTraits,
-    Item::Author: ToyItemTraits,
-{
-    fn encode_topic_id(topic_id: &Item::Topic) -> String {
-        stringify(topic_id)
-    }
-
-    fn device_id_to_log_id(device_id: &Item::Author) -> String {
-        stringify(device_id)
-    }
-
-    fn log_id_from_string(s: &str) -> Result<Item::Topic, anyhow::Error> {
-        let topic: Item::Topic = unstringify(s)?;
-        Ok(topic)
-    }
-
-    fn device_id_from_string(s: &str) -> Result<Item::Author, anyhow::Error> {
-        let author: Item::Author = unstringify(s)?;
-        Ok(author)
-    }
-
+impl<Item: MailboxItem> ToyMailboxClient<Item> {
     fn serialize_operation(item: &Item) -> Result<Blip, anyhow::Error> {
         let bytes = p2panda_core::cbor::encode_cbor(item)?;
         Ok(Blip::new(bytes))
@@ -518,69 +483,112 @@ where
     }
 }
 
-pub fn stringify(value: impl Serialize) -> String {
-    serde_json::to_string(&value)
-        .expect("value is JSON-serializable")
-        .trim_matches('"')
-        .to_string()
-}
-
-pub fn unstringify<T: DeserializeOwned>(s: &str) -> Result<T, anyhow::Error> {
-    serde_json::from_str(&format!("\"{}\"", s))
-        .map_err(|e| anyhow::anyhow!("Failed to unstringify: {}", e))
-}
-
-/// Poll the mailbox `/health` endpoint until it responds, confirming the server
-/// is listening before clients try to use it.
-pub async fn wait_for_mailbox_health(url: &str) {
-    let health = format!("{url}/health");
-    for _ in 0..100 {
-        if let Ok(resp) = crate::HTTP_CLIENT.get(&health).send().await {
-            if resp.status().is_success() {
-                return;
-            }
-        }
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    }
-    panic!("mailbox /health never became ready at {health}");
-}
-
 #[cfg(test)]
 mod tests {
-    use serde::Deserialize;
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
 
-    #[derive(Debug, PartialEq)]
-    struct Abecedarian(u8);
+    type StoredBlips = BTreeMap<String, BTreeMap<String, BTreeMap<u64, mailbox_server::Blip>>>;
 
-    impl Serialize for Abecedarian {
-        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            serializer.serialize_str(&format!(
-                "{}",
-                "abcdefghijklmnopqrstuvwxyz"
-                    .chars()
-                    .take(self.0 as usize)
-                    .collect::<String>()
-            ))
-        }
+    fn msg(topic: u8, author: char, seq: u64) -> crate::testing::Msg {
+        crate::testing::Msg { topic, author, seq }
     }
 
-    impl<'de> Deserialize<'de> for Abecedarian {
-        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            let s = String::deserialize(deserializer)?;
-            let value = s.chars().count() as u8;
-            Ok(Abecedarian(value))
-        }
-    }
+    /// Spawn a fake mailbox server on a free port. It only stores blips and
+    /// echoes them back, plus computes simple contiguous watermarks; the
+    /// `missing` vector is always empty because callers only need to verify
+    /// that topic/author keys encode and decode correctly through the toy
+    /// client. Returns the server's base URL and shared storage.
+    async fn spawn_fake_mailbox_server() -> (String, Arc<Mutex<StoredBlips>>) {
+        let stored: Arc<Mutex<StoredBlips>> = Arc::new(Mutex::new(BTreeMap::new()));
+        let stored_in_store = stored.clone();
+        let stored_in_get = stored.clone();
 
-    #[test]
-    fn test_stringify_unstringify() {
-        let topic = Abecedarian(10);
-        let topic_str = stringify(&topic);
-        assert_eq!(topic_str, "abcdefghij");
-        let topic_unstr = unstringify(&topic_str).unwrap();
-        assert_eq!(topic, topic_unstr);
+        let app = axum::Router::new()
+            .route(
+                "/blips/store",
+                axum::routing::post(
+                    move |axum::Json(req): axum::Json<mailbox_server::StoreBlipsRequest>| async move {
+                        let mut stored = stored_in_store.lock().unwrap();
+                        let mut watermarks: BTreeMap<String, BTreeMap<String, Option<u64>>> =
+                            BTreeMap::new();
+                        for (topic, authors) in req.blips {
+                            let topic_entry = stored.entry(topic.clone()).or_default();
+                            let mut topic_watermarks: BTreeMap<String, Option<u64>> =
+                                BTreeMap::new();
+                            for (author, seqs) in authors {
+                                let author_entry = topic_entry.entry(author.clone()).or_default();
+                                for (seq, blip) in &seqs {
+                                    author_entry.insert(*seq, blip.clone());
+                                }
+                                let watermark = seqs
+                                    .keys()
+                                    .enumerate()
+                                    .take_while(|(i, seq)| **seq == *i as u64)
+                                    .map(|(_, seq)| seq)
+                                    .copied()
+                                    .last();
+                                topic_watermarks.insert(author, watermark);
+                            }
+                            watermarks.insert(topic, topic_watermarks);
+                        }
+                        axum::Json(mailbox_server::StoreBlipsResponse { watermarks })
+                    },
+                ),
+            )
+            .route(
+                "/blips/get",
+                axum::routing::post(
+                    move |axum::Json(req): axum::Json<mailbox_server::GetBlipsRequest>| async move {
+                        let stored = stored_in_get.lock().unwrap();
+                        let mut blips_by_topic: BTreeMap<
+                            String,
+                            mailbox_server::GetBlipsForTopicResponse,
+                        > = BTreeMap::new();
+                        for (topic, authors) in req.topics {
+                            let mut topic_blips: BTreeMap<String, BTreeMap<u64, mailbox_server::Blip>> =
+                                BTreeMap::new();
+                            let mut missing: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+                            if let Some(topic_entry) = stored.get(&topic) {
+                                for (author, min_seq) in authors {
+                                    if let Some(author_entry) = topic_entry.get(&author) {
+                                        let filtered: BTreeMap<u64, mailbox_server::Blip> =
+                                            author_entry
+                                                .iter()
+                                                .filter(|(seq, _)| **seq > min_seq)
+                                                .map(|(seq, blip)| (*seq, blip.clone()))
+                                                .collect();
+                                        topic_blips.insert(author, filtered);
+                                    } else {
+                                        missing.insert(author, Vec::new());
+                                    }
+                                }
+                            } else {
+                                for (author, _) in authors {
+                                    missing.insert(author, Vec::new());
+                                }
+                            }
+                            blips_by_topic.insert(
+                                topic,
+                                mailbox_server::GetBlipsForTopicResponse {
+                                    blips: topic_blips,
+                                    missing,
+                                },
+                            );
+                        }
+                        axum::Json(mailbox_server::GetBlipsResponse { blips_by_topic })
+                    },
+                ),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+        (base_url, stored)
     }
 
     #[tokio::test]
@@ -608,7 +616,7 @@ mod tests {
         });
         let base_url = format!("http://{addr}");
 
-        let already = crate::toy::send_register_hashes(
+        let already = send_register_hashes(
             &base_url,
             vec![h_stored, h_new],
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
@@ -617,6 +625,59 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(already, vec![h_stored]);
+    }
+
+    #[tokio::test]
+    async fn publish_and_fetch_round_trip_msg_keys() {
+        let (base_url, stored) = spawn_fake_mailbox_server().await;
+
+        let client = ToyMailboxClient::<crate::testing::Msg>::new(
+            "mbx".to_string(),
+            base_url,
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
+        );
+
+        let response = client
+            .publish(vec![msg(42, 'a', 0), msg(42, 'a', 1), msg(42, 'b', 0)])
+            .await
+            .unwrap();
+
+        // The watermark response decoded the string keys back to Msg's Topic
+        // and Author types.
+        assert_eq!(response.watermark(&42, &'a'), Some(1));
+        assert_eq!(response.watermark(&42, &'b'), Some(0));
+
+        // The keys were encoded as bare strings, not JSON arrays/objects.
+        let stored = stored.lock().unwrap();
+        assert_eq!(stored.keys().collect::<Vec<_>>(), vec!["42"]);
+        let author_keys: std::collections::BTreeSet<&str> =
+            stored["42"].keys().map(|s| s.as_str()).collect();
+        assert_eq!(author_keys, ["a", "b"].iter().copied().collect());
+        drop(stored);
+
+        // Fetch back the items above the reported local height.
+        let request = FetchRequest(BTreeMap::from([(
+            42u8,
+            BTreeMap::from([('a', 0u64), ('b', 0u64)]),
+        )]));
+        let response = client.fetch(request).await.unwrap();
+
+        let topic_response = response.0.get(&42).expect("topic 42");
+        let author_a_seqs: Vec<u64> = topic_response
+            .items
+            .iter()
+            .filter(|m| m.author() == 'a')
+            .map(|m| m.seq_num())
+            .collect();
+        let author_b_seqs: Vec<u64> = topic_response
+            .items
+            .iter()
+            .filter(|m| m.author() == 'b')
+            .map(|m| m.seq_num())
+            .collect();
+        assert_eq!(author_a_seqs, vec![1]);
+        assert!(author_b_seqs.is_empty());
     }
 
     #[tokio::test]

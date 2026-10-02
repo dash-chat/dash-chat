@@ -341,8 +341,6 @@ impl<'de, K: TopicKind> Deserialize<'de> for Topic<K> {
 mod tests {
     use super::*;
 
-    use mailbox_client::toy;
-
     const TOPIC_BYTES: [u8; 32] = [0xab; 32];
     const TOPIC_HEX: &str = "abababababababababababababababababababababababababababababababab";
 
@@ -359,34 +357,6 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&topic).unwrap(),
             format!("\"{}\"", TOPIC_HEX)
-        );
-    }
-
-    /// The toy mailbox client uses topic/author ids as HTTP map keys by JSON-
-    /// serializing them and stripping the surrounding quotes (`stringify`),
-    /// reversing that to decode (`unstringify`). That only works if the type's
-    /// `Serialize` impl emits a single JSON string. These tests pin that wire
-    /// format for the real `TopicId` and `DeviceId` so a future `Serialize`
-    /// change (e.g. emitting a byte array) can't silently corrupt mailbox keys.
-    /// See `ToyItemTraits` in `mailbox-client`.
-    #[test]
-    fn topic_id_stringifies_to_bare_hex_for_mailbox_key() {
-        let topic: TopicId = Topic::<kind::Untyped>::new(TOPIC_BYTES).into();
-        let key = toy::stringify(topic);
-        assert_eq!(key, TOPIC_HEX);
-        assert!(!key.contains('"'));
-        assert_eq!(toy::unstringify::<TopicId>(&key).unwrap(), topic);
-    }
-
-    #[test]
-    fn device_id_stringifies_to_bare_hex_for_mailbox_key() {
-        let device_id = crate::DeviceId::from(SigningKey::from_bytes(&[0xcd; 32]).verifying_key());
-        let key = toy::stringify(device_id);
-        assert_eq!(key, hex::encode(device_id.as_bytes()));
-        assert!(!key.contains('"'));
-        assert_eq!(
-            toy::unstringify::<crate::DeviceId>(&key).unwrap(),
-            device_id
         );
     }
 }
