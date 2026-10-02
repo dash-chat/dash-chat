@@ -573,15 +573,21 @@ const PROCESS_LIFECYCLE_DISPATCH_MS = 1_500;
  *  a scroll, and well under the app's 500ms long-press threshold. */
 const TAP_HOLD_MS = 100;
 
-/** How long a click may take to reach the page after its touch. */
-const CLICK_DELIVERY_MS = 2_000;
-
 /** Between the two reads of a tap target's centre that must agree before it
  *  is tapped: a fraction of the app's longest open transition (400ms). */
 const TAP_SETTLE_MS = 100;
 
 /** How many times to re-tap an element whose tap never reached the page. */
 const TAP_ATTEMPTS = 3;
+
+/** How long a busy page gets to turn a touch into its click before the tap
+ *  counts as dropped. Asked any sooner, a click that is merely late reads as
+ *  a miss, and the retry waits on an element the first tap has already
+ *  navigated away from. */
+const CLICK_DISPATCH_MS = 3_000;
+
+/** How often the page is asked whether the click has fired yet. */
+const CLICK_POLL_MS = 100;
 
 /** A fresh handle for `element`, resolved again through the same parent chain
  *  it was originally found by, or null if it is no longer in the page. */
@@ -753,7 +759,8 @@ async function tapTookEffect(
  *  round trip takes most of a second, so a page that moves in between leaves
  *  the tap landing on something else — which still fires a click, just not the
  *  one that was asked for. The flag lives on documentElement because a click
- *  that lands usually starts a navigation and takes the element with it. */
+ *  that lands usually starts a navigation and takes the element with it, and
+ *  it records a click anywhere so that the wait for it ends on the first one. */
 async function clickReachedElement(
 	agent: WebdriverIO.Browser,
 	element: WebdriverIO.Element,
@@ -805,22 +812,28 @@ async function clickReachedElement(
 		.pause(TAP_HOLD_MS)
 		.up()
 		.perform();
-	// A busy main thread delivers the click after the touch returns; a check
-	// made at once calls it a miss, and the retry taps whatever the click had
-	// already turned the target into.
+	const tappedAt = Date.now();
+	let polls = 0;
 	let landed: string | undefined;
 	try {
 		await agent.waitUntil(
 			async () => {
+				polls++;
 				landed = await agent.execute(
 					() => document.documentElement.dataset.e2eClick,
 				);
 				return landed !== undefined;
 			},
-			{ timeout: CLICK_DELIVERY_MS, interval: 100 },
+			{ timeout: CLICK_DISPATCH_MS, interval: CLICK_POLL_MS },
 		);
 	} catch {
+		console.log(`[tap-timing] no click in ${Date.now() - tappedAt}ms`);
 		return 'none';
+	}
+	if (polls > 1 || landed !== 'target') {
+		console.log(
+			`[tap-timing] ${landed} on poll ${polls}, ${Date.now() - tappedAt}ms after the touch`,
+		);
 	}
 	return landed === 'target' || landed === 'elsewhere' ? landed : 'none';
 }
