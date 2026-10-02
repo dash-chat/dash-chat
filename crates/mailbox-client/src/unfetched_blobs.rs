@@ -44,13 +44,14 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
         let Some(tracked) = mailboxes.tracked_mailbox(&mailbox_id).await else {
             continue; // mailbox not currently registered; retry when it returns
         };
-        let Some(url) = tracked.client().await.url() else {
+        let client = tracked.client().await;
+        let Some(url) = client.url() else {
             continue; // non-HTTP mailbox (e.g. in-memory test mailbox)
         };
 
         let mut held = Vec::new();
         for hash in hashes {
-            if mailboxes.upload_due(&mailbox_id, hash).await && reader.has_blob(hash).await {
+            if mailboxes.upload_due_at(&url, hash) && reader.has_blob(hash).await {
                 held.push(hash);
             }
         }
@@ -64,7 +65,6 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
 
         // Upload again too: the upload that followed these blobs' message may
         // have been cut off, and the mailbox can't fetch from a phone it can't dial.
-        let client = tracked.client().await;
         if let Err(err) = client
             .push_blobs(held, reader.clone(), tracker.clone())
             .await
