@@ -8,8 +8,8 @@
  * the machine never runs more than one extra app. Then the mailbox link is cut
  * and the main agents must still deliver to each other both ways.
  *
- * The main agents are whatever PLATFORMS provides (desktop by default, phones
- * if asked for); the short-lived ones are always desktop.
+ * The main agents are the phones PHONES lists when there are any, desktop
+ * otherwise; the short-lived ones are always desktop.
  *
  * Skips itself unless E2E_STRESS=1, and against a remote mailbox, whose link
  * can't be cut. Run it with:

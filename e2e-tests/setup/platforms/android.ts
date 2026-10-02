@@ -24,7 +24,13 @@ import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { E2E_RELAY_URL } from '../relay';
 import { runTurboBuild } from '../turbo-build';
-import { WIFI_REASSOCIATE_MS, type WifiInfo, waitForWifi } from '../wifi';
+import {
+	WIFI_REASSOCIATE_MS,
+	type WifiInfo,
+	hostNetworkVerdict,
+	networkOf,
+	waitForWifi,
+} from '../wifi';
 import {
 	type AgentPlatform,
 	type PrepareContext,
@@ -121,8 +127,8 @@ function captureAndroidDevShellEnv(): NodeJS.ProcessEnv {
 	return env;
 }
 
-// The appium server is spawned by @wdio/appium-service with this process's
-// env, and its uiautomator2 driver locates adb through PATH/ANDROID_HOME —
+// The appium server is spawned by startAppium (setup/appium-server.ts) with
+// this process's env, and its uiautomator2 driver locates adb through PATH/ANDROID_HOME —
 // the one part of the captured shell env that must land in process.env.
 function applyAppiumServerEnv() {
 	for (const key of ['PATH', 'ANDROID_HOME', 'ANDROID_SDK_ROOT']) {
@@ -632,7 +638,12 @@ export function pressAndroidHome(udid: string): void {
 }
 
 export function androidWifiInfo(udid: string): WifiInfo {
-	return { ssid: androidWifiSsid(udid), address: androidWifiAddress(udid) };
+	const [address, prefixLength] = androidWifiInterface(udid);
+	return {
+		ssid: androidWifiSsid(udid),
+		address,
+		network: networkOf(address, prefixLength),
+	};
 }
 
 /** Whether the device reaches the internet over its current network: a TCP
@@ -646,16 +657,21 @@ export function androidHasInternet(udid: string): boolean {
 	}
 }
 
-/** The device's current IPv4 address on wlan0, or '' while it has none. While
- *  wifi is down the interface itself disappears and adb exits non-zero, which
- *  is the same "no address yet" answer as an empty match. */
-function androidWifiAddress(udid: string): string {
+/** The IPv4 address and prefix length of wlan0; '' and 0 while it has none.
+ *  While wifi is down the interface itself disappears and adb exits
+ *  non-zero, which is the same "no address yet" answer as an empty match. */
+function androidWifiInterface(udid: string): [string, number] {
 	try {
 		const out = adbShell(udid, 'ip -4 addr show wlan0');
-		return out.match(/inet (\d+\.\d+\.\d+\.\d+)/)?.[1] ?? '';
+		const match = out.match(/inet (\d+\.\d+\.\d+\.\d+)\/(\d+)/);
+		return match === null ? ['', 0] : [match[1], Number(match[2])];
 	} catch {
-		return '';
+		return ['', 0];
 	}
+}
+
+function androidWifiAddress(udid: string): string {
+	return androidWifiInterface(udid)[0];
 }
 
 /** Quote `value` for the device's shell, through the host shell that `adb
@@ -681,7 +697,7 @@ export function androidWifiSsid(udid: string): string {
 
 /** Join `ssid` (an empty `passphrase` means an open network), saving it on
  *  the device if it is new, and resolve with the IPv4 address obtained on it. */
-export async function connectAndroidWifi(
+async function connectAndroidWifi(
 	udid: string,
 	ssid: string,
 	passphrase: string,
@@ -703,23 +719,89 @@ export async function connectAndroidWifi(
 	);
 }
 
-/** Forget every saved network called `ssid`, which drops the association if
- *  that is the current one, and resolve with the IPv4 address the device is
- *  on once it has settled on another saved network. */
-export async function forgetAndroidWifi(
+/** Forget every saved network named in `ssids`, without waiting for where
+ *  the device lands. */
+export function forgetAndroidWifi(udid: string, ssids: string[]): void {
+	const wanted = new Set(ssids);
+	for (const line of adbShell(udid, 'cmd wifi list-networks').split('\n')) {
+		const match = line.match(/^(\d+)\s+(.+?)\s+\S+\s*$/);
+		if (match !== null && wanted.has(match[2])) {
+			adbShell(udid, `cmd wifi forget-network ${match[1]}`);
+		}
+	}
+}
+
+/** Join `ssid` as the one test network saved on the device — every other of
+ *  `testNetworks` is forgotten once it is on — and resolve with the IPv4 address
+ *  obtained on it. */
+export async function joinAndroidWifi(
 	udid: string,
 	ssid: string,
+	passphrase: string,
+	testNetworks: string[],
 ): Promise<string> {
+	const address = await connectAndroidWifi(udid, ssid, passphrase);
+	forgetAndroidWifi(
+		udid,
+		testNetworks.filter(other => other !== ssid),
+	);
+	return address;
+}
+
+/** Get the device onto the network the host is on from wherever it is: radio
+ *  on, every one of `testNetworks` forgotten, and then every other network it
+ *  lands on that is clearly not the host's forgotten in turn. Once it is
+ *  surely on the host's network every other saved network goes too, so all it
+ *  can ever fall back to is that one; while that is unsure nothing more is
+ *  forgotten, and the caller's reachability check names the network. */
+export async function leaveAndroidWifi(
+	udid: string,
+	testNetworks: string[],
+): Promise<WifiInfo> {
+	adbShell(udid, 'svc wifi enable');
+	forgetAndroidWifi(udid, testNetworks);
+	let left: WifiInfo | null = null;
+	for (;;) {
+		const info = await settledAndroidWifi(udid, left);
+		const verdict = hostNetworkVerdict(info.address);
+		if (verdict === 'host') forgetAndroidWifiExcept(udid, info.ssid);
+		if (verdict !== 'elsewhere') return info;
+		forgetAndroidWifi(udid, [info.ssid]);
+		left = info;
+	}
+}
+
+/** Where the device is once it is associated and holds an address, on a
+ *  network other than `left`: the SSID changes before the interface drops
+ *  the old address, so both have to have moved on. */
+async function settledAndroidWifi(
+	udid: string,
+	left: WifiInfo | null,
+): Promise<WifiInfo> {
+	await waitForWifi(
+		() => {
+			const { ssid, address } = androidWifiInfo(udid);
+			if (ssid === '' || address === '') return '';
+			if (left !== null && (ssid === left.ssid || address === left.address)) {
+				return '';
+			}
+			return ssid;
+		},
+		`device settled on no network the host can reach within ${WIFI_REASSOCIATE_MS / 1_000}s; ` +
+			"save the host's Wi-Fi on it once by hand",
+	);
+	return androidWifiInfo(udid);
+}
+
+/** Forget every saved network but `keep`. A network is listed once per
+ *  security type it accepts, so its id can come up twice. */
+function forgetAndroidWifiExcept(udid: string, keep: string): void {
 	const ids = new Set<string>();
 	for (const line of adbShell(udid, 'cmd wifi list-networks').split('\n')) {
 		const match = line.match(/^(\d+)\s+(.+?)\s+\S+\s*$/);
-		if (match !== null && match[2] === ssid) ids.add(match[1]);
+		if (match !== null && match[2] !== keep) ids.add(match[1]);
 	}
 	for (const id of ids) adbShell(udid, `cmd wifi forget-network ${id}`);
-	return await waitForWifi(
-		() => (androidWifiSsid(udid) === ssid ? '' : androidWifiAddress(udid)),
-		`device never settled on another network ${WIFI_REASSOCIATE_MS / 1_000}s after forgetting "${ssid}"`,
-	);
 }
 
 /** Turn Wi-Fi off and resolve once the device holds no Wi-Fi address: the

@@ -201,3 +201,17 @@ export async function restartMailbox(): Promise<void> {
 	);
 	await waitForMailboxReady(info.url);
 }
+
+/** Back to a healthy mailbox, whatever a spec left it in: running, not
+ *  suspended, behind a link with nothing degrading it. Every spec file
+ *  starts and ends here (wdio.conf.ts), so none has to put back what it
+ *  broke, and a run that died mid-spec cannot hand the next one a dead
+ *  mailbox. A no-op against a remote mailbox, which is never broken. */
+export async function ensureHealthyMailbox(): Promise<void> {
+	if (isRemoteMailbox()) return;
+	const { pid, url } = readInfo();
+	if (isAlive(pid)) resumeMailbox();
+	else await restartMailbox();
+	await healMailboxLink();
+	await waitForMailboxReady(url);
+}

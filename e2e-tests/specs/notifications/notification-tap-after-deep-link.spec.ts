@@ -31,10 +31,6 @@ describe('Notification tap after opening the app from a deep link', () => {
 		await createProfiles({ Rex: receiver, Sam: sender });
 	});
 
-	afterEach(async function () {
-		if (this.currentTest?.state === 'failed') await notifications.recover();
-	});
-
 	it('opens the tapped group chat, not the chat of the deep-linked contact', async () => {
 		await receiver.handleDeepLink(await contactLinkOf(sender));
 		await receiver.directChatPage.ready();

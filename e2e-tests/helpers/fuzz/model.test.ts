@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { describeContent } from '../components/notifications/content.ts';
-import { ExpectedModel, type NotificationTexts } from './model.ts';
+import {
+	ExpectedModel,
+	HOME_NETWORK,
+	type NotificationTexts,
+	newModel,
+} from './model.ts';
 
 /** The wording the app puts in a notification it cannot fully name, as the
  *  English catalogue has it. */
@@ -55,8 +60,8 @@ function withCloud(...names: string[]): ExpectedModel {
 	return new ExpectedModel(names.map(phone), [], true, true, true);
 }
 
-const N1 = 'lab-a';
-const N2 = 'lab-b';
+const N1 = 'test-a';
+const N2 = 'test-b';
 const HOME = 'office';
 
 function lans(networks: string[], ...names: string[]): ExpectedModel {
@@ -356,7 +361,7 @@ test('propagateShared unions everyone as one LAN, whatever the topology', () => 
 	assert.equal(m.knowsProfile(B, A), true);
 });
 
-test('running hubs follow the card, at home while it is on no lab LAN', () => {
+test('running hubs follow the card, at home while it is on no test network', () => {
 	const m = lansWithHome([N1], A, B);
 	const hub = m.createHub();
 	m.agentJoin(A, HOME);
@@ -1409,4 +1414,20 @@ test('a request is announced only on the device it was sent to', () => {
 	m.propagate();
 	assert.deepEqual(showing(m, A), []);
 	assert.deepEqual(showing(m, B), [`New contact request | ${C}`]);
+});
+
+test('a run with test networks also has the home one, which no test network may be named', () => {
+	const real = {
+		agents: [],
+		networks: [{ ssid: 'test-a' }],
+		cloudUsable: true,
+		cloudDegradable: false,
+		push: false,
+	};
+	assert.deepEqual(newModel(real).networkNames(), [HOME_NETWORK, 'test-a']);
+	assert.equal(newModel({ ...real, networks: [] }).homeNetwork(), null);
+	assert.throws(
+		() => newModel({ ...real, networks: [{ ssid: HOME_NETWORK }] }),
+		new RegExp(HOME_NETWORK),
+	);
 });

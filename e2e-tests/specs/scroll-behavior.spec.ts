@@ -17,7 +17,6 @@ describe('Chat scroll behavior', () => {
 	 *  appended after that one inside this suite still runs under Material.
 	 *  Read from the app rather than assumed: a phone picks iOS or Material by
 	 *  platform, which is the whole reason that test overrides it. */
-	let themeBefore: 'ios' | 'material' | null = null;
 	// Need enough overflow that scrollUp can move past the bottom
 	// threshold (200px) — leave headroom so timing/layout jitter doesn't
 	// drop us below.
@@ -34,10 +33,6 @@ describe('Chat scroll behavior', () => {
 		]);
 		await createProfiles({ Alice: agent1, Bob: agent2 });
 		await exchangeContacts([agent1, agent2]);
-	});
-
-	after(async () => {
-		if (themeBefore !== null) await agent1.setTheme(themeBefore);
 	});
 
 	it('fills the chat until it overflows enough to scroll', async () => {
@@ -149,9 +144,6 @@ describe('Chat scroll behavior', () => {
 		// ReverseScrollPage leaves the navbar alone on purpose — its gradient
 		// and blur do the fading — so it writes no opacity to read, and on a
 		// phone that is the theme the app picks.
-		themeBefore = await agent1.execute(() =>
-			document.querySelector('.k-ios') === null ? 'material' : 'ios',
-		);
 		await agent1.setTheme('material');
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(true);
 		await agent1.waitUntil(

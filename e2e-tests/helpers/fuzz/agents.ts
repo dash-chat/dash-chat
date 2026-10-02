@@ -104,13 +104,13 @@ export interface HubReal {
  * tear down whatever a run leaves behind. */
 export interface Real {
 	agents: StressAgent[];
-	/** The configured networks, in the order moves index them, the host's
-	 * own one marked as home. */
+	/** The test networks, in the order moves index them. The network every
+	 * device falls back to with none of them saved is never among them. */
 	networks: WifiNetwork[];
 	/** The host's Wi-Fi card, null when it has none or no network is
 	 * configured. */
 	hubsDevice: string | null;
-	/** The lab SSID the card is on, null while it is on its usual network.
+	/** The test network the card is on, null while it is on its usual network.
 	 * Where every hub is today: a later slice with a card (or a machine) per
 	 * hub replaces this with a location on `HubReal`. */
 	hubsNetwork: string | null;
@@ -184,11 +184,6 @@ export function notificationsOf(sa: StressAgent): NotificationHelper {
 		throw new Error(`${sa.name}'s notifications are not read by this run`);
 	}
 	return sa.notifications;
-}
-
-/** The lab networks: the ones a run joins, leaves and forgets. */
-export function labNetworks(real: Real): WifiNetwork[] {
-	return real.networks.filter(n => !n.home);
 }
 
 export function networkNamed(real: Real, name: string): WifiNetwork {

@@ -62,17 +62,6 @@ describe('Offline UX', () => {
 		await exchangeContacts([agent1, agent2]);
 	});
 
-	after(() => {
-		if (mailboxSuspended) {
-			try {
-				resumeMailbox();
-			} catch {
-				/* ignore */
-			}
-			mailboxSuspended = false;
-		}
-	});
-
 	describe('cloud mailbox online', () => {
 		it('sends a message, peer receives it, sender shows delivered, and the navbar chip stays hidden', async () => {
 			await agent1.directChatPage.composer.sendMessage('online hello');

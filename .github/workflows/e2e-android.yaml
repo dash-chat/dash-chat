@@ -83,10 +83,16 @@ jobs:
       - name: Build UI packages
         run: pnpm -F ./packages/stores build
 
+      # Desktop agents fill every agent a spec asks for beyond the emulators.
+      - name: Install a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
       - name: Run E2E tests on two Android emulators
         env:
-          PLATFORMS: android-emulator,android-emulator
-        run: set -o pipefail && just e2e 2>&1 | tee e2e-android-output.log
+          PHONES: android-emulator,android-emulator
+        run: set -o pipefail && dbus-run-session -- xvfb-run just e2e 2>&1 | tee e2e-android-output.log
 
       - name: Upload test logs on failure
         if: failure() || cancelled()

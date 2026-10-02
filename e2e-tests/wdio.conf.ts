@@ -1,12 +1,11 @@
 /**
- * Unified e2e config. The PLATFORMS env var lists the agents to launch as an
- * unordered multiset of platforms (default `desktop,desktop`) — `desktop`
- * (the built binary, driven through its embedded WebDriver server), `android` (physical device via
+ * Unified e2e config. Every agent a spec asks for that no phone fills is a
+ * desktop agent — the host's own build, driven through its embedded WebDriver
+ * server — launched for that spec file. The PHONES env var lists the phones
+ * the run drives as an unordered multiset — `android` (physical device via
  * Appium), `android-emulator` (running emulator via Appium), or `ios`
- * (connected iPhone via Appium/XCUITest) — so any combo runs through this one
- * config, e.g. `PLATFORMS=ios,ios just e2e run send-messages`. Combos are bound
- * by host OS, though: `ios` needs macOS + a device, and `desktop` runs the
- * host's own build, on Linux or macOS.
+ * (connected iPhone via Appium/XCUITest) — e.g.
+ * `PHONES=ios,ios just e2e run send-messages`; `ios` needs macOS.
  */
 import { setOptions } from 'expect-webdriverio';
 import type { ChildProcess } from 'node:child_process';
@@ -14,11 +13,15 @@ import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { AndroidNotifications } from './helpers/components/notifications/android';
+import { IosNotifications } from './helpers/components/notifications/ios';
 import { notificationMatchers } from './helpers/components/notifications/matchers';
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
+import { startAppium } from './setup/appium-server';
 import { claimAllWhenFreeSync, release } from './setup/claims';
 import {
 	killAllE2EProcesses,
+	killLeftoverLocalHubs,
 	killLeftoverMailboxServers,
 } from './setup/cleanup';
 import {
@@ -29,13 +32,14 @@ import {
 import { releaseWifiDevice } from './setup/host-wifi';
 import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
 import { ensureLoopback } from './setup/loopback';
+import { ensureHealthyMailbox } from './setup/mailbox-control';
 import {
 	buildCargoPackages,
 	startLocalMailboxServer,
 } from './setup/mailbox-server';
 import { CHECKOUT_CLAIM } from './setup/network-id';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
-import { DesktopPlatform, buildDesktopApp } from './setup/platforms/desktop';
+import { buildDesktopApp, stopDesktopAgents } from './setup/platforms/desktop';
 import { IosPlatform, clearIosAppData } from './setup/platforms/ios';
 import type { AgentPlatform } from './setup/platforms/platform';
 import {
@@ -43,10 +47,11 @@ import {
 	pushTestingEnabled,
 	startLocalPushServer,
 } from './setup/push-server';
+import { specAgents } from './setup/setup-agents';
 import {
-	type AgentPlatformName,
+	type PhonePlatformName,
 	getSpecFileRetries,
-	platformNames,
+	phonePlatforms,
 	remoteMailboxUrl,
 } from './setup/test-env';
 import { startToxiproxy } from './setup/toxiproxy';
@@ -54,20 +59,16 @@ import { startToxiproxy } from './setup/toxiproxy';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
-const nameBySlot = new Map<number, AgentPlatformName>(
-	platformNames().map((name, i) => [i + 1, name]),
+const nameBySlot = new Map<number, PhonePlatformName>(
+	phonePlatforms().map((name, i) => [i + 1, name]),
 );
 
-const desktopSlots = [...nameBySlot]
-	.filter(([, name]) => name === 'desktop')
-	.map(([slot]) => slot);
 const iosSlots = [...nameBySlot]
 	.filter(([, name]) => name === 'ios')
 	.map(([slot]) => slot);
 const androidKinds = new Map<number, AndroidKind>(
 	[...nameBySlot].filter(
-		(entry): entry is [number, AndroidKind] =>
-			entry[1] !== 'desktop' && entry[1] !== 'ios',
+		(entry): entry is [number, AndroidKind] => entry[1] !== 'ios',
 	),
 );
 
@@ -99,10 +100,7 @@ pushServerBuild?.catch(() => {});
 const android =
 	androidKinds.size > 0 ? new AndroidPlatform(androidKinds) : null;
 const ios = iosSlots.length > 0 ? new IosPlatform(iosSlots) : null;
-const desktop =
-	desktopSlots.length > 0 ? new DesktopPlatform(desktopSlots) : null;
 const platforms: AgentPlatform[] = [];
-if (desktop !== null) platforms.push(desktop);
 if (android !== null) platforms.push(android);
 if (ios !== null) platforms.push(ios);
 
@@ -115,17 +113,38 @@ function agentEntry(slot: number) {
 	return platform.remoteOptions(slot);
 }
 
+/** The run's fixed sessions: one per phone. wdio refuses a run with none, so
+ *  a phone-less run gets one on webdriverio's protocol stub, which opens no
+ *  session and drives nothing. */
+function sessionEntries() {
+	if (nameBySlot.size === 0) {
+		return {
+			host: { automationProtocol: './protocol-stub.js', capabilities: {} },
+		};
+	}
+	return Object.fromEntries(
+		[...nameBySlot.keys()].map(slot => [`agent${slot}`, agentEntry(slot)]),
+	);
+}
+
 let mailboxServer: ChildProcess | undefined;
 let mailboxLogger: ChildProcess | undefined;
 let pushServer: ChildProcess | undefined;
 let pushLogger: ChildProcess | undefined;
 let toxiproxy: ChildProcess | undefined;
 let toxiproxyLogger: ChildProcess | undefined;
+let appium: ChildProcess | undefined;
 let mailboxTls: ChildProcess | undefined;
 let mailboxTlsLogger: ChildProcess | undefined;
 
 async function teardown() {
-	for (const server of [mailboxServer, mailboxTls, pushServer, toxiproxy]) {
+	for (const server of [
+		mailboxServer,
+		mailboxTls,
+		pushServer,
+		toxiproxy,
+		appium,
+	]) {
 		if (server?.pid) {
 			// Negative PID = signal the entire detached process group.
 			try {
@@ -138,6 +157,7 @@ async function teardown() {
 	for (const platform of platforms) {
 		await platform.onComplete();
 	}
+	killAllE2EProcesses();
 	mailboxLogger?.kill();
 	pushLogger?.kill();
 	toxiproxyLogger?.kill();
@@ -152,11 +172,35 @@ async function saveFailureScreenshots(test: {
 }): Promise<void> {
 	const dir = failuresDir();
 	const slug = failureSlug(`${test.parent} ${test.title}`);
-	for (const name of browser.instances) {
+	for (const [i, agent] of specAgents.entries()) {
 		await saveFailureScreenshot(
-			browser.getInstance(name),
-			path.join(dir, `${slug}-${name}.png`),
+			agent,
+			path.join(dir, `${slug}-agent${i + 1}.png`),
 		);
+	}
+}
+
+/** After a failure, put every phone whose session was left outside the app's
+ *  webview — on a notification shade, in Settings — back in it: otherwise
+ *  every test after it fails on an unrelated-looking selector. A phone still
+ *  in the webview is left alone, since the way back from a shade (Back on
+ *  Android) would move the app itself. */
+async function recoverPhones(): Promise<void> {
+	for (const slot of [...androidKinds.keys(), ...iosSlots]) {
+		const b = browser.getInstance(`agent${slot}`);
+		try {
+			const context = await b.getContext();
+			const id = typeof context === 'string' ? context : context.id;
+			if (id.startsWith('WEBVIEW')) continue;
+		} catch {
+			// Where the session is cannot be told, and a guess could press
+			// Back on the app itself.
+			continue;
+		}
+		const helper = iosSlots.includes(slot)
+			? new IosNotifications(b)
+			: new AndroidNotifications(b);
+		await helper.recover();
 	}
 }
 
@@ -168,27 +212,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	maxInstances: 1,
 	specFileRetries: getSpecFileRetries(),
 
-	capabilities: Object.fromEntries(
-		[...nameBySlot.keys()].map(slot => [`agent${slot}`, agentEntry(slot)]),
-	),
-
-	// The appium server's own log only reaches the console as truncated warnings,
-	// so keep the full one on disk — device-side failures (usbmux timeouts, WDA
-	// signing) are only diagnosable from it.
-	services:
-		appiumPort !== null
-			? [
-					[
-						'appium',
-						{
-							args: {
-								port: appiumPort,
-								log: path.join(ROOT, '.dbs', 'e2e', 'appium.log'),
-							},
-						},
-					],
-				]
-			: [],
+	capabilities: sessionEntries(),
 
 	logLevel: 'warn',
 	waitforTimeout: UI_TIMEOUT,
@@ -237,8 +261,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			} catch {
 				// ignore
 			}
-			// The appium service starts right after this hook and writes its log
-			// here, so the directory has to exist before the first server does.
+			// Appium writes its log here, so the directory has to exist before
+			// the first server does.
 			mkdirSync(dataDir, { recursive: true });
 
 			// When MAILBOX_URL names a deployment environment, run against its
@@ -277,15 +301,12 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				} = await startLocalMailboxServer(pushUrl));
 			}
 
-			// Stress specs launch short-lived desktop visitors even when every
-			// agent is a phone.
-			if (desktop === null && process.env.E2E_STRESS === '1') {
-				buildDesktopApp();
-			}
+			buildDesktopApp();
 
 			for (const platform of platforms) {
 				await platform.onPrepare({ mailboxPort, pushPort });
 			}
+			if (appiumPort !== null) appium = await startAppium(appiumPort);
 		} catch (err) {
 			console.error('onPrepare failed, aborting run:', err);
 			// process.exit skips onComplete — tear down the already-started
@@ -309,9 +330,11 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	 * before passing, so the 30s waitforTimeout default turns every absence
 	 * assertion into a 30s stall. Cap all matchers at the settle window; an
 	 * assertion that genuinely needs longer opts in with `{ wait: UI_TIMEOUT }`. */
-	before() {
+	async before() {
 		setOptions({ wait: RENDER_SETTLE_WINDOW });
 		expect.extend(notificationMatchers);
+		killLeftoverLocalHubs();
+		await ensureHealthyMailbox();
 	},
 
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes
@@ -320,17 +343,26 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	 * `passed: !error && !skip`), so only an error counts as a failure — a spec
 	 * that skips itself for the launched platforms must not leave one behind. */
 	async afterTest(test, _context, result) {
-		if (result.error !== undefined) await saveFailureScreenshots(test);
+		if (result.error === undefined) return;
+		await saveFailureScreenshots(test);
+		await recoverPhones();
 	},
 
 	async afterHook(test, _context, result) {
-		if (result.error !== undefined) await saveFailureScreenshots(test);
+		if (result.error === undefined) return;
+		await saveFailureScreenshots(test);
+		await recoverPhones();
 	},
 
 	async after() {
 		for (const slot of iosSlots) {
 			await clearIosAppData(browser.getInstance(`agent${slot}`));
 		}
+		killLeftoverLocalHubs();
+		await ensureHealthyMailbox();
+		// Not in afterSession: wdio skips it when the only session is the
+		// desktop-only stub, which has no session id.
+		await stopDesktopAgents();
 	},
 
 	async afterSession() {

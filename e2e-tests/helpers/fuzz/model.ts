@@ -98,7 +98,12 @@ export interface ExpectedHub {
 	running: boolean;
 }
 
-/** A LAN available to a run, by its real network name. */
+/** The network every phone and the host are on when a run leaves them
+ *  alone: whatever each device falls back to with no test network saved. The
+ *  harness never learns its name, so the model carries it under this one. */
+export const HOME_NETWORK = 'home';
+
+/** A LAN available to a run, by its real network name — or [`HOME_NETWORK`]. */
 export interface ExpectedNetwork {
 	name: string;
 	/** The host's own LAN: every running hub is on it, whatever LAN the
@@ -2008,18 +2013,25 @@ export class ExpectedModel {
 
 /** The model for `real`, before anything has happened: no chats, no
  * contacts, no hub anywhere, everyone foregrounded and off the air, and the
- * cloud as reachable as the run found it. */
+ * cloud as reachable as the run found it. A run with test networks also has
+ * the home one, which the hubs sit on while the card is on no test
+ * network and the phones walk back to. */
 export function newModel(real: {
 	agents: {
 		agent: { platform: string; p2p: boolean };
 		name: string;
 		notificationTexts: NotificationTexts | null;
 	}[];
-	networks: { ssid: string; home: boolean }[];
+	networks: { ssid: string }[];
 	cloudUsable: boolean;
 	cloudDegradable: boolean;
 	push: boolean;
 }): ExpectedModel {
+	if (real.networks.some(n => n.ssid === HOME_NETWORK)) {
+		throw new Error(
+			`a test network cannot be called "${HOME_NETWORK}": that is the name of the network the run never joins`,
+		);
+	}
 	return new ExpectedModel(
 		real.agents.map(({ agent, name, notificationTexts }) => ({
 			name,
@@ -2027,7 +2039,12 @@ export function newModel(real: {
 			p2p: agent.p2p,
 			notifications: notificationTexts,
 		})),
-		real.networks.map(n => ({ name: n.ssid, home: n.home })),
+		real.networks.length === 0
+			? []
+			: [
+					{ name: HOME_NETWORK, home: true },
+					...real.networks.map(n => ({ name: n.ssid, home: false })),
+				],
 		real.cloudUsable,
 		real.cloudDegradable,
 		real.push,

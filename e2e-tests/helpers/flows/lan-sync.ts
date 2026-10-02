@@ -1,6 +1,12 @@
-import { launchEphemeralAgent } from '../../setup/ephemeral-agent';
+import path from 'node:path';
+
+import {
+	failuresDir,
+	saveFailureScreenshot,
+} from '../../setup/failure-screenshots';
 import { cutMailboxLink, healMailboxLink } from '../../setup/mailbox-control';
-import type { Agent } from '../../setup/setup-agents';
+import { discardDesktopAgent } from '../../setup/platforms/desktop';
+import { type Agent, setupDesktopAgent } from '../../setup/setup-agents';
 import { exchangeContacts } from './exchange-contacts';
 
 export interface NamedAgent {
@@ -19,7 +25,7 @@ export async function meetVisitor(
 	round: number,
 	hosts: NamedAgent[],
 ): Promise<void> {
-	const visitor = await launchEphemeralAgent();
+	const visitor = await setupDesktopAgent();
 	try {
 		await visitor.agent.createProfilePage.createProfile(`Visitor ${round}`);
 		for (const host of hosts) {
@@ -30,8 +36,16 @@ export async function meetVisitor(
 		await hosts[hosts.length - 1].agent.directChatPage.messages.waitForMessage(
 			greeting,
 		);
+	} catch (err) {
+		// The spec's failure screenshots only cover its own agents, and the
+		// visitor is gone by the time they are taken.
+		await saveFailureScreenshot(
+			visitor.agent,
+			path.join(failuresDir(), `visitor-${round}.png`),
+		);
+		throw err;
 	} finally {
-		await visitor.kill();
+		await discardDesktopAgent(visitor.slot);
 	}
 }
 

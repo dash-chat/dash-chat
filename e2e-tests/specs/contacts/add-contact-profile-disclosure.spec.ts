@@ -2,11 +2,7 @@ import { createProfiles } from '../../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
 import { tid } from '../../helpers/selectors';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
-import {
-	isRemoteMailbox,
-	resumeMailbox,
-	suspendMailbox,
-} from '../../setup/mailbox-control';
+import { isRemoteMailbox, suspendMailbox } from '../../setup/mailbox-control';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 async function waitForTextContent(
@@ -27,7 +23,6 @@ describe('Contact profile disclosure', () => {
 	let alice: Agent; // the scanned contact
 	let bob: Agent; // the scanner
 	let aliceCode: string;
-	let mailboxSuspended = false;
 
 	before(async function () {
 		// Suspending the shared mailbox is impossible against a remote environment
@@ -45,19 +40,7 @@ describe('Contact profile disclosure', () => {
 		await navigateToAddContact(alice);
 		aliceCode = await alice.addContactPage.getAddContactLink();
 		suspendMailbox();
-		mailboxSuspended = true;
 		await alice.stopApp();
-	});
-
-	after(() => {
-		if (mailboxSuspended) {
-			try {
-				resumeMailbox();
-			} catch {
-				/* ignore */
-			}
-			mailboxSuspended = false;
-		}
 	});
 
 	it('shows the scanned QR name with a placeholder avatar while the contact is offline', async () => {

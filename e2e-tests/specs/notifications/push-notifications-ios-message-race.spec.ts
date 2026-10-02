@@ -23,7 +23,7 @@ const PROCESSED_TIMEOUT = 30_000;
  *
  * Skips itself unless E2E_STRESS=1, and unless push testing is available (a
  * Firebase service-account key plus a mobile agent). Run it with:
- *   PLATFORMS=ios,desktop just e2e run notifications/push-notifications-ios-message-race
+ *   PHONES=ios just e2e run notifications/push-notifications-ios-message-race
  */
 describe('Photos sent into a chat open on the iPhone', function () {
 	this.timeout(ROUNDS * 2 * PROCESSED_TIMEOUT + 600_000);

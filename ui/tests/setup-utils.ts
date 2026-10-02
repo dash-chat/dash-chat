@@ -10,8 +10,17 @@
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import { invokeAfterSetup } from 'dash-chat-stores';
+import {
+	wifiAdd,
+	wifiAddedSsids,
+	wifiCurrent,
+	wifiForget,
+	wifiRequestJoin,
+} from 'tauri-plugin-network-interfaces-api';
 
 import type { m } from '../src/lib/paraglide/messages.js';
+
+const requestJoinOutcomes = new Map<string, string>();
 
 type Messages = typeof m;
 
@@ -621,6 +630,30 @@ export const testUtils = {
 	forceBlobError,
 	swipeToReply,
 	myDeviceId: (): Promise<string> => invokeAfterSetup('my_device_id'),
+	/** Wi-Fi control on phones (the network-interfaces plugin's `wifi-control`
+	 * feature, e2e builds only): the networks the app added, and the
+	 * interface it is on. */
+	wifi: {
+		current: wifiCurrent,
+		addedSsids: wifiAddedSsids,
+		add: wifiAdd,
+		requestJoin: wifiRequestJoin,
+		forget: wifiForget,
+		/** Start a join request and report on it through `requestJoinOutcome`:
+		 * on iOS the request sits behind a system "join?" alert that blocks the
+		 * webview, so a driver cannot both await it and answer the alert. */
+		startRequestJoin(ssid: string, passphrase: string): void {
+			requestJoinOutcomes.delete(ssid);
+			wifiRequestJoin(ssid, passphrase).then(
+				() => requestJoinOutcomes.set(ssid, 'ok'),
+				e => requestJoinOutcomes.set(ssid, String(e)),
+			);
+		},
+		/** 'ok' once the `startRequestJoin` for `ssid` is on the network, its
+		 * error once it failed, null while it is still going. */
+		requestJoinOutcome: (ssid: string): string | null =>
+			requestJoinOutcomes.get(ssid) ?? null,
+	},
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

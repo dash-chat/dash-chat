@@ -51,14 +51,13 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_barcode_scanner::init())
-            .plugin(tauri_plugin_view::init());
+            .plugin(tauri_plugin_view::init())
+            .plugin(tauri_plugin_network_interfaces::init());
     }
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(tauri_plugin_android_fs::init());
         builder = builder.plugin(tauri_plugin_medialibrary::init());
-        // Holds a MulticastLock so inbound mDNS reaches us (the wifi driver otherwise filters it).
-        builder = builder.plugin(tauri_plugin_network_interfaces::init());
         builder = builder.plugin(
             tauri_plugin_lifecycle::Builder::new()
                 .on_pause(|app| async move {

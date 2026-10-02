@@ -11,40 +11,38 @@ export function getSpecFileRetries(): number {
 	return retries;
 }
 
-const AGENT_PLATFORMS = [
-	'desktop',
-	'android',
-	'android-emulator',
-	'ios',
-] as const;
-export type AgentPlatformName = (typeof AGENT_PLATFORMS)[number];
+const PHONE_PLATFORMS = ['android', 'android-emulator', 'ios'] as const;
+export type PhonePlatformName = (typeof PHONE_PLATFORMS)[number];
+export type AgentPlatformName = 'desktop' | PhonePlatformName;
 
 export function isMobile(platform: AgentPlatformName): boolean {
-	return (
-		platform === 'ios' ||
-		platform === 'android' ||
-		platform === 'android-emulator'
-	);
+	return platform !== 'desktop';
 }
 
 /**
- * Platforms of the launched agents, parsed from the PLATFORMS env var — an
- * unordered comma-separated multiset (duplicates set the agent count, order
- * carries no meaning). Index i runs agent slot i+1.
+ * The phones the run drives, parsed from the PHONES env var — an unordered
+ * comma-separated multiset (duplicates set the phone count, order carries no
+ * meaning); none when unset. Index i runs agent slot i+1. Desktop agents are
+ * never listed: `setupAgents` launches one for every agent no phone fills.
  */
-export function platformNames(): AgentPlatformName[] {
-	const raw = process.env.PLATFORMS;
-	const names = (raw === undefined || raw === '' ? 'desktop,desktop' : raw)
-		.split(',')
-		.map(name => name.trim());
+export function phonePlatforms(): PhonePlatformName[] {
+	if (process.env.PLATFORMS !== undefined) {
+		throw new Error(
+			'PLATFORMS is no longer read: list only the phones, in PHONES ' +
+				'(desktop agents are launched as each spec needs them)',
+		);
+	}
+	const raw = process.env.PHONES;
+	if (raw === undefined || raw === '') return [];
+	const names = raw.split(',').map(name => name.trim());
 	for (const name of names) {
-		if (!(AGENT_PLATFORMS as readonly string[]).includes(name)) {
+		if (!(PHONE_PLATFORMS as readonly string[]).includes(name)) {
 			throw new Error(
-				`PLATFORMS entry '${name}' is not a valid platform (expected one of: ${AGENT_PLATFORMS.join(', ')})`,
+				`PHONES entry '${name}' is not a phone platform (expected one of: ${PHONE_PLATFORMS.join(', ')})`,
 			);
 		}
 	}
-	return names as AgentPlatformName[];
+	return names as PhonePlatformName[];
 }
 
 /**
@@ -61,13 +59,14 @@ export function remoteMailboxUrl(): string | null {
 	return url;
 }
 
+/** A test network: one a run walks phones and hubs onto and off. The network
+ *  the phones and host are on otherwise is never listed, named or joined by
+ *  the harness — it is whatever a device falls back to with no test network
+ *  saved. */
 export interface WifiNetwork {
 	ssid: string;
 	/** '' for an open network. */
 	passphrase: string;
-	/** The host's own LAN rather than a lab one: the phones and the host are
-	 *  on it to begin with, and a run never leaves, forgets or deletes it. */
-	home: boolean;
 }
 
 /** One `ssid` or `ssid:passphrase` entry; a bare `ssid` is an open network.
@@ -79,17 +78,20 @@ function parseNetwork(entry: string): WifiNetwork {
 			`E2E_WIFI_NETWORKS entry '${entry.trim()}' is not 'ssid' or 'ssid:passphrase'`,
 		);
 	}
-	return { ssid: parts[0], passphrase: parts[1] ?? '', home: false };
+	return { ssid: parts[0], passphrase: parts[1] ?? '' };
 }
 
 /**
  * The Wi-Fi networks a run may walk phones and hubs through, from
  * E2E_WIFI_NETWORKS as `ssid:passphrase,ssid:passphrase` in the order moves
- * index them; empty when unset. Which of them, if any, is the run's home
- * network is read off the phones when the run starts.
+ * index them; empty when unset. Test networks only: see [`WifiNetwork`].
  */
 export function wifiNetworks(): WifiNetwork[] {
 	const raw = process.env.E2E_WIFI_NETWORKS;
 	if (raw === undefined || raw.trim() === '') return [];
 	return raw.split(',').map(parseNetwork);
+}
+
+export function testNetworkSsids(): string[] {
+	return wifiNetworks().map(n => n.ssid);
 }

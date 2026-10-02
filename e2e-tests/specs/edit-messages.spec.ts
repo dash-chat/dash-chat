@@ -29,10 +29,10 @@ describe('Editing messages', () => {
 		const edited2 =
 			await agent2.directChatPage.messages.waitForMessage('Hello world');
 
-		await browser.waitUntil(() => edited1.hasEditedIndicator(), {
+		await agent1.waitUntil(() => edited1.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the author side',
 		});
-		await browser.waitUntil(() => edited2.hasEditedIndicator(), {
+		await agent2.waitUntil(() => edited2.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the peer side',
 		});
 	});
@@ -78,7 +78,7 @@ describe('Editing messages', () => {
 		await composer.discardDraftConfirm.waitForClickable();
 		await composer.discardDraftConfirm.click();
 		await composer.editingBanner.waitForExist();
-		await browser.waitUntil(
+		await agent1.waitUntil(
 			async () => (await composer.inputText()) === 'Hello world',
 			{ timeoutMsg: 'Editing input is not prefilled with the message text' },
 		);
