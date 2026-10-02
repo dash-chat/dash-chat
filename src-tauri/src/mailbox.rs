@@ -162,7 +162,7 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, add
     let url = hub_url(addr);
     node.mailboxes
         .register(
-            mailbox_client::toy::ToyMailboxClient::new(
+            mailbox_client::backends::toy::ToyMailboxClient::new(
                 id.clone(),
                 url.clone(),
                 node.endpoint_id(),

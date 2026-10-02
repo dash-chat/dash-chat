@@ -1010,7 +1010,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        mem::MemMailbox,
+        backends::mem::MemMailbox,
         testing::{DummyStore, MemStore, Msg},
     };
 

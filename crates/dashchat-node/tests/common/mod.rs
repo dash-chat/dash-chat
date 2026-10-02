@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use dashchat_node::mailbox::MailboxOperation;
-use dashchat_node::testing::TestNode;
-use mailbox_client::toy::ToyMailboxClient;
+use dashchat_node::testing::{TestNode, wait_for_mailbox_health};
+use mailbox_client::backends::toy::ToyMailboxClient;
 use mailbox_local_server::LocalMailboxServer;
 use mailbox_server::FetchConfig;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -38,7 +38,7 @@ pub async fn spawn_relay_mailbox(
     )
     .await
     .unwrap();
-    mailbox_client::toy::wait_for_mailbox_health(&server.url).await;
+    wait_for_mailbox_health(&server.url).await;
 
     let relay_for_addrs = relay.clone();
     tokio::spawn(async move {
@@ -84,7 +84,7 @@ pub async fn spawn_standalone_mailbox() -> StandaloneMailbox {
             tracing::error!("standalone test mailbox failed: {err:?}");
         }
     });
-    mailbox_client::toy::wait_for_mailbox_health(&url).await;
+    wait_for_mailbox_health(&url).await;
     let health = dashchat_node::mailbox::fetch_mailbox_health(&url)
         .await
         .unwrap();
