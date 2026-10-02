@@ -84,7 +84,6 @@ pub async fn followup_unfetched_blobs_once(node: &Node) {
             NodeBlobSource::new(node.clone()),
             node.blob_reader(),
             node.unfetched_blob_tracker(),
-            node.endpoint_id(),
         )
         .await;
 }
