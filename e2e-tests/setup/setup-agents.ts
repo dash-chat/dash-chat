@@ -573,6 +573,9 @@ const PROCESS_LIFECYCLE_DISPATCH_MS = 1_500;
  *  a scroll, and well under the app's 500ms long-press threshold. */
 const TAP_HOLD_MS = 100;
 
+/** How long a click may take to reach the page after its touch. */
+const CLICK_DELIVERY_MS = 2_000;
+
 /** Between the two reads of a tap target's centre that must agree before it
  *  is tapped: a fraction of the app's longest open transition (400ms). */
 const TAP_SETTLE_MS = 100;
@@ -636,17 +639,26 @@ async function tapPoint(
 			? { x, y }
 			: null;
 	};
+	let replaced = 0;
+	const centreOf = async (live: WebdriverIO.Element) => {
+		try {
+			return await agent.execute(centreIfTopmost, live);
+		} catch {
+			replaced++;
+			return null;
+		}
+	};
 	try {
 		return await agent.waitUntil(async () => {
 			const live = await refetch(element);
 			if (live === null) return null;
-			const point = await agent.execute(centreIfTopmost, live);
+			const point = await centreOf(live);
 			if (point === null) return null;
 			// A menu still scaling or sliding in reports the centre it has now,
 			// not the one it settles at, and a tap there lands beside it — on a
 			// backdrop that closes the menu. Tap only once the centre holds still.
 			await agent.pause(TAP_SETTLE_MS);
-			const settled = await agent.execute(centreIfTopmost, live);
+			const settled = await centreOf(live);
 			if (settled === null || settled.x !== point.x || settled.y !== point.y) {
 				return null;
 			}
@@ -654,10 +666,12 @@ async function tapPoint(
 		});
 	} catch (err) {
 		const why = err instanceof Error ? err.message : String(err);
+		const live = (await refetch(element)) ?? element;
 		throw new Error(
 			`${String(element.selector)} is in the page but never became the ` +
 				'topmost element at its own centre, so a tap there would have hit ' +
-				`${await describeCover(agent, element)} (${why})`,
+				`${await describeCover(agent, live)}; it was replaced under the ` +
+				`check ${replaced} times (${why})`,
 		);
 	}
 }
@@ -694,7 +708,44 @@ async function describeCover(
 	}
 }
 
-/** Touch (x, y) and report whether `element` actually received a click.
+/** Whether `element` cannot be clicked: a disabled control, which gets no
+ *  click at all. */
+function isDisabled(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+): Promise<boolean> {
+	return agent.execute(
+		(el: HTMLElement) =>
+			el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true',
+		element,
+	);
+}
+
+/** Whether a tap whose click did not reach `element` still did what a click
+ *  on it does. Some touches act without the click ever reaching a listener, or
+ *  with it arriving after the check, and a retry then taps something else.
+ *  Two outcomes count: the element turned disabled since before the first tap
+ *  (a send button busy sending), which no click elsewhere can cause; or, when
+ *  no click was dispatched at all, it left the page (a back button, as its page
+ *  goes) — a click elsewhere, on a backdrop, could have removed it too. */
+async function tapTookEffect(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+	disabledAtStart: boolean,
+	click: 'elsewhere' | 'none',
+): Promise<boolean> {
+	const live = await refetch(element);
+	if (live === null) return click === 'none';
+	if (disabledAtStart) return false;
+	try {
+		return await isDisabled(agent, live);
+	} catch {
+		return false;
+	}
+}
+
+/** Touch (x, y) and report where the click it dispatched landed: on
+ *  `element`, elsewhere, or nowhere.
  *
  *  WDA reports a successful touch that WebKit sometimes never turns into a
  *  click, so the tap has to be confirmed rather than assumed. It has to be
@@ -709,15 +760,39 @@ async function clickReachedElement(
 	x: number,
 	y: number,
 	pointerType: PointerType,
-): Promise<boolean> {
+): Promise<'target' | 'elsewhere' | 'none'> {
 	await agent.execute((el: HTMLElement) => {
 		delete document.documentElement.dataset.e2eClick;
+		delete document.documentElement.dataset.e2eClickElsewhere;
 		document.addEventListener(
 			'click',
 			event => {
 				const target = event.target;
-				if (target instanceof Node && (el === target || el.contains(target))) {
-					document.documentElement.dataset.e2eClick = 'seen';
+				// A re-render between the hit test and the click hands it to a
+				// fresh copy of the same control.
+				const testid = el.getAttribute('data-testid');
+				const onTarget =
+					target instanceof Element &&
+					(el.contains(target) ||
+						(testid !== null &&
+							target.closest(`[data-testid="${testid}"]`) !== null));
+				// A click that reaches no element still in the page was dispatched
+				// at a target the touch already removed: it acted, it did not miss.
+				const elsewhere =
+					!onTarget && target instanceof Element && target.isConnected;
+				document.documentElement.dataset.e2eClick = onTarget
+					? 'target'
+					: elsewhere
+						? 'elsewhere'
+						: 'none';
+				if (elsewhere) {
+					const testid = target.closest('[data-testid]');
+					document.documentElement.dataset.e2eClickElsewhere = [
+						target.tagName.toLowerCase(),
+						testid === null
+							? ''
+							: `in [data-testid="${testid.getAttribute('data-testid')}"]`,
+					].join(' ');
 				}
 			},
 			{ once: true, capture: true },
@@ -730,9 +805,24 @@ async function clickReachedElement(
 		.pause(TAP_HOLD_MS)
 		.up()
 		.perform();
-	return await agent.execute(
-		() => document.documentElement.dataset.e2eClick === 'seen',
-	);
+	// A busy main thread delivers the click after the touch returns; a check
+	// made at once calls it a miss, and the retry taps whatever the click had
+	// already turned the target into.
+	let landed: string | undefined;
+	try {
+		await agent.waitUntil(
+			async () => {
+				landed = await agent.execute(
+					() => document.documentElement.dataset.e2eClick,
+				);
+				return landed !== undefined;
+			},
+			{ timeout: CLICK_DELIVERY_MS, interval: 100 },
+		);
+	} catch {
+		return 'none';
+	}
+	return landed === 'target' || landed === 'elsewhere' ? landed : 'none';
 }
 
 type PointerType = 'touch' | 'mouse';
@@ -768,12 +858,22 @@ export function tapWebElementsAtTheirRect(
 					return await origClick();
 				}
 			}
+			let disabledAtStart: boolean | undefined;
 			for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
 				const { x, y, live } = await tapPoint(agent, this);
-				if (await clickReachedElement(agent, live, x, y, pointerType)) return;
+				disabledAtStart ??= await isDisabled(agent, live);
+				const click = await clickReachedElement(agent, live, x, y, pointerType);
+				if (click === 'target') return;
+				if (await tapTookEffect(agent, this, disabledAtStart, click)) return;
+				const landedOn =
+					click === 'elsewhere'
+						? await agent.execute(
+								() => document.documentElement.dataset.e2eClickElsewhere,
+							)
+						: 'nothing';
 				console.warn(
-					`[${pointerType}] tap at ${x},${y} did not reach ${String(this.selector)} ` +
-						`(attempt ${attempt}/${TAP_ATTEMPTS})`,
+					`[${pointerType}] tap at ${x},${y} did not reach ${String(this.selector)}; ` +
+						`its click went to ${landedOn} (attempt ${attempt}/${TAP_ATTEMPTS})`,
 				);
 			}
 			throw new Error(

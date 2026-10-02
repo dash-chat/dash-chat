@@ -521,7 +521,12 @@ function xcresultMentions(result: string, text: string): boolean {
 				'--path',
 				result,
 			],
-			{ encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+			{
+				encoding: 'utf8',
+				maxBuffer: 64 * 1024 * 1024,
+				// A bundle still being written fails to read; that is no answer.
+				stdio: ['ignore', 'pipe', 'ignore'],
+			},
 		).includes(text);
 	} catch {
 		return false;

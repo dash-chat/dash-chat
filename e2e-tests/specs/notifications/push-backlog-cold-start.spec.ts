@@ -12,7 +12,11 @@ import { type Agent, setupAgents } from '../../setup/setup-agents';
 // the app replays all of them when it next opens the chat's topic.
 const BACKLOG = 200;
 
-describe('Cold start after a push backlog', () => {
+// wdio arms its abort timer from the mocha timeout when a test starts, so a
+// timeout set inside the test body never takes effect.
+describe('Cold start after a push backlog', function () {
+	this.timeout(20 * 60_000);
+
 	let rex: Agent;
 	let sam: Agent;
 	let notifications: NotificationHelper;
@@ -28,8 +32,7 @@ describe('Cold start after a push backlog', () => {
 		await exchangeContacts([rex, sam]);
 	});
 
-	it('opens and stays usable after many messages arrived while it was quit', async function () {
-		this.timeout(20 * 60_000);
+	it('opens and stays usable after many messages arrived while it was quit', async () => {
 		await rex.directChatPage.back.click();
 		await rex.homePage.ready();
 		await rex.pause(5_000);

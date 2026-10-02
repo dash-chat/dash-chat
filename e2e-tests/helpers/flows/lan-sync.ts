@@ -1,3 +1,9 @@
+import path from 'node:path';
+
+import {
+	failuresDir,
+	saveFailureScreenshot,
+} from '../../setup/failure-screenshots';
 import { cutMailboxLink, healMailboxLink } from '../../setup/mailbox-control';
 import { discardDesktopAgent } from '../../setup/platforms/desktop';
 import { type Agent, setupDesktopAgent } from '../../setup/setup-agents';
@@ -30,6 +36,14 @@ export async function meetVisitor(
 		await hosts[hosts.length - 1].agent.directChatPage.messages.waitForMessage(
 			greeting,
 		);
+	} catch (err) {
+		// The spec's failure screenshots only cover its own agents, and the
+		// visitor is gone by the time they are taken.
+		await saveFailureScreenshot(
+			visitor.agent,
+			path.join(failuresDir(), `visitor-${round}.png`),
+		);
+		throw err;
 	} finally {
 		await discardDesktopAgent(visitor.slot);
 	}
