@@ -139,6 +139,9 @@ impl Node {
             return Ok(());
         };
         debug!(topic = ?topic.aliased(), "import mailbox stream");
+        // What the topic already holds is waiting in the mailbox: fetch it
+        // now rather than at the next scheduled poll.
+        self.mailboxes.request_sync(Some(topic.into())).await;
 
         let stream = Box::pin(ReceiverStream::new(mailbox_rx).map(Operation::from));
         self.import_stream(topic, stream).await

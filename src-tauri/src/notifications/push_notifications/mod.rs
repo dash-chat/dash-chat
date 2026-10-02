@@ -151,21 +151,7 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
     let topic_ids = if are_notifications_enabled(&app_handle).await {
-        // Inbox topics live in their own store (they expire) and are not in
-        // subscribed_topics; without them this full sync unsubscribes the
-        // inbox on the server and a contact request can't wake the app.
-        let inbox_topics = node
-            .get_active_inbox_topics()
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-        let topic_ids: HashSet<PushTopicId> = node
-            .subscribed_topics()
-            .await?
-            .into_iter()
-            .chain(inbox_topics.into_iter().map(|inbox| *inbox.topic))
-            .map(|t| PushTopicId::from(t.to_hex()))
-            .collect();
-        topic_ids
+        topics_that_wake_device(&node).await?
     } else {
         HashSet::new()
     };
@@ -183,6 +169,25 @@ async fn sync_subscriptions(app_handle: AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn topics_that_wake_device(
+    node: &dashchat_node::Node,
+) -> anyhow::Result<HashSet<PushTopicId>> {
+    // Inbox topics live in their own store (they expire) and are not in
+    // subscribed_topics; without them a full sync unsubscribes the inbox on
+    // the server and a contact request can't wake the app.
+    let inbox_topics = node
+        .get_active_inbox_topics()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
+    Ok(node
+        .subscribed_topics()
+        .await?
+        .into_iter()
+        .chain(inbox_topics.into_iter().map(|inbox| *inbox.topic))
+        .map(|t| PushTopicId::from(t.to_hex()))
+        .collect())
+}
+
 /// Subscribe the current device to push notifications for the given topics.
 async fn subscribe_to_topics(
     app_handle: &AppHandle,
@@ -198,20 +203,24 @@ async fn subscribe_to_topics(
         .get()
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
-    let verifying_key = VerifyingKey::from(node.device_id().to_string());
-
     let client = app_handle.state::<PushNotificationsClient>();
+    subscribe_node_to_topics(&client, &node, topic_ids).await
+}
 
+/// Subscribe `node`'s device to push notifications for the given topics.
+async fn subscribe_node_to_topics(
+    client: &PushNotificationsClient,
+    node: &dashchat_node::Node,
+    topic_ids: HashSet<PushTopicId>,
+) -> anyhow::Result<()> {
     log::info!(
         "Subscribing to {} topics on push notifications server.",
         topic_ids.len()
     );
 
     client
-        .add_topic_subscriptions(verifying_key, topic_ids)
-        .await?;
-
-    Ok(())
+        .add_topic_subscriptions(VerifyingKey::from(node.device_id().to_string()), topic_ids)
+        .await
 }
 
 /// Listens for new topic subscriptions and registers them with the push notifications server.
