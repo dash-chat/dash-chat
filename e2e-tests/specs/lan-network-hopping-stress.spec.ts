@@ -13,8 +13,10 @@
  *   4. Bob follows her there and must receive it, then they sync both ways;
  *   5. Bob drops off Wi-Fi, Alice writes again, and Bob must receive it once
  *      he is back.
- * The mailbox link is cut throughout 2–5: the phones reach it over USB, not
- * Wi-Fi, so only a direct connection on a shared LAN can carry anything.
+ * The mailbox link is cut throughout 2–5: an Android phone reaches it over
+ * USB whatever Wi-Fi it is on, so only a direct connection on a shared LAN
+ * can carry anything. An iPhone reaches it over its home network alone, so it
+ * goes back there to meet each visitor.
  *
  * Skips itself unless E2E_STRESS=1, two networks are configured (see
  * e2e-tests/.env.example) and the mailbox link can be cut. Run it with:
@@ -50,6 +52,8 @@ describe('LAN sync while hopping networks', function () {
 
 	let alice: NamedAgent;
 	let bob: NamedAgent;
+	/** The network both phones are on when the run starts. */
+	let home: string;
 
 	before(async function () {
 		if (process.env.E2E_STRESS !== '1') this.skip();
@@ -59,6 +63,7 @@ describe('LAN sync while hopping networks', function () {
 			{ platform: 'phone' },
 			{ platform: 'phone' },
 		]);
+		home = await agent1.wifiSsid();
 		alice = { agent: agent1, name: 'Alice' };
 		bob = { agent: agent2, name: 'Bob' };
 		await createProfiles({ Alice: agent1, Bob: agent2 });
@@ -67,8 +72,25 @@ describe('LAN sync while hopping networks', function () {
 
 	after(async () => {
 		if (alice === undefined) return;
+		await Promise.all([alice, bob].map(leaveLabNetworks));
 		await ensurePhonesShareALan([alice.agent, bob.agent]);
 	});
+
+	async function backToMailbox(phone: NamedAgent): Promise<void> {
+		if (phone.agent.platform !== 'ios') return;
+		// Saved on the phone, so it joins without its passphrase.
+		await phone.agent.connectWifi(home, '');
+	}
+
+	/** Forgetting only the network a phone is on drops it onto the next lab
+	 *  network it has saved, so every one of them goes. */
+	async function leaveLabNetworks(phone: NamedAgent): Promise<void> {
+		if ((await phone.agent.wifiSsid()) === '') await phone.agent.enableWifi();
+		await backToMailbox(phone);
+		for (const network of networks) {
+			if (network.ssid !== home) await phone.agent.forgetWifi(network.ssid);
+		}
+	}
 
 	it('syncs on every network, apart and reunited', async () => {
 		let visitors = 0;
@@ -79,6 +101,7 @@ describe('LAN sync while hopping networks', function () {
 				const step = `tour ${tour}, ${here.ssid}`;
 
 				visitors++;
+				await Promise.all([alice, bob].map(backToMailbox));
 				await meetVisitor(visitors, [alice, bob]);
 
 				await withMailboxCut(async () => {
