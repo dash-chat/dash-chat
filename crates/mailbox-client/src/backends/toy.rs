@@ -115,13 +115,7 @@ impl BlobUploadLifecycle for NoopUploadLifecycle {
         Some(0)
     }
 
-    fn finish_upload(
-        &self,
-        base_url: &str,
-        hash: iroh_blobs::Hash,
-        _claim: u64,
-        _succeeded: bool,
-    ) {
+    fn finish_upload(&self, base_url: &str, hash: iroh_blobs::Hash, _claim: u64, _succeeded: bool) {
         tracing::warn!(
             %base_url,
             %hash,
@@ -170,10 +164,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     }
 
     /// Attach the shared upload lifecycle; called by `Mailboxes::register`.
-    pub fn set_upload_lifecycle(
-        &mut self,
-        lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>,
-    ) {
+    pub fn set_upload_lifecycle(&mut self, lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>) {
         self.lifecycle = lifecycle;
     }
 
