@@ -1268,7 +1268,10 @@ mod tests {
             .await
             .push_blobs(
                 vec![hash],
-                Arc::new(StubBlobReader { hash, bytes: bytes::Bytes::new() }),
+                Arc::new(StubBlobReader {
+                    hash,
+                    bytes: bytes::Bytes::new(),
+                }),
                 Arc::new(crate::NoopUnfetchedBlobTracker),
             )
             .await
