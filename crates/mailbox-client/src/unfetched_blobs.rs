@@ -37,7 +37,6 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
     source: Arc<dyn BlobSource>,
     reader: Arc<dyn BlobReader>,
     tracker: Arc<dyn UnfetchedBlobTracker>,
-    _endpoint_id: iroh::EndpointId,
 ) where
     Item: MailboxItem,
     Store: MailboxStore<Item>,

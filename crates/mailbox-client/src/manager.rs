@@ -548,16 +548,8 @@ where
         source: Arc<dyn crate::unfetched_blobs::BlobSource>,
         reader: Arc<dyn crate::BlobReader>,
         tracker: Arc<dyn crate::UnfetchedBlobTracker>,
-        endpoint_id: iroh::EndpointId,
     ) {
-        crate::unfetched_blobs::reconcile_unfetched_blobs(
-            self,
-            source,
-            reader,
-            tracker,
-            endpoint_id,
-        )
-        .await;
+        crate::unfetched_blobs::reconcile_unfetched_blobs(self, source, reader, tracker).await;
     }
 
     /// Nudge the poll loop to check for the next mailbox to poll.
