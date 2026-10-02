@@ -360,11 +360,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		}
 		killLeftoverLocalHubs();
 		await ensureHealthyMailbox();
+		// Not in afterSession: wdio skips it when the only session is the
+		// desktop-only stub, which has no session id.
+		await stopDesktopAgents();
 	},
 
 	async afterSession() {
 		releaseWifiDevice();
-		await stopDesktopAgents();
 		for (const platform of platforms) {
 			await platform.afterSession();
 		}
