@@ -20,9 +20,6 @@ pub trait BlobSource: Send + Sync + 'static {
     /// Return all blob hashes still recorded as unfetched, grouped by mailbox.
     async fn unfetched_blobs_by_mailbox(&self) -> BTreeMap<MailboxId, Vec<iroh_blobs::Hash>>;
 
-    /// Whether the local node can read the bytes for this blob.
-    async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool;
-
     /// Refresh our dialing address with the mailbox before attempting upload.
     async fn prepare_upload_to(&self, url: &str);
 }
@@ -53,7 +50,7 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
 
         let mut held = Vec::new();
         for hash in hashes {
-            if mailboxes.upload_due(&mailbox_id, hash).await && source.has_blob(hash).await {
+            if mailboxes.upload_due(&mailbox_id, hash).await && reader.has_blob(hash).await {
                 held.push(hash);
             }
         }
