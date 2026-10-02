@@ -305,27 +305,19 @@ mod tests {
         let alice_sync = alice
             .mailboxes
             .sync_tracker()
-            .sync_state(&mailbox_id)
+            .sync_state_for_log(&*chat_id, &alice_device)
             .await
             .expect("alice sync state missing");
         let bobbi_sync = bobbi
             .mailboxes
             .sync_tracker()
-            .sync_state(&mailbox_id)
+            .sync_state_for_log(&*chat_id, &alice_device)
             .await
             .expect("bobbi sync state missing");
 
         poll.wait_for(|| async {
-            let alice_seq = alice_sync
-                .borrow()
-                .get(&*chat_id)
-                .and_then(|m| m.get(&alice_device))
-                .copied();
-            let bobbi_seq = bobbi_sync
-                .borrow()
-                .get(&*chat_id)
-                .and_then(|m| m.get(&alice_device))
-                .copied();
+            let alice_seq = alice_sync.borrow().get(&mailbox_id).copied();
+            let bobbi_seq = bobbi_sync.borrow().get(&mailbox_id).copied();
             if alice_seq == Some(0) && bobbi_seq == Some(0) {
                 Ok(())
             } else {

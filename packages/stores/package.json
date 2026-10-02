@@ -20,6 +20,7 @@
 		"emittery": "^1.2.0",
 		"rimraf": "^6.1.0",
 		"signalium": "^3.0.1",
+		"tauri-plugin-subscriptions": "github:dash-chat/tauri-plugin-subscriptions#885a779f88d2622b4d4c1a839d5d28bc8dcac52e",
 		"tauri-plugin-system-theme": "github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d",
 		"webbuf": "^3.0.28"
 	},

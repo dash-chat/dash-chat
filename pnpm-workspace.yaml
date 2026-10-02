@@ -16,6 +16,7 @@ allowBuilds:
   "@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/034dafd0a591fce73d4fe865e216cc3e225236c5": true
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d: true
   tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a86d8cf2ea998eba7f93dc6b53674fdb77d3def5: true
+  tauri-plugin-subscriptions@https://codeload.github.com/dash-chat/tauri-plugin-subscriptions/tar.gz/885a779f88d2622b4d4c1a839d5d28bc8dcac52e: true
   appium: true
   sharp: true
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/ce6e762f816bdffeaa0bd56078995bda21cdb68b: true

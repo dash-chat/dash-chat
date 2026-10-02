@@ -1,8 +1,11 @@
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
+use async_rx::StreamExt as _;
 use dashchat_node::Node;
+use futures::{Stream, StreamExt};
 use tokio::sync::{watch, Mutex};
+use tokio_stream::wrappers::WatchStream;
 
 use crate::node::app_node::AppNode;
 use crate::node::node_context::{NodeContext, NodeRole};
@@ -11,8 +14,9 @@ use crate::node::node_context::{NodeContext, NodeRole};
 /// built for.
 ///
 /// Reused across sequential push notifications, and also holds the main app
-/// Node when the app is running.
-static SLOT: Mutex<Option<AppNode>> = Mutex::const_new(None);
+/// Node when the app is running. A watch, so long-lived subscriptions follow the
+/// node across swaps.
+static SLOT: LazyLock<watch::Sender<Option<AppNode>>> = LazyLock::new(|| watch::channel(None).0);
 
 /// Serializes every slot mutation that must not interleave: node builds and
 /// evictions ([`get_or_build_node`]) and teardown ([`clear`]). Holding it across
@@ -25,22 +29,30 @@ static SLOT: Mutex<Option<AppNode>> = Mutex::const_new(None);
 /// other push and they all miss iOS's ~30s budget.
 static LIFECYCLE_LOCK: Mutex<()> = Mutex::const_new(());
 
-/// Bumped on every swap of the node in [`SLOT`] (build, eviction, or teardown) so
-/// long-lived per-node subscriptions can re-bind to the current node. A plain
-/// counter, never the `Node`, so it can never keep a torn-down node alive.
-static GENERATION: LazyLock<watch::Sender<u64>> = LazyLock::new(|| watch::channel(0u64).0);
-
-/// A receiver that fires whenever the slot's node is swapped.
-pub(crate) fn subscribe_generation() -> watch::Receiver<u64> {
-    GENERATION.subscribe()
-}
-
-fn bump_generation() {
-    GENERATION.send_modify(|g| *g = g.wrapping_add(1));
+/// The stream `make` builds on the app's node, switched to the next node after
+/// every swap, and silent while there is none.
+///
+/// The old node's stream is dropped once the subscription sees the swap, which
+/// may be after teardown has started; `Node::shutdown` closes its pools itself,
+/// so a lingering stream holds no file lock (0xdead10cc).
+pub(crate) fn node_stream<S, F>(make: F) -> impl Stream<Item = S::Item> + Send + 'static
+where
+    F: Fn(Node) -> S + Send + 'static,
+    S: Stream + Send + 'static,
+{
+    WatchStream::new(SLOT.subscribe())
+        .map(move |app_node| {
+            let node = app_node
+                .filter(|app_node| app_node.context.role.can_be_used_for(NodeRole::App))
+                .map(|app_node| make(app_node.node));
+            futures::stream::iter(node).flatten()
+        })
+        .fuse()
+        .switch()
 }
 
 pub(crate) async fn current_node() -> Option<AppNode> {
-    SLOT.lock().await.clone()
+    SLOT.borrow().clone()
 }
 
 /// The slot's Node, but only if its role can satisfy `role`. Side-effect free:
@@ -129,9 +141,8 @@ pub async fn get_or_build_node(
     // the same time in this process. The slot is left empty during shutdown and
     // build so a concurrent caller cannot observe a Node whose context disagrees
     // with its actual behavior.
-    if let Some(old_app_node) = SLOT.lock().await.take() {
+    if let Some(old_app_node) = SLOT.send_replace(None) {
         old_app_node.teardown().await;
-        bump_generation();
     }
 
     log::info!("No compatible node in the cache, building node from scratch.");
@@ -145,8 +156,7 @@ pub async fn get_or_build_node(
     .await?;
 
     let app_node = AppNode::new(context, node.clone())?;
-    *SLOT.lock().await = Some(app_node);
-    bump_generation();
+    SLOT.send_replace(Some(app_node));
 
     Ok(AcquiredNode { node, is_new: true })
 }
@@ -157,11 +167,10 @@ pub async fn get_or_build_node(
 /// a node was actually torn down.
 pub async fn clear() -> bool {
     let _lifecycle_guard = LIFECYCLE_LOCK.lock().await;
-    let app_node = SLOT.lock().await.take();
+    let app_node = SLOT.send_replace(None);
     match app_node {
         Some(app_node) => {
             app_node.teardown().await;
-            bump_generation();
             true
         }
         None => false,

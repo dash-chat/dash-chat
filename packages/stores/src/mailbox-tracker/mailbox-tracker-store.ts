@@ -1,12 +1,8 @@
 import { ReactivePromise, reactive } from 'signalium';
+import { subscribe } from 'tauri-plugin-subscriptions';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
-import { subscribeChannel } from '../utils/tauri-channel';
-import {
-	type MailboxConnectionState,
-	type MailboxId,
-	type MailboxSyncState,
-} from './types';
+import { type MailboxConnectionState, type MailboxId } from './types';
 
 // Flip the UI to "disconnected" after this many consecutive errors. Intentionally
 // lower than the backend's degraded_threshold (5) so the UI reacts faster than
@@ -15,11 +11,9 @@ const UI_DISCONNECTED_ERROR_THRESHOLD = 2;
 
 export interface IMailboxTrackerStore {
 	activeMailboxIds(): ReactivePromise<MailboxId[]>;
-	allMailboxIds(): ReactivePromise<MailboxId[]>;
 	connectionState(
 		mailboxId: MailboxId,
 	): ReactivePromise<MailboxConnectionState>;
-	syncState(mailboxId: MailboxId): ReactivePromise<MailboxSyncState>;
 	syncStateForLog(
 		topicId: TopicId,
 		author: DeviceId,
@@ -41,22 +35,17 @@ export interface IMailboxTrackerStore {
 
 export class MailboxTrackerStore implements IMailboxTrackerStore {
 	activeMailboxIds = reactive(() =>
-		subscribeChannel<MailboxId[]>('mailbox_subscribe_active_ids'),
-	);
-
-	allMailboxIds = reactive(() =>
-		subscribeChannel<MailboxId[]>('mailbox_subscribe_all_ids'),
+		subscribe<MailboxId[]>('mailbox_subscribe_active_ids'),
 	);
 
 	connectionState = reactive((mailboxId: MailboxId) =>
-		subscribeChannel<MailboxConnectionState>(
-			'mailbox_subscribe_connection_state',
-			{ mailboxId },
-		),
+		subscribe<MailboxConnectionState>('mailbox_subscribe_connection_state', {
+			mailboxId,
+		}),
 	);
 
 	cloudMailboxId = reactive(() =>
-		subscribeChannel<MailboxId | null>('mailbox_subscribe_cloud_id'),
+		subscribe<MailboxId | null>('mailbox_subscribe_cloud_id'),
 	);
 
 	// Registration itself proves reachability: the cloud mailbox is only registered
@@ -123,30 +112,12 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		};
 	});
 
-	syncState = reactive((mailboxId: MailboxId) =>
-		subscribeChannel<MailboxSyncState>('mailbox_subscribe_sync_state', {
-			mailboxId,
-		}),
-	);
-
 	/// Per-(topic, author) view across every mailbox we've ever synced with.
-	/// Recomputes when `allMailboxIds` or any per-mailbox `syncState` changes.
-	syncStateForLog = reactive(
-		async (
-			topicId: TopicId,
-			author: DeviceId,
-		): Promise<Record<MailboxId, number>> => {
-			const ids = await this.allMailboxIds();
-			const out: Record<MailboxId, number> = {};
-			for (const id of ids) {
-				const sync = await this.syncState(id);
-				const seq = sync[topicId]?.[author];
-				if (seq !== undefined) {
-					out[id] = seq;
-				}
-			}
-			return out;
-		},
+	syncStateForLog = reactive((topicId: TopicId, author: DeviceId) =>
+		subscribe<Record<MailboxId, number>>(
+			'mailbox_subscribe_sync_state_for_log',
+			{ topicId, author },
+		),
 	);
 
 	/// IDs of mailboxes that have synced at least up to `seq` for the (topic, author) log.
