@@ -163,6 +163,7 @@ async fn inspection_client(url: &str) -> ToyMailboxClient<MailboxOperation> {
         url,
         iroh::SecretKey::generate().public(),
         Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+        mailbox_client::testing::noop_upload_lifecycle(),
     )
 }
 
@@ -178,6 +179,7 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
                 url,
                 node.endpoint_id(),
                 node.unfetched_blob_tracker(),
+                node.mailboxes.upload_scheduler(),
             )
             .with_blob_reader(node.blob_reader()),
         )

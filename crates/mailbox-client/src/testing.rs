@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{MailboxItem, store::MailboxStore};
@@ -57,6 +59,30 @@ impl crate::MailboxKey for char {
         }
         Ok(ch)
     }
+}
+
+/// A lifecycle that allows uncoordinated uploads to proceed. Use only in tests
+/// where the client is not registered with a `Mailboxes` owner.
+pub fn noop_upload_lifecycle() -> Arc<dyn crate::BlobUploadLifecycle> {
+    #[derive(Clone)]
+    struct NoopLifecycle;
+
+    impl crate::BlobUploadLifecycle for NoopLifecycle {
+        fn claim_upload(&self, _base_url: &str, _hash: iroh_blobs::Hash) -> Option<u64> {
+            Some(0)
+        }
+
+        fn finish_upload(
+            &self,
+            _base_url: &str,
+            _hash: iroh_blobs::Hash,
+            _claim: u64,
+            _succeeded: bool,
+        ) {
+        }
+    }
+
+    Arc::new(NoopLifecycle)
 }
 
 #[derive(Clone)]
