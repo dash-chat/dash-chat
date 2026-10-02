@@ -65,10 +65,6 @@ impl BlobSource for NodeBlobSource {
         }
     }
 
-    async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
-        self.node.blob_reader().has_blob(hash).await
-    }
-
     async fn prepare_upload_to(&self, url: &str) {
         if let Err(err) = self.node.register_with_mailbox(url).await {
             tracing::warn!(?err, "failed to refresh our address on the mailbox");
