@@ -529,7 +529,14 @@ where
         let Some(url) = tracked.client().await.url() else {
             return false;
         };
-        self.scheduler.upload_due(&url, hash)
+        self.upload_due_at(&url, hash)
+    }
+
+    /// Whether an upload of `hash` to the mailbox at `url` would start now,
+    /// without re-resolving the mailbox. For callers that already hold the
+    /// mailbox URL.
+    pub fn upload_due_at(&self, url: &str, hash: iroh_blobs::Hash) -> bool {
+        self.scheduler.upload_due(url, hash)
     }
 
     /// Network changed or app resumed: clear in-flight claims and backoffs so
