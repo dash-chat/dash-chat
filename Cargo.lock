@@ -2036,7 +2036,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.20.11"
+version = "0.20.12"
 dependencies = [
  "android_logger",
  "anyhow",

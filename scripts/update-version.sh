@@ -39,28 +39,31 @@ for f in "$TAURI_CONF" "$CARGO_TOML" "$IOS_PLIST" "$IOS_PBXPROJ" "$IOS_PROJECT_Y
   fi
 done
 
+# perl instead of sed: BSD sed (macOS) and GNU sed disagree on -i, 0,/re/ and \s
+export VERSION
+
 # 1. Update tauri.conf.json
-sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$TAURI_CONF"
+perl -pi -e 's/"version": "[^"]*"/"version": "$ENV{VERSION}"/' "$TAURI_CONF"
 echo "  Updated $TAURI_CONF"
 
 # 2. Update src-tauri/Cargo.toml (only the package version, not dependency versions)
-sed -i "0,/^version = \"[^\"]*\"/s//version = \"$VERSION\"/" "$CARGO_TOML"
+perl -pi -e '$done ||= s/^version = "[^"]*"/version = "$ENV{VERSION}"/' "$CARGO_TOML"
 echo "  Updated $CARGO_TOML"
 
 # 3. Update iOS Info.plist (CFBundleShortVersionString and CFBundleVersion)
-sed -i "/<key>CFBundleShortVersionString<\/key>/{ n; s|<string>[^<]*</string>|<string>$VERSION</string>| }" "$IOS_PLIST"
-sed -i "/<key>CFBundleVersion<\/key>/{ n; s|<string>[^<]*</string>|<string>$VERSION</string>| }" "$IOS_PLIST"
+perl -0pi -e 's|(<key>CFBundleShortVersionString</key>\s*<string>)[^<]*|$1$ENV{VERSION}|' "$IOS_PLIST"
+perl -0pi -e 's|(<key>CFBundleVersion</key>\s*<string>)[^<]*|$1$ENV{VERSION}|' "$IOS_PLIST"
 echo "  Updated $IOS_PLIST"
 
 # 4. Update the Xcode project: the notification extension generates its Info.plist
 # from these, and App Store validation requires them to match the app's.
-sed -i "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = $VERSION;/" "$IOS_PBXPROJ"
-sed -i "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = $VERSION;/" "$IOS_PBXPROJ"
+perl -pi -e 's/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = $ENV{VERSION};/' "$IOS_PBXPROJ"
+perl -pi -e 's/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = $ENV{VERSION};/' "$IOS_PBXPROJ"
 echo "  Updated $IOS_PBXPROJ"
 
 # 5. Update the xcodegen spec the Xcode project is regenerated from
-sed -i "s/^\(\s*CFBundleShortVersionString:\).*/\1 $VERSION/" "$IOS_PROJECT_YML"
-sed -i "s/^\(\s*CFBundleVersion:\).*/\1 \"$VERSION\"/" "$IOS_PROJECT_YML"
+perl -pi -e 's/^(\s*CFBundleShortVersionString:).*/$1 $ENV{VERSION}/' "$IOS_PROJECT_YML"
+perl -pi -e 's/^(\s*CFBundleVersion:).*/$1 "$ENV{VERSION}"/' "$IOS_PROJECT_YML"
 echo "  Updated $IOS_PROJECT_YML"
 
 # 6. Update Cargo.lock to reflect the new version
