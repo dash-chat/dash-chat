@@ -12,6 +12,7 @@ pub use mailbox_server::RegisterPeerRequest;
 
 /// Test helpers and fixtures. Available outside `#[cfg(test)]` so dependent
 /// crates' tests can reuse utilities like `noop_upload_lifecycle`.
+#[cfg(feature = "testing")]
 pub mod testing;
 
 use std::{
