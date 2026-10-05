@@ -10,7 +10,12 @@ path = "src/lib.rs"
 name = "mailbox-local-server"
 path = "src/main.rs"
 
+[features]
+# Cross builds have no target openssl to link against, so build it from source
+vendored-openssl = ["dep:openssl-sys", "openssl-sys/vendored"]
+
 [dependencies]
+panic-policy = { workspace = true }
 dashchat-utils = { workspace = true }
 local-hub-discovery = { workspace = true }
 mailbox-server = { workspace = true }
@@ -22,6 +27,7 @@ tokio = { version = "1", features = ["full"] }
 clap = { version = "4.5", features = ["derive"] }
 futures = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+openssl-sys = { version = "0.9", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

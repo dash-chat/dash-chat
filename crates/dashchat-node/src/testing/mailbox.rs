@@ -1,7 +1,7 @@
 use mailbox_client::{
     FetchRequest, FetchResponse, MailboxClient, MailboxId, PublishResponse,
-    mem::{MemMailbox, MemMailboxClient},
-    toy::ToyMailboxClient,
+    backends::mem::{MemMailbox, MemMailboxClient},
+    backends::toy::ToyMailboxClient,
 };
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -134,11 +134,26 @@ impl TestMailbox {
             Self::Mem(mb) => node.mailboxes.register(mb.client()).await,
             Self::Cloud { url } => register_served_mailbox(node, url).await,
             Self::Local(local) => {
-                mailbox_client::toy::wait_for_mailbox_health(&local.url).await;
+                wait_for_mailbox_health(&local.url).await;
                 register_served_mailbox(node, &local.url).await;
             }
         }
     }
+}
+
+/// Poll a mailbox server's `/health` endpoint until it responds, confirming the
+/// server is listening before test setup tries to use it.
+pub async fn wait_for_mailbox_health(url: &str) {
+    let health = format!("{url}/health");
+    for _ in 0..100 {
+        if let Ok(resp) = mailbox_client::HTTP_CLIENT.get(&health).send().await {
+            if resp.status().is_success() {
+                return;
+            }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    panic!("mailbox /health never became ready at {health}");
 }
 
 async fn inspection_client(url: &str) -> ToyMailboxClient<MailboxOperation> {

@@ -13,8 +13,9 @@ use p2panda::streams::{
     StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
+use p2panda_auth::group::GroupCrdtError;
 use p2panda_stream::Processor;
-use p2panda_stream::groups::GroupsArgs as GroupsProcessorArgs;
+use p2panda_stream::groups::{GroupsArgs as GroupsProcessorArgs, GroupsError};
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
@@ -426,12 +427,13 @@ impl Actor {
         // the only caller (the actor's single event loop), so `next` returns our own item without
         // blocking. It carries only the input back plus a processed/no-op flag, so dropping it
         // loses nothing; we drain it so the queue doesn't grow unboundedly.
-        self.groups_processor
-            .next()
-            .await
-            .map_err(|(_, err)| ProcessorError::Groups(err.to_string()))?;
-
-        Ok(())
+        match self.groups_processor.next().await {
+            Ok(_) => Ok(()),
+            // Another process sharing the groups state (the iOS push extension)
+            // already applied it.
+            Err((_, GroupsError::Groups(GroupCrdtError::DuplicateOperation(..)))) => Ok(()),
+            Err((_, err)) => Err(ProcessorError::Groups(err.to_string())),
+        }
     }
 }
 

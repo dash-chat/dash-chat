@@ -1,6 +1,7 @@
 [profile.release]
 opt-level = 3
-panic = "abort"
+# Why not "abort": see crates/panic-policy/src/lib.rs.
+panic = "unwind"
 lto = "fat"
 codegen-units = 1
 # inherits = "release"
@@ -24,6 +25,7 @@ tracing = "0.1"
 
 dashchat-compat = { path = "crates/dashchat-compat" }
 dashchat-utils = { path = "crates/dashchat-utils" }
+panic-policy = { path = "crates/panic-policy" }
 network-watch = { path = "crates/network-watch" }
 mailbox-client = { path = "crates/mailbox-client" }
 opus-transcode = { path = "crates/opus-transcode" }
@@ -71,12 +73,16 @@ iroh = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60
 iroh-base = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 iroh-dns = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
-# iroh-gossip 0.101.0 + n0-computer/iroh-gossip PR #159 (redial after a failed dial)
-iroh-gossip = { git = "https://github.com/YuniqueUnic/iroh-gossip", rev = "9eb21c0b99fab5cfca9876e949b05d2aa1fae850" }
+# iroh-gossip 0.101.0 + n0-computer/iroh-gossip PRs #161, #162 and #163 (resource
+# cleanup, failed-dial and lost-join recovery, rejoin when isolated)
+iroh-gossip = { git = "https://github.com/dash-chat/iroh-gossip", rev = "efc565e0e63800a77a3add0dbb97f980278e2974" }
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "8eec1f09322c09efa0c0e81a8fa523d3745ba035" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616" }
+# swarm-discovery 0.6.3 + a non-fatal default-interface multicast join, so a
+# hub on a host without a default route (an offline hotspot) can still start
+swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = "1cf4c14c67b60bf8c020b5cc002fd7f438492199" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback

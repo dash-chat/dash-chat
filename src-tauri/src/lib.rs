@@ -9,6 +9,7 @@ mod device_info;
 mod error;
 mod filesystem;
 mod i18n;
+mod logger;
 mod mailbox;
 #[cfg(desktop)]
 mod media_drop;
@@ -37,6 +38,7 @@ pub(crate) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    panic_policy::install_panic_hook();
     crate::utils::install_crypto_provider();
 
     filesystem::init_data_dir();
@@ -49,14 +51,13 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_barcode_scanner::init())
-            .plugin(tauri_plugin_view::init());
+            .plugin(tauri_plugin_view::init())
+            .plugin(tauri_plugin_network_interfaces::init());
     }
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(tauri_plugin_android_fs::init());
         builder = builder.plugin(tauri_plugin_medialibrary::init());
-        // Holds a MulticastLock so inbound mDNS reaches us (the wifi driver otherwise filters it).
-        builder = builder.plugin(tauri_plugin_network_interfaces::init());
         builder = builder.plugin(
             tauri_plugin_lifecycle::Builder::new()
                 .on_pause(|app| async move {
@@ -94,6 +95,11 @@ pub fn run() {
                     {
                         if let Err(err) = app_node_manager.resume(&app).await {
                             log::error!("Failed to rebuild node on foreground: {err:?}");
+                        }
+                        // Uploads cut off while we were away go out again now.
+                        mailbox_client::backends::toy::restart_uploads();
+                        if let Ok(node) = app_node_manager.get().await {
+                            node.notify_unfetched_blob_followup();
                         }
                     }
                 })

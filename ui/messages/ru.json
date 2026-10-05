@@ -40,8 +40,8 @@
     "replyingTo": "Ответ на {{name}}",
     "voiceMessage": "Голосовое сообщение",
     "messageDeleted": "Сообщение удалено",
-    "messageStatusSending": "Отправка",
-    "messageStatusMailbox": "Отправить и все еще отправить",
+    "messageStatusSending": "Попытка отправить",
+    "messageStatusMailbox": "Отправить на сервер",
     "messageStatusDelivered": "Поставлено",
     "discardDraftTitle": "Распечатка?",
     "discardDraftDescription": "Это действие нельзя отменить.",
@@ -189,7 +189,7 @@
     "attachPhotos": "Фотографии",
     "attachFile": "Файл",
     "attachMenu": "Attach",
-    "gallery": "Галерея",
+    "gallery": "Фотографии",
     "removeAttachment": "Удалить",
     "addMoreAttachments": "Добавить другое приложение",
     "removeAllAttachments": "Удалить все вложения",
@@ -370,5 +370,8 @@
     "testBanner": "Испытание на ранний доступ",
     "feedback": "Отзывы",
     "reportSent": "Сообщение отправлено. Спасибо!",
-    "reportQueued": "Отчет сохранен. Он будет отправлен, когда вы вернетесь в интернет."
+    "reportQueued": "Отчет сохранен. Он будет отправлен, когда вы вернетесь в интернет.",
+    "messageStatusUnsent": "Отправка",
+    "retry": "Retry",
+    "notificationsPermissionDenied": "Уведомления должны быть указаны. Вы можете разрешить их в настройках вашего устройства."
 }

@@ -13,6 +13,7 @@
 		/** Give the button a translucent surface background. */
 		filled?: boolean;
 		loading?: boolean;
+		disabled?: boolean;
 		iconClass?: string;
 		class?: string;
 		children?: Snippet;
@@ -36,6 +37,7 @@
 		expanded,
 		filled = false,
 		loading = false,
+		disabled = false,
 		iconClass = 'text-2xl',
 		class: className = '',
 		children,
@@ -66,6 +68,7 @@
 <Button
 	clear
 	inline
+	{disabled}
 	onClick={click}
 	onpointerdowncapture={stopAncestorPress}
 	onpointerdown={onPointerDown}

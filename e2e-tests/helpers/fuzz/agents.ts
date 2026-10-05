@@ -51,10 +51,22 @@ export async function readNotificationTexts(
 	sa: StressAgent,
 ): Promise<NotificationTexts | null> {
 	if (sa.notifications === null) return null;
-	const [generic, unnamedSender, voice] = await Promise.all([
+	const [
+		generic,
+		unnamedSender,
+		voice,
+		newContactRequest,
+		newGroup,
+		addedYouTemplate,
+		addedToAGroup,
+	] = await Promise.all([
 		sa.agent.tr('youHaveANewMessage'),
 		sa.agent.tr('newMessage'),
 		sa.agent.tr('voiceMessage'),
+		sa.agent.tr('newContactRequest'),
+		sa.agent.tr('newGroup'),
+		sa.agent.tr('someoneAddedYouToTheGroup', { name: NAME_SLOT }),
+		sa.agent.tr('someoneAddedYouToTheGroupNoName'),
 	]);
 	const photos: Record<number, string> = {};
 	for (const count of PHOTO_COUNTS) {
@@ -63,8 +75,21 @@ export async function readNotificationTexts(
 				? await sa.agent.tr('photo')
 				: await sa.agent.tr('photosCount', { count });
 	}
-	return { generic, unnamedSender, photos, voice };
+	return {
+		generic,
+		unnamedSender,
+		photos,
+		voice,
+		newContactRequest,
+		newGroup,
+		addedYouToTheGroup: name => addedYouTemplate.replace(NAME_SLOT, () => name),
+		addedToAGroup,
+	};
 }
+
+/** Stands in for a name while a message is read once, to be filled in with
+ *  each real one later. */
+const NAME_SLOT = '\u0000name\u0000';
 
 /** A hub identity: its db, key and port survive its process, so bringing it
  * up on another network is the same hub moving, as a deployed one would. */
@@ -79,13 +104,13 @@ export interface HubReal {
  * tear down whatever a run leaves behind. */
 export interface Real {
 	agents: StressAgent[];
-	/** The configured networks, in the order moves index them, the host's
-	 * own one marked as home. */
+	/** The test networks, in the order moves index them. The network every
+	 * device falls back to with none of them saved is never among them. */
 	networks: WifiNetwork[];
 	/** The host's Wi-Fi card, null when it has none or no network is
 	 * configured. */
 	hubsDevice: string | null;
-	/** The lab SSID the card is on, null while it is on its usual network.
+	/** The test network the card is on, null while it is on its usual network.
 	 * Where every hub is today: a later slice with a card (or a machine) per
 	 * hub replaces this with a location on `HubReal`. */
 	hubsNetwork: string | null;
@@ -159,11 +184,6 @@ export function notificationsOf(sa: StressAgent): NotificationHelper {
 		throw new Error(`${sa.name}'s notifications are not read by this run`);
 	}
 	return sa.notifications;
-}
-
-/** The lab networks: the ones a run joins, leaves and forgets. */
-export function labNetworks(real: Real): WifiNetwork[] {
-	return real.networks.filter(n => !n.home);
 }
 
 export function networkNamed(real: Real, name: string): WifiNetwork {

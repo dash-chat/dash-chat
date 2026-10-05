@@ -12,11 +12,7 @@
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import {
-	isRemoteMailbox,
-	resumeMailbox,
-	suspendMailbox,
-} from '../setup/mailbox-control';
+import { isRemoteMailbox, suspendMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Pure p2p sync (no mailbox)', () => {
@@ -34,15 +30,6 @@ describe('Pure p2p sync (no mailbox)', () => {
 		suspendMailbox();
 		await createProfiles({ Alice: agent1, Bob: agent2 });
 		await exchangeContacts([agent1, agent2]);
-	});
-
-	after(() => {
-		if (isRemoteMailbox()) return;
-		try {
-			resumeMailbox();
-		} catch {
-			/* mailbox process already gone */
-		}
 	});
 
 	it('syncs a text message agent1 → agent2 over p2p', async () => {

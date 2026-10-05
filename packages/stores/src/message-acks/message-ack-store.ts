@@ -3,11 +3,7 @@ import { type ReactivePromise, reactive, relay } from 'signalium';
 import type { IMailboxTrackerStore } from '../mailbox-tracker/mailbox-tracker-store';
 import type { DeviceId, TopicId } from '../p2panda/types';
 import { MessageAcks, MessageDeliveryStatus } from '../types';
-import { pollingRequired } from '../utils/polling-required';
 import type { IMessageAckClient } from './message-ack-client';
-
-const POLL_INTERVAL_MS = 1_000;
-const POLLING_ENABLED = pollingRequired();
 
 export class MessageAckStore {
 	constructor(
@@ -30,18 +26,12 @@ export class MessageAckStore {
 				};
 
 				fetchAcks();
-				const interval = POLLING_ENABLED
-					? setInterval(fetchAcks, POLL_INTERVAL_MS)
-					: undefined;
 
 				const unsub = this.client.onNewMessageAcks(topic, acks => {
 					state.value = mergeAcks(state.value, acks);
 				});
 
-				return () => {
-					clearInterval(interval);
-					unsub();
-				};
+				return () => unsub();
 			}),
 	);
 

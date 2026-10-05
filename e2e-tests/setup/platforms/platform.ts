@@ -35,8 +35,8 @@ export interface PrepareContext {
 }
 
 /**
- * Everything platform-specific about running an agent (desktop binary vs
- * Android device). The unified wdio config delegates each agent slot to its
+ * Everything platform-specific about running a phone agent (Android device
+ * or iPhone). The unified wdio config delegates each phone slot to its
  * platform and calls the hooks of every platform in use.
  */
 export interface AgentPlatform {

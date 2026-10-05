@@ -107,9 +107,27 @@ export function killLeftoverMailboxServers() {
 	killOursBuiltFrom('mailbox-server');
 	killOursBuiltFrom('mailbox-local-server');
 	killOursBuiltFrom('push-notifications-server');
-	// Not built here: startToxiproxy stamps this checkout's `.dbs` into its
-	// environment instead.
+	// Not built here: startToxiproxy and startMailboxTls stamp this checkout's
+	// `.dbs` into their environments instead.
 	killOursNamed('toxiproxy-server');
+	killOursNamed('stunnel');
+}
+
+/** Kill every local hub this checkout's specs started. Only specs start hubs,
+ *  so none should outlive the spec file that started it; this runs around
+ *  every spec file (wdio.conf.ts), so one a failed or killed spec left
+ *  behind cannot show up in the next. */
+export function killLeftoverLocalHubs() {
+	killOursBuiltFrom('mailbox-local-server');
+	// Each hub's log is echoed by a `tail -F` of its own, which outlives it.
+	try {
+		execSync(
+			`pkill -f ${JSON.stringify(`tail -n 0 -F ${path.join(ROOT, '.dbs', 'e2e', 'hubs')}`)}`,
+			{ stdio: 'ignore' },
+		);
+	} catch {
+		/* none running */
+	}
 }
 
 /** Kill any process listening on the given TCP ports. */

@@ -1,7 +1,11 @@
 use std::time::Duration;
 
-use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::toy::ToyMailboxClient;
+use dashchat_node::{
+    mailbox::MailboxOperation,
+    testing::{wait_for_mailbox_health, *},
+    *,
+};
+use mailbox_client::backends::toy::ToyMailboxClient;
 
 mod common;
 
@@ -222,6 +226,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
 /// sender's blob is the explicit address registration in step 4, guaranteeing
 /// the fetch cannot succeed before then.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "the followup now uploads the blob, so the mailbox never has to fetch it"]
 async fn recovers_unfetched_blob_after_source_restart() {
     dashchat_node::testing::setup_tracing(
         &[
@@ -270,7 +275,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
     .await
     .unwrap();
     let url = server.url.clone();
-    mailbox_client::toy::wait_for_mailbox_health(&url).await;
+    wait_for_mailbox_health(&url).await;
 
     // Sender (alice) and a contact (bobbi). Bobbi only exists so alice has a
     // direct chat to send media into; he stays offline for the whole media

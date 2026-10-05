@@ -11,19 +11,15 @@
  *
  * Skips itself unless E2E_STRESS=1. Either phone platform will do — both
  * drive their Wi-Fi through the harness:
- *   PLATFORMS=android,android E2E_STRESS=1 just e2e run p2p-network-switch
- *   PLATFORMS=ios,ios E2E_STRESS=1 just e2e run p2p-network-switch
+ *   PHONES=android,android E2E_STRESS=1 just e2e run p2p-network-switch
+ *   PHONES=ios,ios E2E_STRESS=1 just e2e run p2p-network-switch
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { stampedLog } from '../helpers/utils';
-import {
-	isRemoteMailbox,
-	killMailbox,
-	restartMailbox,
-} from '../setup/mailbox-control';
+import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
-import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
+import { wifiNetworks } from '../setup/test-env';
 
 const AWAY_MS = 60_000;
 /** Past the peer's QUIC idle timeout on every old session, so the return
@@ -55,35 +51,21 @@ describe('Pure p2p sync across a network switch', function () {
 
 	let alice: Agent;
 	let bob: Agent;
-	let mailboxKilled = false;
-	let otherNetwork: WifiNetwork | undefined;
 
 	before(async function () {
 		if (process.env.E2E_STRESS !== '1') this.skip();
 		if (isRemoteMailbox()) this.skip();
 		await killMailbox();
-		mailboxKilled = true;
 		[alice, bob] = await setupAgents(this, [
 			{ platform: 'phone' },
 			{ platform: 'phone' },
 		]);
-		// An earlier run that died mid-case leaves a phone off the air.
-		await alice.enableWifi();
-		await bob.enableWifi();
 		await createProfiles({ Alice: alice, Bob: bob });
 		await exchangeContacts([alice, bob]);
 		// A round trip on the LAN before the move, so a later failure is about
 		// the return and not about p2p never having worked between these two.
 		await bob.directChatPage.composer.sendMessage('hello before leaving');
 		await expectArrival(alice, 'hello before leaving', Date.now());
-	});
-
-	after(async () => {
-		if (otherNetwork !== undefined) {
-			await alice.forgetWifi(otherNetwork.ssid);
-			await bob.forgetWifi(otherNetwork.ssid);
-		}
-		if (mailboxKilled) await restartMailbox();
 	});
 
 	it('receives a message the peer sent while it was off Wi-Fi, once back on the LAN', async () => {
@@ -180,13 +162,14 @@ describe('Pure p2p sync across a network switch', function () {
 	});
 
 	it('receives a message the peer sent once both phones had moved to another Wi-Fi network', async function () {
-		const home = (await alice.wifiInfo()).ssid;
-		otherNetwork = wifiNetworks().find(n => n.ssid !== home);
-		if (otherNetwork === undefined) this.skip();
+		const [network] = wifiNetworks();
+		if (network === undefined) this.skip();
 		const text = 'sent once we had both moved network';
-		await alice.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
-		await bob.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
-		stampedLog(`both phones on ${otherNetwork.ssid}`);
+		// Bob dials Alice, so Alice moves last: the message then needs an
+		// address she took just before it was sent.
+		await bob.joinWifi(network.ssid, network.passphrase);
+		await alice.joinWifi(network.ssid, network.passphrase);
+		stampedLog(`both phones on ${network.ssid}`);
 		await bob.directChatPage.composer.sendMessage(text);
 		await expectArrival(alice, text, Date.now());
 	});

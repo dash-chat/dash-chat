@@ -18,6 +18,7 @@
 		"@awesome.me/webawesome": "3.13.0",
 		"@choochmeque/tauri-plugin-sharekit-api": "^0.3.0",
 		"@gbyte/tauri-plugin-ios-photos": "github:dash-chat/tauri-plugin-ios-photos#034dafd0a591fce73d4fe865e216cc3e225236c5",
+		"tauri-plugin-network-interfaces-api": "github:dash-chat/tauri-plugin-network-interfaces#9c50b47eab93202a55f0374fe9c70bb2016c8a2f",
 		"@mdi/js": "^7.4.47",
 		"@saurl/tauri-plugin-safe-area-insets-css-api": "^0.1.0",
 		"@tauri-apps/api": "^2",

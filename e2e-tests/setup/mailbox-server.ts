@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort, allocatePreferredPort } from './allocate-port';
+import { mailboxAnswers, startMailboxTls } from './mailbox-tls';
 import { E2E_NETWORK_ID, MAILBOX_PREFERRED_PORT } from './network-id';
 import { E2E_RELAY_URL } from './relay';
 import { Link } from './toxiproxy';
@@ -97,8 +98,8 @@ export function spawnMailboxServer(
 }
 
 /**
- * Start a local mailbox server on a freshly allocated port, behind a link a
- * spec can degrade: spawn it, echo its log file + lifecycle to the console,
+ * Start a local mailbox server on a freshly allocated port, behind TLS and a
+ * link a spec can degrade: spawn it, echo its log file + lifecycle to the console,
  * wait until it answers /health, expose its URL via process.env.MAILBOX_URL,
  * and persist mailbox-info.json so specs can drive its lifecycle. Shared by
  * the desktop and Android wdio configs.
@@ -108,13 +109,16 @@ export async function startLocalMailboxServer(
 ): Promise<{
 	proc: ChildProcess;
 	logger: ChildProcess;
+	tls: ChildProcess;
+	tlsLogger: ChildProcess;
 	port: number;
 	url: string;
 }> {
 	const port = await allocatePreferredPort(MAILBOX_PREFERRED_PORT);
 	const bindPort = await allocateFreePort();
-	await Link.open(MAILBOX_LINK, port, bindPort);
-	const url = `http://localhost:${port}`;
+	const tls = await startMailboxTls(bindPort);
+	await Link.open(MAILBOX_LINK, port, tls.port);
+	const url = `https://localhost:${port}`;
 	const dbPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-server', 'mailbox.db');
 	mkdirSync(path.dirname(dbPath), { recursive: true });
 
@@ -149,7 +153,7 @@ export async function startLocalMailboxServer(
 		}),
 	);
 
-	return { proc, logger, port, url };
+	return { proc, logger, tls: tls.proc, tlsLogger: tls.logger, port, url };
 }
 
 /** Poll the server's /health until it answers, or throw after `timeoutMs`. */
@@ -159,12 +163,7 @@ export async function waitForMailboxReady(
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
-		try {
-			const res = await fetch(`${url}/health`);
-			if (res.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		if (await mailboxAnswers(url, Math.max(1, deadline - Date.now()))) return;
 		await new Promise(r => setTimeout(r, 500));
 	}
 	throw new Error(`Mailbox server at ${url} failed to become ready`);

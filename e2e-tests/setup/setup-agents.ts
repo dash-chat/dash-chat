@@ -6,9 +6,12 @@
  * page-object instances
  * (`agent.homePage`, `agent.directChatPage`, …) and a small set of agent-level
  * helpers that proxy to the browser-side test registry (`agent.tr`,
- * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PLATFORMS
- * multiset can't fulfill the requirements.
+ * `agent.goto`, `agent.setLocale`, …) — or skips the suite when the PHONES
+ * multiset can't fulfill the requirements only a phone can.
  */
+import { asyncExitHook } from 'exit-hook';
+import { existsSync, readFileSync } from 'node:fs';
+
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
@@ -38,26 +41,31 @@ import { SettingsPage } from '../helpers/pages/settings/settings-page';
 import { WelcomePage } from '../helpers/pages/welcome-page';
 import { checkOverflow } from '../helpers/review/checks';
 import { ASYNC_SCRIPT_TIMEOUT } from '../helpers/timeouts';
-import { ensurePhonesShareALan } from './phone-lan';
+import { sourceLogFile } from './agent-logger';
+import { convergeNetworks, forgetTestNetworks } from './phone-lan';
 import {
 	APP_PACKAGE,
 	androidHasInternet,
 	androidWifiInfo,
-	androidWifiSsid,
-	connectAndroidWifi,
+	denyAndroidNotificationPermission,
 	disableAndroidWifi,
 	enableAndroidWifi,
 	forgetAndroidWifi,
 	isAndroidAppRunning,
+	joinAndroidWifi,
+	leaveAndroidWifi,
 	pressAndroidHome,
+	resetAndroidNotificationPermission,
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
 import {
 	clearAgentDir,
+	discardDesktopAgent,
 	isAgentAppRunning,
 	killAgentApp,
 	launchAgentApp,
+	launchDesktopAgent,
 	macWindowRect,
 	readOpenedUrls,
 } from './platforms/desktop';
@@ -69,16 +77,22 @@ import {
 	resetIosAppState,
 } from './platforms/ios';
 import {
-	connectIosWifi,
 	disableIosWifi,
 	enableIosWifi,
 	forgetIosWifi,
 	iosWifiInfo,
-	iosWifiSsid,
+	joinIosWifi,
+	leaveIosWifi,
 } from './platforms/ios-wifi';
-import { type AgentPlatformName, isMobile, platformNames } from './test-env';
+import {
+	type AgentPlatformName,
+	type PhonePlatformName,
+	isMobile,
+	phonePlatforms,
+	testNetworkSsids,
+} from './test-env';
 import { deviceUdid, switchToWebview, waitForTestUtils } from './webview';
-import type { WifiInfo } from './wifi';
+import { WIFI_REASSOCIATE_MS, type WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
@@ -177,21 +191,30 @@ export type Agent = WebdriverIO.Browser & {
 	/** Turn Wi-Fi off, leaving the app foregrounded. Physical phones only:
 	 *  Android through adb, with the app on screen throughout; iOS through the
 	 *  Settings app, which takes the app off screen for the duration and puts
-	 *  it back, as a user changing networks does. Same for the rest of the
-	 *  Wi-Fi controls. */
+	 *  it back, as a user changing networks does. Same for turning it on; the
+	 *  test networks are handled through the app on iOS. */
 	disableWifi(): Promise<void>;
 	/** Turn Wi-Fi on and resolve once the device holds a routable IPv4 address
 	 *  again, returning it: the supplicant lands on whichever saved network
 	 *  scores best, so callers check it is the one they expect. */
 	enableWifi(): Promise<string>;
-	/** Join `ssid` (an empty `passphrase` means an open network), saving it on
-	 *  the device if it is new, and resolve with the IPv4 address obtained on
-	 *  it. */
-	connectWifi(ssid: string, passphrase: string): Promise<string>;
-	/** Forget `ssid`, which drops it if it is the current network, and resolve
-	 *  with the IPv4 address the device is on once it has settled on another
-	 *  saved network. */
-	forgetWifi(ssid: string): Promise<string>;
+	/** Join the test network `ssid` (an empty `passphrase` means an open
+	 *  network) and resolve with the IPv4 address obtained on it. It becomes
+	 *  the one test network saved on the device: any other is forgotten once
+	 *  the device is on this one, so a killed run can strand a phone on at
+	 *  most the network it was on. iOS goes through the app (the
+	 *  network-interfaces plugin), with the app on screen throughout; Android
+	 *  through adb. */
+	joinWifi(ssid: string, passphrase: string): Promise<string>;
+	/** Get onto the host's LAN from wherever the device is: radio on, every
+	 *  test network forgotten, then every network it lands on that is clearly
+	 *  not the host's forgotten in turn (on Android, every other saved network
+	 *  too once it is surely on the host's). Resolves with where it settled. */
+	leaveWifi(): Promise<WifiInfo>;
+	/** Forget every test network without waiting for where the device lands:
+	 *  what a move that is about to turn the radio off does first, so nothing
+	 *  of the run's is saved while it is off. */
+	forgetWifi(): Promise<void>;
 	/** Drop and restore Wi-Fi and resolve once the device holds a routable
 	 *  IPv4 address again. Physical phones only; throws elsewhere, since no
 	 *  other platform can lose its LAN without also losing the driver session.
@@ -199,13 +222,13 @@ export type Agent = WebdriverIO.Browser & {
 	 *  reassociation from a jump to a different SSID, which would invalidate
 	 *  any discovery measurement taken after it. */
 	cycleWifi(downMs: number): Promise<string>;
-	/** The network this device is on: its SSID and IPv4 address, each ''
-	 *  while it has none. */
+	/** The network this device is on: its IPv4 address and the LAN it is on,
+	 *  '' while it has none, and its SSID where the platform tells an app —
+	 *  on iOS only for a test network, which the app added itself; on the
+	 *  user's own network it reads ''. On iOS the reading is the app's, so
+	 *  it brings the app to the foreground if it is not — call it where that
+	 *  is harmless, as with [`hasInternet`]. Same for the test-network operations. */
 	wifiInfo(): Promise<WifiInfo>;
-	/** The SSID the device is associated with, or '' while it is on none.
-	 *  Cheaper than [`wifiInfo`], which on iOS walks into the Wi-Fi page for an
-	 *  address; this reads only what the platform says for free. */
-	wifiSsid(): Promise<string>;
 	/** Whether the phone can reach the internet. On android this is a pure adb
 	 *  probe; on iOS the answer has to come from the app's own webview, so it
 	 *  brings the app to the foreground — call it where that is harmless, or
@@ -222,6 +245,17 @@ export type Agent = WebdriverIO.Browser & {
 	/** Kill the phone's push extension process, so the next push starts a
 	 *  fresh one. iOS only. */
 	killPushExtension(): Promise<void>;
+	/** Take the notification permission back to never asked, so the app's next
+	 *  request shows the system dialog. Call it between [`stopApp`] and
+	 *  [`startApp`]. Android only. */
+	resetNotificationPermission(): void;
+	/** Deny the notification permission for good, so the app's requests are
+	 *  refused without a dialog. Call it between [`stopApp`] and
+	 *  [`startApp`]. Android only. */
+	denyNotificationPermission(): void;
+	/** What this agent's device has logged so far in the run, as the harness
+	 *  captured it. */
+	readLog(): string;
 };
 
 /** (Re)build every page object against `b`. Called on first setup and again
@@ -264,6 +298,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		await b.execute(async (p: string) => {
 			await window.__test.goto(p);
 		}, path);
+	};
+	agent.readLog = () => {
+		const file = sourceLogFile(`agent-${slot}`);
+		if (!existsSync(file))
+			throw new Error(`no log was captured for agent-${slot} at ${file}`);
+		return readFileSync(file, 'utf8');
 	};
 	agent.injectDeepLink = async (url: string) => {
 		await b.execute((u: string) => window.__test.handleDeepLink(u), url);
@@ -423,14 +463,36 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await enableIosWifi(b)
 			: await enableAndroidWifi(wifiUdid(agent, b));
-	agent.connectWifi = async (ssid: string, passphrase: string) =>
+	const joinWifiOnce = async (ssid: string, passphrase: string) =>
 		agent.platform === 'ios'
-			? await connectIosWifi(b, ssid, passphrase)
-			: await connectAndroidWifi(wifiUdid(agent, b), ssid, passphrase);
-	agent.forgetWifi = async (ssid: string) =>
+			? await joinIosWifi(b, ssid, passphrase)
+			: await joinAndroidWifi(
+					wifiUdid(agent, b),
+					ssid,
+					passphrase,
+					testNetworkSsids(),
+				);
+	agent.joinWifi = async (ssid: string, passphrase: string) => {
+		// A phone sometimes fails to associate with an access point it was just
+		// on; one more try keeps that radio hiccup from failing the spec.
+		try {
+			return await joinWifiOnce(ssid, passphrase);
+		} catch (err) {
+			console.warn(`failed to join ${ssid}, retrying: ${String(err)}`);
+			return await joinWifiOnce(ssid, passphrase);
+		}
+	};
+	agent.leaveWifi = async () =>
 		agent.platform === 'ios'
-			? await forgetIosWifi(b, ssid)
-			: await forgetAndroidWifi(wifiUdid(agent, b), ssid);
+			? await leaveIosWifi(b, testNetworkSsids())
+			: await leaveAndroidWifi(wifiUdid(agent, b), testNetworkSsids());
+	agent.forgetWifi = async () => {
+		if (agent.platform === 'ios') {
+			await forgetIosWifi(b);
+			return;
+		}
+		forgetAndroidWifi(wifiUdid(agent, b), testNetworkSsids());
+	};
 	agent.cycleWifi = async (downMs: number) => {
 		await agent.disableWifi();
 		await b.pause(downMs);
@@ -440,10 +502,6 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		agent.platform === 'ios'
 			? await iosWifiInfo(b)
 			: androidWifiInfo(deviceUdid(b));
-	agent.wifiSsid = async () =>
-		agent.platform === 'ios'
-			? await iosWifiSsid(b)
-			: androidWifiSsid(deviceUdid(b));
 	agent.hasInternet = async () =>
 		agent.platform === 'ios'
 			? await iosHasInternet(b)
@@ -475,6 +533,22 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		}
 		killIosPushExtension(deviceUdid(b));
 	};
+	agent.resetNotificationPermission = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(
+				`resetNotificationPermission needs android, got ${agent.platform}`,
+			);
+		}
+		resetAndroidNotificationPermission(deviceUdid(b));
+	};
+	agent.denyNotificationPermission = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(
+				`denyNotificationPermission needs android, got ${agent.platform}`,
+			);
+		}
+		denyAndroidNotificationPermission(deviceUdid(b));
+	};
 
 	return agent;
 }
@@ -505,6 +579,15 @@ const TAP_SETTLE_MS = 100;
 
 /** How many times to re-tap an element whose tap never reached the page. */
 const TAP_ATTEMPTS = 3;
+
+/** How long a busy page gets to turn a touch into its click before the tap
+ *  counts as dropped. Asked any sooner, a click that is merely late reads as
+ *  a miss, and the retry waits on an element the first tap has already
+ *  navigated away from. */
+const CLICK_DISPATCH_MS = 3_000;
+
+/** How often the page is asked whether the click has fired yet. */
+const CLICK_POLL_MS = 100;
 
 /** A fresh handle for `element`, resolved again through the same parent chain
  *  it was originally found by, or null if it is no longer in the page. */
@@ -562,17 +645,26 @@ async function tapPoint(
 			? { x, y }
 			: null;
 	};
+	let replaced = 0;
+	const centreOf = async (live: WebdriverIO.Element) => {
+		try {
+			return await agent.execute(centreIfTopmost, live);
+		} catch {
+			replaced++;
+			return null;
+		}
+	};
 	try {
 		return await agent.waitUntil(async () => {
 			const live = await refetch(element);
 			if (live === null) return null;
-			const point = await agent.execute(centreIfTopmost, live);
+			const point = await centreOf(live);
 			if (point === null) return null;
 			// A menu still scaling or sliding in reports the centre it has now,
 			// not the one it settles at, and a tap there lands beside it — on a
 			// backdrop that closes the menu. Tap only once the centre holds still.
 			await agent.pause(TAP_SETTLE_MS);
-			const settled = await agent.execute(centreIfTopmost, live);
+			const settled = await centreOf(live);
 			if (settled === null || settled.x !== point.x || settled.y !== point.y) {
 				return null;
 			}
@@ -580,10 +672,12 @@ async function tapPoint(
 		});
 	} catch (err) {
 		const why = err instanceof Error ? err.message : String(err);
+		const live = (await refetch(element)) ?? element;
 		throw new Error(
 			`${String(element.selector)} is in the page but never became the ` +
 				'topmost element at its own centre, so a tap there would have hit ' +
-				`${await describeCover(agent, element)} (${why})`,
+				`${await describeCover(agent, live)}; it was replaced under the ` +
+				`check ${replaced} times (${why})`,
 		);
 	}
 }
@@ -620,7 +714,44 @@ async function describeCover(
 	}
 }
 
-/** Touch (x, y) and report whether `element` actually received a click.
+/** Whether `element` cannot be clicked: a disabled control, which gets no
+ *  click at all. */
+function isDisabled(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+): Promise<boolean> {
+	return agent.execute(
+		(el: HTMLElement) =>
+			el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true',
+		element,
+	);
+}
+
+/** Whether a tap whose click did not reach `element` still did what a click
+ *  on it does. Some touches act without the click ever reaching a listener, or
+ *  with it arriving after the check, and a retry then taps something else.
+ *  Two outcomes count: the element turned disabled since before the first tap
+ *  (a send button busy sending), which no click elsewhere can cause; or, when
+ *  no click was dispatched at all, it left the page (a back button, as its page
+ *  goes) — a click elsewhere, on a backdrop, could have removed it too. */
+async function tapTookEffect(
+	agent: WebdriverIO.Browser,
+	element: WebdriverIO.Element,
+	disabledAtStart: boolean,
+	click: 'elsewhere' | 'none',
+): Promise<boolean> {
+	const live = await refetch(element);
+	if (live === null) return click === 'none';
+	if (disabledAtStart) return false;
+	try {
+		return await isDisabled(agent, live);
+	} catch {
+		return false;
+	}
+}
+
+/** Touch (x, y) and report where the click it dispatched landed: on
+ *  `element`, elsewhere, or nowhere.
  *
  *  WDA reports a successful touch that WebKit sometimes never turns into a
  *  click, so the tap has to be confirmed rather than assumed. It has to be
@@ -628,22 +759,47 @@ async function describeCover(
  *  round trip takes most of a second, so a page that moves in between leaves
  *  the tap landing on something else — which still fires a click, just not the
  *  one that was asked for. The flag lives on documentElement because a click
- *  that lands usually starts a navigation and takes the element with it. */
+ *  that lands usually starts a navigation and takes the element with it, and
+ *  it records a click anywhere so that the wait for it ends on the first one. */
 async function clickReachedElement(
 	agent: WebdriverIO.Browser,
 	element: WebdriverIO.Element,
 	x: number,
 	y: number,
 	pointerType: PointerType,
-): Promise<boolean> {
+): Promise<'target' | 'elsewhere' | 'none'> {
 	await agent.execute((el: HTMLElement) => {
 		delete document.documentElement.dataset.e2eClick;
+		delete document.documentElement.dataset.e2eClickElsewhere;
 		document.addEventListener(
 			'click',
 			event => {
 				const target = event.target;
-				if (target instanceof Node && (el === target || el.contains(target))) {
-					document.documentElement.dataset.e2eClick = 'seen';
+				// A re-render between the hit test and the click hands it to a
+				// fresh copy of the same control.
+				const testid = el.getAttribute('data-testid');
+				const onTarget =
+					target instanceof Element &&
+					(el.contains(target) ||
+						(testid !== null &&
+							target.closest(`[data-testid="${testid}"]`) !== null));
+				// A click that reaches no element still in the page was dispatched
+				// at a target the touch already removed: it acted, it did not miss.
+				const elsewhere =
+					!onTarget && target instanceof Element && target.isConnected;
+				document.documentElement.dataset.e2eClick = onTarget
+					? 'target'
+					: elsewhere
+						? 'elsewhere'
+						: 'none';
+				if (elsewhere) {
+					const testid = target.closest('[data-testid]');
+					document.documentElement.dataset.e2eClickElsewhere = [
+						target.tagName.toLowerCase(),
+						testid === null
+							? ''
+							: `in [data-testid="${testid.getAttribute('data-testid')}"]`,
+					].join(' ');
 				}
 			},
 			{ once: true, capture: true },
@@ -656,9 +812,30 @@ async function clickReachedElement(
 		.pause(TAP_HOLD_MS)
 		.up()
 		.perform();
-	return await agent.execute(
-		() => document.documentElement.dataset.e2eClick === 'seen',
-	);
+	const tappedAt = Date.now();
+	let polls = 0;
+	let landed: string | undefined;
+	try {
+		await agent.waitUntil(
+			async () => {
+				polls++;
+				landed = await agent.execute(
+					() => document.documentElement.dataset.e2eClick,
+				);
+				return landed !== undefined;
+			},
+			{ timeout: CLICK_DISPATCH_MS, interval: CLICK_POLL_MS },
+		);
+	} catch {
+		console.log(`[tap-timing] no click in ${Date.now() - tappedAt}ms`);
+		return 'none';
+	}
+	if (polls > 1 || landed !== 'target') {
+		console.log(
+			`[tap-timing] ${landed} on poll ${polls}, ${Date.now() - tappedAt}ms after the touch`,
+		);
+	}
+	return landed === 'target' || landed === 'elsewhere' ? landed : 'none';
 }
 
 type PointerType = 'touch' | 'mouse';
@@ -681,7 +858,7 @@ type PointerType = 'touch' | 'mouse';
  *  which never reaches a handler on a child (a Konsta list item's link), while
  *  a pointer action is dispatched at the point's innermost element and
  *  bubbles up like a real click. */
-function tapWebElementsAtTheirRect(
+export function tapWebElementsAtTheirRect(
 	agent: WebdriverIO.Browser,
 	pointerType: PointerType,
 ): void {
@@ -694,12 +871,22 @@ function tapWebElementsAtTheirRect(
 					return await origClick();
 				}
 			}
+			let disabledAtStart: boolean | undefined;
 			for (let attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
 				const { x, y, live } = await tapPoint(agent, this);
-				if (await clickReachedElement(agent, live, x, y, pointerType)) return;
+				disabledAtStart ??= await isDisabled(agent, live);
+				const click = await clickReachedElement(agent, live, x, y, pointerType);
+				if (click === 'target') return;
+				if (await tapTookEffect(agent, this, disabledAtStart, click)) return;
+				const landedOn =
+					click === 'elsewhere'
+						? await agent.execute(
+								() => document.documentElement.dataset.e2eClickElsewhere,
+							)
+						: 'nothing';
 				console.warn(
-					`[${pointerType}] tap at ${x},${y} did not reach ${String(this.selector)} ` +
-						`(attempt ${attempt}/${TAP_ATTEMPTS})`,
+					`[${pointerType}] tap at ${x},${y} did not reach ${String(this.selector)}; ` +
+						`its click went to ${landedOn} (attempt ${attempt}/${TAP_ATTEMPTS})`,
 				);
 			}
 			throw new Error(
@@ -755,15 +942,14 @@ function skipSessionDeleteOnceAppIsGone(
 	);
 }
 
-/** Build an agent by capability name and wait for window.__test to be ready.
+/** Build an agent on session `b` and wait for window.__test to be ready.
  *  Defaults to narrow (mobile) layout so back buttons and FABs render — review
  *  checks switch to wide explicitly when they need the desktop two-panel UI. */
 async function setupAgent(
-	agentName: string,
+	b: WebdriverIO.Browser,
 	platform: AgentPlatformName,
 	slot: number,
 ): Promise<Agent> {
-	const b = browser.getInstance(agentName);
 	await waitForTestUtils(b);
 	if (platform === 'ios') {
 		// Each spec file gets fresh sessions but not a fresh install, so state
@@ -823,7 +1009,7 @@ async function setupAgent(
 				urls = readOpenedUrls(slot);
 				return urls.length >= count;
 			},
-			{ timeoutMsg: `${agentName} never asked the OS to open ${count} url(s)` },
+			{ timeoutMsg: `agent${slot} never asked the OS to open ${count} url(s)` },
 		);
 		return urls;
 	};
@@ -876,31 +1062,91 @@ function specificity(requirement: PlatformRequirement): number {
 	return 3;
 }
 
-/** Assign each requirement a distinct launched slot — narrowest requirements
- *  first so broader ones take the leftovers, ascending slot order for
- *  determinism — or null when the launched platforms can't fulfill them all. */
-function matchSlots(
+/** Assign each requirement a distinct phone slot when a phone fulfills it,
+ *  or null for a desktop agent — narrowest requirements first so broader ones
+ *  take the leftover phones, ascending slot order for determinism — or null
+ *  overall when a requirement only a phone fulfills finds none. */
+function assignPhones(
 	requirements: readonly PlatformRequirement[],
-	platforms: AgentPlatformName[],
-): number[] | null {
-	const free = platforms.map((platform, i) => ({ slot: i + 1, platform }));
-	const slots: number[] = [];
+	phones: PhonePlatformName[],
+): (number | null)[] | null {
+	const free = phones.map((platform, i) => ({ slot: i + 1, platform }));
+	const slots: (number | null)[] = [];
 	const order = [...requirements.keys()].sort(
 		(a, b) => specificity(requirements[b]) - specificity(requirements[a]),
 	);
 	for (const i of order) {
 		const j = free.findIndex(f => fulfills(requirements[i], f.platform));
-		if (j === -1) return null;
-		slots[i] = free[j].slot;
-		free.splice(j, 1);
+		if (j !== -1) {
+			slots[i] = free[j].slot;
+			free.splice(j, 1);
+		} else if (fulfills(requirements[i], 'desktop')) {
+			slots[i] = null;
+		} else {
+			return null;
+		}
 	}
 	return slots;
 }
 
+let desktopsLaunched = 0;
+
+/** Launch one more desktop agent, on the next slot past every phone's. */
+export async function setupDesktopAgent(): Promise<{
+	agent: Agent;
+	slot: number;
+}> {
+	desktopsLaunched += 1;
+	const slot = phonePlatforms().length + desktopsLaunched;
+	try {
+		const agent = await setupAgent(
+			await launchDesktopAgent(slot),
+			'desktop',
+			slot,
+		);
+		return { agent, slot };
+	} catch (e) {
+		// A leftover app would keep advertising over mDNS and skew the rest of the run.
+		await discardDesktopAgent(slot);
+		throw e;
+	}
+}
+
+/** The agents `setupAgents` built for this spec file. */
+export const specAgents: Agent[] = [];
+
+/** Room for every phone to work through every network it has to forget on
+ *  the way back, each waited out up to WIFI_REASSOCIATE_MS. */
+const PHONES_BACK_MS = 5 * WIFI_REASSOCIATE_MS;
+
+/** The exit codes exit-hook reports for SIGINT and SIGTERM. */
+const SIGNAL_EXIT_CODES = [130, 143];
+
+let signalHookRegistered = false;
+
+/** On Ctrl-C the suite's afterAll never runs, and wdio kills the worker 5s
+ *  later: time to forget the test networks, not to wait for the phones to
+ *  land. An iPhone left on one cannot verify its developer certificate
+ *  offline, and then no session, and so no harness, can reach it again. The
+ *  hook joins wdio's own exit-hook, which waits for it; registered in the
+ *  worker only, since a launcher hook would end the launcher at once. */
+function forgetTestNetworksOnSignal(): void {
+	if (signalHookRegistered) return;
+	signalHookRegistered = true;
+	asyncExitHook(
+		async exitCode => {
+			if (SIGNAL_EXIT_CODES.includes(exitCode)) {
+				await forgetTestNetworks(specAgents);
+			}
+		},
+		{ wait: 4_500 },
+	);
+}
+
 /**
- * Build one agent per requirement, matched against the unordered PLATFORMS
- * multiset (a 'desktop' requirement gets a desktop agent no matter its
- * position in PLATFORMS), skipping the suite when no assignment exists. Call
+ * Build one agent per requirement: on a phone from the unordered PHONES
+ * multiset when one fulfills it, on a desktop app launched for it otherwise.
+ * Skips the suite when a requirement only a phone fulfills finds none. Call
  * from a `before(async function () { ... })` hook (not an arrow function —
  * `this` must be the mocha context so the suite can be skipped).
  */
@@ -908,16 +1154,36 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 	ctx: Mocha.Context,
 	requirements: T,
 ): Promise<{ [K in keyof T]: Agent }> {
-	const platforms = platformNames();
-	const slots = matchSlots(
+	const phones = phonePlatforms();
+	const slots = assignPhones(
 		requirements.map(r => r.platform),
-		platforms,
+		phones,
 	);
 	if (slots === null) ctx.skip();
 	const agents = await Promise.all(
-		slots.map(slot => setupAgent(`agent${slot}`, platforms[slot - 1], slot)),
+		slots.map(async slot =>
+			slot === null
+				? (await setupDesktopAgent()).agent
+				: await setupAgent(
+						browser.getInstance(`agent${slot}`),
+						phones[slot - 1],
+						slot,
+					),
+		),
 	);
-	await ensurePhonesShareALan(agents);
+	specAgents.push(...agents);
+	forgetTestNetworksOnSignal();
+	await convergeNetworks(agents);
+	// However the suite ends, its phones go back on the host's LAN: an iPhone
+	// left on a test network would get the next run's build installed with no
+	// internet to verify it.
+	ctx.test?.parent?.afterAll(
+		'put the phones back on the host LAN',
+		function (this: Mocha.Context) {
+			this.timeout(PHONES_BACK_MS);
+			return convergeNetworks(agents);
+		},
+	);
 	return agents as { [K in keyof T]: Agent };
 }
 

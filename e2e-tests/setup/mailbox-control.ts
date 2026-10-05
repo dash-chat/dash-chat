@@ -17,8 +17,9 @@ import {
 	spawnMailboxServer,
 	waitForMailboxReady,
 } from './mailbox-server';
+import { mailboxAnswers } from './mailbox-tls';
 import { remoteMailboxUrl } from './test-env';
-import { Link } from './toxiproxy';
+import { Link, type LinkConditions } from './toxiproxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MAILBOX_INFO_PATH = path.join(
@@ -82,14 +83,7 @@ export async function mailboxWakesPhones(): Promise<boolean> {
  *  does, which is how a spec that took it down is known without being asked. */
 export async function mailboxServing(): Promise<boolean> {
 	if (isRemoteMailbox()) return false;
-	try {
-		const res = await fetch(`${readInfo().url}/health`, {
-			signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
-		});
-		return res.ok;
-	} catch {
-		return false;
-	}
+	return await mailboxAnswers(readInfo().url, HEALTH_TIMEOUT_MS);
 }
 
 /** Whether the link agents reach the mailbox through can be degraded: the
@@ -106,6 +100,11 @@ function link(): Link {
 /** Every request still answers, about a second late. */
 export function slowMailboxLink(): Promise<void> {
 	return link().slow();
+}
+
+/** Every connection from now on crosses a network with these conditions. */
+export function shapeMailboxLink(conditions: LinkConditions): Promise<void> {
+	return link().shape(conditions);
 }
 
 /** Requests are accepted and then never answered. */
@@ -201,4 +200,18 @@ export async function restartMailbox(): Promise<void> {
 		JSON.stringify({ ...info, pid: server.pid }),
 	);
 	await waitForMailboxReady(info.url);
+}
+
+/** Back to a healthy mailbox, whatever a spec left it in: running, not
+ *  suspended, behind a link with nothing degrading it. Every spec file
+ *  starts and ends here (wdio.conf.ts), so none has to put back what it
+ *  broke, and a run that died mid-spec cannot hand the next one a dead
+ *  mailbox. A no-op against a remote mailbox, which is never broken. */
+export async function ensureHealthyMailbox(): Promise<void> {
+	if (isRemoteMailbox()) return;
+	const { pid, url } = readInfo();
+	if (isAlive(pid)) resumeMailbox();
+	else await restartMailbox();
+	await healMailboxLink();
+	await waitForMailboxReady(url);
 }

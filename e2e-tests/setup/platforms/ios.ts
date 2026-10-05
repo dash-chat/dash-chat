@@ -1,5 +1,16 @@
-import { type ChildProcess, execSync, spawn } from 'node:child_process';
-import { readFileSync, rmSync } from 'node:fs';
+import {
+	type ChildProcess,
+	execFileSync,
+	execSync,
+	spawn,
+} from 'node:child_process';
+import {
+	existsSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+} from 'node:fs';
 import { networkInterfaces, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -369,7 +380,7 @@ async function wipeIosAppData(b: WebdriverIO.Browser): Promise<void> {
 }
 
 /** Bring the app to the foreground and attach to its webview. */
-async function attachToIosApp(b: WebdriverIO.Browser): Promise<void> {
+export async function attachToIosApp(b: WebdriverIO.Browser): Promise<void> {
 	await b.activateApp(APP_BUNDLE_ID);
 	await switchToWebview(b, 'ios');
 	await waitForTestUtils(b);
@@ -480,11 +491,54 @@ function startSyslogLogger(agent: string, udid: string): ChildProcess | null {
  * sessions that land directly in the app's WKWebView context, so specs and page
  * objects work exactly as on desktop and Android.
  */
+/** What iOS says when it will not launch a developer-signed app because it
+ *  cannot check the developer certificate online. */
+const UNTRUSTED_CERTIFICATE = 'Developer App Certificate is not trusted';
+
+/** Whether a WebDriverAgent launch on `slot` since `since` was refused for
+ *  an untrusted developer certificate, as its Xcode test results record. */
+function wdaRefusedCertificate(slot: number, since: number): boolean {
+	const results = path.join(E2E_DIR, '.appium', `wda-${slot}`, 'Logs', 'Test');
+	if (!existsSync(results)) return false;
+	return readdirSync(results)
+		.filter(name => name.endsWith('.xcresult'))
+		.map(name => path.join(results, name))
+		.filter(result => statSync(result).mtimeMs >= since)
+		.some(result => xcresultMentions(result, UNTRUSTED_CERTIFICATE));
+}
+
+function xcresultMentions(result: string, text: string): boolean {
+	try {
+		return execFileSync(
+			'xcrun',
+			[
+				'xcresulttool',
+				'get',
+				'object',
+				'--legacy',
+				'--format',
+				'json',
+				'--path',
+				result,
+			],
+			{
+				encoding: 'utf8',
+				maxBuffer: 64 * 1024 * 1024,
+				// A bundle still being written fails to read; that is no answer.
+				stdio: ['ignore', 'pipe', 'ignore'],
+			},
+		).includes(text);
+	} catch {
+		return false;
+	}
+}
+
 export class IosPlatform implements AgentPlatform {
 	readonly slots: number[];
 	readonly appiumPort: number;
 	private udids: Map<number, string>;
 	private loggers = new Map<number, ChildProcess>();
+	private readonly startedAt = Date.now();
 
 	constructor(slots: number[]) {
 		assertIosToolsAvailable();
@@ -535,7 +589,7 @@ export class IosPlatform implements AgentPlatform {
 				// connected iPhone isn't in the team profile yet.
 				'appium:allowProvisioningDeviceRegistration': true,
 				'appium:updatedWDABundleId': WDA_BUNDLE_ID,
-				// Per-slot DerivedData: a two-device run (PLATFORMS=ios,ios) starts both
+				// Per-slot DerivedData: a two-device run (PHONES=ios,ios) starts both
 				// sessions at once, and two xcodebuilds sharing one DerivedData collide
 				// (WDA "xcodebuild failed with code 65"). Same reason as the per-slot
 				// ports above.
@@ -569,7 +623,7 @@ export class IosPlatform implements AgentPlatform {
 		// host still holds before each session.
 		process.env._WDIO_IOS_HOST_IP = hostIp;
 		const bakedEnv: Record<string, string> = {
-			MAILBOX_URL: `http://${hostIp}:${mailboxPort}`,
+			MAILBOX_URL: `https://${hostIp}:${mailboxPort}`,
 		};
 		if (pushPort !== null) {
 			bakedEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://${hostIp}:${pushPort}`;
@@ -663,6 +717,16 @@ export class IosPlatform implements AgentPlatform {
 		for (const udid of this.udids.values()) {
 			killStaleSyslogLoggers(udid);
 			release(udid);
+		}
+		for (const [slot, udid] of this.udids) {
+			if (!wdaRefusedCertificate(slot, this.startedAt)) continue;
+			console.error(
+				`[ios] ${udid} would not launch WebDriverAgent: ${UNTRUSTED_CERTIFICATE}. ` +
+					'iOS checks it online, so the phone is likely on a Wi-Fi network ' +
+					'with no internet, such as a test network an interrupted run left ' +
+					'it on. Put it back on your Wi-Fi by hand, and trust the developer ' +
+					'in Settings > General > VPN & Device Management if it asks.',
+			);
 		}
 	}
 }

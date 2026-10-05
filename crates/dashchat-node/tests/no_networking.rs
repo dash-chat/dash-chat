@@ -1,5 +1,5 @@
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::mem::MemMailbox;
+use mailbox_client::backends::mem::MemMailbox;
 
 /// The iOS push extension runs `no_p2p` with `no_blob_sync`, which leaves
 /// nothing needing the iroh endpoint, so p2panda is spawned with no networking

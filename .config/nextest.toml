@@ -175,3 +175,7 @@ flaky-fail-status = "failure"
 
 # This profile is activated if MIRI_SYSROOT is set.
 [profile.default-miri]
+# The LAN sync tests keep nodes idle or away from the network for minutes on purpose.
+[[profile.default.overrides]]
+filter = 'binary(lan_sync_crowded_address_book)'
+slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }

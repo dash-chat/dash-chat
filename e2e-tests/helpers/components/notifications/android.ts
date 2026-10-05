@@ -8,7 +8,21 @@ import {
 const APP_NAME = 'Dash Chat';
 
 const TEXT_EXTRA =
-	/android\.(title|text|bigText)=(?:Spannable)?String \((.*)\)$/gm;
+	/android\.(title|text|bigText|conversationTitle)=(?:Spannable)?String \((.*)\)$/gm;
+
+const MESSAGING_STYLE =
+	'android.template=String (android.app.Notification$MessagingStyle)';
+
+/** A chat notification's thread: one indexed Bundle per line, oldest first. */
+const THREAD =
+	/^\s*android\.messages=Bundle\[\] \(\d+\)\n((?:\s*\[\d+\] .*\n?)*)/m;
+
+/** One message of the thread, with its sender and text as the app posted
+ * them. The platform rewrites the notification's own title from these (to
+ * "group: sender" in a group), so this is where the app's wording survives
+ * intact. Bundle prints its keys in hash order, which for the ones the plugin
+ * sets is this one. */
+const MESSAGE = /^\[\d+\] Bundle\[\{.*\bsender=(.*?), text=(.*), time=\d+\}\]$/;
 
 /** What a just-opened shade gets to put its entries in the view tree. The
  * notification is already confirmed posted when this runs, so this covers
@@ -35,11 +49,37 @@ function dashChatNotifications(dump: string): DeliveredNotification[] {
 		.filter(record => record.includes(`pkg=${APP_PACKAGE}`));
 	for (const record of records) {
 		const extras = [...record.matchAll(TEXT_EXTRA)];
-		const title = extras.find(([, key]) => key === 'title')?.[2];
+		const extra = (key: string) => extras.find(([, k]) => k === key)?.[2];
+		const title = extra('title');
 		if (title === undefined) continue;
-		notifications.push({ title, texts: extras.map(([, , value]) => value) });
+		const texts = extras.map(([, , value]) => value);
+		if (!record.includes(MESSAGING_STYLE)) {
+			notifications.push({ title, body: extra('text') ?? '', texts });
+			continue;
+		}
+		const { sender, text } = latestThreadMessage(record);
+		notifications.push({
+			title: sender,
+			body: text,
+			conversation: extra('conversationTitle') ?? null,
+			texts,
+		});
 	}
 	return notifications;
+}
+
+/** The newest message of a chat notification's thread. Throws rather than
+ *  fall back to the platform's rewritten title, which would fail every check
+ *  against it without saying why. */
+function latestThreadMessage(record: string): { sender: string; text: string } {
+	const latest = THREAD.exec(record)?.[1].trim().split('\n').pop()?.trim();
+	const match = latest === undefined ? null : MESSAGE.exec(latest);
+	if (match === null) {
+		throw new Error(
+			`cannot read the thread of a chat notification:\n${record}`,
+		);
+	}
+	return { sender: match[1], text: match[2] };
 }
 
 /** Android (UiAutomator2) notification observation: content is read from the
@@ -59,64 +99,22 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 		return udid as string;
 	}
 
-	private notificationTexts(): string[] {
-		return this.notifications().flatMap(n => n.texts);
-	}
-
 	private notifications(): DeliveredNotification[] {
 		return dashChatNotifications(
 			adbShell(this.udid(), 'dumpsys notification --noredact'),
 		);
 	}
 
-	delivered(): Promise<DeliveredNotification[]> {
-		return Promise.resolve(this.notifications());
+	/** Reads the notification service, which disturbs nothing on screen. */
+	protected withNotificationUi<T>(
+		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
+	): Promise<T> {
+		return fn(() => Promise.resolve(this.notifications()));
 	}
 
 	/** A back-key press closes the shade (and is harmless when it is closed). */
 	protected async dismissNotificationUi(): Promise<void> {
 		await this.agent.back();
-	}
-
-	waitForNotification(textIncludes: string, timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.agent.openNotifications();
-			let texts: string[] = [];
-			await this.agent.waitUntil(
-				() => {
-					texts = this.notificationTexts();
-					return texts.some(t => t.includes(textIncludes));
-				},
-				{
-					timeout,
-					timeoutMsg: `No notification containing "${textIncludes}" arrived within ${timeout}ms`,
-				},
-			);
-			return texts.join('\n');
-		});
-	}
-
-	waitForAppNotification(timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.agent.openNotifications();
-			// Wait on the notification service, not on shade elements: MIUI
-			// renders MessagingStyle notifications without any element matching
-			// the app name, so a shade-based wait never fires for chat messages.
-			let texts: string[] = [];
-			await this.agent.waitUntil(
-				() => {
-					texts = this.notificationTexts();
-					return texts.length > 0;
-				},
-				{
-					timeout,
-					timeoutMsg: `No ${APP_NAME} notification arrived within ${timeout}ms`,
-				},
-			);
-			return texts.join('\n');
-		});
 	}
 
 	/** Bring the entry containing `textIncludes` into the shade's view tree.

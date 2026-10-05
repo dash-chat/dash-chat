@@ -2078,8 +2078,9 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.20.3"
+version = "0.20.11"
 dependencies = [
+ "android_logger",
  "anyhow",
  "app_dirs2",
  "async-trait",
@@ -2112,6 +2113,7 @@ dependencies = [
  "p2panda",
  "p2panda-auth",
  "p2panda-core",
+ "panic-policy",
  "push-notifications-client",
  "regex",
  "rustls 0.23.45",
@@ -5008,7 +5010,7 @@ dependencies = [
 [[package]]
 name = "iroh-gossip"
 version = "0.101.0"
-source = "git+https://github.com/YuniqueUnic/iroh-gossip?rev=9eb21c0b99fab5cfca9876e949b05d2aa1fae850#9eb21c0b99fab5cfca9876e949b05d2aa1fae850"
+source = "git+https://github.com/dash-chat/iroh-gossip?rev=efc565e0e63800a77a3add0dbb97f980278e2974#efc565e0e63800a77a3add0dbb97f980278e2974"
 dependencies = [
  "blake3",
  "bytes",
@@ -5786,7 +5788,6 @@ dependencies = [
  "ciborium",
  "dashchat-utils",
  "derive_more 1.0.0",
- "hex",
  "iroh",
  "iroh-blobs",
  "mailbox-server",
@@ -5818,6 +5819,8 @@ dependencies = [
  "local-hub-discovery",
  "log",
  "mailbox-server",
+ "openssl-sys",
+ "panic-policy",
  "tempfile",
  "tokio",
  "tracing-subscriber",
@@ -5842,6 +5845,7 @@ dependencies = [
  "iroh-blobs",
  "mailbox-server",
  "p2panda-net",
+ "panic-policy",
  "push-notifications-client",
  "push-notifications-server",
  "redb 3.1.3",
@@ -7808,6 +7812,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "panic-policy"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "log",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
 name = "papaya"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8490,6 +8504,7 @@ dependencies = [
  "futures",
  "hex",
  "mockall",
+ "panic-policy",
  "pretty_assertions",
  "push-notifications-client",
  "push-notifications-server",
@@ -10747,8 +10762,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "swarm-discovery"
 version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b4877f20f064de34b77d79237c9caa37c393590af8ef5a2f3253d59be5a338b"
+source = "git+https://github.com/dash-chat/swarm-discovery?rev=1cf4c14c67b60bf8c020b5cc002fd7f438492199#1cf4c14c67b60bf8c020b5cc002fd7f438492199"
 dependencies = [
  "acto",
  "hickory-proto",
@@ -11533,7 +11547,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-network-interfaces"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=90f383f32c74ab28b79be51bf5e6088644b2226c#90f383f32c74ab28b79be51bf5e6088644b2226c"
+source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=9c50b47eab93202a55f0374fe9c70bb2016c8a2f#9c50b47eab93202a55f0374fe9c70bb2016c8a2f"
 dependencies = [
  "serde",
  "tauri",
@@ -11544,7 +11558,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=8eec1f09322c09efa0c0e81a8fa523d3745ba035#8eec1f09322c09efa0c0e81a8fa523d3745ba035"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=3136b282944beea5bc2bc7ef184c84d25b594616#3136b282944beea5bc2bc7ef184c84d25b594616"
 dependencies = [
  "log",
  "ndk-context",
@@ -11566,7 +11580,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=8eec1f09322c09efa0c0e81a8fa523d3745ba035#8eec1f09322c09efa0c0e81a8fa523d3745ba035"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=3136b282944beea5bc2bc7ef184c84d25b594616#3136b282944beea5bc2bc7ef184c84d25b594616"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -11580,7 +11594,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=8eec1f09322c09efa0c0e81a8fa523d3745ba035#8eec1f09322c09efa0c0e81a8fa523d3745ba035"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=3136b282944beea5bc2bc7ef184c84d25b594616#3136b282944beea5bc2bc7ef184c84d25b594616"
 dependencies = [
  "rand 0.8.8",
  "serde",
@@ -11705,7 +11719,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-system-theme"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-system-theme?rev=1145bd4c3ccf4c09c667f3c54afa4e72d53988cb#1145bd4c3ccf4c09c667f3c54afa4e72d53988cb"
+source = "git+https://github.com/dash-chat/tauri-plugin-system-theme?rev=347505a15d1607529d1426fe126274a9082e27a9#347505a15d1607529d1426fe126274a9082e27a9"
 dependencies = [
  "log",
  "serde",
@@ -11763,7 +11777,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-virtual-keyboard"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard?rev=a86d8cf2ea998eba7f93dc6b53674fdb77d3def5#a86d8cf2ea998eba7f93dc6b53674fdb77d3def5"
+source = "git+https://github.com/dash-chat/tauri-plugin-virtual-keyboard?rev=6163645a2c730338cadc0d9def0ff3091be0515b#6163645a2c730338cadc0d9def0ff3091be0515b"
 dependencies = [
  "serde",
  "tauri",

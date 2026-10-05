@@ -18,7 +18,7 @@ pub(crate) async fn track_cloud_mailbox(node: &Node) -> anyhow::Result<String> {
     // known only by id and is not dialable.
     node.insert_peer_addr(health.endpoint_addr).await?;
     if !node.mailboxes.is_tracked(&health.mailbox_id).await {
-        let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
+        let mailbox_client = mailbox_client::backends::toy::ToyMailboxClient::new(
             health.mailbox_id,
             mailbox_url.clone(),
             node.endpoint_id(),
@@ -91,7 +91,7 @@ pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
 }
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
-    install_logger(&app_handle)?;
+    crate::logger::install_app_logger(&app_handle)?;
     crate::device_info::log_device_info(&app_handle);
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
@@ -137,126 +137,4 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-/// os_log is the only log channel that leaves an iOS device, so it is what any
-/// on-device debugging reads. Redacted, unlike the other targets: the unified
-/// log is swept into sysdiagnose archives, which users hand to Apple and attach
-/// to bug reports, and nothing sensitive may leave that way.
-#[cfg(target_os = "ios")]
-fn device_console_target() -> tauri_plugin_log::Target {
-    let logger =
-        oslog::OsLogger::new("studio.darksoil.dashchat").level_filter(log::LevelFilter::Debug);
-    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Dispatch(
-        tauri_plugin_log::fern::Dispatch::new().chain(Box::new(logger) as Box<dyn log::Log>),
-    ))
-    .format(format_redacted_record)
-}
-
-#[cfg(target_os = "ios")]
-fn format_redacted_record(
-    out: tauri_plugin_log::fern::FormatCallback,
-    message: &std::fmt::Arguments,
-    record: &log::Record,
-) {
-    let redacted = tauri_plugin_sentry_reporting::redact(
-        &crate::redaction::REDACTION_REGEXES,
-        &message.to_string(),
-    );
-    format_record(out, &format_args!("{redacted}"), record);
-}
-
-fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
-    let fs = FileSystem::new(handle)?;
-
-    // Only iOS pushes to it, below.
-    #[cfg_attr(not(target_os = "ios"), allow(unused_mut))]
-    let mut targets = vec![
-        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout).format(format_record),
-        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-            path: fs.logs_dir(),
-            file_name: None,
-        })
-        .format(format_record),
-        tauri_plugin_sentry_reporting::log_target(handle),
-    ];
-    #[cfg(target_os = "ios")]
-    targets.push(device_console_target());
-
-    let log_plugin = tauri_plugin_log::Builder::default()
-        .level(log::LevelFilter::Warn)
-        .level_for("dashchat_node", log::LevelFilter::Debug)
-        .level_for("dashchat_utils", log::LevelFilter::Debug)
-        // Whether peers find each other, and who is in a topic once they have:
-        // at the default Warn only the failures reach a device's log, which
-        // reads as "p2p is broken" whether or not anything ever worked. Per
-        // module rather than the whole crate — `p2panda_net::sync` and
-        // `::iroh_endpoint` are together ~70% of its Debug output, and what
-        // they add over their own warnings is not worth that much of the log
-        // tail an error report carries.
-        .level_for("p2panda_net::discovery", log::LevelFilter::Debug)
-        .level_for("p2panda_net::gossip", log::LevelFilter::Debug)
-        .level_for("p2panda_net::iroh_mdns", log::LevelFilter::Debug)
-        .level_for("mailbox_client", log::LevelFilter::Debug)
-        .level_for("mailbox_server", log::LevelFilter::Debug)
-        .level_for("mailbox_local_server", log::LevelFilter::Debug)
-        .level_for("local_hub_discovery", log::LevelFilter::Debug)
-        .level_for("network_watch", log::LevelFilter::Debug)
-        .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
-        .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
-        .format(|out, message, _record| out.finish(format_args!("{message}")))
-        .clear_targets()
-        .max_file_size(5 * 1024 * 1024)
-        // The default, `KeepOne`, deletes the log on every rotation, so a report
-        // sent just after one carries almost nothing. ~50 MB in all.
-        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(9))
-        .targets(targets)
-        .build();
-
-    crate::utils::install_panic_hook();
-
-    let error_reporting_dir = fs.error_reporting_dir();
-    if let Some(config) = crate::sentry::config(fs.logs_dir(), error_reporting_dir.clone()) {
-        std::fs::create_dir_all(&error_reporting_dir)?;
-        handle.plugin(tauri_plugin_sentry_reporting::init(config))?;
-    }
-
-    handle.plugin(log_plugin)?;
-
-    Ok(())
-}
-
-pub(crate) fn format_record(
-    out: tauri_plugin_log::fern::FormatCallback,
-    message: &std::fmt::Arguments,
-    record: &log::Record,
-) {
-    let format =
-        time::macros::format_description!("[[[year]-[month]-[day]][[[hour]:[minute]:[second]]");
-    let args = if let (Some(file), Some(line)) = (record.file(), record.line()) {
-        format_args!(
-            "{}[{} {}:{}][{}] {}",
-            tauri_plugin_log::TimezoneStrategy::UseUtc
-                .get_now()
-                .format(&format)
-                .unwrap(),
-            record.target(),
-            file.to_string(),
-            line.to_string(),
-            record.level(),
-            message
-        )
-    } else {
-        format_args!(
-            "{}[{}][{}] {}",
-            tauri_plugin_log::TimezoneStrategy::UseUtc
-                .get_now()
-                .format(&format)
-                .unwrap(),
-            record.target(),
-            record.level(),
-            message
-        )
-    };
-    out.finish(args)
 }

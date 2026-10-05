@@ -62,17 +62,6 @@ describe('Offline UX', () => {
 		await exchangeContacts([agent1, agent2]);
 	});
 
-	after(() => {
-		if (mailboxSuspended) {
-			try {
-				resumeMailbox();
-			} catch {
-				/* ignore */
-			}
-			mailboxSuspended = false;
-		}
-	});
-
 	describe('cloud mailbox online', () => {
 		it('sends a message, peer receives it, sender shows delivered, and the navbar chip stays hidden', async () => {
 			await agent1.directChatPage.composer.sendMessage('online hello');
@@ -132,8 +121,8 @@ describe('Offline UX', () => {
 			expect(await agent1.directChatPage.lastMessageStatus()).toBe('sending');
 		});
 
-		// connect_timeout=5s + timeout=10s × degraded_threshold(5) gives a
-		// worst case around ~60s before the chip flips. Pad on top so a slow
+		// A suspended mailbox fails each request at timeout=20s and the chip
+		// flips on the second failure, around ~45s. Pad on top so a slow
 		// runner doesn't false-fail.
 		it('navbar chip flips to "disconnected", clicking it opens the explainer dialog, and the close button dismisses it', async () => {
 			const indicator = agent1.directChatPage.connectionStatusIndicator;

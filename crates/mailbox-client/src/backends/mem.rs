@@ -1,10 +1,14 @@
-use super::*;
+use crate::{
+    FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient, MailboxId, MailboxItem,
+    OptionalItemTraits, PublishResponse,
+};
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
+use dashchat_utils::SeqNum;
 use tokio::sync::RwLock;
 
 /// A client for the in-memory mailbox server.
@@ -182,7 +186,7 @@ where
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::testing::Msg;
+    use crate::{FetchTopicResponse, testing::Msg};
 
     use super::*;
 

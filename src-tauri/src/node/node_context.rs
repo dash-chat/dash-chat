@@ -87,10 +87,12 @@ impl NodeContext {
     /// Context used when handling push-notifications in a limited time window with the app closed:
     /// no P2P, no blob sync, and no app-lifetime channels.
     #[cfg_attr(not(mobile), allow(dead_code))]
-    pub fn for_push_notifications() -> Self {
+    pub fn for_push_notifications(
+        notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
+    ) -> Self {
         Self {
             role: NodeRole::PushNotification,
-            notification_tx: None,
+            notification_tx,
             topic_subscribed_tx: None,
             app_handle: None,
         }
@@ -163,7 +165,6 @@ impl NodeContext {
             // ALPN is hashed with the network id, so foreign connections are
             // rejected at protocol negotiation.
             config.network_id = e2e_network_id();
-            config.message_ack_debounce = std::time::Duration::from_millis(300);
             config
         } else {
             dashchat_node::NodeConfig::default()
@@ -183,6 +184,15 @@ impl NodeContext {
         if self.role == NodeRole::PushNotification {
             config.stream_cursor_prefix = Some("nse".to_string());
         }
+        // Only on iOS do the extension and the app run at the same time over
+        // one store, so only there can the extension store an operation the
+        // running app then never gets; elsewhere a background node runs only
+        // while the app does not, and the app's replay at startup covers it.
+        let shares_store_with_running_app = cfg!(target_os = "ios");
+        config.record_processed_operations =
+            self.role == NodeRole::PushNotification && shares_store_with_running_app;
+        config.import_recorded_operations =
+            self.role == NodeRole::App && shares_store_with_running_app;
 
         if !self.p2p_enabled() {
             config = config.no_p2p();
@@ -218,7 +228,7 @@ mod tests {
     // session and kills the running app's networking actors.
     #[test]
     fn the_push_extension_needs_no_iroh_endpoint() {
-        let config = NodeContext::for_push_notifications().node_config();
+        let config = NodeContext::for_push_notifications(None).node_config();
         assert!(!config.enable_p2p);
         assert!(!config.enable_blob_sync);
         assert!(app_context().node_config().enable_blob_sync);
@@ -228,7 +238,7 @@ mod tests {
     fn p2p_follows_the_role() {
         assert!(app_context().node_config().enable_p2p);
         assert!(
-            !NodeContext::for_push_notifications()
+            !NodeContext::for_push_notifications(None)
                 .node_config()
                 .enable_p2p
         );

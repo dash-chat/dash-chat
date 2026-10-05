@@ -54,6 +54,12 @@ pub struct OpNotification {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum SystemNotification {
+    /// A group chat was added (its group was created with an admin).
+    GroupChatAdded { chat_id: ChatId },
+    /// Members of a group chat were added, removed, promoted or demoted.
+    GroupMembersChanged { chat_id: ChatId },
+    /// Devices were introduced as belonging to agents.
+    AgentsIntroduced { agents: BTreeMap<DeviceId, AgentId> },
     /// A new tombstone has been created.
     Tombstones {
         topic: TopicId,
@@ -136,6 +142,14 @@ impl Node {
         debug!(topic = ?topic.aliased(), "import mailbox stream");
 
         let stream = Box::pin(ReceiverStream::new(mailbox_rx).map(Operation::from));
+        self.import_stream(topic, stream).await
+    }
+
+    pub(super) async fn import_stream(
+        &self,
+        topic: TopicId,
+        stream: std::pin::Pin<Box<dyn futures::Stream<Item = Operation> + Send>>,
+    ) -> anyhow::Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
             .actor_tx
@@ -196,6 +210,14 @@ impl Node {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "groups operation processing");
+                                if !node.recorded_for_app(&operation).await {
+                                    if let Some(processed_tx) = processed_tx {
+                                        let _ = processed_tx.send(Err(ProcessorError::App(
+                                            "failed to record the operation for the app".into(),
+                                        )));
+                                    }
+                                    continue;
+                                }
 
                                 if let Some(err) = error {
                                     // @TODO: should consider if this is the desired behavior.
@@ -243,6 +265,14 @@ impl Node {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
+                                if !node.recorded_for_app(&operation).await {
+                                    if let Some(processed_tx) = processed_tx {
+                                        let _ = processed_tx.send(Err(ProcessorError::App(
+                                            "failed to record the operation for the app".into(),
+                                        )));
+                                    }
+                                    continue;
+                                }
 
 
                                 // Process the operation.
@@ -290,6 +320,46 @@ impl Node {
         handle
     }
 
+    /// As the push extension, record `operation` for the app to process too,
+    /// unless the app acknowledged it already or authored it. Done before
+    /// processing it, so the record outlives the extension being killed
+    /// mid-way; returns whether to go on processing, since acknowledging an
+    /// unrecorded operation would hide it from the app for good.
+    async fn recorded_for_app(&self, operation: &ProcessedOperation<Payload>) -> bool {
+        if !self.config.record_processed_operations {
+            return true;
+        }
+        let author = DeviceId::from(operation.author());
+        if author == self.device_id() {
+            return true;
+        }
+        let topic = TopicId::from(operation.topic());
+        let header = operation.processed().header();
+        let recorded = async {
+            let acked = self
+                .op_store
+                .acked_log_height(&topic, &author, &header.extensions.log_id())
+                .await?;
+            if acked.is_some_and(|acked| acked >= header.seq_num) {
+                return anyhow::Ok(());
+            }
+            self.local_store
+                .record_extension_processed_operation(operation.id(), topic)
+                .await
+        }
+        .await;
+        match recorded {
+            Ok(()) => true,
+            Err(err) => {
+                error!(
+                    ?err,
+                    "failed to record an operation for the app to process; leaving it unprocessed"
+                );
+                false
+            }
+        }
+    }
+
     async fn ack_operation(&self, operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
         // Mark the operation as processed so it can be awaited by
         // [`crate::testing::PollConfig::consistency`]
@@ -303,6 +373,18 @@ impl Node {
         // operation eligible for mailbox transmission (see
         // `OpStore::acked_log_height`).
         operation.ack().await?;
+        if self.config.import_recorded_operations
+            && let Err(err) = self
+                .local_store
+                .forget_extension_processed_operation(&operation.id())
+                .await
+        {
+            // At worst the operation is imported once more.
+            warn!(
+                ?err,
+                "failed to forget an operation the push extension recorded"
+            );
+        }
 
         if DeviceId::from(operation.author()) == self.device_id() {
             self.mailboxes
@@ -362,7 +444,11 @@ impl Node {
             .await
         {
             // Continue processing.
-            Ok(_) => (),
+            Ok(event) => {
+                if let Some(event) = event {
+                    self.notify_system_event(event).await?;
+                }
+            }
 
             // Don't process but allow the log to proceed.
             Err(ProjectionError::InvalidOp(msg)) => {

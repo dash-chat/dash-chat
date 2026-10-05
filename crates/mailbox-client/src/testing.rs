@@ -29,6 +29,36 @@ impl MailboxItem for Msg {
     }
 }
 
+impl crate::MailboxKey for u8 {
+    fn to_mailbox_key(&self) -> String {
+        self.to_string()
+    }
+
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
+        key.parse::<u8>()
+            .map_err(|e| anyhow::anyhow!("invalid u8 mailbox key: {e}"))
+    }
+}
+
+impl crate::MailboxKey for char {
+    fn to_mailbox_key(&self) -> String {
+        self.to_string()
+    }
+
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
+        let mut chars = key.chars();
+        let ch = chars
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("empty char mailbox key"))?;
+        if chars.next().is_some() {
+            return Err(anyhow::anyhow!(
+                "char mailbox key must be exactly one character"
+            ));
+        }
+        Ok(ch)
+    }
+}
+
 #[derive(Clone)]
 pub struct DummyStore;
 

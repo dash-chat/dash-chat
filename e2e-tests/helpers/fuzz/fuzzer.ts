@@ -17,6 +17,7 @@ import {
 	mailboxServing,
 	mailboxWakesPhones,
 } from '../../setup/mailbox-control';
+import { convergeNetworks } from '../../setup/phone-lan';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
 import type { RenderedMessage } from '../components/messages';
@@ -27,7 +28,6 @@ import {
 	type Real,
 	type StressAgent,
 	ensureHome,
-	labNetworks,
 	log,
 	newReal,
 	openChatByTitle,
@@ -118,8 +118,9 @@ export class Fuzzer {
 	 * Building the world is the fuzzer's because `search` does it again for
 	 * every sequence: only a world that can be rebuilt can be shrunk against.
 	 *
-	 * The network the phones are on to begin with is the run's home network:
-	 * phones may walk onto it, and the hubs are on it whenever the card is.
+	 * The network the phones and the host fall back to with no test network
+	 * saved is the run's home one: phones may walk back onto it, and the
+	 * hubs are on it whenever the card is. It is never named or joined.
 	 * A spec prepares once, from its `before` hook — whose context `ctx` is,
 	 * so that the suite's tests can be freed of their timeout before any of
 	 * them starts — and runs as often as it likes.
@@ -163,21 +164,9 @@ export class Fuzzer {
 					'networks are configured but the host has no Wi-Fi card',
 				);
 			}
-			await restoreNetworks(real);
-			// However the run ends: a search that fails partway leaves every
-			// phone wherever `resetAgent` last put it, which is off Wi-Fi, and
-			// the host's card on a lab network. Nothing else puts them back,
-			// so every later run on these devices starts off the air.
-			// `eachTest` above only reaches tests, so this hook would inherit
-			// whatever the suite allows — too little, and the phones are left
-			// off the air by the very hook that exists to put them back.
-			suite.afterAll('restore networks', function (this: Mocha.Context) {
-				this.timeout(FUZZ_TEST_TIMEOUT_MS);
-				return restoreNetworks(real);
-			});
 			assertInRange(
 				real.hubsDevice,
-				labNetworks(real).map(n => n.ssid),
+				real.networks.map(n => n.ssid),
 			);
 		}
 		return new Fuzzer(
@@ -360,48 +349,10 @@ export class Fuzzer {
 	}
 }
 
-/** Put a phone back on its usual network however a run left it: on the
- *  air, with every test network forgotten so the supplicant cannot pick one
- *  again. Throws if no saved network is in range. */
-async function restorePhone(
-	sa: StressAgent,
-	networks: WifiNetwork[],
-): Promise<void> {
-	await sa.agent.enableWifi();
-	for (const network of networks) await sa.agent.forgetWifi(network.ssid);
-}
-
-/** The network every phone is on to begin with is the run's home network:
- *  the listed entry of that name, or that name alone when it is not listed.
- *  Read before anything is left or forgotten, so the run cannot take the
- *  network everyone sits on for a lab one. */
-async function inferHomeNetwork(real: Real): Promise<void> {
-	const infos = await Promise.all(real.agents.map(sa => sa.agent.wifiInfo()));
-	const ssids = new Set(infos.map(info => info.ssid));
-	if (ssids.size !== 1) {
-		throw new Error(
-			`the phones are on different networks to begin with (${[...ssids].join(', ')}); put them on the host's network`,
-		);
-	}
-	const [ssid] = ssids;
-	if (ssid === '') {
-		console.log('[wifi] the phones are on no network; no home network');
-		return;
-	}
-	const listed = real.networks.find(n => n.ssid === ssid);
-	if (listed !== undefined) listed.home = true;
-	else real.networks.push({ ssid, passphrase: '', home: true });
-	console.log(`[wifi] home network: ${ssid}`);
-}
-
-/** The host's card and every phone back on their usual networks. */
-async function restoreNetworks(real: Real): Promise<void> {
-	// Per phone and independent, so every phone does it at once; only the
-	// host's own card has to be taken off the lab networks in turn.
-	await Promise.all(real.agents.map(sa => sa.agent.enableWifi()));
-	await inferHomeNetwork(real);
-	for (const network of labNetworks(real)) await leaveWifi(network.ssid);
-	await Promise.all(real.agents.map(sa => restorePhone(sa, labNetworks(real))));
+/** The host's card and every phone back on the host's usual network — what
+ *  a sequence starts from. */
+function restoreNetworks(real: Real): Promise<void> {
+	return convergeNetworks(real.agents.map(sa => sa.agent));
 }
 
 /** Drive every agent to where moves expect it. Each drives its own session
@@ -587,16 +538,12 @@ async function teardown(real: Real): Promise<void> {
 	if (mailboxDegradable()) await healMailboxLink();
 	await parkHubs(real);
 	if (real.networks.length === 0) return;
-	for (const network of labNetworks(real)) await leaveWifi(network.ssid);
-	await Promise.all(
-		real.agents.map(async sa => {
-			try {
-				await restorePhone(sa, labNetworks(real));
-			} catch {
-				/* no saved network in range; nothing to restore */
-			}
-		}),
-	);
+	try {
+		await restoreNetworks(real);
+	} catch (err) {
+		/* a phone with no network of its own in range; it stays where it is */
+		console.log(`[wifi] ${String(err)}`);
+	}
 }
 
 /**
@@ -632,6 +579,9 @@ async function resetAgent(
 		model.foreground(sa.name);
 	}
 	if (!model.hasNetworks()) return;
+	// Nothing of the run's stays saved while the radio is off, so turning it
+	// back on can only land the phone on a network of its own.
+	await sa.agent.forgetWifi();
 	await sa.agent.disableWifi();
 	model.agentLeave(sa.name);
 }

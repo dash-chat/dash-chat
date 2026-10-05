@@ -21,6 +21,15 @@ use crate::{
 };
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// A dial that has not connected by now gets another alongside it rather than
+/// waiting on the kernel's own SYN retransmit a second later: right after a
+/// link comes up the first SYN is routinely lost.
+const REDIAL_INTERVAL: Duration = Duration::from_millis(500);
+/// The browser's swarm-discovery cadence, where hubs keep the interactive
+/// 0.7 s. A browser gives up on a peer after three of its own cadences, and
+/// Wi-Fi drops enough multicast to age out a hub that is still up; hubs are
+/// still heard as fast as they announce, which is on their cadence.
+const BROWSE_CADENCE: Duration = Duration::from_secs(2);
 /// Longer than [`PROBE_TIMEOUT`], so a hub with an address that hangs is not
 /// re-probed before the sweep that is still waiting on it gives up.
 const REPROBE_INTERVAL: Duration = Duration::from_secs(PROBE_TIMEOUT.as_secs() + 1);
@@ -146,6 +155,30 @@ impl DiscoveryBrowser {
             guard.add_interface_v4(*new);
         }
         *joined = current;
+        drop(browsing);
+        self.drop_hubs_we_left();
+    }
+
+    /// Off every subnet a hub answered on, the phone is the one that moved,
+    /// which swarm-discovery would take [`BROWSE_CADENCE`] times three to see.
+    fn drop_hubs_we_left(&self) {
+        let subnets = local_subnets_v4();
+        let mut hubs = self
+            .hubs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        hubs.retain(|id, hub| {
+            let left = !hub.answered_at.is_empty()
+                && !hub
+                    .answered_at
+                    .iter()
+                    .any(|addr| reachable_from_here(*addr, &subnets));
+            if left {
+                log::debug!("Local hub is gone, we left its network: mailbox={id}");
+            }
+            !left
+        });
+        self.publish(&hubs);
     }
 
     /// A probe that cannot answer blocks every later sighting of that hub until
@@ -180,6 +213,7 @@ impl DiscoveryBrowser {
             &browse_id(),
             interfaces.iter().copied().collect(),
         )
+        .with_cadence(BROWSE_CADENCE)
         // Runs on a swarm-discovery actor, which is spawned on the handle
         // passed to `Discoverer::spawn` below — so this is on our runtime
         // and may spawn, but must not block: it only takes the sighting in.
@@ -336,16 +370,45 @@ fn on_a_local_subnet(ip: Ipv4Addr, subnets: &[(Ipv4Addr, u8)]) -> bool {
     })
 }
 
+/// Dials `addr` again every [`REDIAL_INTERVAL`] without giving up on the
+/// earlier dials, all within one [`PROBE_TIMEOUT`]: the first dial gets all of
+/// it, so a slow handshake still completes.
 async fn answers(addr: SocketAddr) -> bool {
-    match tokio::time::timeout(PROBE_TIMEOUT, tokio::net::TcpStream::connect(addr)).await {
-        Ok(Ok(_stream)) => true,
-        Ok(Err(err)) => {
-            log::trace!("Probe to {addr} refused / errored: {err}");
-            false
+    let dial_count = (PROBE_TIMEOUT.as_millis() / REDIAL_INTERVAL.as_millis()).max(1) as u32;
+    let mut dials: FuturesUnordered<_> = (0..dial_count)
+        .map(|n| async move {
+            tokio::time::sleep(REDIAL_INTERVAL * n).await;
+            dial(addr).await
+        })
+        .collect();
+    let verdict = tokio::time::timeout(PROBE_TIMEOUT, async {
+        while let Some(dialled) = dials.next().await {
+            if let Some(answered) = dialled {
+                return answered;
+            }
         }
-        Err(_elapsed) => {
-            log::trace!("Probe to {addr} timed out after {PROBE_TIMEOUT:?}");
-            false
+        false
+    })
+    .await;
+    verdict.unwrap_or_else(|_elapsed| {
+        log::trace!("Probe to {addr} timed out after {PROBE_TIMEOUT:?}");
+        false
+    })
+}
+
+/// Whether one dial of `addr` settles if it answers, or `None` when a later
+/// dial may still get through: right after a link comes up, even a reachable
+/// address is briefly unroutable.
+async fn dial(addr: SocketAddr) -> Option<bool> {
+    match tokio::net::TcpStream::connect(addr).await {
+        Ok(_stream) => Some(true),
+        Err(err) if err.kind() == std::io::ErrorKind::ConnectionRefused => {
+            log::trace!("Probe to {addr} refused: {err}");
+            Some(false)
+        }
+        Err(err) => {
+            log::trace!("Probe to {addr} not through yet: {err}");
+            None
         }
     }
 }
@@ -581,6 +644,18 @@ mod tests {
         assert_eq!(hubs["elsewhere"].awaiting_probe, None);
         assert!(hubs["here"].probed_at.is_none());
         assert!(hubs["elsewhere"].probed_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_refused_dial_settles_the_probe_without_redialling() {
+        // Bound but not listening: the port stays ours, and a dial is refused.
+        let reserved = tokio::net::TcpSocket::new_v4().unwrap();
+        reserved.bind((Ipv4Addr::LOCALHOST, 0).into()).unwrap();
+        let closed = reserved.local_addr().unwrap();
+
+        let started = Instant::now();
+        assert!(!answers(closed).await);
+        assert!(started.elapsed() < REDIAL_INTERVAL);
     }
 
     #[tokio::test]

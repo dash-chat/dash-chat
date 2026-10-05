@@ -1,5 +1,5 @@
 /** NetworkManager does the joining; the card autoconnects back to its usual
- *  network once a lab network's profile is dropped. */
+ *  network once a test network's profile is dropped. */
 import { execFileSync } from 'node:child_process';
 
 import { type HostWifi, waitForAddress } from './driver';
@@ -45,6 +45,15 @@ function wifiDevice(): string | null {
 
 export const linux: HostWifi = {
 	wifiDevice,
+
+	// A join leaves a profile named after the network until the leave
+	// deletes it, so a run killed in between still shows here.
+	joinedTestNetworks(ssids) {
+		const profiles = nmcli('-t', '-f', 'NAME', 'connection', 'show').split(
+			'\n',
+		);
+		return ssids.filter(ssid => profiles.includes(ssid));
+	},
 
 	visibleNetworks(device) {
 		const ssids = nmcli(

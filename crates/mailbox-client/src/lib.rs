@@ -1,8 +1,7 @@
+pub mod backends;
 pub mod manager;
-pub mod mem;
 pub mod store;
 pub mod sync_tracker;
-pub mod toy;
 
 pub use mailbox_server::RegisterPeerRequest;
 
@@ -22,11 +21,21 @@ use tracing::Instrument;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-    reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10))
-        .build()
-        .expect("Failed to build HTTP client")
+    // Setting up a connection on a loaded mobile network alone can take
+    // several seconds, so the connect budget matches Signal's 15 s. The total
+    // covers the connect too.
+    let builder = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(20));
+    // The e2e mailbox serves TLS so that a degraded link slows the handshake,
+    // which the connect timeout covers, as a real network does. DER because
+    // native-tls only parses PEM on macOS and panics on iOS.
+    #[cfg(feature = "e2e-test-ca")]
+    let builder = builder.add_root_certificate(
+        reqwest::Certificate::from_der(include_bytes!("../e2e-test-ca/ca.der"))
+            .expect("e2e test CA is valid DER"),
+    );
+    builder.build().expect("Failed to build HTTP client")
 });
 
 #[async_trait::async_trait]
@@ -132,12 +141,29 @@ impl<T> ItemTraits for T where
 {
 }
 
+/// How a `Topic` or `Author` maps to a string key for addressing a log inside
+/// a mailbox.
+///
+/// This key is persisted server-side and shared across client versions, so the
+/// encoding for any type already in production must never change. The concrete
+/// mailbox-server (`mailbox-server`) places additional constraints on keys:
+/// they must not contain `:` or NUL, and topic keys used for push notifications
+/// must pass a 64-character lowercase-hex validation (`validate_hex32`). The
+/// production implementations (`TopicId` below and `DeviceId` in `dashchat-node`)
+/// satisfy those constraints; test-only fixtures (e.g. `u8`/`char` for
+/// `crate::testing::Msg`) are intentionally minimal and are not sent to a real
+/// mailbox.
+pub trait MailboxKey: ItemTraits {
+    fn to_mailbox_key(&self) -> String;
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error>;
+}
+
 pub trait MailboxItem:
     Clone + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync + 'static
 {
     type Hash: ItemTraits;
-    type Author: ItemTraits;
-    type Topic: ItemTraits;
+    type Author: MailboxKey;
+    type Topic: MailboxKey;
 
     fn seq_num(&self) -> SeqNum;
     fn hash(&self) -> Self::Hash;
@@ -167,6 +193,7 @@ pub trait UnfetchedBlobTracker: Send + Sync + 'static {
 #[async_trait::async_trait]
 pub trait BlobReader: Send + Sync + 'static {
     async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes>;
+    async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool;
 }
 
 /// No-op tracker for tests and contexts that don't persist unfetched blobs.
@@ -177,4 +204,47 @@ pub struct NoopUnfetchedBlobTracker;
 impl UnfetchedBlobTracker for NoopUnfetchedBlobTracker {
     async fn record(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
     async fn remove(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
+}
+
+impl MailboxKey for p2panda_core::Topic {
+    fn to_mailbox_key(&self) -> String {
+        self.to_hex()
+    }
+
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
+        Ok(key.parse()?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn topic_id_round_trips_through_mailbox_key() {
+        let bytes = [0xab; 32];
+        let topic = p2panda_core::Topic::from(bytes);
+        let key = topic.to_mailbox_key();
+        assert_eq!(
+            key,
+            "abababababababababababababababababababababababababababababababab"
+        );
+        assert_eq!(p2panda_core::Topic::from_mailbox_key(&key).unwrap(), topic);
+    }
+
+    #[test]
+    fn topic_id_from_mailbox_key_rejects_non_hex() {
+        assert!(p2panda_core::Topic::from_mailbox_key("not-hex").is_err());
+    }
+
+    #[test]
+    fn topic_id_from_mailbox_key_rejects_wrong_length() {
+        assert!(p2panda_core::Topic::from_mailbox_key("ab").is_err());
+        assert!(
+            p2panda_core::Topic::from_mailbox_key(
+                "ababababababababababababababababababababababababababababababababcd"
+            )
+            .is_err()
+        );
+    }
 }

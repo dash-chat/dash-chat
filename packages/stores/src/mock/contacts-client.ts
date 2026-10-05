@@ -29,6 +29,10 @@ export class MockContactsClient implements IContactsClient {
 		return undefined;
 	}
 
+	onAgentsIntroduced(): () => void {
+		return () => {};
+	}
+
 	async directChatId(devicePubkey: DeviceId): Promise<string> {
 		return chatIdForDevices(this.deviceId, devicePubkey);
 	}

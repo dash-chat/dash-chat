@@ -9,6 +9,9 @@ export interface HostWifi {
 	/** Join `ssid` on `device` and resolve with the IPv4 address obtained on
 	 *  it. */
 	joinWifi(device: string, ssid: string, passphrase: string): Promise<string>;
+	/** Which of the test networks `ssids` the card has joined and not left
+	 *  yet: what it could be on instead of its usual network. */
+	joinedTestNetworks(ssids: string[]): string[];
 	/** Leave `ssid` and resolve once the card is back on its usual network,
 	 *  with an address — where every hub is again from then on. */
 	leaveWifi(ssid: string): Promise<void>;

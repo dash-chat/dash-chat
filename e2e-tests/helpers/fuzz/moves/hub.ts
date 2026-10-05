@@ -1,6 +1,6 @@
 /** Moves a local hub makes: coming into being, its process starting,
  *  stopping or dying, and joining or leaving a LAN. Every hub is a process
- *  on the host, whose one Wi-Fi card is the hubs' location among the lab
+ *  on the host, whose one Wi-Fi card is the hubs' location among the test
  *  networks — the home network has them all along — so a join or a
  *  leave moves all of them at once. Each ends by asserting what the
  *  connection chips show, so a sequence fails at the exact move hub
@@ -151,7 +151,7 @@ class HubJoinMove extends Move {
 	}
 }
 
-/** Take the hubs back home — the host's card leaving its lab LAN for its
+/** Take the hubs back home — the host's card leaving its test network for its
  *  usual one. Phones there must drop them; phones at home must show them. */
 class HubLeaveMove extends Move {
 	check(m: Readonly<ExpectedModel>): boolean {

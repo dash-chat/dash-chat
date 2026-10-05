@@ -100,7 +100,6 @@ pnpm install
 This is a pnpm workspace with multiple packages:
 - **ui/**: Svelte 5 + TypeScript frontend (SvelteKit application)
 - **packages/stores/**: Shared TypeScript stores for state management
-- **packages/site/**: Marketing/download site
 - **e2e-tests/**: WebdriverIO E2E test suite
 - **crates/dashchat-node/**: Core p2p backend logic (Rust)
 - **crates/mailbox-server/**: HTTP server for offline message storage
@@ -370,7 +369,7 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 
 ### E2E Tests (WebdriverIO)
 
-The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (the built binary, driven through the WebDriver server the e2e build embeds), `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
+The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). Every agent a spec asks for is a `desktop` agent (the built binary, driven through the WebDriver server the e2e build embeds, launched for that spec file) unless a phone fills it. The `PHONES` env var lists the phones to drive as an unordered comma-separated multiset (duplicates set the phone count, order carries no meaning; unset means none): `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
 
 ```bash
 # Build the Tauri binary and run the e2e suite (recommended)
@@ -379,25 +378,23 @@ just e2e
 # Build and run a single spec
 just e2e run send-messages
 
-# Phone + desktop, two phones, two auto-booted emulators, or a single desktop
-PLATFORMS=android,desktop just e2e run send-messages
-PLATFORMS=android,android just e2e run send-messages
-PLATFORMS=android-emulator,android-emulator just e2e run send-messages
-PLATFORMS=desktop just e2e run settings-pages
+# A phone (desktops fill the other agents), two phones, or two auto-booted emulators
+PHONES=android just e2e run send-messages
+PHONES=android,android just e2e run send-messages
+PHONES=android-emulator,android-emulator just e2e run send-messages
 
-# Connected iPhone; pair two iPhones for two-agent specs, or an iPhone with the
-# Mac's own desktop build
-PLATFORMS=ios,ios just e2e run send-messages
-PLATFORMS=ios,desktop just e2e run send-messages
-PLATFORMS=ios just e2e run settings-pages
+# Connected iPhone; pair two iPhones for two-agent specs, or one iPhone with
+# the Mac's own desktop build
+PHONES=ios,ios just e2e run send-messages
+PHONES=ios just e2e run send-messages
 ```
 
 **Key details:**
-- Desktop runs need `toxiproxy-server` on the PATH; the nix dev shell provides it. Without nix: the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when it is missing.
+- Desktop runs need `toxiproxy-server` on the PATH; the nix dev shell provides it. Without nix: the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when it is missing. Behind the proxy, `stunnel` (also in the nix dev shell) serves the local mailbox over TLS with a certificate from the committed test CA in `crates/mailbox-client/e2e-test-ca/`, which e2e builds trust, so a degraded link slows the TLS handshake the app's connect timeout covers.
 - Tests use page objects from `e2e-tests/helpers/pages/`. `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` returns one `Agent` per requirement with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
 - Platform-specific setup (desktop app launches, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
-- Desktop agents are the e2e build launched by the harness with `DATA_DIR`, `MAILBOX_URL` and `TAURI_WEBDRIVER_PORT` in their env, and driven through the W3C WebDriver server that build embeds (`tauri-plugin-wdio-webdriver`, behind the `e2e-tests` cargo feature), on Linux and macOS alike (`e2e-tests/setup/platforms/desktop.ts`); the compat suite (`e2e-tests/compat/`) launches the binaries it builds from each ref the same way, so it can only test refs whose e2e build embeds that server; Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
+- Desktop agents are the e2e build launched by the harness with `DATA_DIR`, `MAILBOX_URL` and `TAURI_WEBDRIVER_PORT` in their env, and driven through the W3C WebDriver server that build embeds (`tauri-plugin-wdio-webdriver`, behind the `e2e-tests` cargo feature), on Linux and macOS alike (`e2e-tests/setup/platforms/desktop.ts`); the compat suite (`e2e-tests/compat/`) launches the binaries it builds from each ref the same way, so it can only test refs whose e2e build embeds that server; Android agents get the mailbox via a baked `https://127.0.0.1:3200` URL bridged with `adb reverse`.
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events.
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run.
 - The hub fuzz (`local-hub-discovery-stress`) walks phones and local hubs through real Wi-Fi networks. `E2E_WIFI_NETWORKS=ssid:pass,ssid:pass` in a gitignored `e2e-tests/.env` (see `e2e-tests/.env.example`, which also lists what the access points must look like; `just e2e` loads it, and `ENV=staging just e2e` layers the root `.env.staging` under it) names them; the host's Wi-Fi card joins them as a client for the length of the run, which is what puts the hubs (processes on the host) on a LAN. Unset, every hub and network move stays out of the runs.
@@ -408,7 +405,7 @@ PLATFORMS=ios just e2e run settings-pages
 - **Specs run in narrow (mobile) layout by default.** `setupAgent` forces `agent.setWideScreen(false)` so back buttons (`direct-chat-back`, `offline-back`, …) and FABs render — most of those are gated by `{#if !isWideScreen.value}`. When a spec needs the desktop two-panel layout (e.g. `review-checks` switching combos), call `agent.setWideScreen(true)` in `before()`. Wide-screen mode mounts `ChatListPanel` / `SettingsPanel` / `NewMessagePanel` in the sidebar; some navigation steps that need a back-out in narrow can skip it in wide-screen because the sidebar is always there. The handful of cross-mode helpers (`helpers/review/visit-all-pages.ts`) guard with `if (await page.back.isDisplayed())` to handle both.
 - **Use `page.ready()` instead of bare waits after navigation.** Each page object has a `ready()` method that waits for the first stable element on that page. Call it right after the click that triggered the navigation.
 - **Only pass custom `waitUntil` / `waitForExist` arguments when strictly necessary.** The default `waitforTimeout` (30s) is correct for incidental waits — animations, navigations, store hydration. Override `timeout` / `interval` / `timeoutMsg` only when (a) the operation genuinely needs longer than 30s (network sync, p2p propagation, connection-state flips that depend on real timeouts) or (b) a custom error message is the only way to diagnose a flake. Don't copy timeouts from neighbouring code without justifying them.
-- **Specs declare per-agent requirements in `setupAgents`.** Each suite builds its agents with `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` inside `before(async function () { ... })` (a plain `function`, so `this` is the mocha context). A spec covering a platform-specific feature passes `{ platform: 'desktop' }`, `{ platform: 'android' }` (fulfilled by a physical device or an emulator), or `{ platform: 'ios' }` for the agent that needs it. The harness matches the requirements against the unordered `PLATFORMS` multiset — a `'desktop'` requirement gets a desktop agent regardless of its position in the list — and skips the suite when no assignment exists (including when the spec asks for more agents than `PLATFORMS` launches).
+- **Specs declare per-agent requirements in `setupAgents`.** Each suite builds its agents with `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` inside `before(async function () { ... })` (a plain `function`, so `this` is the mocha context). A spec covering a platform-specific feature passes `{ platform: 'desktop' }`, `{ platform: 'android' }` (fulfilled by a physical device or an emulator), or `{ platform: 'ios' }` for the agent that needs it. The harness gives each requirement a phone from the unordered `PHONES` multiset when one fulfills it (narrowest requirements first, so `'any'` takes the leftover phones) and launches a desktop agent for every other one; it skips the suite only when a requirement that needs a phone (`'android'`, `'ios'`, `'phone'`, `'mobile'`) finds none.
 - **One page object per route, one spec per feature.** When you add a new route under `ui/src/routes/`, add a matching page object under `e2e-tests/helpers/pages/` (mirror the route structure: `routes/settings/profile/edit-name/+page.svelte` → `helpers/pages/settings/profile/edit-name-page.ts`) and wire it into `setup-agents.ts`. New UI features must also ship with a spec in `e2e-tests/specs/` covering the happy path.
 
 **REQUIREMENT:** E2E specs must drive the UI via page objects (`agent.homePage.newMessageButton.click()`), not by inlining `document.querySelector` or duplicating selectors. DOM-side helpers that can't be expressed as clicks belong in `ui/tests/setup-utils.ts` under `window.__test`.

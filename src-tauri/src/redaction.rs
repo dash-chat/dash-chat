@@ -63,8 +63,8 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/",
         // DeviceId and AgentId wrappers (must precede bare VerifyingKey/Hash patterns)
         r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
-        // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...])
-        r"(VerifyingKey|Hash|Signature|InboxNonce)\(\[[\d, ]+\]\)",
+        // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...]), Topic([...])
+        r"(VerifyingKey|Hash|Signature|InboxNonce|Topic)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about/description fields with quoted values
@@ -253,6 +253,15 @@ mod tests {
     fn redacts_signature_byte_array() {
         let input = "sig: Signature([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64])";
         assert_eq!(redact(input), "sig: [REDACTED]");
+    }
+
+    #[test]
+    fn redacts_topic_byte_array() {
+        let input = "Received notification: Op(OpNotification { topic: Topic([115, 141, 94, 24, 253, 20, 106, 114, 176, 29, 155, 223, 118, 237, 251, 242, 223, 65, 196, 109, 60, 229, 115, 151, 106, 243, 121, 82, 124, 168, 1, 2]), ";
+        assert_eq!(
+            redact(input),
+            "Received notification: Op(OpNotification { topic: [REDACTED], "
+        );
     }
 
     #[test]

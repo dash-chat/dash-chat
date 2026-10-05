@@ -43,6 +43,15 @@ export async function leaveWifi(ssid: string): Promise<void> {
 	await driver.leaveWifi(ssid);
 }
 
+/** Take the card off every one of the test networks `ssids` it has joined,
+ *  so the network it is on is its usual one: the network the phones are put
+ *  on. */
+export async function leaveTestNetworks(ssids: string[]): Promise<void> {
+	// Hosts without test networks needn't have the platform's Wi-Fi tooling.
+	if (ssids.length === 0) return;
+	for (const ssid of driver.joinedTestNetworks(ssids)) await leaveWifi(ssid);
+}
+
 /** Give the card back at the end of the spec file. */
 export function releaseWifiDevice(): void {
 	if (claimed === null) return;

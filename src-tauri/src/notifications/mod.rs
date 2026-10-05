@@ -7,7 +7,8 @@ pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
 use dashchat_node::{
-    ChatId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic, TopicId,
+    AgentId, ChatId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic,
+    TopicId,
 };
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
@@ -15,15 +16,30 @@ use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionSta
 
 use crate::node::AppNodeManager;
 
+/// Run a notification plugin call on the blocking pool. On mobile each call
+/// parks its thread until the native side answers, which can take seconds
+/// (FCM's getToken, or `show()` asking the webview for its route); on a
+/// runtime worker that stalls unrelated commands, e.g. creating a contact code.
+pub(crate) async fn run_plugin_call<T: Send + 'static>(
+    call: impl FnOnce() -> T + Send + 'static,
+) -> anyhow::Result<T> {
+    tokio::task::spawn_blocking(call)
+        .await
+        .context("notification plugin call panicked")
+}
+
 /// Returns `true` iff the user has both enabled notifications in app settings
 /// and granted OS-level permission. On desktop the permission state is always
 /// `Granted` so this collapses to the settings check.
-pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
-    crate::settings::load_settings(handle).notifications_enabled
-        && matches!(
-            handle.notification().permission_state(),
-            Ok(PermissionState::Granted)
-        )
+pub(crate) async fn are_notifications_enabled(handle: &AppHandle) -> bool {
+    if !crate::settings::load_settings(handle).notifications_enabled {
+        return false;
+    }
+    let h = handle.clone();
+    matches!(
+        run_plugin_call(move || h.notification().permission_state()).await,
+        Ok(Ok(PermissionState::Granted))
+    )
 }
 
 /// Show a system notification for an operation that arrived through the
@@ -34,7 +50,7 @@ pub(crate) async fn show_sync_notification(
     app_handle: &AppHandle,
     notification: &dashchat_node::OpNotification,
 ) {
-    if !are_notifications_enabled(app_handle) {
+    if !are_notifications_enabled(app_handle).await {
         return;
     }
 
@@ -70,8 +86,14 @@ pub(crate) async fn show_sync_notification(
         }
     }
 
-    if let Err(err) = show_notification_from_data(app_handle, data) {
-        log::error!("Failed to show sync-path notification: {err:?}");
+    log::info!(
+        "Notifying about a synced operation {}",
+        notification.header.hash()
+    );
+    let h = app_handle.clone();
+    match run_plugin_call(move || show_notification_from_data(&h, data)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) | Err(err) => log::error!("Failed to show sync-path notification: {err:?}"),
     }
 }
 
@@ -223,16 +245,25 @@ async fn chat_message_notification(
 
     let is_direct_chat =
         *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic;
+    let mut qr_code_name = None;
     if is_direct_chat {
-        let accepted = match node.accepted_contact_agent_ids().await {
-            Ok(accepted) => accepted,
-            Err(err) => {
-                log::error!("Failed to load accepted contacts: {err:?}");
-                return None;
-            }
+        let accepted = match sender_agent_id {
+            Some(agent_id) => is_accepted_agent(node, agent_id).await,
+            None => false,
         };
-        if !sender_agent_id.is_some_and(|agent_id| accepted.contains(&agent_id)) {
-            return None;
+        if !accepted {
+            // Someone whose code we scanned writes to a chat that already shows
+            // their messages, while their acceptance may still be on its way:
+            // without a mailbox it only arrives once both devices meet again.
+            let request = match node.outgoing_contact_request(sender_device_id).await {
+                Ok(Some(request)) => request,
+                Ok(None) => return None,
+                Err(err) => {
+                    log::error!("Failed to load our outgoing contact request: {err:?}");
+                    return None;
+                }
+            };
+            qr_code_name = Some(request.profile_name).filter(|name| !name.is_empty());
         }
     } else if !is_member_of(node, topic).await {
         return None;
@@ -244,7 +275,11 @@ async fn chat_message_notification(
         None
     };
 
-    let sender_name = sender_profile.as_ref().map(|p| p.name.clone());
+    let sender_name = sender_profile
+        .as_ref()
+        .map(|p| p.name.clone())
+        .filter(|name| !name.is_empty())
+        .or(qr_code_name);
     let sender_avatar = sender_profile
         .and_then(|p| p.avatar)
         .filter(|s| s.starts_with("data:image/"));
@@ -320,6 +355,20 @@ async fn chat_message_notification(
     }
 
     Some(data)
+}
+
+/// Whether `agent_id` is a contact we accepted. Unlike `Node::is_accepted_contact`
+/// this takes the agent id the caller already resolved for the sender's device.
+async fn is_accepted_agent(node: &Node, agent_id: AgentId) -> bool {
+    match node.accepted_contact_agent_ids().await {
+        Ok(accepted) => accepted.contains(&agent_id),
+        // Fails open: the chat shows the message whatever this lookup says, so
+        // the caller goes on to check whether we scanned the sender's code.
+        Err(err) => {
+            log::error!("Failed to load accepted contacts: {err:?}");
+            false
+        }
+    }
 }
 
 /// Whether we are still in the group `topic` names. Leaving one does not stop
@@ -488,7 +537,82 @@ fn stable_notification_id(id_bytes: &[u8]) -> anyhow::Result<i32> {
 
 #[cfg(test)]
 mod tests {
+    use dashchat_node::testing::TestNode;
+    use dashchat_node::{AddContactResult, AsBody, NodeConfig, Profile};
+    use p2panda::operation::LogId;
+
     use super::*;
+
+    /// Publish `text` in `chat` on `node` and return the operation the way
+    /// the sync loop hands it to the builder.
+    async fn message_op(node: &TestNode, chat: ChatId, text: &str) -> (Header, Payload) {
+        let header = node.send_message(chat, text, None, None).await.unwrap();
+        let op = node
+            .op_store
+            .get_log(&node.device_id(), &LogId::from_topic(chat.into()), None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|op| op.hash == header.hash())
+            .unwrap();
+        let payload = Payload::try_from_body(&op.body.unwrap()).unwrap();
+        (header, payload)
+    }
+
+    /// Someone whose code we scanned writes to us before their acceptance
+    /// has reached us. The chat already shows their message, so it must be
+    /// announced, titled with the name their code carried (DASH-CHAT-4W).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn announces_a_message_from_someone_we_scanned() {
+        let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+        let bob = TestNode::new(NodeConfig::testing(), "bob").await;
+        bob.set_profile(Profile {
+            name: "Bob".to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        })
+        .await
+        .unwrap();
+
+        // Each scans the other's code. Nothing travels between the two nodes,
+        // so neither acceptance ever arrives.
+        let alice_code = alice.create_add_contact_qr_code().await.unwrap();
+        let bob_code = bob.create_add_contact_qr_code().await.unwrap();
+        let AddContactResult::NewRequest(chat) = alice.add_contact(bob_code).await.unwrap() else {
+            panic!("alice had already asked bob");
+        };
+        let AddContactResult::NewRequest(bobs_chat) = bob.add_contact(alice_code).await.unwrap()
+        else {
+            panic!("bob had already asked alice");
+        };
+        assert_eq!(chat, bobs_chat);
+
+        let (header, payload) = message_op(&bob, chat, "are you there?").await;
+        let data = build_notification_data(&alice, chat.into(), &header, Some(&payload))
+            .await
+            .expect("bob's message is announced");
+        assert_eq!(data.title.as_deref(), Some("Bob"));
+        assert_eq!(data.body.as_deref(), Some("are you there?"));
+    }
+
+    /// Someone who scanned our code, and whom we have not accepted, writes to
+    /// us. Their request is theirs to make, so nothing is announced.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stays_silent_for_someone_who_scanned_us() {
+        let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+        let carol = TestNode::new(NodeConfig::testing(), "carol").await;
+
+        let alice_code = alice.create_add_contact_qr_code().await.unwrap();
+        let AddContactResult::NewRequest(chat) = carol.add_contact(alice_code).await.unwrap()
+        else {
+            panic!("carol had already asked alice");
+        };
+
+        let (header, payload) = message_op(&carol, chat, "hello?").await;
+        let data = build_notification_data(&alice, chat.into(), &header, Some(&payload)).await;
+        assert!(data.is_none(), "announced: {data:?}");
+    }
 
     #[test]
     fn stable_notification_id_uses_first_four_bytes_little_endian() {

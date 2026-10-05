@@ -45,6 +45,8 @@ pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
+    panic_policy::install_panic_hook();
+
     // iOS never sets `APP_HANDLE` because the NSE runs in a separate process.
     #[cfg(target_os = "android")]
     let main_app_alive = crate::APP_HANDLE.get().is_some();
@@ -57,8 +59,11 @@ pub fn receive_push_notification(
         crate::utils::install_crypto_provider();
 
         #[cfg(target_os = "android")]
-        ANDROID_LOGS_ONCE.call_once(|| unsafe {
-            setup_android_logs();
+        ANDROID_LOGS_ONCE.call_once(|| {
+            unsafe { setup_android_logs() };
+            if let Err(err) = crate::logger::android::install_push_logger(&context.data_dir) {
+                eprintln!("Failed to install the push process's logger: {err:?}");
+            }
         });
         #[cfg(target_os = "ios")]
         IOS_LOGGER_ONCE.call_once(|| {
@@ -70,8 +75,6 @@ pub fn receive_push_notification(
                     .level_filter(log::LevelFilter::Debug)
                     .init();
             }
-            // Now that the logger is initialized, route panics through it.
-            crate::utils::install_panic_hook();
         });
         crate::i18n::init_i18n();
     }
@@ -109,9 +112,6 @@ pub fn receive_push_notification(
 
 #[cfg(target_os = "ios")]
 fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
-    use log::Log;
-    use tauri_plugin_log::fern;
-
     let fs = FileSystem::from_app_root_dir(data_dir.to_path_buf())?;
     let logs_dir = fs.app_root_dir().join("logs-nse");
     std::fs::create_dir_all(&logs_dir)?;
@@ -128,31 +128,7 @@ fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
         }
     }
 
-    let os_logger = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
-        .level_filter(log::LevelFilter::Debug);
-
-    fern::Dispatch::new()
-        .format(crate::setup::format_record)
-        .level(log::LevelFilter::Warn)
-        .level_for("dashchat_node", log::LevelFilter::Debug)
-        .level_for("dashchat_utils", log::LevelFilter::Debug)
-        .level_for("mailbox_client", log::LevelFilter::Debug)
-        .level_for("mailbox_server", log::LevelFilter::Debug)
-        .level_for("mailbox_local_server", log::LevelFilter::Debug)
-        .level_for("local_hub_discovery", log::LevelFilter::Debug)
-        .level_for("tauri_app_lib", log::LevelFilter::Debug)
-        .chain(fern::log_file(&log_path)?)
-        .chain(fern::Output::call(move |record| {
-            os_logger.log(record);
-        }))
-        .apply()?;
-
-    // `apply()` sets the global max level to the dispatch's base level (Warn),
-    // which would silence Debug/Info on the os_log target. Keep the unified
-    // log channel verbose for on-device debugging.
-    log::set_max_level(log::LevelFilter::Debug);
-
-    Ok(())
+    crate::logger::ios::install_push_extension_logger(&log_path)
 }
 
 async fn handle_push_notifications_with_fallback_messages(
@@ -171,10 +147,6 @@ async fn handle_push_notifications_with_fallback_messages(
                     "Successfully processed push notification, no actual notification needs to be shown.",
                 );
             }
-            // Nudge the main app to resync over the shared database (it may never
-            // see the operation this process just ingested).
-            #[cfg(target_os = "ios")]
-            super::nse_signal::post_nse_did_process();
             result
         }
         Err(err) => {
@@ -256,9 +228,13 @@ async fn handle_push_notification(
         app_data_dir
     );
 
+    #[cfg(target_os = "ios")]
+    let notification_tx = Some(super::nse_signal::nudge_on_processed_operations());
+    #[cfg(not(target_os = "ios"))]
+    let notification_tx = None;
     let acquired = node_slot::get_node_for_push_notification(
         app_data_dir,
-        NodeContext::for_push_notifications(),
+        NodeContext::for_push_notifications(notification_tx),
     )
     .await
     .context("failed to get node")?;
@@ -338,6 +314,10 @@ async fn handle_push_notification(
     else {
         return Ok(None);
     };
+    log::info!(
+        "Notifying about a pushed operation {}",
+        operation.header.hash()
+    );
 
     let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
         &filesystem.notified_operations_db_path(),
