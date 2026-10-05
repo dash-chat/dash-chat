@@ -823,7 +823,7 @@ impl OpProjection {
         .bind(author)
         .fetch_optional(&self.pool)
         .await?;
-        Ok(seq.map(|seq| seq as SeqNum))
+        Ok(seq.map(|seq| SeqNum::try_from(seq)).transpose()?)
     }
 
     /// Record an operation hash in the per-topic tombstone set with the reason

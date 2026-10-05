@@ -104,7 +104,10 @@ impl OpStore {
         from: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
         let log = self.log_operations(author, log_id, from).await?;
-        if log.is_empty() && !self.log_exists(author, log_id).await? {
+        if log.is_empty()
+            && tracing::enabled!(tracing::Level::WARN)
+            && !self.log_exists(author, log_id).await?
+        {
             tracing::warn!(
                 "No log found for log_id {} and author {}",
                 Hash::from_bytes(*log_id.as_bytes()),
@@ -358,16 +361,25 @@ mod tests {
             assert!(log.is_none(), "absent log from {from}: {log:?}");
         }
 
-        insert(
-            &store,
-            &signed_op(&signing_key, log_id, 0, None, b"zero"),
-            &log_id,
-        )
-        .await;
-        let log = MailboxStore::get_log(&store, &author, &topic, 1)
-            .await
-            .unwrap();
-        assert_eq!(log.map(|ops| ops.len()), Some(0));
+        let op0 = signed_op(&signing_key, log_id, 0, None, b"zero");
+        insert(&store, &op0, &log_id).await;
+        ack_up_to(&store, &topic, &author, log_id, 0).await;
+
+        let served = |from: SeqNum| {
+            let store = store.clone();
+            async move {
+                MailboxStore::get_log(&store, &author, &topic, from)
+                    .await
+                    .unwrap()
+                    .map(|ops| {
+                        ops.into_iter()
+                            .map(|op| op.header.hash())
+                            .collect::<Vec<_>>()
+                    })
+            }
+        };
+        assert_eq!(served(0).await, Some(vec![op0.hash]));
+        assert_eq!(served(1).await, Some(vec![]));
     }
 
     /// Mailbox sync must only see the contiguous prefix of a log whose
