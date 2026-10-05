@@ -5584,6 +5584,7 @@ dependencies = [
  "derive_more 1.0.0",
  "iroh",
  "iroh-blobs",
+ "mailbox-client",
  "mailbox-server",
  "nanoid 0.5.0",
  "once_cell",
