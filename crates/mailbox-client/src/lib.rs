@@ -1,13 +1,11 @@
 pub mod backends;
+pub mod blobs;
 pub mod manager;
 pub mod store;
 pub mod sync_tracker;
-pub mod unfetched_blobs;
-pub mod upload_tracker;
 
-pub use unfetched_blobs::BlobSource;
-pub use upload_tracker::BlobUploadLifecycle;
-
+pub use blobs::unfetched_blobs::BlobSource;
+pub use blobs::upload_tracker::BlobUploadLifecycle;
 pub use mailbox_server::RegisterPeerRequest;
 
 /// Test helpers and fixtures. Available outside `#[cfg(test)]` so dependent

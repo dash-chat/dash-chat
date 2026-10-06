@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::blobs::unfetched_blobs::reconcile_unfetched_blobs;
+use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
 use chrono::{DateTime, Utc};
@@ -364,7 +366,7 @@ where
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
-    upload_tracker: Arc<crate::upload_tracker::BlobUploadTracker>,
+    upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
 }
@@ -387,7 +389,7 @@ where
             topics: Arc::new(Mutex::new(Default::default())),
             store,
             sync_tracker,
-            upload_tracker: Arc::new(crate::upload_tracker::BlobUploadTracker::new()),
+            upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
         }
@@ -540,7 +542,7 @@ where
 
     /// Access the shared blob upload tracker so callers can wire it into a
     /// `ToyMailboxClient` before registration.
-    pub fn upload_tracker(&self) -> Arc<crate::upload_tracker::BlobUploadTracker> {
+    pub fn upload_tracker(&self) -> Arc<BlobUploadTracker> {
         self.upload_tracker.clone()
     }
 
@@ -557,11 +559,11 @@ where
     /// mailbox lacks.
     pub async fn reconcile_unfetched_blobs(
         &self,
-        source: Arc<dyn crate::unfetched_blobs::BlobSource>,
-        reader: Arc<dyn crate::BlobReader>,
-        tracker: Arc<dyn crate::UnfetchedBlobTracker>,
+        source: Arc<dyn BlobSource>,
+        reader: Arc<dyn BlobReader>,
+        tracker: Arc<dyn UnfetchedBlobTracker>,
     ) {
-        crate::unfetched_blobs::reconcile_unfetched_blobs(self, source, reader, tracker).await;
+        reconcile_unfetched_blobs(self, source, reader, tracker).await;
     }
 
     /// Nudge the poll loop to check for the next mailbox to poll.
