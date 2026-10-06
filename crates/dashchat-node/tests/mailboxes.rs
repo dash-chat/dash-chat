@@ -107,7 +107,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            alice.mailboxes.upload_scheduler(),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi
@@ -116,7 +116,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            bobbi.mailboxes.upload_scheduler(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
 
@@ -160,7 +160,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            alice.mailboxes.upload_scheduler(),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi
@@ -169,7 +169,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            bobbi.mailboxes.upload_scheduler(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
 

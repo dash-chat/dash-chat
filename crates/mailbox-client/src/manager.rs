@@ -364,7 +364,7 @@ where
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
-    scheduler: Arc<crate::upload_scheduler::BlobUploadScheduler>,
+    upload_tracker: Arc<crate::upload_tracker::BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
 }
@@ -387,7 +387,7 @@ where
             topics: Arc::new(Mutex::new(Default::default())),
             store,
             sync_tracker,
-            scheduler: Arc::new(crate::upload_scheduler::BlobUploadScheduler::new()),
+            upload_tracker: Arc::new(crate::upload_tracker::BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
         }
@@ -535,19 +535,19 @@ where
     /// without re-resolving the mailbox. For callers that already hold the
     /// mailbox URL.
     pub fn upload_due_at(&self, url: &str, hash: iroh_blobs::Hash) -> bool {
-        self.scheduler.upload_due(url, hash)
+        self.upload_tracker.upload_due(url, hash)
     }
 
-    /// Access the shared blob upload scheduler so callers can wire it into a
+    /// Access the shared blob upload tracker so callers can wire it into a
     /// `ToyMailboxClient` before registration.
-    pub fn upload_scheduler(&self) -> Arc<crate::upload_scheduler::BlobUploadScheduler> {
-        self.scheduler.clone()
+    pub fn upload_tracker(&self) -> Arc<crate::upload_tracker::BlobUploadTracker> {
+        self.upload_tracker.clone()
     }
 
     /// Network changed or app resumed: clear in-flight claims and backoffs so
     /// uploads can start again immediately.
     pub fn reset_uploads(&self) {
-        self.scheduler.restart_uploads();
+        self.upload_tracker.restart_uploads();
     }
 
     /// Reconcile unfetched blobs across all registered mailboxes.
@@ -1263,7 +1263,7 @@ mod tests {
     // -- MailboxTracker unit tests --
 
     #[tokio::test]
-    async fn register_attaches_upload_scheduler_to_toy_client() {
+    async fn register_attaches_upload_tracker_to_toy_client() {
         let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
         let url = server.server_address().unwrap().to_string();
         let url = url.trim_end_matches('/').to_string();
@@ -1284,7 +1284,7 @@ mod tests {
             url,
             iroh::SecretKey::generate().public(),
             Arc::new(crate::NoopUnfetchedBlobTracker),
-            mailboxes.upload_scheduler(),
+            mailboxes.upload_tracker(),
         )
         .with_blob_reader(reader.clone());
 

@@ -111,7 +111,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             &url,
             alice.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            alice.mailboxes.upload_scheduler(),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -126,7 +126,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             &url,
             bobbi.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            bobbi.mailboxes.upload_scheduler(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -197,7 +197,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             &url,
             bobbi.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            bobbi.mailboxes.upload_scheduler(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();
@@ -265,7 +265,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             &url,
             alice.endpoint_id(),
             alice.unfetched_blob_tracker(),
-            alice.mailboxes.upload_scheduler(),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -278,7 +278,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             &url,
             bobbi.endpoint_id(),
             bobbi.unfetched_blob_tracker(),
-            bobbi.mailboxes.upload_scheduler(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
     // Poison: register the mailbox endpoint with NO usable transport. Op sync
@@ -351,7 +351,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             &url,
             bobbi.endpoint_id(),
             bobbi.unfetched_blob_tracker(),
-            bobbi.mailboxes.upload_scheduler(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();

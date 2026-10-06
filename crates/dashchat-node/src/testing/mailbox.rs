@@ -179,7 +179,7 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
                 url,
                 node.endpoint_id(),
                 node.unfetched_blob_tracker(),
-                node.mailboxes.upload_scheduler(),
+                node.mailboxes.upload_tracker(),
             )
             .with_blob_reader(node.blob_reader()),
         )
