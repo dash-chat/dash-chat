@@ -7,6 +7,7 @@ use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
 use tokio::sync::{Notify, Semaphore};
 
 use crate::MailboxId;
+use crate::blobs::outbox_store;
 
 /// Persistent queue for ensuring blobs reach a mailbox.
 pub struct BlobOutbox {
@@ -46,7 +47,7 @@ impl BlobOutbox {
             .max_connections(4)
             .connect(database_url)
             .await?;
-        Self::migrate(&db).await?;
+        outbox_store::migrate(&db).await?;
         Ok(Arc::new(Self {
             db,
             global_semaphore: Arc::new(Semaphore::new(config.global_concurrency)),
@@ -60,98 +61,20 @@ impl BlobOutbox {
     ///
     /// If the pair is already queued or in flight, this is a no-op.
     pub async fn ensure(&self, mailbox_id: MailboxId, blob_hash: BlobHash) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO blob_outbox_jobs (mailbox_id, blob_hash, state, attempts, created_at)
-            VALUES (?, ?, 'pending', 0, unixepoch('subsec'))
-            ON CONFLICT(mailbox_id, blob_hash) DO UPDATE SET
-                state = CASE
-                    WHEN excluded.state IN ('pending', 'failed')
-                    THEN excluded.state
-                    ELSE blob_outbox_jobs.state
-                END,
-                next_attempt_at = CASE
-                    WHEN excluded.state IN ('pending', 'failed')
-                    THEN NULL
-                    ELSE blob_outbox_jobs.next_attempt_at
-                END
-            "#,
-        )
-        .bind(mailbox_id)
-        .bind(&blob_hash.as_bytes()[..])
-        .execute(&self.db)
-        .await?;
-
+        outbox_store::ensure_job(&self.db, &mailbox_id, blob_hash).await?;
         self.notify.notify_one();
         Ok(())
     }
 
     /// Reset all pending retries immediately, for example after a network change.
     pub async fn reset_retries(&self) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE blob_outbox_jobs
-            SET next_attempt_at = NULL
-            WHERE state IN ('pending', 'failed')
-            "#,
-        )
-        .execute(&self.db)
-        .await?;
-
+        outbox_store::reset_retries(&self.db).await?;
         self.notify.notify_one();
         Ok(())
     }
 
     /// Cancel all pending work for a removed mailbox.
     pub async fn cancel_mailbox(&self, mailbox_id: &MailboxId) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE blob_outbox_jobs
-            SET state = 'cancelled'
-            WHERE mailbox_id = ? AND state != 'done'
-            "#,
-        )
-        .bind(mailbox_id)
-        .execute(&self.db)
-        .await?;
-
-        Ok(())
-    }
-
-    async fn migrate(db: &Pool<Sqlite>) -> Result<()> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS blob_outbox_jobs (
-                id INTEGER PRIMARY KEY,
-                mailbox_id TEXT NOT NULL,
-                blob_hash BLOB NOT NULL,
-                state TEXT NOT NULL,
-                attempts INTEGER NOT NULL,
-                next_attempt_at REAL,
-                created_at REAL NOT NULL,
-                UNIQUE(mailbox_id, blob_hash)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_blob_outbox_jobs_ready
-            ON blob_outbox_jobs(state, next_attempt_at, created_at)
-            WHERE state IN ('pending', 'failed');
-
-            CREATE TABLE IF NOT EXISTS blob_outbox_job_log (
-                id INTEGER PRIMARY KEY,
-                job_id INTEGER NOT NULL,
-                happened_at REAL NOT NULL,
-                old_state TEXT,
-                new_state TEXT,
-                error TEXT
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_blob_outbox_job_log_job_id
-            ON blob_outbox_job_log(job_id);
-            "#,
-        )
-        .execute(db)
-        .await?;
-
-        Ok(())
+        outbox_store::cancel_jobs_for_mailbox(&self.db, mailbox_id).await
     }
 }
