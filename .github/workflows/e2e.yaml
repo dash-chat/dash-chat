@@ -7,9 +7,13 @@ on:
     branches: [main, 'main-**', develop]
 
 jobs:
-  e2e:
+  e2e-shard:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
 
@@ -71,13 +75,13 @@ jobs:
       - name: Run E2E tests
         env:
           E2E_SPEC_FILE_RETRIES: '3' # TODO: make the e2e tests less flaky on CI
-        run: set -o pipefail && dbus-run-session -- xvfb-run just e2e 2>&1 | tee e2e-output.log
+        run: set -o pipefail && dbus-run-session -- xvfb-run just e2e suite --shard=${{ matrix.shard }}/4 2>&1 | tee e2e-output.log
 
       - name: Upload test logs on failure
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-logs
+          name: e2e-logs-shard-${{ matrix.shard }}
           path: |
             e2e-output.log
             .dbs/e2e/failures/
@@ -90,3 +94,12 @@ jobs:
       - name: Cleanup E2E data
         if: always()
         run: rm -rf .dbs/e2e
+
+  # The required check is named `e2e`, and a skipped required check counts as
+  # passing, so this always runs and fails unless every shard succeeded.
+  e2e:
+    if: always()
+    needs: e2e-shard
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.e2e-shard.result }}" = success
