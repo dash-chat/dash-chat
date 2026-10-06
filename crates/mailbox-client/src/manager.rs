@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::blobs::blob_outbox::BlobOutbox;
 use crate::blobs::unfetched_blobs::reconcile_unfetched_blobs;
 use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::store::MailboxStore;
@@ -367,6 +368,7 @@ where
     store: Store,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     upload_tracker: Arc<BlobUploadTracker>,
+    blob_outbox: Option<Arc<BlobOutbox>>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
 }
@@ -380,6 +382,7 @@ where
     fn new(
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        blob_outbox: Option<Arc<BlobOutbox>>,
         config: MailboxesConfig,
     ) -> Self {
         let (active_mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
@@ -390,6 +393,7 @@ where
             store,
             sync_tracker,
             upload_tracker: Arc::new(BlobUploadTracker::new()),
+            blob_outbox,
             config,
             nudge: Arc::new(Notify::new()),
         }
@@ -752,9 +756,10 @@ where
     pub async fn spawn(
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        blob_outbox: Option<Arc<BlobOutbox>>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
-        let manager = Self::new(store, sync_tracker, config);
+        let manager = Self::new(store, sync_tracker, blob_outbox, config);
         let r = manager.clone();
         tokio::spawn(
             async move {
@@ -1217,11 +1222,11 @@ mod tests {
 
     /// Create a Mailboxes instance without spawning the background loop
     fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::new(DummyStore, test_sync_tracker(), config)
+        Mailboxes::new(DummyStore, test_sync_tracker(), None, config)
     }
 
     async fn spawn_test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_sync_tracker(), config)
+        Mailboxes::<Msg, DummyStore>::spawn(DummyStore, test_sync_tracker(), None, config)
             .await
             .unwrap()
     }
@@ -2863,7 +2868,7 @@ mod tests {
         config: MailboxesConfig,
         store: MemStore,
     ) -> Mailboxes<Msg, MemStore> {
-        Mailboxes::new(store, test_sync_tracker(), config)
+        Mailboxes::new(store, test_sync_tracker(), None, config)
     }
 
     async fn join(handles: Vec<tokio::task::JoinHandle<()>>) {

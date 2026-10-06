@@ -396,6 +396,7 @@ impl Node {
         let mailboxes = Mailboxes::spawn(
             op_store.clone(),
             sync_tracker,
+            None,
             config.mailboxes_config.clone(),
         )
         .await?;

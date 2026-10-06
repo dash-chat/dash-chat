@@ -4,6 +4,7 @@ pub mod manager;
 pub mod store;
 pub mod sync_tracker;
 
+pub use blobs::blob_outbox::{BlobOutbox, BlobOutboxConfig};
 pub use blobs::unfetched_blobs::BlobSource;
 pub use blobs::upload_tracker::BlobUploadLifecycle;
 pub use mailbox_server::RegisterPeerRequest;
