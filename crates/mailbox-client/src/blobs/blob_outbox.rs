@@ -106,13 +106,14 @@ impl BlobOutbox {
     ///
     /// `process` is called for every ready job. On success the job is marked
     /// done; on failure it is marked failed and retried later.
-    pub fn spawn_scheduler<F, Fut>(&self, process: F)
+    pub fn spawn_scheduler<F, Fut>(&self, process: F) -> tokio::task::JoinHandle<()>
     where
         F: Fn(Job) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send,
     {
         let db = self.db.clone();
         let notify = self.notify.clone();
+        let initial_backoff = self.config.initial_blob_failure_backoff;
 
         tokio::spawn(async move {
             loop {
@@ -131,18 +132,23 @@ impl BlobOutbox {
                     if (process)(job).await.is_ok() {
                         let _ = outbox_store::mark_done(&db, job_id).await;
                     } else {
-                        let next_attempt_at = (std::time::SystemTime::now()
-                            + std::time::Duration::from_secs(5))
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64();
+                        let next_attempt_at = (std::time::SystemTime::now() + initial_backoff)
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs_f64();
                         let _ = outbox_store::mark_failed(&db, job_id, next_attempt_at).await;
+
+                        let notify = notify.clone();
+                        tokio::spawn(async move {
+                            tokio::time::sleep(initial_backoff).await;
+                            notify.notify_one();
+                        });
                     }
                 }
 
                 notify.notified().await;
             }
-        });
+        })
     }
 }
 
@@ -164,10 +170,36 @@ mod tests {
         }
     }
 
+    fn flaky_processor(
+        attempts: Arc<StdMutex<usize>>,
+        failures_before_success: usize,
+        recorded: Arc<StdMutex<Vec<Job>>>,
+    ) -> impl Fn(Job) -> std::future::Ready<Result<()>> {
+        move |job| {
+            let mut attempts = attempts.lock().unwrap();
+            *attempts += 1;
+            let attempt = *attempts;
+            recorded.lock().unwrap().push(job);
+            if attempt > failures_before_success {
+                std::future::ready(Ok(()))
+            } else {
+                std::future::ready(Err(anyhow::anyhow!("boom")))
+            }
+        }
+    }
+
     async fn open_in_memory() -> Arc<BlobOutbox> {
-        BlobOutbox::open("sqlite::memory:", BlobOutboxConfig::default())
-            .await
-            .unwrap()
+        open_in_memory_with_config(BlobOutboxConfig::default()).await
+    }
+
+    async fn open_in_memory_with_config(config: BlobOutboxConfig) -> Arc<BlobOutbox> {
+        BlobOutbox::open("sqlite::memory:", config).await.unwrap()
+    }
+
+    fn fast_backoff_config() -> BlobOutboxConfig {
+        let mut config = BlobOutboxConfig::default();
+        config.initial_blob_failure_backoff = Duration::from_millis(100);
+        config
     }
 
     async fn open_temp_file() -> (tempfile::TempDir, String) {
@@ -177,17 +209,35 @@ mod tests {
         (tmp, database_url)
     }
 
-    fn spawn_recording_scheduler(outbox: &Arc<BlobOutbox>) -> Arc<StdMutex<Vec<Job>>> {
+    fn spawn_recording_scheduler(outbox: &Arc<BlobOutbox>) -> (tokio::task::JoinHandle<()>, Arc<StdMutex<Vec<Job>>>) {
         let processed: Arc<StdMutex<Vec<Job>>> = Arc::new(StdMutex::new(Vec::new()));
-        outbox.spawn_scheduler(recording_processor(processed.clone()));
-        processed
+        let handle = outbox.spawn_scheduler(recording_processor(processed.clone()));
+        (handle, processed)
     }
 
-    async fn wait_for_jobs<'a>(
-        processed: &'a Arc<StdMutex<Vec<Job>>>,
+    fn spawn_flaky_scheduler(
+        outbox: &Arc<BlobOutbox>,
+        failures_before_success: usize,
+    ) -> (
+        tokio::task::JoinHandle<()>,
+        Arc<StdMutex<Vec<Job>>>,
+        Arc<StdMutex<usize>>,
+    ) {
+        let attempts = Arc::new(StdMutex::new(0usize));
+        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let handle = outbox.spawn_scheduler(flaky_processor(
+            attempts.clone(),
+            failures_before_success,
+            recorded.clone(),
+        ));
+        (handle, recorded, attempts)
+    }
+
+    async fn wait_for_jobs(
+        processed: &Arc<StdMutex<Vec<Job>>>,
         timeout: Duration,
         message: &str,
-    ) -> std::sync::MutexGuard<'a, Vec<Job>> {
+    ) {
         let delivered = tokio::time::timeout(timeout, async {
             loop {
                 if !processed.lock().unwrap().is_empty() {
@@ -199,7 +249,25 @@ mod tests {
         .await;
 
         assert!(delivered.is_ok(), "{message}");
-        processed.lock().unwrap()
+    }
+
+    async fn wait_for_attempts(
+        attempts: &Arc<StdMutex<usize>>,
+        target: usize,
+        timeout: Duration,
+        message: &str,
+    ) {
+        let delivered = tokio::time::timeout(timeout, async {
+            loop {
+                if *attempts.lock().unwrap() >= target {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+
+        assert!(delivered.is_ok(), "{message}");
     }
 
     async fn expect_one_job(
@@ -208,16 +276,24 @@ mod tests {
         hash: BlobHash,
         message: &str,
     ) {
-        let jobs = wait_for_jobs(processed, Duration::from_secs(2), message).await;
+        wait_for_jobs(processed, Duration::from_secs(2), message).await;
+        let jobs = processed.lock().unwrap();
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].mailbox_id, *mailbox_id);
         assert_eq!(jobs[0].blob_hash, hash);
     }
 
+    fn assert_jobs_match(jobs: &Vec<Job>, mailbox_id: &MailboxId, hash: BlobHash) {
+        for job in jobs {
+            assert_eq!(job.mailbox_id, *mailbox_id);
+            assert_eq!(job.blob_hash, hash);
+        }
+    }
+
     #[tokio::test]
     async fn scheduler_delivers_pending_job_to_processor() {
         let outbox = open_in_memory().await;
-        let processed = spawn_recording_scheduler(&outbox);
+        let (scheduler, processed) = spawn_recording_scheduler(&outbox);
 
         let (mailbox_id, hash) = example_job();
         outbox.ensure(mailbox_id.clone(), hash).await.unwrap();
@@ -229,6 +305,7 @@ mod tests {
             "scheduler did not deliver the job in time",
         )
         .await;
+        scheduler.abort();
     }
 
     #[tokio::test]
@@ -246,7 +323,7 @@ mod tests {
         let consumer = BlobOutbox::open(&database_url, BlobOutboxConfig::default())
             .await
             .unwrap();
-        let processed = spawn_recording_scheduler(&consumer);
+        let (scheduler, processed) = spawn_recording_scheduler(&consumer);
 
         expect_one_job(
             &processed,
@@ -255,5 +332,38 @@ mod tests {
             "scheduler did not process the pre-existing job in time",
         )
         .await;
+        scheduler.abort();
+    }
+
+    #[tokio::test]
+    async fn scheduler_retries_failed_jobs_after_backoff() {
+        let outbox = open_in_memory_with_config(fast_backoff_config()).await;
+        let (scheduler, recorded, attempts) = spawn_flaky_scheduler(&outbox, 1);
+
+        let (mailbox_id, hash) = example_job();
+        outbox.ensure(mailbox_id.clone(), hash).await.unwrap();
+
+        // First attempt fails quickly.
+        wait_for_jobs(
+            &recorded,
+            Duration::from_secs(2),
+            "first attempt did not run",
+        )
+        .await;
+
+        // After backoff the scheduler retries and the second attempt succeeds.
+        wait_for_attempts(
+            &attempts,
+            2,
+            Duration::from_secs(10),
+            "scheduler did not retry the failed job in time",
+        )
+        .await;
+
+        scheduler.abort();
+
+        let recorded = recorded.lock().unwrap();
+        assert_eq!(recorded.len(), 2);
+        assert_jobs_match(&recorded, &mailbox_id, hash);
     }
 }
