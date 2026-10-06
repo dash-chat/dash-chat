@@ -126,20 +126,19 @@ impl ValidChatOps {
     // quote is dropped — and clearing a reply can't invalidate anything else,
     // so a single pass (after edit/delete pruning above) is enough.
     fn prune_invalid_replies(&mut self) {
-        let candidates: Vec<(Hash, Hash, u64)> = self
+        let candidates: Vec<(Hash, Hash)> = self
             .0
             .iter()
             .filter_map(|(hash, op)| match op.kind {
                 ChatOpKind::Message {
                     reply: Some(target),
-                } => Some((*hash, target, op.timestamp)),
+                } => Some((*hash, target)),
                 _ => None,
             })
             .collect();
-        for (hash, target, timestamp) in candidates {
+        for (hash, target) in candidates {
             let valid = ReplyCandidate {
                 target,
-                timestamp,
                 self_hash: Some(hash),
             }
             .validate(self)
