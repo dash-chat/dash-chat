@@ -2408,7 +2408,7 @@ impl Node {
         hash: &str,
         timeout: Option<std::time::Duration>,
     ) -> anyhow::Result<Vec<u8>> {
-        let hash: iroh_blobs::Hash = hash.parse()?;
+        let hash = parse_blob_hash(hash)?;
         let blob_sync = self.require_blob_sync()?;
         let Some(timeout) = timeout else {
             return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
@@ -2565,6 +2565,18 @@ mod config_validation_tests {
     }
 }
 
+const BLOB_HASH_HEX_LEN: usize = 64;
+const BLOB_HASH_BASE32_LEN: usize = 52;
+
+/// `iroh_blobs::Hash::from_str` asserts on the decoded length instead of
+/// returning an error, so any input that is not exactly one hash long panics.
+fn parse_blob_hash(hash: &str) -> anyhow::Result<iroh_blobs::Hash> {
+    if hash.len() != BLOB_HASH_HEX_LEN && hash.len() != BLOB_HASH_BASE32_LEN {
+        anyhow::bail!("invalid blob hash length {}: {hash:?}", hash.len());
+    }
+    Ok(hash.parse()?)
+}
+
 #[cfg(test)]
 mod blob_load_tests {
     use crate::NodeConfig;
@@ -2579,6 +2591,16 @@ mod blob_load_tests {
 
         let got = node.load_blob(&hash, None).await.unwrap();
         assert_eq!(got, b"hello");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn load_blob_malformed_hash_errors_instead_of_panicking() {
+        let node = TestNode::new(NodeConfig::testing(), "alice").await;
+        let full = iroh_blobs::Hash::new(b"truncated-in-transit").to_string();
+        let truncated = &full[..19];
+
+        let err = node.load_blob(truncated, None).await;
+        assert!(err.is_err());
     }
 
     #[tokio::test(flavor = "multi_thread")]
