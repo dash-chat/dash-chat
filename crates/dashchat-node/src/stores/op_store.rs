@@ -7,11 +7,11 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use dashchat_utils::SeqNum;
 use p2panda::Hash;
 #[cfg(any(test, feature = "testing"))]
 use p2panda::operation::Header;
 use p2panda::operation::{LogId, Operation};
-use p2panda_core::SeqNum;
 use p2panda_store::SqliteStore;
 use p2panda_store::logs::LogStore;
 
@@ -81,7 +81,7 @@ impl OpStore {
         topic: &TopicId,
         author: &DeviceId,
         log_id: &LogId,
-    ) -> anyhow::Result<Option<u64>> {
+    ) -> anyhow::Result<Option<SeqNum>> {
         use p2panda_store::cursors::CursorStore;
         // The ack cursor is persisted by p2panda under the topic's string
         // representation (see `StreamSubscription`'s internal `Acked`).
@@ -100,7 +100,7 @@ impl OpStore {
         &self,
         author: &DeviceId,
         log_id: &LogId,
-        from: Option<u64>,
+        from: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
         let log = self
             .store
@@ -122,7 +122,7 @@ impl OpStore {
 
     pub async fn get_operation(&self, hash: &Hash) -> anyhow::Result<Option<Operation>> {
         use p2panda_store::operations::OperationStore;
-        OperationStore::<Operation, Hash, LogId>::get_operation(&self.store, hash)
+        OperationStore::<Operation, Hash>::get_operation(&self.store, hash)
             .await
             .map_err(|err| anyhow::anyhow!("failed to get operation for {hash:?}: {err}"))
     }
@@ -166,7 +166,7 @@ impl OpStore {
                 }
             }
         }
-        logs.sort_by_key(|(h, _)| h.timestamp);
+        logs.sort_by_key(|(h, _)| h.extensions.timestamp());
         Ok(logs)
     }
 
@@ -174,8 +174,7 @@ impl OpStore {
     /// intact so log sync stays consistent. Used to enforce tombstones.
     pub async fn delete_body(&self, hash: &Hash) -> anyhow::Result<()> {
         use p2panda_store::operations::OperationStore;
-        OperationStore::<Operation, Hash, LogId>::delete_operation_payload(&self.store, hash)
-            .await?;
+        OperationStore::<Operation, Hash>::delete_operation_payload(&self.store, hash).await?;
         Ok(())
     }
 
@@ -206,7 +205,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         &self,
         author: &DeviceId,
         topic: &TopicId,
-        from: u64,
+        from: SeqNum,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
         let log_id = LogId::from_topic(*topic);
         let from = if from == 0 { None } else { Some(from - 1) };
@@ -245,7 +244,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         Ok(Some(ops))
     }
 
-    async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, u64)>> {
+    async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, SeqNum)>> {
         Ok(OpStore::get_log_heights(self, &LogId::from_topic(*topic))
             .await?
             .into_iter()
@@ -256,14 +255,14 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
 #[cfg(test)]
 mod tests {
     use p2panda::operation::{Extensions, Header};
-    use p2panda_core::{Body, PruneFlag, Timestamp};
+    use p2panda_core::{Body, Timestamp};
     use p2panda_store::Transaction;
     use p2panda_store::operations::OperationStore;
 
     use super::*;
 
     async fn fetch(store: &OpStore, hash: &Hash) -> Operation {
-        OperationStore::<Operation, Hash, LogId>::get_operation(&store.store, hash)
+        OperationStore::<Operation, Hash>::get_operation(&store.store, hash)
             .await
             .unwrap()
             .unwrap()
@@ -272,28 +271,20 @@ mod tests {
     fn signed_op(
         signing_key: &p2panda::SigningKey,
         log_id: LogId,
-        seq_num: u64,
+        seq_num: SeqNum,
         backlink: Option<Hash>,
         payload: &[u8],
     ) -> Operation {
-        let body = Body::new(payload);
-        let mut header = Header {
-            version: 1,
-            verifying_key: signing_key.verifying_key(),
-            signature: None,
-            payload_size: body.size(),
-            payload_hash: Some(body.hash()),
-            timestamp: Timestamp::new(seq_num),
-            seq_num,
-            backlink,
-            extensions: Extensions {
-                log_id,
-                prune_flag: PruneFlag::default(),
-                groups_args: None,
-                version: 1,
-            },
-        };
-        header.sign(signing_key);
+        let body = Body::from_bytes(payload);
+        // Timestamps track seq_num so the tests' expected ordering is deterministic.
+        let extensions = Extensions::builder(log_id)
+            .timestamp(Timestamp::new(seq_num.into()))
+            .build();
+        let header = Header::builder()
+            .body(payload)
+            .seq_num(seq_num)
+            .backlink(backlink)
+            .build(signing_key, extensions);
         Operation {
             hash: header.hash(),
             header,
@@ -303,14 +294,9 @@ mod tests {
 
     async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
         let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash, LogId>::insert_operation(
-            &store.store,
-            &op.hash,
-            op,
-            log_id,
-        )
-        .await
-        .unwrap();
+        OperationStore::<Operation, Hash>::insert_operation(&store.store, &op.hash, op, log_id)
+            .await
+            .unwrap();
         store.store.commit(permit).await.unwrap();
     }
 
@@ -322,7 +308,7 @@ mod tests {
         topic: &TopicId,
         author: &DeviceId,
         log_id: LogId,
-        seq: u64,
+        seq: SeqNum,
     ) {
         use p2panda_core::Cursor;
         use p2panda_core::logs::LogHeights;
@@ -399,24 +385,10 @@ mod tests {
         let log_id = LogId::from_topic(topic);
 
         let signing_key = p2panda::SigningKey::generate();
-        let body = Body::new(b"payload");
-        let mut header = Header {
-            version: 1,
-            verifying_key: signing_key.verifying_key(),
-            signature: None,
-            payload_size: body.size(),
-            payload_hash: Some(body.hash()),
-            timestamp: Timestamp::new(0),
-            seq_num: 0,
-            backlink: None,
-            extensions: Extensions {
-                log_id,
-                prune_flag: PruneFlag::default(),
-                groups_args: None,
-                version: 1,
-            },
-        };
-        header.sign(&signing_key);
+        let body = Body::from_bytes(b"payload");
+        let header = Header::builder()
+            .body(b"payload")
+            .build(&signing_key, Extensions::builder(log_id).build());
         let hash = header.hash();
         let op = Operation {
             hash,
@@ -425,14 +397,9 @@ mod tests {
         };
 
         let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash, LogId>::insert_operation(
-            &store.store,
-            &hash,
-            &op,
-            &log_id,
-        )
-        .await
-        .unwrap();
+        OperationStore::<Operation, Hash>::insert_operation(&store.store, &hash, &op, &log_id)
+            .await
+            .unwrap();
         store.store.commit(permit).await.unwrap();
         assert!(fetch(&store, &hash).await.body.is_some());
 

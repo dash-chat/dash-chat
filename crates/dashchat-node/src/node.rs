@@ -1127,9 +1127,9 @@ impl Node {
                 }
                 if newest
                     .as_ref()
-                    .is_none_or(|(at, _)| op.header.timestamp > *at)
+                    .is_none_or(|(at, _)| op.header.extensions.timestamp() > *at)
                 {
-                    newest = Some((op.header.timestamp, request));
+                    newest = Some((op.header.extensions.timestamp(), request));
                 }
             }
         }
@@ -1439,7 +1439,7 @@ impl Node {
                     op.header.hash(),
                     ChatOp {
                         author: DeviceId::from(op.header.verifying_key),
-                        timestamp: op.header.timestamp.into(),
+                        timestamp: op.header.extensions.timestamp().into(),
                         seq_num: op.header.seq_num,
                         kind,
                     },
@@ -1570,8 +1570,9 @@ impl Node {
                 let is_later = match &latest {
                     None => true,
                     Some((h, _)) => {
-                        op.header.timestamp > h.timestamp
-                            || (op.header.timestamp == h.timestamp && op.header.seq_num > h.seq_num)
+                        op.header.extensions.timestamp() > h.extensions.timestamp()
+                            || (op.header.extensions.timestamp() == h.extensions.timestamp()
+                                && op.header.seq_num > h.seq_num)
                     }
                 };
                 if is_later {
@@ -2012,10 +2013,10 @@ impl Node {
                 if req_agent == agent_id
                     && latest
                         .as_ref()
-                        .is_none_or(|(ts, _)| op.header.timestamp > *ts)
+                        .is_none_or(|(ts, _)| op.header.extensions.timestamp() > *ts)
                     && !self.local_store.is_known_inbox_topic(*reply_topic).await?
                 {
-                    latest = Some((op.header.timestamp, reply_topic));
+                    latest = Some((op.header.extensions.timestamp(), reply_topic));
                 }
             }
         }

@@ -91,7 +91,7 @@ pub struct LocalStore {
 impl LocalStore {
     pub async fn new(pool: SqlitePool) -> anyhow::Result<Self> {
         for sql in MIGRATIONS {
-            sqlx::query(sql).execute(&pool).await?;
+            sqlx::query(*sql).execute(&pool).await?;
         }
 
         let store = Self { pool };

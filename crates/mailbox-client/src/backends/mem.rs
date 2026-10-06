@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+use dashchat_utils::SeqNum;
 use tokio::sync::RwLock;
 
 /// A client for the in-memory mailbox server.
@@ -27,7 +28,7 @@ impl<Item: MailboxItem> MemMailboxClient<Item> {
 
 pub type MemMailboxLogs<Item> = HashMap<
     <Item as MailboxItem>::Topic,
-    HashMap<<Item as MailboxItem>::Author, BTreeMap<u64, Item>>,
+    HashMap<<Item as MailboxItem>::Author, BTreeMap<SeqNum, Item>>,
 >;
 
 #[derive(Clone)]
@@ -51,13 +52,13 @@ impl<Item: MailboxItem> MemMailbox<Item> {
         }
     }
 
-    pub async fn log_heights(&self) -> BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> {
+    pub async fn log_heights(&self) -> BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> {
         let ops = self.ops.read().await;
         let mut log_heights = BTreeMap::new();
         for (topic, ops) in ops.iter() {
             let mut topic_heights = BTreeMap::new();
             for (author, ops) in ops.iter() {
-                topic_heights.insert(*author, ops.len() as u64);
+                topic_heights.insert(*author, ops.len() as SeqNum);
             }
             log_heights.insert(*topic, topic_heights);
         }
@@ -189,7 +190,7 @@ mod tests {
 
     use super::*;
 
-    fn msg(topic: u8, author: char, seq: u64) -> Msg {
+    fn msg(topic: u8, author: char, seq: SeqNum) -> Msg {
         Msg { topic, author, seq }
     }
 
@@ -215,7 +216,7 @@ mod tests {
     async fn fetch(
         client: &MemMailboxClient<Msg>,
         topic: MsgTopic,
-        authors: &[(char, u64)],
+        authors: &[(char, SeqNum)],
     ) -> anyhow::Result<FetchTopicResponse<Msg>> {
         let FetchResponse(mut r) = client.fetch(r(topic, authors)).await?;
         let rr = r.remove(&topic).unwrap();
@@ -223,18 +224,18 @@ mod tests {
         Ok(rr)
     }
 
-    fn r(topic: MsgTopic, authors: &[(char, u64)]) -> FetchRequest<Msg> {
+    fn r(topic: MsgTopic, authors: &[(char, SeqNum)]) -> FetchRequest<Msg> {
         FetchRequest(BTreeMap::from([(
             topic,
             BTreeMap::from_iter(authors.into_iter().cloned()),
         )]))
     }
 
-    fn m(topic: MsgTopic, author: char, seq: u64) -> Msg {
+    fn m(topic: MsgTopic, author: char, seq: SeqNum) -> Msg {
         Msg { topic, author, seq }
     }
 
-    fn mm(topic: MsgTopic, author: char, r: std::ops::Range<u64>) -> Vec<Msg> {
+    fn mm(topic: MsgTopic, author: char, r: std::ops::Range<SeqNum>) -> Vec<Msg> {
         r.map(|i| m(topic, author, i)).collect()
     }
 
@@ -347,7 +348,7 @@ mod tests {
 }
 
 /// Highest `n` such that seqs `0..=n` are all present.
-fn contiguous_watermark<Item>(log: &BTreeMap<u64, Item>) -> Option<u64> {
+fn contiguous_watermark<Item>(log: &BTreeMap<SeqNum, Item>) -> Option<SeqNum> {
     let mut watermark = None;
     for &seq in log.keys() {
         if seq == watermark.map_or(0, |w| w + 1) {

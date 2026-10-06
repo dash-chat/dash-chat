@@ -57,7 +57,8 @@ pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
 pub type TopicId = String;
 pub type Author = String;
-pub type SequenceNumber = u64;
+
+pub use dashchat_utils::SeqNum;
 
 /// Encode an iroh EndpointId as the canonical MailboxId string (base64url, no pad).
 pub fn encode_mailbox_id(id: iroh::EndpointId) -> String {

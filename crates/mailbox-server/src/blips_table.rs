@@ -1,3 +1,4 @@
+use dashchat_utils::SeqNum;
 use redb::{Key, TableDefinition, TypeName, Value};
 use std::cmp::Ordering;
 use std::fmt;
@@ -32,7 +33,7 @@ pub struct BlipsKey {
     // NOTE: order of these fields matters!
     pub topic_id: String,
     pub author: String,
-    pub sequence_number: u64,
+    pub sequence_number: SeqNum,
     pub uuid: Uuid,
 }
 
@@ -41,7 +42,7 @@ impl BlipsKey {
     pub fn new(
         topic_id: String,
         author: String,
-        sequence_number: u64,
+        sequence_number: SeqNum,
         uuid: Uuid,
     ) -> Result<Self, BlipsKeyError> {
         if topic_id.contains(':') || topic_id.contains('\0') {
@@ -62,7 +63,7 @@ impl BlipsKey {
     pub fn new_now(
         topic_id: String,
         author: String,
-        sequence_number: u64,
+        sequence_number: SeqNum,
     ) -> Result<Self, BlipsKeyError> {
         Self::new(topic_id, author, sequence_number, Uuid::now_v7())
     }
@@ -79,7 +80,7 @@ impl BlipsKey {
 
         let topic_id = parts[0].to_string();
         let author = parts[1].to_string();
-        let sequence_number = parts[2].parse::<u64>().map_err(|e| {
+        let sequence_number = parts[2].parse::<SeqNum>().map_err(|e| {
             BlipsKeyError::ParseError(format!("Invalid sequence number '{}': {}", parts[2], e))
         })?;
         let uuid = Uuid::parse_str(parts[3]).map_err(|e| {
@@ -144,7 +145,7 @@ impl Value for BlipsKey {
 
         // Read sequence number (8 bytes big-endian)
         let seq_start = first_null + 1 + second_null + 1;
-        let sequence_number = u64::from_be_bytes(
+        let sequence_number = SeqNum::from_be_bytes(
             data[seq_start..seq_start + 8]
                 .try_into()
                 .expect("Invalid sequence number bytes"),
@@ -205,7 +206,7 @@ pub enum BlipsKeyPrefix {
     /// Match all keys for a topic:author: "topic_id:author:"
     TopicAuthor(String, String),
     /// Match all keys for a topic:author:seq: "topic_id:author:seq:"
-    TopicAuthorSeq(String, String, u64),
+    TopicAuthorSeq(String, String, SeqNum),
 }
 
 impl BlipsKeyPrefix {
@@ -242,13 +243,13 @@ impl BlipsKeyPrefix {
                 topic_id: topic.clone(),
                 // U+FFFF is the highest Unicode code point, sorts after all valid authors
                 author: String::from("\u{FFFF}"),
-                sequence_number: u64::MAX,
+                sequence_number: SeqNum::MAX,
                 uuid: Uuid::max(),
             },
             BlipsKeyPrefix::TopicAuthor(topic, author) => BlipsKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
-                sequence_number: u64::MAX,
+                sequence_number: SeqNum::MAX,
                 uuid: Uuid::max(),
             },
             BlipsKeyPrefix::TopicAuthorSeq(topic, author, seq) => BlipsKey {
@@ -391,7 +392,7 @@ mod tests {
             "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb"
         );
         assert_eq!(end.author, "\u{ffff}");
-        assert_eq!(end.sequence_number, u64::MAX);
+        assert_eq!(end.sequence_number, SeqNum::MAX);
         assert_eq!(end.uuid, Uuid::max());
     }
 
@@ -408,7 +409,7 @@ mod tests {
 
         assert_eq!(end.topic_id, "topic");
         assert_eq!(end.author, "author");
-        assert_eq!(end.sequence_number, u64::MAX);
+        assert_eq!(end.sequence_number, SeqNum::MAX);
         assert_eq!(end.uuid, Uuid::max());
     }
 

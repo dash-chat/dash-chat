@@ -19,6 +19,11 @@ pub mod compat;
 pub mod testing;
 
 pub use aliased::Aliasing;
+pub use dashchat_utils::SeqNum;
+
+// `SeqNum` is shared with the mailbox layer via `dashchat-utils`, which cannot
+// depend on p2panda; this fails to compile if the two ever diverge in width.
+const _: fn(p2panda_core::SeqNum) -> SeqNum = std::convert::identity;
 
 pub use chat::*;
 pub use contact::AddContactQrCode;
@@ -49,7 +54,7 @@ pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
 pub trait AsBody: Cbor {
     fn try_into_body(&self) -> Result<p2panda_core::Body, p2panda_core::cbor::EncodeError> {
         let bytes = self.as_bytes()?;
-        Ok(p2panda_core::Body::new(bytes.as_slice()))
+        Ok(p2panda_core::Body::from_bytes(bytes.as_slice()))
     }
 
     fn try_from_body(body: &p2panda_core::Body) -> Result<Self, p2panda_core::cbor::DecodeError> {

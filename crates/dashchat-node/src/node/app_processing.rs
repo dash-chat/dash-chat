@@ -337,7 +337,7 @@ impl Node {
         let recorded = async {
             let acked = self
                 .op_store
-                .acked_log_height(&topic, &author, &header.extensions.log_id)
+                .acked_log_height(&topic, &author, &header.extensions.log_id())
                 .await?;
             if acked.is_some_and(|acked| acked >= header.seq_num) {
                 return anyhow::Ok(());
@@ -531,8 +531,8 @@ impl Node {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
                     use p2panda_store::topics::TopicStore;
-                    let author = operation.header().verifying_key;
-                    let log_id = operation.header.extensions.log_id;
+                    let author = operation.header.verifying_key;
+                    let log_id = operation.header.extensions.log_id();
                     let topic = self
                         .op_store
                         .store
@@ -747,7 +747,7 @@ impl Node {
                     let valid_ops = self.valid_chat_ops(chat_id).await?;
                     let candidate = crate::chat::ReplyCandidate {
                         target,
-                        timestamp: operation.processed().header().timestamp.into(),
+                        timestamp: operation.processed().header().extensions.timestamp().into(),
                         self_hash: Some(hash),
                     };
                     if let Err(err) = candidate.validate(&valid_ops) {
@@ -770,7 +770,7 @@ impl Node {
                 // forwarded to the frontend) with a warning.
                 let chat_id = ChatId::from_topic_id(topic)?;
                 let valid_ops = self.valid_chat_ops(chat_id).await?;
-                let edit_ts: u64 = operation.processed().header().timestamp.into();
+                let edit_ts: u64 = operation.processed().header().extensions.timestamp().into();
                 let candidate = EditCandidate {
                     target: *edit_hash,
                     editor: author,
