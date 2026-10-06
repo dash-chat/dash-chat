@@ -51,8 +51,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.20.12
-        CFBundleVersion: "0.20.12"
+        CFBundleShortVersionString: 0.20.13
+        CFBundleVersion: "0.20.13"
         FirebaseAppDelegateProxyEnabled: false
         FirebaseMessagingAutoInitEnabled: false
         FirebaseDataCollectionDefaultEnabled: false
