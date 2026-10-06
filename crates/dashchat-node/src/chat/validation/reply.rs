@@ -248,20 +248,6 @@ mod tests {
     }
 
     #[test]
-    fn reply_to_a_message_stamped_ahead_of_the_local_clock() {
-        let bobbi = device(2);
-        let ops = ValidChatOps::new([(hash(1), message(bobbi, 2000, 0))]);
-        assert_eq!(
-            ReplyCandidate {
-                target: hash(1),
-                self_hash: None,
-            }
-            .validate(&ops),
-            Ok(())
-        );
-    }
-
-    #[test]
     fn author_cannot_reply_to_a_superseded_edit() {
         let alice = device(1);
         let ops = ValidChatOps::new([

@@ -214,6 +214,35 @@ mod tests {
     }
 
     #[test]
+    fn prune_keeps_a_reply_stamped_before_its_target() {
+        let alice = device(1);
+        let bobbi = device(2);
+        let mut ops = ValidChatOps::new([
+            (hash(1), message(alice, 2000, 0)),
+            (
+                hash(2),
+                ChatOp {
+                    author: bobbi,
+                    timestamp: 1000,
+                    seq_num: 0,
+                    kind: ChatOpKind::Message {
+                        reply: Some(hash(1)),
+                    },
+                },
+            ),
+        ]);
+
+        ops.prune();
+
+        assert_eq!(
+            ops.get(&hash(2)).unwrap().kind,
+            ChatOpKind::Message {
+                reply: Some(hash(1))
+            }
+        );
+    }
+
+    #[test]
     fn prune_clears_a_reply_to_a_message_deleted_in_the_same_pass() {
         let alice = device(1);
         let bobbi = device(2);
