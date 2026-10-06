@@ -8,9 +8,10 @@ use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
-    // @TODO: topic is only represented on an operation in it's hashed form. We can't derive it
+    // @TODO: topic is only represented on an operation in its hashed form. We can't derive it
     // from the header so we add it here as an own field on mailbox operation.
     pub topic: TopicId,
+    #[serde(with = "crate::header_serde")]
     pub header: Header,
     pub body: Option<Body>,
 }

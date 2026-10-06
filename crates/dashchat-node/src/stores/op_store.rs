@@ -8,6 +8,7 @@ use std::{
 };
 
 use dashchat_utils::SeqNum;
+use futures::TryStreamExt;
 use p2panda::Hash;
 #[cfg(any(test, feature = "testing"))]
 use p2panda::operation::Header;
@@ -15,7 +16,7 @@ use p2panda::operation::{LogId, Operation};
 use p2panda_store::SqliteStore;
 use p2panda_store::logs::LogStore;
 
-use crate::{mailbox::MailboxOperation, topic::TopicId, util::first, *};
+use crate::{mailbox::MailboxOperation, topic::TopicId, *};
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
 pub struct OpStore {
@@ -102,22 +103,43 @@ impl OpStore {
         log_id: &LogId,
         from: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
-        let log = self
-            .store
-            .get_log_entries(author, log_id, from, None)
-            .await?
-            .unwrap_or_else(|| {
-                tracing::warn!(
-                    "No log found for log_id {} and author {}",
-                    Hash::from_bytes(*log_id.as_bytes()),
-                    author
-                );
-                vec![]
-            })
-            .into_iter()
-            .map(first)
-            .collect();
+        let log = self.log_operations(author, log_id, from).await?;
+        if log.is_empty()
+            && tracing::enabled!(tracing::Level::WARN)
+            && !self.log_exists(author, log_id).await?
+        {
+            tracing::warn!(
+                "No log found for log_id {} and author {}",
+                Hash::from_bytes(*log_id.as_bytes()),
+                author
+            );
+        }
         Ok(log)
+    }
+
+    /// Whether we hold any entry of `author`'s log, telling an absent log apart
+    /// from one with nothing past a cursor.
+    async fn log_exists(&self, author: &DeviceId, log_id: &LogId) -> anyhow::Result<bool> {
+        let heights = self
+            .store
+            .get_log_heights(author, std::slice::from_ref(log_id))
+            .await?;
+        Ok(heights.is_some())
+    }
+
+    /// Collect a log's entries, decoding each stored operation into our extension type.
+    async fn log_operations(
+        &self,
+        author: &DeviceId,
+        log_id: &LogId,
+        from: Option<SeqNum>,
+    ) -> anyhow::Result<Vec<Operation>> {
+        self.store
+            .log_entries(author, log_id, from, None)?
+            .map_err(anyhow::Error::from)
+            .and_then(|entry| async move { Ok(Operation::try_from(entry.entry)?) })
+            .try_collect()
+            .await
     }
 
     pub async fn get_operation(&self, hash: &Hash) -> anyhow::Result<Option<Operation>> {
@@ -208,18 +230,11 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         from: SeqNum,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
         let log_id = LogId::from_topic(*topic);
-        let from = if from == 0 { None } else { Some(from - 1) };
-        let log = self
-            .store
-            .get_log_entries(author, &log_id, from, None)
-            .await
-            .map_err(|err| {
-                anyhow::anyhow!("failed to get log for {author:?}: {log_id:?}: {err}")
-            })?;
-
-        let Some(log) = log else {
+        let from = from.checked_sub(1);
+        let log = self.log_operations(author, &log_id, from).await?;
+        if log.is_empty() && !self.log_exists(author, &log_id).await? {
             return Ok(None);
-        };
+        }
 
         // Only transmit the contiguous prefix of fully-processed operations.
         // An operation that hasn't completed application-layer processing may
@@ -231,7 +246,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         // p2panda before ever reaching the application layer.
         let acked_height = self.acked_log_height(topic, author, &log_id).await?;
         let mut ops = Vec::with_capacity(log.len());
-        for (op, _) in log {
+        for op in log {
             if op.body.is_some() && acked_height.is_none_or(|h| op.header.seq_num > h) {
                 break;
             }
@@ -327,6 +342,44 @@ mod tests {
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn mailbox_get_log_distinguishes_absent_from_up_to_date() {
+        use mailbox_client::store::MailboxStore;
+
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let topic = TopicId::random();
+        let log_id = LogId::from_topic(topic);
+        let signing_key = p2panda::SigningKey::generate();
+        let author = DeviceId::from(signing_key.verifying_key());
+
+        for from in [0, 1] {
+            let log = MailboxStore::get_log(&store, &author, &topic, from)
+                .await
+                .unwrap();
+            assert!(log.is_none(), "absent log from {from}: {log:?}");
+        }
+
+        let op0 = signed_op(&signing_key, log_id, 0, None, b"zero");
+        insert(&store, &op0, &log_id).await;
+        ack_up_to(&store, &topic, &author, log_id, 0).await;
+
+        let served = |from: SeqNum| {
+            let store = store.clone();
+            async move {
+                MailboxStore::get_log(&store, &author, &topic, from)
+                    .await
+                    .unwrap()
+                    .map(|ops| {
+                        ops.into_iter()
+                            .map(|op| op.header.hash())
+                            .collect::<Vec<_>>()
+                    })
+            }
+        };
+        assert_eq!(served(0).await, Some(vec![op0.hash]));
+        assert_eq!(served(1).await, Some(vec![]));
     }
 
     /// Mailbox sync must only see the contiguous prefix of a log whose

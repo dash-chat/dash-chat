@@ -331,7 +331,7 @@ impl Node {
 
         let mut builder = P2PandaNode::builder()
             .network_id(config.network_id)
-            .signing_key(node_keys.private_key.clone())
+            .credentials(node_keys.credentials())
             .database_url(&url)
             // Acknowledge operations explicitly, only once application-layer
             // processing has finished (see `spawn_application_processor_task`).

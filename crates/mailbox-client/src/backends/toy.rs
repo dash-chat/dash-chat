@@ -452,12 +452,11 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
             let topic = Item::Topic::from_mailbox_key(&topic_id_str)?;
 
             // Deserialize blips to operations
-            let mut items = Vec::new();
-            for (_author_str, seq_blips) in topic_response.blips {
-                for (_seq, blip) in seq_blips {
-                    items.push(Self::deserialize_operation(&blip)?);
-                }
-            }
+            let items: Vec<Item> = topic_response
+                .blips
+                .into_values()
+                .flat_map(Self::decode_log)
+                .collect();
 
             // Convert missing map
             let mut missing: HashMap<Item::Author, Vec<SeqNum>> = HashMap::new();
@@ -481,6 +480,27 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
 
     fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
         Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
+    }
+
+    /// Decode one author's blobs in sequence order, stopping at the first one this build
+    /// cannot decode.
+    ///
+    /// The mailbox is shared with peers on other builds, so a blob we cannot decode must not
+    /// fail the whole exchange and wedge sync until retention expires it. Truncating rather
+    /// than skipping leaves the author's log short instead of ingesting operations whose
+    /// backlink can never arrive; every other author and topic in the exchange is unaffected.
+    fn decode_log(seq_blips: BTreeMap<SeqNum, Blip>) -> Vec<Item> {
+        let mut items = Vec::with_capacity(seq_blips.len());
+        for (seq_num, blip) in seq_blips {
+            match Self::deserialize_operation(&blip) {
+                Ok(item) => items.push(item),
+                Err(err) => {
+                    tracing::warn!(?err, seq_num, "undecodable mailbox blob; truncating log");
+                    break;
+                }
+            }
+        }
+        items
     }
 }
 
