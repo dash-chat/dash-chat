@@ -418,10 +418,20 @@ impl Actor {
         &self,
         operation: &ProcessedOperation<Payload>,
     ) -> Result<(), ProcessorError> {
-        self.groups_processor
+        match self
+            .groups_processor
             .process(operation.event.groups_args.clone())
             .await
-            .map_err(|(_, err)| ProcessorError::Groups(err.to_string()))?;
+        {
+            Ok(()) => {}
+            // Another process sharing the groups state (the iOS push extension)
+            // already applied it. A failed `process` enqueues nothing, so there
+            // is nothing to drain.
+            Err((_, GroupsError::Groups(GroupCrdtError::DuplicateOperation(..)))) => {
+                return Ok(());
+            }
+            Err((_, err)) => return Err(ProcessorError::Groups(err.to_string())),
+        }
 
         // A successful `process` always enqueues exactly one item, no-ops included, and this is
         // the only caller (the actor's single event loop), so `next` returns our own item without
@@ -429,13 +439,11 @@ impl Actor {
         // loses nothing; we drain it so the queue doesn't grow unboundedly.
         //
         // Note that this is only a temporary solution anyway and will go away with the spaces refactor.
-        match self.groups_processor.next().await {
-            Ok(_) => Ok(()),
-            // Another process sharing the groups state (the iOS push extension)
-            // already applied it.
-            Err((_, GroupsError::Groups(GroupCrdtError::DuplicateOperation(..)))) => Ok(()),
-            Err((_, err)) => Err(ProcessorError::Groups(err.to_string())),
-        }
+        self.groups_processor
+            .next()
+            .await
+            .map(|_| ())
+            .map_err(|(_, err)| ProcessorError::Groups(err.to_string()))
     }
 }
 

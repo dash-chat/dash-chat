@@ -120,10 +120,11 @@ pub type TopicId = p2panda::Topic;
 
 /// The single topic an application log belongs to, or `None` if the log has no association yet.
 ///
-/// Application logs are keyed per space (`log_id = digest(space_id ++ "space_application/v1")`),
-/// so an `(author, log_id)` pair resolves to exactly one topic. Control logs are not: the member
-/// control log id is a constant shared by every space, so this is only valid for application
-/// operations.
+/// "Application log" here refers to p2panda's split of spaces into application and control logs.
+/// The application log is specified as `log_id = digest(space_id ++ "space_application/v1")`.
+/// Under proper use, there will only ever be one topic per application log.
+///
+/// This function must NOT be used for other types of logs, where the 1:1 mapping is not guaranteed.
 pub async fn resolve_application_topic(
     store: &SqliteStore,
     author: &VerifyingKey,
