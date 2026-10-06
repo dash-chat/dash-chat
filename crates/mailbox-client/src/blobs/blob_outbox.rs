@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use iroh_blobs::Hash as BlobHash;
-use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
+use sqlx::{Pool, Sqlite, sqlite::SqliteConnectOptions, sqlite::SqlitePoolOptions};
 use tokio::sync::{Notify, Semaphore};
 
 #[cfg(test)]
@@ -65,9 +66,10 @@ impl Default for BlobOutboxConfig {
 impl BlobOutbox {
     /// Open or create the outbox tables in the given SQLite database.
     pub async fn open(database_url: &str, config: BlobOutboxConfig) -> Result<Arc<Self>> {
+        let opts = SqliteConnectOptions::from_str(database_url)?.create_if_missing(true);
         let db = SqlitePoolOptions::new()
             .max_connections(4)
-            .connect(database_url)
+            .connect_with(opts)
             .await?;
         outbox_store::migrate(&db).await?;
         Ok(Arc::new(Self {
@@ -114,14 +116,8 @@ impl BlobOutbox {
 
         tokio::spawn(async move {
             loop {
-                notify.notified().await;
-
-                loop {
-                    let Some(row) = outbox_store::select_next_ready(&db).await.unwrap_or(None)
-                    else {
-                        break;
-                    };
-
+                // Drain any work that is already due, then wait for new notifications.
+                while let Some(row) = outbox_store::select_next_ready(&db).await.unwrap_or(None) {
                     let job_id = row.id;
                     if !outbox_store::try_claim_job(&db, job_id)
                         .await
@@ -143,6 +139,8 @@ impl BlobOutbox {
                         let _ = outbox_store::mark_failed(&db, job_id, next_attempt_at).await;
                     }
                 }
+
+                notify.notified().await;
             }
         });
     }
@@ -153,6 +151,10 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    fn example_job() -> (MailboxId, BlobHash) {
+        ("test-mbx".to_string(), BlobHash::new(b"test blob"))
+    }
+
     fn recording_processor(
         processed: Arc<StdMutex<Vec<Job>>>,
     ) -> impl Fn(Job) -> std::future::Ready<Result<()>> {
@@ -162,20 +164,31 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn scheduler_delivers_pending_job_to_processor() {
-        let outbox = BlobOutbox::open("sqlite::memory:", BlobOutboxConfig::default())
+    async fn open_in_memory() -> Arc<BlobOutbox> {
+        BlobOutbox::open("sqlite::memory:", BlobOutboxConfig::default())
             .await
-            .unwrap();
+            .unwrap()
+    }
 
+    async fn open_temp_file() -> (tempfile::TempDir, String) {
+        let tmp = tempfile::tempdir().unwrap();
+        let db_path = tmp.path().join("outbox.db");
+        let database_url = format!("sqlite://{}", db_path.to_string_lossy());
+        (tmp, database_url)
+    }
+
+    fn spawn_recording_scheduler(outbox: &Arc<BlobOutbox>) -> Arc<StdMutex<Vec<Job>>> {
         let processed: Arc<StdMutex<Vec<Job>>> = Arc::new(StdMutex::new(Vec::new()));
         outbox.spawn_scheduler(recording_processor(processed.clone()));
+        processed
+    }
 
-        let mailbox_id = "test-mbx".to_string();
-        let hash = BlobHash::new(b"test blob");
-        outbox.ensure(mailbox_id.clone(), hash).await.unwrap();
-
-        let delivered = tokio::time::timeout(Duration::from_secs(2), async {
+    async fn wait_for_jobs<'a>(
+        processed: &'a Arc<StdMutex<Vec<Job>>>,
+        timeout: Duration,
+        message: &str,
+    ) -> std::sync::MutexGuard<'a, Vec<Job>> {
+        let delivered = tokio::time::timeout(timeout, async {
             loop {
                 if !processed.lock().unwrap().is_empty() {
                     break;
@@ -185,14 +198,62 @@ mod tests {
         })
         .await;
 
-        assert!(
-            delivered.is_ok(),
-            "scheduler did not deliver the job in time"
-        );
+        assert!(delivered.is_ok(), "{message}");
+        processed.lock().unwrap()
+    }
 
-        let processed = processed.lock().unwrap();
-        assert_eq!(processed.len(), 1);
-        assert_eq!(processed[0].mailbox_id, mailbox_id);
-        assert_eq!(processed[0].blob_hash, hash);
+    async fn expect_one_job(
+        processed: &Arc<StdMutex<Vec<Job>>>,
+        mailbox_id: &MailboxId,
+        hash: BlobHash,
+        message: &str,
+    ) {
+        let jobs = wait_for_jobs(processed, Duration::from_secs(2), message).await;
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].mailbox_id, *mailbox_id);
+        assert_eq!(jobs[0].blob_hash, hash);
+    }
+
+    #[tokio::test]
+    async fn scheduler_delivers_pending_job_to_processor() {
+        let outbox = open_in_memory().await;
+        let processed = spawn_recording_scheduler(&outbox);
+
+        let (mailbox_id, hash) = example_job();
+        outbox.ensure(mailbox_id.clone(), hash).await.unwrap();
+
+        expect_one_job(
+            &processed,
+            &mailbox_id,
+            hash,
+            "scheduler did not deliver the job in time",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn scheduler_processes_existing_jobs_on_startup() {
+        let (_tmp, database_url) = open_temp_file().await;
+
+        let producer = BlobOutbox::open(&database_url, BlobOutboxConfig::default())
+            .await
+            .unwrap();
+
+        let (mailbox_id, hash) = example_job();
+        producer.ensure(mailbox_id.clone(), hash).await.unwrap();
+        drop(producer);
+
+        let consumer = BlobOutbox::open(&database_url, BlobOutboxConfig::default())
+            .await
+            .unwrap();
+        let processed = spawn_recording_scheduler(&consumer);
+
+        expect_one_job(
+            &processed,
+            &mailbox_id,
+            hash,
+            "scheduler did not process the pre-existing job in time",
+        )
+        .await;
     }
 }
