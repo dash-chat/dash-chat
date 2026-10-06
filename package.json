@@ -29,7 +29,7 @@
 		"turbo": "^2.10.10"
 	},
 	"type": "module",
-	"packageManager": "pnpm@11.18.0",
+	"packageManager": "pnpm@11.28.5",
 	"engines": {
 		"node": ">=24 <25",
 		"pnpm": ">=11.0.0"
