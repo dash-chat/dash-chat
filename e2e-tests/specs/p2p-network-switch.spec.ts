@@ -184,8 +184,10 @@ describe('Pure p2p sync across a network switch', function () {
 		otherNetwork = wifiNetworks().find(n => n.ssid !== home);
 		if (otherNetwork === undefined) this.skip();
 		const text = 'sent once we had both moved network';
-		await alice.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
+		// Bob dials Alice, so Alice moves last: the message then needs an
+		// address she took just before it was sent.
 		await bob.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
+		await alice.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
 		stampedLog(`both phones on ${otherNetwork.ssid}`);
 		await bob.directChatPage.composer.sendMessage(text);
 		await expectArrival(alice, text, Date.now());
