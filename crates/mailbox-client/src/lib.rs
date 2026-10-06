@@ -3,10 +3,10 @@ pub mod manager;
 pub mod store;
 pub mod sync_tracker;
 pub mod unfetched_blobs;
-pub mod upload_scheduler;
+pub mod upload_tracker;
 
 pub use unfetched_blobs::BlobSource;
-pub use upload_scheduler::BlobUploadLifecycle;
+pub use upload_tracker::BlobUploadLifecycle;
 
 pub use mailbox_server::RegisterPeerRequest;
 

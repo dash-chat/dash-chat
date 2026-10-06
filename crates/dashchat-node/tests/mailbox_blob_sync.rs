@@ -73,7 +73,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             &url,
             alice.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            alice.mailboxes.upload_scheduler(),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
@@ -83,7 +83,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             &url,
             bobbi.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            bobbi.mailboxes.upload_scheduler(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
 
@@ -160,7 +160,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             &url,
             bobbi.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            bobbi.mailboxes.upload_scheduler(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
 
@@ -291,7 +291,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
             &url,
             alice.endpoint_id(),
             alice.unfetched_blob_tracker(),
-            alice.mailboxes.upload_scheduler(),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     let bobbi = TestNode::new(config.clone(), "bobbi").await;
@@ -301,7 +301,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
             &url,
             bobbi.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
-            bobbi.mailboxes.upload_scheduler(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
 
@@ -398,7 +398,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
             &url,
             alice.endpoint_id(),
             alice.unfetched_blob_tracker(),
-            alice.mailboxes.upload_scheduler(),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
 

@@ -203,7 +203,7 @@ pub fn app_mailbox_client(
         url,
         node.endpoint_id(),
         node.unfetched_blob_tracker(),
-        node.mailboxes.upload_scheduler(),
+        node.mailboxes.upload_tracker(),
     )
     .with_blob_reader(node.blob_reader())
 }
