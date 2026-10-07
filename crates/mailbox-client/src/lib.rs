@@ -4,9 +4,11 @@ mod connection_health;
 pub mod manager;
 mod polling;
 pub mod store;
-pub mod sync_tracker;
+mod sync;
+mod sync_tracker;
 
 pub use connection_health::MailboxesConfig;
+pub use sync_tracker::MailboxSyncTracker;
 
 pub use blobs::unfetched_blobs::BlobSource;
 pub use blobs::upload_tracker::BlobUploadLifecycle;
