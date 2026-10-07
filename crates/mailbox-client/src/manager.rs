@@ -5,6 +5,7 @@ use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::connection_health::{MailboxConnectionState, MailboxesConfig, SyncStatus};
 use crate::polling::PollGuard;
 use crate::store::MailboxStore;
+use crate::sync::SyncCoordinator;
 use crate::sync_tracker::MailboxSyncTracker;
 use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
@@ -155,11 +156,11 @@ where
     mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>>>,
     active_mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
-    store: Store,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
+    sync_coordinator: SyncCoordinator<Item, Store>,
 }
 
 impl<Item, Store> Mailboxes<Item, Store>
@@ -178,11 +179,11 @@ where
             mailboxes: Arc::new(Mutex::new(Default::default())),
             active_mailbox_ids_tx,
             topics: Arc::new(Mutex::new(Default::default())),
-            store,
-            sync_tracker,
+            sync_tracker: sync_tracker.clone(),
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
+            sync_coordinator: SyncCoordinator::new(store, sync_tracker.clone()),
         }
     }
 
@@ -454,37 +455,9 @@ where
         topic: Item::Topic,
         author: Item::Author,
     ) -> anyhow::Result<()> {
-        let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
-        let start = synced.map_or(0, |n| n + 1);
-        let ops = self
-            .store
-            .get_log(&author, &topic, start)
-            .await?
-            .unwrap_or_default();
-        let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
-            return Ok(());
-        };
-        let response = tracked.client().await.publish(ops).await?;
-
-        let watermark = response.watermark(&topic, &author);
-        if let Some(wm) = watermark {
-            self.sync_tracker
-                .record_synced(id, &[(topic, author, wm)])
-                .await?;
-        }
-        // An echo behind what we pushed means the ops landed above a gap the
-        // tracker didn't know about (e.g. the mailbox lost state); a full sync
-        // will backfill it.
-        if watermark.is_none_or(|wm| wm < top) {
-            tracing::warn!(
-                mailbox = %id,
-                pushed = top,
-                echoed = ?watermark,
-                "mailbox watermark behind after direct store"
-            );
-            anyhow::bail!("mailbox watermark {watermark:?} behind published seq {top}");
-        }
-        Ok(())
+        self.sync_coordinator
+            .store_fast_push(id, tracked, topic, author)
+            .await
     }
 
     /// Immediately sync every registered mailbox without touching status or backoff.
@@ -660,103 +633,10 @@ where
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
-        let mut request = BTreeMap::new();
-        let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> = BTreeMap::new();
-        for topic in topics {
-            let heights =
-                BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
-            sent_heights.insert(topic, heights.clone());
-            request.insert(topic, heights);
-        }
-
-        let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
-
-        let mut ops_to_publish: Vec<Item> = vec![];
-        let mut acks: Vec<(Item::Topic, Item::Author, u64)> = vec![];
-
-        for (topic, response) in response.into_iter() {
-            let FetchTopicResponse { items, missing } = response;
-            if items.is_empty() && missing.is_empty() {
-                tracing::trace!(topic = %topic, "Syncing with mailbox: nothing to do");
-            } else {
-                tracing::info!(
-                    topic = %topic,
-                    items = items.len(),
-                    missing = missing.len(),
-                    "fetched operations"
-                );
-            }
-
-            // Sync watermark inference for authors we sent heights for:
-            // if the server returned no `missing` entries for an author, it has the log
-            // contiguously up to at least the height we sent.
-            if let Some(heights) = sent_heights.get(&topic) {
-                for (author, height) in heights {
-                    if !missing.contains_key(author) {
-                        acks.push((topic, *author, *height));
-                    }
-                }
-            }
-
-            // Each received item is one the mailbox already has.
-            for item in &items {
-                acks.push((item.topic(), item.author(), item.seq_num()));
-            }
-
-            let Some(sender) = self.topics.lock().await.get(&topic).cloned() else {
-                tracing::warn!(topic = %topic, "no sender for topic");
-                continue;
-            };
-
-            for item in items {
-                if sender.send(item).await.is_err() {
-                    tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
-                    self.topics.lock().await.remove(&topic);
-                    break;
-                }
-            }
-
-            for (author, seqs) in missing {
-                let Some(lowest) = seqs.iter().min() else {
-                    continue;
-                };
-                let Some(log) = self
-                    .store
-                    .get_log(&author, &topic, *lowest)
-                    .await
-                    .map_err(|err| anyhow::anyhow!("failed to get log for {topic:?}: {err}"))?
-                else {
-                    tracing::error!(author = ?author, topic = %topic, lowest = ?lowest, "no log found");
-                    continue;
-                };
-
-                for seq in &seqs {
-                    // The operations in the 0..lowest range are not included in the log vector,
-                    // because `get_log()` is called with `lowest` as the starting point.
-                    // Adjust the index to take this into account:
-                    let index = seq - lowest;
-                    if let Some(item) = log.get(index as usize) {
-                        ops_to_publish.push(item.clone());
-                    }
-                }
-            }
-        }
-
-        // For ops we successfully publish, the mailbox now has at least their seq_num.
-        // ACID: a power cut here would lose these ops_to_publish.
-        let publish_acks: Vec<(Item::Topic, Item::Author, u64)> = ops_to_publish
-            .iter()
-            .map(|op| (op.topic(), op.author(), op.seq_num()))
-            .collect();
-
-        mailbox.publish(ops_to_publish).await?;
-
-        acks.extend(publish_acks);
-        if let Err(err) = self.sync_tracker.record_synced(&mailbox.id(), &acks).await {
-            tracing::error!(?err, mailbox = %&mailbox.id(), "failed to record sync watermarks");
-        }
-
-        Ok(())
+        let topics_map = self.topics.lock().await.clone();
+        self.sync_coordinator
+            .sync_topics(topics, mailbox, &topics_map)
+            .await
     }
 }
 

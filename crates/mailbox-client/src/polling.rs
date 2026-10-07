@@ -1,6 +1,6 @@
+use crate::manager::TrackedMailbox;
 use std::sync::Arc;
 use tokio::sync::Notify;
-use crate::manager::TrackedMailbox;
 
 /// Clears the in-flight flag and re-arms the poll loop however the poll task
 /// exits, so a panic mid-poll costs one cycle instead of stranding the mailbox

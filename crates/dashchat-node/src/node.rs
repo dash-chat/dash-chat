@@ -388,7 +388,7 @@ impl Node {
         // === mailboxes === //
 
         let sync_tracker = std::sync::Arc::new(
-            mailbox_client::sync_tracker::MailboxSyncTracker::open(
+            mailbox_client::MailboxSyncTracker::open(
                 filesystem.mailbox_sync_tracker_path(),
             )
             .await?,
