@@ -7,6 +7,7 @@ use crate::polling::PollGuard;
 use crate::store::MailboxStore;
 use crate::sync::SyncCoordinator;
 use crate::sync_tracker::MailboxSyncTracker;
+use crate::registry::Registry;
 use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 
@@ -147,62 +148,6 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 }
 
-/// Internal registry for managing a collection of tracked mailboxes.
-struct Registry<Item: MailboxItem> {
-    mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>>>,
-    active_mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
-}
-
-impl<Item: MailboxItem> Registry<Item> {
-    fn new() -> Self {
-        let (tx, _) = watch::channel(BTreeSet::new());
-        Self {
-            mailboxes: Arc::new(Mutex::new(BTreeMap::new())),
-            active_mailbox_ids_tx: tx,
-        }
-    }
-
-    async fn register(&self, id: MailboxId, mailbox: TrackedMailbox<Item>) {
-        let mut map = self.mailboxes.lock().await;
-        let arc_mailbox = Arc::new(mailbox);
-        map.insert(id.clone(), arc_mailbox);
-
-        let mut active = BTreeSet::new();
-        for (mid, _) in map.iter() {
-            active.insert(mid.clone());
-        }
-        let _ = self.active_mailbox_ids_tx.send(active);
-    }
-
-    async fn unregister(&self, id: &MailboxId) {
-        let mut map = self.mailboxes.lock().await;
-        if map.remove(id).is_some() {
-            let mut active = BTreeSet::new();
-            for (mid, _) in map.iter() {
-                active.insert(mid.clone());
-            }
-            let _ = self.active_mailbox_ids_tx.send(active);
-        }
-    }
-
-    async fn get(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
-        self.mailboxes.lock().await.get(id).cloned()
-    }
-
-    async fn all(&self) -> Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> {
-        self.mailboxes
-            .lock()
-            .await
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect()
-    }
-
-    fn active_ids_rx(&self) -> watch::Receiver<BTreeSet<MailboxId>> {
-        self.active_mailbox_ids_tx.subscribe()
-    }
-}
-
 #[derive(Clone)]
 pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     registry: Arc<Registry<Item>>,
@@ -327,10 +272,7 @@ where
     }
 
     pub async fn clear(&self) {
-        let mut map = self.registry.mailboxes.lock().await;
-        map.clear();
-        let active = BTreeSet::new();
-        let _ = self.registry.active_mailbox_ids_tx.send(active);
+        self.registry.clear().await;
     }
 
     pub async fn subscribed_topics(&self) -> BTreeSet<Item::Topic> {

@@ -3,6 +3,7 @@ pub mod blobs;
 mod connection_health;
 pub mod manager;
 mod polling;
+mod registry;
 pub mod store;
 mod sync;
 mod sync_tracker;
