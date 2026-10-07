@@ -602,9 +602,14 @@ where
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
         let topics_map = self.topics.lock().await.clone();
-        self.sync_coordinator
+        let result = self
+            .sync_coordinator
             .sync_topics(topics, mailbox, &topics_map)
-            .await
+            .await?;
+        for topic in result.closed_topics {
+            self.unsubscribe(topic).await.ok();
+        }
+        Ok(())
     }
 }
 
