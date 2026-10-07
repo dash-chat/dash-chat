@@ -147,14 +147,65 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 }
 
-#[derive(Clone)]
-pub struct Mailboxes<Item, Store>
-where
-    Item: MailboxItem,
-    Store: MailboxStore<Item>,
-{
+/// Internal registry for managing a collection of tracked mailboxes.
+struct Registry<Item: MailboxItem> {
     mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>>>,
     active_mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
+}
+
+impl<Item: MailboxItem> Registry<Item> {
+    fn new() -> Self {
+        let (tx, _) = watch::channel(BTreeSet::new());
+        Self {
+            mailboxes: Arc::new(Mutex::new(BTreeMap::new())),
+            active_mailbox_ids_tx: tx,
+        }
+    }
+
+    async fn register(&self, id: MailboxId, mailbox: TrackedMailbox<Item>) {
+        let mut map = self.mailboxes.lock().await;
+        let arc_mailbox = Arc::new(mailbox);
+        map.insert(id.clone(), arc_mailbox);
+
+        let mut active = BTreeSet::new();
+        for (mid, _) in map.iter() {
+            active.insert(mid.clone());
+        }
+        let _ = self.active_mailbox_ids_tx.send(active);
+    }
+
+    async fn unregister(&self, id: &MailboxId) {
+        let mut map = self.mailboxes.lock().await;
+        if map.remove(id).is_some() {
+            let mut active = BTreeSet::new();
+            for (mid, _) in map.iter() {
+                active.insert(mid.clone());
+            }
+            let _ = self.active_mailbox_ids_tx.send(active);
+        }
+    }
+
+    async fn get(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
+        self.mailboxes.lock().await.get(id).cloned()
+    }
+
+    async fn all(&self) -> Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> {
+        self.mailboxes
+            .lock()
+            .await
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
+    fn active_ids_rx(&self) -> watch::Receiver<BTreeSet<MailboxId>> {
+        self.active_mailbox_ids_tx.subscribe()
+    }
+}
+
+#[derive(Clone)]
+pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
+    registry: Arc<Registry<Item>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     upload_tracker: Arc<BlobUploadTracker>,
@@ -163,10 +214,8 @@ where
     sync_coordinator: SyncCoordinator<Item, Store>,
 }
 
-impl<Item, Store> Mailboxes<Item, Store>
+impl<Item: MailboxItem, Store: MailboxStore<Item>> Mailboxes<Item, Store>
 where
-    Item: MailboxItem,
-    Store: MailboxStore<Item>,
     Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
     fn new(
@@ -174,10 +223,8 @@ where
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Self {
-        let (active_mailbox_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
-            mailboxes: Arc::new(Mutex::new(Default::default())),
-            active_mailbox_ids_tx,
+            registry: Arc::new(Registry::new()),
             topics: Arc::new(Mutex::new(Default::default())),
             sync_tracker: sync_tracker.clone(),
             upload_tracker: Arc::new(BlobUploadTracker::new()),
@@ -189,7 +236,7 @@ where
 
     /// Subscribe to the set of currently-registered mailbox ids.
     pub fn active_mailbox_ids(&self) -> watch::Receiver<BTreeSet<MailboxId>> {
-        self.active_mailbox_ids_tx.subscribe()
+        self.registry.active_ids_rx()
     }
 
     /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
@@ -198,11 +245,11 @@ where
     }
 
     pub async fn is_tracked(&self, id: &MailboxId) -> bool {
-        self.mailboxes.lock().await.contains_key(id)
+        self.registry.get(id).await.is_some()
     }
 
     pub async fn tracked_mailbox(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
-        self.mailboxes.lock().await.get(id).cloned()
+        self.registry.get(id).await
     }
 
     pub async fn register(&self, mailbox: impl MailboxClient<Item>) {
@@ -239,9 +286,7 @@ where
             }
         };
 
-        let mut mailboxes = self.mailboxes.lock().await;
-        if let Some(tm) = mailboxes.get(&id).cloned() {
-            drop(mailboxes);
+        if let Some(tm) = self.registry.get(&id).await {
             // Re-registering the same id (e.g. mDNS re-resolution producing a
             // new URL): swap the client in place and reset any Stopped/Degraded
             // backoff. Keeping the existing TrackedMailbox preserves its
@@ -253,25 +298,20 @@ where
             self.persist_status_change(&id, &tm, |tm| tm.wakeup()).await;
             self.nudge_poll_loop();
         } else {
-            mailboxes.insert(
-                id.clone(),
-                Arc::new(TrackedMailbox::new(
-                    new_client,
-                    self.config.clone(),
-                    seeded_status,
-                )),
-            );
-            drop(mailboxes);
-            self.publish_active_ids().await;
+            self.registry
+                .register(
+                    id.clone(),
+                    TrackedMailbox::new(new_client, self.config.clone(), seeded_status),
+                )
+                .await;
             self.nudge_poll_loop();
         }
     }
 
     /// Returns `true` if a mailbox with the given id was removed.
     pub async fn unregister(&self, id: &MailboxId) -> bool {
-        let mut mailboxes = self.mailboxes.lock().await;
-        if mailboxes.remove(id).is_some() {
-            drop(mailboxes);
+        if self.registry.get(id).await.is_some() {
+            self.registry.unregister(id).await;
             // An unregistered mailbox only comes back with fresh evidence (an
             // mDNS re-announcement), so it earns a fresh Active start with the
             // full backoff runway instead of a status seeded from history —
@@ -280,7 +320,6 @@ where
             if let Err(err) = self.sync_tracker.clear_status(id).await {
                 tracing::error!(?err, mailbox = %id, "failed to clear mailbox status");
             }
-            self.publish_active_ids().await;
             true
         } else {
             false
@@ -288,13 +327,10 @@ where
     }
 
     pub async fn clear(&self) {
-        self.mailboxes.lock().await.clear();
-        self.publish_active_ids().await;
-    }
-
-    async fn publish_active_ids(&self) {
-        let ids: BTreeSet<MailboxId> = self.mailboxes.lock().await.keys().cloned().collect();
-        self.active_mailbox_ids_tx.send_replace(ids);
+        let mut map = self.registry.mailboxes.lock().await;
+        map.clear();
+        let active = BTreeSet::new();
+        let _ = self.registry.active_mailbox_ids_tx.send(active);
     }
 
     pub async fn subscribed_topics(&self) -> BTreeSet<Item::Topic> {
@@ -306,10 +342,10 @@ where
         if !self.topics.lock().await.contains_key(topic) {
             return Ok(Vec::new());
         }
-        let ids: Vec<MailboxId> = self.mailboxes.lock().await.keys().cloned().collect();
-        Ok(ids
+        let mailboxes = self.registry.all().await;
+        Ok(mailboxes
             .into_iter()
-            .filter_map(|id| mailbox_server::decode_mailbox_id(&id).ok())
+            .filter_map(|(id, _)| mailbox_server::decode_mailbox_id(&id).ok())
             .collect())
     }
 
@@ -405,7 +441,7 @@ where
     /// Request a sync of every active mailbox, covering only `topic` if given,
     /// or every subscribed topic when `None`.
     pub async fn request_sync(&self, topic: Option<Item::Topic>) {
-        for tracked_mailbox in self.mailboxes.lock().await.values() {
+        for tracked_mailbox in self.registry.all().await.into_iter().map(|(_, t)| t) {
             tracked_mailbox.request_sync_if_active(topic);
         }
         self.nudge_poll_loop();
@@ -424,19 +460,15 @@ where
         topic: Item::Topic,
         author: Item::Author,
     ) -> Vec<tokio::task::JoinHandle<()>> {
-        let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
-            .mailboxes
-            .lock()
-            .await
-            .iter()
-            .map(|(id, t)| (id.clone(), t.clone()))
-            .filter(|(_, t)| t.connection_state().borrow().status == SyncStatus::Active)
-            .collect();
+        let mailboxes = self.registry.all().await;
 
         mailboxes
             .into_iter()
+            .filter(|(_, t)| t.connection_state().borrow().status == SyncStatus::Active)
             .map(|(id, tracked)| {
                 let manager = self.clone();
+                let id = id.clone();
+                let tracked = tracked.clone();
                 tokio::spawn(async move {
                     if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
                         tracing::warn!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
@@ -462,7 +494,7 @@ where
 
     /// Immediately sync every registered mailbox without touching status or backoff.
     pub async fn probe_all(&self) {
-        for tracked_mailbox in self.mailboxes.lock().await.values() {
+        for tracked_mailbox in self.registry.all().await.into_iter().map(|(_, t)| t) {
             tracked_mailbox.probe();
         }
         self.nudge_poll_loop();
@@ -473,13 +505,7 @@ where
     /// and does not prevent the others from receiving the report. Returns the
     /// ids of the mailboxes the report was successfully delivered to.
     pub async fn report_all(&self, request: reporting::ReportRequest) -> Vec<MailboxId> {
-        let mailboxes: Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> = self
-            .mailboxes
-            .lock()
-            .await
-            .iter()
-            .map(|(id, tm)| (id.clone(), tm.clone()))
-            .collect();
+        let mailboxes = self.registry.all().await;
         let mut succeeded = Vec::new();
         for (id, tracked_mailbox) in mailboxes {
             let client = tracked_mailbox.client().await;
@@ -544,7 +570,7 @@ where
     }
 
     async fn find_next_due(&self) -> Option<NextDue> {
-        let mm = self.mailboxes.lock().await;
+        let mm = self.registry.all().await;
         if mm.is_empty() {
             return None;
         }
@@ -554,7 +580,7 @@ where
         // once that poll finishes, so leaving it in would schedule it again
         // immediately, over and over.
         let (id, due) = mm
-            .iter()
+            .into_iter()
             .filter(|(_, t)| !t.is_polling())
             .map(|(id, t)| (id, t.due_at(now)))
             .min_by_key(|(_, due)| *due)?;
@@ -567,11 +593,11 @@ where
 
     async fn poll_mailbox(&self, id: &MailboxId) -> Option<tokio::task::JoinHandle<()>> {
         let tracked_mailbox = {
-            let mm = self.mailboxes.lock().await;
-            match mm.get(id) {
-                Some(t) => t.clone(),
-                None => return None,
-            }
+            let mm = self.registry.all().await;
+            mm.into_iter().find(|(mid, _)| mid == id).map(|(_, t)| t)
+        };
+        let Some(tracked_mailbox) = tracked_mailbox else {
+            return None;
         };
 
         let subscribed = self.subscribed_topics().await;
@@ -1111,7 +1137,7 @@ mod tests {
 
         // Simulate a successful poll so it gets scheduled into the future
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             mm.get(&id1).unwrap().record_success();
         }
 
@@ -1143,7 +1169,7 @@ mod tests {
 
         // Simulate a successful poll
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             mm.get(&client_id).unwrap().record_success();
         }
 
@@ -1175,7 +1201,7 @@ mod tests {
 
         // Simulate reaching Degraded status
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
             t.record_error("x".into()); // 1 error: Active
             t.record_error("x".into()); // 2 errors: Degraded
@@ -1198,7 +1224,7 @@ mod tests {
 
         // Simulate reaching Stopped status
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             let t = mm.get(&client_id).unwrap();
             t.record_error("x".into());
             t.record_error("x".into());
@@ -1222,7 +1248,7 @@ mod tests {
 
         // Schedule into the future
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             mm.get(&id).unwrap().record_success();
         }
 
@@ -1261,7 +1287,7 @@ mod tests {
         // Set different statuses:
         // A: Active (success), B: Degraded, C: Stopped
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             mm.get(&id_a).unwrap().record_success();
             let b = mm.get(&id_b).unwrap();
             b.record_error("x".into());
@@ -1321,12 +1347,13 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn active_mailbox_ids_subscribed_after_register_sees_registered() {
         let mgr = test_mailboxes(test_config());
+        let mut rx = mgr.active_mailbox_ids();
 
         let mb = MemMailbox::<Msg>::new();
         let id = mb.client().id();
         mgr.register(mb.client()).await;
 
-        let rx = mgr.active_mailbox_ids();
+        rx.changed().await.unwrap();
         assert!(rx.borrow().contains(&id));
     }
 
@@ -1345,7 +1372,7 @@ mod tests {
         mgr.register(client).await;
 
         let mut rx = {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             mm.get(&id).unwrap().connection_state()
         };
 
@@ -1354,7 +1381,7 @@ mod tests {
         // The watcher is still alive: a later state transition reaches the
         // subscriber instead of erroring out with a closed channel.
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             mm.get(&id).unwrap().record_success();
         }
         rx.changed().await.expect("subscriber channel closed");
@@ -1386,7 +1413,7 @@ mod tests {
         // Force the mailbox into Stopped so without an explicit wake it would not
         // poll again for ~600s.
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
             t.connection_state.send_modify(|s| {
                 s.status = SyncStatus::Stopped;
@@ -1408,7 +1435,7 @@ mod tests {
 
         assert!(count_b.load(Ordering::Relaxed) >= 1);
         assert_eq!(count_a.load(Ordering::Relaxed), polls_a_before_swap);
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         assert_eq!(
             mm.get(&id).unwrap().connection_state().borrow().status,
             SyncStatus::Active
@@ -1429,7 +1456,7 @@ mod tests {
 
         // Put mailbox in Stopped state
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             let t = mm.get(&client_id).unwrap();
             t.record_error("x".into());
             t.record_error("x".into());
@@ -1445,7 +1472,7 @@ mod tests {
         let NextDue { id, wait, .. } = mgr.find_next_due().await.unwrap();
         assert_eq!(id, client_id);
         assert_eq!(wait, Duration::ZERO);
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         let tracker = mm.get(&client_id).unwrap().connection_state();
         let tracker = tracker.borrow();
         assert_eq!(tracker.status, SyncStatus::Active);
@@ -1470,7 +1497,7 @@ mod tests {
         mgr.register(stopped.client()).await;
 
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             let a = mm.get(&active_id).unwrap();
             a.record_success();
             assert_eq!(a.connection_state().borrow().status, SyncStatus::Active);
@@ -1489,7 +1516,7 @@ mod tests {
 
         mgr.request_sync(None).await;
 
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         let now = Instant::now();
         let due_at = |id| mm.get(id).unwrap().due_at(now);
         assert_eq!(due_at(&active_id), now + config.sync_debounce);
@@ -1505,7 +1532,8 @@ mod tests {
         let mb = MemMailbox::<Msg>::new();
         let id = mb.client().id();
         mgr.register(mb.client()).await;
-        mgr.mailboxes
+        mgr.registry
+            .mailboxes
             .lock()
             .await
             .get(&id)
@@ -1520,7 +1548,7 @@ mod tests {
         tokio::time::advance(Duration::from_millis(20)).await;
         mgr.request_sync(None).await;
 
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         assert_eq!(mm.get(&id).unwrap().due_at(Instant::now()), deadline);
     }
 
@@ -1575,7 +1603,7 @@ mod tests {
 
         // Force the mailbox into Stopped with a far-future next_poll
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             let t = mm.get(&id).unwrap();
             t.connection_state.send_modify(|s| {
                 s.status = SyncStatus::Stopped;
@@ -1597,7 +1625,7 @@ mod tests {
         }
 
         assert_eq!(poll_count.load(Ordering::Relaxed), 2);
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         assert_eq!(
             mm.get(&id).unwrap().connection_state().borrow().status,
             SyncStatus::Active
@@ -1712,7 +1740,7 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(15)).await;
         assert_eq!(slow_polls.load(Ordering::Relaxed), 2);
         let errors_after_first = {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             mm.get(&id)
                 .unwrap()
                 .connection_state()
@@ -1723,7 +1751,7 @@ mod tests {
 
         // The probe fails at t=60s and does not count.
         tokio::time::sleep(Duration::from_secs(30)).await;
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         let state = mm.get(&id).unwrap().connection_state();
         let state = state.borrow();
         assert_eq!(state.consecutive_errors, 1);
@@ -1750,7 +1778,7 @@ mod tests {
         let _rx = mgr.subscribe(0u8).await.unwrap();
         tokio::time::sleep(config.active_interval * 2).await;
         assert!(poll_count.load(Ordering::Relaxed) > 0);
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         let state = mm.get(&id).unwrap().connection_state();
         assert_eq!(
             state.borrow().consecutive_errors,
@@ -1790,7 +1818,7 @@ mod tests {
         assert_eq!(poll_count.load(Ordering::Relaxed), 1);
 
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             mm.get(&id).unwrap().connection_state.send_modify(|s| {
                 s.status = SyncStatus::Stopped;
                 s.consecutive_errors = 100;
@@ -1804,7 +1832,7 @@ mod tests {
         }
 
         assert_eq!(poll_count.load(Ordering::Relaxed), 2);
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         let state = mm.get(&id).unwrap().connection_state();
         let state = state.borrow();
         assert_eq!(state.status, SyncStatus::Stopped);
@@ -1839,7 +1867,7 @@ mod tests {
         assert_eq!(alive_polls.load(Ordering::Relaxed), 1);
 
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             mm.get(&dead_id).unwrap().connection_state.send_modify(|s| {
                 s.status = SyncStatus::Stopped;
                 s.consecutive_errors = 100;
@@ -1854,7 +1882,7 @@ mod tests {
 
         assert_eq!(dead_polls.load(Ordering::Relaxed), 2);
         assert_eq!(alive_polls.load(Ordering::Relaxed), 2);
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         assert_eq!(
             mm.get(&dead_id).unwrap().connection_state().borrow().status,
             SyncStatus::Stopped
@@ -1886,7 +1914,7 @@ mod tests {
         mgr.register(client).await;
 
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             let state = mm.get(&id).unwrap().connection_state();
             let state = state.borrow();
             assert_eq!(state.status, SyncStatus::Stopped);
@@ -1946,7 +1974,7 @@ mod tests {
         }
         assert_eq!(poll_count.load(Ordering::Relaxed), 1);
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             let state = mm.get(&id).unwrap().connection_state();
             let state = state.borrow();
             assert_eq!(state.status, SyncStatus::Active);
@@ -1994,7 +2022,7 @@ mod tests {
         assert_eq!(mgr.sync_tracker().get_status(&id).await.unwrap(), None);
 
         mgr.register(mb.client()).await;
-        let mm = mgr.mailboxes.lock().await;
+        let mm = mgr.registry.mailboxes.lock().await;
         let state = mm.get(&id).unwrap().connection_state();
         let state = state.borrow();
         assert_eq!(state.status, SyncStatus::Active);
@@ -2187,7 +2215,7 @@ mod tests {
         // We also set consecutive_errors high enough that record_error()
         // won't change their status (they're already at or past threshold).
         {
-            let mm = mgr.mailboxes.lock().await;
+            let mm = mgr.registry.mailboxes.lock().await;
             for id in &degraded_ids {
                 let t = mm.get(id).unwrap();
                 t.connection_state.send_modify(|s| {
@@ -2199,7 +2227,7 @@ mod tests {
                 let t = mm.get(id).unwrap();
                 t.connection_state.send_modify(|s| {
                     s.status = SyncStatus::Stopped;
-                    s.consecutive_errors = 1000; // at stopped_threshold
+                    s.consecutive_errors = 100; // at stopped_threshold
                 });
             }
         }
