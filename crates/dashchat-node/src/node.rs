@@ -32,7 +32,8 @@ use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
-use mailbox_client::manager::{Mailboxes, MailboxesConfig};
+use mailbox_client::manager::Mailboxes;
+use mailbox_client::MailboxesConfig;
 use tokio::task::JoinHandle;
 
 use crate::chat::{

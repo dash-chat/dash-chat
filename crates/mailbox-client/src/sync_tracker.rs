@@ -15,7 +15,7 @@ use sqlx::{
 use tokio::sync::{Mutex, watch};
 
 use crate::MailboxId;
-use crate::manager::SyncStatus;
+use crate::connection_health::SyncStatus;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         mailbox_id TEXT NOT NULL,

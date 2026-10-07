@@ -1,8 +1,11 @@
 pub mod backends;
 pub mod blobs;
+mod connection_health;
 pub mod manager;
 pub mod store;
 pub mod sync_tracker;
+
+pub use connection_health::MailboxesConfig;
 
 pub use blobs::unfetched_blobs::BlobSource;
 pub use blobs::upload_tracker::BlobUploadLifecycle;
