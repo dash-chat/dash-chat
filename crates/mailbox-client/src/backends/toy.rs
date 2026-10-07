@@ -1,3 +1,4 @@
+use dashchat_utils::SeqNum;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -284,7 +285,7 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         }
 
         // Group operations by topic -> author -> seq_num
-        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<u64, Blip>>> = BTreeMap::new();
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, Blip>>> = BTreeMap::new();
 
         let blob_hashes: Vec<iroh_blobs::Hash> =
             ops.iter().flat_map(|op| op.blob_hashes()).collect();
@@ -368,11 +369,11 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error> {
         // Convert FetchRequest to GetBlipsRequest
-        let mut topics: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+        let mut topics: BTreeMap<String, BTreeMap<String, SeqNum>> = BTreeMap::new();
 
         for (topic, authors) in request.0.iter() {
             let topic_id = topic.to_mailbox_key();
-            let mut author_map: BTreeMap<String, u64> = BTreeMap::new();
+            let mut author_map: BTreeMap<String, SeqNum> = BTreeMap::new();
 
             for (author, height) in authors.iter() {
                 author_map.insert(author.to_mailbox_key(), *height);
@@ -407,15 +408,14 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
             let topic = Item::Topic::from_mailbox_key(&topic_id_str)?;
 
             // Deserialize blips to operations
-            let mut items = Vec::new();
-            for (_author_str, seq_blips) in topic_response.blips {
-                for (_seq, blip) in seq_blips {
-                    items.push(Self::deserialize_operation(&blip)?);
-                }
-            }
+            let items: Vec<Item> = topic_response
+                .blips
+                .into_values()
+                .flat_map(Self::decode_log)
+                .collect();
 
             // Convert missing map
-            let mut missing: HashMap<Item::Author, Vec<u64>> = HashMap::new();
+            let mut missing: HashMap<Item::Author, Vec<SeqNum>> = HashMap::new();
             for (author_str, seq_nums) in topic_response.missing {
                 let author = Item::Author::from_mailbox_key(&author_str)?;
                 missing.insert(author, seq_nums);
@@ -437,6 +437,27 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
         Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
     }
+
+    /// Decode one author's blobs in sequence order, stopping at the first one this build
+    /// cannot decode.
+    ///
+    /// The mailbox is shared with peers on other builds, so a blob we cannot decode must not
+    /// fail the whole exchange and wedge sync until retention expires it. Truncating rather
+    /// than skipping leaves the author's log short instead of ingesting operations whose
+    /// backlink can never arrive; every other author and topic in the exchange is unaffected.
+    fn decode_log(seq_blips: BTreeMap<SeqNum, Blip>) -> Vec<Item> {
+        let mut items = Vec::with_capacity(seq_blips.len());
+        for (seq_num, blip) in seq_blips {
+            match Self::deserialize_operation(&blip) {
+                Ok(item) => items.push(item),
+                Err(err) => {
+                    tracing::warn!(?err, seq_num, "undecodable mailbox blob; truncating log");
+                    break;
+                }
+            }
+        }
+        items
+    }
 }
 
 #[cfg(test)]
@@ -446,9 +467,9 @@ mod tests {
 
     use super::*;
 
-    type StoredBlips = BTreeMap<String, BTreeMap<String, BTreeMap<u64, mailbox_server::Blip>>>;
+    type StoredBlips = BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, mailbox_server::Blip>>>;
 
-    fn msg(topic: u8, author: char, seq: u64) -> crate::testing::Msg {
+    fn msg(topic: u8, author: char, seq: SeqNum) -> crate::testing::Msg {
         crate::testing::Msg { topic, author, seq }
     }
 
@@ -468,11 +489,11 @@ mod tests {
                 axum::routing::post(
                     move |axum::Json(req): axum::Json<mailbox_server::StoreBlipsRequest>| async move {
                         let mut stored = stored_in_store.lock().unwrap();
-                        let mut watermarks: BTreeMap<String, BTreeMap<String, Option<u64>>> =
+                        let mut watermarks: BTreeMap<String, BTreeMap<String, Option<SeqNum>>> =
                             BTreeMap::new();
                         for (topic, authors) in req.blips {
                             let topic_entry = stored.entry(topic.clone()).or_default();
-                            let mut topic_watermarks: BTreeMap<String, Option<u64>> =
+                            let mut topic_watermarks: BTreeMap<String, Option<SeqNum>> =
                                 BTreeMap::new();
                             for (author, seqs) in authors {
                                 let author_entry = topic_entry.entry(author.clone()).or_default();
@@ -482,7 +503,7 @@ mod tests {
                                 let watermark = seqs
                                     .keys()
                                     .enumerate()
-                                    .take_while(|(i, seq)| **seq == *i as u64)
+                                    .take_while(|(i, seq)| **seq == *i as SeqNum)
                                     .map(|(_, seq)| seq)
                                     .copied()
                                     .last();
@@ -504,13 +525,13 @@ mod tests {
                             mailbox_server::GetBlipsForTopicResponse,
                         > = BTreeMap::new();
                         for (topic, authors) in req.topics {
-                            let mut topic_blips: BTreeMap<String, BTreeMap<u64, mailbox_server::Blip>> =
+                            let mut topic_blips: BTreeMap<String, BTreeMap<SeqNum, mailbox_server::Blip>> =
                                 BTreeMap::new();
-                            let mut missing: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+                            let mut missing: BTreeMap<String, Vec<SeqNum>> = BTreeMap::new();
                             if let Some(topic_entry) = stored.get(&topic) {
                                 for (author, min_seq) in authors {
                                     if let Some(author_entry) = topic_entry.get(&author) {
-                                        let filtered: BTreeMap<u64, mailbox_server::Blip> =
+                                        let filtered: BTreeMap<SeqNum, mailbox_server::Blip> =
                                             author_entry
                                                 .iter()
                                                 .filter(|(seq, _)| **seq > min_seq)
@@ -616,18 +637,18 @@ mod tests {
         // Fetch back the items above the reported local height.
         let request = FetchRequest(BTreeMap::from([(
             42u8,
-            BTreeMap::from([('a', 0u64), ('b', 0u64)]),
+            BTreeMap::from([('a', 0), ('b', 0)]),
         )]));
         let response = client.fetch(request).await.unwrap();
 
         let topic_response = response.0.get(&42).expect("topic 42");
-        let author_a_seqs: Vec<u64> = topic_response
+        let author_a_seqs: Vec<SeqNum> = topic_response
             .items
             .iter()
             .filter(|m| m.author() == 'a')
             .map(|m| m.seq_num())
             .collect();
-        let author_b_seqs: Vec<u64> = topic_response
+        let author_b_seqs: Vec<SeqNum> = topic_response
             .items
             .iter()
             .filter(|m| m.author() == 'b')

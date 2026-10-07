@@ -46,6 +46,7 @@ impl Notification {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpNotification {
     pub topic: TopicId,
+    #[serde(with = "crate::header_serde")]
     pub header: Header,
     pub payload: Option<Payload>,
 }
@@ -337,7 +338,7 @@ impl Node {
         let recorded = async {
             let acked = self
                 .op_store
-                .acked_log_height(&topic, &author, &header.extensions.log_id)
+                .acked_log_height(&topic, &author, &header.extensions.log_id())
                 .await?;
             if acked.is_some_and(|acked| acked >= header.seq_num) {
                 return anyhow::Ok(());
@@ -530,17 +531,21 @@ impl Node {
         if Self::is_tombstoneable(&payload) {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
-                    use p2panda_store::topics::TopicStore;
-                    let author = operation.header().verifying_key;
-                    let log_id = operation.header.extensions.log_id;
-                    let topic = self
-                        .op_store
-                        .store
-                        .resolve_topic(&author, &log_id)
-                        .await?
-                        .ok_or_else(|| {
-                            anyhow!(format!("failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}", author.aliased(), log_id.aliased()))
-                        })?;
+                    let author = operation.header.verifying_key;
+                    let log_id = operation.header.extensions.log_id();
+                    let topic = crate::topic::resolve_application_topic(
+                        &self.op_store.store,
+                        &author,
+                        &log_id,
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}",
+                            author.aliased(),
+                            log_id.aliased()
+                        )
+                    })?;
 
                     if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash()).collect();
@@ -769,7 +774,7 @@ impl Node {
                 // forwarded to the frontend) with a warning.
                 let chat_id = ChatId::from_topic_id(topic)?;
                 let valid_ops = self.valid_chat_ops(chat_id).await?;
-                let edit_ts: u64 = operation.processed().header().timestamp.into();
+                let edit_ts: u64 = operation.processed().header().extensions.timestamp().into();
                 let candidate = EditCandidate {
                     target: *edit_hash,
                     editor: author,

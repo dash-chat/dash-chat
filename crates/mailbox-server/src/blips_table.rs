@@ -1,9 +1,12 @@
+use dashchat_utils::SeqNum;
 use redb::{Key, TableDefinition, TypeName, Value};
 use std::cmp::Ordering;
 use std::fmt;
 use uuid::Uuid;
 
 use crate::watermarks_table::WatermarksKey;
+
+const SEQ_BYTES: usize = size_of::<SeqNum>();
 
 /// Error type for blips key operations
 #[derive(Debug, thiserror::Error)]
@@ -18,12 +21,12 @@ pub enum BlipsKeyError {
 
 /// Key for BLIPS_TABLE with binary format for efficient comparison.
 ///
-/// Binary format: `topic_id + 0x00 + author + 0x00 + seq_be8 + uuid_16`
+/// Binary format: `topic_id + 0x00 + author + 0x00 + seq_be4 + uuid_16`
 /// - topic_id: UTF-8 bytes (no null bytes allowed)
 /// - 0x00: null byte delimiter
 /// - author: UTF-8 bytes (no null bytes allowed)
 /// - 0x00: null byte delimiter
-/// - seq_be8: sequence number as 8 bytes big-endian
+/// - seq_be4: sequence number as 4 bytes big-endian
 /// - uuid_16: UUID as 16 raw bytes
 ///
 /// This format enables direct byte comparison that matches struct field ordering.
@@ -32,7 +35,7 @@ pub struct BlipsKey {
     // NOTE: order of these fields matters!
     pub topic_id: String,
     pub author: String,
-    pub sequence_number: u64,
+    pub sequence_number: SeqNum,
     pub uuid: Uuid,
 }
 
@@ -41,7 +44,7 @@ impl BlipsKey {
     pub fn new(
         topic_id: String,
         author: String,
-        sequence_number: u64,
+        sequence_number: SeqNum,
         uuid: Uuid,
     ) -> Result<Self, BlipsKeyError> {
         if topic_id.contains(':') || topic_id.contains('\0') {
@@ -62,7 +65,7 @@ impl BlipsKey {
     pub fn new_now(
         topic_id: String,
         author: String,
-        sequence_number: u64,
+        sequence_number: SeqNum,
     ) -> Result<Self, BlipsKeyError> {
         Self::new(topic_id, author, sequence_number, Uuid::now_v7())
     }
@@ -79,7 +82,7 @@ impl BlipsKey {
 
         let topic_id = parts[0].to_string();
         let author = parts[1].to_string();
-        let sequence_number = parts[2].parse::<u64>().map_err(|e| {
+        let sequence_number = parts[2].parse::<SeqNum>().map_err(|e| {
             BlipsKeyError::ParseError(format!("Invalid sequence number '{}': {}", parts[2], e))
         })?;
         let uuid = Uuid::parse_str(parts[3]).map_err(|e| {
@@ -105,7 +108,7 @@ impl fmt::Display for BlipsKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}:{}:{:020}:{}",
+            "{}:{}:{:010}:{}",
             self.topic_id, self.author, self.sequence_number, self.uuid
         )
     }
@@ -142,16 +145,16 @@ impl Value for BlipsKey {
             .expect("Invalid UTF-8 in author")
             .to_string();
 
-        // Read sequence number (8 bytes big-endian)
+        // Read sequence number (4 bytes big-endian)
         let seq_start = first_null + 1 + second_null + 1;
-        let sequence_number = u64::from_be_bytes(
-            data[seq_start..seq_start + 8]
+        let sequence_number = SeqNum::from_be_bytes(
+            data[seq_start..seq_start + SEQ_BYTES]
                 .try_into()
                 .expect("Invalid sequence number bytes"),
         );
 
         // Read UUID (16 bytes)
-        let uuid_start = seq_start + 8;
+        let uuid_start = seq_start + SEQ_BYTES;
         let uuid = Uuid::from_bytes(
             data[uuid_start..uuid_start + 16]
                 .try_into()
@@ -171,7 +174,7 @@ impl Value for BlipsKey {
         Self: 'b,
     {
         let mut bytes =
-            Vec::with_capacity(value.topic_id.len() + 1 + value.author.len() + 1 + 8 + 16);
+            Vec::with_capacity(value.topic_id.len() + 1 + value.author.len() + 1 + SEQ_BYTES + 16);
         bytes.extend_from_slice(value.topic_id.as_bytes());
         bytes.push(0);
         bytes.extend_from_slice(value.author.as_bytes());
@@ -191,7 +194,7 @@ impl Key for BlipsKey {
         // Direct byte comparison preserves ordering because:
         // - Null byte (0x00) delimiters are smaller than any valid UTF-8 byte
         // - Strings compare lexicographically by UTF-8 bytes
-        // - Sequence number is 8 bytes big-endian (preserves numeric ordering)
+        // - Sequence number is 4 bytes big-endian (preserves numeric ordering)
         // - UUID is 16 raw bytes (preserves Uuid::cmp ordering)
         data1.cmp(data2)
     }
@@ -205,7 +208,7 @@ pub enum BlipsKeyPrefix {
     /// Match all keys for a topic:author: "topic_id:author:"
     TopicAuthor(String, String),
     /// Match all keys for a topic:author:seq: "topic_id:author:seq:"
-    TopicAuthorSeq(String, String, u64),
+    TopicAuthorSeq(String, String, SeqNum),
 }
 
 impl BlipsKeyPrefix {
@@ -242,13 +245,13 @@ impl BlipsKeyPrefix {
                 topic_id: topic.clone(),
                 // U+FFFF is the highest Unicode code point, sorts after all valid authors
                 author: String::from("\u{FFFF}"),
-                sequence_number: u64::MAX,
+                sequence_number: SeqNum::MAX,
                 uuid: Uuid::max(),
             },
             BlipsKeyPrefix::TopicAuthor(topic, author) => BlipsKey {
                 topic_id: topic.clone(),
                 author: author.clone(),
-                sequence_number: u64::MAX,
+                sequence_number: SeqNum::MAX,
                 uuid: Uuid::max(),
             },
             BlipsKeyPrefix::TopicAuthorSeq(topic, author, seq) => BlipsKey {
@@ -261,10 +264,14 @@ impl BlipsKeyPrefix {
     }
 }
 
-// Database key format: topic_id + 0x00 + author + 0x00 + seq_be8 + uuid_16
+// Database key format: topic_id + 0x00 + author + 0x00 + seq_be4 + uuid_16
 // The UUID v7 suffix is used for cleanup based on message age
 // Binary format enables direct byte comparison for efficient database operations
-pub const BLIPS_TABLE: TableDefinition<BlipsKey, &[u8]> = TableDefinition::new("blips");
+//
+// The table name carries a version because redb cannot detect a changed key
+// layout: the sequence number used to occupy 8 bytes, and reading those rows
+// with this layout would misparse every key after it.
+pub const BLIPS_TABLE: TableDefinition<BlipsKey, &[u8]> = TableDefinition::new("blips_v2");
 
 #[cfg(test)]
 mod tests {
@@ -284,7 +291,7 @@ mod tests {
         let uuid = Uuid::now_v7();
         let key = BlipsKey::new("topic".into(), "author".into(), 5, uuid).unwrap();
         let serialized = key.to_string();
-        assert!(serialized.contains(":00000000000000000005:"));
+        assert!(serialized.contains(":0000000005:"));
     }
 
     #[test]
@@ -391,7 +398,7 @@ mod tests {
             "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb"
         );
         assert_eq!(end.author, "\u{ffff}");
-        assert_eq!(end.sequence_number, u64::MAX);
+        assert_eq!(end.sequence_number, SeqNum::MAX);
         assert_eq!(end.uuid, Uuid::max());
     }
 
@@ -408,7 +415,7 @@ mod tests {
 
         assert_eq!(end.topic_id, "topic");
         assert_eq!(end.author, "author");
-        assert_eq!(end.sequence_number, u64::MAX);
+        assert_eq!(end.sequence_number, SeqNum::MAX);
         assert_eq!(end.uuid, Uuid::max());
     }
 
