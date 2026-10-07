@@ -167,6 +167,7 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, add
                 url.clone(),
                 node.endpoint_id(),
                 node.unfetched_blob_tracker(),
+                node.mailboxes.upload_tracker(),
             )
             .with_blob_reader(node.blob_reader()),
         )
