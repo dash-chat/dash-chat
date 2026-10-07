@@ -1,3 +1,8 @@
+// Shared test utilities. This module is included by several integration-test
+// binaries; each binary uses a different subset of helpers, so suppress the
+// resulting dead-code warnings rather than deleting legitimate shared tools.
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -198,6 +203,7 @@ pub fn app_mailbox_client(
         url,
         node.endpoint_id(),
         node.unfetched_blob_tracker(),
+        node.mailboxes.upload_tracker(),
     )
     .with_blob_reader(node.blob_reader())
 }
@@ -212,5 +218,6 @@ pub fn inspection_client(
         url,
         iroh::SecretKey::generate().public(),
         Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+        mailbox_client::testing::noop_upload_lifecycle(),
     )
 }

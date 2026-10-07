@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::blobs::unfetched_blobs::reconcile_unfetched_blobs;
+use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
 use chrono::{DateTime, Utc};
@@ -364,6 +366,7 @@ where
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
     store: Store,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
 }
@@ -386,6 +389,7 @@ where
             topics: Arc::new(Mutex::new(Default::default())),
             store,
             sync_tracker,
+            upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
         }
@@ -515,6 +519,51 @@ where
             .into_iter()
             .filter_map(|id| mailbox_server::decode_mailbox_id(&id).ok())
             .collect())
+    }
+
+    /// Whether an upload of `hash` to the given registered mailbox would start
+    /// now: not in flight and not backing off.
+    pub async fn upload_due(&self, mailbox_id: &MailboxId, hash: iroh_blobs::Hash) -> bool {
+        let Some(tracked) = self.tracked_mailbox(mailbox_id).await else {
+            return false;
+        };
+        let Some(url) = tracked.client().await.url() else {
+            return false;
+        };
+        self.upload_due_at(&url, hash)
+    }
+
+    /// Whether an upload of `hash` to the mailbox at `url` would start now,
+    /// without re-resolving the mailbox. For callers that already hold the
+    /// mailbox URL.
+    pub fn upload_due_at(&self, url: &str, hash: iroh_blobs::Hash) -> bool {
+        self.upload_tracker.upload_due(url, hash)
+    }
+
+    /// Access the shared blob upload tracker so callers can wire it into a
+    /// `ToyMailboxClient` before registration.
+    pub fn upload_tracker(&self) -> Arc<BlobUploadTracker> {
+        self.upload_tracker.clone()
+    }
+
+    /// Network changed or app resumed: clear in-flight claims and backoffs so
+    /// uploads can start again immediately.
+    pub fn reset_uploads(&self) {
+        self.upload_tracker.restart_uploads();
+    }
+
+    /// Reconcile unfetched blobs across all registered mailboxes.
+    ///
+    /// For every mailbox that still has unfetched blobs recorded by `source`,
+    /// re-announce the hashes the node currently holds and push any bytes the
+    /// mailbox lacks.
+    pub async fn reconcile_unfetched_blobs(
+        &self,
+        source: Arc<dyn BlobSource>,
+        reader: Arc<dyn BlobReader>,
+        tracker: Arc<dyn UnfetchedBlobTracker>,
+    ) {
+        reconcile_unfetched_blobs(self, source, reader, tracker).await;
     }
 
     /// Nudge the poll loop to check for the next mailbox to poll.
@@ -1010,7 +1059,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        backends::mem::MemMailbox,
+        BlobReader,
+        backends::{mem::MemMailbox, toy::ToyMailboxClient},
         testing::{DummyStore, MemStore, Msg},
     };
 
@@ -1176,7 +1226,94 @@ mod tests {
             .unwrap()
     }
 
+    /// Blob reader that always reports it has a single fixed blob and returns
+    /// its bytes.
+    struct StubBlobReader {
+        hash: iroh_blobs::Hash,
+        bytes: bytes::Bytes,
+    }
+
+    #[async_trait::async_trait]
+    impl BlobReader for StubBlobReader {
+        async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+            assert_eq!(hash, self.hash);
+            Ok(self.bytes.clone())
+        }
+
+        async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
+            hash == self.hash
+        }
+    }
+
+    /// Blob reader that claims to have a blob but always fails to read it.
+    struct FailingBlobReader {
+        hash: iroh_blobs::Hash,
+    }
+
+    #[async_trait::async_trait]
+    impl BlobReader for FailingBlobReader {
+        async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+            assert_eq!(hash, self.hash);
+            Err(anyhow::anyhow!("simulated read failure"))
+        }
+
+        async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
+            hash == self.hash
+        }
+    }
+
     // -- MailboxTracker unit tests --
+
+    #[tokio::test]
+    async fn register_attaches_upload_tracker_to_toy_client() {
+        let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
+        let url = server.server_address().unwrap().to_string();
+        let url = url.trim_end_matches('/').to_string();
+
+        let mailboxes = test_mailboxes(test_config());
+        let id: MailboxId = "test-mbx".into();
+        let hash = iroh_blobs::Hash::new(b"coordinated blob");
+
+        // Reader used to build the client and to satisfy `has_blob` during
+        // `push_blobs`.
+        let reader = Arc::new(StubBlobReader {
+            hash,
+            bytes: bytes::Bytes::from_static(b"coordinated blob"),
+        });
+
+        let client = ToyMailboxClient::<Msg>::new(
+            id.clone(),
+            url,
+            iroh::SecretKey::generate().public(),
+            Arc::new(crate::NoopUnfetchedBlobTracker),
+            mailboxes.upload_tracker(),
+        )
+        .with_blob_reader(reader.clone());
+
+        mailboxes.register(client).await;
+
+        // A reader that fails to read the bytes makes the spawned upload finish
+        // with `succeeded = false`, leaving the hash on a deterministic retry
+        // backoff.
+        let failing_reader: Arc<dyn BlobReader> = Arc::new(FailingBlobReader { hash });
+
+        let registered = mailboxes.tracked_mailbox(&id).await.unwrap();
+        registered
+            .client()
+            .await
+            .push_blobs(
+                vec![hash],
+                failing_reader,
+                Arc::new(crate::NoopUnfetchedBlobTracker),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            !mailboxes.upload_due(&id, hash).await,
+            "registered toy client must share Mailboxes' upload scheduler"
+        );
+    }
 
     #[tokio::test(start_paused = true)]
     async fn tracker_starts_active() {
