@@ -8,8 +8,8 @@ pub mod store;
 mod sync;
 mod sync_tracker;
 
-pub use connection_health::MailboxesConfig;
-pub use sync_tracker::MailboxSyncTracker;
+pub use connection_health::{MailboxesConfig, MailboxConnectionState};
+pub use sync_tracker::{MailboxSyncTracker, MailboxSyncState};
 
 pub use blobs::unfetched_blobs::BlobSource;
 pub use blobs::upload_tracker::BlobUploadLifecycle;
