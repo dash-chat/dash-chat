@@ -1289,13 +1289,12 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn active_mailbox_ids_subscribed_after_register_sees_registered() {
         let mgr = test_mailboxes(test_config());
-        let mut rx = mgr.active_mailbox_ids();
 
         let mb = MemMailbox::<Msg>::new();
         let id = mb.client().id();
         mgr.register(mb.client()).await;
 
-        rx.changed().await.unwrap();
+        let rx = mgr.active_mailbox_ids();
         assert!(rx.borrow().contains(&id));
     }
 
