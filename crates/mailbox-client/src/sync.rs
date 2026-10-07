@@ -8,7 +8,8 @@
 //! The coordinator abstracts the specific sync loop logic away from the
 //! main [`crate::manager::Mailboxes`] registry.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::Hash;
 use std::sync::Arc;
 
 use crate::MailboxId;
@@ -16,6 +17,21 @@ use crate::manager::TrackedMailbox;
 use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
 use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
+
+/// Result of [`SyncCoordinator::sync_topics`].
+#[derive(Debug)]
+pub struct SyncTopicResult<Topic> {
+    /// Topics whose receivers were closed during delivery.
+    pub closed_topics: HashSet<Topic>,
+}
+
+impl<Topic> Default for SyncTopicResult<Topic> {
+    fn default() -> Self {
+        Self {
+            closed_topics: HashSet::new(),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct SyncCoordinator<Item, Store>
@@ -49,10 +65,10 @@ where
         &self,
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
-        topic_senders: &std::collections::HashMap<Item::Topic, tokio::sync::mpsc::Sender<Item>>,
-    ) -> anyhow::Result<()>
+        topic_senders: &HashMap<Item::Topic, tokio::sync::mpsc::Sender<Item>>,
+    ) -> anyhow::Result<SyncTopicResult<Item::Topic>>
     where
-        Item::Topic: std::fmt::Display,
+        Item::Topic: std::fmt::Display + Eq + Hash,
     {
         let mut request = BTreeMap::new();
         let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, u64>> = BTreeMap::new();
@@ -67,6 +83,7 @@ where
 
         let mut ops_to_publish: Vec<Item> = vec![];
         let mut acks: Vec<(Item::Topic, Item::Author, u64)> = vec![];
+        let mut result: SyncTopicResult<Item::Topic> = SyncTopicResult::default();
 
         for (topic, response) in response.into_iter() {
             let FetchTopicResponse { items, missing } = response;
@@ -105,8 +122,7 @@ where
             for item in items {
                 if sender.send(item).await.is_err() {
                     tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
-                    // Note: We can't easily remove from the map here since we don't have the map.
-                    // The manager will need to handle the cleanup or we provide a way.
+                    result.closed_topics.insert(topic.clone());
                     break;
                 }
             }
@@ -146,7 +162,7 @@ where
             tracing::error!(?err, mailbox = %&mailbox.id(), "failed to record sync watermarks");
         }
 
-        Ok(())
+        Ok(result)
     }
 
     pub async fn store_fast_push(
