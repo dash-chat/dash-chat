@@ -29,7 +29,7 @@ impl<Item: MailboxItem> Registry<Item> {
         for (mid, _) in map.iter() {
             active.insert(mid.clone());
         }
-        let _ = self.active_mailbox_ids_tx.send(active);
+        let _ = self.active_mailbox_ids_tx.send_replace(active);
     }
 
     pub async fn unregister(&self, id: &MailboxId) {
@@ -39,7 +39,7 @@ impl<Item: MailboxItem> Registry<Item> {
             for (mid, _) in map.iter() {
                 active.insert(mid.clone());
             }
-            let _ = self.active_mailbox_ids_tx.send(active);
+            let _ = self.active_mailbox_ids_tx.send_replace(active);
         }
     }
 
