@@ -154,27 +154,22 @@ where
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
                 let now = chrono::Utc::now().timestamp_millis();
-                let placeholders = std::iter::repeat("(?, ?, ?, ?, ?)")
-                    .take(encoded.len())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let sql = format!(
-                    "INSERT INTO mailbox_sync_state (mailbox_id, topic, author, seq_num, updated_at)
-                     VALUES {placeholders}
-                     ON CONFLICT (mailbox_id, topic, author) DO UPDATE SET
-                        seq_num = MAX(excluded.seq_num, mailbox_sync_state.seq_num),
-                        updated_at = excluded.updated_at"
+                let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+                    "INSERT INTO mailbox_sync_state (mailbox_id, topic, author, seq_num, updated_at) ",
                 );
-                let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
-                for (topic_bytes, author_bytes, seq) in &encoded {
-                    query = query
-                        .bind(mailbox)
-                        .bind(topic_bytes)
-                        .bind(author_bytes)
-                        .bind(i64::from(*seq))
-                        .bind(now);
-                }
-                query.execute(pool).await?;
+                query.push_values(&encoded, |mut row, (topic_bytes, author_bytes, seq)| {
+                    row.push_bind(mailbox)
+                        .push_bind(topic_bytes)
+                        .push_bind(author_bytes)
+                        .push_bind(i64::from(*seq))
+                        .push_bind(now);
+                });
+                query.push(
+                    " ON CONFLICT (mailbox_id, topic, author) DO UPDATE SET
+                        seq_num = MAX(excluded.seq_num, mailbox_sync_state.seq_num),
+                        updated_at = excluded.updated_at",
+                );
+                query.build().execute(pool).await?;
             }
             SyncBackend::Mem(rows) => {
                 let mut rows = rows.lock().await;

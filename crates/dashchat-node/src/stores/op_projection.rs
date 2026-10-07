@@ -180,17 +180,19 @@ impl OpProjection {
         if device_ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let placeholders = std::iter::repeat("?")
-            .take(device_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql =
-            format!("SELECT device_id, agent_id FROM devices WHERE device_id IN ({placeholders})");
-        let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(sqlx::AssertSqlSafe(sql));
+        let mut q = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT device_id, agent_id FROM devices WHERE device_id IN (",
+        );
+        let mut ids = q.separated(", ");
         for id in device_ids {
-            q = q.bind(*id);
+            ids.push_bind(*id);
         }
-        Ok(q.fetch_all(&self.pool).await?.into_iter().collect())
+        q.push(")");
+        Ok(q.build_query_as::<(DeviceId, AgentId)>()
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .collect())
     }
 
     pub async fn is_author_blocked(&self, device_id: &DeviceId) -> anyhow::Result<bool> {
