@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::blobs::unfetched_blobs::reconcile_unfetched_blobs;
 use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::connection_health::{MailboxConnectionState, MailboxesConfig, SyncStatus};
+use crate::polling::PollGuard;
 use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
 use tokio::sync::{Notify, watch};
@@ -67,7 +68,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
             .send_modify(|t| t.record_probe_error(&self.config, err));
     }
 
-    fn reschedule(&self) {
+    pub(crate) fn reschedule(&self) {
         self.connection_state
             .send_modify(|t| t.reschedule(&self.config));
     }
@@ -132,55 +133,16 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 
     /// Claim this mailbox for a poll, returning `false` if one is already in flight.
-    fn begin_poll(&self) -> bool {
+    pub(crate) fn begin_poll(&self) -> bool {
         !self.polling.swap(true, Ordering::SeqCst)
     }
 
-    fn end_poll(&self) {
+    pub(crate) fn end_poll(&self) {
         self.polling.store(false, Ordering::SeqCst);
     }
 
     fn is_polling(&self) -> bool {
         self.polling.load(Ordering::SeqCst)
-    }
-}
-
-/// Clears the in-flight flag and re-arms the poll loop however the poll task
-/// exits, so a panic mid-poll costs one cycle instead of stranding the mailbox
-/// as permanently "polling" and thus never due again.
-struct PollGuard<Item: MailboxItem> {
-    tracked_mailbox: Arc<TrackedMailbox<Item>>,
-    nudge: Arc<Notify>,
-    completed: bool,
-}
-
-impl<Item: MailboxItem> PollGuard<Item> {
-    /// Claim the mailbox for a poll, returning `None` if one is already in flight.
-    pub fn claim(tracked_mailbox: Arc<TrackedMailbox<Item>>, nudge: Arc<Notify>) -> Option<Self> {
-        if !tracked_mailbox.begin_poll() {
-            return None;
-        }
-        Some(Self {
-            tracked_mailbox,
-            nudge,
-            completed: false,
-        })
-    }
-
-    pub fn complete(mut self) {
-        self.completed = true;
-    }
-}
-
-impl<Item: MailboxItem> Drop for PollGuard<Item> {
-    fn drop(&mut self) {
-        if !self.completed {
-            // An unwinding poll recorded neither success nor error, so nothing
-            // moved `next_poll` off the past and it would be re-polled instantly.
-            self.tracked_mailbox.reschedule();
-        }
-        self.tracked_mailbox.end_poll();
-        self.nudge.notify_one();
     }
 }
 

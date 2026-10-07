@@ -2,6 +2,7 @@ pub mod backends;
 pub mod blobs;
 mod connection_health;
 pub mod manager;
+mod polling;
 pub mod store;
 pub mod sync_tracker;
 
