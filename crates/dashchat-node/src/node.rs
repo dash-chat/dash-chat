@@ -15,7 +15,7 @@ use crate::error::{
     AddContactError, AddContactResult, Error, RemoveGroupMemberError, ShutdownError,
 };
 use crate::filesystem::Filesystem;
-use crate::node::actor::{Actor, Command};
+use crate::node::actor::Streams;
 #[cfg(feature = "testing")]
 use crate::testing::TestNode;
 use aliased::Aliasing;
@@ -30,7 +30,7 @@ use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
 use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc};
 
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
@@ -229,7 +229,7 @@ pub struct Node {
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
-    actor_tx: mpsc::Sender<Command>,
+    streams: Streams,
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -372,9 +372,7 @@ impl Node {
             false => Some(p2panda_node.endpoint()?),
         };
 
-        // Spawn node actor.
-        let (node_actor, events_rx) = Actor::new(p2panda_node, config.stream_cursor_prefix.clone());
-        let actor_tx = node_actor.spawn().await?;
+        let (streams, events_rx) = Streams::new(p2panda_node, config.stream_cursor_prefix.clone());
 
         // === stores === //
 
@@ -457,7 +455,7 @@ impl Node {
             node_keys,
             notification_tx,
             topic_subscribed_tx,
-            actor_tx,
+            streams,
             processor_cancel_tx,
             processor_handle: Default::default(),
             stored_topics_init_handle: Default::default(),
@@ -679,12 +677,7 @@ impl Node {
             return Ok(());
         }
 
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(Command::RegisterPeerAddr { addr, reply_tx })
-            .await
-            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-        reply_rx.await??;
+        self.streams.register_peer_addr(addr).await?;
         Ok(())
     }
 
@@ -1594,13 +1587,7 @@ impl Node {
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if let Err(err) = self.actor_tx.send(Command::Shutdown { reply_tx }).await {
-            tracing::warn!("failed to send shutdown command to node actor: {}", err);
-            return Err(ShutdownError::ActorShutdown(Box::new(err)));
-        }
-
-        reply_rx.await?;
+        self.streams.shutdown().await;
 
         if let Err(err) = self.processor_cancel_tx.send(()).await {
             tracing::warn!(

@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use aliased::Aliasing;
@@ -19,7 +20,7 @@ use p2panda_stream::groups::{GroupsArgs as GroupsProcessorArgs, GroupsError};
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
-use tokio::task::JoinSet;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::{error, warn};
 
@@ -27,40 +28,14 @@ use crate::Payload;
 
 type GroupsProcessor = p2panda_stream::groups::Groups<GroupsProcessorArgs<()>, Extensions, LogId>;
 
-/// Node actor commands.
-pub(crate) enum Command {
-    Subscribe {
-        topic: Topic,
-        reply_tx: oneshot::Sender<Result<bool, NodeActorError>>,
-    },
-    #[allow(unused)]
-    Unsubscribe {
-        topic: Topic,
-        reply_tx: oneshot::Sender<()>,
-    },
-    Import {
-        topic: Topic,
-        stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
-    },
-    Publish {
-        topic: Topic,
-        payload: Payload,
-        reply_tx: oneshot::Sender<Result<ProcessFuture, NodeActorError>>,
-    },
-    RegisterBootstrap {
-        node_id: NodeId,
-        relay_url: RelayUrl,
-        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
-    },
-    RegisterPeerAddr {
-        addr: iroh::EndpointAddr,
-        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
-    },
-    Shutdown {
-        reply_tx: oneshot::Sender<()>,
-    },
-}
+type ProcessedTx = oneshot::Sender<Result<(), ProcessorError>>;
+type ProcessedRx = oneshot::Receiver<Result<(), ProcessorError>>;
+
+/// Own-authored operations the drain task forwarded before `publish` claimed them (see
+/// [`Processed`]). The window is the gap between p2panda returning the hash and the claim, so
+/// this only ever holds a handful; the cap just guards against operations we authored through
+/// other routes (replays, local imports) and never claim.
+const UNCLAIMED_CAPACITY: usize = 1024;
 
 // Wrapper around StreamEvent from p2panda with variants for "system", "groups" and "application"
 // events.
@@ -72,8 +47,8 @@ pub(crate) enum Command {
 // The error is required so that if a groups control message fails processing, then the
 // application layer can still decide separately whether to perform further processing or not.
 //
-// @TODO: This wrapping might not have been required if the node actor and app processing pipeline
-// was combined into one process. I(sam) avoided doing that so as to keep my work as self
+// @TODO: This wrapping might not have been required if the stream draining and app processing
+// pipeline was combined into one process. I(sam) avoided doing that so as to keep my work as self
 // contained as possible, it could be that i've generated some additional abstraction because of
 // that though. It's also a side-effect of groups operations not being processed inside of the
 // p2panda node yet, this generated some further error handling requirements. In any further
@@ -85,13 +60,13 @@ pub enum ProcessorEvent {
     Groups {
         operation: ProcessedOperation<Payload>,
         source: Source,
-        processed_tx: Option<oneshot::Sender<Result<(), ProcessorError>>>,
+        processed_tx: Option<ProcessedTx>,
         error: Option<ProcessorError>,
     },
     App {
         operation: ProcessedOperation<Payload>,
         source: Source,
-        processed_tx: Option<oneshot::Sender<Result<(), ProcessorError>>>,
+        processed_tx: Option<ProcessedTx>,
     },
 
     ImportFailed {
@@ -100,139 +75,136 @@ pub enum ProcessorEvent {
     },
 }
 
-/// Actor for the p2panda node.
+/// Per-topic p2panda streams.
 ///
-/// This is a thin wrapper around the p2panda node API which includes merging of all subscription
-/// streams and holding all publish handles. It also processes groups control messages when they
-/// arrive on the stream and allows users to await this processing for operations they process
-/// locally.
-pub struct Actor {
+/// This is a thin wrapper around the p2panda node API which holds all publish handles and runs
+/// one task draining every subscription stream. That task also processes groups control messages
+/// as they arrive and lets callers await that processing for operations they published locally.
+///
+/// Publishing and subscribing are plain methods: the only state confined to the drain task is the
+/// merged subscription streams and the groups processor, so calls never queue behind event
+/// processing the way an actor command would.
+#[derive(Clone)]
+pub struct Streams {
+    inner: Arc<Inner>,
+}
+
+struct Inner {
     /// p2panda node.
-    inner: p2panda::Node,
-
-    /// All publishing channel senders.
-    tx_map: HashMap<Topic, StreamPublisher<Payload>>,
-
-    /// All subscription streams.
-    streams: StreamMap<Topic, StreamSubscription<Payload>>,
-
-    /// One shot channels for all received operations which resolve once the operation has
-    /// completed additional processing.
-    ///
-    /// These are held while groups control messages are being processed so the user can await
-    /// this processing on top of what the node already provides with PublishFuture. The oneshot
-    /// channel sender is forwarded further up the processing pipeline (to the application layer)
-    /// so that any further processing which occurs there can also be awaited.
-    processed: HashMap<Hash, oneshot::Sender<Result<(), ProcessorError>>>,
-
-    /// Groups processor.
-    groups_processor: GroupsProcessor,
-
-    /// Channel for forwarding all received events on to the application layer processor.
-    events_tx: mpsc::UnboundedSender<ProcessorEvent>,
+    node: p2panda::Node,
 
     /// Prefix for each topic stream's ack cursor name. `None` uses p2panda's
     /// default per-topic cursor (`"{topic}"`);
     stream_cursor_prefix: Option<String>,
 
-    /// Import tasks spawned so `handle_import` does not block the actor loop.
-    /// Dropped on shutdown, aborting any still-parked imports.
-    import_tasks: JoinSet<()>,
+    /// All publishing channel senders.
+    ///
+    /// Held across opening a new topic's stream so two callers racing on the same new topic
+    /// can't open it twice.
+    publishers: tokio::sync::Mutex<HashMap<Topic, StreamPublisher<Payload>>>,
+
+    processed: Arc<std::sync::Mutex<Processed>>,
+
+    drain_tx: mpsc::UnboundedSender<DrainCommand>,
+    drain_handle: std::sync::Mutex<Option<JoinHandle<()>>>,
 }
 
-impl Actor {
+/// One shot channels for locally published operations which resolve once the operation has
+/// completed additional processing.
+///
+/// These are held while groups control messages are being processed so the user can await this
+/// processing on top of what the node already provides with PublishFuture. The oneshot channel
+/// sender is forwarded further up the processing pipeline (to the application layer) so that any
+/// further processing which occurs there can also be awaited.
+///
+/// p2panda hands an operation to the pipeline before `publish` learns its hash, so the drain task
+/// can forward it before the publisher registers interest. For own-authored operations the drain
+/// task then attaches a sender of its own and parks the receiver in `unclaimed` for `publish` to
+/// pick up.
+#[derive(Default)]
+struct Processed {
+    registered: HashMap<Hash, ProcessedTx>,
+    unclaimed: HashMap<Hash, ProcessedRx>,
+    unclaimed_order: VecDeque<Hash>,
+}
+
+impl Processed {
+    /// Sender to attach to a processed operation's event, if anyone will await it.
+    fn take_sender(&mut self, hash: Hash, authored_by_us: bool) -> Option<ProcessedTx> {
+        if let Some(tx) = self.registered.remove(&hash) {
+            return Some(tx);
+        }
+        if !authored_by_us {
+            return None;
+        }
+        let (tx, rx) = oneshot::channel();
+        self.unclaimed.insert(hash, rx);
+        self.unclaimed_order.push_back(hash);
+        while self.unclaimed_order.len() > UNCLAIMED_CAPACITY {
+            if let Some(evicted) = self.unclaimed_order.pop_front() {
+                self.unclaimed.remove(&evicted);
+            }
+        }
+        Some(tx)
+    }
+
+    /// Receiver `publish` awaits for an operation it just published.
+    fn claim(&mut self, hash: Hash) -> ProcessedRx {
+        if let Some(rx) = self.unclaimed.remove(&hash) {
+            return rx;
+        }
+        let (tx, rx) = oneshot::channel();
+        self.registered.insert(hash, tx);
+        rx
+    }
+}
+
+enum DrainCommand {
+    Subscribe(Topic, StreamSubscription<Payload>),
+    Unsubscribe(Topic),
+    Import {
+        topic: Topic,
+        publisher: StreamPublisher<Payload>,
+        stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
+    },
+}
+
+impl Streams {
     pub(crate) fn new(
         node: p2panda::Node,
         stream_cursor_prefix: Option<String>,
     ) -> (Self, mpsc::UnboundedReceiver<ProcessorEvent>) {
-        let groups_processor = GroupsProcessor::new(node.store());
-        // Unbounded so the actor never blocks here: the application processor
-        // (the only consumer) itself sends commands to this actor and awaits the
-        // reply, so a bounded channel deadlocks under a burst of events (see
+        // Unbounded so the drain task never blocks here: the application processor
+        // (the only consumer) itself publishes and awaits the result, so a bounded
+        // channel deadlocks under a burst of events (see
         // `late_joiner_syncing_crossing_replies_can_hit_target_not_found` in
         // tests/reply_messages.rs, which used to hang this way).
         let (events_tx, events_rx) = mpsc::unbounded_channel();
+        let (drain_tx, drain_rx) = mpsc::unbounded_channel();
+        let processed = Arc::new(std::sync::Mutex::new(Processed::default()));
 
-        (
-            Self {
-                inner: node,
-                tx_map: Default::default(),
-                streams: Default::default(),
-                processed: Default::default(),
-                groups_processor,
-                events_tx,
+        let drain = Drain {
+            node_id: node.id(),
+            streams: Default::default(),
+            groups_processor: GroupsProcessor::new(node.store()),
+            processed: processed.clone(),
+            events_tx,
+            import_tasks: JoinSet::new(),
+        };
+        let drain_handle = tokio::spawn(drain.run(drain_rx));
+
+        let streams = Self {
+            inner: Arc::new(Inner {
+                node,
                 stream_cursor_prefix,
-                import_tasks: JoinSet::new(),
-            },
-            events_rx,
-        )
-    }
+                publishers: Default::default(),
+                processed,
+                drain_tx,
+                drain_handle: std::sync::Mutex::new(Some(drain_handle)),
+            }),
+        };
 
-    pub(crate) async fn spawn(mut self) -> Result<mpsc::Sender<Command>, NodeActorError> {
-        let (message_tx, mut message_rx) = mpsc::channel(100);
-
-        let _ = tokio::spawn(async move {
-            loop {
-                select!(
-                    Some(message) = message_rx.recv() => {
-                        match message {
-                            Command::Subscribe { topic, reply_tx } => {
-                                let result = self.handle_subscribe(topic).await;
-                                let _ = reply_tx.send(result);
-                            }
-                            Command::Unsubscribe { topic, reply_tx } => {
-                                self.handle_unsubscribe(topic);
-                                let _ = reply_tx.send(());
-                            }
-                            Command::Import { topic, stream, reply_tx } => {
-                                let result = self.handle_import(topic, stream).await;
-                                let _ = reply_tx.send(result);
-                            }
-                            Command::Publish {
-                                topic,
-                                payload,
-                                reply_tx,
-                            } => {
-                                let result = self.handle_publish(topic, payload).await;
-                                let _ = reply_tx.send(result);
-                            }
-                            Command::RegisterBootstrap { node_id, relay_url, reply_tx } => {
-                                let result = self.handle_register_bootstrap(node_id, relay_url).await;
-                                let _ = reply_tx.send(result);
-
-                            },
-                            Command::RegisterPeerAddr { addr, reply_tx } => {
-                                let result = self.handle_register_peer_addr(addr).await;
-                                let _ = reply_tx.send(result);
-                            },
-                            Command::Shutdown { reply_tx } => {
-                                // Drop self and then break out of the processing loop which will
-                                // cause the actor task to complete.
-                                drop(self);
-                                let _ = reply_tx.send(());
-                                break;
-                            }
-                        };
-                    }
-                    Some((_, event)) = self.streams.next() => {
-                        if let Err(err) = self.process_event(event).await {
-                            warn!(?err, "actor event processing failed");
-                        }
-                    }
-                    Some(result) = self.import_tasks.join_next() => {
-                        if let Err(err) = result {
-                            error!(?err, "import task panicked");
-                        }
-                    }
-                    else => {
-                        warn!("node actor message channel closed, exiting event loop");
-                        break;
-                    }
-                );
-            }
-        });
-
-        Ok(message_tx)
+        (streams, events_rx)
     }
 
     /// Open a topic stream, tracking its ack cursor under a per-topic name. With
@@ -245,76 +217,73 @@ impl Actor {
         topic: Topic,
     ) -> Result<(StreamPublisher<Payload>, StreamSubscription<Payload>), CreateStreamError> {
         let cursor_name = self
+            .inner
             .stream_cursor_prefix
             .as_ref()
             .map(|prefix| format!("{prefix}:{topic}"));
         self.inner
+            .node
             .stream_from(topic, StreamFrom::Frontier, cursor_name)
             .await
     }
 
-    async fn handle_subscribe(&mut self, topic: Topic) -> Result<bool, NodeActorError> {
-        // If we're already subscribed to this topic then just return now.
-        if self.tx_map.contains_key(&topic) {
-            return Ok(false);
+    /// The topic's publisher, opening its stream if this is the first use of the topic.
+    ///
+    /// Returns whether the stream was newly opened.
+    async fn publisher(
+        &self,
+        topic: Topic,
+    ) -> Result<(StreamPublisher<Payload>, bool), StreamsError> {
+        let mut publishers = self.inner.publishers.lock().await;
+        if let Some(tx) = publishers.get(&topic) {
+            return Ok((tx.clone(), false));
         }
         let (tx, rx) = self.open_stream(topic).await?;
-        self.tx_map.insert(topic, tx);
-        self.streams.insert(topic, rx);
-        Ok(true)
+        publishers.insert(topic, tx.clone());
+        self.send_to_drain(DrainCommand::Subscribe(topic, rx))?;
+        Ok((tx, true))
     }
 
-    fn handle_unsubscribe(&mut self, topic: Topic) {
-        self.tx_map.remove(&topic);
-        self.streams.remove(&topic);
+    fn send_to_drain(&self, command: DrainCommand) -> Result<(), StreamsError> {
+        self.inner
+            .drain_tx
+            .send(command)
+            .map_err(|_| StreamsError::DrainClosed)
     }
 
-    async fn handle_import(
-        &mut self,
+    /// Subscribe to a topic. Returns `false` if already subscribed.
+    pub(crate) async fn subscribe(&self, topic: Topic) -> Result<bool, StreamsError> {
+        let (_, opened) = self.publisher(topic).await?;
+        Ok(opened)
+    }
+
+    #[allow(unused)]
+    pub(crate) async fn unsubscribe(&self, topic: Topic) {
+        self.inner.publishers.lock().await.remove(&topic);
+        let _ = self.send_to_drain(DrainCommand::Unsubscribe(topic));
+    }
+
+    /// Import an external stream of operations into a topic, subscribing to it if needed.
+    pub(crate) async fn import(
+        &self,
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-    ) -> Result<(), NodeActorError> {
-        // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
-        let tx = match self.tx_map.get(&topic) {
-            Some(tx) => tx.clone(),
-            None => {
-                let (tx, rx) = self.open_stream(topic).await?;
-                self.tx_map.insert(topic, tx.clone());
-                self.streams.insert(topic, rx);
-                tx
-            }
-        };
-
-        // Spawn the import consumption into a separate task so the actor loop
-        // is not blocked while the topic processor replays local operations
-        // before accepting the external stream. This keeps Publish commands and
-        // event processing responsive during backlog replay.
-        let events_tx = self.events_tx.clone();
-        self.import_tasks.spawn(async move {
-            if let Err(err) = tx.import(stream).await {
-                error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
-                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, error: err });
-            }
-        });
-
-        Ok(())
+    ) -> Result<(), StreamsError> {
+        let (publisher, _) = self.publisher(topic).await?;
+        self.send_to_drain(DrainCommand::Import {
+            topic,
+            publisher,
+            stream,
+        })
     }
 
-    async fn handle_publish(
-        &mut self,
+    /// Publish a payload into a topic, subscribing to it if needed.
+    pub(crate) async fn publish(
+        &self,
         topic: Topic,
         payload: Payload,
-    ) -> Result<ProcessFuture, NodeActorError> {
-        // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
-        let tx = match self.tx_map.get(&topic) {
-            Some(tx) => tx.clone(),
-            None => {
-                let (tx, rx) = self.open_stream(topic).await?;
-                self.tx_map.insert(topic, tx.clone());
-                self.streams.insert(topic, rx);
-                tx
-            }
-        };
+    ) -> Result<ProcessFuture, StreamsError> {
+        let (tx, _) = self.publisher(topic).await?;
 
         // If the payload represents a change to group state then publish it as a groups control
         // message, all other payload variants are published via the "normal" route.
@@ -323,28 +292,26 @@ impl Actor {
             _ => tx.publish(payload).await,
         }?;
 
-        let (processed_tx, processed_rx) = oneshot::channel();
         let hash = publish_fut.hash();
         hash.alias_numbered();
-        let _ = self.processed.insert(hash, processed_tx);
-        let process_fut = ProcessFuture::new(hash, publish_fut, processed_rx);
+        let processed_rx = self.inner.processed.lock().unwrap().claim(hash);
 
-        Ok(process_fut)
+        Ok(ProcessFuture::new(hash, publish_fut, processed_rx))
     }
 
-    async fn handle_register_bootstrap(
+    pub(crate) async fn register_bootstrap(
         &self,
         node_id: NodeId,
         relay_url: RelayUrl,
-    ) -> Result<(), NodeActorError> {
+    ) -> Result<(), StreamsError> {
         // insert_node_addr replaces the whole entry, which would drop the LAN addresses of a peer
         // we already know and leave it undialable while offline.
         let addr = iroh::EndpointAddr::new(p2panda_net::utils::from_verifying_key(node_id))
             .with_relay_url(relay_url);
-        if self.inner.node_addr_known(&addr).await? {
+        if self.inner.node.node_addr_known(&addr).await? {
             return Ok(());
         }
-        self.inner.insert_node_addr(addr).await?;
+        self.inner.node.insert_node_addr(addr).await?;
         Ok(())
     }
 
@@ -366,21 +333,103 @@ impl Actor {
     // p2panda discovery hook;
     // the iroh QUIC handshake prevents data from flowing to the wrong peer,
     // so the worst case is wasted dial attempts.
-    async fn handle_register_peer_addr(
-        &mut self,
+    pub(crate) async fn register_peer_addr(
+        &self,
         addr: iroh::EndpointAddr,
-    ) -> Result<(), NodeActorError> {
-        self.inner.insert_node_addr(addr).await?;
+    ) -> Result<(), StreamsError> {
+        self.inner.node.insert_node_addr(addr).await?;
         Ok(())
     }
 
-    async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {
+    /// Drop every publisher and stop the drain task, aborting any still-parked imports.
+    pub(crate) async fn shutdown(&self) {
+        self.inner.publishers.lock().await.clear();
+        let handle = self.inner.drain_handle.lock().unwrap().take();
+        if let Some(handle) = handle {
+            handle.abort();
+            let _ = handle.await;
+        }
+    }
+}
+
+/// State confined to the task draining all subscription streams.
+struct Drain {
+    node_id: NodeId,
+
+    /// All subscription streams.
+    streams: StreamMap<Topic, StreamSubscription<Payload>>,
+
+    /// Groups processor.
+    groups_processor: GroupsProcessor,
+
+    processed: Arc<std::sync::Mutex<Processed>>,
+
+    /// Channel for forwarding all received events on to the application layer processor.
+    events_tx: mpsc::UnboundedSender<ProcessorEvent>,
+
+    /// Import tasks spawned so an import does not block the drain loop.
+    /// Dropped on shutdown, aborting any still-parked imports.
+    import_tasks: JoinSet<()>,
+}
+
+impl Drain {
+    async fn run(mut self, mut command_rx: mpsc::UnboundedReceiver<DrainCommand>) {
+        loop {
+            select!(
+                command = command_rx.recv() => {
+                    match command {
+                        Some(DrainCommand::Subscribe(topic, rx)) => {
+                            self.streams.insert(topic, rx);
+                        }
+                        Some(DrainCommand::Unsubscribe(topic)) => {
+                            self.streams.remove(&topic);
+                        }
+                        Some(DrainCommand::Import { topic, publisher, stream }) => {
+                            self.spawn_import(topic, publisher, stream);
+                        }
+                        None => {
+                            warn!("streams dropped, exiting drain loop");
+                            break;
+                        }
+                    }
+                }
+                Some((_, event)) = self.streams.next() => {
+                    if let Err(err) = self.process_event(event).await {
+                        warn!(?err, "stream event processing failed");
+                    }
+                }
+                Some(result) = self.import_tasks.join_next() => {
+                    if let Err(err) = result {
+                        error!(?err, "import task panicked");
+                    }
+                }
+            );
+        }
+    }
+
+    fn spawn_import(
+        &mut self,
+        topic: Topic,
+        publisher: StreamPublisher<Payload>,
+        stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
+    ) {
+        let events_tx = self.events_tx.clone();
+        self.import_tasks.spawn(async move {
+            if let Err(err) = publisher.import(stream).await {
+                error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
+                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, error: err });
+            }
+        });
+    }
+
+    async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), StreamsError> {
         let processor_event = match &event {
             StreamEvent::Processed { operation, source } => {
-                let id = operation.id();
-                // For all processed operations remove the processed_tx from the map for forwarding to the
-                // application layer.
-                let processed_tx = self.processed.remove(&id);
+                let processed_tx = self
+                    .processed
+                    .lock()
+                    .unwrap()
+                    .take_sender(operation.id(), operation.author() == self.node_id);
 
                 if let Payload::GroupControl(_) = operation.message() {
                     // Process any groups control messages.
@@ -409,7 +458,7 @@ impl Actor {
         // Forward the event for further application layer processing.
         self.events_tx
             .send(processor_event)
-            .map_err(|_| NodeActorError::EventSend)?;
+            .map_err(|_| StreamsError::EventSend)?;
 
         Ok(())
     }
@@ -434,7 +483,7 @@ impl Actor {
         }
 
         // A successful `process` always enqueues exactly one item, no-ops included, and this is
-        // the only caller (the actor's single event loop), so `next` returns our own item without
+        // the only caller (the single drain loop), so `next` returns our own item without
         // blocking. It carries only the input back plus a processed/no-op flag, so dropping it
         // loses nothing; we drain it so the queue doesn't grow unboundedly.
         //
@@ -455,11 +504,7 @@ pub struct ProcessFuture {
 }
 
 impl ProcessFuture {
-    pub fn new(
-        hash: Hash,
-        published_fut: PublishFuture,
-        processed_rx: oneshot::Receiver<Result<(), ProcessorError>>,
-    ) -> Self {
+    pub fn new(hash: Hash, published_fut: PublishFuture, processed_rx: ProcessedRx) -> Self {
         Self {
             hash,
             inner: Box::pin(join(published_fut, processed_rx).map(|(result, _)| result)),
@@ -483,7 +528,7 @@ impl Future for ProcessFuture {
 }
 
 #[derive(Debug, Error)]
-pub enum NodeActorError {
+pub enum StreamsError {
     #[error(transparent)]
     Publish(#[from] PublishError),
 
@@ -495,6 +540,9 @@ pub enum NodeActorError {
 
     #[error("error sending on event tx")]
     EventSend,
+
+    #[error("stream drain task is gone")]
+    DrainClosed,
 
     #[error(transparent)]
     Network(#[from] NetworkError),
@@ -519,14 +567,13 @@ mod tests {
     use p2panda_store::groups::GroupsStore;
     use p2panda_store::{SqliteStore, tx_unwrap};
     use p2panda_stream::groups::GroupsOperation;
-    use tokio::sync::oneshot;
 
     use crate::node::actor::ProcessorEvent;
     use crate::stores::GROUPS_STATE_ID;
     use crate::testing::setup_tracing;
     use crate::{ChatMessageContent, ChatPayload, Payload};
 
-    use super::{Actor, Command};
+    use super::{Processed, Streams};
 
     type GroupsState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
 
@@ -552,6 +599,43 @@ mod tests {
         })
     }
 
+    #[tokio::test]
+    async fn claim_after_forward_still_resolves() {
+        let hash = Hash::digest(b"op");
+        let mut processed = Processed::default();
+
+        let tx = processed
+            .take_sender(hash, true)
+            .expect("own op gets a sender");
+        tx.send(Ok(())).unwrap();
+
+        let rx = processed.claim(hash);
+        assert!(rx.await.unwrap().is_ok());
+        assert!(processed.unclaimed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn claim_before_forward_resolves() {
+        let hash = Hash::digest(b"op");
+        let mut processed = Processed::default();
+
+        let rx = processed.claim(hash);
+        let tx = processed
+            .take_sender(hash, false)
+            .expect("registered op gets its sender");
+        tx.send(Ok(())).unwrap();
+
+        assert!(rx.await.unwrap().is_ok());
+        assert!(processed.registered.is_empty());
+    }
+
+    #[tokio::test]
+    async fn remote_ops_get_no_sender() {
+        let mut processed = Processed::default();
+        assert!(processed.take_sender(Hash::digest(b"op"), false).is_none());
+        assert!(processed.unclaimed.is_empty());
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn subscribe_and_send() {
         setup_tracing(&["dashchat=info"], true);
@@ -572,29 +656,13 @@ mod tests {
             .await
             .unwrap();
 
-        let (alice_actor, alice_events_rx) = Actor::new(alice, None);
-        let alice_actor_tx = alice_actor.spawn().await.unwrap();
-
-        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi, None);
-        let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
+        let (alice_streams, alice_events_rx) = Streams::new(alice, None);
+        let (bobbi_streams, bobbi_events_rx) = Streams::new(bobbi, None);
 
         // Both alice and bobbi subscribe to topics a & b.
         for topic in [topic_a, topic_b] {
-            let (reply_tx, reply_rx) = oneshot::channel();
-            alice_actor_tx
-                .send(Command::Subscribe { topic, reply_tx })
-                .await
-                .unwrap();
-
-            assert!(reply_rx.await.unwrap().unwrap());
-
-            let (reply_tx, reply_rx) = oneshot::channel();
-            bobbi_actor_tx
-                .send(Command::Subscribe { topic, reply_tx })
-                .await
-                .unwrap();
-
-            assert!(reply_rx.await.unwrap().unwrap());
+            assert!(alice_streams.subscribe(topic).await.unwrap());
+            assert!(bobbi_streams.subscribe(topic).await.unwrap());
         }
 
         // Alice sends a message into each topic.
@@ -606,17 +674,7 @@ mod tests {
             (topic_a, topic_a_message.clone()),
             (topic_b, topic_b_message.clone()),
         ] {
-            let (reply_tx, reply_rx) = oneshot::channel();
-            alice_actor_tx
-                .send(Command::Publish {
-                    topic,
-                    payload,
-                    reply_tx,
-                })
-                .await
-                .unwrap();
-
-            let processed_future = reply_rx.await.unwrap().unwrap();
+            let processed_future = alice_streams.publish(topic, payload).await.unwrap();
             processed_futures.push(processed_future);
         }
 
@@ -624,7 +682,16 @@ mod tests {
         for mut events_rx in [alice_events_rx, bobbi_events_rx] {
             let mut topic_a_message_received = false;
             let mut topic_b_message_received = false;
-            while let Some(ProcessorEvent::App { operation, .. }) = events_rx.recv().await {
+            while let Some(ProcessorEvent::App {
+                operation,
+                processed_tx,
+                ..
+            }) = events_rx.recv().await
+            {
+                if let Some(processed_tx) = processed_tx {
+                    let _ = processed_tx.send(Ok(()));
+                }
+
                 if operation.message() == &topic_a_message {
                     topic_a_message_received = true;
                 }
@@ -667,27 +734,11 @@ mod tests {
         let alice_id = alice.id();
         let bobbi_id = bobbi.id();
 
-        let (alice_actor, alice_events_rx) = Actor::new(alice, None);
-        let alice_actor_tx = alice_actor.spawn().await.unwrap();
+        let (alice_streams, alice_events_rx) = Streams::new(alice, None);
+        let (bobbi_streams, bobbi_events_rx) = Streams::new(bobbi, None);
 
-        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi, None);
-        let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
-
-        // Alice subscribes to topic.
-        let (reply_tx, reply_rx) = oneshot::channel();
-        alice_actor_tx
-            .send(Command::Subscribe { topic, reply_tx })
-            .await
-            .unwrap();
-        assert!(reply_rx.await.unwrap().unwrap());
-
-        // Bobbi subscribes to topic.
-        let (reply_tx, reply_rx) = oneshot::channel();
-        bobbi_actor_tx
-            .send(Command::Subscribe { topic, reply_tx })
-            .await
-            .unwrap();
-        assert!(reply_rx.await.unwrap().unwrap());
+        assert!(alice_streams.subscribe(topic).await.unwrap());
+        assert!(bobbi_streams.subscribe(topic).await.unwrap());
 
         // Alice publishes a "create" group message.
         let group_id = SigningKey::generate().verifying_key();
@@ -703,21 +754,23 @@ mod tests {
         )
         .await;
 
-        let (reply_tx, reply_rx) = oneshot::channel();
-        alice_actor_tx
-            .send(Command::Publish {
-                topic,
-                payload: create_group.clone(),
-                reply_tx,
-            })
+        let processed_fut = alice_streams
+            .publish(topic, create_group.clone())
             .await
             .unwrap();
-        let processed_fut = reply_rx.await.unwrap().unwrap();
 
         // Both receive the message on their events stream.
         for mut events_rx in [alice_events_rx, bobbi_events_rx] {
             while let Some(event) = events_rx.recv().await {
-                if let ProcessorEvent::Groups { operation, .. } = event {
+                if let ProcessorEvent::Groups {
+                    operation,
+                    processed_tx,
+                    ..
+                } = event
+                {
+                    if let Some(processed_tx) = processed_tx {
+                        let _ = processed_tx.send(Ok(()));
+                    }
                     if operation.message() == &create_group {
                         break;
                     }

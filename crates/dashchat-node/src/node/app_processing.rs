@@ -112,20 +112,7 @@ impl Node {
     async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         debug!(topic = ?topic.aliased(), "subscribe to topic");
 
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self
-            .actor_tx
-            .send(Command::Subscribe {
-                topic: topic.into(),
-                reply_tx,
-            })
-            .await
-            .is_err()
-        {
-            return Err(anyhow!("Error sending on actor channel"));
-        };
-
-        reply_rx.await??;
+        self.streams.subscribe(topic.into()).await?;
 
         if let Some(tx) = &self.topic_subscribed_tx {
             let _ = tx.send(topic).await;
@@ -150,22 +137,7 @@ impl Node {
         topic: TopicId,
         stream: std::pin::Pin<Box<dyn futures::Stream<Item = Operation> + Send>>,
     ) -> anyhow::Result<()> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self
-            .actor_tx
-            .send(Command::Import {
-                topic: topic.into(),
-                stream,
-                reply_tx,
-            })
-            .await
-            .is_err()
-        {
-            return Err(anyhow!("Error sending on actor channel"));
-        };
-
-        reply_rx.await??;
-
+        self.streams.import(topic.into(), stream).await?;
         Ok(())
     }
 
@@ -901,17 +873,9 @@ impl Node {
         }
 
         debug!(node_id = %node_id, "add bootstrap node");
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(Command::RegisterBootstrap {
-                node_id,
-                relay_url: RELAY_URL.clone(),
-                reply_tx,
-            })
-            .await
-            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-
-        reply_rx.await??;
+        self.streams
+            .register_bootstrap(node_id, RELAY_URL.clone())
+            .await?;
         Ok(())
     }
 

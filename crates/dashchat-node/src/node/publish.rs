@@ -12,28 +12,17 @@ impl Node {
         payload: impl Into<Payload>,
         _alias: Option<&str>,
     ) -> Result<Header, anyhow::Error> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-
-        // Construct a node actor command.
         let payload: Payload = payload.into();
 
         debug!(topic = ?topic.aliased(), payload = ?payload.aliased(), "publish operation");
 
-        let command = Command::Publish {
-            topic: topic.into(),
-            payload,
-            reply_tx,
-        };
-
-        // Send the command to the node actor.
-        if let Err(err) = self.actor_tx.send(command).await {
-            tracing::warn!("failed to publish command to node actor: {}", err);
-            return Err(Error::AuthorOperation(err.to_string()).into());
-        }
-
-        // Await the response, this just means that the command has been handled, it does not mean
-        // the operation has been published or processed yet.
-        let process_fut = warn_if_slow("awaiting reply_rx", reply_rx).await??;
+        // This only means the operation has been handed to the pipeline, not that it has been
+        // published or processed yet.
+        let process_fut = warn_if_slow(
+            "awaiting publish",
+            self.streams.publish(topic.into(), payload),
+        )
+        .await?;
 
         // Now we await the operation being published and processed on the system layer.
         let event = warn_if_slow("awaiting process_fut", process_fut).await?;
