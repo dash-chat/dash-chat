@@ -1,6 +1,5 @@
 pub(crate) mod actor;
 mod app_processing;
-mod backlog_monitor;
 mod message_acks;
 pub(crate) mod publish;
 mod report;
@@ -372,7 +371,7 @@ impl Node {
             false => Some(p2panda_node.endpoint()?),
         };
 
-        let (streams, events_rx) = Streams::new(p2panda_node, config.stream_cursor_prefix.clone());
+        let (streams, drain) = Streams::new(p2panda_node, config.stream_cursor_prefix.clone());
 
         // === stores === //
 
@@ -473,8 +472,7 @@ impl Node {
 
         // === application processor task === //
 
-        let processor_handle =
-            node.spawn_application_processor_task(events_rx, processor_cancel_rx);
+        let processor_handle = node.spawn_application_processor_task(drain, processor_cancel_rx);
         node.processor_handle.lock().await.replace(processor_handle);
 
         // === blob fetch loop === //

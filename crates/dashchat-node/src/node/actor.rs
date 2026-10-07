@@ -8,27 +8,22 @@ use futures::future::join;
 use futures::{FutureExt, Stream};
 use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
-use p2panda::operation::{Extensions, LogId, Operation};
+use p2panda::operation::Operation;
 use p2panda::streams::{
     ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
     StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
-use p2panda_auth::group::GroupCrdtError;
-use p2panda_stream::Processor;
-use p2panda_stream::groups::{GroupsArgs as GroupsProcessorArgs, GroupsError};
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinSet;
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::{error, warn};
 
 use crate::Payload;
 
-type GroupsProcessor = p2panda_stream::groups::Groups<GroupsProcessorArgs<()>, Extensions, LogId>;
-
-type ProcessedTx = oneshot::Sender<Result<(), ProcessorError>>;
+pub(crate) type ProcessedTx = oneshot::Sender<Result<(), ProcessorError>>;
 type ProcessedRx = oneshot::Receiver<Result<(), ProcessorError>>;
 
 /// Own-authored operations the drain task forwarded before `publish` claimed them (see
@@ -37,33 +32,11 @@ type ProcessedRx = oneshot::Receiver<Result<(), ProcessorError>>;
 /// other routes (replays, local imports) and never claim.
 const UNCLAIMED_CAPACITY: usize = 1024;
 
-// Wrapper around StreamEvent from p2panda with variants for "system", "groups" and "application"
-// events.
-//
-// This is used to express different variants of event types which will be forwarded to further
-// application layer event processors and to package operations with their processed_tx and any
-// errors which already occurred in this processor. The processed_tx is required so that the
-// ProcessorFuture can be signaled to complete only after all application processing has occurred.
-// The error is required so that if a groups control message fails processing, then the
-// application layer can still decide separately whether to perform further processing or not.
-//
-// @TODO: This wrapping might not have been required if the stream draining and app processing
-// pipeline was combined into one process. I(sam) avoided doing that so as to keep my work as self
-// contained as possible, it could be that i've generated some additional abstraction because of
-// that though. It's also a side-effect of groups operations not being processed inside of the
-// p2panda node yet, this generated some further error handling requirements. In any further
-// refactoring it could be worth considering how these modules could actually be refactored into
-// one place. In any case, it would be required to have both the processed_tx and additional error
-// handling in place, so this is not wasted work in the long-run.
+/// Something [`Drain::next`] hands to the application processor.
 pub enum ProcessorEvent {
-    System(StreamEvent<Payload>),
-    Groups {
-        operation: ProcessedOperation<Payload>,
-        source: Source,
-        processed_tx: Option<ProcessedTx>,
-        error: Option<ProcessorError>,
-    },
-    App {
+    /// An operation ready for application processing. `processed_tx` is set when a local
+    /// `publish` is awaiting it, and must be resolved once processing is done.
+    Operation {
         operation: ProcessedOperation<Payload>,
         source: Source,
         processed_tx: Option<ProcessedTx>,
@@ -77,13 +50,12 @@ pub enum ProcessorEvent {
 
 /// Per-topic p2panda streams.
 ///
-/// This is a thin wrapper around the p2panda node API which holds all publish handles and runs
-/// one task draining every subscription stream. That task also processes groups control messages
-/// as they arrive and lets callers await that processing for operations they published locally.
+/// This is a thin wrapper around the p2panda node API which holds all publish handles. Every
+/// subscription stream is merged into the [`Drain`], which the application processor pulls
+/// operations from, and callers can await that processing for operations they published locally.
 ///
-/// Publishing and subscribing are plain methods: the only state confined to the drain task is the
-/// merged subscription streams and the groups processor, so calls never queue behind event
-/// processing the way an actor command would.
+/// Publishing and subscribing are plain methods, so calls never queue behind event processing the
+/// way an actor command would.
 #[derive(Clone)]
 pub struct Streams {
     inner: Arc<Inner>,
@@ -106,21 +78,15 @@ struct Inner {
     processed: Arc<std::sync::Mutex<Processed>>,
 
     drain_tx: mpsc::UnboundedSender<DrainCommand>,
-    drain_handle: std::sync::Mutex<Option<JoinHandle<()>>>,
 }
 
 /// One shot channels for locally published operations which resolve once the operation has
-/// completed additional processing.
+/// completed application processing, on top of what the node already provides with
+/// PublishFuture.
 ///
-/// These are held while groups control messages are being processed so the user can await this
-/// processing on top of what the node already provides with PublishFuture. The oneshot channel
-/// sender is forwarded further up the processing pipeline (to the application layer) so that any
-/// further processing which occurs there can also be awaited.
-///
-/// p2panda hands an operation to the pipeline before `publish` learns its hash, so the drain task
-/// can forward it before the publisher registers interest. For own-authored operations the drain
-/// task then attaches a sender of its own and parks the receiver in `unclaimed` for `publish` to
-/// pick up.
+/// p2panda hands an operation to the pipeline before `publish` learns its hash, so the drain can
+/// yield it before the publisher registers interest. For own-authored operations the drain then
+/// attaches a sender of its own and parks the receiver in `unclaimed` for `publish` to pick up.
 #[derive(Default)]
 struct Processed {
     registered: HashMap<Hash, ProcessedTx>,
@@ -170,28 +136,17 @@ enum DrainCommand {
 }
 
 impl Streams {
-    pub(crate) fn new(
-        node: p2panda::Node,
-        stream_cursor_prefix: Option<String>,
-    ) -> (Self, mpsc::UnboundedReceiver<ProcessorEvent>) {
-        // Unbounded so the drain task never blocks here: the application processor
-        // (the only consumer) itself publishes and awaits the result, so a bounded
-        // channel deadlocks under a burst of events (see
-        // `late_joiner_syncing_crossing_replies_can_hit_target_not_found` in
-        // tests/reply_messages.rs, which used to hang this way).
-        let (events_tx, events_rx) = mpsc::unbounded_channel();
-        let (drain_tx, drain_rx) = mpsc::unbounded_channel();
+    pub(crate) fn new(node: p2panda::Node, stream_cursor_prefix: Option<String>) -> (Self, Drain) {
+        let (drain_tx, command_rx) = mpsc::unbounded_channel();
         let processed = Arc::new(std::sync::Mutex::new(Processed::default()));
 
         let drain = Drain {
             node_id: node.id(),
             streams: Default::default(),
-            groups_processor: GroupsProcessor::new(node.store()),
             processed: processed.clone(),
-            events_tx,
+            command_rx,
             import_tasks: JoinSet::new(),
         };
-        let drain_handle = tokio::spawn(drain.run(drain_rx));
 
         let streams = Self {
             inner: Arc::new(Inner {
@@ -200,11 +155,10 @@ impl Streams {
                 publishers: Default::default(),
                 processed,
                 drain_tx,
-                drain_handle: std::sync::Mutex::new(Some(drain_handle)),
             }),
         };
 
-        (streams, events_rx)
+        (streams, drain)
     }
 
     /// Open a topic stream, tracking its ack cursor under a per-topic name. With
@@ -287,10 +241,7 @@ impl Streams {
 
         // If the payload represents a change to group state then publish it as a groups control
         // message, all other payload variants are published via the "normal" route.
-        let publish_fut = match &payload {
-            Payload::GroupControl(args) => tx.publish_groups(args.clone(), payload).await,
-            _ => tx.publish(payload).await,
-        }?;
+        let publish_fut = tx.publish(payload).await?;
 
         let hash = publish_fut.hash();
         hash.alias_numbered();
@@ -341,69 +292,79 @@ impl Streams {
         Ok(())
     }
 
-    /// Drop every publisher and stop the drain task, aborting any still-parked imports.
+    /// Drop every publisher. Still-parked imports are aborted when the [`Drain`] is dropped.
     pub(crate) async fn shutdown(&self) {
         self.inner.publishers.lock().await.clear();
-        let handle = self.inner.drain_handle.lock().unwrap().take();
-        if let Some(handle) = handle {
-            handle.abort();
-            let _ = handle.await;
-        }
     }
 }
 
-/// State confined to the task draining all subscription streams.
-struct Drain {
+/// Every subscription stream merged into one, pulled by the application processor.
+///
+/// The application processor must never await a publish into a subscribed topic while it is
+/// pulling from here: p2panda's per-topic pipeline is bounded all the way through to the
+/// subscription, so such a publish can wait on the very drain it is blocking.
+pub(crate) struct Drain {
     node_id: NodeId,
 
     /// All subscription streams.
     streams: StreamMap<Topic, StreamSubscription<Payload>>,
 
-    /// Groups processor.
-    groups_processor: GroupsProcessor,
-
     processed: Arc<std::sync::Mutex<Processed>>,
 
-    /// Channel for forwarding all received events on to the application layer processor.
-    events_tx: mpsc::UnboundedSender<ProcessorEvent>,
+    command_rx: mpsc::UnboundedReceiver<DrainCommand>,
 
-    /// Import tasks spawned so an import does not block the drain loop.
-    /// Dropped on shutdown, aborting any still-parked imports.
-    import_tasks: JoinSet<()>,
+    /// Import tasks spawned so an import does not block the drain.
+    /// Dropped with the drain, aborting any still-parked imports.
+    import_tasks: JoinSet<Option<(Topic, ImportError)>>,
 }
 
 impl Drain {
-    async fn run(mut self, mut command_rx: mpsc::UnboundedReceiver<DrainCommand>) {
+    /// Wait for the next event to process, handling subscription changes in the meantime.
+    ///
+    /// Returns `None` once [`Streams`] has been dropped. Cancel safe.
+    pub(crate) async fn next(&mut self) -> Option<ProcessorEvent> {
         loop {
             select!(
-                command = command_rx.recv() => {
-                    match command {
-                        Some(DrainCommand::Subscribe(topic, rx)) => {
-                            self.streams.insert(topic, rx);
-                        }
-                        Some(DrainCommand::Unsubscribe(topic)) => {
-                            self.streams.remove(&topic);
-                        }
-                        Some(DrainCommand::Import { topic, publisher, stream }) => {
-                            self.spawn_import(topic, publisher, stream);
-                        }
-                        None => {
-                            warn!("streams dropped, exiting drain loop");
-                            break;
-                        }
-                    }
+                command = self.command_rx.recv() => {
+                    let Some(command) = command else {
+                        warn!("streams dropped, exiting drain");
+                        return None;
+                    };
+                    self.handle_command(command);
                 }
                 Some((_, event)) = self.streams.next() => {
-                    if let Err(err) = self.process_event(event).await {
-                        warn!(?err, "stream event processing failed");
+                    if let Some(event) = self.processor_event(event) {
+                        return Some(event);
                     }
                 }
                 Some(result) = self.import_tasks.join_next() => {
-                    if let Err(err) = result {
-                        error!(?err, "import task panicked");
+                    match result {
+                        Ok(Some((topic, error))) => {
+                            return Some(ProcessorEvent::ImportFailed { topic, error });
+                        }
+                        Ok(None) => {}
+                        Err(err) => error!(?err, "import task panicked"),
                     }
                 }
             );
+        }
+    }
+
+    fn handle_command(&mut self, command: DrainCommand) {
+        match command {
+            DrainCommand::Subscribe(topic, rx) => {
+                self.streams.insert(topic, rx);
+            }
+            DrainCommand::Unsubscribe(topic) => {
+                self.streams.remove(&topic);
+            }
+            DrainCommand::Import {
+                topic,
+                publisher,
+                stream,
+            } => {
+                self.spawn_import(topic, publisher, stream);
+            }
         }
     }
 
@@ -413,86 +374,46 @@ impl Drain {
         publisher: StreamPublisher<Payload>,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) {
-        let events_tx = self.events_tx.clone();
         self.import_tasks.spawn(async move {
-            if let Err(err) = publisher.import(stream).await {
-                error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
-                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, error: err });
-            }
+            let err = publisher.import(stream).await.err()?;
+            error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
+            Some((topic, err))
         });
     }
 
-    async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), StreamsError> {
-        let processor_event = match &event {
+    /// The event to hand to the application processor, logging any system event instead.
+    fn processor_event(&mut self, event: StreamEvent<Payload>) -> Option<ProcessorEvent> {
+        match event {
             StreamEvent::Processed { operation, source } => {
                 let processed_tx = self
                     .processed
                     .lock()
                     .unwrap()
                     .take_sender(operation.id(), operation.author() == self.node_id);
-
-                if let Payload::GroupControl(_) = operation.message() {
-                    // Process any groups control messages.
-                    let result = self.process_groups_control(operation).await;
-                    if let Err(err) = result.as_ref() {
-                        warn!("groups processing error: {err:?}");
-                    }
-
-                    ProcessorEvent::Groups {
-                        operation: operation.clone(),
-                        source: source.clone(),
-                        processed_tx,
-                        error: result.err(),
-                    }
-                } else {
-                    ProcessorEvent::App {
-                        operation: operation.clone(),
-                        source: source.clone(),
-                        processed_tx,
-                    }
-                }
+                Some(ProcessorEvent::Operation {
+                    operation,
+                    source,
+                    processed_tx,
+                })
             }
-            _ => ProcessorEvent::System(event),
-        };
-
-        // Forward the event for further application layer processing.
-        self.events_tx
-            .send(processor_event)
-            .map_err(|_| StreamsError::EventSend)?;
-
-        Ok(())
-    }
-
-    async fn process_groups_control(
-        &self,
-        operation: &ProcessedOperation<Payload>,
-    ) -> Result<(), ProcessorError> {
-        match self
-            .groups_processor
-            .process(operation.event.groups_args.clone())
-            .await
-        {
-            Ok(()) => {}
-            // Another process sharing the groups state (the iOS push extension)
-            // already applied it. A failed `process` enqueues nothing, so there
-            // is nothing to drain.
-            Err((_, GroupsError::Groups(GroupCrdtError::DuplicateOperation(..)))) => {
-                return Ok(());
+            StreamEvent::ProcessingFailed { error, .. } => {
+                warn!("error processing operation: {error:?}");
+                None
             }
-            Err((_, err)) => return Err(ProcessorError::Groups(err.to_string())),
+            StreamEvent::DecodeFailed { error, .. } => {
+                warn!("error decoding operation: {error:?}");
+                None
+            }
+            StreamEvent::ReplayFailed { error, .. } => {
+                warn!("error replaying stream: {error:?}");
+                None
+            }
+            StreamEvent::AckFailed { error, .. } => {
+                warn!("error acking operation: {error:?}");
+                None
+            }
+            _ => None,
         }
-
-        // A successful `process` always enqueues exactly one item, no-ops included, and this is
-        // the only caller (the single drain loop), so `next` returns our own item without
-        // blocking. It carries only the input back plus a processed/no-op flag, so dropping it
-        // loses nothing; we drain it so the queue doesn't grow unboundedly.
-        //
-        // Note that this is only a temporary solution anyway and will go away with the spaces refactor.
-        self.groups_processor
-            .next()
-            .await
-            .map(|_| ())
-            .map_err(|(_, err)| ProcessorError::Groups(err.to_string()))
     }
 }
 
@@ -538,10 +459,7 @@ pub enum StreamsError {
     #[error(transparent)]
     Import(#[from] ImportError),
 
-    #[error("error sending on event tx")]
-    EventSend,
-
-    #[error("stream drain task is gone")]
+    #[error("stream drain is gone")]
     DrainClosed,
 
     #[error(transparent)]
@@ -552,51 +470,21 @@ pub enum StreamsError {
 pub enum ProcessorError {
     #[error("application layer processing error: {0}")]
     App(String),
-
-    #[error("groups operation processing error: {0}")]
-    Groups(String),
 }
 
 #[cfg(test)]
 mod tests {
     use futures::future::join_all;
-    use p2panda::groups::GroupsArgs;
-    use p2panda::{Hash, Node, SigningKey, Topic, VerifyingKey};
-    use p2panda_auth::Access;
-    use p2panda_auth::group::{GroupAction, GroupCrdtState, GroupMember};
-    use p2panda_store::groups::GroupsStore;
-    use p2panda_store::{SqliteStore, tx_unwrap};
-    use p2panda_stream::groups::GroupsOperation;
+    use p2panda::{Hash, Node, Topic};
 
     use crate::node::actor::ProcessorEvent;
-    use crate::stores::GROUPS_STATE_ID;
     use crate::testing::setup_tracing;
     use crate::{ChatMessageContent, ChatPayload, Payload};
 
     use super::{Processed, Streams};
 
-    type GroupsState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
-
     fn chat(message: &str) -> Payload {
         Payload::Chat(ChatPayload::Message(ChatMessageContent::text_only(message)))
-    }
-
-    async fn groups_control(
-        store: &SqliteStore,
-        group_id: VerifyingKey,
-        action: GroupAction<VerifyingKey>,
-    ) -> Payload {
-        let groups_y: GroupsState =
-            tx_unwrap!(store, { store.get_groups_state_tx(*GROUPS_STATE_ID).await })
-                .unwrap()
-                .unwrap_or_default();
-
-        let dependencies = groups_y.heads(&[group_id]);
-        Payload::GroupControl(GroupsArgs {
-            group_id,
-            action,
-            dependencies,
-        })
     }
 
     #[tokio::test]
@@ -656,8 +544,8 @@ mod tests {
             .await
             .unwrap();
 
-        let (alice_streams, alice_events_rx) = Streams::new(alice, None);
-        let (bobbi_streams, bobbi_events_rx) = Streams::new(bobbi, None);
+        let (alice_streams, alice_drain) = Streams::new(alice, None);
+        let (bobbi_streams, bobbi_drain) = Streams::new(bobbi, None);
 
         // Both alice and bobbi subscribe to topics a & b.
         for topic in [topic_a, topic_b] {
@@ -679,14 +567,14 @@ mod tests {
         }
 
         // Both alice and bobbi receive the messages on their events stream.
-        for mut events_rx in [alice_events_rx, bobbi_events_rx] {
+        for mut drain in [alice_drain, bobbi_drain] {
             let mut topic_a_message_received = false;
             let mut topic_b_message_received = false;
-            while let Some(ProcessorEvent::App {
+            while let Some(ProcessorEvent::Operation {
                 operation,
                 processed_tx,
                 ..
-            }) = events_rx.recv().await
+            }) = drain.next().await
             {
                 if let Some(processed_tx) = processed_tx {
                     let _ = processed_tx.send(Ok(()));
@@ -708,87 +596,6 @@ mod tests {
 
         for event in join_all(processed_futures).await {
             assert!(event.unwrap().is_completed());
-        }
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn process_groups_control_messages() {
-        setup_tracing(&["dashchat=info", "aliased=warn"], true);
-
-        let network_id = Topic::random();
-        let topic = Topic::random();
-
-        let alice = Node::builder()
-            .network_id(network_id.into())
-            .spawn()
-            .await
-            .unwrap();
-        let bobbi = Node::builder()
-            .network_id(network_id.into())
-            .spawn()
-            .await
-            .unwrap();
-
-        let alice_store = alice.store();
-        let bobbi_store = bobbi.store();
-        let alice_id = alice.id();
-        let bobbi_id = bobbi.id();
-
-        let (alice_streams, alice_events_rx) = Streams::new(alice, None);
-        let (bobbi_streams, bobbi_events_rx) = Streams::new(bobbi, None);
-
-        assert!(alice_streams.subscribe(topic).await.unwrap());
-        assert!(bobbi_streams.subscribe(topic).await.unwrap());
-
-        // Alice publishes a "create" group message.
-        let group_id = SigningKey::generate().verifying_key();
-        let create_group = groups_control(
-            &alice_store,
-            group_id,
-            GroupAction::Create {
-                initial_members: vec![
-                    (GroupMember::Individual(alice_id), Access::manage()),
-                    (GroupMember::Individual(bobbi_id), Access::manage()),
-                ],
-            },
-        )
-        .await;
-
-        let processed_fut = alice_streams
-            .publish(topic, create_group.clone())
-            .await
-            .unwrap();
-
-        // Both receive the message on their events stream.
-        for mut events_rx in [alice_events_rx, bobbi_events_rx] {
-            while let Some(event) = events_rx.recv().await {
-                if let ProcessorEvent::Groups {
-                    operation,
-                    processed_tx,
-                    ..
-                } = event
-                {
-                    if let Some(processed_tx) = processed_tx {
-                        let _ = processed_tx.send(Ok(()));
-                    }
-                    if operation.message() == &create_group {
-                        break;
-                    }
-                }
-            }
-        }
-
-        assert!(processed_fut.await.unwrap().is_completed());
-
-        // And they have also processed the groups control message.
-        for store in [alice_store, bobbi_store] {
-            let groups_y: GroupsState =
-                tx_unwrap!(store, { store.get_groups_state_tx(*GROUPS_STATE_ID).await })
-                    .unwrap()
-                    .unwrap();
-            let members = groups_y.members(group_id);
-            assert!(members.contains(&(alice_id, Access::manage())));
-            assert!(members.contains(&(bobbi_id, Access::manage())));
         }
     }
 }

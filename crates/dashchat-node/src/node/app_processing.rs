@@ -3,21 +3,18 @@ use derive_more::derive::From;
 use futures::StreamExt;
 use p2panda::NodeId;
 use p2panda::operation::Header;
-use p2panda::streams::{ProcessedOperation, Source, StreamEvent};
+use p2panda::streams::{ProcessedOperation, Source};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, warn};
 
 use crate::AckedOp;
 use crate::forward_edit_closure;
-use crate::node::actor::{ProcessorError, ProcessorEvent};
-use crate::node::backlog_monitor::BacklogMonitor;
+use crate::node::actor::{Drain, ProcessedTx, ProcessorError, ProcessorEvent};
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
-
-const BACKLOG_SAMPLE_SECS: u64 = 30;
 
 #[derive(Clone, Debug, Serialize, Deserialize, From)]
 pub enum Notification {
@@ -145,151 +142,73 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().aliased())))]
     pub(super) fn spawn_application_processor_task(
         &self,
-        mut events_rx: mpsc::UnboundedReceiver<ProcessorEvent>,
+        mut drain: Drain,
         mut cancel_rx: mpsc::Receiver<()>,
     ) -> tokio::task::JoinHandle<()> {
         let node = self.clone();
 
-        let handle = tokio::spawn(async move {
-            let node = node.clone();
-            let mut backlog = BacklogMonitor::default();
-            let mut backlog_tick =
-                tokio::time::interval(std::time::Duration::from_secs(BACKLOG_SAMPLE_SECS));
-
+        tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    // Sampled on a timer, so a processor parked inside one event
-                    // (e.g. on a stalled frontend notification channel) still gets its backlog reported.
-                    _ = backlog_tick.tick() => {
-                        backlog.sample(events_rx.len());
-                    }
-                    Some(processor_event) = events_rx.recv() => {
-                        match processor_event {
-                            ProcessorEvent::System(event) => {
-                                match event {
-                                    StreamEvent::ProcessingFailed { error, .. } => warn!("error processing operation: {error:?}"),
-                                    StreamEvent::DecodeFailed { error, .. } => warn!("error decoding operation: {error:?}"),
-                                    StreamEvent::ReplayFailed { error, .. } => warn!("error replaying stream: {error:?}"),
-                                    StreamEvent::AckFailed { error, .. } => warn!("error acking operation: {error:?}"),
-                                    // @TODO: the operation variant should never be included here in the
-                                    // system event as it will either be a groups or application event.
-                                    StreamEvent::Processed {..} => unreachable!(),
-                                    // @TODO: There are more interesting events which could be logged here.
-                                    _ => ()
-                                }
-                            },
-                            ProcessorEvent::Groups { operation, source, processed_tx, error } => {
-                                let topic = operation.topic();
-                                let id = operation.id();
-                                tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "groups operation processing");
-                                if !node.recorded_for_app(&operation).await {
-                                    if let Some(processed_tx) = processed_tx {
-                                        let _ = processed_tx.send(Err(ProcessorError::App(
-                                            "failed to record the operation for the app".into(),
-                                        )));
-                                    }
-                                    continue;
-                                }
-
-                                if let Some(err) = error {
-                                    // @TODO: should consider if this is the desired behavior.
-                                    //
-                                    // An error occurred when processing this groups operation so we skip
-                                    // processing here on the application layer.
-                                    if let Some(processed_tx) = processed_tx {
-                                        if let Err(err) = processed_tx.send(Err(err)) {
-                                            tracing::error!(?err, "processed_tx send error")
-                                        }
-                                    }
-
-                                    continue;
-                                };
-
-                                let result = node.process_groups(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
-
-                                // Signal that the operation has been fully processed. This will
-                                // allow the ProcessFuture to complete. We return a result here so
-                                // that any errors can be reacted to by the waiter.
-                                if let Some(processed_tx) = processed_tx {
-                                    if let Err(err) = processed_tx.send(result.clone()) {
-                                        tracing::error!(?err, "processed_tx send error")
-                                    }
-                                }
-
-                                // Don't continue to acknowledgement if there was an error processing,
-                                // so that the operation will be replayed another time.
-                                if let Err(err) = result {
-                                    tracing::error!(?err, "process groups operation error");
-                                    continue;
-                                };
-
-                                if let Err(err) = node.ack_operation(&operation).await {
-                                    tracing::error!(?err, "failed to acknowledge operation");
-                                }
-                            },
-                            ProcessorEvent::ImportFailed { topic, error } => {
-                                error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
-                                if let Err(err) = node.mailboxes.unsubscribe(topic).await {
-                                    error!(topic = ?topic.aliased(), ?err, "failed to unsubscribe topic after import failure");
-                                }
-                            }
-                            ProcessorEvent::App { operation, source, processed_tx } => {
-                                let topic = operation.topic();
-                                let id = operation.id();
-                                tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
-                                if !node.recorded_for_app(&operation).await {
-                                    if let Some(processed_tx) = processed_tx {
-                                        let _ = processed_tx.send(Err(ProcessorError::App(
-                                            "failed to record the operation for the app".into(),
-                                        )));
-                                    }
-                                    continue;
-                                }
-
-
-                                // Process the operation.
-                                let result = node.process_app(&operation, &source).await.map_err(|err|ProcessorError::App(err.to_string()));
-
-                                // Signal that the operation has been fully processed. This will
-                                // allow the ProcessFuture to complete. We return a result here so
-                                // that any errors can be reacted to by the waiter.
-                                if let Some(processed_tx) = processed_tx {
-                                    if let Err(err) = processed_tx.send(result.clone()) {
-                                        tracing::error!(?err, "processed_tx send error")
-                                    }
-                                }
-
-                                // Don't continue to acknowledgement if there was an error processing,
-                                // so that the operation will be replayed another time.
-                                if let Err(err) = result {
-                                    tracing::error!(?err, "process operation error");
-                                    continue;
-                                }
-
-
-                                if let Err(err) = node.ack_operation(&operation).await {
-                                    tracing::error!(?err, "failed to acknowledge operation");
-                                }
-                            },
+                    event = drain.next() => match event {
+                        Some(ProcessorEvent::Operation { operation, source, processed_tx }) => {
+                            node.process_operation(operation, source, processed_tx).await;
                         }
-
-                    }
+                        Some(ProcessorEvent::ImportFailed { topic, error }) => {
+                            error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
+                            if let Err(err) = node.mailboxes.unsubscribe(topic).await {
+                                error!(topic = ?topic.aliased(), ?err, "failed to unsubscribe topic after import failure");
+                            }
+                        }
+                        None => break,
+                    },
                     Some(()) = cancel_rx.recv() => {
                         tracing::info!("stream processing loop cancelled");
-                        break;
-                    }
-
-                    else => {
-                        // Both stream_rx is closed and streams is exhausted
                         break;
                     }
                 }
             }
 
             tracing::info!("stream processing loop finished");
-        });
+        })
+    }
 
-        handle
+    /// Process one received operation, resolve its `processed_tx` with the result, and acknowledge
+    /// it if processing succeeded so that a failed operation is replayed another time.
+    async fn process_operation(
+        &self,
+        operation: ProcessedOperation<Payload>,
+        source: Source,
+        processed_tx: Option<ProcessedTx>,
+    ) {
+        tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "operation processing");
+
+        let result = if self.recorded_for_app(&operation).await {
+            match operation.message() {
+                Payload::GroupControl(_) => self.process_groups(&operation, &source).await,
+                _ => self.process_app(&operation, &source).await,
+            }
+            .map_err(|err| ProcessorError::App(err.to_string()))
+        } else {
+            Err(ProcessorError::App(
+                "failed to record the operation for the app".into(),
+            ))
+        };
+
+        if let Some(processed_tx) = processed_tx
+            && let Err(err) = processed_tx.send(result.clone())
+        {
+            error!(?err, "processed_tx send error");
+        }
+
+        if let Err(err) = result {
+            error!(?err, "process operation error");
+            return;
+        }
+
+        if let Err(err) = self.ack_operation(&operation).await {
+            error!(?err, "failed to acknowledge operation");
+        }
     }
 
     /// As the push extension, record `operation` for the app to process too,
