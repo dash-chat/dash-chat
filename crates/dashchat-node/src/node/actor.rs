@@ -50,18 +50,10 @@ pub enum ProcessorEvent {
 
 /// Per-topic p2panda streams.
 ///
-/// This is a thin wrapper around the p2panda node API which holds all publish handles. Every
-/// subscription stream is merged into the [`Drain`], which the application processor pulls
-/// operations from, and callers can await that processing for operations they published locally.
-///
-/// Publishing and subscribing are plain methods, so calls never queue behind event processing the
-/// way an actor command would.
-#[derive(Clone)]
+/// This is a thin wrapper around the p2panda node API which holds all publish handles.
+/// Every subscription stream is merged into the [`Drain`], which is created at the same
+/// time as `Streams`.
 pub struct Streams {
-    inner: Arc<Inner>,
-}
-
-struct Inner {
     /// p2panda node.
     node: p2panda::Node,
 
@@ -149,13 +141,11 @@ impl Streams {
         };
 
         let streams = Self {
-            inner: Arc::new(Inner {
-                node,
-                stream_cursor_prefix,
-                publishers: Default::default(),
-                processed,
-                drain_tx,
-            }),
+            node,
+            stream_cursor_prefix,
+            publishers: Default::default(),
+            processed,
+            drain_tx,
         };
 
         (streams, drain)
@@ -171,12 +161,10 @@ impl Streams {
         topic: Topic,
     ) -> Result<(StreamPublisher<Payload>, StreamSubscription<Payload>), CreateStreamError> {
         let cursor_name = self
-            .inner
             .stream_cursor_prefix
             .as_ref()
             .map(|prefix| format!("{prefix}:{topic}"));
-        self.inner
-            .node
+        self.node
             .stream_from(topic, StreamFrom::Frontier, cursor_name)
             .await
     }
@@ -188,7 +176,7 @@ impl Streams {
         &self,
         topic: Topic,
     ) -> Result<(StreamPublisher<Payload>, bool), StreamsError> {
-        let mut publishers = self.inner.publishers.lock().await;
+        let mut publishers = self.publishers.lock().await;
         if let Some(tx) = publishers.get(&topic) {
             return Ok((tx.clone(), false));
         }
@@ -199,8 +187,7 @@ impl Streams {
     }
 
     fn send_to_drain(&self, command: DrainCommand) -> Result<(), StreamsError> {
-        self.inner
-            .drain_tx
+        self.drain_tx
             .send(command)
             .map_err(|_| StreamsError::DrainClosed)
     }
@@ -213,7 +200,7 @@ impl Streams {
 
     #[allow(unused)]
     pub(crate) async fn unsubscribe(&self, topic: Topic) {
-        self.inner.publishers.lock().await.remove(&topic);
+        self.publishers.lock().await.remove(&topic);
         let _ = self.send_to_drain(DrainCommand::Unsubscribe(topic));
     }
 
@@ -245,7 +232,7 @@ impl Streams {
 
         let hash = publish_fut.hash();
         hash.alias_numbered();
-        let processed_rx = self.inner.processed.lock().unwrap().claim(hash);
+        let processed_rx = self.processed.lock().unwrap().claim(hash);
 
         Ok(ProcessFuture::new(hash, publish_fut, processed_rx))
     }
@@ -259,10 +246,10 @@ impl Streams {
         // we already know and leave it undialable while offline.
         let addr = iroh::EndpointAddr::new(p2panda_net::utils::from_verifying_key(node_id))
             .with_relay_url(relay_url);
-        if self.inner.node.node_addr_known(&addr).await? {
+        if self.node.node_addr_known(&addr).await? {
             return Ok(());
         }
-        self.inner.node.insert_node_addr(addr).await?;
+        self.node.insert_node_addr(addr).await?;
         Ok(())
     }
 
@@ -288,13 +275,13 @@ impl Streams {
         &self,
         addr: iroh::EndpointAddr,
     ) -> Result<(), StreamsError> {
-        self.inner.node.insert_node_addr(addr).await?;
+        self.node.insert_node_addr(addr).await?;
         Ok(())
     }
 
     /// Drop every publisher. Still-parked imports are aborted when the [`Drain`] is dropped.
     pub(crate) async fn shutdown(&self) {
-        self.inner.publishers.lock().await.clear();
+        self.publishers.lock().await.clear();
     }
 }
 
@@ -444,7 +431,7 @@ impl Future for ProcessFuture {
     type Output = <PublishFuture as Future>::Output;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.inner.poll_unpin(cx)
+        self.poll_unpin(cx)
     }
 }
 

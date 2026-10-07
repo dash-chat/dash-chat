@@ -228,7 +228,7 @@ pub struct Node {
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
-    streams: Streams,
+    streams: Arc<Streams>,
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -372,6 +372,7 @@ impl Node {
         };
 
         let (streams, drain) = Streams::new(p2panda_node, config.stream_cursor_prefix.clone());
+        let streams = Arc::new(streams);
 
         // === stores === //
 
