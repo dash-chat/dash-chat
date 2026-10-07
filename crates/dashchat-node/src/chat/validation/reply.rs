@@ -24,9 +24,6 @@ pub enum ReplyError {
     #[error("the message being replied to has been deleted")]
     TargetDeleted,
 
-    #[error("a reply must be later than the message it replies to")]
-    TimestampNotLater,
-
     #[error("a reply must target the most recent edit of a message")]
     NotLatestEdit,
 }
@@ -48,7 +45,6 @@ pub struct ValidReply {
 pub struct ReplyCandidate {
     /// The operation the reply points at.
     pub target: Hash,
-    pub timestamp: u64,
     /// `None` when an author is about to publish a reply (all rules are
     /// enforced as a hard error, including targeting the latest known edit).
     /// `Some` when a receiver is validating a reply published by someone else
@@ -63,7 +59,6 @@ impl ReplyCandidate {
     pub fn validate(&self, valid_ops: &ValidChatOps) -> Result<(), ReplyError> {
         self.check_target_repliable(valid_ops)?;
         self.check_target_not_deleted(valid_ops)?;
-        self.check_timestamp_later(valid_ops)?;
         if self.self_hash.is_none() {
             self.check_target_is_latest_edit(valid_ops)?;
         }
@@ -89,16 +84,6 @@ impl ReplyCandidate {
         );
         if deleted {
             return Err(ReplyError::TargetDeleted);
-        }
-        Ok(())
-    }
-
-    fn check_timestamp_later(&self, valid_ops: &ValidChatOps) -> Result<(), ReplyError> {
-        let target = valid_ops
-            .get(&self.target)
-            .ok_or(ReplyError::TargetNotFound)?;
-        if self.timestamp <= target.timestamp {
-            return Err(ReplyError::TimestampNotLater);
         }
         Ok(())
     }
@@ -175,7 +160,6 @@ mod tests {
         assert_eq!(
             ReplyCandidate {
                 target: hash(1),
-                timestamp: 2000,
                 self_hash: None,
             }
             .validate(&ops),
@@ -193,7 +177,6 @@ mod tests {
         assert_eq!(
             ReplyCandidate {
                 target: hash(2),
-                timestamp: 3000,
                 self_hash: None,
             }
             .validate(&ops),
@@ -208,7 +191,6 @@ mod tests {
         assert_eq!(
             ReplyCandidate {
                 target: hash(9),
-                timestamp: 2000,
                 self_hash: None,
             }
             .validate(&ops),
@@ -223,7 +205,6 @@ mod tests {
         assert_eq!(
             ReplyCandidate {
                 target: hash(1),
-                timestamp: 2000,
                 self_hash: None,
             }
             .validate(&ops),
@@ -241,7 +222,6 @@ mod tests {
         assert_eq!(
             ReplyCandidate {
                 target: hash(2),
-                timestamp: 3000,
                 self_hash: None,
             }
             .validate(&ops),
@@ -260,44 +240,10 @@ mod tests {
         assert_eq!(
             ReplyCandidate {
                 target: hash(1),
-                timestamp: 3000,
                 self_hash: None,
             }
             .validate(&ops),
             Err(ReplyError::TargetDeleted)
-        );
-    }
-
-    #[test]
-    fn reply_must_be_later_than_target() {
-        let alice = device(1);
-        let ops = ValidChatOps::new([(hash(1), message(alice, 1000, 0))]);
-        assert_eq!(
-            ReplyCandidate {
-                target: hash(1),
-                timestamp: 1000,
-                self_hash: None,
-            }
-            .validate(&ops),
-            Err(ReplyError::TimestampNotLater)
-        );
-        assert_eq!(
-            ReplyCandidate {
-                target: hash(1),
-                timestamp: 999,
-                self_hash: None,
-            }
-            .validate(&ops),
-            Err(ReplyError::TimestampNotLater)
-        );
-        assert_eq!(
-            ReplyCandidate {
-                target: hash(1),
-                timestamp: 1001,
-                self_hash: None,
-            }
-            .validate(&ops),
-            Ok(())
         );
     }
 
@@ -313,7 +259,6 @@ mod tests {
         assert_eq!(
             ReplyCandidate {
                 target: hash(1),
-                timestamp: 3000,
                 self_hash: None,
             }
             .validate(&ops),
@@ -333,7 +278,6 @@ mod tests {
         assert_eq!(
             ReplyCandidate {
                 target: hash(1),
-                timestamp: 3000,
                 self_hash: Some(hash(3)),
             }
             .validate(&ops),

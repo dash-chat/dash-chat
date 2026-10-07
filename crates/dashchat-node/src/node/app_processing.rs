@@ -747,7 +747,6 @@ impl Node {
                     let valid_ops = self.valid_chat_ops(chat_id).await?;
                     let candidate = crate::chat::ReplyCandidate {
                         target,
-                        timestamp: operation.processed().header().timestamp.into(),
                         self_hash: Some(hash),
                     };
                     if let Err(err) = candidate.validate(&valid_ops) {
