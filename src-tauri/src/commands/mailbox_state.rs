@@ -3,7 +3,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use dashchat_node::{topic::TopicId, DeviceId, Node};
-use mailbox_client::{manager::MailboxConnectionState, sync_tracker::MailboxSyncState, MailboxId};
+use mailbox_client::{MailboxConnectionState, MailboxSyncState, MailboxId};
 use serde::Serialize;
 use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
