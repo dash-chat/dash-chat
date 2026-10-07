@@ -4,10 +4,10 @@ use crate::blobs::unfetched_blobs::reconcile_unfetched_blobs;
 use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::connection_health::{MailboxConnectionState, MailboxesConfig, SyncStatus};
 use crate::polling::PollGuard;
+use crate::registry::Registry;
 use crate::store::MailboxStore;
 use crate::sync::SyncCoordinator;
 use crate::sync_tracker::MailboxSyncTracker;
-use crate::registry::Registry;
 use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 
@@ -2094,10 +2094,10 @@ mod tests {
             // degraded clients never naturally transition to Stopped
             // during the test; stopped clients are forced manually.
             degraded_threshold: 1,
-            stopped_threshold: 1000,
+            stopped_threshold: 50,
         };
 
-        let mgr = spawn_test_mailboxes(config).await;
+        let mgr = spawn_test_mailboxes(config.clone()).await;
 
         // Subscribe to a topic so poll_mailbox actually calls sync_topics
         let _rx = mgr.subscribe(0u8).await.unwrap();
@@ -2163,6 +2163,7 @@ mod tests {
                 t.connection_state.send_modify(|s| {
                     s.status = SyncStatus::Degraded;
                     s.consecutive_errors = 1; // at degraded_threshold
+                    s.reschedule(&config);
                 });
             }
             for id in &stopped_ids {
@@ -2170,6 +2171,7 @@ mod tests {
                 t.connection_state.send_modify(|s| {
                     s.status = SyncStatus::Stopped;
                     s.consecutive_errors = 100; // at stopped_threshold
+                    s.reschedule(&config);
                 });
             }
         }
