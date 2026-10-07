@@ -1,11 +1,16 @@
 pub mod backends;
+pub mod blobs;
 pub mod manager;
 pub mod store;
 pub mod sync_tracker;
 
+pub use blobs::unfetched_blobs::BlobSource;
+pub use blobs::upload_tracker::BlobUploadLifecycle;
 pub use mailbox_server::RegisterPeerRequest;
 
-#[cfg(test)]
+/// Test helpers and fixtures. Available outside `#[cfg(test)]` so dependent
+/// crates' tests can reuse utilities like `noop_upload_lifecycle`.
+#[cfg(feature = "testing")]
 pub mod testing;
 
 use std::{
@@ -70,6 +75,20 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     /// default no-op covers in-memory/test mailboxes that have no server to
     /// receive reports.
     async fn report(&self, _request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    /// Push unfetched blob bytes to the mailbox, best-effort.
+    ///
+    /// The default no-op covers in-memory/test mailboxes that do not store
+    /// blobs. Implementations should announce the hashes to the mailbox and
+    /// stream the bytes for the ones it lacks.
+    async fn push_blobs(
+        &self,
+        _hashes: Vec<iroh_blobs::Hash>,
+        _reader: Arc<dyn BlobReader>,
+        _tracker: Arc<dyn UnfetchedBlobTracker>,
+    ) -> Result<(), anyhow::Error> {
         Ok(())
     }
 }

@@ -24,13 +24,15 @@ bytes = { workspace = true }
 reporting = { workspace = true }
 # TODO: pull out the toy mailbox request/response types so they can be
 #       independently depended upon
-mailbox-server = { path = "../mailbox-server" }
+mailbox-server = { path = "../mailbox-server", default-features = false }
 p2panda-core = { workspace = true }
 iroh = { version = "1.0.0", default-features = false, features = ["tls-ring"] }
 iroh-blobs = "0.103.0"
 
 [dev-dependencies]
 axum = { version = "0.8", features = ["json"] }
+mailbox-server = { path = "../mailbox-server", features = ["test_utils"] }
+mailbox-client = { path = ".", features = ["testing"] }
 pretty_assertions = "1.4.1"
 tempfile = "3.24"
 tokio = { version = "1.43.0", features = ["test-util"] }
@@ -38,3 +40,4 @@ tokio = { version = "1.43.0", features = ["test-util"] }
 
 [features]
 e2e-test-ca = []
+testing = []

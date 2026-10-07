@@ -1180,10 +1180,8 @@ impl Node {
 
         if let Some(target) = reply {
             let valid_ops = self.valid_chat_ops(chat_id).await?;
-            let now = u64::from(p2panda_core::Timestamp::now());
             ReplyCandidate {
                 target,
-                timestamp: now,
                 self_hash: None,
             }
             .validate(&valid_ops)?;
