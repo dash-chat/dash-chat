@@ -88,6 +88,9 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.local_store.register_topic_as_subscribed(topic).await?;
         self.initialize_topic(*topic).await?;
+        // What the topic already holds is waiting in the mailbox: fetch it
+        // now rather than at the next scheduled poll.
+        self.mailboxes.request_sync(Some((*topic).into())).await;
 
         Ok(())
     }
