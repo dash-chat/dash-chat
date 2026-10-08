@@ -7,6 +7,7 @@ use dashchat_node::{testing::*, *};
 
 use maplit::{btreemap, btreeset};
 use p2panda_auth::Access;
+use p2panda_auth::group::{GroupAction, GroupMember};
 use std::collections::BTreeSet;
 
 fn format_members(members: &BTreeSet<(DeviceId, Access)>, labels: &[(&DeviceId, &str)]) -> String {
@@ -746,4 +747,79 @@ async fn test_group_events() {
         .await
         .expect("bobbi is told which agent the added device belongs to");
     assert_eq!(introduced, cammy.agent_id());
+}
+
+async fn next_invitation(node: &TestNode) -> (ChatId, p2panda::Hash) {
+    node.watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n.op()?.payload.as_ref()? {
+                Payload::Chat(ChatPayload::JoinGroup {
+                    chat_id,
+                    add_member_operation_hash,
+                }) => Some((*chat_id, *add_member_operation_hash)),
+                _ => None,
+            },
+        )
+        .await
+        .expect("an invitation arrives")
+}
+
+async fn adds_member(node: &TestNode, operation: p2panda::Hash, member: DeviceId) -> bool {
+    let operation = node
+        .op_store
+        .get_operation(&operation)
+        .await
+        .unwrap()
+        .unwrap();
+    let is_member = |m: &GroupMember<p2panda::VerifyingKey>| matches!(m, GroupMember::Individual(pk) if DeviceId::from(*pk) == member);
+    let args = operation.header.extensions.group_args().unwrap();
+    match &args.action {
+        GroupAction::Create { initial_members } => {
+            initial_members.iter().any(|(m, _)| is_member(m))
+        }
+        GroupAction::Add { member, .. } => is_member(member),
+        _ => false,
+    }
+}
+
+/// After a removal the invitee still holds the operation that added it the
+/// first time, so an invitation names the one it is about.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_invitation_names_the_operation_adding_the_invitee() {
+    setup();
+
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => Access::write(),
+        })
+        .await
+        .unwrap();
+    let (invited_to, create) = next_invitation(&bobbi).await;
+    assert_eq!(invited_to, chat_id);
+    assert!(adds_member(&alice, create, bobbi.device_id()).await);
+
+    alice
+        .remove_group_member(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+    alice
+        .add_group_member(chat_id, *bobbi.device_id(), Access::write())
+        .await
+        .unwrap();
+    let (invited_to, re_add) = next_invitation(&bobbi).await;
+    assert_eq!(invited_to, chat_id);
+    assert_ne!(re_add, create);
+    assert!(adds_member(&alice, re_add, bobbi.device_id()).await);
 }
