@@ -5,7 +5,6 @@ use std::time::Duration;
 use backon::{ExponentialBuilder, Retryable};
 use dashchat_node::topic::TopicId;
 use dashchat_node::Node;
-use dashchat_utils::WakeEarlyOn;
 use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::types::{TopicId as PushTopicId, VerifyingKey};
 use tauri::{AppHandle, EventId, Listener};
@@ -107,13 +106,15 @@ async fn keep_topics_subscribed(
                 topics_on_server.as_ref(),
             )
         };
-        let result = update_subscriptions
-            .retry(ExponentialBuilder::new().with_jitter().without_max_times())
-            .wake_early_on(changed.clone())
-            .notify(|err, delay| {
-                log::warn!("Failed to update push notification subscriptions, retrying in {delay:?}: {err:?}")
-            })
-            .await;
+        let result = tokio::select! {
+            result = update_subscriptions
+                .retry(ExponentialBuilder::new().with_jitter().without_max_times())
+                .notify(|err, delay| {
+                    log::warn!("Failed to update push notification subscriptions, retrying in {delay:?}: {err:?}")
+                }) => result,
+            // A change restarts the attempt at once, not after its backoff.
+            () = changed.notified() => continue,
+        };
         match result {
             Ok(topics) => topics_on_server = Some(topics),
             Err(err) => log::warn!("Gave up updating push notification subscriptions: {err:?}"),

@@ -5,7 +5,6 @@ mod derive_watch;
 pub mod endpoint;
 mod fetch_loop;
 mod retry_with_backoff;
-mod wake_early_on;
 
 #[cfg(feature = "cbor")]
 pub mod cbor;
@@ -13,7 +12,6 @@ pub mod cbor;
 pub use derive_watch::derive_watch;
 pub use fetch_loop::{fetch_loop, FetchConfig, FetchPool};
 pub use retry_with_backoff::retry_with_backoff;
-pub use wake_early_on::{SleepUntilNotified, WakeEarlyOn};
 
 /// A position in an append-only log, shared by every layer that handles one:
 /// p2panda operations, the op store, and the mailbox protocol.
