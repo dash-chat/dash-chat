@@ -20,26 +20,42 @@ impl<Item: MailboxItem> Registry<Item> {
         }
     }
 
-    pub async fn register(&self, id: MailboxId, mailbox: TrackedMailbox<Item>) {
+    /// Looks up an existing mailbox under `id`; if one is present, `f` is called
+    /// with the existing handle and the returned `TrackedMailbox` is ignored.
+    /// If no mailbox is present, `f` is called with a fresh `TrackedMailbox`
+    /// built from `create`, and the result is inserted under `id`.
+    ///
+    /// Returns the mailbox stored under `id` after the operation, and whether it
+    /// was freshly inserted.
+    pub async fn get_or_insert_with<F>(
+        &self,
+        id: MailboxId,
+        create: F,
+    ) -> (Arc<TrackedMailbox<Item>>, bool)
+    where
+        F: FnOnce() -> TrackedMailbox<Item>,
+    {
         let mut map = self.mailboxes.lock().await;
-        let arc_mailbox = Arc::new(mailbox);
-        map.insert(id.clone(), arc_mailbox);
-
-        let mut active = BTreeSet::new();
-        for (mid, _) in map.iter() {
-            active.insert(mid.clone());
+        if let Some(existing) = map.get(&id).cloned() {
+            return (existing, false);
         }
-        let _ = self.active_mailbox_ids_tx.send_replace(active);
+
+        let mailbox = Arc::new(create());
+        map.insert(id.clone(), mailbox.clone());
+        self.send_active_ids(&map);
+        (mailbox, true)
     }
 
-    pub async fn unregister(&self, id: &MailboxId) {
+    /// Removes the mailbox for `id`, if any.
+    ///
+    /// Returns `true` when an entry was removed.
+    pub async fn unregister(&self, id: &MailboxId) -> bool {
         let mut map = self.mailboxes.lock().await;
         if map.remove(id).is_some() {
-            let mut active = BTreeSet::new();
-            for (mid, _) in map.iter() {
-                active.insert(mid.clone());
-            }
-            let _ = self.active_mailbox_ids_tx.send_replace(active);
+            self.send_active_ids(&map);
+            true
+        } else {
+            false
         }
     }
 
@@ -64,5 +80,10 @@ impl<Item: MailboxItem> Registry<Item> {
 
     pub fn active_ids_rx(&self) -> watch::Receiver<BTreeSet<MailboxId>> {
         self.active_mailbox_ids_tx.subscribe()
+    }
+
+    fn send_active_ids(&self, map: &BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>) {
+        let active: BTreeSet<MailboxId> = map.keys().cloned().collect();
+        let _ = self.active_mailbox_ids_tx.send_replace(active);
     }
 }
