@@ -89,6 +89,7 @@ pub fn run() {
                 })
                 .on_resume(|app| async move {
                     use tauri::Manager;
+                    notifications::disable_notifications_if_permission_revoked(&app).await;
                     if let Some(app_node_manager) = app
                         .try_state::<node::AppNodeManager>()
                         .map(|s| s.inner().clone())

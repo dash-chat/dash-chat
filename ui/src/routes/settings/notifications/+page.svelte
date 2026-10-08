@@ -1,3 +1,10 @@
+<script module lang="ts">
+	// Whether the user has already refused the OS prompt once this app run. The
+	// prompt returns 'denied' both when it was shown-and-declined and when it's
+	// permanently suppressed, so this is how we tell them apart.
+	let deniedOnce = false;
+</script>
+
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
@@ -17,6 +24,7 @@
 	import type { SettingsStore } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
 	import { ensureNotificationPermission } from '$lib/utils/notifications';
+	import PermissionSettingsSheet from '$lib/components/PermissionSettingsSheet.svelte';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
@@ -26,16 +34,26 @@
 
 	let toggling = $state(false);
 	let refusedEnables = $state(0);
+	let showSettingsSheet = $state(false);
 
 	async function enable() {
 		if (toggling) return;
 		toggling = true;
 		try {
 			if (await ensureNotificationPermission()) {
+				deniedOnce = false;
 				await settingsStore.setNotificationsEnabled(true);
 			} else {
-				showToast(m.notificationsPermissionDenied(), 'error');
 				refusedEnables += 1;
+				// On the first refusal the OS dialog was shown and the next attempt
+				// re-prompts, so a toast is enough. Once permanently denied the
+				// dialog no longer shows, so guide the user to the app's settings.
+				if (deniedOnce) {
+					showSettingsSheet = true;
+				} else {
+					deniedOnce = true;
+					showToast(m.notificationsPermissionDenied(), 'error');
+				}
 			}
 		} catch (e) {
 			console.error('Failed to enable notifications:', e);
@@ -94,3 +112,14 @@
 		</div>
 	</div>
 </Page>
+
+<PermissionSettingsSheet
+	bind:opened={showSettingsSheet}
+	title={m.notificationsSettingsTitle()}
+	subtitle={m.notificationsSettingsSubtitle()}
+	steps={[
+		m.notificationsSettingsStep1(),
+		m.notificationsSettingsStep2(),
+		m.notificationsSettingsStep3(),
+	]}
+/>

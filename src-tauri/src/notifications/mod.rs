@@ -28,18 +28,37 @@ pub(crate) async fn run_plugin_call<T: Send + 'static>(
         .context("notification plugin call panicked")
 }
 
-/// Returns `true` iff the user has both enabled notifications in app settings
-/// and granted OS-level permission. On desktop the permission state is always
-/// `Granted` so this collapses to the settings check.
-pub(crate) async fn are_notifications_enabled(handle: &AppHandle) -> bool {
-    if !crate::settings::load_settings(handle).notifications_enabled {
-        return false;
+/// The persisted setting alone: it is only turned on once the OS permission is
+/// granted, and [`disable_notifications_if_permission_revoked`] turns it off
+/// again when that permission goes away.
+pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
+    crate::settings::load_settings(handle).notifications_enabled
+}
+
+/// Turns the notifications setting off when the OS permission is no longer
+/// granted, so that the setting keeps meaning what the toggle made it mean.
+/// Run where the app can ask the OS: at start and on every return to the
+/// foreground.
+pub(crate) async fn disable_notifications_if_permission_revoked(handle: &AppHandle) {
+    if !are_notifications_enabled(handle) {
+        return;
     }
     let h = handle.clone();
-    matches!(
+    let granted = matches!(
         run_plugin_call(move || h.notification().permission_state()).await,
         Ok(Ok(PermissionState::Granted))
-    )
+    );
+    if granted {
+        return;
+    }
+    log::info!("The notification permission was revoked: turning notifications off.");
+    if let Err(err) = crate::settings::set_setting(
+        handle,
+        "notifications_enabled".to_string(),
+        serde_json::Value::Bool(false),
+    ) {
+        log::error!("Failed to turn notifications off: {err:?}");
+    }
 }
 
 /// Show a system notification for an operation that arrived through the
@@ -50,7 +69,7 @@ pub(crate) async fn show_sync_notification(
     app_handle: &AppHandle,
     notification: &dashchat_node::OpNotification,
 ) {
-    if !are_notifications_enabled(app_handle).await {
+    if !are_notifications_enabled(app_handle) {
         return;
     }
 

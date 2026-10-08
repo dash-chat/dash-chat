@@ -6,6 +6,7 @@ export class NotificationsPage extends TestHelper {
 	toggle = this.el(tid('notifications-toggle'));
 	toggleSwitch = this.el(`${tid('notifications-toggle')} label`);
 	toggleInput = this.el(`${tid('notifications-toggle')} input`);
+	settingsSheet = this.el(tid('permission-settings-sheet'));
 
 	async ready() {
 		await this.toggle.waitForExist();

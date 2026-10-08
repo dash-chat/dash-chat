@@ -130,6 +130,8 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     let app_node_manager = crate::node::AppNodeManager::spawn(&app_handle, local_data_path).await?;
     app_handle.manage(app_node_manager);
 
+    crate::notifications::disable_notifications_if_permission_revoked(&app_handle).await;
+
     // Start the local mailbox server after the node is managed so it can
     // derive a stable mDNS instance name from the device id.
     #[cfg(not(mobile))]
