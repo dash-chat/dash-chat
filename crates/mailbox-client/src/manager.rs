@@ -212,26 +212,30 @@ where
             }
         }
 
-        // Seed a fresh registration from the last session's judged status so a
-        // mailbox that was backed off before a restart (or an iOS node rebuild)
-        // doesn't restart aggressive polling; its immediate first poll re-judges
-        // it. Read before taking the mailboxes lock (no DB I/O under it), and
-        // only when not already tracked (re-registration keeps its live state).
-        // If a concurrent unregister lands in between, the fallback to Active
-        // matches pre-seeding behavior and the first poll corrects it.
-        let seeded_status = if self.is_tracked(&id).await {
-            SyncStatus::Active
-        } else {
-            match self.sync_tracker.get_status(&id).await {
-                Ok(status) => status.unwrap_or(SyncStatus::Active),
-                Err(err) => {
-                    tracing::error!(?err, mailbox = %id, "failed to load persisted mailbox status");
-                    SyncStatus::Active
-                }
+        // Determine the status to seed a fresh registration with. We load the
+        // persisted status before taking the registry lock so no DB I/O blocks
+        // other registry operations. The atomic compound operation below is
+        // responsible for deciding whether the mailbox already exists.
+        let seeded_status = match self.sync_tracker.get_status(&id).await {
+            Ok(status) => status.unwrap_or(SyncStatus::Active),
+            Err(err) => {
+                tracing::error!(?err, mailbox = %id, "failed to load persisted mailbox status");
+                SyncStatus::Active
             }
         };
 
-        if let Some(tm) = self.registry.get(&id).await {
+        let (tm, inserted) = self
+            .registry
+            .get_or_insert_with(id.clone(), || {
+                TrackedMailbox::new(new_client.clone(), self.config.clone(), seeded_status)
+            })
+            .await;
+
+        if inserted {
+            // Fresh registration: the new TrackedMailbox already owns
+            // `new_client` and starts from `seeded_status`.
+            self.nudge_poll_loop();
+        } else {
             // Re-registering the same id (e.g. mDNS re-resolution producing a
             // new URL): swap the client in place and reset any Stopped/Degraded
             // backoff. Keeping the existing TrackedMailbox preserves its
@@ -242,21 +246,17 @@ where
             tm.replace_client(new_client).await;
             self.persist_status_change(&id, &tm, |tm| tm.wakeup()).await;
             self.nudge_poll_loop();
-        } else {
-            self.registry
-                .register(
-                    id.clone(),
-                    TrackedMailbox::new(new_client, self.config.clone(), seeded_status),
-                )
-                .await;
-            self.nudge_poll_loop();
         }
     }
 
     /// Returns `true` if a mailbox with the given id was removed.
     pub async fn unregister(&self, id: &MailboxId) -> bool {
-        if self.registry.get(id).await.is_some() {
-            self.registry.unregister(id).await;
+        // The single compound op removes the entry and returns whether it
+        // existed. Only then do we clear the persisted status, so a concurrent
+        // register cannot observe the removal and recreate a mailbox with the
+        // old persisted status.
+        let removed = self.registry.unregister(id).await;
+        if removed {
             // An unregistered mailbox only comes back with fresh evidence (an
             // mDNS re-announcement), so it earns a fresh Active start with the
             // full backoff runway instead of a status seeded from history —
@@ -265,10 +265,8 @@ where
             if let Err(err) = self.sync_tracker.clear_status(id).await {
                 tracing::error!(?err, mailbox = %id, "failed to clear mailbox status");
             }
-            true
-        } else {
-            false
         }
+        removed
     }
 
     pub async fn clear(&self) {
