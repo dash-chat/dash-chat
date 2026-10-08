@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+backon = { version = "1.6", default-features = false, features = ["std", "tokio-sleep"] }
 iroh = { workspace = true, optional = true }
 iroh-blobs = { workspace = true, optional = true }
 futures = "0.3"

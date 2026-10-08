@@ -2084,6 +2084,7 @@ dependencies = [
  "anyhow",
  "app_dirs2",
  "async-trait",
+ "backon",
  "chrono",
  "dashchat-node",
  "dashchat-utils",
@@ -2115,6 +2116,7 @@ dependencies = [
  "p2panda-core",
  "panic-policy",
  "push-notifications-client",
+ "push-notifications-server",
  "regex",
  "rustls 0.23.45",
  "sentry-types 0.42.0",
@@ -2233,6 +2235,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "backon",
  "ciborium",
  "futures",
  "iroh",
@@ -8487,6 +8490,7 @@ name = "push-notifications-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dashchat-utils",
  "derive_more 2.1.1",
  "reqwest 0.12.28",
  "serde",

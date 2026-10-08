@@ -221,6 +221,10 @@ async fn handle_push_notification(
     let topic_id = TopicId::try_from(topic_bytes)?;
 
     let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
+    if !crate::settings::load_settings_from_filesystem(&filesystem).notifications_enabled {
+        log::info!("Notifications are disabled: ignoring the push notification.");
+        return Ok(None);
+    }
     let app_data_dir = filesystem.app_data_dir();
 
     log::info!(
