@@ -40,10 +40,10 @@ describe('Notifications after allowing them during profile creation', () => {
 			await agent.tr('notificationsPermissionDenied'),
 		);
 		await expect(agent.notificationsPage.toggleInput).not.toBeSelected();
-		await expect(agent.notificationsPage.settingsSheet).not.toBeDisplayed();
+		expect(await agent.notificationsPage.isSettingsSheetOpen()).toBe(false);
 
 		await agent.notificationsPage.toggleSwitch.click();
-		await expect(agent.notificationsPage.settingsSheet).toBeDisplayed();
+		await agent.waitUntil(() => agent.notificationsPage.isSettingsSheetOpen());
 		await expect(agent.notificationsPage.toggleInput).not.toBeSelected();
 	});
 });
