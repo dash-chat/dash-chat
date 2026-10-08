@@ -28,9 +28,10 @@ pub(crate) async fn run_plugin_call<T: Send + 'static>(
         .context("notification plugin call panicked")
 }
 
-/// The persisted setting alone: it is only turned on once the OS permission is
-/// granted, and [`disable_notifications_if_permission_revoked`] turns it off
-/// again when that permission goes away.
+/// The persisted setting alone. On mobile it is only turned on once the OS
+/// permission is granted, and [`disable_notifications_if_permission_revoked`]
+/// turns it off again when that permission goes away; on desktop there is no
+/// permission and it defaults to on.
 pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
     crate::settings::load_settings(handle).notifications_enabled
 }
@@ -38,20 +39,26 @@ pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
 /// Turns the notifications setting off when the OS permission is no longer
 /// granted, so that the setting keeps meaning what the toggle made it mean.
 /// Run where the app can ask the OS: at start and on every return to the
-/// foreground.
+/// foreground. A failed query changes nothing: only an answer may.
 pub(crate) async fn disable_notifications_if_permission_revoked(handle: &AppHandle) {
     if !are_notifications_enabled(handle) {
         return;
     }
     let h = handle.clone();
-    let granted = matches!(
-        run_plugin_call(move || h.notification().permission_state()).await,
-        Ok(Ok(PermissionState::Granted))
-    );
-    if granted {
-        return;
+    match run_plugin_call(move || h.notification().permission_state()).await {
+        Ok(Ok(PermissionState::Granted)) => return,
+        Ok(Ok(state)) => {
+            log::info!("The notification permission is {state:?}: turning notifications off.")
+        }
+        Ok(Err(err)) => {
+            log::error!("Failed to read the notification permission state: {err:?}");
+            return;
+        }
+        Err(err) => {
+            log::error!("The notification permission query failed: {err:?}");
+            return;
+        }
     }
-    log::info!("The notification permission was revoked: turning notifications off.");
     if let Err(err) = crate::settings::set_setting(
         handle,
         "notifications_enabled".to_string(),
