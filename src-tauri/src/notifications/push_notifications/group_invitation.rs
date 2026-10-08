@@ -7,9 +7,11 @@
 use dashchat_node::{ChatId, Node};
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda_core::{Hash, VerifyingKey};
+use push_notifications_client::types::TopicId as PushTopicId;
 use tauri_plugin_notification::NotificationData;
 
 use super::receive_push_notification::{OP_POLL_INTERVAL, RECONNECT_INTERVAL};
+use crate::node::node_slot;
 use crate::notifications;
 
 /// The notification for `join_group`, and the operation to record it against.
@@ -105,4 +107,27 @@ async fn wait_for_group_name(node: &Node, chat_id: ChatId, deadline: tokio::time
 fn is_on_group_by_inviter(operation: &Operation, chat_id: ChatId, inviter: VerifyingKey) -> bool {
     operation.header.verifying_key == inviter
         && operation.header.extensions.log_id() == LogId::from_topic(*chat_id)
+}
+
+/// Nothing runs once the push handler returns, so the group's messages only
+/// wake this device if its topic reaches the push server before then.
+pub async fn wait_until_group_is_subscribed_on_push_server(
+    chat_id: ChatId,
+    deadline: tokio::time::Instant,
+) {
+    let Some(app_node) = node_slot::current_node().await else {
+        return;
+    };
+    let group_topic = PushTopicId::from(chat_id.to_hex());
+    let mut topics_on_server = app_node
+        .push_notifications_topic_subscriptions
+        .topics_on_server
+        .clone();
+    let subscribed = topics_on_server.wait_for(|topics| topics.contains(&group_topic));
+    if tokio::time::timeout_at(deadline, subscribed).await.is_err() {
+        log::warn!(
+            "Group {} was not subscribed on the push server in time",
+            chat_id.to_hex()
+        );
+    }
 }
