@@ -61,10 +61,10 @@ pub struct Streams {
     /// can't open it twice.
     publishers: tokio::sync::Mutex<HashMap<Topic, StreamPublisher<Payload>>>,
 
-    /// Senders for locally published operations awaiting application processing, keyed by
-    /// operation hash. `publish` registers each one before the operation enters p2panda's
-    /// pipeline, so the drain always finds it when the operation comes out of the subscription.
-    processed: Arc<std::sync::Mutex<HashMap<Hash, ProcessedTx>>>,
+    /// Senders for locally authored operations awaiting application processing, keyed by
+    /// operation hash. When the operation has been fully processed, we remove the sender from
+    /// the map and fire its signal.
+    in_process: Arc<std::sync::Mutex<HashMap<Hash, ProcessedTx>>>,
 
     drain_tx: mpsc::UnboundedSender<DrainCommand>,
 }
@@ -95,7 +95,7 @@ impl Streams {
             node,
             stream_cursor_prefix,
             publishers: Default::default(),
-            processed,
+            in_process: processed,
             drain_tx,
         };
 
@@ -181,7 +181,7 @@ impl Streams {
         let mut registered = None;
         let published = tx
             .publish_with(payload, |hash| {
-                self.processed.lock().unwrap().insert(hash, processed_tx);
+                self.in_process.lock().unwrap().insert(hash, processed_tx);
                 registered = Some(hash);
             })
             .await;
@@ -190,7 +190,7 @@ impl Streams {
             Ok(publish_fut) => publish_fut,
             Err(err) => {
                 if let Some(hash) = registered {
-                    self.processed.lock().unwrap().remove(&hash);
+                    self.in_process.lock().unwrap().remove(&hash);
                 }
                 return Err(err.into());
             }
