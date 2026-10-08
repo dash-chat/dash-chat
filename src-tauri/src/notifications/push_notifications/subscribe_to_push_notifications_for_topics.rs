@@ -97,22 +97,17 @@ async fn keep_topics_subscribed(
     loop {
         let update_subscriptions =
             || update_subscriptions(&node, &client, topics_on_server.as_ref());
-        let result = tokio::select! {
-            result = update_subscriptions
+        let topics = tokio::select! {
+            Ok(topics) = update_subscriptions
                 .retry(ExponentialBuilder::new().with_jitter().without_max_times())
                 .notify(|err, delay| {
                     log::warn!("Failed to update push notification subscriptions, retrying in {delay:?}: {err:?}")
-                }) => result,
+                }) => topics,
             // A change restarts the attempt at once, not after its backoff.
             () = changed.notified() => continue,
         };
-        match result {
-            Ok(topics) => {
-                topics_on_server_tx.send_replace(topics.clone());
-                topics_on_server = Some(topics);
-            }
-            Err(err) => log::warn!("Gave up updating push notification subscriptions: {err:?}"),
-        }
+        topics_on_server_tx.send_replace(topics.clone());
+        topics_on_server = Some(topics);
         tokio::select! {
             () = changed.notified() => {}
             Some(_) = new_topics.recv() => {}
@@ -206,6 +201,7 @@ mod tests {
             .add_topic_subscriptions(&device(&node), &HashSet::from([stale_topic.clone()]))
             .await
             .unwrap();
+        let expected = push_notifications_topics(&node).await.unwrap();
 
         let _subscriptions = SubscribeToPushNotificationsForTopicsTask::spawn(
             node.clone(),
@@ -214,7 +210,6 @@ mod tests {
             new_topics,
         );
 
-        let expected = push_notifications_topics(&node).await.unwrap();
         eventually("the server has exactly the node's topics", || async {
             server.db.topics_of(&device(&node)) == expected
         })
@@ -287,9 +282,18 @@ mod tests {
     async fn retries_until_the_server_is_reachable() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
-        drop(listener);
+        // Hangs up on every request until the server takes the listener over,
+        // so the port is never free for another test to take.
+        let hanging_up = tokio::spawn(async move {
+            let until = tokio::time::Instant::now() + Duration::from_millis(500);
+            while let Ok(Ok((stream, _))) = tokio::time::timeout_at(until, listener.accept()).await
+            {
+                drop(stream);
+            }
+            listener
+        });
         let (node, new_topics, _dir) = start_node().await;
-        let client = PushNotificationsClient::new(url.clone()).unwrap();
+        let client = PushNotificationsClient::new(url).unwrap();
         let _subscriptions = SubscribeToPushNotificationsForTopicsTask::spawn(
             node.clone(),
             None,
@@ -297,15 +301,46 @@ mod tests {
             new_topics,
         );
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        let server = TestPushServer::start_at(
-            TcpListener::bind(url.trim_start_matches("http://"))
-                .await
-                .unwrap(),
-        )
-        .await;
+        let server = TestPushServer::start_at(hanging_up.await.unwrap()).await;
 
         wait_until_synced(&server, &node).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn subscribes_to_nothing_while_notifications_are_disabled() {
+        let server = TestPushServer::start().await;
+        let (node, new_topics, dir) = start_node().await;
+        let settings = crate::settings::Settings {
+            notifications_enabled: false,
+            ..Default::default()
+        };
+        std::fs::write(
+            dir.path().join(crate::filesystem::SETTINGS_FILE_NAME),
+            serde_json::to_string(&settings).unwrap(),
+        )
+        .unwrap();
+        let stale_topic = PushTopicId::from("stale".to_string());
+        server
+            .db
+            .add_topic_subscriptions(&device(&node), &HashSet::from([stale_topic]))
+            .await
+            .unwrap();
+
+        let _subscriptions = SubscribeToPushNotificationsForTopicsTask::spawn(
+            node.clone(),
+            None,
+            server.client(),
+            new_topics,
+        );
+
+        eventually("the server has no topics for the device", || async {
+            server.db.topics_of(&device(&node)).is_empty()
+        })
+        .await;
+        assert_eq!(
+            server.db.requests().last(),
+            Some(&SubscriptionRequest::Replace(HashSet::new()))
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -131,6 +131,7 @@ impl NodeContext {
     pub fn enable_cloud_mailbox_registration(&self) -> bool {
         self.role == NodeRole::App
     }
+
     /// Whether a Node built for this context can be reused to satisfy a request
     /// for the `requested` context.
     pub fn is_compatible_with(&self, requested: &Self) -> bool {

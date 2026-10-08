@@ -7,8 +7,7 @@ use push_notifications_client::types::{FcmToken, VerifyingKey};
 use tauri::{AppHandle, EventId, Listener, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Notify;
-use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::{push_notifications_url, NEW_FCM_TOKEN_EVENT, NOTIFICATIONS_ENABLED_UPDATED_EVENT};
 use crate::node::AppNodeManager;
@@ -17,12 +16,12 @@ use crate::notifications::{are_notifications_enabled, run_plugin_call};
 /// Keeps the FCM token registered with the push notifications server while
 /// notifications are enabled, and unregistered while they are not: now, so a
 /// loss of data in the server is recovered from, and whenever either changes.
+/// Stops when dropped.
 pub(crate) struct RegisterPushNotificationsTokenTask {
     handle: AppHandle,
     notifications_enabled_listener: EventId,
     new_token_listener: EventId,
-    tracker: TaskTracker,
-    token: CancellationToken,
+    _task: AbortOnDropHandle<()>,
 }
 
 impl RegisterPushNotificationsTokenTask {
@@ -41,29 +40,20 @@ impl RegisterPushNotificationsTokenTask {
             token_changed.notify_one();
         });
 
-        let tracker = TaskTracker::new();
-        let token = CancellationToken::new();
-        tracker.spawn(
-            token
-                .clone()
-                .run_until_cancelled_owned(keep_token_registered(handle.clone(), client, changed)),
-        );
+        let task = tokio::spawn(keep_token_registered(handle.clone(), client, changed));
         Ok(Self {
             handle,
             notifications_enabled_listener,
             new_token_listener,
-            tracker,
-            token,
+            _task: AbortOnDropHandle::new(task),
         })
     }
+}
 
-    /// Stop, and wait until stopped.
-    pub(crate) async fn shutdown(&self) {
+impl Drop for RegisterPushNotificationsTokenTask {
+    fn drop(&mut self) {
         self.handle.unlisten(self.notifications_enabled_listener);
         self.handle.unlisten(self.new_token_listener);
-        self.token.cancel();
-        self.tracker.close();
-        self.tracker.wait().await;
     }
 }
 
@@ -74,17 +64,14 @@ async fn keep_token_registered(
 ) {
     loop {
         let update_registration = || register_or_unregister_token(&handle, &client);
-        let result = tokio::select! {
-            result = update_registration
+        tokio::select! {
+            _ = update_registration
                 .retry(ExponentialBuilder::new().with_jitter().without_max_times())
                 .notify(|err, delay| {
                     log::warn!("Failed to update the push notifications token registration, retrying in {delay:?}: {err:?}")
-                }) => result,
+                }) => {}
             // A change restarts the attempt at once, not after its backoff.
             () = changed.notified() => continue,
-        };
-        if let Err(err) = result {
-            log::warn!("Gave up updating the push notifications token registration: {err:?}");
         }
         changed.notified().await;
     }
