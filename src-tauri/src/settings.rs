@@ -54,7 +54,13 @@ pub(crate) fn load_settings<R: Runtime>(handle: &AppHandle<R>) -> Settings {
 }
 
 pub(crate) fn load_settings_from_filesystem(filesystem: &FileSystem) -> Settings {
-    let path = filesystem.settings_path();
+    load_settings_from_data_dir(filesystem.app_data_dir())
+}
+
+/// `app_data_dir` is where a [`FileSystem`] keeps the settings file, and what
+/// a [`dashchat_node::Node`] knows as its data path.
+pub(crate) fn load_settings_from_data_dir(app_data_dir: &std::path::Path) -> Settings {
+    let path = app_data_dir.join(crate::filesystem::SETTINGS_FILE_NAME);
 
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
