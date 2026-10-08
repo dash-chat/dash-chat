@@ -69,7 +69,7 @@ pub struct AppNode {
     /// (only the main app does).
     registration: Option<CloudMailboxRegistration>,
     #[cfg(mobile)]
-    push_notifications_topic_subscriptions: SubscribeToPushNotificationsForTopicsTask,
+    pub(crate) push_notifications_topic_subscriptions: SubscribeToPushNotificationsForTopicsTask,
 }
 
 impl AppNode {

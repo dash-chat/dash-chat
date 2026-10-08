@@ -399,14 +399,20 @@ async fn notification_for_pushed_operation(
             chat_id,
             add_member_operation_hash,
         })) => {
-            super::group_invitation::wait_for_added_us_notification(
+            let notification = super::group_invitation::wait_for_added_us_notification(
                 node,
                 header,
                 *chat_id,
                 *add_member_operation_hash,
                 handler_deadline,
             )
-            .await
+            .await;
+            super::group_invitation::wait_until_group_is_subscribed_on_push_server(
+                *chat_id,
+                handler_deadline,
+            )
+            .await;
+            notification
         }
         _ => None,
     }
