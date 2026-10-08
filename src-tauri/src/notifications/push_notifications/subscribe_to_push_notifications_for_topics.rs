@@ -10,7 +10,8 @@ use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::types::{TopicId as PushTopicId, VerifyingKey};
 use tauri::{AppHandle, EventId, Listener};
 use tokio::sync::{mpsc, Notify};
-use tokio_util::task::AbortOnDropHandle;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use super::NOTIFICATIONS_ENABLED_UPDATED_EVENT;
 use crate::notifications::are_notifications_enabled;
@@ -20,13 +21,14 @@ use crate::notifications::are_notifications_enabled;
 const CHANGES_DEBOUNCE: Duration = Duration::from_millis(500);
 
 /// Keeps the push notifications server subscribed, for this device, to every
-/// topic of a node: the server only wakes the device for those. Stops when shut
-/// down, or when its last clone is dropped.
+/// topic of a node: the server only wakes the device for those. Holds a clone
+/// of the node, so it must be shut down before the node is.
 #[derive(Clone)]
 pub(crate) struct SubscribeToPushNotificationsForTopicsTask {
     app_handle: Option<AppHandle>,
     notifications_enabled_listener: Option<EventId>,
-    task: Arc<AbortOnDropHandle<()>>,
+    tracker: TaskTracker,
+    token: CancellationToken,
 }
 
 impl SubscribeToPushNotificationsForTopicsTask {
@@ -47,27 +49,37 @@ impl SubscribeToPushNotificationsForTopicsTask {
             })
         });
 
-        let task = tokio::spawn(keep_topics_subscribed(
-            node,
-            app_handle.clone(),
-            client,
-            new_topics,
-            changed,
-        ));
+        let tracker = TaskTracker::new();
+        let token = CancellationToken::new();
+        tracker.spawn(
+            token
+                .clone()
+                .run_until_cancelled_owned(keep_topics_subscribed(
+                    node,
+                    app_handle.clone(),
+                    client,
+                    new_topics,
+                    changed,
+                )),
+        );
         Self {
             app_handle,
             notifications_enabled_listener,
-            task: Arc::new(AbortOnDropHandle::new(task)),
+            tracker,
+            token,
         }
     }
 
-    pub(crate) fn shutdown(&self) {
+    /// Stop, and wait until stopped.
+    pub(crate) async fn shutdown(&self) {
         if let (Some(handle), Some(listener)) =
             (&self.app_handle, self.notifications_enabled_listener)
         {
             handle.unlisten(listener);
         }
-        self.task.abort();
+        self.token.cancel();
+        self.tracker.close();
+        self.tracker.wait().await;
     }
 }
 
@@ -298,7 +310,7 @@ mod tests {
         );
         wait_until_synced(&server, &node).await;
 
-        subscriptions.shutdown();
+        subscriptions.shutdown().await;
         let group = node.create_group(BTreeMap::new()).await.unwrap();
         tokio::time::sleep(CHANGES_DEBOUNCE * 3).await;
 

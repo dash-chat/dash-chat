@@ -119,7 +119,7 @@ impl AppNode {
     /// Abort app-specific tasks and shut the Node down.
     pub async fn teardown(self) {
         #[cfg(mobile)]
-        self.push_notifications_topic_subscriptions.shutdown();
+        self.push_notifications_topic_subscriptions.shutdown().await;
         // Drain the cloud-mailbox retry first: it holds a `Node` clone and
         // touches SQLite pools, so it must stop before shutdown.
         if let Some(registration) = self.registration {
