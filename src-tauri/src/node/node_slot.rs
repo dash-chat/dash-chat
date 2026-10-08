@@ -151,9 +151,19 @@ pub async fn get_or_build_node(
     .await?;
 
     #[cfg(mobile)]
-    let app_node = AppNode::new(context, node.clone(), topic_subscribed_rx)?;
+    let app_node = AppNode::new(context, node.clone(), topic_subscribed_rx);
     #[cfg(not(mobile))]
-    let app_node = AppNode::new(context, node.clone())?;
+    let app_node = AppNode::new(context, node.clone());
+    let app_node = match app_node {
+        Ok(app_node) => app_node,
+        Err(err) => {
+            // A dropped Node keeps its SQLite pools, and their file locks, open.
+            if let Err(shutdown_err) = node.shutdown().await {
+                log::error!("Failed to shut down node: {shutdown_err:?}");
+            }
+            return Err(err);
+        }
+    };
     *SLOT.lock().await = Some(app_node);
     bump_generation();
 
