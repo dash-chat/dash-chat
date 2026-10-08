@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -25,12 +25,6 @@ use crate::Payload;
 
 pub(crate) type ProcessedTx = oneshot::Sender<Result<(), ProcessorError>>;
 type ProcessedRx = oneshot::Receiver<Result<(), ProcessorError>>;
-
-/// Own-authored operations the drain task forwarded before `publish` claimed them (see
-/// [`Processed`]). The window is the gap between p2panda returning the hash and the claim, so
-/// this only ever holds a handful; the cap just guards against operations we authored through
-/// other routes (replays, local imports) and never claim.
-const UNCLAIMED_CAPACITY: usize = 1024;
 
 /// Something [`Drain::next`] hands to the application processor.
 pub enum ProcessorEvent {
@@ -67,54 +61,12 @@ pub struct Streams {
     /// can't open it twice.
     publishers: tokio::sync::Mutex<HashMap<Topic, StreamPublisher<Payload>>>,
 
-    processed: Arc<std::sync::Mutex<Processed>>,
+    /// Senders for locally published operations awaiting application processing, keyed by
+    /// operation hash. `publish` registers each one before the operation enters p2panda's
+    /// pipeline, so the drain always finds it when the operation comes out of the subscription.
+    processed: Arc<std::sync::Mutex<HashMap<Hash, ProcessedTx>>>,
 
     drain_tx: mpsc::UnboundedSender<DrainCommand>,
-}
-
-/// One shot channels for locally published operations which resolve once the operation has
-/// completed application processing, on top of what the node already provides with
-/// PublishFuture.
-///
-/// p2panda hands an operation to the pipeline before `publish` learns its hash, so the drain can
-/// yield it before the publisher registers interest. For own-authored operations the drain then
-/// attaches a sender of its own and parks the receiver in `unclaimed` for `publish` to pick up.
-#[derive(Default)]
-struct Processed {
-    registered: HashMap<Hash, ProcessedTx>,
-    unclaimed: HashMap<Hash, ProcessedRx>,
-    unclaimed_order: VecDeque<Hash>,
-}
-
-impl Processed {
-    /// Sender to attach to a processed operation's event, if anyone will await it.
-    fn take_sender(&mut self, hash: Hash, authored_by_us: bool) -> Option<ProcessedTx> {
-        if let Some(tx) = self.registered.remove(&hash) {
-            return Some(tx);
-        }
-        if !authored_by_us {
-            return None;
-        }
-        let (tx, rx) = oneshot::channel();
-        self.unclaimed.insert(hash, rx);
-        self.unclaimed_order.push_back(hash);
-        while self.unclaimed_order.len() > UNCLAIMED_CAPACITY {
-            if let Some(evicted) = self.unclaimed_order.pop_front() {
-                self.unclaimed.remove(&evicted);
-            }
-        }
-        Some(tx)
-    }
-
-    /// Receiver `publish` awaits for an operation it just published.
-    fn claim(&mut self, hash: Hash) -> ProcessedRx {
-        if let Some(rx) = self.unclaimed.remove(&hash) {
-            return rx;
-        }
-        let (tx, rx) = oneshot::channel();
-        self.registered.insert(hash, tx);
-        rx
-    }
 }
 
 enum DrainCommand {
@@ -130,10 +82,9 @@ enum DrainCommand {
 impl Streams {
     pub(crate) fn new(node: p2panda::Node, stream_cursor_prefix: Option<String>) -> (Self, Drain) {
         let (drain_tx, command_rx) = mpsc::unbounded_channel();
-        let processed = Arc::new(std::sync::Mutex::new(Processed::default()));
+        let processed = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
         let drain = Drain {
-            node_id: node.id(),
             streams: Default::default(),
             processed: processed.clone(),
             command_rx,
@@ -226,13 +177,27 @@ impl Streams {
     ) -> Result<ProcessFuture, StreamsError> {
         let (tx, _) = self.publisher(topic).await?;
 
-        // If the payload represents a change to group state then publish it as a groups control
-        // message, all other payload variants are published via the "normal" route.
-        let publish_fut = tx.publish(payload).await?;
+        let (processed_tx, processed_rx) = oneshot::channel();
+        let mut registered = None;
+        let published = tx
+            .publish_with(payload, |hash| {
+                self.processed.lock().unwrap().insert(hash, processed_tx);
+                registered = Some(hash);
+            })
+            .await;
+
+        let publish_fut = match published {
+            Ok(publish_fut) => publish_fut,
+            Err(err) => {
+                if let Some(hash) = registered {
+                    self.processed.lock().unwrap().remove(&hash);
+                }
+                return Err(err.into());
+            }
+        };
 
         let hash = publish_fut.hash();
         hash.alias_numbered();
-        let processed_rx = self.processed.lock().unwrap().claim(hash);
 
         Ok(ProcessFuture::new(hash, publish_fut, processed_rx))
     }
@@ -291,12 +256,10 @@ impl Streams {
 /// pulling from here: p2panda's per-topic pipeline is bounded all the way through to the
 /// subscription, so such a publish can wait on the very drain it is blocking.
 pub(crate) struct Drain {
-    node_id: NodeId,
-
     /// All subscription streams.
     streams: StreamMap<Topic, StreamSubscription<Payload>>,
 
-    processed: Arc<std::sync::Mutex<Processed>>,
+    processed: Arc<std::sync::Mutex<HashMap<Hash, ProcessedTx>>>,
 
     command_rx: mpsc::UnboundedReceiver<DrainCommand>,
 
@@ -372,11 +335,7 @@ impl Drain {
     fn processor_event(&mut self, event: StreamEvent<Payload>) -> Option<ProcessorEvent> {
         match event {
             StreamEvent::Processed { operation, source } => {
-                let processed_tx = self
-                    .processed
-                    .lock()
-                    .unwrap()
-                    .take_sender(operation.id(), operation.author() == self.node_id);
+                let processed_tx = self.processed.lock().unwrap().remove(&operation.id());
                 Some(ProcessorEvent::Operation {
                     operation,
                     source,
@@ -431,7 +390,7 @@ impl Future for ProcessFuture {
     type Output = <PublishFuture as Future>::Output;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.poll_unpin(cx)
+        self.inner.poll_unpin(cx)
     }
 }
 
@@ -462,53 +421,16 @@ pub enum ProcessorError {
 #[cfg(test)]
 mod tests {
     use futures::future::join_all;
-    use p2panda::{Hash, Node, Topic};
+    use p2panda::{Node, Topic};
 
     use crate::node::actor::ProcessorEvent;
     use crate::testing::setup_tracing;
     use crate::{ChatMessageContent, ChatPayload, Payload};
 
-    use super::{Processed, Streams};
+    use super::Streams;
 
     fn chat(message: &str) -> Payload {
         Payload::Chat(ChatPayload::Message(ChatMessageContent::text_only(message)))
-    }
-
-    #[tokio::test]
-    async fn claim_after_forward_still_resolves() {
-        let hash = Hash::digest(b"op");
-        let mut processed = Processed::default();
-
-        let tx = processed
-            .take_sender(hash, true)
-            .expect("own op gets a sender");
-        tx.send(Ok(())).unwrap();
-
-        let rx = processed.claim(hash);
-        assert!(rx.await.unwrap().is_ok());
-        assert!(processed.unclaimed.is_empty());
-    }
-
-    #[tokio::test]
-    async fn claim_before_forward_resolves() {
-        let hash = Hash::digest(b"op");
-        let mut processed = Processed::default();
-
-        let rx = processed.claim(hash);
-        let tx = processed
-            .take_sender(hash, false)
-            .expect("registered op gets its sender");
-        tx.send(Ok(())).unwrap();
-
-        assert!(rx.await.unwrap().is_ok());
-        assert!(processed.registered.is_empty());
-    }
-
-    #[tokio::test]
-    async fn remote_ops_get_no_sender() {
-        let mut processed = Processed::default();
-        assert!(processed.take_sender(Hash::digest(b"op"), false).is_none());
-        assert!(processed.unclaimed.is_empty());
     }
 
     #[tokio::test(flavor = "multi_thread")]
