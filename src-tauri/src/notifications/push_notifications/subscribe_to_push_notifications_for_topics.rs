@@ -8,7 +8,7 @@ use dashchat_node::Node;
 use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::types::{TopicId as PushTopicId, VerifyingKey};
 use tauri::{AppHandle, EventId, Listener};
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{mpsc, watch, Notify};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -26,6 +26,7 @@ const CHANGES_DEBOUNCE: Duration = Duration::from_millis(500);
 pub(crate) struct SubscribeToPushNotificationsForTopicsTask {
     app_handle: Option<AppHandle>,
     notifications_enabled_listener: Option<EventId>,
+    pub(crate) topics_on_server: watch::Receiver<HashSet<PushTopicId>>,
     tracker: TaskTracker,
     token: CancellationToken,
 }
@@ -49,18 +50,24 @@ impl SubscribeToPushNotificationsForTopicsTask {
             })
         });
 
+        let (topics_on_server_tx, topics_on_server) = watch::channel(HashSet::new());
         let tracker = TaskTracker::new();
         let token = CancellationToken::new();
         tracker.spawn(
             token
                 .clone()
                 .run_until_cancelled_owned(keep_topics_subscribed(
-                    node, client, new_topics, changed,
+                    node,
+                    client,
+                    new_topics,
+                    changed,
+                    topics_on_server_tx,
                 )),
         );
         Self {
             app_handle,
             notifications_enabled_listener,
+            topics_on_server,
             tracker,
             token,
         }
@@ -84,6 +91,7 @@ async fn keep_topics_subscribed(
     client: PushNotificationsClient,
     mut new_topics: mpsc::Receiver<TopicId>,
     changed: Arc<Notify>,
+    topics_on_server_tx: watch::Sender<HashSet<PushTopicId>>,
 ) {
     let mut topics_on_server = None;
     loop {
@@ -99,7 +107,10 @@ async fn keep_topics_subscribed(
             () = changed.notified() => continue,
         };
         match result {
-            Ok(topics) => topics_on_server = Some(topics),
+            Ok(topics) => {
+                topics_on_server_tx.send_replace(topics.clone());
+                topics_on_server = Some(topics);
+            }
             Err(err) => log::warn!("Gave up updating push notification subscriptions: {err:?}"),
         }
         tokio::select! {
@@ -245,6 +256,31 @@ mod tests {
             server.db.requests().last(),
             Some(SubscriptionRequest::Add(_))
         ));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn publishes_a_new_topic_once_it_is_on_the_server() {
+        let server = TestPushServer::start().await;
+        let (node, new_topics, _dir) = start_node().await;
+        let subscriptions = SubscribeToPushNotificationsForTopicsTask::spawn(
+            node.clone(),
+            None,
+            server.client(),
+            new_topics,
+        );
+
+        let group = node.create_group(BTreeMap::new()).await.unwrap();
+        let group_topic = PushTopicId::from(group.to_hex());
+        let mut topics_on_server = subscriptions.topics_on_server.clone();
+        tokio::time::timeout(
+            Duration::from_secs(15),
+            topics_on_server.wait_for(|topics| topics.contains(&group_topic)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert!(server.db.topics_of(&device(&node)).contains(&group_topic));
     }
 
     #[tokio::test(flavor = "multi_thread")]
