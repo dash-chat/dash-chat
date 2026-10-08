@@ -11,6 +11,7 @@ use tracing::{debug, error, warn};
 use crate::AckedOp;
 use crate::forward_edit_closure;
 use crate::node::actor::{Drain, ProcessedTx, ProcessorError, ProcessorEvent};
+use crate::node::publish::warn_if_slow;
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
@@ -152,7 +153,13 @@ impl Node {
                 tokio::select! {
                     event = drain.next() => match event {
                         Some(ProcessorEvent::Operation { operation, source, processed_tx }) => {
-                            node.process_operation(operation, source, processed_tx).await;
+                            // A stalled processor stalls p2panda's bounded pipeline, so this
+                            // is the only early warning that it has fallen behind.
+                            warn_if_slow(
+                                "processing an operation",
+                                node.process_operation(operation, source, processed_tx),
+                            )
+                            .await;
                         }
                         Some(ProcessorEvent::ImportFailed { topic, error }) => {
                             error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");

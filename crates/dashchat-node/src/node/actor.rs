@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 
 use aliased::Aliasing;
@@ -8,12 +9,13 @@ use futures::future::join;
 use futures::{FutureExt, Stream};
 use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
-use p2panda::operation::Operation;
+use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
     ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
     StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
+use p2panda_core::traits::Digest;
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
@@ -22,6 +24,8 @@ use tokio_stream::{StreamExt, StreamMap};
 use tracing::{error, warn};
 
 use crate::Payload;
+
+type Event = p2panda::processor::Event<LogId, Extensions, Topic>;
 
 pub(crate) type ProcessedTx = oneshot::Sender<Result<(), ProcessorError>>;
 type ProcessedRx = oneshot::Receiver<Result<(), ProcessorError>>;
@@ -67,6 +71,8 @@ pub struct Streams {
     in_process: Arc<std::sync::Mutex<HashMap<Hash, ProcessedTx>>>,
 
     drain_tx: mpsc::UnboundedSender<DrainCommand>,
+
+    shut_down: AtomicBool,
 }
 
 enum DrainCommand {
@@ -97,6 +103,7 @@ impl Streams {
             publishers: Default::default(),
             in_process: processed,
             drain_tx,
+            shut_down: AtomicBool::new(false),
         };
 
         (streams, drain)
@@ -128,6 +135,9 @@ impl Streams {
         topic: Topic,
     ) -> Result<(StreamPublisher<Payload>, bool), StreamsError> {
         let mut publishers = self.publishers.lock().await;
+        if self.shut_down.load(Ordering::Acquire) {
+            return Err(StreamsError::ShutDown);
+        }
         if let Some(tx) = publishers.get(&topic) {
             return Ok((tx.clone(), false));
         }
@@ -179,6 +189,8 @@ impl Streams {
 
         let (processed_tx, processed_rx) = oneshot::channel();
         let mut registered = None;
+        // `publish_with` calls back before the operation enters the pipeline, so the entry
+        // is in place before the drain can see the operation.
         let published = tx
             .publish_with(payload, |hash| {
                 self.in_process.lock().unwrap().insert(hash, processed_tx);
@@ -196,7 +208,7 @@ impl Streams {
             }
         };
 
-        let hash = publish_fut.hash();
+        let hash = registered.expect("publish_with registers the hash before returning Ok");
         hash.alias_numbered();
 
         Ok(ProcessFuture::new(hash, publish_fut, processed_rx))
@@ -244,9 +256,13 @@ impl Streams {
         Ok(())
     }
 
-    /// Drop every publisher. Still-parked imports are aborted when the [`Drain`] is dropped.
+    /// Drop every publisher and refuse to open any more, failing every publish still awaiting
+    /// processing. Still-parked imports are aborted when the [`Drain`] is dropped.
     pub(crate) async fn shutdown(&self) {
-        self.publishers.lock().await.clear();
+        let mut publishers = self.publishers.lock().await;
+        self.shut_down.store(true, Ordering::Release);
+        publishers.clear();
+        self.in_process.lock().unwrap().clear();
     }
 }
 
@@ -254,7 +270,9 @@ impl Streams {
 ///
 /// The application processor must never await a publish into a subscribed topic while it is
 /// pulling from here: p2panda's per-topic pipeline is bounded all the way through to the
-/// subscription, so such a publish can wait on the very drain it is blocking.
+/// subscription, so such a publish can wait on the very drain it is blocking (see
+/// `late_joiner_syncing_crossing_replies_can_hit_target_not_found` in `tests/reply_messages.rs`,
+/// which hangs this way).
 pub(crate) struct Drain {
     /// All subscription streams.
     streams: StreamMap<Topic, StreamSubscription<Payload>>,
@@ -342,23 +360,33 @@ impl Drain {
                     processed_tx,
                 })
             }
-            StreamEvent::ProcessingFailed { error, .. } => {
+            StreamEvent::ProcessingFailed { event, error, .. } => {
                 warn!("error processing operation: {error:?}");
+                self.fail(event.hash(), format!("processing failed: {error}"));
                 None
             }
-            StreamEvent::DecodeFailed { error, .. } => {
+            StreamEvent::DecodeFailed { event, error } => {
                 warn!("error decoding operation: {error:?}");
+                self.fail(event.hash(), format!("decoding failed: {error}"));
                 None
             }
-            StreamEvent::ReplayFailed { error, .. } => {
+            StreamEvent::ReplayFailed { error } => {
                 warn!("error replaying stream: {error:?}");
                 None
             }
-            StreamEvent::AckFailed { error, .. } => {
+            StreamEvent::AckFailed { event, error } => {
                 warn!("error acking operation: {error:?}");
+                self.fail(event.hash(), format!("acking failed: {error}"));
                 None
             }
             _ => None,
+        }
+    }
+
+    /// Fail the local publish awaiting `hash`, if any.
+    fn fail(&mut self, hash: Hash, reason: String) {
+        if let Some(processed_tx) = self.processed.lock().unwrap().remove(&hash) {
+            let _ = processed_tx.send(Err(ProcessorError::System(reason)));
         }
     }
 }
@@ -367,14 +395,20 @@ impl Drain {
 /// system and application layer processing.
 pub struct ProcessFuture {
     hash: Hash,
-    inner: Pin<Box<dyn Future<Output = <PublishFuture as Future>::Output> + Send + Sync>>,
+    inner: Pin<Box<dyn Future<Output = Result<Event, ProcessError>> + Send + Sync>>,
 }
 
 impl ProcessFuture {
     pub fn new(hash: Hash, published_fut: PublishFuture, processed_rx: ProcessedRx) -> Self {
+        let inner =
+            join(published_fut, processed_rx).map(|(published, processed)| match processed {
+                Ok(Ok(())) => published.map_err(ProcessError::System),
+                Ok(Err(err)) => Err(ProcessError::Processor(err)),
+                Err(_) => Err(ProcessError::ProcessorGone),
+            });
         Self {
             hash,
-            inner: Box::pin(join(published_fut, processed_rx).map(|(result, _)| result)),
+            inner: Box::pin(inner),
         }
     }
 }
@@ -387,7 +421,7 @@ impl ProcessFuture {
 }
 
 impl Future for ProcessFuture {
-    type Output = <PublishFuture as Future>::Output;
+    type Output = Result<Event, ProcessError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.inner.poll_unpin(cx)
@@ -408,6 +442,9 @@ pub enum StreamsError {
     #[error("stream drain is gone")]
     DrainClosed,
 
+    #[error("streams are shut down")]
+    ShutDown,
+
     #[error(transparent)]
     Network(#[from] NetworkError),
 }
@@ -416,6 +453,22 @@ pub enum StreamsError {
 pub enum ProcessorError {
     #[error("application layer processing error: {0}")]
     App(String),
+
+    #[error("system layer processing error: {0}")]
+    System(String),
+}
+
+/// Why a locally published operation did not finish processing.
+#[derive(Debug, Error)]
+pub enum ProcessError {
+    #[error("system layer never reported the operation processed: {0}")]
+    System(oneshot::error::RecvError),
+
+    #[error(transparent)]
+    Processor(ProcessorError),
+
+    #[error("application processor went away before processing the operation")]
+    ProcessorGone,
 }
 
 #[cfg(test)]

@@ -34,7 +34,7 @@ impl Node {
     }
 }
 
-async fn warn_if_slow<F: std::future::Future>(what: &str, fut: F) -> F::Output {
+pub(super) async fn warn_if_slow<F: std::future::Future>(what: &str, fut: F) -> F::Output {
     tokio::pin!(fut);
     match tokio::time::timeout(std::time::Duration::from_secs(30), &mut fut).await {
         Ok(out) => out,
