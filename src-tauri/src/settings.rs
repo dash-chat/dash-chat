@@ -44,13 +44,17 @@ const fn default_notifications_enabled() -> bool {
 }
 
 pub(crate) fn load_settings<R: Runtime>(handle: &AppHandle<R>) -> Settings {
-    let path = match FileSystem::new(handle) {
-        Ok(fs) => fs.settings_path(),
+    match FileSystem::new(handle) {
+        Ok(filesystem) => load_settings_from_filesystem(&filesystem),
         Err(err) => {
             log::error!("Failed to resolve settings path: {err:?}");
-            return Settings::default();
+            Settings::default()
         }
-    };
+    }
+}
+
+pub(crate) fn load_settings_from_filesystem(filesystem: &FileSystem) -> Settings {
+    let path = filesystem.settings_path();
 
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,

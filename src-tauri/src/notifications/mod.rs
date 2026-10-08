@@ -1,6 +1,6 @@
 mod notified_operations_store;
 
-#[cfg(mobile)]
+#[cfg(any(mobile, test))]
 pub mod push_notifications;
 
 pub(crate) use notified_operations_store::NotifiedOperationsStore;

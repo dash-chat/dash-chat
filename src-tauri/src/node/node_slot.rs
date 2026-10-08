@@ -136,14 +136,23 @@ pub async fn get_or_build_node(
 
     log::info!("No compatible node in the cache, building node from scratch.");
 
+    #[cfg(mobile)]
+    let (topic_subscribed_tx, topic_subscribed_rx) = tokio::sync::mpsc::channel(100);
+    #[cfg(mobile)]
+    let topic_subscribed_tx = Some(topic_subscribed_tx);
+    #[cfg(not(mobile))]
+    let topic_subscribed_tx = None;
     let node = Node::new(
         data_path.clone(),
         context.node_config(),
         context.notification_tx.clone(),
-        context.topic_subscribed_tx.clone(),
+        topic_subscribed_tx,
     )
     .await?;
 
+    #[cfg(mobile)]
+    let app_node = AppNode::new(context, node.clone(), topic_subscribed_rx)?;
+    #[cfg(not(mobile))]
     let app_node = AppNode::new(context, node.clone())?;
     *SLOT.lock().await = Some(app_node);
     bump_generation();
