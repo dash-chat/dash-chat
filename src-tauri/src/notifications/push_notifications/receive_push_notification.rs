@@ -226,6 +226,9 @@ async fn handle_push_notification(
     let topic_id = TopicId::try_from(topic_bytes)?;
 
     let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
+    // The setting alone, unlike `are_notifications_enabled`: there is no app
+    // here to ask the OS through, and with the permission denied the OS drops
+    // whatever this returns anyway.
     if !crate::settings::load_settings_from_filesystem(&filesystem).notifications_enabled {
         log::info!("Notifications are disabled: ignoring the push notification.");
         return Ok(None);

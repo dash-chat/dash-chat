@@ -102,7 +102,7 @@ async fn register_or_unregister_token(
         .map_err(|e| anyhow::anyhow!(e))?;
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
 
-    if are_notifications_enabled(handle) {
+    if are_notifications_enabled(handle).await {
         log::info!("Notifications are enabled: registering FCM token.");
         let h = handle.clone();
         let token = run_plugin_call(move || h.notification().register_for_push_notifications())
