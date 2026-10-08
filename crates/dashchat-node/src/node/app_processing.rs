@@ -642,7 +642,7 @@ impl Node {
                 }
             }
 
-            Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
+            Payload::Chat(ChatPayload::JoinGroup { chat_id, .. }) => {
                 self.join_group(*chat_id)
                     .await
                     .context("failed to join group from invitation")?;
