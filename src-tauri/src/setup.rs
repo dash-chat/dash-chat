@@ -127,9 +127,6 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     // iOS app is backgrounded (releasing SQLite locks) and rebuilt on foreground.
     // AppNodeManager::spawn owns the notification and topic-subscribed channels and wires
     // up the notification loop and push notifications internally.
-    // Before the push registration below reads the setting.
-    crate::notifications::disable_notifications_if_permission_revoked(&app_handle).await;
-
     let app_node_manager = crate::node::AppNodeManager::spawn(&app_handle, local_data_path).await?;
     app_handle.manage(app_node_manager);
 

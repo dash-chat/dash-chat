@@ -51,6 +51,7 @@ import {
 	disableAndroidWifi,
 	enableAndroidWifi,
 	forgetAndroidWifi,
+	grantAndroidNotificationPermission,
 	isAndroidAppRunning,
 	joinAndroidWifi,
 	leaveAndroidWifi,
@@ -253,6 +254,10 @@ export type Agent = WebdriverIO.Browser & {
 	 *  refused without a dialog. Call it between [`stopApp`] and
 	 *  [`startApp`]. Android only. */
 	denyNotificationPermission(): void;
+	/** Grant the notification permission, as allowing it in the app's system
+	 *  settings does. Call it between [`stopApp`] and [`startApp`]. Android
+	 *  only. */
+	grantNotificationPermission(): void;
 	/** What this agent's device has logged so far in the run, as the harness
 	 *  captured it. */
 	readLog(): string;
@@ -548,6 +553,14 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			);
 		}
 		denyAndroidNotificationPermission(deviceUdid(b));
+	};
+	agent.grantNotificationPermission = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(
+				`grantNotificationPermission needs android, got ${agent.platform}`,
+			);
+		}
+		grantAndroidNotificationPermission(deviceUdid(b));
 	};
 
 	return agent;

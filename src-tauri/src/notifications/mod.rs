@@ -12,7 +12,7 @@ use dashchat_node::{
 };
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionState};
+use tauri_plugin_notification::{NotificationData, NotificationExt};
 
 use crate::node::AppNodeManager;
 
@@ -28,44 +28,11 @@ pub(crate) async fn run_plugin_call<T: Send + 'static>(
         .context("notification plugin call panicked")
 }
 
-/// The persisted setting alone. On mobile it is only turned on once the OS
-/// permission is granted, and [`disable_notifications_if_permission_revoked`]
-/// turns it off again when that permission goes away; on desktop there is no
-/// permission and it defaults to on.
+/// The user's choice alone, with no OS permission check: it must also be
+/// readable where there is no app to ask the OS through, and while the
+/// permission is denied the OS drops whatever we show anyway.
 pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
     crate::settings::load_settings(handle).notifications_enabled
-}
-
-/// Turns the notifications setting off when the OS permission is no longer
-/// granted, so that the setting keeps meaning what the toggle made it mean.
-/// Run where the app can ask the OS: at start and on every return to the
-/// foreground. A failed query changes nothing: only an answer may.
-pub(crate) async fn disable_notifications_if_permission_revoked(handle: &AppHandle) {
-    if !are_notifications_enabled(handle) {
-        return;
-    }
-    let h = handle.clone();
-    match run_plugin_call(move || h.notification().permission_state()).await {
-        Ok(Ok(PermissionState::Granted)) => return,
-        Ok(Ok(state)) => {
-            log::info!("The notification permission is {state:?}: turning notifications off.")
-        }
-        Ok(Err(err)) => {
-            log::error!("Failed to read the notification permission state: {err:?}");
-            return;
-        }
-        Err(err) => {
-            log::error!("The notification permission query failed: {err:?}");
-            return;
-        }
-    }
-    if let Err(err) = crate::settings::set_setting(
-        handle,
-        "notifications_enabled".to_string(),
-        serde_json::Value::Bool(false),
-    ) {
-        log::error!("Failed to turn notifications off: {err:?}");
-    }
 }
 
 /// Show a system notification for an operation that arrived through the

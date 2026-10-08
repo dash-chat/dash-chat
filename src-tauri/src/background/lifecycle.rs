@@ -17,7 +17,6 @@ pub(crate) async fn on_pause(app: AppHandle<Wry>) {
 }
 
 pub(crate) async fn on_resume(app: AppHandle<Wry>) {
-    crate::notifications::disable_notifications_if_permission_revoked(&app).await;
     let manager = app.state::<ServiceManagerHandle<Wry>>();
     if manager.is_running().await {
         if let Err(e) = manager.stop().await {

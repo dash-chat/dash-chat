@@ -614,6 +614,17 @@ export function denyAndroidNotificationPermission(udid: string): void {
 	);
 }
 
+/** Grant the notification permission, as allowing it in the app's system
+ *  settings does after it was denied for good. */
+export function grantAndroidNotificationPermission(udid: string): void {
+	const permission = 'android.permission.POST_NOTIFICATIONS';
+	adbShell(
+		udid,
+		`pm clear-permission-flags ${APP_PACKAGE} ${permission} user-fixed`,
+	);
+	adbShell(udid, `pm grant ${APP_PACKAGE} ${permission}`);
+}
+
 /** Whether the app's main process is running. Appium's queryAppState
  *  pgrep-matches any process whose name contains the package, and webview
  *  renderer processes can linger for minutes after the main process exits, so

@@ -1,10 +1,3 @@
-<script module lang="ts">
-	// Whether the user has already refused the OS prompt once this app run. The
-	// prompt returns 'denied' both when it was shown-and-declined and when it's
-	// permanently suppressed, so this is how we tell them apart.
-	let deniedOnce = false;
-</script>
-
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
@@ -20,10 +13,13 @@
 		Toggle,
 		useTheme,
 	} from 'konsta/svelte';
-	import { getContext } from 'svelte';
+	import { getContext, onMount } from 'svelte';
 	import type { SettingsStore } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
-	import { ensureNotificationPermission } from '$lib/utils/notifications';
+	import {
+		ensureNotificationPermission,
+		notificationPermissionGranted,
+	} from '$lib/utils/notifications';
 	import PermissionSettingsSheet from '$lib/components/PermissionSettingsSheet.svelte';
 
 	const theme = $derived(useTheme());
@@ -35,23 +31,26 @@
 	let toggling = $state(false);
 	let refusedEnables = $state(0);
 	let showSettingsSheet = $state(false);
+	// The setting keeps the user's choice even when the permission is revoked
+	// from the device settings, so the toggle shows both.
+	let permissionGranted = $state<boolean | undefined>();
+
+	onMount(async () => {
+		permissionGranted = (await notificationPermissionGranted()) === true;
+	});
 
 	async function enable() {
 		if (toggling) return;
 		toggling = true;
 		try {
 			if (await ensureNotificationPermission()) {
-				deniedOnce = false;
+				permissionGranted = true;
 				await settingsStore.setNotificationsEnabled(true);
 			} else {
 				refusedEnables += 1;
-				// On the first refusal the OS dialog was shown and the next attempt
-				// re-prompts, so a toast is enough. Once permanently denied the
-				// dialog no longer shows, so guide the user to the app's settings.
-				if (deniedOnce) {
+				if ((await notificationPermissionGranted()) === false) {
 					showSettingsSheet = true;
 				} else {
-					deniedOnce = true;
 					showToast(m.notificationsPermissionDenied(), 'error');
 				}
 			}
@@ -96,15 +95,18 @@
 				<ListItem title={m.notifications()} data-testid="notifications-toggle">
 					{#snippet after()}
 						{#await $notificationsEnabled then enabled}
-							<!-- Konsta's Toggle keeps the checked state its own click set, so a
-							     refused enable remounts it to show the stored value again. -->
-							{#key refusedEnables}
-								<Toggle
-									checked={enabled}
-									disabled={toggling}
-									onChange={() => (enabled ? disable() : enable())}
-								/>
-							{/key}
+							{#if permissionGranted !== undefined}
+								<!-- Konsta's Toggle keeps the checked state its own click set, so a
+								     refused enable remounts it to show the stored value again. -->
+								{#key refusedEnables}
+									<Toggle
+										checked={enabled && permissionGranted}
+										disabled={toggling}
+										onChange={() =>
+											enabled && permissionGranted ? disable() : enable()}
+									/>
+								{/key}
+							{/if}
 						{/await}
 					{/snippet}
 				</ListItem>
