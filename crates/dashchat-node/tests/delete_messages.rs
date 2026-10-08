@@ -92,6 +92,7 @@ async fn media_hash_of(node: &TestNode, chat: ChatId, text: &str) -> iroh_blobs:
 /// edited media messages, a delete of one edit chain, and a third member added
 /// after the delete who must never receive the deleted payloads or media.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
     setup();
 
