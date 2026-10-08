@@ -8,7 +8,8 @@ use push_notifications_client::types::{FcmToken, VerifyingKey};
 use tauri::{AppHandle, EventId, Listener, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Notify;
-use tokio_util::task::AbortOnDropHandle;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use super::{push_notifications_url, NEW_FCM_TOKEN_EVENT, NOTIFICATIONS_ENABLED_UPDATED_EVENT};
 use crate::node::AppNodeManager;
@@ -17,12 +18,12 @@ use crate::notifications::{are_notifications_enabled, run_plugin_call};
 /// Keeps the FCM token registered with the push notifications server while
 /// notifications are enabled, and unregistered while they are not: now, so a
 /// loss of data in the server is recovered from, and whenever either changes.
-/// Stops when dropped.
 pub(crate) struct RegisterPushNotificationsTokenTask {
     handle: AppHandle,
     notifications_enabled_listener: EventId,
     new_token_listener: EventId,
-    _task: AbortOnDropHandle<()>,
+    tracker: TaskTracker,
+    token: CancellationToken,
 }
 
 impl RegisterPushNotificationsTokenTask {
@@ -41,20 +42,29 @@ impl RegisterPushNotificationsTokenTask {
             token_changed.notify_one();
         });
 
-        let task = tokio::spawn(keep_token_registered(handle.clone(), client, changed));
+        let tracker = TaskTracker::new();
+        let token = CancellationToken::new();
+        tracker.spawn(
+            token
+                .clone()
+                .run_until_cancelled_owned(keep_token_registered(handle.clone(), client, changed)),
+        );
         Ok(Self {
             handle,
             notifications_enabled_listener,
             new_token_listener,
-            _task: AbortOnDropHandle::new(task),
+            tracker,
+            token,
         })
     }
-}
 
-impl Drop for RegisterPushNotificationsTokenTask {
-    fn drop(&mut self) {
+    /// Stop, and wait until stopped.
+    pub(crate) async fn shutdown(&self) {
         self.handle.unlisten(self.notifications_enabled_listener);
         self.handle.unlisten(self.new_token_listener);
+        self.token.cancel();
+        self.tracker.close();
+        self.tracker.wait().await;
     }
 }
 
