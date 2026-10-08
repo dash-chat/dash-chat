@@ -264,10 +264,9 @@ describe('Push notifications (real device, end-to-end)', () => {
 	});
 
 	it('announces nothing for a group a blocked contact adds the killed app to', async () => {
-		const newMessage = await receiver.tr('youHaveANewMessage');
-
 		await receiver.startApp();
 		await receiver.homePage.ready();
+		const newMessage = await receiver.tr('youHaveANewMessage');
 		await receiver.homePage.openChat('Ben');
 		await receiver.directChatPage.ready();
 		await blockAgent(receiver);
