@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use backon::{ExponentialBuilder, Retryable};
-use dashchat_utils::WakeEarlyOn;
 use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::types::{FcmToken, VerifyingKey};
 use tauri::{AppHandle, EventId, Listener, Manager};
@@ -73,15 +72,17 @@ async fn keep_token_registered(
     client: PushNotificationsClient,
     changed: Arc<Notify>,
 ) {
-    let update_registration = || register_or_unregister_token(&handle, &client);
     loop {
-        let result = update_registration
-            .retry(ExponentialBuilder::new().with_jitter().without_max_times())
-            .wake_early_on(changed.clone())
-            .notify(|err, delay| {
-                log::warn!("Failed to update the push notifications token registration, retrying in {delay:?}: {err:?}")
-            })
-            .await;
+        let update_registration = || register_or_unregister_token(&handle, &client);
+        let result = tokio::select! {
+            result = update_registration
+                .retry(ExponentialBuilder::new().with_jitter().without_max_times())
+                .notify(|err, delay| {
+                    log::warn!("Failed to update the push notifications token registration, retrying in {delay:?}: {err:?}")
+                }) => result,
+            // A change restarts the attempt at once, not after its backoff.
+            () = changed.notified() => continue,
+        };
         if let Err(err) = result {
             log::warn!("Gave up updating the push notifications token registration: {err:?}");
         }
