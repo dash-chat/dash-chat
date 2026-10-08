@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use super::NOTIFICATIONS_ENABLED_UPDATED_EVENT;
-use crate::notifications::are_notifications_enabled;
+use crate::settings::load_settings_from_data_dir;
 
 /// How long to wait for more changes before acting on one, so a burst (every
 /// stored topic, when the node starts) is handled in one pass.
@@ -31,8 +31,9 @@ pub(crate) struct SubscribeToPushNotificationsForTopicsTask {
 }
 
 impl SubscribeToPushNotificationsForTopicsTask {
-    /// `new_topics` receives each topic the node subscribes to. `app_handle` is
-    /// `None` in a push process.
+    /// `new_topics` receives each topic the node subscribes to. `app_handle`,
+    /// when there is one, is listened to for changes of the notifications
+    /// setting; the setting itself is read from the node's data directory.
     pub(crate) fn spawn(
         node: Node,
         app_handle: Option<AppHandle>,
@@ -54,11 +55,7 @@ impl SubscribeToPushNotificationsForTopicsTask {
             token
                 .clone()
                 .run_until_cancelled_owned(keep_topics_subscribed(
-                    node,
-                    app_handle.clone(),
-                    client,
-                    new_topics,
-                    changed,
+                    node, client, new_topics, changed,
                 )),
         );
         Self {
@@ -84,28 +81,14 @@ impl SubscribeToPushNotificationsForTopicsTask {
 
 async fn keep_topics_subscribed(
     node: Node,
-    app_handle: Option<AppHandle>,
     client: PushNotificationsClient,
     mut new_topics: mpsc::Receiver<TopicId>,
     changed: Arc<Notify>,
 ) {
-    // A push process may be frozen as soon as its handler returns, so it sends
-    // a new topic at once instead of waiting for the rest of a burst.
-    let debounce = if app_handle.is_some() {
-        CHANGES_DEBOUNCE
-    } else {
-        Duration::ZERO
-    };
     let mut topics_on_server = None;
     loop {
-        let update_subscriptions = || {
-            update_subscriptions(
-                &node,
-                app_handle.as_ref(),
-                &client,
-                topics_on_server.as_ref(),
-            )
-        };
+        let update_subscriptions =
+            || update_subscriptions(&node, &client, topics_on_server.as_ref());
         let result = tokio::select! {
             result = update_subscriptions
                 .retry(ExponentialBuilder::new().with_jitter().without_max_times())
@@ -123,7 +106,7 @@ async fn keep_topics_subscribed(
             () = changed.notified() => {}
             Some(_) = new_topics.recv() => {}
         }
-        tokio::time::sleep(debounce).await;
+        tokio::time::sleep(CHANGES_DEBOUNCE).await;
         while new_topics.try_recv().is_ok() {}
     }
 }
@@ -132,11 +115,10 @@ async fn keep_topics_subscribed(
 /// otherwise replaces its whole set. Returns what the server now has.
 async fn update_subscriptions(
     node: &Node,
-    app_handle: Option<&AppHandle>,
     client: &PushNotificationsClient,
     topics_on_server: Option<&HashSet<PushTopicId>>,
 ) -> anyhow::Result<HashSet<PushTopicId>> {
-    let topics = topics_to_subscribe_to(node, app_handle).await?;
+    let topics = topics_to_subscribe_to(node).await?;
     let device = VerifyingKey::from(node.device_id().to_string());
     match topics_on_server {
         Some(on_server) if on_server.is_subset(&topics) => {
@@ -163,17 +145,8 @@ async fn update_subscriptions(
 }
 
 /// Every topic the node listens to, or none while notifications are disabled.
-async fn topics_to_subscribe_to(
-    node: &Node,
-    app_handle: Option<&AppHandle>,
-) -> anyhow::Result<HashSet<PushTopicId>> {
-    let notifications_enabled = match app_handle {
-        Some(handle) => are_notifications_enabled(handle),
-        // A push process has no app handle to check with, but then an
-        // unregistered token keeps the server from pushing anyway.
-        None => true,
-    };
-    if !notifications_enabled {
+async fn topics_to_subscribe_to(node: &Node) -> anyhow::Result<HashSet<PushTopicId>> {
+    if !load_settings_from_data_dir(node.data_path()).notifications_enabled {
         return Ok(HashSet::new());
     }
     push_notifications_topics(node).await
