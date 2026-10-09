@@ -58,6 +58,7 @@ p2panda-core = { workspace = true }
 
 anyhow = "1.0.95"
 async-trait = "0.1.85"
+backon = { version = "1.6", default-features = false, features = ["std", "tokio-sleep"] }
 time = "0.3"
 tokio = { version = "1.43.0", features = ["fs"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -146,3 +147,4 @@ e2e-tests = [
 dashchat-node = { path = "../crates/dashchat-node", features = ["testing"] }
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
+push-notifications-server = { path = "../crates/push-notifications-server", features = ["test-utils"] }
