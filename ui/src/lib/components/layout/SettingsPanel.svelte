@@ -95,11 +95,13 @@
 						class="qr-button text-black dark:text-white"
 						data-testid="settings-qr-link"
 						use:stopPropagation
-						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 16px'}
+						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 12px'}
 						aria-label={m.addContact()}
 					>
-						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 22px"
-						></wa-icon>
+						<span class="qr-button-disc">
+							<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 24px"
+							></wa-icon>
+						</span>
 					</a>
 				{/snippet}
 			</TitleTruncatedListItem>
@@ -210,17 +212,25 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 36px;
-		height: 36px;
-		border-radius: 50%;
+		width: 48px;
+		height: 48px;
 		border: none;
-		background-color: var(--k-color-bg-300, rgba(128, 128, 128, 0.15));
 		cursor: pointer;
 		text-decoration: none;
 		-webkit-tap-highlight-color: transparent;
 	}
 
-	.qr-button:active {
+	.qr-button-disc {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		background-color: var(--k-color-bg-300, rgba(128, 128, 128, 0.15));
+	}
+
+	.qr-button:active .qr-button-disc {
 		opacity: 0.7;
 	}
 </style>
