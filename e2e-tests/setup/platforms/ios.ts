@@ -23,6 +23,7 @@ import {
 	allocatePinnedPort,
 	allocatePinnedPortFrom,
 } from '../allocate-port';
+import { runAppBuild } from '../app-build';
 import {
 	type Want,
 	claimAllWhenFreeSync,
@@ -33,7 +34,6 @@ import { deviceHasBuild, recordInstalled } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { E2E_RELAY_URL } from '../relay';
-import { runTurboBuild } from '../turbo-build';
 import { deviceUdid, switchToWebview, waitForTestUtils } from '../webview';
 import {
 	type AgentPlatform,
@@ -660,8 +660,8 @@ export class IosPlatform implements AgentPlatform {
 			SENTRY_PROJECT: process.env.SENTRY_PROJECT,
 		});
 		// The task's last step (scripts/export-session-ipa.ts) copies the built
-		// .ipa to SESSION_IPA, so turbo snapshots and restores the final artifact.
-		runTurboBuild(
+		// .ipa to SESSION_IPA.
+		runAppBuild(
 			'e2e:build:ios',
 			envWithoutWdioLoader({
 				...bakedEnv,

@@ -1,7 +1,7 @@
 /**
  * Copy the freshest .ipa from the tauri ios build dir to the fixed path the
  * e2e sessions install from. Runs as the last step of the `e2e:build:ios`
- * task so turbo snapshots the final artifact: the build dir's layout is
+ * task: the build dir's layout is
  * rearranged by tauri between versions (the .ipa is exported to the build
  * dir, then moved into an arch subdir), so newest-mtime wins.
  */

@@ -70,23 +70,6 @@
           pkgs = import inputs.nixpkgs { inherit system overlays; };
           pkgsPnpm = import inputs.nixpkgs-pnpm { inherit system; };
 
-          tauriLibraries = with pkgs; [
-            webkitgtk_4_1
-            gtk3
-            cairo
-            gdk-pixbuf
-            glib
-            dbus
-            openssl
-            librsvg
-            libsoup_3
-            libayatana-appindicator
-            pango
-            # libatk-1.0
-            at-spi2-core
-            pkgsPnpm.alsa-lib
-            libopus
-          ];
           # GStreamer so WebKitGTK can play voice-note audio: WAV from desktop
           # recorders (base/good) and AAC/M4A from mobile ones (bad).
           gstPluginPath = pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" [
@@ -100,12 +83,15 @@
           # androidDev shells: identical rustc + host-build env keep artifacts
           # in the shared target dir fingerprint-compatible across shells.
           rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-          rustCranelift = pkgs.rust-bin.nightly."2025-12-15".default.override {
-            extensions = [ "rustc-codegen-cranelift-preview" ];
-          };
           hostBuildEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
-            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries} -C link-arg=-fuse-ld=mold"
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-args=-Wl,-rpath,${lib.makeLibraryPath tauriLibraries}"
+            # libappindicator-sys dlopens the tray library by soname instead of
+            # linking it, so the linker-derived RUNPATH never covers it.
+            export LD_LIBRARY_PATH="${pkgs.libayatana-appindicator}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            export GIO_EXTRA_MODULES="${pkgs.glib-networking}/lib/gio/modules"
+            # GLib finds compiled GSettings schemas only through XDG_DATA_DIRS; nix's
+            # GSETTINGS_SCHEMAS_PATH is folded into it by wrappers at install time,
+            # which a dev shell never runs.
+            export XDG_DATA_DIRS="$GSETTINGS_SCHEMAS_PATH''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
             # audiopus_sys vendors an old libopus whose CMakeLists predates the
             # 3.5 floor modern CMake enforces; let it configure anyway.
             export CMAKE_POLICY_VERSION_MINIMUM=3.5
@@ -124,6 +110,11 @@
               export LD_LIBRARY_PATH="${pkgs.mesa}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             fi
           '';
+          # bindgen (coreaudio-sys, apple-sys) needs libclang, and a nix shell does
+          # not expose Xcode's.
+          macosBuildEnvHook = lib.optionalString pkgs.stdenv.isDarwin ''
+            export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
+          '';
           # Voice notes: let WebKitGTK find GStreamer plugins for <audio> playback.
           voiceHostEnvHook = lib.optionalString pkgs.stdenv.isLinux ''
             export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPluginPath}"
@@ -137,33 +128,40 @@
             pkgs.doctl
             pkgs.toxiproxy
             pkgs.stunnel
+            pkgs.pkg-config
+            # openssl-sys is built from source and its configure step is a perl script.
+            pkgs.perl
           ]
           ++ lib.optionals pkgs.stdenv.isLinux [
-            pkgs.mold
             pkgs.cmake
-            pkgsPnpm.alsa-lib
-          ];
+            pkgs.gsettings-desktop-schemas
+            pkgs.shared-mime-info
+          ]
+          ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
         in
         rec {
           devShells.default = pkgs.mkShell {
             packages = [ rust ] ++ packages;
-            buildInputs = lib.optionals pkgs.stdenv.isLinux [
-              pkgsPnpm.alsa-lib
-              pkgs.libopus
-            ];
-            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            shellHook = hostBuildEnvHook + voiceHostEnvHook;
-          };
-
-          # Opt-in faster dev builds: nightly rustc with the Cranelift codegen backend
-          devShells.cranelift = pkgs.mkShell {
-            packages = [ rustCranelift ] ++ packages;
-            buildInputs = lib.optionals pkgs.stdenv.isLinux [
-              pkgsPnpm.alsa-lib
-              pkgs.libopus
-            ];
-            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.holochainTauriDev ];
-            shellHook = hostBuildEnvHook + voiceHostEnvHook;
+            buildInputs = [
+              # mailbox-server links the system OpenSSL; only the app crate vendors it.
+              pkgs.openssl
+            ]
+            ++ lib.optionals pkgs.stdenv.isLinux (
+              with pkgs;
+              [
+                webkitgtk_4_1
+                gtk3
+                libsoup_3
+                glib
+                gdk-pixbuf
+                librsvg
+                dbus
+                libayatana-appindicator
+                alsa-lib
+                libopus
+              ]
+            );
+            shellHook = hostBuildEnvHook + voiceHostEnvHook + macosBuildEnvHook;
           };
 
           devShells.androidDev = pkgs.mkShell {
@@ -174,8 +172,7 @@
               # audiopus_sys builds libopus from source for each ABI via CMake.
               pkgs.cmake
             ]
-            ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ]
-            ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.mold ];
+            ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ];
             inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
             # The e2e harness consumes tools and artifacts from PATH and
             # conventional paths; this hook provides the chromedrivers dir.

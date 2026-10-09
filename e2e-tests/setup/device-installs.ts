@@ -1,8 +1,7 @@
 /**
  * Which build each device currently has installed, so onPrepare installs an
- * app archive once per build instead of once per run. turbo (see
- * turbo-build.ts) guarantees the archive on disk matches the sources; this
- * records which device got which archive bytes. Android verifies directly
+ * app archive once per build instead of once per run: this records which
+ * device got which archive bytes. Android verifies directly
  * against the device (md5 of the installed base.apk); iOS can't checksum an
  * installed app, so this stamp is the record.
  */
