@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { envInt } from '../../helpers/utils';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import { runAppBuild } from '../app-build';
 import {
 	type Want,
 	claimAllWhenFreeSync,
@@ -23,7 +24,6 @@ import { hashFile } from '../device-installs';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { E2E_RELAY_URL } from '../relay';
-import { runTurboBuild } from '../turbo-build';
 import {
 	WIFI_REASSOCIATE_MS,
 	type WifiInfo,
@@ -506,12 +506,7 @@ function builtLayoutChunk(): string {
 /** Fail when `apk` carries a frontend other than the one just built, which a
  *  stale native lib packaged into it is. Tauri embeds the frontend in the rust
  *  lib under its own asset paths and the APK stores the lib uncompressed, so
- *  the chunk name reads straight out of the file.
- *
- *  Only ever ask this of an APK this run packaged: a vite build hashes its
- *  chunks differently every time it runs, so the name only says which build
- *  an APK came from, never which sources — which is turbo's cache key to
- *  answer, and it restores an APK only for the sources that built it. */
+ *  the chunk name reads straight out of the file. */
 function assertApkFrontendIsCurrent(apk: string, udid: string): void {
 	const expected = `nodes/${builtLayoutChunk()}`;
 	const found = execSync(
@@ -531,14 +526,14 @@ function assertApkFrontendIsCurrent(apk: string, udid: string): void {
 /** Install the e2e APK on `udid` unless it already has this exact build.
  *  Sessions carry no `appium:app`, so this per-run install is the only one —
  *  each session then just fast-resets (`pm clear`) instead of reinstalling. */
-function ensureApkInstalled(udid: string, built: boolean): void {
+function ensureApkInstalled(udid: string): void {
 	const apk = apkForDevice(udid);
 	if (!existsSync(apk)) {
 		throw new Error(
 			`e2e APK not found at ${apk} (for device ${udid}) after the tauri android build`,
 		);
 	}
-	if (built) assertApkFrontendIsCurrent(apk, udid);
+	assertApkFrontendIsCurrent(apk, udid);
 	if (installedApkMd5(udid) === hashFile(apk, 'md5')) {
 		console.log(
 			`[android] ${udid} already has the current e2e APK — skipping install`,
@@ -946,7 +941,7 @@ export class AndroidPlatform implements AgentPlatform {
 		for (const dir of NATIVE_LIB_INTERMEDIATES) {
 			rmSync(dir, { recursive: true, force: true });
 		}
-		const built = runTurboBuild(
+		runAppBuild(
 			'e2e:build:android',
 			envWithoutWdioLoader(bakedEnv, androidEnv),
 		);
@@ -962,7 +957,7 @@ export class AndroidPlatform implements AgentPlatform {
 		}
 
 		for (const udid of this.udids.values()) {
-			ensureApkInstalled(udid, built);
+			ensureApkInstalled(udid);
 			keepScreenAwake(udid);
 			bridgeHostPorts(udid);
 		}

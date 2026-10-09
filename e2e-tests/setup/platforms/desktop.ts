@@ -18,11 +18,11 @@ import { remote } from 'webdriverio';
 import { UI_TIMEOUT } from '../../helpers/timeouts';
 import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
+import { runAppBuild } from '../app-build';
 import { killAllE2EProcesses, killAndWait, pidsNamedWithEnv } from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
 import { E2E_RELAY_URL } from '../relay';
-import { runTurboBuild } from '../turbo-build';
 import {
 	isPortListening,
 	waitForPortFree,
@@ -111,7 +111,7 @@ const WEBKITGTK_ENV: Record<string, string> = {
 };
 
 export function buildDesktopApp(): void {
-	runTurboBuild(
+	runAppBuild(
 		'e2e:build:desktop',
 		envWithoutWdioLoader({
 			VITE_E2E: 'true',
