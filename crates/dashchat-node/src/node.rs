@@ -1586,9 +1586,8 @@ impl Node {
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 
-        // The p2panda node stays alive inside `streams` until the last `Node`
-        // clone drops; it holds pool clones but closes nothing itself, so the
-        // pool closes below are the only ones that matter.
+        // Drops the p2panda node, stopping its network actors before the pool
+        // they share with the op store closes below.
         self.streams.shutdown().await;
 
         if let Err(err) = self.processor_cancel_tx.send(()).await {
@@ -1646,8 +1645,8 @@ impl Node {
         self.local_store.close().await;
         self.op_store.close().await;
 
-        // Holds only sockets (no file lock), so it goes last. The p2panda node
-        // outlives shutdown inside `Streams` and never closes its endpoint, so
+        // Holds only sockets (no file lock), so it goes last. Dropping the
+        // p2panda node in `streams.shutdown()` does not close its endpoint, so
         // this is the only close. A node with no networking layer never opened
         // one.
         if let Some(endpoint) = &self.endpoint {

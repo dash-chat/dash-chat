@@ -18,7 +18,7 @@ use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_core::traits::Digest;
 use thiserror::Error;
 use tokio::select;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{RwLockReadGuard, mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::{error, warn};
@@ -52,8 +52,9 @@ pub enum ProcessorEvent {
 /// Every subscription stream is merged into the [`Drain`], which is created at the same
 /// time as `Streams`.
 pub struct Streams {
-    /// p2panda node.
-    node: p2panda::Node,
+    /// p2panda node. Taken by [`shutdown`](Self::shutdown): dropping it stops p2panda's
+    /// network actors, which share the operation store's pool.
+    node: tokio::sync::RwLock<Option<p2panda::Node>>,
 
     /// Prefix for each topic stream's ack cursor name. `None` uses p2panda's
     /// default per-topic cursor (`"{topic}"`);
@@ -98,7 +99,7 @@ impl Streams {
         };
 
         let streams = Self {
-            node,
+            node: tokio::sync::RwLock::new(Some(node)),
             stream_cursor_prefix,
             publishers: Default::default(),
             in_process: processed,
@@ -117,14 +118,21 @@ impl Streams {
     async fn open_stream(
         &self,
         topic: Topic,
-    ) -> Result<(StreamPublisher<Payload>, StreamSubscription<Payload>), CreateStreamError> {
+    ) -> Result<(StreamPublisher<Payload>, StreamSubscription<Payload>), StreamsError> {
         let cursor_name = self
             .stream_cursor_prefix
             .as_ref()
             .map(|prefix| format!("{prefix}:{topic}"));
-        self.node
+        Ok(self
+            .node()
+            .await?
             .stream_from(topic, StreamFrom::Frontier, cursor_name)
-            .await
+            .await?)
+    }
+
+    async fn node(&self) -> Result<RwLockReadGuard<'_, p2panda::Node>, StreamsError> {
+        RwLockReadGuard::try_map(self.node.read().await, Option::as_ref)
+            .map_err(|_| StreamsError::ShutDown)
     }
 
     /// The topic's publisher, opening its stream if this is the first use of the topic.
@@ -223,10 +231,11 @@ impl Streams {
         // we already know and leave it undialable while offline.
         let addr = iroh::EndpointAddr::new(p2panda_net::utils::from_verifying_key(node_id))
             .with_relay_url(relay_url);
-        if self.node.node_addr_known(&addr).await? {
+        let node = self.node().await?;
+        if node.node_addr_known(&addr).await? {
             return Ok(());
         }
-        self.node.insert_node_addr(addr).await?;
+        node.insert_node_addr(addr).await?;
         Ok(())
     }
 
@@ -252,17 +261,19 @@ impl Streams {
         &self,
         addr: iroh::EndpointAddr,
     ) -> Result<(), StreamsError> {
-        self.node.insert_node_addr(addr).await?;
+        self.node().await?.insert_node_addr(addr).await?;
         Ok(())
     }
 
-    /// Drop every publisher and refuse to open any more, failing every publish still awaiting
-    /// processing. Still-parked imports are aborted when the [`Drain`] is dropped.
+    /// Drop every publisher and the p2panda node, refuse to open any more streams, and fail
+    /// every publish still awaiting processing. Still-parked imports are aborted when the
+    /// [`Drain`] is dropped.
     pub(crate) async fn shutdown(&self) {
         let mut publishers = self.publishers.lock().await;
         self.shut_down.store(true, Ordering::Release);
         publishers.clear();
         self.in_process.lock().unwrap().clear();
+        self.node.write().await.take();
     }
 }
 
@@ -473,10 +484,12 @@ pub enum ProcessError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use futures::future::join_all;
     use p2panda::{Node, Topic};
 
-    use crate::node::actor::ProcessorEvent;
+    use crate::node::actor::{Drain, ProcessError, ProcessorEvent, StreamsError};
     use crate::testing::setup_tracing;
     use crate::{ChatMessageContent, ChatPayload, Payload};
 
@@ -559,5 +572,103 @@ mod tests {
         for event in join_all(processed_futures).await {
             assert!(event.unwrap().is_completed());
         }
+    }
+
+    async fn spawn_node() -> Node {
+        Node::builder()
+            .network_id(Topic::random().into())
+            .spawn()
+            .await
+            .unwrap()
+    }
+
+    /// Pull the drain forever, acknowledging every operation as processed.
+    fn spawn_acking_drain(mut drain: Drain) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            while let Some(event) = drain.next().await {
+                if let ProcessorEvent::Operation {
+                    processed_tx: Some(processed_tx),
+                    ..
+                } = event
+                {
+                    let _ = processed_tx.send(Ok(()));
+                }
+            }
+        })
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn concurrent_publishes_form_one_log() {
+        setup_tracing(&["dashchat=info"], true);
+        let topic = Topic::random();
+        let (streams, drain) = Streams::new(spawn_node().await, None);
+        let streams = Arc::new(streams);
+        let drain_task = spawn_acking_drain(drain);
+
+        let publishes = (0..10).map(|i| {
+            let streams = streams.clone();
+            tokio::spawn(async move {
+                streams
+                    .publish(topic, chat(&format!("message {i}")))
+                    .await
+                    .unwrap()
+                    .await
+                    .unwrap()
+            })
+        });
+        let mut headers: Vec<_> = join_all(publishes)
+            .await
+            .into_iter()
+            .map(|event| event.unwrap().header().to_owned())
+            .collect();
+        headers.sort_by_key(|header| header.seq_num);
+
+        for (seq_num, pair) in headers.windows(2).enumerate() {
+            assert_eq!(pair[0].seq_num, seq_num as u32);
+            assert_eq!(pair[1].backlink, Some(pair[0].hash()));
+        }
+        assert_eq!(headers.len(), 10);
+        drain_task.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn racing_subscribes_open_a_topic_once() {
+        let topic = Topic::random();
+        let (streams, _drain) = Streams::new(spawn_node().await, None);
+        let streams = Arc::new(streams);
+
+        let subscribes = (0..4).map(|_| {
+            let streams = streams.clone();
+            tokio::spawn(async move { streams.subscribe(topic).await.unwrap() })
+        });
+        let opened = join_all(subscribes)
+            .await
+            .into_iter()
+            .filter(|opened| *opened.as_ref().unwrap())
+            .count();
+        assert_eq!(opened, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shutdown_fails_in_flight_publish_and_refuses_new_ones() {
+        let topic = Topic::random();
+        let (streams, drain) = Streams::new(spawn_node().await, None);
+
+        let in_flight = streams
+            .publish(topic, chat("never processed"))
+            .await
+            .unwrap();
+        streams.shutdown().await;
+        drop(drain);
+
+        assert!(matches!(in_flight.await, Err(ProcessError::ProcessorGone)));
+        assert!(matches!(
+            streams.publish(topic, chat("after shutdown")).await,
+            Err(StreamsError::ShutDown)
+        ));
+        assert!(matches!(
+            streams.subscribe(topic).await,
+            Err(StreamsError::ShutDown)
+        ));
     }
 }

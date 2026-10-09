@@ -5,6 +5,7 @@ use p2panda::NodeId;
 use p2panda::operation::Header;
 use p2panda::streams::{ProcessedOperation, Source};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::error::TrySendError;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, warn};
 
@@ -810,19 +811,14 @@ impl Node {
     /// it refetches and renders the body-less op) but must never receive the
     /// deleted content.
     pub async fn notify_header(&self, topic: TopicId, header: &Header) -> anyhow::Result<()> {
-        if let Some(notification_tx) = self.notification_tx.clone() {
-            notification_tx
-                .send(
-                    OpNotification {
-                        topic: topic.clone(),
-                        header: header.clone(),
-                        payload: None,
-                    }
-                    .into(),
-                )
-                .await
-                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
-        }
+        self.notify(
+            OpNotification {
+                topic,
+                header: header.clone(),
+                payload: None,
+            }
+            .into(),
+        );
         Ok(())
     }
 
@@ -832,29 +828,34 @@ impl Node {
         header: &Header,
         payload: &Payload,
     ) -> anyhow::Result<()> {
-        if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
-            notification_tx
-                .send(
-                    OpNotification {
-                        topic: topic.clone(),
-                        header: header.clone(),
-                        payload: Some(payload.clone()),
-                    }
-                    .into(),
-                )
-                .await
-                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
-        }
+        self.notify(
+            OpNotification {
+                topic,
+                header: header.clone(),
+                payload: Some(payload.clone()),
+            }
+            .into(),
+        );
         Ok(())
     }
 
     async fn notify_system_event(&self, event: SystemNotification) -> anyhow::Result<()> {
-        if let Some(notification_tx) = self.notification_tx.clone() {
-            notification_tx
-                .send(event.into())
-                .await
-                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
-        }
+        self.notify(event.into());
         Ok(())
+    }
+
+    /// Hand a notification to the frontend without waiting on it: the processor drives
+    /// p2panda's bounded pipeline, so a webview that stops draining must not stall sync.
+    fn notify(&self, notification: Notification) {
+        let Some(notification_tx) = &self.notification_tx else {
+            return;
+        };
+        match notification_tx.try_send(notification) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => {
+                warn!("notification channel full (frontend not draining), dropping notification")
+            }
+            Err(TrySendError::Closed(_)) => warn!("notification channel closed"),
+        }
     }
 }

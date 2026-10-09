@@ -34,13 +34,17 @@ impl Node {
     }
 }
 
+/// Await `fut`, warning every 30s it is still pending.
 pub(super) async fn warn_if_slow<F: std::future::Future>(what: &str, fut: F) -> F::Output {
     tokio::pin!(fut);
-    match tokio::time::timeout(std::time::Duration::from_secs(30), &mut fut).await {
-        Ok(out) => out,
-        Err(_) => {
-            tracing::warn!("{what} is taking longer than 30s");
-            fut.await
+    let started = std::time::Instant::now();
+    loop {
+        match tokio::time::timeout(std::time::Duration::from_secs(30), &mut fut).await {
+            Ok(out) => return out,
+            Err(_) => tracing::warn!(
+                "{what} has been pending for {}s",
+                started.elapsed().as_secs()
+            ),
         }
     }
 }
