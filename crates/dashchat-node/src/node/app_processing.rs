@@ -11,8 +11,8 @@ use tracing::{debug, error, warn};
 
 use crate::AckedOp;
 use crate::forward_edit_closure;
-use crate::node::actor::{Drain, ProcessedTx, ProcessorError, ProcessorEvent};
 use crate::node::publish::warn_if_slow;
+use crate::node::streams::{ProcessedTx, ProcessorError, ProcessorEvent, TopicDrain};
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
@@ -144,7 +144,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().aliased())))]
     pub(super) fn spawn_application_processor_task(
         &self,
-        mut drain: Drain,
+        mut drain: TopicDrain,
         mut cancel_rx: mpsc::Receiver<()>,
     ) -> tokio::task::JoinHandle<()> {
         let node = self.clone();
