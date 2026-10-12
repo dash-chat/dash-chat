@@ -12,7 +12,7 @@
  * labels are matched in English, so the device has to be set to it.
  */
 import { ASYNC_SCRIPT_TIMEOUT } from '../../helpers/timeouts';
-import { switchToWebview } from '../webview';
+import { isOnWebview, switchToWebview } from '../webview';
 import {
 	WIFI_REASSOCIATE_MS,
 	type WifiInfo,
@@ -311,9 +311,7 @@ async function inWebview<T>(
 	if (state !== APP_STATE_FOREGROUND) {
 		await attachToIosApp(b);
 	} else {
-		const context = await b.getContext();
-		const contextId = typeof context === 'string' ? context : context.id;
-		if (!contextId.startsWith('WEBVIEW')) await switchToWebview(b, 'ios');
+		if (!(await isOnWebview(b))) await switchToWebview(b, 'ios');
 	}
 	await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
 	return await body();

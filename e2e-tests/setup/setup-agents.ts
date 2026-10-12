@@ -12,6 +12,7 @@
 import { asyncExitHook } from 'exit-hook';
 import { existsSync, readFileSync } from 'node:fs';
 
+import { ErrorPlaceholder } from '../helpers/components/error-placeholder';
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
@@ -91,7 +92,12 @@ import {
 	phonePlatforms,
 	testNetworkSsids,
 } from './test-env';
-import { deviceUdid, switchToWebview, waitForTestUtils } from './webview';
+import {
+	deviceUdid,
+	isOnWebview,
+	switchToWebview,
+	waitForTestUtils,
+} from './webview';
 import { WIFI_REASSOCIATE_MS, type WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
@@ -111,6 +117,7 @@ export type Agent = WebdriverIO.Browser & {
 	editAboutPage: EditAboutPage;
 	editNamePage: EditNamePage;
 	editPhotoPage: EditPhotoPage;
+	errorPlaceholder: ErrorPlaceholder;
 	eulaPage: EulaPage;
 	addMembersPage: AddMembersPage;
 	groupChatPage: GroupChatPage;
@@ -165,6 +172,9 @@ export type Agent = WebdriverIO.Browser & {
 	/** Send the app to the background (home button) without killing it.
 	 *  On Android this is a home-key press; on desktop it is currently a no-op. */
 	backgroundApp(): Promise<void>;
+	/** Whether the app's process is alive, foreground or background. A phone
+	 *  app the OS killed while it was backgrounded reports false. */
+	isAppRunning(): Promise<boolean>;
 	/** Relaunch after [`stopApp`] or [`waitForAppExit`] and wait until the app
 	 *  is interactive again. Idempotent: a no-op when the app is already
 	 *  running (on mobile it foregrounds a backgrounded app). */
@@ -271,6 +281,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.editAboutPage = new EditAboutPage(b);
 	agent.editNamePage = new EditNamePage(b);
 	agent.editPhotoPage = new EditPhotoPage(b);
+	agent.errorPlaceholder = new ErrorPlaceholder(b);
 	agent.eulaPage = new EulaPage(b);
 	agent.addMembersPage = new AddMembersPage(b);
 	agent.groupChatPage = new GroupChatPage(b);
@@ -427,6 +438,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		// unrun and the "background" purely notional.
 		await b.pause(PROCESS_LIFECYCLE_DISPATCH_MS);
 	};
+	agent.isAppRunning = async () => {
+		if (agent.platform === 'desktop') {
+			return true;
+		}
+		return Number(await b.queryAppState(APP_PACKAGE)) > APP_STATE_NOT_RUNNING;
+	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
 			// A live session means the app is running and driveable, and there
@@ -441,9 +458,14 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await launchAgentApp(slot);
 			await b.reloadSession();
 		} else {
+			const wasRunning =
+				Number(await b.queryAppState(APP_PACKAGE)) > APP_STATE_NOT_RUNNING;
 			// activateApp is itself idempotent: it launches a stopped app and
 			// merely foregrounds a running one.
 			await b.activateApp(APP_PACKAGE);
+			// A backgrounded app keeps its page and the session its webview
+			// context, so there is nothing to reattach.
+			if (wasRunning && (await isOnWebview(b))) return;
 			// A relaunch drops back to the native context; only the session's
 			// initial `autoWebview` does this for us.
 			await switchToWebview(b, agent.platform);
@@ -866,8 +888,7 @@ export function tapWebElementsAtTheirRect(
 		'click',
 		async function (this: WebdriverIO.Element, origClick) {
 			if (pointerType === 'touch') {
-				const context = await agent.getContext();
-				if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+				if (!(await isOnWebview(agent))) {
 					return await origClick();
 				}
 			}
@@ -905,8 +926,7 @@ function tapWebElementsWithTouch(agent: WebdriverIO.Browser): void {
 	agent.overwriteCommand(
 		'click',
 		async function (this: WebdriverIO.Element, origClick) {
-			const context = await agent.getContext();
-			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+			if (!(await isOnWebview(agent))) {
 				return await origClick();
 			}
 			const { x, y } = await tapPoint(agent, this);
