@@ -849,7 +849,9 @@ impl Node {
         for (member, access) in initial_members {
             // TODO: this erases info about Individual vs Group member.
             // Do we need a proper Group in the Space to account for this?
-            space.add(member.id(), access.level).await?;
+            space
+                .run(async move |space| space.add(member.id(), access.level).await)
+                .await??;
         }
         Ok(())
     }
@@ -906,8 +908,8 @@ impl Node {
         self.streams
             .space(chat_id.into())
             .await?
-            .add(member.id(), access.level)
-            .await?;
+            .run(async move |space| space.add(member.id(), access.level).await)
+            .await??;
         Ok(())
     }
 
@@ -920,8 +922,8 @@ impl Node {
         self.streams
             .space(chat_id.into())
             .await?
-            .remove(member.id())
-            .await?;
+            .run(async move |space| space.remove(member.id()).await)
+            .await??;
         Ok(())
     }
 
