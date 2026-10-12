@@ -766,12 +766,7 @@ impl Node {
             (GroupMember::Individual(*self.device_id()), Access::write()),
             (GroupMember::Individual(*other_device_id), Access::write()),
         ];
-        self.publish(
-            topic,
-            Payload::group_control(topic, GroupAction::Create { initial_members }, deps)?,
-            Some(&format!("create_direct_chat_space({:?})", topic.aliased())),
-        )
-        .await?;
+        self.create_space(topic, initial_members).await?;
 
         tracing::info!(
             my_actor = ?my_actor.aliased(),
@@ -828,14 +823,7 @@ impl Node {
 
         self.register_topic(chat_id).await?;
 
-        // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads(*chat_id).await?;
-        self.publish(
-            chat_id,
-            Payload::group_control(chat_id, GroupAction::Create { initial_members }, deps)?,
-            Some(&format!("create_group({:?})", chat_id.aliased())),
-        )
-        .await?;
+        self.create_space(chat_id, initial_members).await?;
 
         // Ensure that future non-contact members can see every initial member's
         // profile, including the creator's. The creator is the only node that
@@ -850,6 +838,14 @@ impl Node {
             self.invite_to_group(chat_id, agent).await?;
         }
         Ok(chat_id)
+    }
+
+    async fn create_space(
+        &self,
+        topic: ChatId,
+        initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
+    ) -> anyhow::Result<()> {
+        todo!()
     }
 
     /// This is a temporary hack until we have device groups, see docs for [`ChatPayload::IntroduceAgents`].
@@ -894,6 +890,23 @@ impl Node {
         Ok(())
     }
 
+    async fn add_group_member_to_space(
+        &self,
+        chat_id: ChatId,
+        member: VerifyingKey,
+        access: p2panda_auth::Access,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    async fn remove_group_member_from_space(
+        &self,
+        chat_id: ChatId,
+        member: VerifyingKey,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
+
     pub async fn add_group_member(
         &self,
         chat_id: ChatId,
@@ -909,19 +922,8 @@ impl Node {
             ));
         }
 
-        self.publish(
-            chat_id,
-            Payload::group_control(
-                chat_id,
-                GroupAction::Add {
-                    member: GroupMember::Individual(member),
-                    access,
-                },
-                deps,
-            )?,
-            Some(&format!("add_group_member({:?})", chat_id.aliased())),
-        )
-        .await?;
+        self.add_group_member_to_space(chat_id, member, access)
+            .await?;
 
         let agent_id = self
             .projection
@@ -952,7 +954,6 @@ impl Node {
         chat_id: ChatId,
         member: VerifyingKey,
     ) -> Result<(), RemoveGroupMemberError> {
-        // TODO: this should use a transaction, but the race is not a big deal here
         let member_id = DeviceId::from(member);
         if !self.has_other_admins(chat_id, member_id).await?
             && !self.is_only_member(chat_id, member_id).await?
@@ -960,19 +961,8 @@ impl Node {
             return Err(RemoveGroupMemberError::LastAdmin);
         }
 
-        let deps = self.group_store.heads(*chat_id).await?;
-        self.publish(
-            chat_id,
-            Payload::group_control(
-                chat_id,
-                GroupAction::Remove {
-                    member: GroupMember::Individual(member),
-                },
-                deps,
-            )?,
-            Some(&format!("remove_group_member({:?})", chat_id.aliased())),
-        )
-        .await?;
+        self.remove_group_member_from_space(chat_id, member).await?;
+
         Ok(())
     }
 
