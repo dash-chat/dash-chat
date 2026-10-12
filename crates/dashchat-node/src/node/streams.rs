@@ -5,12 +5,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 
 use aliased::Aliasing;
-use derive_more::derive::{Display, From};
+use derive_more::derive::From;
 use futures::future::join;
-use futures::{FutureExt, Stream};
+use futures::{FutureExt, Stream, StreamExt};
 use p2panda::network::NetworkError;
-use p2panda::node::CreateStreamError;
+use p2panda::node::{CreateSpaceError, CreateStreamError, SubscribeSpaceError};
 use p2panda::operation::{Extensions, LogId, Operation};
+use p2panda::spaces::SpaceSubscription;
 use p2panda::streams::{
     ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
     StreamPublisher, StreamSubscription,
@@ -21,10 +22,13 @@ use thiserror::Error;
 use tokio::select;
 use tokio::sync::{RwLockReadGuard, mpsc, oneshot};
 use tokio::task::JoinSet;
-use tokio_stream::{StreamExt, StreamMap};
+use tokio_stream::StreamMap;
 use tracing::{error, warn};
 
-use crate::Payload;
+use crate::{ChatId, Payload};
+
+// TODO: XXX: be careful with the drop handler
+pub type Space = Arc<p2panda::spaces::Space<Payload>>;
 
 type Event = p2panda::processor::Event<LogId, Extensions, Topic>;
 
@@ -65,7 +69,7 @@ pub struct TopicStreams {
     ///
     /// Held across opening a new topic's stream so two callers racing on the same new topic
     /// can't open it twice.
-    publishers: tokio::sync::Mutex<HashMap<Topic, StreamPublisher<Payload>>>,
+    publishers: tokio::sync::Mutex<HashMap<Topic, Publisher>>,
 
     /// Senders for locally authored operations awaiting application processing, keyed by
     /// operation hash. When the operation has been fully processed, we remove the sender from
@@ -77,12 +81,58 @@ pub struct TopicStreams {
     shut_down: AtomicBool,
 }
 
+#[derive(Clone, From)]
+pub enum Publisher {
+    Stream(StreamPublisher<Payload>),
+    Space(Space),
+}
+
+impl Publisher {
+    pub fn tx(&self) -> &StreamPublisher<Payload> {
+        match self {
+            Publisher::Stream(tx) => tx,
+            Publisher::Space(space) => space.publisher(),
+        }
+    }
+}
+
+pub enum Subscriber {
+    Stream(StreamSubscription<Payload>),
+    Space(SpaceSubscription<Payload>),
+}
+
+impl Stream for Subscriber {
+    type Item = StreamEvent<Payload>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match &mut *self {
+            Subscriber::Stream(stream) => stream.poll_next_unpin(cx),
+            Subscriber::Space(space) => space.poll_next_unpin(cx),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Subscriber::Stream(stream) => stream.size_hint(),
+            Subscriber::Space(space) => space.size_hint(),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum StreamIntent {
+    CreateSpace,
+    JoinSpace,
+    SubscribeStream,
+    ExistingStreamOnly,
+}
+
 enum DrainCommand {
-    Subscribe(Topic, StreamSubscription<Payload>),
+    Subscribe(Topic, Subscriber),
     Unsubscribe(Topic),
     Import {
         topic: Topic,
-        publisher: StreamPublisher<Payload>,
+        publisher: Publisher,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     },
 }
@@ -139,24 +189,47 @@ impl TopicStreams {
             .map_err(|_| StreamsError::ShutDown)
     }
 
-    /// The topic's publisher, opening its stream if this is the first use of the topic.
+    /// The topic's publisher, creating the stream/space if this is the first use of the topic.
     ///
-    /// Returns whether the stream was newly opened.
+    /// Returns whether the stream was newly created.
     async fn publisher(
         &self,
         topic: Topic,
-    ) -> Result<(StreamPublisher<Payload>, bool), StreamsError> {
-        let mut publishers = self.publishers.lock().await;
+        space: StreamIntent,
+    ) -> Result<(Publisher, bool), StreamsError> {
+        let mut pubs = self.publishers.lock().await;
         if self.shut_down.load(Ordering::Acquire) {
             return Err(StreamsError::ShutDown);
         }
-        if let Some(tx) = publishers.get(&topic) {
-            return Ok((tx.clone(), false));
+        if let Some(sub) = pubs.get(&topic) {
+            return Ok((sub.clone(), false));
         }
-        let (tx, rx) = self.open_stream(topic).await?;
-        publishers.insert(topic, tx.clone());
-        self.send_to_drain(DrainCommand::Subscribe(topic, rx))?;
-        Ok((tx, true))
+
+        let (publisher, subscriber) = match space {
+            StreamIntent::CreateSpace => {
+                let (space, subscriber) = self.node().await?.create_space(topic).await?;
+                (
+                    Publisher::Space(Arc::new(space)),
+                    Subscriber::Space(subscriber),
+                )
+            }
+            StreamIntent::JoinSpace => {
+                let (space, subscriber) = self.node().await?.space(topic).await?;
+                (
+                    Publisher::Space(Arc::new(space)),
+                    Subscriber::Space(subscriber),
+                )
+            }
+            StreamIntent::SubscribeStream => {
+                let (tx, rx) = self.open_stream(topic).await?;
+                (Publisher::Stream(tx), Subscriber::Stream(rx))
+            }
+            StreamIntent::ExistingStreamOnly => return Err(StreamsError::NotSubscribed),
+        };
+
+        pubs.insert(topic, publisher.clone());
+        self.send_to_drain(DrainCommand::Subscribe(topic, subscriber))?;
+        Ok((publisher, true))
     }
 
     fn send_to_drain(&self, command: DrainCommand) -> Result<(), StreamsError> {
@@ -165,9 +238,24 @@ impl TopicStreams {
             .map_err(|_| StreamsError::DrainClosed)
     }
 
+    pub(crate) async fn create_space(&self, chat_id: ChatId) -> Result<Space, StreamsError> {
+        let (publisher, created) = self
+            .publisher(chat_id.into(), StreamIntent::CreateSpace)
+            .await?;
+        if !created {
+            return Err(StreamsError::SpaceAlreadyExists);
+        }
+        match publisher {
+            Publisher::Space(space) => Ok(space),
+            Publisher::Stream(_) => {
+                unreachable!("we created the space, so this is a space publisher")
+            }
+        }
+    }
+
     /// Subscribe to a topic. Returns `false` if already subscribed.
     pub(crate) async fn subscribe(&self, topic: Topic) -> Result<bool, StreamsError> {
-        let (_, opened) = self.publisher(topic).await?;
+        let (_, opened) = self.publisher(topic, StreamIntent::SubscribeStream).await?;
         Ok(opened)
     }
 
@@ -177,13 +265,15 @@ impl TopicStreams {
         let _ = self.send_to_drain(DrainCommand::Unsubscribe(topic));
     }
 
-    /// Import an external stream of operations into a topic, subscribing to it if needed.
+    /// Import an external stream of operations into a subscribed topic.
     pub(crate) async fn import(
         &self,
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) -> Result<(), StreamsError> {
-        let (publisher, _) = self.publisher(topic).await?;
+        let (publisher, _) = self
+            .publisher(topic, StreamIntent::ExistingStreamOnly)
+            .await?;
         self.send_to_drain(DrainCommand::Import {
             topic,
             publisher,
@@ -191,19 +281,22 @@ impl TopicStreams {
         })
     }
 
-    /// Publish a payload into a topic, subscribing to it if needed.
+    /// Publish a payload into a subscribed topic.
     pub(crate) async fn publish(
         &self,
         topic: Topic,
         payload: Payload,
     ) -> Result<ProcessFuture, StreamsError> {
-        let (tx, _) = self.publisher(topic).await?;
+        let (publisher, _) = self
+            .publisher(topic, StreamIntent::ExistingStreamOnly)
+            .await?;
 
         let (processed_tx, processed_rx) = oneshot::channel();
         let mut registered = None;
         // `publish_with` calls back before the operation enters the pipeline, so the entry
         // is in place before the drain can see the operation.
-        let published = tx
+        let published = publisher
+            .tx()
             .publish_with(payload, |hash| {
                 self.in_process.lock().unwrap().insert(hash, processed_tx);
                 registered = Some(hash);
@@ -290,7 +383,7 @@ impl TopicStreams {
 /// which hangs this way).
 pub(crate) struct TopicDrain {
     /// All subscription streams.
-    streams: StreamMap<Topic, StreamSubscription<Payload>>,
+    streams: StreamMap<Topic, Subscriber>,
 
     processed: Arc<std::sync::Mutex<HashMap<Hash, ProcessedTx>>>,
 
@@ -354,11 +447,11 @@ impl TopicDrain {
     fn spawn_import(
         &mut self,
         topic: Topic,
-        publisher: StreamPublisher<Payload>,
+        publisher: Publisher,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) {
         self.import_tasks.spawn(async move {
-            let err = publisher.import(stream).await.err()?;
+            let err = publisher.tx().import(stream).await.err()?;
             error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
             Some((topic, err))
         });
@@ -452,7 +545,19 @@ pub enum StreamsError {
     Subscribe(#[from] CreateStreamError),
 
     #[error(transparent)]
+    CreateSpace(#[from] CreateSpaceError),
+
+    #[error(transparent)]
+    SubscribeSpace(#[from] SubscribeSpaceError),
+
+    #[error(transparent)]
     Import(#[from] ImportError),
+
+    #[error("can't create a space that already exists")]
+    SpaceAlreadyExists,
+
+    #[error("topic must be subscribed to first")]
+    NotSubscribed,
 
     #[error("stream drain is gone")]
     DrainClosed,

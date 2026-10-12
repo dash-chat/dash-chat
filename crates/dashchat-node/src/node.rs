@@ -23,7 +23,7 @@ use chrono::{Duration, Utc};
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
-use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
+use p2panda::{AccessLevel, Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
@@ -845,7 +845,13 @@ impl Node {
         topic: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
     ) -> anyhow::Result<()> {
-        todo!()
+        let space = self.streams.create_space(topic).await?;
+        for (member, access) in initial_members {
+            // TODO: this erases info about Individual vs Group member.
+            // Do we need a proper Group in the Space to account for this?
+            space.add(member.id(), access.level).await?;
+        }
+        Ok(())
     }
 
     /// This is a temporary hack until we have device groups, see docs for [`ChatPayload::IntroduceAgents`].
