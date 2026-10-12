@@ -41,13 +41,13 @@ reporting = { path = "crates/reporting" }
 #   extension sharing one database file stop refusing each other's writes with
 #   "database is locked".
 # - The `custom_cursor_name` param to `stream_from` (p2panda#1408).
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "2d41a3e4" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "2d41a3e4", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "5b19df0f" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "5b19df0f", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "2d41a3e4" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "2d41a3e4" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "2d41a3e4", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "5b19df0f" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "5b19df0f" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "5b19df0f", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -55,9 +55,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "2d41a3e4"
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "2d41a3e4" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "2d41a3e4" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "2d41a3e4" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "5b19df0f" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "5b19df0f" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "5b19df0f" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [
