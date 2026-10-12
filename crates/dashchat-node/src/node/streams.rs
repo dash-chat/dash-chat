@@ -124,7 +124,7 @@ enum StreamIntent {
     CreateSpace,
     JoinSpace,
     SubscribeStream,
-    ExistingStreamOnly,
+    ExistingOnly,
 }
 
 enum DrainCommand {
@@ -224,7 +224,7 @@ impl TopicStreams {
                 let (tx, rx) = self.open_stream(topic).await?;
                 (Publisher::Stream(tx), Subscriber::Stream(rx))
             }
-            StreamIntent::ExistingStreamOnly => return Err(StreamsError::NotSubscribed),
+            StreamIntent::ExistingOnly => return Err(StreamsError::NotSubscribed),
         };
 
         pubs.insert(topic, publisher.clone());
@@ -265,15 +265,21 @@ impl TopicStreams {
         let _ = self.send_to_drain(DrainCommand::Unsubscribe(topic));
     }
 
+    pub(crate) async fn space(&self, topic: Topic) -> Result<Space, StreamsError> {
+        let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
+        match publisher {
+            Publisher::Space(space) => Ok(space),
+            _ => Err(StreamsError::NotSubscribed),
+        }
+    }
+
     /// Import an external stream of operations into a subscribed topic.
     pub(crate) async fn import(
         &self,
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) -> Result<(), StreamsError> {
-        let (publisher, _) = self
-            .publisher(topic, StreamIntent::ExistingStreamOnly)
-            .await?;
+        let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
         self.send_to_drain(DrainCommand::Import {
             topic,
             publisher,
@@ -287,9 +293,7 @@ impl TopicStreams {
         topic: Topic,
         payload: Payload,
     ) -> Result<ProcessFuture, StreamsError> {
-        let (publisher, _) = self
-            .publisher(topic, StreamIntent::ExistingStreamOnly)
-            .await?;
+        let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
 
         let (processed_tx, processed_rx) = oneshot::channel();
         let mut registered = None;
