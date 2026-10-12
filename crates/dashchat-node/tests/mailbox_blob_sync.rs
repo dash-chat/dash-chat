@@ -451,8 +451,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
 /// to its p2panda address book.
 ///
 /// This exercises the full client-side wiring added for mailbox dialability:
-/// `Node::insert_peer_addr` → the `RegisterPeerAddr` actor command → the
-/// p2panda `Node::insert_node_addr` → `AddressBook::insert_node_info`. Without
+/// `Node::insert_peer_addr` through to `AddressBook::insert_node_info`. Without
 /// this path the iroh blob downloader can't reach a peer by its EndpointId.
 /// We feed it a real `EndpointAddr` (the host node's own) and assert the insert
 /// succeeds end-to-end.
