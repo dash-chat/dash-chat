@@ -6,13 +6,13 @@
 	"scripts": {
 		"start": "pnpm dev",
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "vite build && node scripts/sync-build.ts",
 		"preview": "vite preview",
 		"paraglide": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && prettier --check '{src,tests}/**/*.{ts,svelte}'",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && prettier --check '{src,tests,scripts}/**/*.{ts,svelte}'",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"format": "prettier --write '{src,tests}/**/*.{ts,svelte}'",
-		"format:check": "prettier --check '{src,tests}/**/*.{ts,svelte}'"
+		"format": "prettier --write '{src,tests,scripts}/**/*.{ts,svelte}'",
+		"format:check": "prettier --check '{src,tests,scripts}/**/*.{ts,svelte}'"
 	},
 	"dependencies": {
 		"@awesome.me/webawesome": "3.13.0",

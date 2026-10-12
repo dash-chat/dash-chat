@@ -23,7 +23,7 @@ import {
 	allocatePinnedPort,
 	allocatePinnedPortFrom,
 } from '../allocate-port';
-import { runAppBuild } from '../app-build';
+import { SKIP_FRONTEND_BUILD, runBuild } from '../app-build';
 import {
 	type Want,
 	claimAllWhenFreeSync,
@@ -73,8 +73,8 @@ const INTERNET_PROBE_ROUNDS = 2;
 const INTERNET_PROBE_GAP = 2_000;
 
 const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
-// Fixed home for the .ipa the sessions install, copied here by the
-// e2e:build:ios task's export-session-ipa.ts step. The capabilities
+// Fixed home for the .ipa the sessions install, copied here by
+// scripts/export-session-ipa.ts after `tauri ios build`. The capabilities
 // `appium:app` reads are resolved when wdio.conf.ts loads — before onPrepare
 // builds anything — so it can't name a path under the build dir,
 // whose layout the tauri build rearranges (it exports the .ipa to the build
@@ -659,13 +659,10 @@ export class IosPlatform implements AgentPlatform {
 			SENTRY_ORG: process.env.SENTRY_ORG,
 			SENTRY_PROJECT: process.env.SENTRY_PROJECT,
 		});
-		// The task's last step (scripts/export-session-ipa.ts) copies the built
-		// .ipa to SESSION_IPA.
-		runAppBuild(
-			'e2e:build:ios',
+		runBuild(
+			`pnpm tauri ios build --debug --features e2e-tests ${SKIP_FRONTEND_BUILD} && node scripts/export-session-ipa.ts`,
 			envWithoutWdioLoader({
 				...bakedEnv,
-				VITE_E2E: 'true',
 				IPHONEOS_DEPLOYMENT_TARGET: '17.0',
 				// Drop debuginfo (a full-debug iOS build is >10GB and fills the disk;
 				// this is compile-time, so it can't break signing). Unlike android,

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { envInt } from '../../helpers/utils';
 import { echoLinesWithPrefix } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
-import { runAppBuild } from '../app-build';
+import { SKIP_FRONTEND_BUILD, runBuild } from '../app-build';
 import {
 	type Want,
 	claimAllWhenFreeSync,
@@ -926,7 +926,6 @@ export class AndroidPlatform implements AgentPlatform {
 			...mailboxEnv,
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
-			E2E_ANDROID_TARGETS: [...targets].join(' '),
 		};
 		// Gradle packages incrementally, patching the previous APK in place and
 		// leaving holes where replaced entries were: an e2e APK built over a dev
@@ -941,8 +940,8 @@ export class AndroidPlatform implements AgentPlatform {
 		for (const dir of NATIVE_LIB_INTERMEDIATES) {
 			rmSync(dir, { recursive: true, force: true });
 		}
-		runAppBuild(
-			'e2e:build:android',
+		runBuild(
+			`pnpm tauri android build --debug --apk --split-per-abi --features e2e-tests -t ${[...targets].join(' ')} ${SKIP_FRONTEND_BUILD}`,
 			envWithoutWdioLoader(bakedEnv, androidEnv),
 		);
 

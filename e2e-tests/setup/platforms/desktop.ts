@@ -18,7 +18,7 @@ import { remote } from 'webdriverio';
 import { UI_TIMEOUT } from '../../helpers/timeouts';
 import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
-import { runAppBuild } from '../app-build';
+import { SKIP_FRONTEND_BUILD, runBuild } from '../app-build';
 import { killAllE2EProcesses, killAndWait, pidsNamedWithEnv } from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
@@ -111,13 +111,16 @@ const WEBKITGTK_ENV: Record<string, string> = {
 };
 
 export function buildDesktopApp(): void {
-	runAppBuild(
-		'e2e:build:desktop',
+	runBuild(
+		`pnpm tauri build --debug --no-bundle --features e2e-tests ${SKIP_FRONTEND_BUILD}`,
 		envWithoutWdioLoader({
-			VITE_E2E: 'true',
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			E2E_NETWORK_ID,
 			E2E_RELAY_URL,
+			// launchDesktopApp passes the run's own URLs: a baked value is dead and
+			// only ties the binary to one run's mailbox port.
+			MAILBOX_URL: undefined,
+			PUSH_NOTIFICATIONS_SERVER_URL: undefined,
 		}),
 	);
 }
