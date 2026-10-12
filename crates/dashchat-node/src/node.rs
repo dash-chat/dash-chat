@@ -902,7 +902,13 @@ impl Node {
         member: VerifyingKey,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
-        todo!()
+        let member = GroupMember::Individual(member);
+        self.streams
+            .space(chat_id.into())
+            .await?
+            .add(member.id(), access.level)
+            .await?;
+        Ok(())
     }
 
     async fn remove_group_member_from_space(
@@ -910,7 +916,13 @@ impl Node {
         chat_id: ChatId,
         member: VerifyingKey,
     ) -> anyhow::Result<()> {
-        todo!()
+        let member = GroupMember::Individual(member);
+        self.streams
+            .space(chat_id.into())
+            .await?
+            .remove(member.id())
+            .await?;
+        Ok(())
     }
 
     pub async fn add_group_member(
