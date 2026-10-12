@@ -9,6 +9,7 @@ mod singleton_task_with_retries;
 
 #[cfg(feature = "cbor")]
 pub mod cbor;
+pub mod futures;
 
 pub use derive_watch::derive_watch;
 pub use fetch_loop::{fetch_loop, FetchConfig, FetchPool};
