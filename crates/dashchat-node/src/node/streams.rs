@@ -28,7 +28,35 @@ use tracing::{error, warn};
 use crate::{ChatId, Payload};
 
 // TODO: XXX: be careful with the drop handler
-pub type Space = Arc<p2panda::spaces::Space<Payload>>;
+#[derive(Clone)]
+pub struct Space(Arc<p2panda::spaces::Space<Payload>>);
+
+impl Space {
+    pub fn new(space: p2panda::spaces::Space<Payload>) -> Self {
+        Self(Arc::new(space))
+    }
+
+    pub fn publisher(&self) -> &StreamPublisher<Payload> {
+        self.0.publisher()
+    }
+
+    /// Run a Space function on its own task and await it.
+    ///
+    /// p2panda's state futures are deep and can easily overflow the stack.
+    /// Therefore, we require any state operation to be run on its own task.
+    pub async fn run<T, E, F>(
+        &self,
+        f: impl FnOnce(Arc<p2panda::spaces::Space<Payload>>) -> F + Send + 'static,
+    ) -> Result<Result<T, E>, tokio::task::JoinError>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        F: Future<Output = Result<T, E>> + Send + 'static,
+    {
+        let space = self.0.clone();
+        tokio::spawn(async move { f(space).await }).await
+    }
+}
 
 type Event = p2panda::processor::Event<LogId, Extensions, Topic>;
 
@@ -209,14 +237,14 @@ impl TopicStreams {
             StreamIntent::CreateSpace => {
                 let (space, subscriber) = self.node().await?.create_space(topic).await?;
                 (
-                    Publisher::Space(Arc::new(space)),
+                    Publisher::Space(Space::new(space)),
                     Subscriber::Space(subscriber),
                 )
             }
             StreamIntent::JoinSpace => {
                 let (space, subscriber) = self.node().await?.space(topic).await?;
                 (
-                    Publisher::Space(Arc::new(space)),
+                    Publisher::Space(Space::new(space)),
                     Subscriber::Space(subscriber),
                 )
             }
