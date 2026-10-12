@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 
 use aliased::Aliasing;
+use derive_more::derive::{Display, From};
 use futures::future::join;
 use futures::{FutureExt, Stream};
 use p2panda::network::NetworkError;

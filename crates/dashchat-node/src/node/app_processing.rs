@@ -192,14 +192,12 @@ impl Node {
         tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "operation processing");
 
         let result = if self.recorded_for_app(&operation).await {
-            match operation.message() {
-                Payload::GroupControl(_) => self.process_groups(&operation, &source).await,
-                _ => self.process_app(&operation, &source).await,
-            }
-            .map_err(|err| ProcessorError::App(err.to_string()))
+            self.process_app(&operation, &source)
+                .await
+                .map_err(|err| ProcessorError::App(err.to_string()))
         } else {
-            Err(ProcessorError::App(
-                "failed to record the operation for the app".into(),
+            Err(ProcessorError::System(
+                "failed to record the operation for the app".to_string(),
             ))
         };
 
@@ -507,7 +505,7 @@ impl Node {
         // If a receiver is processing this, the tombstone may have been processed prior,
         // so we want to drop the payload now and not process it.
         if self
-            .enforce_tombstone(topic, &operation.event.operation)
+            .enforce_tombstone(topic, &operation.processed().operation)
             .await?
         {
             // The payload is tombstoned, so we must not process it. Return early.
@@ -520,9 +518,6 @@ impl Node {
         let payload = operation.message();
 
         match &payload {
-            Payload::GroupControl(_) => {
-                // Nothing to do.
-            }
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 for (_, agent_id) in agents {
                     if agent_id == &self.agent_id() {

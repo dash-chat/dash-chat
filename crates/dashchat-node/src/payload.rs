@@ -1,5 +1,4 @@
 use dashchat_utils::SeqNum;
-use p2panda::groups::GroupsArgs;
 use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::group::GroupAction;
@@ -254,25 +253,6 @@ pub enum Payload {
     /// Data only seen within your private device group.
     /// No other person sees these.
     DeviceGroup(DeviceGroupPayload),
-
-    // @TODO: this will be removed once spaces is integrated into p2panda node as they will move
-    // onto the provided extension type.
-    /// Groups control message.
-    GroupControl(GroupsArgs),
-}
-
-impl Payload {
-    pub fn group_control(
-        group_id: ChatId,
-        action: GroupAction<VerifyingKey, ()>,
-        dependencies: Vec<Hash>,
-    ) -> anyhow::Result<Self> {
-        Ok(Payload::GroupControl(GroupsArgs {
-            group_id: group_id.to_group_pubkey()?,
-            action,
-            dependencies,
-        }))
-    }
 }
 
 impl Cbor for Payload {}
