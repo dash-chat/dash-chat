@@ -206,15 +206,23 @@ impl TopicStreams {
             .as_ref()
             .map(|prefix| format!("{prefix}:{topic}"));
         Ok(self
-            .node()
-            .await?
-            .stream_from(topic, StreamFrom::Frontier, cursor_name)
+            .with_node(async |node| {
+                node.stream_from(topic, StreamFrom::Frontier, cursor_name)
+                    .await
+            })
             .await?)
     }
 
-    async fn node(&self) -> Result<RwLockReadGuard<'_, p2panda::Node>, StreamsError> {
-        RwLockReadGuard::try_map(self.node.read().await, Option::as_ref)
-            .map_err(|_| StreamsError::ShutDown)
+    async fn with_node<T, E>(
+        &self,
+        f: impl AsyncFnOnce(&p2panda::Node) -> Result<T, E>,
+    ) -> Result<T, StreamsError>
+    where
+        StreamsError: From<E>,
+    {
+        let node = RwLockReadGuard::try_map(self.node.read().await, Option::as_ref)
+            .map_err(|_| StreamsError::ShutDown)?;
+        Ok(Box::pin(f(&node)).await?)
     }
 
     /// The topic's publisher, creating the stream/space if this is the first use of the topic.
@@ -235,14 +243,17 @@ impl TopicStreams {
 
         let (publisher, subscriber) = match space {
             StreamIntent::CreateSpace => {
-                let (space, subscriber) = self.node().await?.create_space(topic).await?;
+                let (space, subscriber) = self
+                    .with_node(async |node| node.create_space(topic).await)
+                    .await?;
                 (
                     Publisher::Space(Space::new(space)),
                     Subscriber::Space(subscriber),
                 )
             }
             StreamIntent::JoinSpace => {
-                let (space, subscriber) = self.node().await?.space(topic).await?;
+                let (space, subscriber) =
+                    self.with_node(async |node| node.space(topic).await).await?;
                 (
                     Publisher::Space(Space::new(space)),
                     Subscriber::Space(subscriber),
@@ -360,11 +371,14 @@ impl TopicStreams {
         // we already know and leave it undialable while offline.
         let addr = iroh::EndpointAddr::new(p2panda_net::utils::from_verifying_key(node_id))
             .with_relay_url(relay_url);
-        let node = self.node().await?;
-        if node.node_addr_known(&addr).await? {
+        let known = self
+            .with_node(async |node| node.node_addr_known(&addr).await)
+            .await?;
+        if known {
             return Ok(());
         }
-        node.insert_node_addr(addr).await?;
+        self.with_node(async |node| node.insert_node_addr(addr).await)
+            .await?;
         Ok(())
     }
 
@@ -390,7 +404,8 @@ impl TopicStreams {
         &self,
         addr: iroh::EndpointAddr,
     ) -> Result<(), StreamsError> {
-        self.node().await?.insert_node_addr(addr).await?;
+        self.with_node(async |node| node.insert_node_addr(addr).await)
+            .await?;
         Ok(())
     }
 
