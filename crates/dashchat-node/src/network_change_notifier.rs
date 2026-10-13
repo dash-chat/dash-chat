@@ -1,6 +1,5 @@
 //! Reacts to OS network changes: wakes the mailbox poller and republishes
-//! iroh's local addresses everywhere, and forwards the change to iroh where
-//! iroh can't notice it itself.
+//! iroh's local addresses everywhere, and forwards the change to iroh on Android.
 //!
 //! The mailbox manager backs off to slow polling (up to `stopped_interval`)
 //! while offline, so without a nudge a restored connection waits out the full
@@ -13,9 +12,8 @@
 //! iroh cannot detect network changes by itself on Android — its native network
 //! monitor has no working backend there (see [`iroh::Endpoint::network_change`]).
 //! Without this, after a WiFi/cellular switch iroh keeps stale addresses and
-//! sockets and never reconnects until the process restarts. Other platforms
-//! detect changes natively, except across a suspension, when iroh's monitor
-//! wasn't running either.
+//! sockets and never reconnects until the process restarts. Non-Android
+//! platforms detect changes natively, so iroh is only notified on Android.
 //!
 //! Even once it knows of the change, iroh recomputes the addresses it advertises
 //! only when a net report's result differs from the previous one, which an
@@ -32,8 +30,6 @@ use mailbox_client::manager::Mailboxes;
 
 use crate::mailbox::MailboxOperation;
 use crate::stores::OpStore;
-
-const IROH_NOTICES_NETWORK_CHANGES: bool = cfg!(not(target_os = "android"));
 
 /// Spawn the network-change notifier for the given endpoint and mailboxes.
 /// An offline node has no endpoint; it still wants its mailboxes probed.
@@ -54,13 +50,7 @@ pub(crate) fn spawn(
                     return;
                 }
             }
-            handle_network_change(
-                endpoint.as_ref(),
-                &mailboxes,
-                &unfetched_blob_trigger,
-                IROH_NOTICES_NETWORK_CHANGES,
-            )
-            .await;
+            handle_network_change(endpoint.as_ref(), &mailboxes, &unfetched_blob_trigger).await;
         }
     })
 }
@@ -69,34 +59,32 @@ pub(crate) async fn handle_network_change(
     endpoint: Option<&p2panda::Endpoint>,
     mailboxes: &Mailboxes<MailboxOperation, OpStore>,
     unfetched_blob_trigger: &tokio::sync::Notify,
-    iroh_noticed_it: bool,
 ) {
     tracing::info!("network-change notifier: probing mailboxes");
     mailboxes.probe_all().await;
     mailboxes.reset_uploads();
     unfetched_blob_trigger.notify_one();
     if let Some(endpoint) = endpoint {
-        notify_iroh(endpoint, iroh_noticed_it).await;
+        notify_iroh(endpoint).await;
     }
 }
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
-async fn notify_iroh(endpoint: &p2panda::Endpoint, iroh_noticed_it: bool) {
+async fn notify_iroh(endpoint: &p2panda::Endpoint) {
     match endpoint.endpoint().await {
         Ok(iroh) => {
-            if !iroh_noticed_it {
+            #[cfg(target_os = "android")]
+            {
                 tracing::info!("network-change notifier: notifying iroh");
                 iroh.network_change().await;
             }
             publish_local_addrs(&iroh).await;
             // Brief, bounded wait for iroh to re-establish; the offline-LAN
             // case never goes "online", so don't block the loop on it.
-            if !iroh_noticed_it {
-                let _ =
-                    tokio::time::timeout(std::time::Duration::from_secs(5), iroh.online()).await;
-            }
+            #[cfg(target_os = "android")]
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), iroh.online()).await;
         }
         Err(err) => {
             tracing::warn!(

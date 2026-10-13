@@ -659,12 +659,16 @@ impl Node {
     /// Catch up after the process was suspended as after a network change: a
     /// suspended process misses network changes, and iOS may close its sockets.
     pub async fn resume(&self) {
-        let iroh_noticed_it = false;
+        if let Some(endpoint) = &self.endpoint {
+            match endpoint.endpoint().await {
+                Ok(iroh) => iroh.network_change().await,
+                Err(err) => tracing::warn!(?err, "resume: could not access iroh endpoint"),
+            }
+        }
         crate::network_change_notifier::handle_network_change(
             self.endpoint.as_ref(),
             &self.mailboxes,
             &self.unfetched_blob_trigger,
-            iroh_noticed_it,
         )
         .await;
     }
