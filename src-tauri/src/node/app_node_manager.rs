@@ -87,35 +87,23 @@ impl AppNodeManager {
         Ok(())
     }
 
-    /// Not `async`, so pause and resume take effect in the order iOS reports
-    /// them even when the returned futures run out of order.
     #[cfg(target_os = "ios")]
-    pub fn pause(&self) -> impl std::future::Future<Output = ()> + Send + 'static {
+    pub async fn pause(&self) {
         // Well inside the ~30s iOS grants, and above the op store's busy
         // timeout a write waits out while the push extension holds it.
-        let suspended = self.sqlite_gate.suspend(std::time::Duration::from_secs(20));
-        async move {
-            if let Err(err) = suspended.await {
-                log::warn!("Database writes still running at suspension: {err}");
-            }
+        let deadline = std::time::Duration::from_secs(20);
+        if let Err(err) = self.sqlite_gate.suspend(deadline).await {
+            log::warn!("Database writes still running at suspension: {err}");
         }
     }
 
     /// Also catches the node up on what changed while the app was suspended.
     #[cfg(target_os = "ios")]
-    pub fn resume(
-        &self,
-        app: &AppHandle,
-    ) -> impl std::future::Future<Output = ()> + Send + 'static {
+    pub async fn resume(&self, app: &AppHandle) {
         self.sqlite_gate.resume();
-        let app_node_manager = self.clone();
-        let app = app.clone();
-        async move {
-            let context = app_node_manager.app_context(&app);
-            match node_slot::get_or_build_node(&app_node_manager.data_path, context).await {
-                Ok(acquired) => acquired.node.resume().await,
-                Err(err) => log::error!("Failed to build node on foreground: {err:?}"),
-            }
+        match node_slot::get_or_build_node(&self.data_path, self.app_context(app)).await {
+            Ok(acquired) => acquired.node.resume().await,
+            Err(err) => log::error!("Failed to build node on foreground: {err:?}"),
         }
     }
 

@@ -78,26 +78,16 @@ pub fn run() {
         // node alive and without a 0xdead10cc kill.
         builder = builder.plugin(
             tauri_plugin_lifecycle::Builder::new()
-                .on_pause(|app| {
+                .on_pause(|app| async move {
                     use tauri::Manager;
-                    let pause = app
-                        .try_state::<node::AppNodeManager>()
-                        .map(|app_node_manager| app_node_manager.pause());
-                    async move {
-                        if let Some(pause) = pause {
-                            pause.await;
-                        }
+                    if let Some(app_node_manager) = app.try_state::<node::AppNodeManager>() {
+                        app_node_manager.pause().await;
                     }
                 })
-                .on_resume(|app| {
+                .on_resume(|app| async move {
                     use tauri::Manager;
-                    let resume = app
-                        .try_state::<node::AppNodeManager>()
-                        .map(|app_node_manager| app_node_manager.resume(&app));
-                    async move {
-                        if let Some(resume) = resume {
-                            resume.await;
-                        }
+                    if let Some(app_node_manager) = app.try_state::<node::AppNodeManager>() {
+                        app_node_manager.resume(&app).await;
                     }
                 })
                 .build(),
