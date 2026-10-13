@@ -74,9 +74,6 @@ impl SqliteGate {
         pool_options: SqlitePoolOptions,
         connect_options: SqliteConnectOptions,
     ) -> Result<GatedPool, sqlx::Error> {
-        // Registered as soon as it exists, before waiting on any connection: a
-        // request parked in an unregistered pool would cancel out a busy
-        // connection in another pool.
         let pool = GatedPool(Arc::new(
             self.with_parking_hooks(pool_options)
                 .connect_lazy_with(connect_options),
