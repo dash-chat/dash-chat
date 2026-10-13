@@ -19,6 +19,22 @@ const IDENTITY_SECRET_KEY: &str = "identity_secret";
 const AGENT_ID_KEY: &str = "agent_id";
 
 /// Distinguishes the roles an inbox topic can play for this node.
+///
+/// Through a normal flow between Alice and Bob, the roles show
+/// up in the following order:
+///
+/// - Alice creates a QR code for inbox X as role `Advertised`
+/// - Bob scans, then:
+///     - Bob creates inbox Y as role `Reply`
+///     - Bob publishes ContactRequest (declaring Y) to X
+///     - Bob registers X as role `Requested`
+/// - Alice receives ContactRequest on X and subscribes to the direct chat topic
+/// - Alice accepts the request (either via UI or mutual request) and:
+///     - Alice publishes ContactRequestAccept to Y
+///     - Alice registers Y as role `Accepted`
+/// - Bob receives ContactRequestAccept on Y, finishing contact request flow
+/// - Bob drops X
+///
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[repr(i64)]
 enum InboxRole {

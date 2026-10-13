@@ -761,7 +761,6 @@ impl Node {
         let other_device_id = DeviceId::from(other);
 
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads(*topic).await?;
         let initial_members = vec![
             (GroupMember::Individual(*self.device_id()), Access::write()),
             (GroupMember::Individual(*other_device_id), Access::write()),
