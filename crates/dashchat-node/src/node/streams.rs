@@ -263,7 +263,7 @@ impl TopicStreams {
                 let (tx, rx) = self.open_stream(topic).await?;
                 (Publisher::Stream(tx), Subscriber::Stream(rx))
             }
-            StreamIntent::ExistingOnly => return Err(StreamsError::NotSubscribed),
+            StreamIntent::ExistingOnly => return Err(StreamsError::NotSubscribed(topic)),
         };
 
         pubs.insert(topic, publisher.clone());
@@ -282,13 +282,23 @@ impl TopicStreams {
             .publisher(chat_id.into(), StreamIntent::CreateSpace)
             .await?;
         if !created {
-            return Err(StreamsError::SpaceAlreadyExists);
+            return Err(StreamsError::SpaceAlreadyExists(chat_id));
         }
         match publisher {
             Publisher::Space(space) => Ok(space),
             Publisher::Stream(_) => {
                 unreachable!("we created the space, so this is a space publisher")
             }
+        }
+    }
+
+    pub(crate) async fn join_space(&self, chat_id: ChatId) -> Result<Space, StreamsError> {
+        let (publisher, _) = self
+            .publisher(chat_id.into(), StreamIntent::JoinSpace)
+            .await?;
+        match publisher {
+            Publisher::Space(space) => Ok(space),
+            Publisher::Stream(_) => Err(StreamsError::NotASpace(chat_id)),
         }
     }
 
@@ -308,7 +318,7 @@ impl TopicStreams {
         let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
         match publisher {
             Publisher::Space(space) => Ok(space),
-            _ => Err(StreamsError::NotSubscribed),
+            _ => Err(StreamsError::NotSubscribed(topic)),
         }
     }
 
@@ -601,10 +611,13 @@ pub enum StreamsError {
     Import(#[from] ImportError),
 
     #[error("can't create a space that already exists")]
-    SpaceAlreadyExists,
+    SpaceAlreadyExists(ChatId),
+
+    #[error("topic is already subscribed to as a normal stream, not a space")]
+    NotASpace(ChatId),
 
     #[error("topic must be subscribed to first")]
-    NotSubscribed,
+    NotSubscribed(p2panda::Topic),
 
     #[error("stream drain is gone")]
     DrainClosed,

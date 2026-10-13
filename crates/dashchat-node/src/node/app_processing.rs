@@ -620,6 +620,14 @@ impl Node {
                             tokio::spawn(async move {
                                 let topic_id =
                                     node.direct_chat_topic(crate::FakeAgentId::from(author));
+
+                                if let Err(err) = node.streams.join_space(topic_id).await {
+                                    tracing::error!(
+                                        ?err,
+                                        "direct chat space was subscribed improperly, can't proceed"
+                                    );
+                                    return;
+                                }
                                 if let Err(err) = node.publish_add_contact(agent_id, topic_id).await
                                 {
                                     tracing::warn!(?err, "failed to record accepted contact");
