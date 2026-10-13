@@ -119,11 +119,12 @@ pub async fn wait_until_group_is_subscribed_on_push_server(
         return;
     };
     let group_topic = PushTopicId::from(chat_id.to_hex());
-    let mut topics_on_server = app_node
+    let mut confirmed_topics = app_node
         .push_notifications_topic_subscriptions
-        .topics_on_server
+        .confirmed_topics
         .clone();
-    let subscribed = topics_on_server.wait_for(|topics| topics.contains(&group_topic));
+    let subscribed = confirmed_topics
+        .wait_for(|topics| topics.as_ref().is_some_and(|t| t.contains(&group_topic)));
     if tokio::time::timeout_at(deadline, subscribed).await.is_err() {
         log::warn!(
             "Group {} was not subscribed on the push server in time",
