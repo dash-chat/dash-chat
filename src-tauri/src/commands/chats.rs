@@ -35,7 +35,7 @@ pub async fn create_group(
             .ok_or_else(|| format!("No device found for agent {:?}", agent_id))?;
         members.insert(*device_id, Access::write());
     }
-    node.create_group(members)
+    node.create_chat_group(members)
         .await
         .map_err(|e| format!("Failed to create group: {e:?}"))
 }

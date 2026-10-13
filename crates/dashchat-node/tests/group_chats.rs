@@ -208,7 +208,7 @@ async fn test_group_chat() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -355,7 +355,7 @@ async fn test_group_chat_registered_in_op_projection() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -391,7 +391,7 @@ async fn test_admin_removes_themself_when_they_are_the_only_member() {
     let alice = make_node(&mailbox, "alice").await;
 
     let chat_id = alice
-        .create_group(btreemap! {})
+        .create_chat_group(btreemap! {})
         .await
         .unwrap()
         .alias_named("groupchat");
@@ -421,7 +421,7 @@ async fn test_admin_removes_themself_there_is_another_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -472,7 +472,7 @@ async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
@@ -504,7 +504,7 @@ async fn test_non_admin_removes_themself() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
@@ -557,7 +557,7 @@ async fn test_admin_removes_non_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
@@ -615,7 +615,7 @@ async fn test_non_admin_cannot_remove_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *andi.device_id() => p2panda_auth::Access::manage(),
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
@@ -681,7 +681,7 @@ async fn test_group_events() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => Access::manage(),
         })
         .await

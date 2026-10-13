@@ -249,7 +249,7 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
     // cammy is an admin so she can perform a group-control action (removing
     // bobbi); bobbi is a plain member.
     let chat = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => Access::write(),
             *cammy.device_id() => Access::manage(),
         })
