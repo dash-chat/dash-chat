@@ -712,6 +712,10 @@ export function pressAndroidHome(udid: string): void {
 	adbShell(udid, 'input keyevent KEYCODE_HOME');
 }
 
+export function pressAndroidBack(udid: string): void {
+	adbShell(udid, 'input keyevent KEYCODE_BACK');
+}
+
 /** Whether the device reaches the internet over its current network: a TCP
  *  connection to a public address opens. */
 export function androidHasInternet(udid: string): boolean {
