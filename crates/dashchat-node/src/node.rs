@@ -246,10 +246,9 @@ pub struct Node {
 
     pub local_store: LocalStore,
     pub projection: OpProjection,
-    #[expect(dead_code, reason = "held so the gate keeps watching the pool")]
-    local_pool: sqlite_gate::GatedPool,
-    #[expect(dead_code, reason = "held so the gate keeps watching the pool")]
-    op_store_pool: sqlite_gate::GatedPool,
+    /// Held only so the gate keeps watching these pools for as long as the node lives.
+    _local_pool: sqlite_gate::GatedPool,
+    _op_store_pool: sqlite_gate::GatedPool,
     group_store: GroupStore,
     node_keys: NodeKeys,
 
@@ -468,8 +467,8 @@ impl Node {
             filesystem,
             local_store,
             projection,
-            local_pool,
-            op_store_pool,
+            _local_pool: local_pool,
+            _op_store_pool: op_store_pool,
             group_store,
             node_keys,
             notification_tx,
@@ -659,12 +658,6 @@ impl Node {
     /// Catch up after the process was suspended as after a network change: a
     /// suspended process misses network changes, and iOS may close its sockets.
     pub async fn resume(&self) {
-        if let Some(endpoint) = &self.endpoint {
-            match endpoint.endpoint().await {
-                Ok(iroh) => iroh.network_change().await,
-                Err(err) => tracing::warn!(?err, "resume: could not access iroh endpoint"),
-            }
-        }
         crate::network_change_notifier::handle_network_change(
             self.endpoint.as_ref(),
             &self.mailboxes,

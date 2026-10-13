@@ -1,5 +1,5 @@
-//! Reacts to OS network changes: wakes the mailbox poller and republishes
-//! iroh's local addresses everywhere, and forwards the change to iroh on Android.
+//! Reacts to OS network changes: wakes the mailbox poller, forwards the change
+//! to iroh and republishes its local addresses.
 //!
 //! The mailbox manager backs off to slow polling (up to `stopped_interval`)
 //! while offline, so without a nudge a restored connection waits out the full
@@ -12,8 +12,9 @@
 //! iroh cannot detect network changes by itself on Android — its native network
 //! monitor has no working backend there (see [`iroh::Endpoint::network_change`]).
 //! Without this, after a WiFi/cellular switch iroh keeps stale addresses and
-//! sockets and never reconnects until the process restarts. Non-Android
-//! platforms detect changes natively, so iroh is only notified on Android.
+//! sockets and never reconnects until the process restarts. Other platforms
+//! detect changes natively, but not while the process is suspended, so it is
+//! told everywhere.
 //!
 //! Even once it knows of the change, iroh recomputes the addresses it advertises
 //! only when a net report's result differs from the previous one, which an
@@ -75,15 +76,11 @@ use std::net::SocketAddr;
 async fn notify_iroh(endpoint: &p2panda::Endpoint) {
     match endpoint.endpoint().await {
         Ok(iroh) => {
-            #[cfg(target_os = "android")]
-            {
-                tracing::info!("network-change notifier: notifying iroh");
-                iroh.network_change().await;
-            }
+            tracing::info!("network-change notifier: notifying iroh");
+            iroh.network_change().await;
             publish_local_addrs(&iroh).await;
             // Brief, bounded wait for iroh to re-establish; the offline-LAN
             // case never goes "online", so don't block the loop on it.
-            #[cfg(target_os = "android")]
             let _ = tokio::time::timeout(std::time::Duration::from_secs(5), iroh.online()).await;
         }
         Err(err) => {
