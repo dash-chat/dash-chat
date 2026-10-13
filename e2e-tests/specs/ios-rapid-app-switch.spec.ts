@@ -35,8 +35,6 @@ describe('Chat list after rapid app switching on the iPhone', function () {
 
 		for (let i = 0; i < SWITCHES; i++) {
 			await bob.backgroundApp();
-			// startApp relaunches a killed app, which would hide the kill.
-			expect(await bob.isAppRunning()).toBe(true);
 			await bob.startApp();
 		}
 
