@@ -28,9 +28,9 @@ static IOS_LOGGER_ONCE: std::sync::Once = std::sync::Once::new();
 #[cfg(target_os = "ios")]
 const MAX_NSE_LOG_SIZE: u64 = 12 * 1024 * 1024;
 
-/// Wall clock, not a count of polls: the iOS extension is killed at ~30 s
-/// whatever the loop's body spends on the network.
-const OP_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+/// What the handler may spend in all, from its entry: the iOS extension is
+/// killed at ~30 s whatever the handler spends on the network.
+const HANDLER_BUDGET: std::time::Duration = std::time::Duration::from_secs(25);
 const OP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
 const RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 /// How long a cloud mailbox registration may hold up the handler at a time. A
@@ -45,6 +45,7 @@ pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
+    let handler_deadline = tokio::time::Instant::now() + HANDLER_BUDGET;
     panic_policy::install_panic_hook();
 
     // iOS never sets `APP_HANDLE` because the NSE runs in a separate process.
@@ -95,6 +96,7 @@ pub fn receive_push_notification(
                 tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
                     notification,
                     data_dir,
+                    handler_deadline,
                 ))
             })
             .expect("failed to spawn push-notification worker thread")
@@ -106,6 +108,7 @@ pub fn receive_push_notification(
         tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
             notification,
             context.data_dir,
+            handler_deadline,
         ))
     }
 }
@@ -134,8 +137,9 @@ fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
 async fn handle_push_notifications_with_fallback_messages(
     notification: NotificationData,
     data_dir: PathBuf,
+    handler_deadline: tokio::time::Instant,
 ) -> Option<NotificationData> {
-    match handle_push_notification(notification, data_dir).await {
+    match handle_push_notification(notification, data_dir, handler_deadline).await {
         Ok(result) => {
             if let Some(data) = &result {
                 log::info!(
@@ -191,6 +195,7 @@ async fn reconnect_cloud_mailbox(
 async fn handle_push_notification(
     notification: NotificationData,
     app_data_root: PathBuf,
+    handler_deadline: tokio::time::Instant,
 ) -> anyhow::Result<Option<NotificationData>> {
     // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
     let topic_hex = notification
@@ -221,6 +226,13 @@ async fn handle_push_notification(
     let topic_id = TopicId::try_from(topic_bytes)?;
 
     let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
+    // The setting alone, unlike `are_notifications_enabled`: there is no app
+    // here to ask the OS through, and with the permission denied the OS drops
+    // whatever this returns anyway.
+    if !crate::settings::load_settings_from_filesystem(&filesystem).notifications_enabled {
+        log::info!("Notifications are disabled: ignoring the push notification.");
+        return Ok(None);
+    }
     let app_data_dir = filesystem.app_data_dir();
 
     log::info!(
@@ -270,9 +282,8 @@ async fn handle_push_notification(
     let from = seq_num.checked_sub(1);
     let mut entry = None;
     let mut cloud_id = None;
-    let deadline = tokio::time::Instant::now() + OP_WAIT;
     let mut next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
-    while tokio::time::Instant::now() < deadline {
+    while tokio::time::Instant::now() < handler_deadline {
         if tokio::time::Instant::now() >= next_reconnect {
             reconnect_cloud_mailbox(&node, &mut cloud_id, &mut cloud_mailbox_attempt).await;
             next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
