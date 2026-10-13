@@ -98,9 +98,9 @@ export interface ExpectedHub {
 	running: boolean;
 }
 
-/** The network every phone and the host are on when a run leaves them
- *  alone: whatever each device falls back to with no test network saved. The
- *  harness never learns its name, so the model carries it under this one. */
+/** The host's own network, which every phone and the host are on when a run
+ *  leaves them alone. Its real name is the platform's business — a phone may
+ *  join it by name or fall back to it — so the model carries it under this one. */
 export const HOME_NETWORK = 'home';
 
 /** A LAN available to a run, by its real network name — or [`HOME_NETWORK`]. */
@@ -2029,7 +2029,7 @@ export function newModel(real: {
 }): ExpectedModel {
 	if (real.networks.some(n => n.ssid === HOME_NETWORK)) {
 		throw new Error(
-			`a test network cannot be called "${HOME_NETWORK}": that is the name of the network the run never joins`,
+			`a test network cannot be called "${HOME_NETWORK}": that is the name the model gives the host's own network`,
 		);
 	}
 	return new ExpectedModel(

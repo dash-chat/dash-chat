@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use tauri::Runtime;
 use tauri_plugin_background_service::{BackgroundService, ServiceContext, ServiceError};
 
 use crate::filesystem::FileSystem;
@@ -16,8 +15,8 @@ impl NodeBackgroundService {
 }
 
 #[async_trait]
-impl<R: Runtime> BackgroundService<R> for NodeBackgroundService {
-    async fn init(&mut self, ctx: &ServiceContext<R>) -> Result<(), ServiceError> {
+impl BackgroundService<tauri::Wry> for NodeBackgroundService {
+    async fn init(&mut self, ctx: &ServiceContext<tauri::Wry>) -> Result<(), ServiceError> {
         log::warn!("{LOG_PREFIX} init");
 
         let fs = FileSystem::new(&ctx.app).map_err(|err| {
@@ -25,16 +24,17 @@ impl<R: Runtime> BackgroundService<R> for NodeBackgroundService {
         })?;
         let data_path = fs.app_data_dir().clone();
 
-        let acquired = node_slot::get_or_build_node(&data_path, NodeContext::for_background_task())
-            .await
-            .map_err(|err| ServiceError::Init(format!("failed to start node: {err:#}")))?;
+        let acquired =
+            node_slot::get_or_build_node(&data_path, NodeContext::for_background_task(&ctx.app))
+                .await
+                .map_err(|err| ServiceError::Init(format!("failed to start node: {err:#}")))?;
 
         log::warn!("{LOG_PREFIX} node acquired, is_new={}", acquired.is_new);
 
         Ok(())
     }
 
-    async fn run(&mut self, ctx: &ServiceContext<R>) -> Result<(), ServiceError> {
+    async fn run(&mut self, ctx: &ServiceContext<tauri::Wry>) -> Result<(), ServiceError> {
         log::warn!("{LOG_PREFIX} run loop started");
 
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));

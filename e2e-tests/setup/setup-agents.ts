@@ -47,19 +47,14 @@ import { convergeNetworks, forgetTestNetworks } from './phone-lan';
 import {
 	APP_PACKAGE,
 	androidHasInternet,
-	androidWifiInfo,
 	denyAndroidNotificationPermission,
-	disableAndroidWifi,
-	enableAndroidWifi,
-	forgetAndroidWifi,
 	isAndroidAppRunning,
-	joinAndroidWifi,
-	leaveAndroidWifi,
 	pressAndroidHome,
 	resetAndroidNotificationPermission,
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
+import { androidWifi, androidWifiInfo } from './platforms/android/wifi';
 import {
 	clearAgentDir,
 	discardDesktopAgent,
@@ -77,14 +72,7 @@ import {
 	killIosPushExtension,
 	resetIosAppState,
 } from './platforms/ios';
-import {
-	disableIosWifi,
-	enableIosWifi,
-	forgetIosWifi,
-	iosWifiInfo,
-	joinIosWifi,
-	leaveIosWifi,
-} from './platforms/ios-wifi';
+import { iosWifi, iosWifiInfo } from './platforms/ios/wifi';
 import {
 	type AgentPlatformName,
 	type PhonePlatformName,
@@ -98,7 +86,7 @@ import {
 	switchToWebview,
 	waitForTestUtils,
 } from './webview';
-import { WIFI_REASSOCIATE_MS, type WifiInfo } from './wifi';
+import { type PhoneWifi, WIFI_REASSOCIATE_MS, type WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
@@ -216,10 +204,12 @@ export type Agent = WebdriverIO.Browser & {
 	 *  network-interfaces plugin), with the app on screen throughout; Android
 	 *  through adb. */
 	joinWifi(ssid: string, passphrase: string): Promise<string>;
-	/** Get onto the host's LAN from wherever the device is: radio on, every
-	 *  test network forgotten, then every network it lands on that is clearly
-	 *  not the host's forgotten in turn (on Android, every other saved network
-	 *  too once it is surely on the host's). Resolves with where it settled. */
+	/** Get onto the host's LAN from wherever the device is, and resolve with
+	 *  where it settled. An Android phone joins the host's network by name
+	 *  when the host tells it (or E2E_HOST_WIFI does); otherwise, and on iOS,
+	 *  every test network is forgotten, then every network the device lands
+	 *  on that is clearly not the host's in turn (on Android, every other
+	 *  saved network too once it is surely on the host's). */
 	leaveWifi(): Promise<WifiInfo>;
 	/** Forget every test network without waiting for where the device lands:
 	 *  what a move that is about to turn the radio off does first, so nothing
@@ -417,7 +407,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await b.terminateApp(APP_PACKAGE);
 			return;
 		}
-		stopAndroidApp(deviceUdid(b));
+		await stopAndroidApp(deviceUdid(b));
 	};
 	agent.backgroundApp = async () => {
 		if (agent.platform === 'desktop') {
@@ -474,47 +464,20 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		attachPages(agent, b);
 		if (agent.platform === 'desktop') await agent.setWideScreen(false);
 	};
-	agent.disableWifi = async () => {
-		if (agent.platform === 'ios') {
-			await disableIosWifi(b);
-			return;
-		}
-		await disableAndroidWifi(wifiUdid(agent, b));
-	};
-	agent.enableWifi = async () =>
-		agent.platform === 'ios'
-			? await enableIosWifi(b)
-			: await enableAndroidWifi(wifiUdid(agent, b));
-	const joinWifiOnce = async (ssid: string, passphrase: string) =>
-		agent.platform === 'ios'
-			? await joinIosWifi(b, ssid, passphrase)
-			: await joinAndroidWifi(
-					wifiUdid(agent, b),
-					ssid,
-					passphrase,
-					testNetworkSsids(),
-				);
+	agent.disableWifi = async () => await phoneWifi(agent, b).radioOff();
+	agent.enableWifi = async () => await phoneWifi(agent, b).radioOn();
 	agent.joinWifi = async (ssid: string, passphrase: string) => {
 		// A phone sometimes fails to associate with an access point it was just
 		// on; one more try keeps that radio hiccup from failing the spec.
 		try {
-			return await joinWifiOnce(ssid, passphrase);
+			return await phoneWifi(agent, b).join({ ssid, passphrase });
 		} catch (err) {
 			console.warn(`failed to join ${ssid}, retrying: ${String(err)}`);
-			return await joinWifiOnce(ssid, passphrase);
+			return await phoneWifi(agent, b).join({ ssid, passphrase });
 		}
 	};
-	agent.leaveWifi = async () =>
-		agent.platform === 'ios'
-			? await leaveIosWifi(b, testNetworkSsids())
-			: await leaveAndroidWifi(wifiUdid(agent, b), testNetworkSsids());
-	agent.forgetWifi = async () => {
-		if (agent.platform === 'ios') {
-			await forgetIosWifi(b);
-			return;
-		}
-		forgetAndroidWifi(wifiUdid(agent, b), testNetworkSsids());
-	};
+	agent.leaveWifi = async () => await phoneWifi(agent, b).goHome();
+	agent.forgetWifi = async () => await phoneWifi(agent, b).dropTestNetworks();
 	agent.cycleWifi = async (downMs: number) => {
 		await agent.disableWifi();
 		await b.pause(downMs);
@@ -585,6 +548,12 @@ function wifiUdid(agent: Agent, b: WebdriverIO.Browser): string {
 		);
 	}
 	return deviceUdid(b);
+}
+
+function phoneWifi(agent: Agent, b: WebdriverIO.Browser): PhoneWifi {
+	return agent.platform === 'ios'
+		? iosWifi(b, testNetworkSsids())
+		: androidWifi(wifiUdid(agent, b), testNetworkSsids());
 }
 
 /** Comfortably past ProcessLifecycleOwner's 700ms background-dispatch delay, so

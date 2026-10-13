@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+#[cfg(mobile)]
+use std::sync::Arc;
 
 use dashchat_node::{Node, Notification};
 use p2panda_core::{cbor::encode_cbor, Body};
@@ -22,12 +24,14 @@ use crate::notifications::NotifiedOperationsStore;
 pub struct AppNodeManager {
     data_path: PathBuf,
     notification_tx: mpsc::Sender<dashchat_node::Notification>,
-    #[cfg(mobile)]
-    topic_subscribed_tx: mpsc::Sender<dashchat_node::topic::TopicId>,
     /// App-lifetime record of already-notified operations, shared with the push
     /// extension via the app-group container.
     notified_operations_store: NotifiedOperationsStore,
     sqlite_gate: SqliteGate,
+    /// Held only so that it runs for as long as the app does.
+    #[cfg(mobile)]
+    _push_notifications_token_registration:
+        Arc<crate::notifications::push_notifications::RegisterPushNotificationsTokenTask>,
 }
 
 impl AppNodeManager {
@@ -36,32 +40,27 @@ impl AppNodeManager {
         // The notification channel is owned here: the sender is reused across node
         // rebuilds, and the receiver drives the app-lifetime notification loop.
         let (notification_tx, notification_rx) = mpsc::channel(100);
-        // The topic-subscribed channel is likewise owned here: the sender is reused
-        // across rebuilds; the receiver feeds the push-notification setup.
-        #[cfg(mobile)]
-        let (topic_subscribed_tx, topic_subscribed_rx) = mpsc::channel(100);
         let sqlite_gate = SqliteGate::new();
         let notified_operations_store = NotifiedOperationsStore::open(
             &crate::filesystem::FileSystem::new(app)?.notified_operations_db_path(),
             &sqlite_gate,
         )
         .await?;
-        let app_node_manager = Self {
-            data_path,
-            notification_tx,
-            #[cfg(mobile)]
-            topic_subscribed_tx,
-            notified_operations_store,
-            sqlite_gate,
-        };
         // App-lifetime loop: it outlives node rebuilds, so it is started once here
         // and detached rather than tracked in a node's task set.
         tokio::spawn(notification_loop(app.clone(), notification_rx));
-        #[cfg(mobile)]
-        crate::notifications::push_notifications::setup_push_notifications(
-            app.clone(),
-            topic_subscribed_rx,
-        )?;
+        let app_node_manager = Self {
+            data_path,
+            notification_tx,
+            notified_operations_store,
+            sqlite_gate,
+            #[cfg(mobile)]
+            _push_notifications_token_registration: Arc::new(
+                crate::notifications::push_notifications::RegisterPushNotificationsTokenTask::spawn(
+                    app.clone(),
+                )?,
+            ),
+        };
         node_slot::get_or_build_node(
             &app_node_manager.data_path,
             app_node_manager.app_context(app),
@@ -73,17 +72,7 @@ impl AppNodeManager {
     /// Build the [`NodeContext`](crate::node::node_context::NodeContext) for the
     /// running app: full networking and notification channels enabled.
     fn app_context(&self, app: &AppHandle) -> NodeContext {
-        #[cfg(mobile)]
-        let topic_subscribed_tx = Some(self.topic_subscribed_tx.clone());
-        #[cfg(not(mobile))]
-        let topic_subscribed_tx = None;
-
-        NodeContext::for_app(
-            app,
-            self.notification_tx.clone(),
-            topic_subscribed_tx,
-            self.sqlite_gate.clone(),
-        )
+        NodeContext::for_app(app, self.notification_tx.clone(), self.sqlite_gate.clone())
     }
 
     /// Persist the peer-to-peer switch and rebuild the node in that mode; off,

@@ -1,7 +1,9 @@
-/** What every platform's Wi-Fi control has in common: the shape of a
- *  reading, and the wait for one. */
+/** What every platform's Wi-Fi control has in common: what a phone's is
+ *  driven through, the shape of a reading, and the wait for one. */
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
+
+import type { WifiNetwork } from './test-env';
 
 /** Comfortably longer than a WPA2 association plus DHCP on a busy 2.4GHz AP. */
 export const WIFI_REASSOCIATE_MS = 90_000;
@@ -16,6 +18,24 @@ export interface WifiInfo {
 	/** The LAN that address is on, as `a.b.c.d/n` with the host bits cleared;
 	 *  '' while there is no address. Two devices on one LAN read the same. */
 	network: string;
+}
+
+/** A phone's Wi-Fi, each operation taking the phone from whatever state it
+ *  is in — radio off, on a test network a killed run left it on, with or
+ *  without networks of its user's saved — to the one it names. */
+export interface PhoneWifi {
+	/** Onto the test network `network`, as the one test network left on the
+	 *  phone; resolves with the address obtained on it. */
+	join(network: WifiNetwork): Promise<string>;
+	/** Onto the host's LAN; resolves with where the phone settled. */
+	goHome(): Promise<WifiInfo>;
+	/** Drop every test network without waiting for where the phone lands: what
+	 *  has to fit in the seconds a Ctrl-C leaves. */
+	dropTestNetworks(): Promise<void>;
+	/** Turn the radio off and resolve once the phone holds no Wi-Fi address. */
+	radioOff(): Promise<void>;
+	/** Turn the radio on and resolve with the address the phone came back on. */
+	radioOn(): Promise<string>;
 }
 
 /** The LAN `address` is on under a `prefixLength`-bit mask, as

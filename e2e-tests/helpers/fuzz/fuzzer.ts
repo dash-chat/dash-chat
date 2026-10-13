@@ -118,9 +118,9 @@ export class Fuzzer {
 	 * Building the world is the fuzzer's because `search` does it again for
 	 * every sequence: only a world that can be rebuilt can be shrunk against.
 	 *
-	 * The network the phones and the host fall back to with no test network
-	 * saved is the run's home one: phones may walk back onto it, and the
-	 * hubs are on it whenever the card is. It is never named or joined.
+	 * The host's own network is the run's home one: phones may walk back onto
+	 * it, and the hubs are on it whenever the card is. It is never one of the
+	 * test networks.
 	 * A spec prepares once, from its `before` hook — whose context `ctx` is,
 	 * so that the suite's tests can be freed of their timeout before any of
 	 * them starts — and runs as often as it likes.

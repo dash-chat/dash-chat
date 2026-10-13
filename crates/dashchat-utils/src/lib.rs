@@ -5,7 +5,6 @@ mod derive_watch;
 pub mod endpoint;
 mod fetch_loop;
 mod retry_with_backoff;
-mod singleton_task_with_retries;
 
 #[cfg(feature = "cbor")]
 pub mod cbor;
@@ -13,7 +12,6 @@ pub mod cbor;
 pub use derive_watch::derive_watch;
 pub use fetch_loop::{fetch_loop, FetchConfig, FetchPool};
 pub use retry_with_backoff::retry_with_backoff;
-pub use singleton_task_with_retries::SingletonTaskWithRetries;
 
 /// A position in an append-only log, shared by every layer that handles one:
 /// p2panda operations, the op store, and the mailbox protocol.
@@ -32,3 +30,9 @@ pub static RELAY_URL: std::sync::LazyLock<iroh::RelayUrl> = std::sync::LazyLock:
         .parse()
         .expect("valid relay URL")
 });
+
+/// Setting up a connection on a loaded mobile network alone can take several
+/// seconds, so the connect budget matches Signal's 15 s. The request budget
+/// covers the connect too.
+pub const HTTP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+pub const HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
