@@ -246,8 +246,9 @@ pub struct Node {
 
     pub local_store: LocalStore,
     pub projection: OpProjection,
-    /// Held so the gate keeps watching these pools for as long as the node lives.
+    #[expect(dead_code, reason = "held so the gate keeps watching the pool")]
     local_pool: sqlite_gate::GatedPool,
+    #[expect(dead_code, reason = "held so the gate keeps watching the pool")]
     op_store_pool: sqlite_gate::GatedPool,
     group_store: GroupStore,
     node_keys: NodeKeys,
@@ -658,10 +659,12 @@ impl Node {
     /// Catch up after the process was suspended as after a network change: a
     /// suspended process misses network changes, and iOS may close its sockets.
     pub async fn resume(&self) {
+        let iroh_noticed_it = false;
         crate::network_change_notifier::handle_network_change(
             self.endpoint.as_ref(),
             &self.mailboxes,
             &self.unfetched_blob_trigger,
+            iroh_noticed_it,
         )
         .await;
     }
@@ -1657,13 +1660,12 @@ impl Node {
             handle.abort();
         }
 
-        // Release every held file lock before returning, or iOS SIGKILLs the
-        // suspended app (0xdead10cc). File locks first, slow best-effort endpoint
-        // close last, each time-bounded so none outlasts the suspension window.
+        // File locks first, slow best-effort endpoint close last, each
+        // time-bounded so a rebuild isn't held up by either.
 
-        // iroh-blobs redb store: a file lock like the SQLite pools; fetch loop
-        // aborted above so nothing else is using it now. Absent when blob sync
-        // is disabled (the push extension), which never opens it.
+        // iroh-blobs redb store; fetch loop aborted above so nothing else is
+        // using it now. Absent when blob sync is disabled (the push extension),
+        // which never opens it.
         if let Some(blob_sync) = &self.blob_sync {
             match tokio::time::timeout(
                 std::time::Duration::from_secs(5),

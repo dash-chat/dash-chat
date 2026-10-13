@@ -33,7 +33,7 @@ async fn wait_for_node(
 /// one. The task ends only when the frontend drops the Channel or the app exits.
 ///
 /// Correctness: only the `watch::Receiver` is held across the forward loop, never
-/// a `Node` clone, so a paused node can still be fully torn down (0xdead10cc). The
+/// a `Node` clone, so a node being swapped out can still be fully torn down. The
 /// `subscribe` future *may* hold a node clone transiently while it waits for a
 /// resource to (re)appear, but it is raced against the generation signal, so a
 /// pause aborts it and releases the clone.
@@ -135,7 +135,7 @@ pub async fn mailbox_subscribe_cloud_id(
     // Custom forwarder: the cloud id is derived from the active-id set *and* the
     // node (it inspects tracked mailboxes), so it recomputes on each active-set
     // change. `node` is held only for the current generation's forward loop and
-    // dropped on swap, so it never keeps a paused node alive.
+    // dropped on swap, so it never keeps a swapped-out node alive.
     let app_node_manager = app_node_manager.inner().clone();
     tokio::spawn(async move {
         let mut generation = app_node_manager.subscribe_generation();

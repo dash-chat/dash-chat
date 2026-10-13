@@ -193,6 +193,9 @@ describe('Push notifications (real device, end-to-end)', () => {
 
 		// Quit from the home page — what a user swiping the app away in the app
 		// switcher does.
+		if (await receiver.directChatPage.back.isDisplayed()) {
+			await receiver.directChatPage.back.click();
+		}
 		await receiver.homePage.ready();
 		await receiver.pause(5_000);
 		await receiver.stopApp();

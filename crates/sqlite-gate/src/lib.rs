@@ -30,9 +30,7 @@ impl std::error::Error for StillInUseError {}
 #[derive(Clone, Debug)]
 pub struct SqliteGate {
     open: watch::Sender<bool>,
-    parked_requests: Arc<AtomicUsize>,
-    /// Weak, so the gate never keeps a pool its owner dropped.
-    pools: Arc<Mutex<Vec<Weak<SqlitePool>>>>,
+    pools: Arc<Mutex<Vec<RegisteredPool>>>,
 }
 
 /// A pool connected through a [`SqliteGate`]. Hold it for as long as the pool
@@ -43,6 +41,30 @@ pub struct GatedPool(Arc<SqlitePool>);
 impl GatedPool {
     pub fn pool(&self) -> &SqlitePool {
         &self.0
+    }
+}
+
+#[derive(Debug)]
+struct RegisteredPool {
+    /// Weak, so the gate never keeps a pool its owner dropped.
+    pool: Weak<SqlitePool>,
+    parked_requests: Arc<AtomicUsize>,
+}
+
+impl RegisteredPool {
+    fn is_alive(&self) -> bool {
+        self.pool.strong_count() > 0
+    }
+
+    /// A parked request holds a connection but can't be inside a transaction,
+    /// so it doesn't count.
+    fn busy_connections(&self) -> usize {
+        let Some(pool) = self.pool.upgrade() else {
+            return 0;
+        };
+        (pool.size() as usize)
+            .saturating_sub(pool.num_idle())
+            .saturating_sub(self.parked_requests.load(Ordering::SeqCst))
     }
 }
 
@@ -64,7 +86,6 @@ impl SqliteGate {
     pub fn new() -> Self {
         Self {
             open: watch::Sender::new(true),
-            parked_requests: Arc::default(),
             pools: Arc::default(),
         }
     }
@@ -74,11 +95,19 @@ impl SqliteGate {
         pool_options: SqlitePoolOptions,
         connect_options: SqliteConnectOptions,
     ) -> Result<GatedPool, sqlx::Error> {
+        let parked_requests = Arc::<AtomicUsize>::default();
         let pool = GatedPool(Arc::new(
-            self.with_parking_hooks(pool_options)
+            self.with_parking_hooks(pool_options, &parked_requests)
                 .connect_lazy_with(connect_options),
         ));
-        self.pools.lock().unwrap().push(Arc::downgrade(&pool.0));
+        {
+            let mut pools = self.pools.lock().unwrap();
+            pools.retain(RegisteredPool::is_alive);
+            pools.push(RegisteredPool {
+                pool: Arc::downgrade(&pool.0),
+                parked_requests,
+            });
+        }
         pool.pool().acquire().await?;
         Ok(pool)
     }
@@ -116,49 +145,46 @@ impl SqliteGate {
         *self.open.borrow()
     }
 
-    async fn wait_until_open(&self) {
+    async fn wait_until_open(&self, parked_requests: &AtomicUsize) {
         if self.is_open() {
             return;
         }
-        self.parked_requests.fetch_add(1, Ordering::SeqCst);
+        parked_requests.fetch_add(1, Ordering::SeqCst);
         // Counted down on drop too, so a cancelled request doesn't stay counted.
-        let _parked = Parked(&self.parked_requests);
+        let _parked = Parked(parked_requests);
         let mut open = self.open.subscribe();
         let _ = open.wait_for(|open| *open).await;
     }
 
-    /// A parked request holds a connection but can't be inside a transaction,
-    /// so it doesn't count.
     fn busy_connections(&self) -> usize {
         let mut pools = self.pools.lock().unwrap();
-        pools.retain(|pool| pool.upgrade().is_some_and(|pool| !pool.is_closed()));
-        let checked_out: usize = pools
-            .iter()
-            .filter_map(Weak::upgrade)
-            .map(|pool| (pool.size() as usize).saturating_sub(pool.num_idle()))
-            .sum();
-        checked_out.saturating_sub(self.parked_requests.load(Ordering::SeqCst))
+        pools.retain(RegisteredPool::is_alive);
+        pools.iter().map(RegisteredPool::busy_connections).sum()
     }
 
-    fn with_parking_hooks(&self, options: SqlitePoolOptions) -> SqlitePoolOptions {
-        let before_acquire = self.clone();
-        let after_connect = self.clone();
+    fn with_parking_hooks(
+        &self,
+        options: SqlitePoolOptions,
+        parked_requests: &Arc<AtomicUsize>,
+    ) -> SqlitePoolOptions {
+        let before_acquire = (self.clone(), parked_requests.clone());
+        let after_connect = (self.clone(), parked_requests.clone());
         // Only iOS suspends its gate, and a request parked there counts towards
         // the acquire timeout for as long as the app is in the background.
         #[cfg(target_os = "ios")]
         let options = options.acquire_timeout(Duration::from_secs(24 * 60 * 60));
         options
             .before_acquire(move |_, _| {
-                let gate = before_acquire.clone();
+                let (gate, parked_requests) = before_acquire.clone();
                 Box::pin(async move {
-                    gate.wait_until_open().await;
+                    gate.wait_until_open(&parked_requests).await;
                     Ok(true)
                 })
             })
             .after_connect(move |_, _| {
-                let gate = after_connect.clone();
+                let (gate, parked_requests) = after_connect.clone();
                 Box::pin(async move {
-                    gate.wait_until_open().await;
+                    gate.wait_until_open(&parked_requests).await;
                     Ok(())
                 })
             })
@@ -202,9 +228,64 @@ mod tests {
             let pool = pool.clone();
             async move { pool.pool().acquire().await.map(|_| ()) }
         });
-        suspended.await.unwrap();
         tokio::time::sleep(Duration::from_millis(50)).await;
+        suspended.await.unwrap();
         assert!(!waiting.is_finished());
+
+        gate.resume();
+        waiting.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn suspend_waits_for_an_open_transaction() {
+        let gate = SqliteGate::new();
+        let pool = pool(&gate).await;
+        let transaction = pool.pool().begin().await.unwrap();
+
+        let suspended = tokio::spawn(gate.suspend(Duration::from_millis(500)));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!suspended.is_finished());
+        transaction.commit().await.unwrap();
+        suspended.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_connection_opened_while_suspended_parks_without_holding_suspend_up() {
+        let gate = SqliteGate::new();
+        let pool = pool(&gate).await;
+        // Holding the only open connection makes the next request open a new one.
+        let held = pool.pool().acquire().await.unwrap();
+
+        let suspended = gate.suspend(Duration::from_millis(500));
+        let waiting = tokio::spawn({
+            let pool = pool.clone();
+            async move { pool.pool().acquire().await.map(|_| ()) }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        drop(held);
+        suspended.await.unwrap();
+        assert!(!waiting.is_finished());
+
+        gate.resume();
+        waiting.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_request_parked_in_one_pool_does_not_hide_a_busy_connection_in_another() {
+        let gate = SqliteGate::new();
+        let parking = pool(&gate).await;
+        let busy = pool(&gate).await;
+        let held = busy.pool().acquire().await.unwrap();
+
+        let suspended = tokio::spawn(gate.suspend(Duration::from_millis(500)));
+        let waiting = tokio::spawn({
+            let parking = parking.clone();
+            async move { parking.pool().acquire().await.map(|_| ()) }
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!suspended.is_finished());
+        drop(held);
+        suspended.await.unwrap().unwrap();
 
         gate.resume();
         waiting.await.unwrap().unwrap();

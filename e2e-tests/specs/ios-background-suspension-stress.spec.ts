@@ -7,15 +7,16 @@
  *
  * A write is open for only milliseconds, so a single round rarely lands inside
  * one: it takes many. Skips itself unless E2E_STRESS=1:
- *   E2E_STRESS=1 PHONES=ios just e2e run ios-background-suspension
+ *   E2E_STRESS=1 PHONES=ios just e2e run ios-background-suspension-stress
  *
  * Tunables: E2E_SUSPENSION_ROUNDS (default 42).
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { envInt } from '../helpers/utils';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
-const ROUNDS = Number(process.env.E2E_SUSPENSION_ROUNDS ?? 42);
+const ROUNDS = envInt('E2E_SUSPENSION_ROUNDS', 42);
 /** How long after seeing the message the user leaves, cycled over the rounds. */
 const LEAVE_AFTER_MS = [0, 100, 200, 300, 400, 500, 600];
 /** Long enough for iOS to have suspended the app whatever the pause does. */
@@ -39,6 +40,11 @@ describe('iPhone app left right after a message arrives', function () {
 		await bob.directChatPage.messages.waitForMessage('before the rounds');
 	});
 
+	// Relaunches a killed app too, so the rounds after a kill still test something.
+	afterEach(async () => {
+		await bob.startApp();
+	});
+
 	for (let round = 1; round <= ROUNDS; round++) {
 		const leaveAfterMs = LEAVE_AFTER_MS[(round - 1) % LEAVE_AFTER_MS.length];
 		it(`round ${round}: is not killed when left ${leaveAfterMs}ms after a message`, async () => {
@@ -49,7 +55,6 @@ describe('iPhone app left right after a message arrives', function () {
 			await bob.pause(AWAY_MS);
 
 			expect(await bob.isAppRunning()).toBe(true);
-			await bob.startApp();
 		});
 	}
 });

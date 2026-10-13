@@ -35,11 +35,13 @@ describe('Chat list after rapid app switching on the iPhone', function () {
 
 		for (let i = 0; i < SWITCHES; i++) {
 			await bob.backgroundApp();
+			// startApp relaunches a killed app, which would hide the kill.
+			expect(await bob.isAppRunning()).toBe(true);
 			await bob.startApp();
 		}
 
 		expect(await bob.errorPlaceholder.root.isExisting()).toBe(false);
-		expect(await bob.homePage.hasChatListItem('Alice')).toBe(true);
+		await bob.homePage.chatListItem('Alice').waitForExist();
 		await alice.directChatPage.composer.sendMessage('after the switching');
 		await bob.homePage.chatListItem('Alice').click();
 		await bob.directChatPage.ready();

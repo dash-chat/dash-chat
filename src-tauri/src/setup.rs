@@ -123,8 +123,8 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         }
     }
 
-    // Keep the node behind a swappable container so it can be torn down when the
-    // iOS app is backgrounded (releasing SQLite locks) and rebuilt on foreground.
+    // Keep the node behind a swappable container so it can be torn down and
+    // rebuilt when p2p is switched on or off.
     // AppNodeManager::spawn owns the notification and topic-subscribed channels and wires
     // up the notification loop and push notifications internally.
     let app_node_manager = crate::node::AppNodeManager::spawn(&app_handle, local_data_path).await?;
