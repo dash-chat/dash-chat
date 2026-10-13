@@ -11,16 +11,17 @@
  * itself rides usbmux and never notices the LAN going away. The Settings
  * labels are matched in English, so the device has to be set to it.
  */
-import { ASYNC_SCRIPT_TIMEOUT } from '../../helpers/timeouts';
-import { isOnWebview, switchToWebview } from '../webview';
+import { ASYNC_SCRIPT_TIMEOUT } from '../../../helpers/timeouts';
+import { isOnWebview, switchToWebview } from '../../webview';
 import {
+	type PhoneWifi,
 	WIFI_REASSOCIATE_MS,
 	type WifiInfo,
 	hostNetworkVerdict,
 	networkOf,
 	waitForWifi,
-} from '../wifi';
-import { APP_BUNDLE_ID, APP_STATE_FOREGROUND, attachToIosApp } from './ios';
+} from '../../wifi';
+import { APP_BUNDLE_ID, APP_STATE_FOREGROUND, attachToIosApp } from './index';
 
 const SETTINGS_BUNDLE_ID = 'com.apple.Preferences';
 
@@ -586,4 +587,17 @@ export function enableIosWifi(b: WebdriverIO.Browser): Promise<string> {
 		);
 		return await waitForAddressOn(settings, ssid);
 	});
+}
+
+export function iosWifi(
+	b: WebdriverIO.Browser,
+	testNetworks: string[],
+): PhoneWifi {
+	return {
+		join: ({ ssid, passphrase }) => joinIosWifi(b, ssid, passphrase),
+		goHome: () => leaveIosWifi(b, testNetworks),
+		dropTestNetworks: () => forgetIosWifi(b),
+		radioOff: () => disableIosWifi(b),
+		radioOn: () => enableIosWifi(b),
+	};
 }

@@ -15,34 +15,34 @@ import { networkInterfaces, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
-import { ASYNC_SCRIPT_TIMEOUT } from '../../helpers/timeouts';
-import { echoLinesWithPrefix } from '../agent-logger';
+import { syncXcodeEnv } from '../../../../scripts/sync-xcode-env';
+import { ASYNC_SCRIPT_TIMEOUT } from '../../../helpers/timeouts';
+import { echoLinesWithPrefix } from '../../agent-logger';
 import {
 	SLOT_PORT_STRIDE,
 	allocatePinnedPort,
 	allocatePinnedPortFrom,
-} from '../allocate-port';
-import { SKIP_FRONTEND_BUILD, runBuild } from '../app-build';
+} from '../../allocate-port';
+import { SKIP_FRONTEND_BUILD, runBuild } from '../../app-build';
 import {
 	type Want,
 	claimAllWhenFreeSync,
 	describeHeld,
 	release,
-} from '../claims';
-import { deviceHasBuild, recordInstalled } from '../device-installs';
-import { envWithoutWdioLoader } from '../harness-env';
-import { E2E_NETWORK_ID } from '../network-id';
-import { E2E_RELAY_URL } from '../relay';
-import { deviceUdid, switchToWebview, waitForTestUtils } from '../webview';
+} from '../../claims';
+import { deviceHasBuild, recordInstalled } from '../../device-installs';
+import { envWithoutWdioLoader } from '../../harness-env';
+import { E2E_NETWORK_ID } from '../../network-id';
+import { E2E_RELAY_URL } from '../../relay';
+import { deviceUdid, switchToWebview, waitForTestUtils } from '../../webview';
 import {
 	type AgentPlatform,
 	type PrepareContext,
 	remoteBakedEnv,
-} from './platform';
+} from '../platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const E2E_DIR = path.resolve(__dirname, '..', '..');
+const E2E_DIR = path.resolve(__dirname, '..', '..', '..');
 
 export const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
 /** What a reachability probe gets before the network counts as having no
