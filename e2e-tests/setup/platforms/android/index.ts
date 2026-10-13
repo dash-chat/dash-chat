@@ -720,7 +720,9 @@ export function pressAndroidBack(udid: string): void {
  *  connection to a public address opens. */
 export function androidHasInternet(udid: string): boolean {
 	try {
-		adbShell(udid, 'nc -z -w 3 1.1.1.1 443');
+		// No `-z`: older toybox nc (Android 12) rejects it. An empty stdin
+		// closes the connection as soon as it opens.
+		adbShell(udid, "'nc -w 3 1.1.1.1 443 </dev/null'");
 		return true;
 	} catch {
 		return false;
