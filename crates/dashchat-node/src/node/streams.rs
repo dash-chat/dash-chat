@@ -213,15 +213,13 @@ impl TopicStreams {
             .await?)
     }
 
-    async fn with_node<T, E>(
+    #[deprecated = "direct p2panda node access is bad encapsulation for TopicStreams"]
+    pub(crate) async fn with_node<T, E>(
         &self,
         f: impl AsyncFnOnce(&p2panda::Node) -> Result<T, E>,
-    ) -> Result<T, StreamsError>
-    where
-        StreamsError: From<E>,
-    {
+    ) -> Result<T, E> {
         let node = RwLockReadGuard::try_map(self.node.read().await, Option::as_ref)
-            .map_err(|_| StreamsError::ShutDown)?;
+            .expect("tokio docs say this is infallible...");
         Ok(Box::pin(f(&node)).await?)
     }
 
@@ -277,7 +275,9 @@ impl TopicStreams {
             .map_err(|_| StreamsError::DrainClosed)
     }
 
+    #[tracing::instrument(skip(self), fields(chat_id = ?chat_id.aliased()))]
     pub(crate) async fn create_space(&self, chat_id: ChatId) -> Result<Space, StreamsError> {
+        tracing::info!(chat_id = ?chat_id.aliased(), "create_space");
         let (publisher, created) = self
             .publisher(chat_id.into(), StreamIntent::CreateSpace)
             .await?;
@@ -303,8 +303,10 @@ impl TopicStreams {
     }
 
     /// Subscribe to a topic. Returns `false` if already subscribed.
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
     pub(crate) async fn subscribe(&self, topic: Topic) -> Result<bool, StreamsError> {
         let (_, opened) = self.publisher(topic, StreamIntent::SubscribeStream).await?;
+        tracing::info!(topic = ?topic.aliased(), ?opened, "topic subscribed");
         Ok(opened)
     }
 

@@ -1,7 +1,6 @@
 use dashchat_utils::SeqNum;
+use p2panda::Hash;
 use p2panda::operation::Header;
-use p2panda::{Hash, VerifyingKey};
-use p2panda_auth::group::GroupAction;
 use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
@@ -52,13 +51,18 @@ pub enum InboxPayload {
         profile: Profile,
         agent_id: AgentId,
         reply_topic: Topic<kind::Inbox>,
+        keybundle: p2panda::spaces::Member,
     },
     /// Sent by the inbox owner back to the scanner over the scanner's private
     /// reply topic, carrying the owner's profile so the scanner learns it
     /// immediately rather than waiting for announcements sync. `agent_id` is the
     /// owner's agent id; the scanner records it against the op author
     /// (device_pubkey), a step toward dropping `agent_id` from the QR code.
-    ContactRequestAccept { profile: Profile, agent_id: AgentId },
+    ContactRequestAccept {
+        profile: Profile,
+        agent_id: AgentId,
+        keybundle: p2panda::spaces::Member,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
