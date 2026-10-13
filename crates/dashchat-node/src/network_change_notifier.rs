@@ -79,10 +79,6 @@ async fn notify_iroh(endpoint: &p2panda::Endpoint) {
             tracing::info!("network-change notifier: notifying iroh");
             iroh.network_change().await;
             publish_local_addrs(&iroh).await;
-            // Brief, bounded wait for iroh to re-establish; the offline-LAN
-            // case never goes "online", so don't block the loop on it.
-            #[cfg(target_os = "android")]
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), iroh.online()).await;
         }
         Err(err) => {
             tracing::warn!(
