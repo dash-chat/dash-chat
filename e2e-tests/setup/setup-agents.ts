@@ -49,6 +49,7 @@ import {
 	androidHasInternet,
 	denyAndroidNotificationPermission,
 	isAndroidAppRunning,
+	pressAndroidBack,
 	pressAndroidHome,
 	resetAndroidNotificationPermission,
 	stopAndroidApp,
@@ -163,6 +164,8 @@ export type Agent = WebdriverIO.Browser & {
 	/** Whether the app's process is alive, foreground or background. A phone
 	 *  app the OS killed while it was backgrounded reports false. */
 	isAppRunning(): Promise<boolean>;
+	/** Android only. */
+	pressSystemBack(): void;
 	/** Relaunch after [`stopApp`] or [`waitForAppExit`] and wait until the app
 	 *  is interactive again. Idempotent: a no-op when the app is already
 	 *  running (on mobile it foregrounds a backgrounded app). */
@@ -517,6 +520,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			throw new Error(`only iOS runs a push extension, got ${agent.platform}`);
 		}
 		killIosPushExtension(deviceUdid(b));
+	};
+	agent.pressSystemBack = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(`pressSystemBack needs android, got ${agent.platform}`);
+		}
+		pressAndroidBack(deviceUdid(b));
 	};
 	agent.resetNotificationPermission = () => {
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
