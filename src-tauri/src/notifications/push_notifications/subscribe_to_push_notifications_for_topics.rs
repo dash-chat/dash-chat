@@ -26,7 +26,9 @@ const CHANGES_DEBOUNCE: Duration = Duration::from_millis(500);
 pub(crate) struct SubscribeToPushNotificationsForTopicsTask {
     app_handle: Option<AppHandle>,
     notifications_enabled_listener: Option<EventId>,
-    pub(crate) topics_on_server: watch::Receiver<HashSet<PushTopicId>>,
+    /// The topics the server has confirmed for this device, `None` until its
+    /// first answer; a push handler waits on it so a new group can wake the device.
+    pub(crate) confirmed_topics: watch::Receiver<Option<HashSet<PushTopicId>>>,
     tracker: TaskTracker,
     token: CancellationToken,
 }
@@ -50,7 +52,7 @@ impl SubscribeToPushNotificationsForTopicsTask {
             })
         });
 
-        let (topics_on_server_tx, topics_on_server) = watch::channel(HashSet::new());
+        let (confirmed_topics_tx, confirmed_topics) = watch::channel(None);
         let tracker = TaskTracker::new();
         let token = CancellationToken::new();
         tracker.spawn(
@@ -61,13 +63,13 @@ impl SubscribeToPushNotificationsForTopicsTask {
                     client,
                     new_topics,
                     changed,
-                    topics_on_server_tx,
+                    confirmed_topics_tx,
                 )),
         );
         Self {
             app_handle,
             notifications_enabled_listener,
-            topics_on_server,
+            confirmed_topics,
             tracker,
             token,
         }
@@ -91,23 +93,19 @@ async fn keep_topics_subscribed(
     client: PushNotificationsClient,
     mut new_topics: mpsc::Receiver<TopicId>,
     changed: Arc<Notify>,
-    topics_on_server_tx: watch::Sender<HashSet<PushTopicId>>,
+    confirmed_topics: watch::Sender<Option<HashSet<PushTopicId>>>,
 ) {
-    let mut topics_on_server = None;
     loop {
-        let update_subscriptions =
-            || update_subscriptions(&node, &client, topics_on_server.as_ref());
-        let topics = tokio::select! {
-            Ok(topics) = update_subscriptions
+        let update_subscriptions = || update_subscriptions(&node, &client, &confirmed_topics);
+        tokio::select! {
+            Ok(()) = update_subscriptions
                 .retry(ExponentialBuilder::new().with_jitter().without_max_times())
                 .notify(|err, delay| {
                     log::warn!("Failed to update push notification subscriptions, retrying in {delay:?}: {err:?}")
-                }) => topics,
+                }) => {}
             // A change restarts the attempt at once, not after its backoff.
             () = changed.notified() => continue,
         };
-        topics_on_server_tx.send_replace(topics.clone());
-        topics_on_server = Some(topics);
         tokio::select! {
             () = changed.notified() => {}
             Some(_) = new_topics.recv() => {}
@@ -118,17 +116,25 @@ async fn keep_topics_subscribed(
 }
 
 /// Adds just the missing topics when the server has nothing it shouldn't;
-/// otherwise replaces its whole set. Returns what the server now has.
+/// otherwise replaces its whole set. Then publishes what the server now has.
 async fn update_subscriptions(
     node: &Node,
     client: &PushNotificationsClient,
-    topics_on_server: Option<&HashSet<PushTopicId>>,
-) -> anyhow::Result<HashSet<PushTopicId>> {
+    confirmed_topics: &watch::Sender<Option<HashSet<PushTopicId>>>,
+) -> anyhow::Result<()> {
     let topics = topics_to_subscribe_to(node).await?;
     let device = VerifyingKey::from(node.device_id().to_string());
-    match topics_on_server {
-        Some(on_server) if on_server.is_subset(&topics) => {
-            let missing: HashSet<PushTopicId> = topics.difference(on_server).cloned().collect();
+    let missing_without_removals = match &*confirmed_topics.borrow() {
+        Some(confirmed) if confirmed.is_subset(&topics) => Some(
+            topics
+                .difference(confirmed)
+                .cloned()
+                .collect::<HashSet<_>>(),
+        ),
+        _ => None,
+    };
+    match missing_without_removals {
+        Some(missing) => {
             if !missing.is_empty() {
                 log::info!(
                     "Subscribing to {} topics on push notifications server.",
@@ -137,7 +143,7 @@ async fn update_subscriptions(
                 client.add_topic_subscriptions(device, missing).await?;
             }
         }
-        _ => {
+        None => {
             log::info!(
                 "Syncing {} topic subscriptions with push notifications server.",
                 topics.len()
@@ -147,7 +153,12 @@ async fn update_subscriptions(
                 .await?;
         }
     }
-    Ok(topics)
+    confirmed_topics.send_if_modified(|confirmed| {
+        let modified = confirmed.as_ref() != Some(&topics);
+        *confirmed = Some(topics);
+        modified
+    });
+    Ok(())
 }
 
 /// Every topic the node listens to, or none while notifications are disabled.
@@ -266,10 +277,11 @@ mod tests {
 
         let group = node.create_group(BTreeMap::new()).await.unwrap();
         let group_topic = PushTopicId::from(group.to_hex());
-        let mut topics_on_server = subscriptions.topics_on_server.clone();
+        let mut confirmed_topics = subscriptions.confirmed_topics.clone();
         tokio::time::timeout(
             Duration::from_secs(15),
-            topics_on_server.wait_for(|topics| topics.contains(&group_topic)),
+            confirmed_topics
+                .wait_for(|topics| topics.as_ref().is_some_and(|t| t.contains(&group_topic))),
         )
         .await
         .unwrap()
