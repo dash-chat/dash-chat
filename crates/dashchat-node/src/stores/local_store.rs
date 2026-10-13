@@ -39,21 +39,29 @@ const AGENT_ID_KEY: &str = "agent_id";
 #[repr(i64)]
 enum InboxRole {
     /// An inbox we advertise in our QR code and receive contact requests on.
+    ///
+    /// The QR creator's own inbox.
     Advertised = 0,
     /// A private inbox we minted while scanning someone's QR, used only to
     /// receive their `ContactRequestAccept`. Never pruned: a late acceptance —
     /// possibly of an older request, after a re-scan — is matched by topic
     /// whatever its expiry, so pruning one would strand that request.
+    ///
+    /// The QR scanner's own inbox.
     Reply = 1,
     /// A requester's private reply inbox that we published our
     /// `ContactRequestAccept` into. Kept subscribed across restarts until the
     /// code expires, so a requester that only reaches us directly can still
     /// sync it from us.
+    ///
+    /// The QR creator's subscription to the scanner's inbox.
     Accepted = 2,
     /// The advertised inbox of a device whose QR we scanned, where our
     /// `ContactRequest` lives. Restored at startup until they become a contact
     /// or the code expires, so a request that didn't sync before a restart still
     /// reaches them.
+    ///
+    /// The QR scanner's subscription to the creator's inbox.
     Requested = 3,
 }
 

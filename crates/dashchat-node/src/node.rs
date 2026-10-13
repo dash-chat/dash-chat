@@ -751,6 +751,9 @@ impl Node {
 
     /// Create a new direct chat Space.
     /// Note that only one node should create the space!
+    ///
+    /// TODO: use a tie breaker in case both nodes created a space, so that one
+    ///       gets deterministically abandoned and both nodes choose the same space.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn create_direct_chat_space(&self, other: FakeAgentId) -> anyhow::Result<()> {
         let topic = self.direct_chat_topic(other);
