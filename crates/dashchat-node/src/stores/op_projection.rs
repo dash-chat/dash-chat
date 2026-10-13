@@ -471,7 +471,7 @@ impl OpProjection {
                         anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                     })?);
 
-                tracing::info!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
+                tracing::debug!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
                 self.save_profile(agent_id, profile.clone()).await?;
                 None
@@ -508,7 +508,9 @@ impl OpProjection {
             Payload::Inbox(InboxPayload::ContactRequest {
                 agent_id, profile, ..
             })
-            | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
+            | Payload::Inbox(InboxPayload::ContactRequestAccept {
+                agent_id, profile, ..
+            }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
                 Some(SystemNotification::AgentsIntroduced {

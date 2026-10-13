@@ -759,7 +759,6 @@ impl Node {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
-        self.register_topic(topic).await?;
 
         let other_device_id = DeviceId::from(other);
 
@@ -847,8 +846,12 @@ impl Node {
         topic: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
     ) -> anyhow::Result<()> {
+        self.register_topic_inner(topic, false).await?;
         let space = self.streams.create_space(topic).await?;
         for (member, access) in initial_members {
+            if member.id() == *self.device_id() {
+                continue;
+            }
             // TODO: this erases info about Individual vs Group member.
             // Do we need a proper Group in the Space to account for this?
             space
@@ -1034,6 +1037,13 @@ impl Node {
         Ok(())
     }
 
+    pub async fn join_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        tracing::info!(?chat_id, "joined space");
+        self.register_topic_inner(chat_id, false).await?;
+        self.streams.join_space(chat_id).await?;
+        Ok(())
+    }
+
     pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
         self.projection.get_group_chat_ids().await
     }
@@ -1057,6 +1067,17 @@ impl Node {
 
     pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
         self.projection.get_profile(agent_id).await
+    }
+
+    pub async fn keybundle(&self) -> anyhow::Result<p2panda::spaces::Member> {
+        Ok(self.streams.with_node(async |node| node.me().await).await?)
+    }
+
+    pub async fn save_keybundle(&self, keybundle: p2panda::spaces::Member) -> anyhow::Result<()> {
+        self.streams
+            .with_node(async |node| node.register_member(keybundle).await)
+            .await?;
+        Ok(())
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
@@ -1704,7 +1725,7 @@ impl Node {
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         let fake_agent_id = FakeAgentId::from(device_id);
-        self.register_topic(self.direct_chat_topic(fake_agent_id))
+        self.register_topic_inner(self.direct_chat_topic(fake_agent_id), false)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.local_store
@@ -1848,12 +1869,18 @@ impl Node {
             return Err(AddContactError::ProfileNotCreated);
         };
 
+        let keybundle = self
+            .keybundle()
+            .await
+            .map_err(|e| AddContactError::OwnKeyMaterialMissing(e.to_string()))?;
+
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
                 profile,
                 agent_id: self.agent_id(),
                 reply_topic: reply_inbox.topic.clone(),
+                keybundle,
             }),
             Some(&format!(
                 "add_contact/contact_request({:?})",
@@ -2047,6 +2074,10 @@ impl Node {
             Payload::Inbox(InboxPayload::ContactRequestAccept {
                 profile,
                 agent_id: self.agent_id(),
+                keybundle: self
+                    .keybundle()
+                    .await
+                    .map_err(|e| Error::OwnKeyMaterialMissing(e.to_string()))?,
             }),
             Some("reply_to_contact_request"),
         )
@@ -2665,6 +2696,7 @@ mod forged_contact_request_tests {
                     profile: mallory.my_profile().await.unwrap().unwrap(),
                     agent_id: bobbi.agent_id(),
                     reply_topic: Topic::inbox(),
+                    keybundle: bobbi.keybundle().await.unwrap(),
                 }),
                 None,
             )
@@ -2719,6 +2751,7 @@ mod forged_contact_request_tests {
                     profile: mallory.my_profile().await.unwrap().unwrap(),
                     agent_id: mallory.agent_id(),
                     reply_topic: alice_inbox.topic,
+                    keybundle: mallory.keybundle().await.unwrap(),
                 }),
                 None,
             )

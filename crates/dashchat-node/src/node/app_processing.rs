@@ -81,12 +81,22 @@ impl Node {
     ///
     /// Note that some topics are excluded from automatic registration, such as inbox topics.
     /// They have to be registered separately with extra context.
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
     pub(crate) async fn register_topic<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
+        self.register_topic_inner(topic, true).await
+    }
+
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn register_topic_inner<K: AutoRegisteredTopic>(
+        &self,
+        topic: Topic<K>,
+        subscribe: bool,
+    ) -> anyhow::Result<()> {
         self.local_store.register_topic_as_subscribed(topic).await?;
-        self.initialize_topic(*topic).await?;
+        self.initialize_topic_inner(*topic, subscribe).await?;
 
         Ok(())
     }
@@ -97,13 +107,27 @@ impl Node {
     /// This must be called:
     /// - when creating a new group chat
     /// - when initializing the node, for each existing group chat
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+        self.initialize_topic_inner(topic, true).await
+    }
+
+    pub(crate) async fn initialize_topic_inner(
+        &self,
+        topic: TopicId,
+        subscribe: bool,
+    ) -> anyhow::Result<()> {
         topic.alias_numbered();
 
-        self.subscribe_to_topic(topic).await?;
-        // Not gated on the subscription being new: publishing into a topic
-        // subscribes it too, without importing its mailbox stream.
-        self.import_mailbox_stream(topic).await?;
+        tracing::info!(topic = ?topic.aliased(), ?subscribe, "initialize topic");
+
+        if subscribe {
+            self.subscribe_to_topic(topic).await?;
+
+            // Not gated on the subscription being new: publishing into a topic
+            // subscribes it too, without importing its mailbox stream.
+            self.import_mailbox_stream(topic).await?;
+        }
         Ok(())
     }
 
@@ -556,7 +580,11 @@ impl Node {
                     return Ok(());
                 }
                 match invitation {
-                    InboxPayload::ContactRequest { agent_id, .. } => {
+                    InboxPayload::ContactRequest {
+                        agent_id,
+                        keybundle,
+                        ..
+                    } => {
                         // A request arrived on our advertised inbox. Except for
                         // subscribing to the shared direct-chat topic (so the
                         // requester's messages are readable before accepting),
@@ -570,8 +598,9 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
-                            self.register_topic(
+                            self.register_topic_inner(
                                 self.direct_chat_topic(crate::FakeAgentId::from(author)),
+                                false,
                             )
                             .await?;
                             // Mutual add: if we also sent this peer a contact
@@ -592,9 +621,15 @@ impl Node {
                                     }
                                 });
                             }
+
+                            self.save_keybundle(keybundle.clone()).await?;
                         }
                     }
-                    InboxPayload::ContactRequestAccept { agent_id, .. } => {
+                    InboxPayload::ContactRequestAccept {
+                        agent_id,
+                        keybundle,
+                        ..
+                    } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
@@ -613,6 +648,8 @@ impl Node {
                                 );
                                 return Ok(());
                             }
+
+                            self.save_keybundle(keybundle.clone()).await?;
                             self.establish_contact(author, *agent_id).await?;
 
                             let node = self.clone();
@@ -621,7 +658,7 @@ impl Node {
                                 let topic_id =
                                     node.direct_chat_topic(crate::FakeAgentId::from(author));
 
-                                if let Err(err) = node.streams.join_space(topic_id).await {
+                                if let Err(err) = node.join_space(topic_id).await {
                                     tracing::error!(
                                         ?err,
                                         "direct chat space was subscribed improperly, can't proceed"
