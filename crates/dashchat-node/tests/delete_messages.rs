@@ -117,7 +117,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
         .unwrap();
 
     let chat = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -547,7 +547,7 @@ async fn delete_cannot_censor_unsynced_message_from_another_author() {
     }
 
     let chat = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
             *mallory.device_id() => p2panda_auth::Access::manage(),
         })

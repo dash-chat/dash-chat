@@ -334,7 +334,7 @@ async fn late_joiner_syncing_crossing_replies_can_hit_target_not_found() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(maplit::btreemap! {
+        .create_chat_group(maplit::btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await

@@ -86,17 +86,21 @@ impl Node {
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        self.register_topic_inner(topic, true).await
+        self.local_store.register_topic_as_subscribed(topic).await?;
+        self.initialize_topic_inner(*topic, false).await?;
+
+        Ok(())
     }
 
     #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
-    pub(crate) async fn register_topic_inner<K: AutoRegisteredTopic>(
+    #[cfg(feature = "testing")]
+    #[deprecated = "must refactor all tests to use spaces"]
+    pub async fn register_topic_legacy<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
-        subscribe: bool,
     ) -> anyhow::Result<()> {
         self.local_store.register_topic_as_subscribed(topic).await?;
-        self.initialize_topic_inner(*topic, subscribe).await?;
+        self.initialize_topic_inner(*topic, true).await?;
 
         Ok(())
     }
@@ -558,7 +562,7 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
-                self.join_group(*chat_id)
+                self.join_chat_group(*chat_id)
                     .await
                     .context("failed to join group from invitation")?;
             }
@@ -598,9 +602,8 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
-                            self.register_topic_inner(
+                            self.register_topic(
                                 self.direct_chat_topic(crate::FakeAgentId::from(author)),
-                                false,
                             )
                             .await?;
                             // Mutual add: if we also sent this peer a contact

@@ -781,7 +781,7 @@ impl Node {
         Ok(())
     }
 
-    pub async fn create_group(
+    pub async fn create_chat_group(
         &self,
         mut initial_members: BTreeMap<VerifyingKey, p2panda_auth::Access>,
     ) -> anyhow::Result<ChatId> {
@@ -822,8 +822,6 @@ impl Node {
             .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
-        self.register_topic(chat_id).await?;
-
         self.create_space(chat_id, initial_members).await?;
 
         // Ensure that future non-contact members can see every initial member's
@@ -846,7 +844,7 @@ impl Node {
         topic: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
     ) -> anyhow::Result<()> {
-        self.register_topic_inner(topic, false).await?;
+        self.register_topic(topic).await?;
         let space = self.streams.create_space(topic).await?;
         for (member, access) in initial_members {
             if member.id() == *self.device_id() {
@@ -1031,15 +1029,15 @@ impl Node {
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().aliased())))]
-    pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
+    pub async fn join_chat_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.register_topic(chat_id).await?;
+        self.join_space(chat_id).await?;
         Ok(())
     }
 
     pub async fn join_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined space");
-        self.register_topic_inner(chat_id, false).await?;
+        self.register_topic(chat_id).await?;
         self.streams.join_space(chat_id).await?;
         Ok(())
     }
@@ -1725,7 +1723,7 @@ impl Node {
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         let fake_agent_id = FakeAgentId::from(device_id);
-        self.register_topic_inner(self.direct_chat_topic(fake_agent_id), false)
+        self.register_topic(self.direct_chat_topic(fake_agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.local_store
