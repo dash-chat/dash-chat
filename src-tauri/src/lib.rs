@@ -74,32 +74,29 @@ pub fn run() {
     #[cfg(target_os = "ios")]
     {
         builder = builder.plugin(tauri_plugin_ios_photos::init());
-        // Quiesce the node (release SQLite locks) on background and rebuild it on
-        // foreground so iOS can suspend the app without a 0xdead10cc kill.
+        // Stop database writes on background so iOS can suspend the app with its
+        // node alive and without a 0xdead10cc kill.
         builder = builder.plugin(
             tauri_plugin_lifecycle::Builder::new()
-                .on_pause(|app| async move {
+                .on_pause(|app| {
                     use tauri::Manager;
-                    if let Some(app_node_manager) = app
+                    let pause = app
                         .try_state::<node::AppNodeManager>()
-                        .map(|s| s.inner().clone())
-                    {
-                        app_node_manager.pause().await;
+                        .map(|app_node_manager| app_node_manager.pause());
+                    async move {
+                        if let Some(pause) = pause {
+                            pause.await;
+                        }
                     }
                 })
-                .on_resume(|app| async move {
+                .on_resume(|app| {
                     use tauri::Manager;
-                    if let Some(app_node_manager) = app
+                    let resume = app
                         .try_state::<node::AppNodeManager>()
-                        .map(|s| s.inner().clone())
-                    {
-                        if let Err(err) = app_node_manager.resume(&app).await {
-                            log::error!("Failed to rebuild node on foreground: {err:?}");
-                        }
-                        // Uploads cut off while we were away go out again now.
-                        if let Ok(node) = app_node_manager.get().await {
-                            node.mailboxes.reset_uploads();
-                            node.notify_unfetched_blob_followup();
+                        .map(|app_node_manager| app_node_manager.resume(&app));
+                    async move {
+                        if let Some(resume) = resume {
+                            resume.await;
                         }
                     }
                 })

@@ -25,6 +25,7 @@ tracing = "0.1"
 
 dashchat-compat = { path = "crates/dashchat-compat" }
 dashchat-utils = { path = "crates/dashchat-utils" }
+sqlite-gate = { path = "crates/sqlite-gate" }
 panic-policy = { path = "crates/panic-policy" }
 network-watch = { path = "crates/network-watch" }
 mailbox-client = { path = "crates/mailbox-client" }

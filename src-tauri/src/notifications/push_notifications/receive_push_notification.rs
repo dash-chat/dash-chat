@@ -321,6 +321,7 @@ async fn handle_push_notification(
 
     let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
         &filesystem.notified_operations_db_path(),
+        &sqlite_gate::SqliteGate::default(),
     )
     .await
     .context("failed to open notified operations store")?;

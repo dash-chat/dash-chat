@@ -1,12 +1,8 @@
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::Path;
 use std::time::Duration;
 
-use sqlx::{
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
-    SqlitePool,
-};
-use tokio::sync::RwLock;
+use sqlite_gate::{GatedPool, SqliteGate};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 
 const MIGRATIONS: &[&str] = &["CREATE TABLE IF NOT EXISTS notified_operations (
         hash BLOB PRIMARY KEY,
@@ -18,57 +14,23 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE IF NOT EXISTS notified_operations (
 /// path consult it so the same op never produces two banners — important on
 /// Android where MessagingStyle would otherwise append the message twice into
 /// the same thread.
-///
-/// The pool is behind an `Option` so [`close`](Self::close) can drain it when
-/// the iOS app is backgrounded (releasing the file lock, avoiding 0xdead10cc)
-/// and it is transparently reopened on next use.
 #[derive(Clone)]
 pub struct NotifiedOperationsStore {
-    path: PathBuf,
-    pool: Arc<RwLock<Option<SqlitePool>>>,
+    pool: GatedPool,
 }
 
 impl NotifiedOperationsStore {
-    async fn open_pool(path: &Path) -> anyhow::Result<SqlitePool> {
+    pub async fn open(db_path: &Path, gate: &SqliteGate) -> anyhow::Result<Self> {
         let opts = SqliteConnectOptions::new()
-            .filename(path)
+            .filename(db_path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
             .busy_timeout(Duration::from_secs(30));
-        let pool = SqlitePoolOptions::new().connect_with(opts).await?;
+        let pool = gate.connect(SqlitePoolOptions::new(), opts).await?;
         for sql in MIGRATIONS {
-            sqlx::query(*sql).execute(&pool).await?;
+            sqlx::query(*sql).execute(pool.pool()).await?;
         }
-        Ok(pool)
-    }
-
-    pub async fn open(db_path: &Path) -> anyhow::Result<Self> {
-        let pool = Self::open_pool(db_path).await?;
-        Ok(Self {
-            path: db_path.to_path_buf(),
-            pool: Arc::new(RwLock::new(Some(pool))),
-        })
-    }
-
-    /// Return the live pool, reopening it if it was closed (e.g. after the app
-    /// was backgrounded and has since resumed).
-    async fn pool(&self) -> anyhow::Result<SqlitePool> {
-        if let Some(pool) = self.pool.read().await.as_ref() {
-            return Ok(pool.clone());
-        }
-        let mut guard = self.pool.write().await;
-        if guard.is_none() {
-            *guard = Some(Self::open_pool(&self.path).await?);
-        }
-        Ok(guard.as_ref().expect("just opened").clone())
-    }
-
-    /// Drain the SQLite pool so it releases its file lock. Called when the iOS
-    /// app is backgrounded; the pool reopens lazily on next use.
-    pub async fn close(&self) {
-        if let Some(pool) = self.pool.write().await.take() {
-            pool.close().await;
-        }
+        Ok(Self { pool })
     }
 
     /// Records that the operation identified by `hash` has had a notification
@@ -84,7 +46,7 @@ impl NotifiedOperationsStore {
         )
         .bind(hash.as_bytes().to_vec())
         .bind(now_nanos)
-        .execute(&self.pool().await?)
+        .execute(self.pool.pool())
         .await?;
         Ok(result.rows_affected() == 1)
     }
@@ -94,7 +56,7 @@ impl NotifiedOperationsStore {
         let row: Option<(i64,)> =
             sqlx::query_as("SELECT notified_at_nanos FROM notified_operations WHERE hash = ?")
                 .bind(hash.as_bytes().to_vec())
-                .fetch_optional(&self.pool().await?)
+                .fetch_optional(self.pool.pool())
                 .await?;
         Ok(row.is_some())
     }
@@ -110,9 +72,12 @@ mod tests {
 
     async fn temp_store() -> (tempfile::TempDir, NotifiedOperationsStore) {
         let dir = tempfile::tempdir().unwrap();
-        let store = NotifiedOperationsStore::open(&dir.path().join("notified_operations.db"))
-            .await
-            .unwrap();
+        let store = NotifiedOperationsStore::open(
+            &dir.path().join("notified_operations.db"),
+            &SqliteGate::default(),
+        )
+        .await
+        .unwrap();
         (dir, store)
     }
 
@@ -150,11 +115,15 @@ mod tests {
         let path = dir.path().join("notified_operations.db");
         let hash = hash_from_byte(0x77);
 
-        let store = NotifiedOperationsStore::open(&path).await.unwrap();
+        let store = NotifiedOperationsStore::open(&path, &SqliteGate::default())
+            .await
+            .unwrap();
         assert!(store.record_notified_operation(hash).await.unwrap());
         drop(store);
 
-        let store = NotifiedOperationsStore::open(&path).await.unwrap();
+        let store = NotifiedOperationsStore::open(&path, &SqliteGate::default())
+            .await
+            .unwrap();
         assert!(!store.record_notified_operation(hash).await.unwrap());
     }
 

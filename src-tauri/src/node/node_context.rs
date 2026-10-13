@@ -81,6 +81,8 @@ pub struct NodeContext {
     /// app process (used to spawn app-lifetime tasks like local-mailbox mDNS
     /// discovery).
     pub app_handle: Option<AppHandle>,
+    /// Only the app ever suspends it.
+    pub sqlite_gate: sqlite_gate::SqliteGate,
 }
 
 impl NodeContext {
@@ -95,6 +97,7 @@ impl NodeContext {
             notification_tx,
             topic_subscribed_tx: None,
             app_handle: None,
+            sqlite_gate: Default::default(),
         }
     }
 
@@ -108,6 +111,7 @@ impl NodeContext {
             notification_tx: None,
             topic_subscribed_tx: None,
             app_handle: None,
+            sqlite_gate: Default::default(),
         }
     }
 
@@ -117,12 +121,14 @@ impl NodeContext {
         app: &AppHandle,
         notification_tx: mpsc::Sender<dashchat_node::Notification>,
         topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
+        sqlite_gate: sqlite_gate::SqliteGate,
     ) -> Self {
         Self {
             role: NodeRole::App,
             notification_tx: Some(notification_tx),
             topic_subscribed_tx,
             app_handle: Some(app.clone()),
+            sqlite_gate,
         }
     }
 
@@ -173,6 +179,7 @@ impl NodeContext {
         // The push extension's short-lived background node only reads
         // operations to build notifications; it must not author any.
         config.enable_message_acks = self.role == NodeRole::App;
+        config.sqlite_gate = self.sqlite_gate.clone();
 
         // The push extension shares the app's database. On p2panda's default
         // per-topic cursor, whichever process fetches an operation first stops
@@ -219,6 +226,7 @@ mod tests {
             notification_tx: None,
             topic_subscribed_tx: None,
             app_handle: None,
+            sqlite_gate: Default::default(),
         }
     }
 

@@ -50,15 +50,23 @@ pub(crate) fn spawn(
                     return;
                 }
             }
-            tracing::info!("network-change notifier: probing mailboxes");
-            mailboxes.probe_all().await;
-            mailboxes.reset_uploads();
-            unfetched_blob_trigger.notify_one();
-            if let Some(endpoint) = &endpoint {
-                notify_iroh(endpoint).await;
-            }
+            handle_network_change(endpoint.as_ref(), &mailboxes, &unfetched_blob_trigger).await;
         }
     })
+}
+
+pub(crate) async fn handle_network_change(
+    endpoint: Option<&p2panda::Endpoint>,
+    mailboxes: &Mailboxes<MailboxOperation, OpStore>,
+    unfetched_blob_trigger: &tokio::sync::Notify,
+) {
+    tracing::info!("network-change notifier: probing mailboxes");
+    mailboxes.probe_all().await;
+    mailboxes.reset_uploads();
+    unfetched_blob_trigger.notify_one();
+    if let Some(endpoint) = endpoint {
+        notify_iroh(endpoint).await;
+    }
 }
 
 use std::collections::BTreeSet;
