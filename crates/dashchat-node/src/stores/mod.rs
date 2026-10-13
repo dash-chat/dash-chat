@@ -26,7 +26,7 @@ pub async fn create_sqlite_pool(
         .filename(&path)
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
-        .busy_timeout(Duration::from_secs(30));
+        .busy_timeout(sqlite_gate::BUSY_TIMEOUT);
     let pool = gate.connect(SqlitePoolOptions::new(), opts).await?;
     Ok(pool)
 }
@@ -35,7 +35,7 @@ pub async fn create_sqlite_pool(
 /// from there), because only a pool connected through `gate` can be suspended.
 pub async fn create_op_store_pool(url: &str, gate: &SqliteGate) -> anyhow::Result<GatedPool> {
     p2panda_store::sqlite::create_database(url).await?;
-    let opts = SqliteConnectOptions::from_str(url)?.busy_timeout(Duration::from_secs(10));
+    let opts = SqliteConnectOptions::from_str(url)?.busy_timeout(sqlite_gate::BUSY_TIMEOUT);
     let pool = gate
         .connect(
             SqlitePoolOptions::new()

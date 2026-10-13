@@ -3,7 +3,6 @@ use std::{
     marker::PhantomData,
     path::Path,
     sync::Arc,
-    time::Duration,
 };
 
 use anyhow::Context;
@@ -81,7 +80,7 @@ where
             .filename(path.as_ref())
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(30));
+            .busy_timeout(sqlite_gate::BUSY_TIMEOUT);
         let pool = gate.connect(SqlitePoolOptions::new(), opts).await?;
         sqlx::query(SCHEMA).execute(pool.pool()).await?;
 

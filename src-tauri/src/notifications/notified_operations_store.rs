@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Duration;
 
 use sqlite_gate::{GatedPool, SqliteGate};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
@@ -25,7 +24,7 @@ impl NotifiedOperationsStore {
             .filename(db_path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(30));
+            .busy_timeout(sqlite_gate::BUSY_TIMEOUT);
         let pool = gate.connect(SqlitePoolOptions::new(), opts).await?;
         for sql in MIGRATIONS {
             sqlx::query(*sql).execute(pool.pool()).await?;

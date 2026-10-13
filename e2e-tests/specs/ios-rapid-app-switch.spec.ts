@@ -38,8 +38,8 @@ describe('Chat list after rapid app switching on the iPhone', function () {
 			await bob.startApp();
 		}
 
-		expect(await bob.errorPlaceholder.root.isExisting()).toBe(false);
 		await bob.homePage.chatListItem('Alice').waitForExist();
+		expect(await bob.errorPlaceholder.root.isExisting()).toBe(false);
 		await alice.directChatPage.composer.sendMessage('after the switching');
 		await bob.homePage.chatListItem('Alice').click();
 		await bob.directChatPage.ready();

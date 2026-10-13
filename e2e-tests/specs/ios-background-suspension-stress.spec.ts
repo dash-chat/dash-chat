@@ -40,9 +40,14 @@ describe('iPhone app left right after a message arrives', function () {
 		await bob.directChatPage.messages.waitForMessage('before the rounds');
 	});
 
-	// Relaunches a killed app too, so the rounds after a kill still test something.
+	// Relaunches a killed app too, back into the chat, so the rounds after a
+	// kill still test something.
 	afterEach(async () => {
 		await bob.startApp();
+		if (!(await bob.directChatPage.back.isDisplayed())) {
+			await bob.homePage.chatListItem('Alice').click();
+			await bob.directChatPage.ready();
+		}
 	});
 
 	for (let round = 1; round <= ROUNDS; round++) {

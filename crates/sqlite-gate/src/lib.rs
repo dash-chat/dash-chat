@@ -5,7 +5,6 @@
 //! don't count. Suspending the gate parks every new connection request and
 //! waits for the connections in use to come back.
 
-use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -13,6 +12,10 @@ use std::time::Duration;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use tokio::sync::watch;
+
+/// The busy timeout for every gated pool. A suspend deadline has to outlast
+/// it: a write waiting out another process's lock is still open until then.
+pub const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How many connections were still busy when [`SqliteGate::suspend`] gave up.
 #[derive(Debug)]
@@ -34,7 +37,8 @@ pub struct SqliteGate {
 }
 
 /// A pool connected through a [`SqliteGate`]. Hold it for as long as the pool
-/// is used: the gate forgets the pool once every handle is dropped.
+/// is used: the gate forgets the pool once every handle is dropped, and stops
+/// waiting for its connections even if a clone of the inner pool lives on.
 #[derive(Clone, Debug)]
 pub struct GatedPool(Arc<SqlitePool>);
 
@@ -112,28 +116,21 @@ impl SqliteGate {
         Ok(pool)
     }
 
-    /// Parks new connection requests right away and returns the wait for the
-    /// busy connections to come back. Not `async`, so suspend and resume take
-    /// effect in call order even when the returned futures run out of order.
-    /// Past `deadline` the gate stays closed anyway: reopening it would let new
+    /// Parks new connection requests and waits for the busy connections to
+    /// come back. Also returns `Ok` if [`Self::resume`] comes first. Past
+    /// `deadline` the gate stays closed anyway: reopening it would let new
     /// writes start just before the app is suspended.
-    pub fn suspend(
-        &self,
-        deadline: Duration,
-    ) -> impl Future<Output = Result<(), StillInUseError>> + Send + 'static {
+    pub async fn suspend(&self, deadline: Duration) -> Result<(), StillInUseError> {
         self.open.send_replace(false);
-        let gate = self.clone();
-        async move {
-            let drained = tokio::time::timeout(deadline, async {
-                while !gate.is_open() && gate.busy_connections() > 0 {
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-            })
-            .await;
-            match drained {
-                Ok(()) => Ok(()),
-                Err(_) => Err(StillInUseError(gate.busy_connections())),
+        let drained = tokio::time::timeout(deadline, async {
+            while !self.is_open() && self.busy_connections() > 0 {
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
+        })
+        .await;
+        match drained {
+            Ok(()) => Ok(()),
+            Err(_) => Err(StillInUseError(self.busy_connections())),
         }
     }
 
@@ -195,6 +192,21 @@ impl SqliteGate {
 mod tests {
     use super::*;
 
+    /// Suspends in the background, returning once the gate is closed.
+    async fn suspend_in_background(
+        gate: &SqliteGate,
+        deadline: Duration,
+    ) -> tokio::task::JoinHandle<Result<(), StillInUseError>> {
+        let suspended = tokio::spawn({
+            let gate = gate.clone();
+            async move { gate.suspend(deadline).await }
+        });
+        while gate.is_open() {
+            tokio::task::yield_now().await;
+        }
+        suspended
+    }
+
     async fn pool(gate: &SqliteGate) -> GatedPool {
         gate.connect(
             SqlitePoolOptions::new().max_connections(2),
@@ -210,7 +222,7 @@ mod tests {
         let pool = pool(&gate).await;
         let connection = pool.pool().acquire().await.unwrap();
 
-        let suspended = tokio::spawn(gate.suspend(Duration::from_millis(500)));
+        let suspended = suspend_in_background(&gate, Duration::from_millis(500)).await;
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(!suspended.is_finished());
         drop(connection);
@@ -223,13 +235,13 @@ mod tests {
         let pool = pool(&gate).await;
 
         // A parked request holds no transaction, so it doesn't hold suspending up.
-        let suspended = gate.suspend(Duration::from_millis(500));
+        let suspended = suspend_in_background(&gate, Duration::from_millis(500)).await;
         let waiting = tokio::spawn({
             let pool = pool.clone();
             async move { pool.pool().acquire().await.map(|_| ()) }
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
-        suspended.await.unwrap();
+        suspended.await.unwrap().unwrap();
         assert!(!waiting.is_finished());
 
         gate.resume();
@@ -242,7 +254,7 @@ mod tests {
         let pool = pool(&gate).await;
         let transaction = pool.pool().begin().await.unwrap();
 
-        let suspended = tokio::spawn(gate.suspend(Duration::from_millis(500)));
+        let suspended = suspend_in_background(&gate, Duration::from_millis(500)).await;
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(!suspended.is_finished());
         transaction.commit().await.unwrap();
@@ -256,14 +268,14 @@ mod tests {
         // Holding the only open connection makes the next request open a new one.
         let held = pool.pool().acquire().await.unwrap();
 
-        let suspended = gate.suspend(Duration::from_millis(500));
+        let suspended = suspend_in_background(&gate, Duration::from_millis(500)).await;
         let waiting = tokio::spawn({
             let pool = pool.clone();
             async move { pool.pool().acquire().await.map(|_| ()) }
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         drop(held);
-        suspended.await.unwrap();
+        suspended.await.unwrap().unwrap();
         assert!(!waiting.is_finished());
 
         gate.resume();
@@ -277,7 +289,7 @@ mod tests {
         let busy = pool(&gate).await;
         let held = busy.pool().acquire().await.unwrap();
 
-        let suspended = tokio::spawn(gate.suspend(Duration::from_millis(500)));
+        let suspended = suspend_in_background(&gate, Duration::from_millis(500)).await;
         let waiting = tokio::spawn({
             let parking = parking.clone();
             async move { parking.pool().acquire().await.map(|_| ()) }
@@ -289,6 +301,27 @@ mod tests {
 
         gate.resume();
         waiting.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn connections_the_pool_opens_by_itself_do_not_hide_a_busy_one() {
+        let gate = SqliteGate::new();
+        let pool = gate
+            .connect(
+                SqlitePoolOptions::new()
+                    .min_connections(3)
+                    .max_connections(4),
+                SqliteConnectOptions::new().in_memory(true),
+            )
+            .await
+            .unwrap();
+        let held = pool.pool().acquire().await.unwrap();
+
+        let suspended = suspend_in_background(&gate, Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!suspended.is_finished());
+        drop(held);
+        suspended.await.unwrap().unwrap();
     }
 
     #[tokio::test]
@@ -314,7 +347,7 @@ mod tests {
         let gate = SqliteGate::new();
         let pool = pool(&gate).await;
 
-        let suspended = gate.suspend(Duration::from_millis(500));
+        let suspended = suspend_in_background(&gate, Duration::from_millis(500)).await;
         let cancelled = tokio::spawn({
             let pool = pool.clone();
             async move { pool.pool().acquire().await.map(|_| ()) }
@@ -322,7 +355,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
         cancelled.abort();
         let _ = cancelled.await;
-        suspended.await.unwrap();
+        suspended.await.unwrap().unwrap();
         gate.resume();
 
         let connection = pool.pool().acquire().await.unwrap();

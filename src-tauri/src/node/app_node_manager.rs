@@ -34,6 +34,12 @@ pub struct AppNodeManager {
         Arc<crate::notifications::push_notifications::RegisterPushNotificationsTokenTask>,
 }
 
+/// Well inside the ~30s iOS grants.
+#[cfg(target_os = "ios")]
+const SUSPEND_DEADLINE: std::time::Duration = std::time::Duration::from_secs(20);
+#[cfg(target_os = "ios")]
+const _: () = assert!(SUSPEND_DEADLINE.as_secs() > sqlite_gate::BUSY_TIMEOUT.as_secs());
+
 impl AppNodeManager {
     /// Build the node and wrap it in the container.
     pub async fn spawn(app: &AppHandle, data_path: PathBuf) -> anyhow::Result<Self> {
@@ -89,10 +95,7 @@ impl AppNodeManager {
 
     #[cfg(target_os = "ios")]
     pub async fn pause(&self) {
-        // Well inside the ~30s iOS grants, and above the op store's busy
-        // timeout a write waits out while the push extension holds it.
-        let deadline = std::time::Duration::from_secs(20);
-        if let Err(err) = self.sqlite_gate.suspend(deadline).await {
+        if let Err(err) = self.sqlite_gate.suspend(SUSPEND_DEADLINE).await {
             log::warn!("Database writes still running at suspension: {err}");
         }
     }

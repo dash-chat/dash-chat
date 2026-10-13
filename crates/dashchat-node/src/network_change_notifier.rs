@@ -81,6 +81,7 @@ async fn notify_iroh(endpoint: &p2panda::Endpoint) {
             publish_local_addrs(&iroh).await;
             // Brief, bounded wait for iroh to re-establish; the offline-LAN
             // case never goes "online", so don't block the loop on it.
+            #[cfg(target_os = "android")]
             let _ = tokio::time::timeout(std::time::Duration::from_secs(5), iroh.online()).await;
         }
         Err(err) => {
@@ -93,16 +94,22 @@ async fn notify_iroh(endpoint: &p2panda::Endpoint) {
 }
 
 /// Registers the current interface addresses with iroh as external addresses
-/// and retracts the ones it still advertises from the previous network.
+/// and retracts the ones it still advertises from the previous network. Adds
+/// before it retracts, so being dropped halfway never leaves iroh advertising
+/// no address at all.
 async fn publish_local_addrs(iroh: &iroh::Endpoint) {
     let current = local_socket_addrs(iroh);
-    for addr in iroh.addr().ip_addrs() {
-        if !current.contains(addr) {
-            iroh.remove_external_addr(addr).await;
-        }
-    }
+    let stale: Vec<SocketAddr> = iroh
+        .addr()
+        .ip_addrs()
+        .filter(|addr| !current.contains(addr))
+        .copied()
+        .collect();
     for addr in &current {
         iroh.add_external_addr(*addr).await;
+    }
+    for addr in &stale {
+        iroh.remove_external_addr(addr).await;
     }
     tracing::info!(addrs = ?current, "network-change notifier: published local addresses");
 }
