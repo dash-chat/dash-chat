@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
-use dashchat_node::{AsBody, Payload, SeqNum, TopicId};
+use dashchat_node::{AsBody, ChatPayload, Payload, SeqNum, TopicId};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
-use p2panda::operation::LogId;
+use p2panda::operation::{Header, LogId};
+use p2panda_core::Hash;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
@@ -31,8 +32,8 @@ const MAX_NSE_LOG_SIZE: u64 = 12 * 1024 * 1024;
 /// What the handler may spend in all, from its entry: the iOS extension is
 /// killed at ~30 s whatever the handler spends on the network.
 const HANDLER_BUDGET: std::time::Duration = std::time::Duration::from_secs(25);
-const OP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
-const RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+pub(super) const OP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+pub(super) const RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 /// How long a cloud mailbox registration may hold up the handler at a time. A
 /// hanging connect otherwise takes up to the HTTP client's 10 s timeout.
 const REGISTER_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
@@ -254,6 +255,28 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
+    wait_for_pushed_operation_notification(
+        node,
+        &filesystem,
+        topic_id,
+        verifying_key,
+        seq_num,
+        handler_deadline,
+    )
+    .await
+}
+
+async fn wait_for_pushed_operation_notification(
+    node: dashchat_node::Node,
+    filesystem: &FileSystem,
+    topic_id: TopicId,
+    verifying_key: p2panda_core::VerifyingKey,
+    seq_num: SeqNum,
+    handler_deadline: tokio::time::Instant,
+) -> anyhow::Result<Option<NotificationData>> {
+    let op_id = format!("{}:{seq_num}", dashchat_node::DeviceId::from(verifying_key));
+    let topic_hex = topic_id.to_hex();
+
     // On every push, not once per node: the extension caches its node for hours
     // and its networking is often not up on the cold-start push. The `/health`
     // round trip also refreshes the mailbox's dialing address. Track it as a
@@ -315,20 +338,18 @@ async fn handle_push_notification(
         None => None,
     };
 
-    let Some(data) = notifications::build_notification_data(
+    let Some((data, notified)) = notification_for_pushed_operation(
         &node,
         topic_id,
         &operation.header,
         payload.as_ref(),
+        handler_deadline,
     )
     .await
     else {
         return Ok(None);
     };
-    log::info!(
-        "Notifying about a pushed operation {}",
-        operation.header.hash()
-    );
+    log::info!("Notifying about a pushed operation {notified}");
 
     let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
         &filesystem.notified_operations_db_path(),
@@ -336,7 +357,7 @@ async fn handle_push_notification(
     .await
     .context("failed to open notified operations store")?;
     match notified_operations_store
-        .record_notified_operation(operation.header.hash())
+        .record_notified_operation(notified)
         .await
     {
         Ok(false) => {
@@ -350,4 +371,49 @@ async fn handle_push_notification(
     }
 
     Ok(Some(data))
+}
+
+async fn notification_for_pushed_operation(
+    node: &dashchat_node::Node,
+    topic_id: TopicId,
+    header: &Header,
+    payload: Option<&Payload>,
+    handler_deadline: tokio::time::Instant,
+) -> Option<(NotificationData, Hash)> {
+    let author = dashchat_node::DeviceId::from(header.verifying_key);
+    match node.projection.is_author_blocked(&author).await {
+        Ok(false) => {}
+        Ok(true) => return None,
+        Err(err) => {
+            log::error!("Failed to check whether {author:?} is blocked: {err:?}");
+            return None;
+        }
+    }
+    if let Some(data) =
+        notifications::build_notification_data(node, topic_id, header, payload).await
+    {
+        return Some((data, header.hash()));
+    }
+    match payload {
+        Some(Payload::Chat(ChatPayload::JoinGroup {
+            chat_id,
+            add_member_operation_hash,
+        })) => {
+            let notification = super::group_invitation::wait_for_added_us_notification(
+                node,
+                header,
+                *chat_id,
+                *add_member_operation_hash,
+                handler_deadline,
+            )
+            .await;
+            super::group_invitation::wait_until_group_is_subscribed_on_push_server(
+                *chat_id,
+                handler_deadline,
+            )
+            .await;
+            notification
+        }
+        _ => None,
+    }
 }

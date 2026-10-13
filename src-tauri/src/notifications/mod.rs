@@ -143,9 +143,6 @@ pub async fn build_notification_data(
     }
 
     // A blocked contact's operations are thrown away as they arrive
-    // (`enforce_blocklist`), so nothing they write may reach the shade
-    // either — a notification for a message the chat will never show is the
-    // one way a block leaks.
     match node.projection.is_author_blocked(&sender_device_id).await {
         Ok(false) => {}
         Ok(true) => return None,

@@ -838,12 +838,13 @@ impl Node {
 
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*chat_id).await?;
-        self.publish(
-            chat_id,
-            Payload::group_control(chat_id, GroupAction::Create { initial_members }, deps)?,
-            Some(&format!("create_group({:?})", chat_id.aliased())),
-        )
-        .await?;
+        let create = self
+            .publish(
+                chat_id,
+                Payload::group_control(chat_id, GroupAction::Create { initial_members }, deps)?,
+                Some(&format!("create_group({:?})", chat_id.aliased())),
+            )
+            .await?;
 
         // Ensure that future non-contact members can see every initial member's
         // profile, including the creator's. The creator is the only node that
@@ -855,7 +856,7 @@ impl Node {
             .await?;
 
         for agent in agents {
-            self.invite_to_group(chat_id, agent).await?;
+            self.invite_to_group(chat_id, agent, create.hash()).await?;
         }
         Ok(chat_id)
     }
@@ -875,8 +876,16 @@ impl Node {
         Ok(())
     }
 
-    async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
-        let payload = Payload::Chat(ChatPayload::JoinGroup { chat_id });
+    async fn invite_to_group(
+        &self,
+        chat_id: ChatId,
+        person: AgentId,
+        add_member_operation_hash: Hash,
+    ) -> anyhow::Result<()> {
+        let payload = Payload::Chat(ChatPayload::JoinGroup {
+            chat_id,
+            add_member_operation_hash,
+        });
         tracing::info!(
             "{:?} is inviting {:?} to group {:?}",
             self.device_id().aliased(),
@@ -917,19 +926,20 @@ impl Node {
             ));
         }
 
-        self.publish(
-            chat_id,
-            Payload::group_control(
+        let add = self
+            .publish(
                 chat_id,
-                GroupAction::Add {
-                    member: GroupMember::Individual(member),
-                    access,
-                },
-                deps,
-            )?,
-            Some(&format!("add_group_member({:?})", chat_id.aliased())),
-        )
-        .await?;
+                Payload::group_control(
+                    chat_id,
+                    GroupAction::Add {
+                        member: GroupMember::Individual(member),
+                        access,
+                    },
+                    deps,
+                )?,
+                Some(&format!("add_group_member({:?})", chat_id.aliased())),
+            )
+            .await?;
 
         let agent_id = self
             .projection
@@ -944,7 +954,7 @@ impl Node {
                 BTreeMap::from([(DeviceId::from(member), agent_id)]),
             )
             .await?;
-            self.invite_to_group(chat_id, agent_id).await?;
+            self.invite_to_group(chat_id, agent_id, add.hash()).await?;
         } else {
             tracing::warn!(
                 "Contact not found (when adding group member): {:?}",

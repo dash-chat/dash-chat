@@ -1,4 +1,6 @@
 #[cfg(mobile)]
+mod group_invitation;
+#[cfg(mobile)]
 mod receive_push_notification;
 #[cfg(mobile)]
 mod register_push_notifications_token;
