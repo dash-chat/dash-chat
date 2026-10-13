@@ -242,6 +242,17 @@
 	});
 </script>
 
+<!-- On a phone a long press on any link or image would otherwise pick it up
+     and float its title and URL under the finger. Drags the app asks for with
+     draggable="true" still go through. -->
+<svelte:document
+	ondragstart={e => {
+		const optedIn =
+			e.target instanceof Element && e.target.closest('[draggable="true"]');
+		if (isMobile && !optedIn) e.preventDefault();
+	}}
+/>
+
 {#if showToolbar}
 	<PreviewToolbar />
 {/if}

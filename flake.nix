@@ -13,9 +13,10 @@
     tauri-plugin-holochain.url = "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
 
     # nixpkgs revs pinned only for the chromedrivers matching the e2e Android
-    # devices' WebView majors (physical phones on 149-153, the emulator image
+    # devices' WebView majors (physical phones on 149-154, the emulator image
     # on 124). The harness materializes packages.e2e-chromedrivers via
     # `nix build --out-link` and Appium picks the right one per device.
+    nixpkgs-chromedriver-154.url = "github:nixos/nixpkgs/7f4b816584abd32222d85a4d7b2d48ead6a80ddd";
     nixpkgs-chromedriver-153.url = "github:nixos/nixpkgs/b7b88d606075b4c018385f7eccc7494d7f00cba5";
     nixpkgs-chromedriver-152.url = "github:nixos/nixpkgs/c495a327fd104a2828cce868079fdc8ce00bc8d1";
     nixpkgs-chromedriver-151.url = "github:nixos/nixpkgs/0e251e24a4f24e036a084b6b4b2d2491af4167f4";
