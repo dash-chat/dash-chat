@@ -13,13 +13,9 @@
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { UI_TIMEOUT } from '../helpers/timeouts';
+import { MAILBOX_HUNG_MS, UI_TIMEOUT } from '../helpers/timeouts';
 import { isRemoteMailbox, suspendMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
-
-/** A suspended mailbox fails each request at its 20s timeout and the chip
- *  gives up on the cloud after the second failure, around 45s. */
-const CLOUD_GIVES_UP_MS = 90_000;
 
 describe('Pure p2p sync (no mailbox)', function () {
 	this.timeout(300_000);
@@ -44,7 +40,7 @@ describe('Pure p2p sync (no mailbox)', function () {
 		for (const agent of [agent1, agent2]) {
 			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
 				'p2p',
-				CLOUD_GIVES_UP_MS,
+				MAILBOX_HUNG_MS,
 				'the chip did not read p2p with the cloud down and the peer connected',
 			);
 		}

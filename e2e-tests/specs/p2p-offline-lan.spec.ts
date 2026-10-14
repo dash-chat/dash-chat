@@ -13,13 +13,10 @@
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { MAILBOX_HUNG_MS } from '../helpers/timeouts';
 import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
-
-/** With no network the cloud mailbox fails every poll at once, and the chip
- *  gives up on it after the second failure. */
-const CLOUD_GIVES_UP_MS = 60_000;
 
 /** Move the phone onto `network`, close the app, and relaunch it there wiped
  *  back to first launch, so its node knows nothing from a network with
@@ -73,7 +70,7 @@ describe('P2P sync on a LAN with no internet', () => {
 		for (const agent of [alice, bob]) {
 			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
 				'p2p',
-				CLOUD_GIVES_UP_MS,
+				MAILBOX_HUNG_MS,
 				'the chip did not read p2p on a LAN with no internet',
 			);
 		}
