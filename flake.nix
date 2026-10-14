@@ -2,9 +2,7 @@
   description = "Dash Chat development flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
-
-    nixpkgs-pnpm.url = "github:nixos/nixpkgs/nixos-26.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
 
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -69,7 +67,6 @@
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
-          pkgsPnpm = import inputs.nixpkgs-pnpm { inherit system; };
 
           # GStreamer so WebKitGTK can play voice-note audio: WAV from desktop
           # recorders (base/good) and AAC/M4A from mobile ones (bad).
@@ -122,9 +119,9 @@
           '';
           packages = [
             pkgs.mprocs
-            pkgsPnpm.just
+            pkgs.just
             pkgs."nodejs_${nodeVersion}"
-            pkgsPnpm.pnpm
+            pkgs.pnpm
             pkgs.cargo-nextest
             pkgs.doctl
             pkgs.toxiproxy
@@ -184,8 +181,8 @@
               # targets. "0" is an explicit veto for cross probes.
               export PKG_CONFIG_ALLOW_CROSS=0
 
-              mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.appium"
-              ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.appium/chromedrivers"
+              mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.cache"
+              ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.cache/chromedrivers"
             '';
           };
 
