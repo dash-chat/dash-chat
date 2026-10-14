@@ -166,7 +166,7 @@
 				<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
 					<ConnectionStatusIndicator
 						{chatId}
-						peers={Object.keys($members ?? {})}
+						peers={$members === undefined ? undefined : Object.keys($members)}
 					/>
 				</div>
 			</Navbar>

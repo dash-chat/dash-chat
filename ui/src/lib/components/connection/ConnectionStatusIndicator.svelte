@@ -18,7 +18,8 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 
-	let { chatId, peers }: { chatId: ChatId; peers: AgentId[] } = $props();
+	let { chatId, peers }: { chatId: ChatId; peers: AgentId[] | undefined } =
+		$props();
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -34,7 +35,9 @@
 		connectedPeersStore.connectedPeers(chatId),
 	);
 	const connectedToPeer = $derived(
-		($connectedPeers ?? []).some(peer => peers.includes(peer)),
+		$connectedPeers === undefined || peers === undefined
+			? undefined
+			: $connectedPeers.some(peer => peers.includes(peer)),
 	);
 
 	const icons: Record<ConnectionChipStatus, string> = {

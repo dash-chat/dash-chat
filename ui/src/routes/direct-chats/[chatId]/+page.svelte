@@ -364,7 +364,9 @@
 								<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
 									<ConnectionStatusIndicator
 										{chatId}
-										peers={$peerAgentId === undefined ? [] : [$peerAgentId]}
+										peers={$peerAgentId === undefined
+											? undefined
+											: [$peerAgentId]}
 									/>
 								</div>
 							</Navbar>

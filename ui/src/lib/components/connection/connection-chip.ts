@@ -25,10 +25,12 @@ export type ConnectionChipStatus = 'local' | 'p2p' | 'disconnected';
  * a failure recorded before `resumedAt` happened while the app was away and
  * says nothing about the connection now, whereas erring towards "fine" on a
  * stale success costs the user nothing. Reactive through `withinWindow`, so
- * the settling deadline re-renders the caller when it expires. */
+ * the settling deadline re-renders the caller when it expires. An undefined
+ * `connectedToPeer` is still loading and gets no verdict, so an open chat
+ * never reads disconnected over a peer it hasn't looked up yet. */
 export function connectionChipStatus(
 	connection: Connection,
-	connectedToPeer: boolean,
+	connectedToPeer: boolean | undefined,
 	resumedAt: number,
 ): ConnectionChipStatus | null {
 	if (connection.connectedToCloudMailboxServer) return null;
@@ -37,5 +39,6 @@ export function connectionChipStatus(
 		connection.cloudLastFailureAtMs !== null &&
 		connection.cloudLastFailureAtMs > resumedAt;
 	if (!failedSinceResume && withinWindow(resumedAt, SETTLING_MS)) return null;
+	if (connectedToPeer === undefined) return null;
 	return connectedToPeer ? 'p2p' : 'disconnected';
 }
