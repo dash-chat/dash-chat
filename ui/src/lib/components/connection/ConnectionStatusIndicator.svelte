@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type {
-		AgentId,
 		ChatId,
 		IConnectedPeersStore,
 		MailboxTrackerStore,
@@ -18,8 +17,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 
-	let { chatId, peers }: { chatId: ChatId; peers: AgentId[] | undefined } =
-		$props();
+	let { chatId }: { chatId: ChatId } = $props();
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -35,9 +33,7 @@
 		connectedPeersStore.connectedPeers(chatId),
 	);
 	const connectedToPeer = $derived(
-		$connectedPeers === undefined || peers === undefined
-			? undefined
-			: $connectedPeers.some(peer => peers.includes(peer)),
+		$connectedPeers === undefined ? undefined : $connectedPeers.length > 0,
 	);
 
 	const icons: Record<ConnectionChipStatus, string> = {
