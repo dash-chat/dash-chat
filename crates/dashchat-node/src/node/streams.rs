@@ -292,13 +292,11 @@ impl TopicStreams {
         }
     }
 
-    pub(crate) async fn join_space(&self, chat_id: ChatId) -> Result<Space, StreamsError> {
-        let (publisher, _) = self
-            .publisher(chat_id.into(), StreamIntent::JoinSpace)
-            .await?;
+    pub(crate) async fn join_space(&self, topic: Topic) -> Result<Space, StreamsError> {
+        let (publisher, _) = self.publisher(topic, StreamIntent::JoinSpace).await?;
         match publisher {
             Publisher::Space(space) => Ok(space),
-            Publisher::Stream(_) => Err(StreamsError::NotASpace(chat_id)),
+            Publisher::Stream(_) => Err(StreamsError::NotASpace(topic)),
         }
     }
 
@@ -616,7 +614,7 @@ pub enum StreamsError {
     SpaceAlreadyExists(ChatId),
 
     #[error("topic is already subscribed to as a normal stream, not a space")]
-    NotASpace(ChatId),
+    NotASpace(Topic),
 
     #[error("topic must be subscribed to first")]
     NotSubscribed(p2panda::Topic),

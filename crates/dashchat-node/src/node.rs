@@ -1038,7 +1038,7 @@ impl Node {
     pub async fn join_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined space");
         self.register_topic(chat_id).await?;
-        self.streams.join_space(chat_id).await?;
+        self.streams.join_space(*chat_id).await?;
         Ok(())
     }
 
@@ -2338,8 +2338,8 @@ impl Node {
 
         let subscribed_topics = self.local_store.subscribed_topics().await?;
         for topic in subscribed_topics.iter() {
-            if let Err(err) = self.initialize_topic(*topic).await {
-                error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed topic");
+            if let Err(err) = self.initialize_space(*topic).await {
+                error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed space");
                 failures += 1;
             }
         }
