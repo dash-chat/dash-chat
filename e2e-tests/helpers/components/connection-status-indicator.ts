@@ -56,11 +56,11 @@ export class ConnectionStatusIndicator extends TestHelper {
 	dialogDescription = this.el(tid('connection-status-dialog-description'));
 	dialogCloseButton = this.el(tid('connection-status-dialog-close'));
 
-	/** Read the chip's data-status. */
-	async status(): Promise<ConnectionStatus> {
+	/** Read the chip's data-status, or null while it is not mounted. */
+	async status(): Promise<ConnectionStatus | null> {
 		return this.agent.execute((sel: string) => {
 			const el = document.querySelector(sel) as HTMLElement | null;
-			if (!el) return 'absent';
+			if (!el) return null;
 			const status = el.dataset.status;
 			if (
 				status === 'pending' ||
@@ -132,7 +132,7 @@ export class ConnectionStatusIndicator extends TestHelper {
 			await this.agent.waitUntil(
 				async () => {
 					seen = await this.status();
-					return seen !== 'local';
+					return seen !== null && seen !== 'local';
 				},
 				{ timeout, interval: 200 },
 			);
