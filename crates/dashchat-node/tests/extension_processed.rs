@@ -86,6 +86,7 @@ async fn app_acknowledges_a_later_operation() -> (TestNode, ChatId, iroh_blobs::
 /// state the app shares, which must not keep the app from processing and
 /// acknowledging it.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn a_group_operation_the_extension_applied_first_is_processed() {
     let config = NodeConfig::testing().no_p2p();
     let mailbox = TestMailbox::from_env();

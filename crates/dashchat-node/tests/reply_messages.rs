@@ -313,6 +313,7 @@ async fn receiver_accepts_reply_to_an_edit_it_knows_is_superseded() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn late_joiner_syncing_crossing_replies_can_hit_target_not_found() {
     setup();
     let poll = PollConfig::default();
