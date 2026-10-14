@@ -4,13 +4,16 @@
  * Verifies that contacts with very long names don't cause horizontal overflow
  * in the chat list, the direct-chat navbar, the contact-request banner, the
  * in-chat peer-name welcome banner, the chat-settings page, the peer profile
- * sheet, and the profile-settings list item.
+ * sheet, the profile-settings list item, and the group-chat navbar.
  */
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
+import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 const LONG_NAME = 'Bartholomew';
 const LONG_SURNAME = 'Wolfeschlegelsteinhausenbergerdorff';
+const LONG_GROUP_NAME =
+	'Wolfeschlegelsteinhausenbergerdorff family reunion planning committee and all the extended cousins of the Bartholomew household';
 
 describe('Long name truncation', () => {
 	let agent1: Agent;
@@ -66,7 +69,7 @@ describe('Long name truncation', () => {
 		await agent2.directChatPage.ready();
 
 		await agent2.directChatPage.waitForPeerProfile();
-		expect(await agent2.directChatPage.checkNavbarOverflow()).toEqual([]);
+		expect(await agent2.directChatPage.navbar.checkOverflow()).toEqual([]);
 		expect(await agent2.checkOverflow()).toEqual([]);
 	});
 
@@ -92,6 +95,15 @@ describe('Long name truncation', () => {
 		await agent1.waitUntil(async () =>
 			agent1.profilePage.nameItemContains(LONG_NAME),
 		);
+		expect(await agent1.checkOverflow()).toEqual([]);
+	});
+
+	it('agent1 creates a group with a long name — group navbar has no overflow', async () => {
+		await agent1.profilePage.back.click();
+		await agent1.settingsPage.ready();
+		await agent1.settingsPage.back.click();
+		await createGroup(agent1, LONG_GROUP_NAME, []);
+		expect(await agent1.groupChatPage.navbar.checkOverflow()).toEqual([]);
 		expect(await agent1.checkOverflow()).toEqual([]);
 	});
 });
