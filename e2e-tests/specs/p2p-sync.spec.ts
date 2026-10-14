@@ -81,6 +81,8 @@ describe('Pure p2p sync (no mailbox)', function () {
 	it('the chip reads disconnected once the peer goes offline, and p2p again once it is back', async () => {
 		const chip = agent1.directChatPage.connectionStatusIndicator;
 		await agent2.stopApp();
+		// A killed desktop peer never closes its connection, so the session only
+		// ends once p2panda's default 10s QUIC idle timeout runs out.
 		await chip.waitForStatus(
 			'disconnected',
 			UI_TIMEOUT,

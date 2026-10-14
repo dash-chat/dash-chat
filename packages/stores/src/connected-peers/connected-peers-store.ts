@@ -9,7 +9,9 @@ export interface IConnectedPeersStore {
 }
 
 /** A peer is connected on a topic while one of its devices has an open p2p sync
- * session with us there: what we publish on it reaches them right away. */
+ * session with us there: what we publish on it reaches them right away. That
+ * is a transport fact, not a membership one: sessions aren't checked against
+ * who is in the chat. */
 export class ConnectedPeersStore implements IConnectedPeersStore {
 	constructor(protected contactsStore: ContactsStore) {}
 
