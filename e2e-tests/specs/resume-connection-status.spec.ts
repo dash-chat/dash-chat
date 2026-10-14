@@ -7,8 +7,8 @@
  * is the entire scenario. On a device whose OS lets a backgrounded app keep
  * polling, nothing fails and this passes on any build — that is the intended
  * outcome, not a gap. On a device that denies a backgrounded app the network,
- * the polls fail for real, and the chip must still not be on screen when the
- * user returns.
+ * the polls fail for real, and the chip must still not read disconnected when
+ * the user returns.
  *
  * The chip's own reporting — flipping to "disconnected" when the mailbox is
  * genuinely unreachable, and back — is covered by `offline-transition-ux`.
@@ -63,8 +63,9 @@ describe('Connection status after resuming from the background', function () {
 		const indicator = agent.groupChatPage.connectionStatusIndicator;
 
 		// Let startup settle: the cloud mailbox is registered after a `/health`
-		// round trip, so the chip can legitimately be up for a moment first.
-		// `!== 'disconnected'` rather than `=== 'connected'`: a local mailbox on
+		// round trip, so the disconnected chip can legitimately be up for a moment
+		// first.
+		// `!== 'disconnected'` rather than `=== 'cloud'`: a local mailbox on
 		// the network shows the "local" chip, which is not the poop.
 		await agent.waitUntil(
 			async () => (await indicator.status()) !== 'disconnected',

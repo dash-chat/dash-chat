@@ -57,8 +57,14 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
+export type RenderedConnectionStatus =
+	| 'pending'
+	| 'cloud'
+	| 'local'
+	| 'disconnected';
+
 export interface ConnectionStatusSample {
-	status: string;
+	status: RenderedConnectionStatus;
 	/** Epoch ms on the device, so samples can be ordered against each other
 	 * without comparing against the test runner's clock on another machine. */
 	at: number;
@@ -76,11 +82,11 @@ const connectionStatuses: ConnectionStatusSample[] = [];
 let connectionStatusObserver: MutationObserver | undefined;
 let connectionStatusToken: string | undefined;
 
-function currentConnectionStatus(): string {
+function currentConnectionStatus(): RenderedConnectionStatus | null {
 	const chip = document.querySelector<HTMLElement>(
 		'[data-testid="connection-status"]',
 	);
-	return chip?.dataset.status ?? 'connected';
+	return (chip?.dataset.status as RenderedConnectionStatus | undefined) ?? null;
 }
 
 /** Start recording every connection status the indicator renders, returning a
@@ -91,6 +97,8 @@ function currentConnectionStatus(): string {
  * backend's re-measurement is invisible to any sampler, but the user sees it. */
 function sampleConnectionStatus(onVisibilityChange: boolean) {
 	const status = currentConnectionStatus();
+	// Nothing on screen to blame while the chip is not mounted.
+	if (status === null) return;
 	const previous = connectionStatuses[connectionStatuses.length - 1];
 	// A visibility transition is always recorded: what was on screen the moment
 	// the page came back is the whole question, and it produces no mutation

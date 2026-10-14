@@ -97,6 +97,9 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 			cloudState.status === 'Active' &&
 			cloudState.consecutive_errors < UI_DISCONNECTED_ERROR_THRESHOLD;
 
+		const cloudFailedLastPoll =
+			cloudState !== undefined && cloudState.consecutive_errors > 0;
+
 		const cloudLastFailure = cloudState?.last_error?.at;
 		const cloudLastFailureAtMs =
 			cloudLastFailure === undefined || cloudLastFailure === null
@@ -118,6 +121,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 
 		return {
 			connectedToCloudMailboxServer,
+			cloudFailedLastPoll,
 			cloudLastFailureAtMs,
 			connectedLocalMailboxCount,
 		};
