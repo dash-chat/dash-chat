@@ -7,8 +7,6 @@ use tauri_plugin_subscriptions::subscription;
 
 use crate::node::node_slot::node_stream;
 
-/// Deduplicated because the node re-sends the set on every session change in
-/// any topic.
 #[subscription]
 pub fn subscribe_to_connected_peers(topic_id: TopicId) -> impl Stream<Item = BTreeSet<DeviceId>> {
     node_stream(move |node| node.connected_peers.connected_devices(topic_id))
