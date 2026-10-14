@@ -19,8 +19,9 @@ export type ConnectionChipStatus = 'local' | 'p2p' | 'disconnected';
 /** What the chip reads, or null to leave it off screen.
  *
  * The chip only has something to say while the cloud is out of reach: that a
- * local hub or a connected peer is standing in, or that nothing is. Those are
- * facts and show at once. Accusing the connection of being down is gated on freshness:
+ * local hub is standing in, that a connected peer is, or that nothing is. A
+ * connected hub is a fact and shows at once. Saying the cloud is down, even
+ * with a peer standing in, is gated on freshness:
  * a failure recorded before `resumedAt` happened while the app was away and
  * says nothing about the connection now, whereas erring towards "fine" on a
  * stale success costs the user nothing. Reactive through `withinWindow`, so
@@ -32,11 +33,9 @@ export function connectionChipStatus(
 ): ConnectionChipStatus | null {
 	if (connection.connectedToCloudMailboxServer) return null;
 	if (connection.connectedLocalMailboxCount > 0) return 'local';
-	if (connectedToPeer) return 'p2p';
 	const failedSinceResume =
 		connection.cloudLastFailureAtMs !== null &&
 		connection.cloudLastFailureAtMs > resumedAt;
-	return failedSinceResume || !withinWindow(resumedAt, SETTLING_MS)
-		? 'disconnected'
-		: null;
+	if (!failedSinceResume && withinWindow(resumedAt, SETTLING_MS)) return null;
+	return connectedToPeer ? 'p2p' : 'disconnected';
 }
