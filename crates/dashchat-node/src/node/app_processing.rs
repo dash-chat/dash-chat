@@ -196,12 +196,12 @@ impl Node {
                     }
                     Some(processor_event) = events_rx.recv() => {
                         match processor_event {
-                            ProcessorEvent::System(event) => {
+                            ProcessorEvent::System { topic, event } => {
                                 match event {
-                                    StreamEvent::ProcessingFailed { error, .. } => warn!("error processing operation: {error:?}"),
-                                    StreamEvent::DecodeFailed { error, .. } => warn!("error decoding operation: {error:?}"),
-                                    StreamEvent::ReplayFailed { error, .. } => warn!("error replaying stream: {error:?}"),
-                                    StreamEvent::AckFailed { error, .. } => warn!("error acking operation: {error:?}"),
+                                    StreamEvent::ProcessingFailed { error, .. } => warn!(topic = ?topic.aliased(), "error processing operation: {error:?}"),
+                                    StreamEvent::DecodeFailed { error, .. } => warn!(topic = ?topic.aliased(), "error decoding operation: {error:?}"),
+                                    StreamEvent::ReplayFailed { error, .. } => warn!(topic = ?topic.aliased(), "error replaying stream: {error:?}"),
+                                    StreamEvent::AckFailed { error, .. } => warn!(topic = ?topic.aliased(), "error acking operation: {error:?}"),
                                     // @TODO: the operation variant should never be included here in the
                                     // system event as it will either be a groups or application event.
                                     StreamEvent::Processed {..} => unreachable!(),
