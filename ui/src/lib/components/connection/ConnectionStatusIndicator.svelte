@@ -100,8 +100,7 @@
 		{#snippet titleSlot()}
 			<div class="flex flex-row items-center gap-2">
 				<wa-icon
-					class="connection-status-dialog-icon"
-					class:connection-status-dialog-icon-local={status === 'local'}
+					class="connection-status-dialog-icon connection-status-dialog-icon-{status}"
 					src={icons[status]}
 					aria-hidden="true"
 				></wa-icon>
@@ -149,13 +148,15 @@
 		font-size: 28px;
 		width: 35px;
 	}
-	.connection-status-local {
+	.connection-status-local,
+	.connection-status-p2p {
 		font-size: 22px;
 	}
 	.connection-status-dialog-icon {
 		font-size: 32px;
 	}
-	.connection-status-dialog-icon-local {
+	.connection-status-dialog-icon-local,
+	.connection-status-dialog-icon-p2p {
 		font-size: 26px;
 	}
 
