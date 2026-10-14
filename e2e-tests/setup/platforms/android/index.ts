@@ -68,19 +68,14 @@ const DEVICE_PUSH_PORT = 3201;
 /** `android` = physical device, `android-emulator` = running emulator. */
 export type AndroidKind = 'android' | 'android-emulator';
 
-/** Appium's extension home — the uiautomator2 driver installs here, not in
- *  node_modules. Without it appium falls back to the pnpm workspace, where
- *  npm-driven driver installs break on pnpm-managed packages. */
-const APPIUM_HOME = path.join(E2E_DIR, '.appium');
-
 /** Flake-pinned chromedrivers (one per device WebView major), provided at
  *  this path by the androidDev shellHook; Appium picks the matching one per
  *  device. */
-const CHROMEDRIVERS_DIR = path.join(E2E_DIR, '.appium', 'chromedrivers');
+const CHROMEDRIVERS_DIR = path.join(E2E_DIR, '.cache', 'chromedrivers');
 
-// Lives in .appium, not .dbs/e2e: onPrepare wipes .dbs/e2e after the launcher
+// Lives in .cache, not .dbs/e2e: onPrepare wipes .dbs/e2e after the launcher
 // (config load) has already written the capture.
-const ANDROID_ENV_FILE = path.join(E2E_DIR, '.appium', 'android-env.json');
+const ANDROID_ENV_FILE = path.join(E2E_DIR, '.cache', 'android-env.json');
 
 /** Env the android commands (adb, boot-emulator, the APK build) run with:
  *  process.env when the harness already has the androidDev shell's tools,
@@ -252,31 +247,6 @@ function bootMissingEmulators(needed: number) {
 		throw err;
 	}
 	console.log('Emulators ready.');
-}
-
-/** Appium keeps its drivers in APPIUM_HOME, not node_modules, so on first run
- *  link in the `appium-uiautomator2-driver` devDependency; the version is pinned
- *  in package.json and the link tracks it. */
-function ensureUiautomator2Driver() {
-	const installed = execSync(
-		'pnpm exec appium driver list --installed 2>&1 || true',
-		{
-			encoding: 'utf8',
-			cwd: E2E_DIR,
-			env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
-		},
-	);
-	if (installed.includes('uiautomator2')) return;
-	const driverPath = path.join(
-		E2E_DIR,
-		'node_modules',
-		'appium-uiautomator2-driver',
-	);
-	execSync(`pnpm exec appium driver install --source=local "${driverPath}"`, {
-		stdio: 'inherit',
-		cwd: E2E_DIR,
-		env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
-	});
 }
 
 function connectedDevices(): string[] {
@@ -748,7 +718,6 @@ export class AndroidPlatform implements AgentPlatform {
 		ensureAndroidEnv();
 		this.slots = [...kindBySlot.keys()];
 		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
-		process.env.APPIUM_HOME = APPIUM_HOME;
 		// Workers reload this module; device provisioning belongs to the
 		// launcher, which claims before any worker starts.
 		if (process.env.WDIO_WORKER_ID === undefined) {
@@ -807,8 +776,6 @@ export class AndroidPlatform implements AgentPlatform {
 	}
 
 	async onPrepare(ctx: PrepareContext) {
-		ensureUiautomator2Driver();
-
 		// Build the e2e APKs only for the claimed devices' architectures.
 		// Debuginfo is dropped and symbols stripped (debug_assertions stays
 		// on, which is what makes the webview inspectable) — with them the

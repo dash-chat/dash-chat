@@ -47,7 +47,7 @@ service-account-key.json
 *.redb
 .dbs
 .e2e-binaries
-e2e-tests/.appium
+e2e-tests/.cache
 signal-reference
 
 # Development environment log files
