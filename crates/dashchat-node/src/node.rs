@@ -45,9 +45,10 @@ use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, P
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
-    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
-    MediaMetadata, OutgoingFile, OutgoingMedia, PendingContactRequest, SendMessageError,
+    AgentId, AsBody, ChatId, ChatReaction, ConnectedPeers, DeleteCandidate, DeleteMessageError,
+    DeviceGroupId, DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId,
+    MediaBundle, MediaMetadata, OutgoingFile, OutgoingMedia, PendingContactRequest,
+    SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
 use tracing::error;
@@ -228,6 +229,8 @@ pub struct Node {
     pub op_store: OpStore,
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
+
+    pub connected_peers: ConnectedPeers,
 
     pub config: NodeConfig,
 
@@ -487,6 +490,7 @@ impl Node {
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
             dirty_ack_topics: Default::default(),
+            connected_peers: Default::default(),
         };
 
         // === application processor task === //

@@ -12,6 +12,7 @@ pub mod topic;
 mod unfetched_blobs;
 pub mod util;
 
+mod connected_peers;
 mod id;
 pub mod mailbox;
 
@@ -27,6 +28,7 @@ pub use dashchat_utils::SeqNum;
 const _: fn(p2panda_core::SeqNum) -> SeqNum = std::convert::identity;
 
 pub use chat::*;
+pub use connected_peers::ConnectedPeers;
 pub use contact::AddContactQrCode;
 pub use error::{
     AddContactError, AddContactResult, DeleteMessageError, EditMessageError, Error,

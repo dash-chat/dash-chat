@@ -198,6 +198,14 @@ impl Node {
                         match processor_event {
                             ProcessorEvent::System { topic, event } => {
                                 match event {
+                                    StreamEvent::SyncStarted { remote_node_id, session_id, .. } => {
+                                        node.connected_peers.session_opened(topic, session_id, DeviceId::from(remote_node_id));
+                                    }
+                                    // An error-free `SyncEnded` only ends catching up: the session stays open in live mode.
+                                    StreamEvent::SyncEnded { session_id, error: Some(_), .. }
+                                    | StreamEvent::SessionEnded { session_id, .. } => {
+                                        node.connected_peers.session_closed(topic, session_id);
+                                    }
                                     StreamEvent::ProcessingFailed { error, .. } => warn!(topic = ?topic.aliased(), "error processing operation: {error:?}"),
                                     StreamEvent::DecodeFailed { error, .. } => warn!(topic = ?topic.aliased(), "error decoding operation: {error:?}"),
                                     StreamEvent::ReplayFailed { error, .. } => warn!(topic = ?topic.aliased(), "error replaying stream: {error:?}"),
