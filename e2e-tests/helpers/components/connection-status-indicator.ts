@@ -1,7 +1,7 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
-export type ConnectionStatus = 'connected' | 'local' | 'disconnected';
+export type ConnectionStatus = 'connected' | 'local' | 'p2p' | 'disconnected';
 
 export interface ConnectionStatusSample {
 	status: string;
@@ -65,7 +65,8 @@ export class ConnectionStatusIndicator extends TestHelper {
 			const el = document.querySelector(sel) as HTMLElement | null;
 			if (!el) return 'connected';
 			const status = el.dataset.status;
-			if (status === 'local' || status === 'disconnected') return status;
+			if (status === 'local' || status === 'p2p' || status === 'disconnected')
+				return status;
 			throw new Error(`connectionStatus: unexpected data-status="${status}"`);
 		}, tid('connection-status'));
 	}

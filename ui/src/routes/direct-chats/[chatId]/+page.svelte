@@ -362,7 +362,10 @@
 								{/snippet}
 
 								<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-									<ConnectionStatusIndicator />
+									<ConnectionStatusIndicator
+										{chatId}
+										peers={$peerAgentId === undefined ? [] : [$peerAgentId]}
+									/>
 								</div>
 							</Navbar>
 						{/if}

@@ -4,6 +4,7 @@
 	import {
 		useReactivePromise,
 		useReactivePromises,
+		useReactiveValue,
 	} from '$lib/stores/use-signal';
 	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
@@ -58,6 +59,7 @@
 		store.messages.readMessageHashes,
 	);
 	const unreadCount = useReactivePromise(store.messages.unreadCount);
+	const members = useReactiveValue(store.allMembers);
 
 	const headerData = useReactivePromises(() => [
 		store.info(),
@@ -162,7 +164,10 @@
 				{/snippet}
 
 				<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-					<ConnectionStatusIndicator />
+					<ConnectionStatusIndicator
+						{chatId}
+						peers={Object.keys($members ?? {})}
+					/>
 				</div>
 			</Navbar>
 		{/snippet}

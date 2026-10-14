@@ -135,6 +135,7 @@ pub fn run() {
     }
 
     builder = builder
+        .plugin(tauri_plugin_subscriptions::init())
         .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
@@ -180,6 +181,7 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_connection_state,
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
+            commands::connected_peers::subscribe_to_connected_peers,
             commands::media::save_blob_to_cache,
             commands::voice::transcode_voice_message,
             pending_navigations::take_pending_navigations,

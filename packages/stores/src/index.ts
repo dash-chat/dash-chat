@@ -39,5 +39,7 @@ export * from './message-acks/message-ack-client.js';
 export * from './mailbox-tracker/mailbox-tracker-store.js';
 export * from './mailbox-tracker/types.js';
 
+export * from './connected-peers/connected-peers-store.js';
+
 export * from './utils/memo.js';
 export * from './utils/invoke-after-setup.js';

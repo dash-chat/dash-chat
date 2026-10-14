@@ -1,8 +1,11 @@
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
+use async_rx::StreamExt as _;
 use dashchat_node::Node;
+use futures::{Stream, StreamExt};
 use tokio::sync::{watch, Mutex};
+use tokio_stream::wrappers::WatchStream;
 
 use crate::node::app_node::AppNode;
 use crate::node::node_context::{NodeContext, NodeRole};
@@ -37,6 +40,25 @@ pub(crate) fn subscribe_generation() -> watch::Receiver<u64> {
 
 fn bump_generation() {
     GENERATION.send_modify(|g| *g = g.wrapping_add(1));
+}
+
+/// The stream `make` builds on the app's node, switched to the next node after
+/// every swap. While there is none it yields `None` once, so a torn-down node's
+/// last value doesn't outlive it.
+pub(crate) fn node_stream<S, F>(make: F) -> impl Stream<Item = Option<S::Item>> + Send + 'static
+where
+    F: Fn(Node) -> S + Send + 'static,
+    S: Stream + Send + 'static,
+    S::Item: Send,
+{
+    WatchStream::new(subscribe_generation())
+        .then(|_| current_node_for_role(NodeRole::App))
+        .map(move |node| match node {
+            Some(node) => make(node).map(Some).left_stream(),
+            None => futures::stream::once(futures::future::ready(None)).right_stream(),
+        })
+        .fuse()
+        .switch()
 }
 
 pub(crate) async fn current_node() -> Option<AppNode> {

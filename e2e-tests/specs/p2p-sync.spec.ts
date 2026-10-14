@@ -6,7 +6,8 @@
  * messages, and media all have to propagate over a direct p2p (iroh/mDNS)
  * connection between the two agents. This is the path exercised by real
  * device-to-device delivery and, unlike the rest of the suite, never falls back
- * to a mailbox relay.
+ * to a mailbox relay. The chat navbar chip says so: it reads "p2p" while the
+ * other agent is a connected peer.
  *
  * Skips against a remote environment mailbox, whose lifecycle we can't control.
  */
@@ -15,7 +16,19 @@ import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { isRemoteMailbox, suspendMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
-describe('Pure p2p sync (no mailbox)', () => {
+/** A suspended mailbox fails each request at its 20s timeout and the chip
+ *  gives up on the cloud after the second failure, around 45s. */
+const CLOUD_GIVES_UP_MS = 90_000;
+/** A killed peer drops its session once the connection's 10s idle timeout
+ *  runs out. */
+const PEER_GONE_MS = 30_000;
+/** A restarted peer is back once its app has started, found us over mDNS and
+ *  opened a sync session. */
+const PEER_BACK_MS = 30_000;
+
+describe('Pure p2p sync (no mailbox)', function () {
+	this.timeout(300_000);
+
 	let agent1: Agent;
 	let agent2: Agent;
 
@@ -30,6 +43,28 @@ describe('Pure p2p sync (no mailbox)', () => {
 		suspendMailbox();
 		await createProfiles({ Alice: agent1, Bob: agent2 });
 		await exchangeContacts([agent1, agent2]);
+	});
+
+	it('both chips read p2p once the cloud is out of reach, and the dialog explains it', async () => {
+		for (const agent of [agent1, agent2]) {
+			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
+				'p2p',
+				CLOUD_GIVES_UP_MS,
+				'the chip did not read p2p with the cloud down and the peer connected',
+			);
+		}
+
+		const chip = agent1.directChatPage.connectionStatusIndicator;
+		await chip.chip.click();
+		await agent1.waitUntil(() => chip.isDialogOpen());
+		await expect(chip.dialogTitle).toHaveText(
+			await agent1.tr('connectionStatusP2pTitle'),
+		);
+		await expect(chip.dialogDescription).toHaveText(
+			await agent1.tr('connectionStatusP2pDescription'),
+		);
+		await chip.dialogCloseButton.click();
+		await agent1.waitUntil(async () => !(await chip.isDialogOpen()));
 	});
 
 	it('syncs a text message agent1 → agent2 over p2p', async () => {
@@ -50,5 +85,21 @@ describe('Pure p2p sync (no mailbox)', () => {
 		await agent1.directChatPage.messages.waitForPhotoMessage('p2pphoto');
 		await agent2.directChatPage.messages.waitForMessage('photo over p2p');
 		await agent2.directChatPage.messages.waitForPhotoMessage('p2pphoto');
+	});
+
+	it('the chip reads disconnected once the peer goes offline, and p2p again once it is back', async () => {
+		const chip = agent1.directChatPage.connectionStatusIndicator;
+		await agent2.stopApp();
+		await chip.waitForStatus(
+			'disconnected',
+			PEER_GONE_MS,
+			'the chip did not read disconnected after the peer went offline',
+		);
+		await agent2.startApp();
+		await chip.waitForStatus(
+			'p2p',
+			PEER_BACK_MS,
+			'the chip did not read p2p after the peer came back',
+		);
 	});
 });

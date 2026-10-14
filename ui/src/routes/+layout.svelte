@@ -22,11 +22,14 @@
 		SettingsStore,
 		MailboxTrackerStore,
 		type IMailboxTrackerStore,
+		ConnectedPeersStore,
+		type IConnectedPeersStore,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
 		MockChatsStore,
 		MockMailboxTrackerStore,
+		MockConnectedPeersStore,
 		MockSettingsClient,
 		MockTombstoneClient,
 		TombstoneClient,
@@ -108,6 +111,7 @@
 	let messageAckStore: MessageAckStore;
 	let chatsStore: ChatsStore;
 	let mailboxTrackerStore: IMailboxTrackerStore;
+	let connectedPeersStore: IConnectedPeersStore;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -139,6 +143,7 @@
 			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
 		);
 		mailboxTrackerStore = new MockMailboxTrackerStore();
+		connectedPeersStore = new MockConnectedPeersStore();
 		messageAckStore = new MessageAckStore(
 			new MockMessageAckClient(),
 			mailboxTrackerStore,
@@ -167,6 +172,7 @@
 
 		tombstoneStore = new TombstoneStore(new TombstoneClient());
 		mailboxTrackerStore = new MailboxTrackerStore();
+		connectedPeersStore = new ConnectedPeersStore(contactsStore);
 		messageAckStore = new MessageAckStore(
 			new MessageAckClient(),
 			mailboxTrackerStore,
@@ -191,6 +197,7 @@
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
 	setContext('mailbox-tracker-store', mailboxTrackerStore);
+	setContext('connected-peers-store', connectedPeersStore);
 
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page

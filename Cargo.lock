@@ -548,6 +548,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-rx"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a82c1a761cd7b772912fd2500f2c0a850c0c72f5f66543038393ac6cfaa3659a"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "async-signal"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2083,6 +2093,7 @@ dependencies = [
  "android_logger",
  "anyhow",
  "app_dirs2",
+ "async-rx",
  "async-trait",
  "backon",
  "chrono",
@@ -2151,6 +2162,7 @@ dependencies = [
  "tauri-plugin-sentry-reporting",
  "tauri-plugin-sharekit",
  "tauri-plugin-single-instance",
+ "tauri-plugin-subscriptions",
  "tauri-plugin-system-theme",
  "tauri-plugin-updater",
  "tauri-plugin-view",
@@ -2160,6 +2172,7 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "url2",
  "uuid",
@@ -11721,6 +11734,30 @@ dependencies = [
  "tracing",
  "windows-sys 0.60.2",
  "zbus 5.19.0",
+]
+
+[[package]]
+name = "tauri-plugin-subscriptions"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-subscriptions?rev=30d1a889a4d7fca0a28bc9d77a7662b6f95cec29#30d1a889a4d7fca0a28bc9d77a7662b6f95cec29"
+dependencies = [
+ "futures",
+ "log",
+ "serde",
+ "tauri",
+ "tauri-plugin-subscriptions-macros",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "tauri-plugin-subscriptions-macros"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-subscriptions?rev=30d1a889a4d7fca0a28bc9d77a7662b6f95cec29#30d1a889a4d7fca0a28bc9d77a7662b6f95cec29"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

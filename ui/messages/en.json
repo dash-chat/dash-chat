@@ -337,6 +337,9 @@
 	"connectionStatusLocalDescription_one": "You have no Internet connection, but you're connected to {{count}} Local Message Hub on your network. Messages will be synchronized with it.",
 	"connectionStatusLocalDescription_other": "You have no Internet connection, but you're connected to {{count}} Local Message Hubs on your network. Messages will be synchronized with them.",
 	"connectionStatusLocalAriaLabel": "Connection status: connected to local message hub. Tap for details.",
+	"connectionStatusP2pTitle": "Direct Connection",
+	"connectionStatusP2pDescription": "You have no Internet connection and no Local Message Hub, but you're directly connected to someone in this chat. Messages you send now reach them right away.",
+	"connectionStatusP2pAriaLabel": "Connection status: directly connected to someone in this chat. Tap for details.",
 
 	"help": "Help",
 	"contactUs": "Contact us",

@@ -1,22 +1,57 @@
 <script lang="ts">
-	import type { MailboxTrackerStore } from 'dash-chat-stores';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import type {
+		AgentId,
+		ChatId,
+		IConnectedPeersStore,
+		MailboxTrackerStore,
+	} from 'dash-chat-stores';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext, type Snippet } from 'svelte';
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { connectionChipStatus } from './connection-chip';
+	import {
+		connectionChipStatus,
+		type ConnectionChipStatus,
+	} from './connection-chip';
 	import { mdiEmoticonPoop } from '@mdi/js';
 	import { Chip, Dialog, DialogButton } from 'konsta/svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 
+	let { chatId, peers }: { chatId: ChatId; peers: AgentId[] } = $props();
+
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
+	);
+	const connectedPeersStore: IConnectedPeersStore = getContext(
+		'connected-peers-store',
 	);
 
 	const connectionStatus = useReactivePromise(
 		mailboxTrackerStore.connectionStatus,
 	);
+	const connectedPeers = useReactiveValue(() =>
+		connectedPeersStore.connectedPeers(chatId),
+	);
+	const connectedToPeer = $derived(
+		($connectedPeers ?? []).some(peer => peers.includes(peer)),
+	);
+
+	const icons: Record<ConnectionChipStatus, string> = {
+		local: '/localmailboxserver.svg',
+		p2p: '/p2p.svg',
+		disconnected: wrapPathInSvg(mdiEmoticonPoop),
+	};
+	const titles: Record<ConnectionChipStatus, () => string> = {
+		local: m.connectionStatusLocalTitle,
+		p2p: m.connectionStatusP2pTitle,
+		disconnected: m.connectionStatusDisconnectedTitle,
+	};
+	const ariaLabels: Record<ConnectionChipStatus, () => string> = {
+		local: m.connectionStatusLocalAriaLabel,
+		p2p: m.connectionStatusP2pAriaLabel,
+		disconnected: m.connectionStatusDisconnectedAriaLabel,
+	};
 
 	let dialogOpened = $state(false);
 
@@ -29,9 +64,9 @@
 	{@const localCount = connectionStatus.connectedLocalMailboxCount}
 	{@const status = connectionChipStatus(
 		connectionStatus,
+		connectedToPeer,
 		renderingResumedAt.value,
 	)}
-	{@const isLocal = status === 'local'}
 	{#if status !== null}
 		<Chip
 			data-testid="connection-status"
@@ -43,9 +78,7 @@
 			}}
 			role="button"
 			tabindex={0}
-			aria-label={isLocal
-				? m.connectionStatusLocalAriaLabel()
-				: m.connectionStatusDisconnectedAriaLabel()}
+			aria-label={ariaLabels[status]()}
 			onClick={() => (dialogOpened = true)}
 			onkeydown={(e: KeyboardEvent) => {
 				if (e.key === 'Enter' || e.key === ' ') {
@@ -54,35 +87,23 @@
 				}
 			}}
 		>
-			{#if isLocal}
-				<wa-icon
-					class="connection-status connection-status-local"
-					src="/localmailboxserver.svg"
-					aria-hidden="true"
-				></wa-icon>
-			{:else}
-				<wa-icon
-					class="connection-status connection-status-disconnected"
-					src={wrapPathInSvg(mdiEmoticonPoop)}
-					aria-hidden="true"
-				></wa-icon>
-			{/if}
+			<wa-icon
+				class="connection-status connection-status-{status}"
+				src={icons[status]}
+				aria-hidden="true"
+			></wa-icon>
 		</Chip>
 
 		{#snippet titleSlot()}
 			<div class="flex flex-row items-center gap-2">
 				<wa-icon
 					class="connection-status-dialog-icon"
-					class:connection-status-dialog-icon-local={isLocal}
-					src={isLocal
-						? '/localmailboxserver.svg'
-						: wrapPathInSvg(mdiEmoticonPoop)}
+					class:connection-status-dialog-icon-local={status === 'local'}
+					src={icons[status]}
 					aria-hidden="true"
 				></wa-icon>
 				<span data-testid="connection-status-dialog-title">
-					{isLocal
-						? m.connectionStatusLocalTitle()
-						: m.connectionStatusDisconnectedTitle()}
+					{titles[status]()}
 				</span>
 			</div>
 		{/snippet}
@@ -96,8 +117,10 @@
 					title={asTitle(titleSlot)}
 				>
 					<span data-testid="connection-status-dialog-description">
-						{#if isLocal}
+						{#if status === 'local'}
 							{m.connectionStatusLocalDescription({ count: localCount })}
+						{:else if status === 'p2p'}
+							{m.connectionStatusP2pDescription()}
 						{:else}
 							{m.connectionStatusDisconnectedDescription()}
 						{/if}

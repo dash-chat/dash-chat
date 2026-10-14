@@ -3,7 +3,8 @@
  * phones join an E2E_WIFI_NETWORKS access point with no upstream before their
  * apps start, and the cloud mailbox is down, so neither the relay nor a
  * mailbox can carry anything. Contact exchange, text messages and media can
- * only cross over a direct connection to a peer discovered over mDNS.
+ * only cross over a direct connection to a peer discovered over mDNS. The chat
+ * navbar chip reads "p2p" while they are connected peers.
  *
  * Needs two physical phones without mobile data, and a network in
  * E2E_WIFI_NETWORKS other than the one the phones are on; skips otherwise:
@@ -15,6 +16,10 @@ import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
+
+/** With no network the cloud mailbox fails every poll at once, and the chip
+ *  gives up on it after the second failure. */
+const CLOUD_GIVES_UP_MS = 60_000;
 
 /** Move the phone onto `network`, close the app, and relaunch it there wiped
  *  back to first launch, so its node knows nothing from a network with
@@ -62,6 +67,16 @@ describe('P2P sync on a LAN with no internet', () => {
 		await Promise.all([alice, bob].map(agent => relaunchOn(agent, network)));
 		await createProfiles({ Alice: alice, Bob: bob });
 		await exchangeContacts([alice, bob]);
+	});
+
+	it('both chips read p2p', async () => {
+		for (const agent of [alice, bob]) {
+			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
+				'p2p',
+				CLOUD_GIVES_UP_MS,
+				'the chip did not read p2p on a LAN with no internet',
+			);
+		}
 	});
 
 	it('syncs a text message Alice → Bob', async () => {
