@@ -9,33 +9,46 @@ const SETTLING_MS = 10_000;
 
 interface Connection {
 	connectedToCloudMailboxServer: boolean;
+	cloudFailedLastPoll: boolean;
 	/** When the cloud mailbox last failed a poll, or null if it never has. */
 	cloudLastFailureAtMs: number | null;
 	connectedLocalMailboxCount: number;
 }
 
-export type ConnectionChipStatus = 'local' | 'p2p' | 'disconnected';
+export type ConnectionChipStatus =
+	| 'cloud'
+	| 'local'
+	| 'p2p'
+	| 'disconnected'
+	| 'pending';
 
-/** What the chip reads, or null to leave it off screen.
+/** What the chip reads: 'pending' while no verdict has been earned yet.
  *
- * The chip only has something to say while the cloud is out of reach: that a
- * local hub is standing in, that an online peer is, or that nothing is. A
- * connected hub is a fact and shows at once. Saying the cloud is down, even
- * with a peer standing in, is gated on freshness:
- * a failure recorded before `resumedAt` happened while the app was away and
- * says nothing about the connection now, whereas erring towards "fine" on a
- * stale success costs the user nothing. Reactive through `withinWindow`, so
- * the settling deadline re-renders the caller when it expires. */
+ * The cloud takes precedence: a local hub is only worth mentioning while it
+ * stands in for an unreachable cloud. A connection, cloud or hub, is a fact
+ * and shows at once, but a cloud whose latest poll failed is no longer
+ * vouched for, so it reads pending until a poll answers or enough fail to
+ * call it down. Saying the cloud is down, even with an online peer standing
+ * in, is gated on freshness: a failure recorded before `resumedAt` happened
+ * while the app was away and says nothing about the connection now. Reactive
+ * through `withinWindow`, so the settling deadline re-renders the caller when
+ * it expires. */
 export function connectionChipStatus(
 	connection: Connection,
 	peerOnline: boolean,
 	resumedAt: number,
-): ConnectionChipStatus | null {
-	if (connection.connectedToCloudMailboxServer) return null;
+): ConnectionChipStatus {
+	if (
+		connection.connectedToCloudMailboxServer &&
+		!connection.cloudFailedLastPoll
+	)
+		return 'cloud';
 	if (connection.connectedLocalMailboxCount > 0) return 'local';
+	if (connection.connectedToCloudMailboxServer) return 'pending';
 	const failedSinceResume =
 		connection.cloudLastFailureAtMs !== null &&
 		connection.cloudLastFailureAtMs > resumedAt;
-	if (!failedSinceResume && withinWindow(resumedAt, SETTLING_MS)) return null;
+	if (!failedSinceResume && withinWindow(resumedAt, SETTLING_MS))
+		return 'pending';
 	return peerOnline ? 'p2p' : 'disconnected';
 }

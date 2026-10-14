@@ -57,8 +57,17 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
+/** What the connection chip shows, or 'absent' while it is not mounted. */
+export type RenderedConnectionStatus =
+	| 'absent'
+	| 'pending'
+	| 'cloud'
+	| 'local'
+	| 'p2p'
+	| 'disconnected';
+
 export interface ConnectionStatusSample {
-	status: string;
+	status: RenderedConnectionStatus;
 	/** Epoch ms on the device, so samples can be ordered against each other
 	 * without comparing against the test runner's clock on another machine. */
 	at: number;
@@ -76,11 +85,13 @@ const connectionStatuses: ConnectionStatusSample[] = [];
 let connectionStatusObserver: MutationObserver | undefined;
 let connectionStatusToken: string | undefined;
 
-function currentConnectionStatus(): string {
+function currentConnectionStatus(): RenderedConnectionStatus {
 	const chip = document.querySelector<HTMLElement>(
 		'[data-testid="connection-status"]',
 	);
-	return chip?.dataset.status ?? 'connected';
+	return (
+		(chip?.dataset.status as RenderedConnectionStatus | undefined) ?? 'absent'
+	);
 }
 
 /** Start recording every connection status the indicator renders, returning a

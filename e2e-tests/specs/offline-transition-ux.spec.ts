@@ -7,7 +7,7 @@
  *
  * Visible states under test:
  *   - Message status: "unsent" → "sending" → "mailbox" → "delivered"
- *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
+ *   - Navbar chip:    cloud → disconnected → local → cloud
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
@@ -63,7 +63,7 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox online', () => {
-		it('sends a message, peer receives it, sender shows delivered, and the navbar chip stays hidden', async () => {
+		it('sends a message, peer receives it, sender shows delivered, and the navbar chip reads cloud and explains it', async () => {
 			await agent1.directChatPage.composer.sendMessage('online hello');
 			await agent2.directChatPage.messages.waitForMessage('online hello');
 
@@ -73,9 +73,20 @@ describe('Offline UX', () => {
 				'online hello',
 				['delivered'],
 			);
-			expect(
-				await agent1.directChatPage.connectionStatusIndicator.status(),
-			).toBe('connected');
+			const indicator = agent1.directChatPage.connectionStatusIndicator;
+			expect(await indicator.status()).toBe('cloud');
+
+			await indicator.chip.click();
+			await agent1.waitUntil(() => indicator.isDialogOpen());
+			await expect(indicator.dialogTitle).toHaveText(
+				await agent1.tr('connectionStatusCloudTitle'),
+			);
+			await expect(indicator.dialogDescription).toHaveText(
+				await agent1.tr('connectionStatusCloudDescription'),
+			);
+
+			await indicator.dialogCloseButton.click();
+			await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 		});
 	});
 
@@ -191,11 +202,11 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox back online', () => {
-		it('navbar chip hides again and the pending message advances to delivered once the peer receives it', async () => {
+		it('navbar chip reads cloud again and the pending message advances to delivered once the peer receives it', async () => {
 			await agent1.waitUntil(
 				async () =>
 					(await agent1.directChatPage.connectionStatusIndicator.status()) ===
-					'connected',
+					'cloud',
 				{ timeout: 30_000 },
 			);
 			await agent2.directChatPage.messages.waitForMessage('offline hello');
