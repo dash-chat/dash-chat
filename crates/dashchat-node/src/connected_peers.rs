@@ -11,8 +11,6 @@ type SessionId = u64;
 
 type SessionsByTopic = BTreeMap<TopicId, BTreeMap<SessionId, DeviceId>>;
 
-/// Sessions run in live mode: one stays open after catching up and pushes what
-/// either side publishes on its topic to the other right away.
 #[derive(Clone)]
 pub struct ConnectedPeers(Arc<watch::Sender<SessionsByTopic>>);
 
