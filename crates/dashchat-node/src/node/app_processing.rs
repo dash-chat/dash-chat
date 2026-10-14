@@ -77,7 +77,8 @@ pub enum SystemNotification {
 
 impl Node {
     /// Register a topic as subscribed in the database, and initialize it.
-    /// When the node restarts, the topic will be reinitialized.
+    /// When the node restarts, the topic will be rejoined as a space by
+    /// [`Self::initialize_space`]: every auto-registered topic is a space.
     ///
     /// Note that some topics are excluded from automatic registration, such as inbox topics.
     /// They have to be registered separately with extra context.
@@ -114,6 +115,17 @@ impl Node {
     #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         self.initialize_topic_inner(topic, true).await
+    }
+
+    /// Rejoin a registered space on node startup and import its mailbox stream.
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn initialize_space(&self, topic: TopicId) -> anyhow::Result<()> {
+        topic.alias_numbered();
+        tracing::info!(topic = ?topic.aliased(), "initialize space");
+
+        self.streams.join_space(topic).await?;
+        self.import_mailbox_stream(topic).await?;
+        Ok(())
     }
 
     pub(crate) async fn initialize_topic_inner(
