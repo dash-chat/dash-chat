@@ -1,7 +1,7 @@
 /**
  * The cloud mailbox over networks as slow as the ones measured across the
  * global majority, where connection setup alone takes seconds. The mailbox
- * answers every request eventually, so the chip must stay hidden and a message
+ * answers every request eventually, so the chip must keep reading cloud and a message
  * must reach the mailbox. One agent in a solo group, so the chip is on screen.
  */
 import { formatStatusTrace } from '../helpers/components/connection-status-indicator';
@@ -31,9 +31,9 @@ describe('Cloud mailbox over slow networks', function () {
 		await agent.createProfilePage.createProfile('Alice', 'Slow');
 		await createGroup(agent, 'Solo Group', []);
 		await chip().waitForStatus(
-			'connected',
+			'cloud',
 			UI_TIMEOUT,
-			'the chip did not hide once the chat opened',
+			'the chip did not read cloud once the chat opened',
 		);
 	});
 

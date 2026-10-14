@@ -337,6 +337,12 @@
 	"connectionStatusLocalDescription_one": "You have no Internet connection, but you're connected to {{count}} Local Message Hub on your network. Messages will be synchronized with it.",
 	"connectionStatusLocalDescription_other": "You have no Internet connection, but you're connected to {{count}} Local Message Hubs on your network. Messages will be synchronized with them.",
 	"connectionStatusLocalAriaLabel": "Connection status: connected to local message hub. Tap for details.",
+	"connectionStatusCloudTitle": "Connected",
+	"connectionStatusCloudDescription": "You're connected to the Internet. Messages are synchronized through the Dash Chat message server.",
+	"connectionStatusCloudAriaLabel": "Connection status: connected to the Internet. Tap for details.",
+	"connectionStatusPendingTitle": "Connecting…",
+	"connectionStatusPendingDescription": "We're checking your connection to the message server.",
+	"connectionStatusPendingAriaLabel": "Connection status: connecting. Tap for details.",
 
 	"help": "Help",
 	"contactUs": "Contact us",
