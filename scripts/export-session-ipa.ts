@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const IOS_BUILD_DIR = path.join(ROOT, 'src-tauri/gen/apple/build');
-const SESSION_IPA = path.join(ROOT, 'e2e-tests/.appium/dash-chat-e2e.ipa');
+const SESSION_IPA = path.join(ROOT, 'e2e-tests/.cache/dash-chat-e2e.ipa');
 
 const out = existsSync(IOS_BUILD_DIR)
 	? execSync(`find "${IOS_BUILD_DIR}" -maxdepth 3 -name '*.ipa'`, {
