@@ -17,6 +17,7 @@
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { UI_TIMEOUT } from '../helpers/timeouts';
 import { stampedLog } from '../helpers/utils';
 import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
@@ -28,12 +29,6 @@ const AWAY_MS = 60_000;
 const LONG_AWAY_MS = 300_000;
 /** Peer discovery and sync, once the phone holds its address again. */
 const DISCOVERY_AND_SYNC_MS = 4_000;
-/** A peer that dropped off Wi-Fi loses its session once the connection's 10s
- *  idle timeout runs out. */
-const PEER_GONE_MS = 30_000;
-/** The chip only has to reflect a session that is already open: each check
- *  follows a message that just crossed it. */
-const CHIP_SHOWS_SESSION_MS = 4_000;
 
 /** `text` must reach `receiver` within [`DISCOVERY_AND_SYNC_MS`] of `since`. */
 async function expectArrival(
@@ -79,7 +74,7 @@ describe('Pure p2p sync across a network switch', function () {
 		for (const agent of [alice, bob]) {
 			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
 				'p2p',
-				CHIP_SHOWS_SESSION_MS,
+				UI_TIMEOUT,
 				'the chip did not read p2p with the peer on the LAN',
 			);
 		}
@@ -92,7 +87,7 @@ describe('Pure p2p sync across a network switch', function () {
 		await bob.directChatPage.composer.sendMessage(text);
 		await bob.directChatPage.connectionStatusIndicator.waitForStatus(
 			'disconnected',
-			PEER_GONE_MS,
+			UI_TIMEOUT,
 			'the chip did not read disconnected with the peer off Wi-Fi',
 		);
 		await alice.pause(AWAY_MS);
@@ -104,7 +99,7 @@ describe('Pure p2p sync across a network switch', function () {
 		await expectArrival(alice, text, Date.now());
 		await bob.directChatPage.connectionStatusIndicator.waitForStatus(
 			'p2p',
-			CHIP_SHOWS_SESSION_MS,
+			UI_TIMEOUT,
 			'the chip did not read p2p once the peer was back on the LAN',
 		);
 	});

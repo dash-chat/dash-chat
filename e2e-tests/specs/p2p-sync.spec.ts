@@ -13,18 +13,13 @@
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { UI_TIMEOUT } from '../helpers/timeouts';
 import { isRemoteMailbox, suspendMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 /** A suspended mailbox fails each request at its 20s timeout and the chip
  *  gives up on the cloud after the second failure, around 45s. */
 const CLOUD_GIVES_UP_MS = 90_000;
-/** A killed peer drops its session once the connection's 10s idle timeout
- *  runs out. */
-const PEER_GONE_MS = 30_000;
-/** A restarted peer is back once its app has started, found us over mDNS and
- *  opened a sync session. */
-const PEER_BACK_MS = 30_000;
 
 describe('Pure p2p sync (no mailbox)', function () {
 	this.timeout(300_000);
@@ -92,13 +87,13 @@ describe('Pure p2p sync (no mailbox)', function () {
 		await agent2.stopApp();
 		await chip.waitForStatus(
 			'disconnected',
-			PEER_GONE_MS,
+			UI_TIMEOUT,
 			'the chip did not read disconnected after the peer went offline',
 		);
 		await agent2.startApp();
 		await chip.waitForStatus(
 			'p2p',
-			PEER_BACK_MS,
+			UI_TIMEOUT,
 			'the chip did not read p2p after the peer came back',
 		);
 	});
