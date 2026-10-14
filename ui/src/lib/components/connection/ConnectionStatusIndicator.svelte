@@ -4,7 +4,7 @@
 		IConnectedPeersStore,
 		MailboxTrackerStore,
 	} from 'dash-chat-stores';
-	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
+	import { useReactivePromises } from '$lib/stores/use-signal';
 	import { getContext, type Snippet } from 'svelte';
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -26,15 +26,10 @@
 		'connected-peers-store',
 	);
 
-	const connectionStatus = useReactivePromise(
-		mailboxTrackerStore.connectionStatus,
-	);
-	const connectedPeers = useReactiveValue(() =>
+	const chipInputs = useReactivePromises(() => [
+		mailboxTrackerStore.connectionStatus(),
 		connectedPeersStore.connectedPeers(chatId),
-	);
-	const connectedToPeer = $derived(
-		$connectedPeers === undefined ? undefined : $connectedPeers.length > 0,
-	);
+	]);
 
 	const icons: Record<ConnectionChipStatus, string> = {
 		local: '/localmailboxserver.svg',
@@ -59,11 +54,11 @@
 	const asTitle = (snippet: Snippet) => snippet as unknown as string;
 </script>
 
-{#await $connectionStatus then connectionStatus}
+{#await $chipInputs then [connectionStatus, connectedPeers]}
 	{@const localCount = connectionStatus.connectedLocalMailboxCount}
 	{@const status = connectionChipStatus(
 		connectionStatus,
-		connectedToPeer,
+		connectedPeers.length > 0,
 		renderingResumedAt.value,
 	)}
 	{#if status !== null}
