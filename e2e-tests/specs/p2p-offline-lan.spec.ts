@@ -13,7 +13,7 @@
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
-import { MAILBOX_HUNG_MS } from '../helpers/timeouts';
+import { UI_TIMEOUT } from '../helpers/timeouts';
 import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
@@ -70,7 +70,7 @@ describe('P2P sync on a LAN with no internet', () => {
 		for (const agent of [alice, bob]) {
 			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
 				'p2p',
-				MAILBOX_HUNG_MS,
+				UI_TIMEOUT,
 				'the chip did not read p2p on a LAN with no internet',
 			);
 		}
