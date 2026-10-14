@@ -81,7 +81,10 @@ pub(crate) enum Command {
 // one place. In any case, it would be required to have both the processed_tx and additional error
 // handling in place, so this is not wasted work in the long-run.
 pub enum ProcessorEvent {
-    System(StreamEvent<Payload>),
+    System {
+        topic: Topic,
+        event: StreamEvent<Payload>,
+    },
     Groups {
         operation: ProcessedOperation<Payload>,
         source: Source,
@@ -214,8 +217,8 @@ impl Actor {
                             }
                         };
                     }
-                    Some((_, event)) = self.streams.next() => {
-                        if let Err(err) = self.process_event(event).await {
+                    Some((topic, event)) = self.streams.next() => {
+                        if let Err(err) = self.process_event(topic, event).await {
                             warn!(?err, "actor event processing failed");
                         }
                     }
@@ -374,7 +377,11 @@ impl Actor {
         Ok(())
     }
 
-    async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {
+    async fn process_event(
+        &mut self,
+        topic: Topic,
+        event: StreamEvent<Payload>,
+    ) -> Result<(), NodeActorError> {
         let processor_event = match &event {
             StreamEvent::Processed { operation, source } => {
                 let id = operation.id();
@@ -403,7 +410,7 @@ impl Actor {
                     }
                 }
             }
-            _ => ProcessorEvent::System(event),
+            _ => ProcessorEvent::System { topic, event },
         };
 
         // Forward the event for further application layer processing.
