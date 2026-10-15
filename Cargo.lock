@@ -11562,11 +11562,12 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=3136b282944beea5bc2bc7ef184c84d25b594616#3136b282944beea5bc2bc7ef184c84d25b594616"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=7b1ad968964aa0b1b42898a5f351ac496606d2aa#7b1ad968964aa0b1b42898a5f351ac496606d2aa"
 dependencies = [
  "log",
  "ndk-context",
  "notify-rust",
+ "plist",
  "rand 0.9.5",
  "regex",
  "serde",
@@ -11584,7 +11585,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=3136b282944beea5bc2bc7ef184c84d25b594616#3136b282944beea5bc2bc7ef184c84d25b594616"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=7b1ad968964aa0b1b42898a5f351ac496606d2aa#7b1ad968964aa0b1b42898a5f351ac496606d2aa"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -11598,7 +11599,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=3136b282944beea5bc2bc7ef184c84d25b594616#3136b282944beea5bc2bc7ef184c84d25b594616"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=7b1ad968964aa0b1b42898a5f351ac496606d2aa#7b1ad968964aa0b1b42898a5f351ac496606d2aa"
 dependencies = [
  "rand 0.8.8",
  "serde",
