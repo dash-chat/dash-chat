@@ -103,7 +103,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
 tauri-plugin-view = "0.0.5"
-tauri-plugin-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-lifecycle", rev = "24e1f1c" }
+tauri-plugin-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-lifecycle", rev = "daf9678" }
 tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "9c50b47eab93202a55f0374fe9c70bb2016c8a2f" }
 
 [target.'cfg(target_os = "android")'.dependencies]

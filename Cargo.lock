@@ -10766,8 +10766,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "swarm-discovery"
-version = "0.6.3"
-source = "git+https://github.com/dash-chat/swarm-discovery?rev=1cf4c14c67b60bf8c020b5cc002fd7f438492199#1cf4c14c67b60bf8c020b5cc002fd7f438492199"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02d5d53c7843e046d7dddcf13254388f432306bbc538cd0029224e2eb6817477"
 dependencies = [
  "acto",
  "hickory-proto",
@@ -11469,7 +11470,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-lifecycle"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-lifecycle?rev=24e1f1c#24e1f1cd6771313968cae9246bab4e1890e7041a"
+source = "git+https://github.com/dash-chat/tauri-plugin-lifecycle?rev=daf9678#daf9678ad40856b0e73043cc21704fca190f7c28"
 dependencies = [
  "jni 0.21.1",
  "serde",
