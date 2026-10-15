@@ -109,6 +109,9 @@ describe('Long name truncation', () => {
 		await agent1.settingsPage.ready();
 		await agent1.settingsPage.back.click();
 		await createGroup(agent1, LONG_GROUP_NAME, []);
+		await expect(agent1.groupChatPage.infoLink).toHaveText(LONG_GROUP_NAME, {
+			containing: true,
+		});
 		expect(await agent1.groupChatPage.navbar.checkOverflow()).toEqual([]);
 		expect(await agent1.checkOverflow()).toEqual([]);
 	});
