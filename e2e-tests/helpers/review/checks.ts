@@ -26,8 +26,13 @@ export interface CheckOptions {
 	checkRTL?: boolean;
 }
 
-export async function checkOverflow(b: WebdriverIO.Browser): Promise<string[]> {
-	return (await b.execute(() => {
+/** Returns descriptions of the horizontal overflow inside the element matching
+ * `rootSelector`, or anywhere on the page when it is omitted. */
+export async function checkOverflow(
+	b: WebdriverIO.Browser,
+	rootSelector = ':root',
+): Promise<string[]> {
+	return (await b.execute(rootSelector => {
 		const isClipped = (el: Element) => {
 			const s = window.getComputedStyle(el as HTMLElement);
 			return (
@@ -61,14 +66,13 @@ export async function checkOverflow(b: WebdriverIO.Browser): Promise<string[]> {
 			});
 		};
 
+		const root = document.querySelector(rootSelector);
+		if (!root) return [`${rootSelector} not found`];
 		const issues: string[] = [];
-		if (
-			document.documentElement.scrollWidth >
-			document.documentElement.clientWidth
-		) {
-			issues.push('Page has horizontal overflow');
+		if (root.scrollWidth > root.clientWidth) {
+			issues.push(`${rootSelector} has horizontal overflow`);
 		}
-		document.querySelectorAll('*').forEach(el => {
+		[root, ...root.querySelectorAll('*')].forEach(el => {
 			if (el.id === 'svelte-announcer') return;
 			if (isClipped(el)) return;
 			if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
@@ -86,7 +90,7 @@ export async function checkOverflow(b: WebdriverIO.Browser): Promise<string[]> {
 			}
 		});
 		return issues.slice(0, 20);
-	})) as string[];
+	}, rootSelector)) as string[];
 }
 
 export async function checkDarkMode(

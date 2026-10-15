@@ -11,7 +11,7 @@ export class GroupChatPage extends TestHelper {
 	back = this.el(tid('group-chat-back'));
 	infoLink = this.el(tid('group-chat-info-link'));
 	headerName = this.el(tid('group-chat-header-name'));
-	navbar = new Navbar(this.agent);
+	navbar = new Navbar(this.agent, tid('group-chat-page'));
 	composer = new Composer(this.agent);
 	messages = new Messages(
 		this.agent,

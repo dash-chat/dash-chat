@@ -36,7 +36,7 @@ export class DirectChatPage extends TestHelper {
 	reportMessage = this.el(tid('direct-chat-report-message'));
 	messageStatus = this.el(tid('message-status'));
 	readMore = this.el(tid('message-read-more'));
-	navbar = new Navbar(this.agent);
+	navbar = new Navbar(this.agent, tid('direct-chat-page'));
 	composer = new Composer(this.agent);
 	messages = new Messages(
 		this.agent,
