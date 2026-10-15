@@ -1,93 +1,81 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::{Stream, StreamExt};
 use p2panda::streams::{EphemeralStreamPublisher, EphemeralStreamSubscription};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, watch};
+use tokio::sync::watch;
 use tokio::time::Instant;
 use tokio_stream::wrappers::WatchStream;
-use tokio_util::task::AbortOnDropHandle;
+use tokio_util::sync::{CancellationToken, DropGuard};
+use tokio_util::task::TaskTracker;
 
 use crate::{DeviceId, TopicId};
 
-const PING_INTERVAL: Duration = Duration::from_secs(5);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const OFFLINE_AFTER: Duration = Duration::from_secs(12);
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub(crate) enum PresenceMessage {
     Hello,
-    Ping,
+    Heartbeat,
     Bye,
 }
 
-type LastSeenByTopic = BTreeMap<TopicId, BTreeMap<DeviceId, Instant>>;
+pub(crate) type PresenceStream = (
+    EphemeralStreamPublisher<PresenceMessage>,
+    EphemeralStreamSubscription<PresenceMessage>,
+);
 
-type Publishers = HashMap<TopicId, EphemeralStreamPublisher<PresenceMessage>>;
+type LastSeen = BTreeMap<TopicId, BTreeMap<DeviceId, Instant>>;
 
-/// Presence on chat topics: every node says `Hello` when it joins a topic, pings it every
-/// [`PING_INTERVAL`] and says `Bye` when it stops. A peer is online on a topic until it says
-/// `Bye` or misses its pings for [`OFFLINE_AFTER`].
+/// Presence on chat topics: every node says `Hello` when it joins a topic, sends a heartbeat every
+/// [`HEARTBEAT_INTERVAL`] and says `Bye` when it stops. A peer is online on a topic until it says
+/// `Bye` or misses its heartbeats for [`OFFLINE_AFTER`].
 #[derive(Clone)]
 pub struct OnlinePeers {
     me: DeviceId,
-    last_seen: Arc<watch::Sender<LastSeenByTopic>>,
-    publishers: Arc<Mutex<Publishers>>,
-    tasks: Arc<std::sync::Mutex<Vec<AbortOnDropHandle<()>>>>,
+    last_seen: Arc<watch::Sender<LastSeen>>,
+    joined: Arc<Mutex<HashSet<TopicId>>>,
+    tasks: TaskTracker,
+    stop: CancellationToken,
+    _stop_on_drop: Arc<DropGuard>,
 }
 
 impl OnlinePeers {
     pub(crate) fn new(me: DeviceId) -> Self {
-        let online_peers = Self {
+        let stop = CancellationToken::new();
+        Self {
             me,
-            last_seen: Arc::new(watch::channel(LastSeenByTopic::new()).0),
-            publishers: Default::default(),
-            tasks: Default::default(),
-        };
-        let pinging = tokio::spawn(ping_and_expire(
-            online_peers.publishers.clone(),
-            online_peers.last_seen.clone(),
-        ));
-        online_peers.keep(pinging);
-        online_peers
-    }
-
-    pub(crate) async fn has_joined(&self, topic: TopicId) -> bool {
-        self.publishers.lock().await.contains_key(&topic)
-    }
-
-    pub(crate) async fn join(
-        &self,
-        topic: TopicId,
-        (publisher, subscription): (
-            EphemeralStreamPublisher<PresenceMessage>,
-            EphemeralStreamSubscription<PresenceMessage>,
-        ),
-    ) {
-        let receiving = tokio::spawn(receive(
-            self.me,
-            topic,
-            subscription,
-            self.publishers.clone(),
-            self.last_seen.clone(),
-        ));
-        self.keep(receiving);
-        send(&publisher, PresenceMessage::Hello).await;
-        self.publishers.lock().await.insert(topic, publisher);
-    }
-
-    pub(crate) async fn say_bye_and_stop(&self) {
-        for publisher in self
-            .publishers
-            .lock()
-            .await
-            .drain()
-            .map(|(_, publisher)| publisher)
-        {
-            send(&publisher, PresenceMessage::Bye).await;
+            last_seen: Arc::new(watch::channel(LastSeen::new()).0),
+            joined: Default::default(),
+            tasks: TaskTracker::new(),
+            _stop_on_drop: Arc::new(stop.clone().drop_guard()),
+            stop,
         }
-        self.tasks.lock().unwrap().clear();
+    }
+
+    pub(crate) fn has_joined(&self, topic: TopicId) -> bool {
+        self.joined.lock().unwrap().contains(&topic)
+    }
+
+    pub(crate) fn join(&self, topic: TopicId, stream: PresenceStream) {
+        if self.joined.lock().unwrap().insert(topic) {
+            self.tasks.spawn(stay_present(
+                self.me,
+                topic,
+                stream,
+                self.last_seen.clone(),
+                self.stop.clone(),
+            ));
+        }
+    }
+
+    pub(crate) async fn leave_all(&self) {
+        self.stop.cancel();
+        self.tasks.close();
+        self.tasks.wait().await;
     }
 
     pub fn devices(&self, topic: TopicId) -> impl Stream<Item = BTreeSet<DeviceId>> + Send + use<> {
@@ -98,72 +86,48 @@ impl OnlinePeers {
                 .unwrap_or_default()
         })
     }
-
-    fn keep(&self, task: tokio::task::JoinHandle<()>) {
-        self.tasks
-            .lock()
-            .unwrap()
-            .push(AbortOnDropHandle::new(task));
-    }
 }
 
-async fn ping_and_expire(
-    publishers: Arc<Mutex<Publishers>>,
-    last_seen: Arc<watch::Sender<LastSeenByTopic>>,
-) {
-    let mut interval = tokio::time::interval(PING_INTERVAL);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        interval.tick().await;
-        let publishers: Vec<_> = publishers.lock().await.values().cloned().collect();
-        for publisher in publishers {
-            send(&publisher, PresenceMessage::Ping).await;
-        }
-        forget_silent(&last_seen);
-    }
-}
-
-fn forget_silent(last_seen: &watch::Sender<LastSeenByTopic>) {
-    last_seen.send_if_modified(|last_seen| {
-        let mut forgot = false;
-        for devices in last_seen.values_mut() {
-            let before = devices.len();
-            devices.retain(|_, seen| seen.elapsed() <= OFFLINE_AFTER);
-            forgot |= devices.len() != before;
-        }
-        last_seen.retain(|_, devices| !devices.is_empty());
-        forgot
-    });
-}
-
-async fn receive(
+async fn stay_present(
     me: DeviceId,
     topic: TopicId,
-    mut subscription: EphemeralStreamSubscription<PresenceMessage>,
-    publishers: Arc<Mutex<Publishers>>,
-    last_seen: Arc<watch::Sender<LastSeenByTopic>>,
+    (publisher, mut subscription): PresenceStream,
+    last_seen: Arc<watch::Sender<LastSeen>>,
+    stop: CancellationToken,
 ) {
-    while let Some(message) = subscription.next().await {
-        let device = DeviceId::from(message.author());
-        if device == me {
-            continue;
-        }
-        match message.body() {
-            PresenceMessage::Hello => {
-                seen(&last_seen, topic, device);
-                // Answer right away so the newcomer doesn't wait a whole interval to see us.
-                let publisher = publishers.lock().await.get(&topic).cloned();
-                if let Some(publisher) = publisher {
-                    send(&publisher, PresenceMessage::Ping).await;
+    send(&publisher, PresenceMessage::Hello).await;
+    let mut heartbeat =
+        tokio::time::interval_at(Instant::now() + HEARTBEAT_INTERVAL, HEARTBEAT_INTERVAL);
+    loop {
+        tokio::select! {
+            _ = stop.cancelled() => {
+                send(&publisher, PresenceMessage::Bye).await;
+                return;
+            }
+            _ = heartbeat.tick() => {
+                send(&publisher, PresenceMessage::Heartbeat).await;
+                forget_silent_peers(&last_seen, topic);
+            }
+            Some(message) = subscription.next() => {
+                let device = DeviceId::from(message.author());
+                if device == me {
+                    continue;
+                }
+                match message.body() {
+                    PresenceMessage::Hello => {
+                        seen(&last_seen, topic, device);
+                        // Answer right away so the newcomer doesn't wait a whole interval to see us.
+                        send(&publisher, PresenceMessage::Heartbeat).await;
+                    }
+                    PresenceMessage::Heartbeat => seen(&last_seen, topic, device),
+                    PresenceMessage::Bye => left(&last_seen, topic, device),
                 }
             }
-            PresenceMessage::Ping => seen(&last_seen, topic, device),
-            PresenceMessage::Bye => left(&last_seen, topic, device),
         }
     }
 }
 
-fn seen(last_seen: &watch::Sender<LastSeenByTopic>, topic: TopicId, device: DeviceId) {
+fn seen(last_seen: &watch::Sender<LastSeen>, topic: TopicId, device: DeviceId) {
     last_seen.send_if_modified(|last_seen| {
         last_seen
             .entry(topic)
@@ -173,16 +137,22 @@ fn seen(last_seen: &watch::Sender<LastSeenByTopic>, topic: TopicId, device: Devi
     });
 }
 
-fn left(last_seen: &watch::Sender<LastSeenByTopic>, topic: TopicId, device: DeviceId) {
+fn left(last_seen: &watch::Sender<LastSeen>, topic: TopicId, device: DeviceId) {
+    last_seen.send_if_modified(|last_seen| {
+        last_seen
+            .get_mut(&topic)
+            .is_some_and(|devices| devices.remove(&device).is_some())
+    });
+}
+
+fn forget_silent_peers(last_seen: &watch::Sender<LastSeen>, topic: TopicId) {
     last_seen.send_if_modified(|last_seen| {
         let Some(devices) = last_seen.get_mut(&topic) else {
             return false;
         };
-        let removed = devices.remove(&device).is_some();
-        if devices.is_empty() {
-            last_seen.remove(&topic);
-        }
-        removed
+        let before = devices.len();
+        devices.retain(|_, seen| seen.elapsed() <= OFFLINE_AFTER);
+        devices.len() != before
     });
 }
 
@@ -200,7 +170,7 @@ mod tests {
         DeviceId::from(p2panda::SigningKey::from_bytes(&[byte; 32]).verifying_key())
     }
 
-    fn online(last_seen: &watch::Sender<LastSeenByTopic>, topic: TopicId) -> BTreeSet<DeviceId> {
+    fn online(last_seen: &watch::Sender<LastSeen>, topic: TopicId) -> BTreeSet<DeviceId> {
         last_seen
             .borrow()
             .get(&topic)
@@ -209,26 +179,26 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_peer_that_stops_pinging_goes_offline() {
-        let last_seen = watch::channel(LastSeenByTopic::new()).0;
+    async fn a_peer_that_stops_sending_heartbeats_goes_offline() {
+        let last_seen = watch::channel(LastSeen::new()).0;
         let topic = TopicId::random();
         let (quiet, chatty) = (device(1), device(2));
         seen(&last_seen, topic, quiet);
         seen(&last_seen, topic, chatty);
 
-        tokio::time::advance(OFFLINE_AFTER - PING_INTERVAL).await;
+        tokio::time::advance(OFFLINE_AFTER - HEARTBEAT_INTERVAL).await;
         seen(&last_seen, topic, chatty);
-        forget_silent(&last_seen);
+        forget_silent_peers(&last_seen, topic);
         assert_eq!(online(&last_seen, topic), BTreeSet::from([quiet, chatty]));
 
-        tokio::time::advance(PING_INTERVAL + Duration::from_millis(1)).await;
-        forget_silent(&last_seen);
+        tokio::time::advance(HEARTBEAT_INTERVAL + Duration::from_millis(1)).await;
+        forget_silent_peers(&last_seen, topic);
         assert_eq!(online(&last_seen, topic), BTreeSet::from([chatty]));
     }
 
     #[test]
     fn a_peer_that_says_bye_goes_offline_at_once() {
-        let last_seen = watch::channel(LastSeenByTopic::new()).0;
+        let last_seen = watch::channel(LastSeen::new()).0;
         let topic = TopicId::random();
         seen(&last_seen, topic, device(1));
         left(&last_seen, topic, device(1));

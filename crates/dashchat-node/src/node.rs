@@ -1624,25 +1624,6 @@ impl Node {
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
-    #[cfg(feature = "testing")]
-    pub async fn block_sync_on_topic(
-        &self,
-        device: DeviceId,
-        topic: TopicId,
-    ) -> anyhow::Result<()> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(Command::BlockSyncOnTopic {
-                node_id: *device,
-                topic,
-                reply_tx,
-            })
-            .await
-            .map_err(|_| anyhow::anyhow!("node actor gone"))?;
-        reply_rx.await?;
-        Ok(())
-    }
-
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
         // Stop any deferred stored-topic initialization before we tear down
         // the actor or clear mailboxes, so it cannot race SQLite pool closure
@@ -1653,7 +1634,7 @@ impl Node {
         }
 
         // While the network is still up, so peers see us leave instead of timing us out.
-        self.online_peers.say_bye_and_stop().await;
+        self.online_peers.leave_all().await;
 
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
@@ -2278,8 +2259,6 @@ impl Node {
         Ok(())
     }
 
-    /// Subscribed topics are stored untyped, so the chats among them are the group chats the
-    /// projection knows and the direct chats with known devices.
     async fn subscribed_chat_topics(
         &self,
         subscribed_topics: &BTreeSet<TopicId>,
@@ -2396,7 +2375,10 @@ impl Node {
         match self.subscribed_chat_topics(&subscribed_topics).await {
             Ok(chat_ids) => {
                 for chat_id in chat_ids {
-                    self.join_presence(chat_id).await;
+                    if let Err(err) = self.join_presence(chat_id).await {
+                        error!(chat_id = ?chat_id.aliased(), ?err, "failed to join presence");
+                        failures += 1;
+                    }
                 }
             }
             Err(err) => {

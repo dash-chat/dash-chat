@@ -9,9 +9,8 @@ use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
-    EphemeralStreamPublisher, EphemeralStreamSubscription, ImportError, ProcessedOperation,
-    PublishError, PublishFuture, Source, StreamEvent, StreamFrom, StreamPublisher,
-    StreamSubscription,
+    ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
+    StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_auth::group::GroupCrdtError;
@@ -25,14 +24,9 @@ use tokio_stream::{StreamExt, StreamMap};
 use tracing::{error, warn};
 
 use crate::Payload;
-use crate::online_peers::PresenceMessage;
+use crate::online_peers::PresenceStream;
 
 type GroupsProcessor = p2panda_stream::groups::Groups<GroupsProcessorArgs<()>, Extensions, LogId>;
-
-pub(crate) type PresenceStream = (
-    EphemeralStreamPublisher<PresenceMessage>,
-    EphemeralStreamSubscription<PresenceMessage>,
-);
 
 /// Node actor commands.
 pub(crate) enum Command {
@@ -67,12 +61,6 @@ pub(crate) enum Command {
     PresenceStream {
         topic: Topic,
         reply_tx: oneshot::Sender<Result<PresenceStream, NodeActorError>>,
-    },
-    #[cfg(feature = "testing")]
-    BlockSyncOnTopic {
-        node_id: NodeId,
-        topic: Topic,
-        reply_tx: oneshot::Sender<()>,
     },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
@@ -225,11 +213,6 @@ impl Actor {
                             Command::PresenceStream { topic, reply_tx } => {
                                 let result = self.inner.ephemeral_stream(topic).await.map_err(NodeActorError::from);
                                 let _ = reply_tx.send(result);
-                            },
-                            #[cfg(feature = "testing")]
-                            Command::BlockSyncOnTopic { node_id, topic, reply_tx } => {
-                                self.inner.topic_block(node_id, topic).await;
-                                let _ = reply_tx.send(());
                             },
                             Command::Shutdown { reply_tx } => {
                                 // Drop self and then break out of the processing loop which will

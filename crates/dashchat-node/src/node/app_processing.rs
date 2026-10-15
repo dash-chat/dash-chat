@@ -97,30 +97,25 @@ impl Node {
 
     pub(crate) async fn register_chat_topic(&self, chat_id: ChatId) -> anyhow::Result<()> {
         self.register_topic(chat_id).await?;
-        self.join_presence(chat_id).await;
-        Ok(())
+        self.join_presence(chat_id).await
     }
 
-    pub(crate) async fn join_presence(&self, chat_id: ChatId) {
-        if !self.config.enable_p2p || self.online_peers.has_joined(*chat_id).await {
-            return;
+    pub(crate) async fn join_presence(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        if !self.config.enable_p2p || self.online_peers.has_joined(*chat_id) {
+            return Ok(());
         }
         let (reply_tx, reply_rx) = oneshot::channel();
         let command = Command::PresenceStream {
             topic: (*chat_id).into(),
             reply_tx,
         };
-        if self.actor_tx.send(command).await.is_err() {
-            warn!(chat_id = ?chat_id.aliased(), "node actor gone, cannot join presence");
-            return;
-        }
-        match reply_rx.await {
-            Ok(Ok(stream)) => self.online_peers.join(*chat_id, stream).await,
-            Ok(Err(err)) => warn!(chat_id = ?chat_id.aliased(), ?err, "failed to join presence"),
-            Err(_) => {
-                warn!(chat_id = ?chat_id.aliased(), "node actor dropped the presence request")
-            }
-        }
+        self.actor_tx
+            .send(command)
+            .await
+            .map_err(|_| anyhow!("node actor gone, cannot join presence"))?;
+        let stream = reply_rx.await??;
+        self.online_peers.join(*chat_id, stream);
+        Ok(())
     }
 
     /// Internal function to start the necessary tasks for processing network activity
