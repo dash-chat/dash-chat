@@ -16,6 +16,7 @@ use crate::{DeviceId, TopicId};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const OFFLINE_AFTER: Duration = Duration::from_secs(12);
+const MIN_HEARTBEAT_GAP: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub(crate) enum PresenceMessage {
@@ -125,8 +126,9 @@ async fn stay_present(
     stop: CancellationToken,
 ) {
     send(&publisher, PresenceMessage::Hello).await;
+    let mut last_sent = Instant::now();
     let mut heartbeat =
-        tokio::time::interval_at(Instant::now() + HEARTBEAT_INTERVAL, HEARTBEAT_INTERVAL);
+        tokio::time::interval_at(last_sent + HEARTBEAT_INTERVAL, HEARTBEAT_INTERVAL);
     loop {
         tokio::select! {
             _ = stop.cancelled() => {
@@ -135,6 +137,7 @@ async fn stay_present(
             }
             _ = heartbeat.tick() => {
                 send(&publisher, PresenceMessage::Heartbeat).await;
+                last_sent = Instant::now();
                 forget_silent_peers(&last_seen, topic);
             }
             Some(message) = subscription.next() => {
@@ -145,8 +148,9 @@ async fn stay_present(
                 match message.body() {
                     PresenceMessage::Hello => {
                         seen(&last_seen, topic, device);
-                        // Answer right away so the newcomer doesn't wait a whole interval to see us.
-                        send(&publisher, PresenceMessage::Heartbeat).await;
+                        // Bring our next heartbeat forward instead of answering, so a burst of joins
+                        // lands on one heartbeat that replaces the scheduled one.
+                        heartbeat.reset_at((last_sent + MIN_HEARTBEAT_GAP).max(Instant::now()));
                     }
                     PresenceMessage::Heartbeat => seen(&last_seen, topic, device),
                     PresenceMessage::Bye => left(&last_seen, topic, device),
