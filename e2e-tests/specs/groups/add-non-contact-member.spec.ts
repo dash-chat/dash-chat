@@ -49,15 +49,14 @@ describe('Adding a member the other members are not contacts with', function () 
 			.waitForExist({ timeout: SYNC_TIMEOUT });
 	});
 
-	it('reads p2p in the group chip when only the newcomer is connected', async function () {
+	it('reads p2p in the group chip when only the newcomer is online', async function () {
 		if (isRemoteMailbox()) this.skip();
 		await newcomer.homePage
 			.chatListItem('mygroup')
 			.waitForExist({ timeout: SYNC_TIMEOUT });
 		suspendMailbox();
 		await admin.stopApp();
-		// Relaunched, the member's only possible session on the group is with
-		// the newcomer, now that the admin is offline.
+		// With the admin offline, the newcomer is the only other member online.
 		await member.stopApp();
 		await member.startApp();
 		await member.homePage.ready();
@@ -67,7 +66,7 @@ describe('Adding a member the other members are not contacts with', function () 
 		await member.groupChatPage.connectionStatusIndicator.waitForStatus(
 			'p2p',
 			UI_TIMEOUT,
-			'the group chip did not read p2p with only a non-contact member connected',
+			'the group chip did not read p2p with only a non-contact member online',
 		);
 	});
 });

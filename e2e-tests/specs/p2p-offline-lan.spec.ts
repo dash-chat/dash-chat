@@ -4,7 +4,7 @@
  * apps start, and the cloud mailbox is down, so neither the relay nor a
  * mailbox can carry anything. Contact exchange, text messages and media can
  * only cross over a direct connection to a peer discovered over mDNS. The chat
- * navbar chip reads "p2p" while they are connected peers.
+ * navbar chip reads "p2p" while they are online.
  *
  * Needs two physical phones without mobile data, and a network in
  * E2E_WIFI_NETWORKS other than the one the phones are on; skips otherwise:

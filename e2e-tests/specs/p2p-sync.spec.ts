@@ -7,7 +7,7 @@
  * connection between the two agents. This is the path exercised by real
  * device-to-device delivery and, unlike the rest of the suite, never falls back
  * to a mailbox relay. The chat navbar chip says so: it reads "p2p" while the
- * other agent is a connected peer.
+ * other agent is online.
  *
  * Skips against a remote environment mailbox, whose lifecycle we can't control.
  */

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type {
 		ChatId,
-		IConnectedPeersStore,
+		IOnlinePeersStore,
 		MailboxTrackerStore,
 	} from 'dash-chat-stores';
 	import { useReactivePromises } from '$lib/stores/use-signal';
@@ -22,13 +22,11 @@
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
 	);
-	const connectedPeersStore: IConnectedPeersStore = getContext(
-		'connected-peers-store',
-	);
+	const onlinePeersStore: IOnlinePeersStore = getContext('online-peers-store');
 
 	const chipInputs = useReactivePromises(() => [
 		mailboxTrackerStore.connectionStatus(),
-		connectedPeersStore.connectedPeers(chatId),
+		onlinePeersStore.onlinePeers(chatId),
 	]);
 
 	const icons: Record<ConnectionChipStatus, string> = {
@@ -54,11 +52,11 @@
 	const asTitle = (snippet: Snippet) => snippet as unknown as string;
 </script>
 
-{#await $chipInputs then [connectionStatus, connectedPeers]}
+{#await $chipInputs then [connectionStatus, onlinePeers]}
 	{@const localCount = connectionStatus.connectedLocalMailboxCount}
 	{@const status = connectionChipStatus(
 		connectionStatus,
-		connectedPeers.length > 0,
+		onlinePeers.length > 0,
 		renderingResumedAt.value,
 	)}
 	{#if status !== null}

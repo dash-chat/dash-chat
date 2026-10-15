@@ -19,7 +19,7 @@ export type ConnectionChipStatus = 'local' | 'p2p' | 'disconnected';
 /** What the chip reads, or null to leave it off screen.
  *
  * The chip only has something to say while the cloud is out of reach: that a
- * local hub is standing in, that a connected peer is, or that nothing is. A
+ * local hub is standing in, that an online peer is, or that nothing is. A
  * connected hub is a fact and shows at once. Saying the cloud is down, even
  * with a peer standing in, is gated on freshness:
  * a failure recorded before `resumedAt` happened while the app was away and
@@ -28,7 +28,7 @@ export type ConnectionChipStatus = 'local' | 'p2p' | 'disconnected';
  * the settling deadline re-renders the caller when it expires. */
 export function connectionChipStatus(
 	connection: Connection,
-	connectedToPeer: boolean,
+	peerOnline: boolean,
 	resumedAt: number,
 ): ConnectionChipStatus | null {
 	if (connection.connectedToCloudMailboxServer) return null;
@@ -37,5 +37,5 @@ export function connectionChipStatus(
 		connection.cloudLastFailureAtMs !== null &&
 		connection.cloudLastFailureAtMs > resumedAt;
 	if (!failedSinceResume && withinWindow(resumedAt, SETTLING_MS)) return null;
-	return connectedToPeer ? 'p2p' : 'disconnected';
+	return peerOnline ? 'p2p' : 'disconnected';
 }

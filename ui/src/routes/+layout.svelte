@@ -22,14 +22,14 @@
 		SettingsStore,
 		MailboxTrackerStore,
 		type IMailboxTrackerStore,
-		ConnectedPeersStore,
-		type IConnectedPeersStore,
+		OnlinePeersStore,
+		type IOnlinePeersStore,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
 		MockChatsStore,
 		MockMailboxTrackerStore,
-		MockConnectedPeersStore,
+		MockOnlinePeersStore,
 		MockSettingsClient,
 		MockTombstoneClient,
 		TombstoneClient,
@@ -111,7 +111,7 @@
 	let messageAckStore: MessageAckStore;
 	let chatsStore: ChatsStore;
 	let mailboxTrackerStore: IMailboxTrackerStore;
-	let connectedPeersStore: IConnectedPeersStore;
+	let onlinePeersStore: IOnlinePeersStore;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -143,7 +143,7 @@
 			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
 		);
 		mailboxTrackerStore = new MockMailboxTrackerStore();
-		connectedPeersStore = new MockConnectedPeersStore();
+		onlinePeersStore = new MockOnlinePeersStore();
 		messageAckStore = new MessageAckStore(
 			new MockMessageAckClient(),
 			mailboxTrackerStore,
@@ -172,7 +172,7 @@
 
 		tombstoneStore = new TombstoneStore(new TombstoneClient());
 		mailboxTrackerStore = new MailboxTrackerStore();
-		connectedPeersStore = new ConnectedPeersStore(contactsStore);
+		onlinePeersStore = new OnlinePeersStore(contactsStore);
 		messageAckStore = new MessageAckStore(
 			new MessageAckClient(),
 			mailboxTrackerStore,
@@ -197,7 +197,7 @@
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
 	setContext('mailbox-tracker-store', mailboxTrackerStore);
-	setContext('connected-peers-store', connectedPeersStore);
+	setContext('online-peers-store', onlinePeersStore);
 
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page

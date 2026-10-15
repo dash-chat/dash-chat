@@ -5,10 +5,10 @@
  * Wi-Fi for a while — on screen, in the background or killed — while either
  * side composes a message; once it holds its address again the message has to
  * cross within seconds, and so has one sent once it is back. The chat navbar
- * chip reads "p2p" while the phones are connected peers and "disconnected"
- * while one is off Wi-Fi. The last case walks both phones onto another Wi-Fi
- * network with the app on screen, so it needs a second network in
- * E2E_WIFI_NETWORKS (see e2e-tests/.env.example) and skips without one.
+ * chip reads "p2p" while both phones are online and "disconnected" while one
+ * is off Wi-Fi. The last case walks both phones onto another Wi-Fi network
+ * with the app on screen, so it needs a second network in E2E_WIFI_NETWORKS
+ * (see e2e-tests/.env.example) and skips without one.
  *
  * Skips itself unless E2E_STRESS=1. Either phone platform will do — both
  * drive their Wi-Fi through the harness:
