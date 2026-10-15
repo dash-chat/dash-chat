@@ -40,21 +40,6 @@ pub struct OnlinePeers {
     presence_by_topic: Arc<Mutex<HashMap<TopicId, TopicPresence>>>,
 }
 
-struct TopicPresence {
-    peers: Arc<TopicPeers>,
-    /// `Some` while we are present on the topic.
-    task: Option<PresenceTask>,
-}
-
-impl TopicPresence {
-    fn new() -> Self {
-        Self {
-            peers: Arc::new(TopicPeers::new()),
-            task: None,
-        }
-    }
-}
-
 impl OnlinePeers {
     pub(crate) fn new(me: DeviceId, projection: OpProjection) -> Self {
         Self {
@@ -64,66 +49,88 @@ impl OnlinePeers {
         }
     }
 
-    pub(crate) fn has_joined(&self, topic: TopicId) -> bool {
-        self.presence_by_topic
-            .lock()
-            .unwrap()
-            .get(&topic)
-            .is_some_and(|presence| presence.task.is_some())
-    }
-
-    pub(crate) fn join(&self, topic: TopicId, stream: PresenceStream) {
-        let mut presence_by_topic = self.presence_by_topic.lock().unwrap();
-        let presence = presence_by_topic
-            .entry(topic)
-            .or_insert_with(TopicPresence::new);
-        if presence.task.is_none() {
-            presence.task = Some(PresenceTask::spawn(
-                self.me,
-                stream,
-                self.projection.clone(),
-                presence.peers.clone(),
-            ));
-        }
+    pub(crate) async fn join(&self, topic: TopicId, stream: PresenceStream) {
+        self.presence(topic)
+            .join(self.me, stream, self.projection.clone())
+            .await;
     }
 
     pub(crate) async fn leave(&self, topic: TopicId) {
-        let task = self
-            .presence_by_topic
-            .lock()
-            .unwrap()
-            .get_mut(&topic)
-            .and_then(|presence| presence.task.take());
-        if let Some(task) = task {
-            task.leave().await;
-        }
+        self.presence(topic).leave().await;
     }
 
     pub(crate) fn forget(&self, device: DeviceId) {
         for presence in self.presence_by_topic.lock().unwrap().values() {
-            presence.peers.forget(device);
+            presence.forget(device);
         }
     }
 
     pub(crate) async fn leave_all(&self) {
-        let tasks: Vec<_> = self
+        let presences: Vec<_> = self
             .presence_by_topic
             .lock()
             .unwrap()
-            .values_mut()
-            .filter_map(|presence| presence.task.take())
+            .values()
+            .cloned()
             .collect();
-        futures::future::join_all(tasks.into_iter().map(PresenceTask::leave)).await;
+        futures::future::join_all(presences.iter().map(TopicPresence::leave)).await;
     }
 
     pub fn devices(&self, topic: TopicId) -> impl Stream<Item = BTreeSet<DeviceId>> + Send + use<> {
+        self.presence(topic).online()
+    }
+
+    fn presence(&self, topic: TopicId) -> TopicPresence {
         self.presence_by_topic
             .lock()
             .unwrap()
             .entry(topic)
             .or_insert_with(TopicPresence::new)
-            .peers
-            .online()
+            .clone()
+    }
+}
+
+#[derive(Clone)]
+struct TopicPresence {
+    peers: Arc<TopicPeers>,
+    /// `Some` while we are present on the topic. Held across a leave until its `Bye` is out, so
+    /// a join waits for it.
+    task: Arc<tokio::sync::Mutex<Option<PresenceTask>>>,
+}
+
+impl TopicPresence {
+    fn new() -> Self {
+        Self {
+            peers: Arc::new(TopicPeers::new()),
+            task: Default::default(),
+        }
+    }
+
+    async fn join(&self, me: DeviceId, stream: PresenceStream, projection: OpProjection) {
+        let mut task = self.task.lock().await;
+        if task.is_none() {
+            *task = Some(PresenceTask::spawn(
+                me,
+                stream,
+                projection,
+                self.peers.clone(),
+            ));
+        }
+    }
+
+    async fn leave(&self) {
+        let mut task = self.task.lock().await;
+        if let Some(task) = task.take() {
+            task.leave().await;
+        }
+    }
+
+    fn forget(&self, device: DeviceId) {
+        self.peers.forget(device);
+    }
+
+    fn online(&self) -> impl Stream<Item = BTreeSet<DeviceId>> + Send + use<> {
+        self.peers.online()
     }
 }
 
@@ -151,8 +158,7 @@ impl PresenceTask {
         Self { stop, finished }
     }
 
-    /// Returns once we have said `Bye` and forgotten the topic's peers, so a task spawned right
-    /// after can't have its peers wiped, or its `Hello` overtaken, by this one.
+    /// Returns once we have said `Bye` and forgotten the topic's peers.
     async fn leave(self) {
         self.stop.cancel();
         let _ = self.finished.await;

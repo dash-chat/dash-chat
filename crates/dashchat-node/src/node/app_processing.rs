@@ -101,7 +101,7 @@ impl Node {
     }
 
     pub(crate) async fn join_presence(&self, chat_id: ChatId) -> anyhow::Result<()> {
-        if !self.config.enable_p2p || self.online_peers.has_joined(*chat_id) {
+        if !self.config.enable_p2p {
             return Ok(());
         }
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -114,7 +114,7 @@ impl Node {
             .await
             .map_err(|_| anyhow!("node actor gone, cannot join presence"))?;
         let stream = reply_rx.await??;
-        self.online_peers.join(*chat_id, stream);
+        self.online_peers.join(*chat_id, stream).await;
         Ok(())
     }
 
