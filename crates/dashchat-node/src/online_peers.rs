@@ -6,6 +6,7 @@ use futures::{Stream, StreamExt};
 use p2panda::streams::{EphemeralStreamPublisher, EphemeralStreamSubscription};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_stream::wrappers::WatchStream;
 use tokio_util::sync::{CancellationToken, DropGuard};
@@ -34,9 +35,37 @@ pub(crate) type PresenceStream = (
 /// device comes online or goes offline, not when a heartbeat refreshes a time.
 type LastSeen = watch::Sender<HashMap<DeviceId, Instant>>;
 
+/// Our presence on one topic: the task that says `Hello`, sends heartbeats and says `Bye`.
 struct TopicPresence {
-    last_seen: Arc<LastSeen>,
-    presence_task: Option<CancellationToken>,
+    stop: CancellationToken,
+    finished: JoinHandle<()>,
+}
+
+impl TopicPresence {
+    fn spawn(
+        tasks: &TaskTracker,
+        stop: CancellationToken,
+        me: DeviceId,
+        stream: PresenceStream,
+        projection: OpProjection,
+        last_seen: Arc<LastSeen>,
+    ) -> Self {
+        let finished = tasks.spawn(stay_present(
+            me,
+            stream,
+            projection,
+            last_seen,
+            stop.clone(),
+        ));
+        Self { stop, finished }
+    }
+
+    /// Returns once the task has said `Bye` and cleared the topic, so a presence spawned right
+    /// after can't have its peers wiped, or its `Hello` overtaken, by this one.
+    async fn leave(self) {
+        self.stop.cancel();
+        let _ = self.finished.await;
+    }
 }
 
 /// Presence on chat topics: every node says `Hello` when it joins a topic, sends a heartbeat every
@@ -46,6 +75,7 @@ struct TopicPresence {
 pub struct OnlinePeers {
     me: DeviceId,
     projection: OpProjection,
+    last_seen_by_topic: Arc<Mutex<HashMap<TopicId, Arc<LastSeen>>>>,
     presence_by_topic: Arc<Mutex<HashMap<TopicId, TopicPresence>>>,
     tasks: TaskTracker,
     stop: CancellationToken,
@@ -58,6 +88,7 @@ impl OnlinePeers {
         Self {
             me,
             projection,
+            last_seen_by_topic: Default::default(),
             presence_by_topic: Default::default(),
             tasks: TaskTracker::new(),
             _stop_on_drop: Arc::new(stop.clone().drop_guard()),
@@ -66,45 +97,37 @@ impl OnlinePeers {
     }
 
     pub(crate) fn has_joined(&self, topic: TopicId) -> bool {
-        self.presence_by_topic
-            .lock()
-            .unwrap()
-            .get(&topic)
-            .is_some_and(|presence| presence.presence_task.is_some())
+        self.presence_by_topic.lock().unwrap().contains_key(&topic)
     }
 
     pub(crate) fn join(&self, topic: TopicId, stream: PresenceStream) {
-        let mut presence_by_topic = self.presence_by_topic.lock().unwrap();
-        let presence = topic_presence(&mut presence_by_topic, topic);
-        if presence.presence_task.is_some() {
-            return;
-        }
-        let stop = self.stop.child_token();
-        presence.presence_task = Some(stop.clone());
-        self.tasks.spawn(stay_present(
-            self.me,
-            stream,
-            self.projection.clone(),
-            presence.last_seen.clone(),
-            stop,
-        ));
-    }
-
-    pub(crate) fn leave(&self, topic: TopicId) {
-        let stop = self
-            .presence_by_topic
+        let last_seen = self.last_seen(topic);
+        self.presence_by_topic
             .lock()
             .unwrap()
-            .get_mut(&topic)
-            .and_then(|presence| presence.presence_task.take());
-        if let Some(stop) = stop {
-            stop.cancel();
+            .entry(topic)
+            .or_insert_with(|| {
+                TopicPresence::spawn(
+                    &self.tasks,
+                    self.stop.child_token(),
+                    self.me,
+                    stream,
+                    self.projection.clone(),
+                    last_seen,
+                )
+            });
+    }
+
+    pub(crate) async fn leave(&self, topic: TopicId) {
+        let presence = self.presence_by_topic.lock().unwrap().remove(&topic);
+        if let Some(presence) = presence {
+            presence.leave().await;
         }
     }
 
     pub(crate) fn forget(&self, device: DeviceId) {
-        for presence in self.presence_by_topic.lock().unwrap().values() {
-            left(&presence.last_seen, device);
+        for last_seen in self.last_seen_by_topic.lock().unwrap().values() {
+            left(last_seen, device);
         }
     }
 
@@ -115,23 +138,18 @@ impl OnlinePeers {
     }
 
     pub fn devices(&self, topic: TopicId) -> impl Stream<Item = BTreeSet<DeviceId>> + Send + use<> {
-        let last_seen = topic_presence(&mut self.presence_by_topic.lock().unwrap(), topic)
-            .last_seen
-            .subscribe();
-        WatchStream::new(last_seen).map(|last_seen| last_seen.keys().copied().collect())
+        WatchStream::new(self.last_seen(topic).subscribe())
+            .map(|last_seen| last_seen.keys().copied().collect())
     }
-}
 
-fn topic_presence(
-    presence_by_topic: &mut HashMap<TopicId, TopicPresence>,
-    topic: TopicId,
-) -> &mut TopicPresence {
-    presence_by_topic
-        .entry(topic)
-        .or_insert_with(|| TopicPresence {
-            last_seen: Arc::new(watch::channel(HashMap::new()).0),
-            presence_task: None,
-        })
+    fn last_seen(&self, topic: TopicId) -> Arc<LastSeen> {
+        self.last_seen_by_topic
+            .lock()
+            .unwrap()
+            .entry(topic)
+            .or_insert_with(|| Arc::new(watch::channel(HashMap::new()).0))
+            .clone()
+    }
 }
 
 async fn stay_present(

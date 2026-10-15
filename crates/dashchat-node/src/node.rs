@@ -2157,7 +2157,8 @@ impl Node {
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
         {
             self.online_peers
-                .leave(*self.direct_chat_topic(FakeAgentId::from(device_id)));
+                .leave(*self.direct_chat_topic(FakeAgentId::from(device_id)))
+                .await;
             self.online_peers.forget(device_id);
         }
 

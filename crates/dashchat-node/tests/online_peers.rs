@@ -243,6 +243,64 @@ async fn contact_is_online_only_once_the_request_is_accepted() {
     .await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn unblocking_right_after_blocking_keeps_both_online() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing();
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config, "bobbi").await;
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let direct_chat = alice.direct_chat_with(&bobbi);
+    let (alice_device, bobbi_device) = (alice.device_id(), bobbi.device_id());
+    let mut alice_view = Box::pin(alice.online_peers.devices(direct_chat.into()));
+    let mut bobbi_view = Box::pin(bobbi.online_peers.devices(direct_chat.into()));
+    wait_until(&mut alice_view, "bobbi online", |devices| {
+        devices.contains(&bobbi_device)
+    })
+    .await;
+
+    alice.block_contact(bobbi.agent_id()).await.unwrap();
+    alice.unblock_contact(bobbi.agent_id()).await.unwrap();
+
+    let at_once = Duration::from_secs(2);
+    wait_within(&mut alice_view, "bobbi back", at_once, |devices| {
+        devices.contains(&bobbi_device)
+    })
+    .await;
+    wait_within(&mut bobbi_view, "alice back", at_once, |devices| {
+        devices.contains(&alice_device)
+    })
+    .await;
+    // Longer than a heartbeat interval, so a late Bye or clear from the replaced task would show.
+    tokio::join!(
+        stays_online(&mut alice_view, bobbi_device, Duration::from_secs(6)),
+        stays_online(&mut bobbi_view, alice_device, Duration::from_secs(6)),
+    );
+}
+
+async fn stays_online(
+    devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
+    device: DeviceId,
+    period: Duration,
+) {
+    let _ = tokio::time::timeout(period, async {
+        while let Some(current) = devices.next().await {
+            assert!(
+                current.contains(&device),
+                "a peer went offline after unblocking"
+            );
+        }
+    })
+    .await;
+}
+
 async fn stays_offline(
     devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
     period: Duration,
