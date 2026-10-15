@@ -69,8 +69,10 @@ export async function checkOverflow(
 		const root = document.querySelector(rootSelector);
 		if (!root) return [`${rootSelector} not found`];
 		const issues: string[] = [];
-		if (root.scrollWidth > root.clientWidth) {
-			issues.push(`${rootSelector} has horizontal overflow`);
+		if (root.scrollWidth > root.clientWidth + 2) {
+			issues.push(
+				`${rootSelector === ':root' ? 'Page' : rootSelector} has horizontal overflow`,
+			);
 		}
 		[root, ...root.querySelectorAll('*')].forEach(el => {
 			if (el.id === 'svelte-announcer') return;

@@ -4,7 +4,8 @@
  * Verifies that contacts with very long names don't cause horizontal overflow
  * in the chat list, the direct-chat navbar, the contact-request banner, the
  * in-chat peer-name welcome banner, the chat-settings page, the peer profile
- * sheet, the profile-settings list item, and the group-chat navbar.
+ * sheet, the profile-settings list item, the group-chat navbar, and the
+ * group info page.
  */
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
@@ -14,6 +15,11 @@ const LONG_NAME = 'Bartholomew';
 const LONG_SURNAME = 'Wolfeschlegelsteinhausenbergerdorff';
 const LONG_GROUP_NAME =
 	'Wolfeschlegelsteinhausenbergerdorff family reunion planning committee and all the extended cousins of the Bartholomew household';
+// The info page's navbar title stays transparent until the page scrolls, so
+// the description must be tall enough to make it scroll.
+const TALL_GROUP_DESCRIPTION = Array(300)
+	.fill('Bring a dish to share.')
+	.join(' ');
 
 describe('Long name truncation', () => {
 	let agent1: Agent;
@@ -104,6 +110,24 @@ describe('Long name truncation', () => {
 		await agent1.settingsPage.back.click();
 		await createGroup(agent1, LONG_GROUP_NAME, []);
 		expect(await agent1.groupChatPage.navbar.checkOverflow()).toEqual([]);
+		expect(await agent1.checkOverflow()).toEqual([]);
+	});
+
+	it('scrolls the long-named group info — navbar title truncates', async () => {
+		await agent1.groupChatPage.infoLink.click();
+		await agent1.groupInfoPage.ready();
+		await agent1.groupInfoPage.editLink.click();
+		await agent1.groupInfoEditPage.ready();
+		await agent1.groupInfoEditPage.setDescription(TALL_GROUP_DESCRIPTION);
+		await agent1.groupInfoEditPage.save();
+		await agent1.groupInfoPage.ready();
+		await agent1.groupInfoPage.scrollToBottom();
+		await agent1.groupInfoPage.headerName.waitForDisplayed();
+		// The navbar clips an untruncated title instead of overflowing, which
+		// shows up as the edit link being pushed off screen.
+		expect(
+			await agent1.groupInfoPage.editLink.isDisplayed({ withinViewport: true }),
+		).toBe(true);
 		expect(await agent1.checkOverflow()).toEqual([]);
 	});
 });
