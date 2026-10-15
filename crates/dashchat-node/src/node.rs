@@ -1806,7 +1806,7 @@ impl Node {
 
         // Subscribe to the shared direct-chat topic right away so messages sent
         // before the owner accepts already sync in both directions.
-        self.register_chat_topic(direct_chat_topic_id)
+        self.register_topic(direct_chat_topic_id)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 

@@ -702,7 +702,7 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
-                            self.register_chat_topic(
+                            self.register_topic(
                                 self.direct_chat_topic(crate::FakeAgentId::from(author)),
                             )
                             .await?;

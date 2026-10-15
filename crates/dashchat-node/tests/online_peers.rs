@@ -193,6 +193,69 @@ async fn blocked_contact_is_offline_until_unblocked() {
     .await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn contact_is_online_only_once_the_request_is_accepted() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing();
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config, "bobbi").await;
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    let direct_chat = alice.direct_chat_with(&bobbi);
+    let mut alice_view = Box::pin(alice.online_peers.devices(direct_chat.into()));
+    let mut bobbi_view = Box::pin(bobbi.online_peers.devices(direct_chat.into()));
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    PollConfig::seconds(15)
+        .wait_for(|| async {
+            for node in [&alice, &bobbi] {
+                if !node
+                    .local_store
+                    .subscribed_topics()
+                    .await?
+                    .contains(&*direct_chat)
+                {
+                    anyhow::bail!("the pending request's direct chat is not registered yet");
+                }
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+    tokio::join!(
+        stays_offline(&mut alice_view, Duration::from_secs(8)),
+        stays_offline(&mut bobbi_view, Duration::from_secs(8)),
+    );
+
+    alice.behavior().accept_next_contact().await.unwrap();
+    let (alice_device, bobbi_device) = (alice.device_id(), bobbi.device_id());
+    wait_until(&mut alice_view, "bobbi online", |devices| {
+        devices.contains(&bobbi_device)
+    })
+    .await;
+    wait_until(&mut bobbi_view, "alice online", |devices| {
+        devices.contains(&alice_device)
+    })
+    .await;
+}
+
+async fn stays_offline(
+    devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
+    period: Duration,
+) {
+    let _ = tokio::time::timeout(period, async {
+        while let Some(current) = devices.next().await {
+            assert!(
+                current.is_empty(),
+                "a peer showed as online before acceptance"
+            );
+        }
+    })
+    .await;
+}
+
 async fn wait_until(
     devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
     expected: &str,
