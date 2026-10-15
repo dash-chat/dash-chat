@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,6 +11,7 @@ use tokio_stream::wrappers::WatchStream;
 use tokio_util::sync::{CancellationToken, DropGuard};
 use tokio_util::task::TaskTracker;
 
+use crate::stores::OpProjection;
 use crate::{DeviceId, TopicId};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -36,18 +37,20 @@ type LastSeen = BTreeMap<TopicId, BTreeMap<DeviceId, Instant>>;
 #[derive(Clone)]
 pub struct OnlinePeers {
     me: DeviceId,
+    projection: OpProjection,
     last_seen: Arc<watch::Sender<LastSeen>>,
-    joined: Arc<Mutex<HashSet<TopicId>>>,
+    joined: Arc<Mutex<HashMap<TopicId, CancellationToken>>>,
     tasks: TaskTracker,
     stop: CancellationToken,
     _stop_on_drop: Arc<DropGuard>,
 }
 
 impl OnlinePeers {
-    pub(crate) fn new(me: DeviceId) -> Self {
+    pub(crate) fn new(me: DeviceId, projection: OpProjection) -> Self {
         let stop = CancellationToken::new();
         Self {
             me,
+            projection,
             last_seen: Arc::new(watch::channel(LastSeen::new()).0),
             joined: Default::default(),
             tasks: TaskTracker::new(),
@@ -57,19 +60,44 @@ impl OnlinePeers {
     }
 
     pub(crate) fn has_joined(&self, topic: TopicId) -> bool {
-        self.joined.lock().unwrap().contains(&topic)
+        self.joined.lock().unwrap().contains_key(&topic)
     }
 
     pub(crate) fn join(&self, topic: TopicId, stream: PresenceStream) {
-        if self.joined.lock().unwrap().insert(topic) {
-            self.tasks.spawn(stay_present(
-                self.me,
-                topic,
-                stream,
-                self.last_seen.clone(),
-                self.stop.clone(),
-            ));
+        let mut joined = self.joined.lock().unwrap();
+        if joined.contains_key(&topic) {
+            return;
         }
+        let stop = self.stop.child_token();
+        joined.insert(topic, stop.clone());
+        self.tasks.spawn(stay_present(
+            self.me,
+            topic,
+            stream,
+            self.projection.clone(),
+            self.last_seen.clone(),
+            stop,
+        ));
+    }
+
+    pub(crate) fn leave(&self, topic: TopicId) {
+        if let Some(stop) = self.joined.lock().unwrap().remove(&topic) {
+            stop.cancel();
+            self.last_seen
+                .send_if_modified(|last_seen| last_seen.remove(&topic).is_some());
+        }
+    }
+
+    pub(crate) fn forget(&self, device: DeviceId) {
+        self.last_seen.send_if_modified(|last_seen| {
+            let mut forgot = false;
+            for devices in last_seen.values_mut() {
+                if devices.remove(&device).is_some() {
+                    forgot = true;
+                }
+            }
+            forgot
+        });
     }
 
     pub(crate) async fn leave_all(&self) {
@@ -92,6 +120,7 @@ async fn stay_present(
     me: DeviceId,
     topic: TopicId,
     (publisher, mut subscription): PresenceStream,
+    projection: OpProjection,
     last_seen: Arc<watch::Sender<LastSeen>>,
     stop: CancellationToken,
 ) {
@@ -110,7 +139,7 @@ async fn stay_present(
             }
             Some(message) = subscription.next() => {
                 let device = DeviceId::from(message.author());
-                if device == me {
+                if device == me || matches!(projection.is_author_blocked(&device).await, Ok(true)) {
                     continue;
                 }
                 match message.body() {

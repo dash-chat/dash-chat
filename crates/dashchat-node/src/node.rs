@@ -463,7 +463,7 @@ impl Node {
         // === node === //
 
         let (processor_cancel_tx, processor_cancel_rx) = mpsc::channel(1);
-        let online_peers = OnlinePeers::new(node_keys.device_id());
+        let online_peers = OnlinePeers::new(node_keys.device_id(), projection.clone());
         let node = Self {
             online_peers,
             op_store,
@@ -2150,6 +2150,17 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        for device_id in self
+            .projection
+            .lookup_devices_by_agent_id(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        {
+            self.online_peers
+                .leave(*self.direct_chat_topic(FakeAgentId::from(device_id)));
+            self.online_peers.forget(device_id);
+        }
+
         Ok(())
     }
 
@@ -2166,6 +2177,24 @@ impl Node {
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        let is_contact = self
+            .accepted_contact_agent_ids()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .contains(&agent_id);
+        if is_contact {
+            for device_id in self
+                .projection
+                .lookup_devices_by_agent_id(agent_id)
+                .await
+                .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            {
+                self.join_presence(self.direct_chat_topic(FakeAgentId::from(device_id)))
+                    .await
+                    .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+            }
+        }
 
         Ok(())
     }
@@ -2259,17 +2288,15 @@ impl Node {
         Ok(())
     }
 
-    async fn subscribed_chat_topics(
-        &self,
-        subscribed_topics: &BTreeSet<TopicId>,
-    ) -> anyhow::Result<Vec<ChatId>> {
+    async fn chat_topics(&self) -> anyhow::Result<Vec<ChatId>> {
         let mut chat_ids = self.projection.get_group_chat_ids().await?;
-        for agent_id in self.projection.all_contact_agent_ids().await? {
+        for agent_id in self.accepted_contact_agent_ids().await? {
             for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
-                chat_ids.push(self.direct_chat_topic(FakeAgentId::from(device_id)));
+                if !self.projection.is_author_blocked(&device_id).await? {
+                    chat_ids.push(self.direct_chat_topic(FakeAgentId::from(device_id)));
+                }
             }
         }
-        chat_ids.retain(|chat_id| subscribed_topics.contains(&**chat_id));
         Ok(chat_ids)
     }
 
@@ -2372,7 +2399,7 @@ impl Node {
             }
         }
 
-        match self.subscribed_chat_topics(&subscribed_topics).await {
+        match self.chat_topics().await {
             Ok(chat_ids) => {
                 for chat_id in chat_ids {
                     if let Err(err) = self.join_presence(chat_id).await {
@@ -2382,7 +2409,7 @@ impl Node {
                 }
             }
             Err(err) => {
-                error!(?err, "failed to look up the subscribed chat topics");
+                error!(?err, "failed to look up the chat topics");
                 failures += 1;
             }
         }

@@ -102,6 +102,97 @@ async fn every_member_of_a_large_group_is_online() {
     .await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn blocked_contact_is_offline_until_unblocked() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing();
+    let mailbox = TestMailbox::from_env();
+    let mut nodes = Vec::new();
+    for name in ["alice", "bobbi", "cammy"] {
+        nodes.push(
+            TestNode::new(config.clone(), name)
+                .await
+                .add_mailbox(&mailbox)
+                .await,
+        );
+    }
+    let [alice, bobbi, cammy] = <[TestNode; 3]>::try_from(nodes).ok().unwrap();
+    introduce_peers([&alice, &bobbi, &cammy]).await.unwrap();
+    for contact in [&bobbi, &cammy] {
+        alice
+            .behavior()
+            .initiate_and_establish_contact(contact)
+            .await
+            .unwrap();
+    }
+    let group_id = alice
+        .create_group(
+            [&bobbi, &cammy]
+                .iter()
+                .map(|member| (*member.device_id(), p2panda_auth::Access::write()))
+                .collect(),
+        )
+        .await
+        .unwrap();
+    for member in [&bobbi, &cammy] {
+        member
+            .behavior()
+            .accept_next_group_invitation()
+            .await
+            .unwrap();
+    }
+
+    let direct_chat = alice.direct_chat_with(&bobbi);
+    let (alice_device, bobbi_device, cammy_device) =
+        (alice.device_id(), bobbi.device_id(), cammy.device_id());
+    let mut alice_direct = Box::pin(alice.online_peers.devices(direct_chat.into()));
+    let mut alice_group = Box::pin(alice.online_peers.devices(group_id.into()));
+    let mut bobbi_direct = Box::pin(bobbi.online_peers.devices(direct_chat.into()));
+    let both = BTreeSet::from([bobbi_device, cammy_device]);
+
+    wait_until(&mut alice_direct, "bobbi online", |devices| {
+        devices.contains(&bobbi_device)
+    })
+    .await;
+    wait_until(&mut alice_group, "bobbi and cammy online", |devices| {
+        *devices == both
+    })
+    .await;
+    wait_until(&mut bobbi_direct, "alice online", |devices| {
+        devices.contains(&alice_device)
+    })
+    .await;
+
+    alice.block_contact(bobbi.agent_id()).await.unwrap();
+    wait_until(&mut alice_direct, "bobbi gone", |devices| {
+        devices.is_empty()
+    })
+    .await;
+    wait_until(&mut alice_group, "only cammy online", |devices| {
+        *devices == BTreeSet::from([cammy_device])
+    })
+    .await;
+    wait_until(&mut bobbi_direct, "alice gone", |devices| {
+        !devices.contains(&alice_device)
+    })
+    .await;
+
+    alice.unblock_contact(bobbi.agent_id()).await.unwrap();
+    wait_until(&mut alice_direct, "bobbi back", |devices| {
+        devices.contains(&bobbi_device)
+    })
+    .await;
+    wait_until(&mut alice_group, "bobbi and cammy back", |devices| {
+        *devices == both
+    })
+    .await;
+    wait_until(&mut bobbi_direct, "alice back", |devices| {
+        devices.contains(&alice_device)
+    })
+    .await;
+}
+
 async fn wait_until(
     devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
     expected: &str,
