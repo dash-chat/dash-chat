@@ -164,16 +164,18 @@ async fn blocked_contact_is_offline_until_unblocked() {
     })
     .await;
 
+    // At once, through Bye and forgetting the blocked device, rather than by missing heartbeats.
+    let at_once = Duration::from_secs(2);
     alice.block_contact(bobbi.agent_id()).await.unwrap();
-    wait_until(&mut alice_direct, "bobbi gone", |devices| {
+    wait_within(&mut alice_direct, "bobbi gone", at_once, |devices| {
         devices.is_empty()
     })
     .await;
-    wait_until(&mut alice_group, "only cammy online", |devices| {
+    wait_within(&mut alice_group, "only cammy online", at_once, |devices| {
         *devices == BTreeSet::from([cammy_device])
     })
     .await;
-    wait_until(&mut bobbi_direct, "alice gone", |devices| {
+    wait_within(&mut bobbi_direct, "alice gone", at_once, |devices| {
         !devices.contains(&alice_device)
     })
     .await;
@@ -261,8 +263,17 @@ async fn wait_until(
     expected: &str,
     condition: impl Fn(&BTreeSet<DeviceId>) -> bool,
 ) {
+    wait_within(devices, expected, Duration::from_secs(30), condition).await;
+}
+
+async fn wait_within(
+    devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
+    expected: &str,
+    within: Duration,
+    condition: impl Fn(&BTreeSet<DeviceId>) -> bool,
+) {
     let mut last_seen = 0;
-    let reached = tokio::time::timeout(Duration::from_secs(30), async {
+    let reached = tokio::time::timeout(within, async {
         while let Some(current) = devices.next().await {
             last_seen = current.len();
             if condition(&current) {
