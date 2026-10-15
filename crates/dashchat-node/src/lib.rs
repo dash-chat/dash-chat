@@ -12,9 +12,9 @@ pub mod topic;
 mod unfetched_blobs;
 pub mod util;
 
-mod connected_peers;
 mod id;
 pub mod mailbox;
+mod online_peers;
 
 pub mod compat;
 #[cfg(feature = "testing")]
@@ -28,7 +28,6 @@ pub use dashchat_utils::SeqNum;
 const _: fn(p2panda_core::SeqNum) -> SeqNum = std::convert::identity;
 
 pub use chat::*;
-pub use connected_peers::ConnectedPeers;
 pub use contact::AddContactQrCode;
 pub use error::{
     AddContactError, AddContactResult, DeleteMessageError, EditMessageError, Error,
@@ -36,6 +35,7 @@ pub use error::{
 };
 pub use id::*;
 pub use node::{Node, NodeConfig, Notification, OpNotification, SystemNotification};
+pub use online_peers::OnlinePeers;
 pub use p2panda::SigningKey;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;

@@ -46,7 +46,7 @@ hex = { version = "0.4.3", features = ["serde"] }
 rand = "0.9.2"
 unicode-segmentation = "1"
 tokio-stream = { version = "0.1.17", features = ["sync"] }
-tokio-util = "0.7"
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 bytes = { workspace = true }

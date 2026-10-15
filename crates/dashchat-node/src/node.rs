@@ -35,6 +35,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
+use crate::OnlinePeers;
 use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
     collect_deletable_edit_chain, resolve_message_root,
@@ -45,10 +46,9 @@ use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, P
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
-    AgentId, AsBody, ChatId, ChatReaction, ConnectedPeers, DeleteCandidate, DeleteMessageError,
-    DeviceGroupId, DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId,
-    MediaBundle, MediaMetadata, OutgoingFile, OutgoingMedia, PendingContactRequest,
-    SendMessageError,
+    AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
+    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
+    MediaMetadata, OutgoingFile, OutgoingMedia, PendingContactRequest, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
 use tracing::error;
@@ -230,7 +230,7 @@ pub struct Node {
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
-    pub connected_peers: ConnectedPeers,
+    pub online_peers: OnlinePeers,
 
     pub config: NodeConfig,
 
@@ -463,7 +463,9 @@ impl Node {
         // === node === //
 
         let (processor_cancel_tx, processor_cancel_rx) = mpsc::channel(1);
+        let online_peers = OnlinePeers::new(node_keys.device_id());
         let node = Self {
+            online_peers,
             op_store,
             mailboxes,
             config,
@@ -490,7 +492,6 @@ impl Node {
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
             dirty_ack_topics: Default::default(),
-            connected_peers: Default::default(),
         };
 
         // === application processor task === //
@@ -795,7 +796,7 @@ impl Node {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
-        self.register_topic(topic).await?;
+        self.register_chat_topic(topic).await?;
 
         let other_device_id = DeviceId::from(other);
 
@@ -865,7 +866,7 @@ impl Node {
             .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
-        self.register_topic(chat_id).await?;
+        self.register_chat_topic(chat_id).await?;
 
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*chat_id).await?;
@@ -1067,7 +1068,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().aliased())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.register_topic(chat_id).await?;
+        self.register_chat_topic(chat_id).await?;
         Ok(())
     }
 
@@ -1623,6 +1624,25 @@ impl Node {
     }
 
     /// Abort the stream processing background task, allowing database handles to be released.
+    #[cfg(feature = "testing")]
+    pub async fn block_sync_on_topic(
+        &self,
+        device: DeviceId,
+        topic: TopicId,
+    ) -> anyhow::Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.actor_tx
+            .send(Command::BlockSyncOnTopic {
+                node_id: *device,
+                topic,
+                reply_tx,
+            })
+            .await
+            .map_err(|_| anyhow::anyhow!("node actor gone"))?;
+        reply_rx.await?;
+        Ok(())
+    }
+
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
         // Stop any deferred stored-topic initialization before we tear down
         // the actor or clear mailboxes, so it cannot race SQLite pool closure
@@ -1631,6 +1651,9 @@ impl Node {
             handle.abort();
             let _ = handle.await;
         }
+
+        // While the network is still up, so peers see us leave instead of timing us out.
+        self.online_peers.say_bye_and_stop().await;
 
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
@@ -1743,7 +1766,7 @@ impl Node {
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         let fake_agent_id = FakeAgentId::from(device_id);
-        self.register_topic(self.direct_chat_topic(fake_agent_id))
+        self.register_chat_topic(self.direct_chat_topic(fake_agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.local_store
@@ -1802,7 +1825,7 @@ impl Node {
 
         // Subscribe to the shared direct-chat topic right away so messages sent
         // before the owner accepts already sync in both directions.
-        self.register_topic(direct_chat_topic_id)
+        self.register_chat_topic(direct_chat_topic_id)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -2255,6 +2278,22 @@ impl Node {
         Ok(())
     }
 
+    /// Subscribed topics are stored untyped, so the chats among them are the group chats the
+    /// projection knows and the direct chats with known devices.
+    async fn subscribed_chat_topics(
+        &self,
+        subscribed_topics: &BTreeSet<TopicId>,
+    ) -> anyhow::Result<Vec<ChatId>> {
+        let mut chat_ids = self.projection.get_group_chat_ids().await?;
+        for agent_id in self.projection.all_contact_agent_ids().await? {
+            for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+                chat_ids.push(self.direct_chat_topic(FakeAgentId::from(device_id)));
+            }
+        }
+        chat_ids.retain(|chat_id| subscribed_topics.contains(&**chat_id));
+        Ok(chat_ids)
+    }
+
     /// Initialize all stored topics.
     ///
     /// Failures loading the topic lists from `local_store` and the announcements
@@ -2350,6 +2389,18 @@ impl Node {
         for topic in subscribed_topics.iter() {
             if let Err(err) = self.initialize_topic(*topic).await {
                 error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed topic");
+                failures += 1;
+            }
+        }
+
+        match self.subscribed_chat_topics(&subscribed_topics).await {
+            Ok(chat_ids) => {
+                for chat_id in chat_ids {
+                    self.join_presence(chat_id).await;
+                }
+            }
+            Err(err) => {
+                error!(?err, "failed to look up the subscribed chat topics");
                 failures += 1;
             }
         }

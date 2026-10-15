@@ -9,8 +9,9 @@ use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
-    ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
-    StreamPublisher, StreamSubscription,
+    EphemeralStreamPublisher, EphemeralStreamSubscription, ImportError, ProcessedOperation,
+    PublishError, PublishFuture, Source, StreamEvent, StreamFrom, StreamPublisher,
+    StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_auth::group::GroupCrdtError;
@@ -24,8 +25,14 @@ use tokio_stream::{StreamExt, StreamMap};
 use tracing::{error, warn};
 
 use crate::Payload;
+use crate::online_peers::PresenceMessage;
 
 type GroupsProcessor = p2panda_stream::groups::Groups<GroupsProcessorArgs<()>, Extensions, LogId>;
+
+pub(crate) type PresenceStream = (
+    EphemeralStreamPublisher<PresenceMessage>,
+    EphemeralStreamSubscription<PresenceMessage>,
+);
 
 /// Node actor commands.
 pub(crate) enum Command {
@@ -57,6 +64,16 @@ pub(crate) enum Command {
         addr: iroh::EndpointAddr,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
+    PresenceStream {
+        topic: Topic,
+        reply_tx: oneshot::Sender<Result<PresenceStream, NodeActorError>>,
+    },
+    #[cfg(feature = "testing")]
+    BlockSyncOnTopic {
+        node_id: NodeId,
+        topic: Topic,
+        reply_tx: oneshot::Sender<()>,
+    },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
     },
@@ -81,10 +98,7 @@ pub(crate) enum Command {
 // one place. In any case, it would be required to have both the processed_tx and additional error
 // handling in place, so this is not wasted work in the long-run.
 pub enum ProcessorEvent {
-    System {
-        topic: Topic,
-        event: StreamEvent<Payload>,
-    },
+    System(StreamEvent<Payload>),
     Groups {
         operation: ProcessedOperation<Payload>,
         source: Source,
@@ -208,6 +222,15 @@ impl Actor {
                                 let result = self.handle_register_peer_addr(addr).await;
                                 let _ = reply_tx.send(result);
                             },
+                            Command::PresenceStream { topic, reply_tx } => {
+                                let result = self.inner.ephemeral_stream(topic).await.map_err(NodeActorError::from);
+                                let _ = reply_tx.send(result);
+                            },
+                            #[cfg(feature = "testing")]
+                            Command::BlockSyncOnTopic { node_id, topic, reply_tx } => {
+                                self.inner.topic_block(node_id, topic).await;
+                                let _ = reply_tx.send(());
+                            },
                             Command::Shutdown { reply_tx } => {
                                 // Drop self and then break out of the processing loop which will
                                 // cause the actor task to complete.
@@ -217,8 +240,8 @@ impl Actor {
                             }
                         };
                     }
-                    Some((topic, event)) = self.streams.next() => {
-                        if let Err(err) = self.process_event(topic, event).await {
+                    Some((_, event)) = self.streams.next() => {
+                        if let Err(err) = self.process_event(event).await {
                             warn!(?err, "actor event processing failed");
                         }
                     }
@@ -377,11 +400,7 @@ impl Actor {
         Ok(())
     }
 
-    async fn process_event(
-        &mut self,
-        topic: Topic,
-        event: StreamEvent<Payload>,
-    ) -> Result<(), NodeActorError> {
+    async fn process_event(&mut self, event: StreamEvent<Payload>) -> Result<(), NodeActorError> {
         let processor_event = match &event {
             StreamEvent::Processed { operation, source } => {
                 let id = operation.id();
@@ -410,7 +429,7 @@ impl Actor {
                     }
                 }
             }
-            _ => ProcessorEvent::System { topic, event },
+            _ => ProcessorEvent::System(event),
         };
 
         // Forward the event for further application layer processing.

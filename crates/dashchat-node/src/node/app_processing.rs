@@ -95,6 +95,34 @@ impl Node {
         Ok(())
     }
 
+    pub(crate) async fn register_chat_topic(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        self.register_topic(chat_id).await?;
+        self.join_presence(chat_id).await;
+        Ok(())
+    }
+
+    pub(crate) async fn join_presence(&self, chat_id: ChatId) {
+        if !self.config.enable_p2p || self.online_peers.has_joined(*chat_id).await {
+            return;
+        }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let command = Command::PresenceStream {
+            topic: (*chat_id).into(),
+            reply_tx,
+        };
+        if self.actor_tx.send(command).await.is_err() {
+            warn!(chat_id = ?chat_id.aliased(), "node actor gone, cannot join presence");
+            return;
+        }
+        match reply_rx.await {
+            Ok(Ok(stream)) => self.online_peers.join(*chat_id, stream).await,
+            Ok(Err(err)) => warn!(chat_id = ?chat_id.aliased(), ?err, "failed to join presence"),
+            Err(_) => {
+                warn!(chat_id = ?chat_id.aliased(), "node actor dropped the presence request")
+            }
+        }
+    }
+
     /// Internal function to start the necessary tasks for processing network activity
     /// for a given topic.
     ///
@@ -196,20 +224,12 @@ impl Node {
                     }
                     Some(processor_event) = events_rx.recv() => {
                         match processor_event {
-                            ProcessorEvent::System { topic, event } => {
+                            ProcessorEvent::System(event) => {
                                 match event {
-                                    StreamEvent::SyncStarted { remote_node_id, session_id, .. } => {
-                                        node.connected_peers.session_opened(topic, session_id, DeviceId::from(remote_node_id));
-                                    }
-                                    // An error-free `SyncEnded` only ends catching up: the session stays open in live mode.
-                                    StreamEvent::SyncEnded { session_id, error: Some(_), .. }
-                                    | StreamEvent::SessionEnded { session_id, .. } => {
-                                        node.connected_peers.session_closed(topic, session_id);
-                                    }
-                                    StreamEvent::ProcessingFailed { error, .. } => warn!(topic = ?topic.aliased(), "error processing operation: {error:?}"),
-                                    StreamEvent::DecodeFailed { error, .. } => warn!(topic = ?topic.aliased(), "error decoding operation: {error:?}"),
-                                    StreamEvent::ReplayFailed { error, .. } => warn!(topic = ?topic.aliased(), "error replaying stream: {error:?}"),
-                                    StreamEvent::AckFailed { error, .. } => warn!(topic = ?topic.aliased(), "error acking operation: {error:?}"),
+                                    StreamEvent::ProcessingFailed { error, .. } => warn!("error processing operation: {error:?}"),
+                                    StreamEvent::DecodeFailed { error, .. } => warn!("error decoding operation: {error:?}"),
+                                    StreamEvent::ReplayFailed { error, .. } => warn!("error replaying stream: {error:?}"),
+                                    StreamEvent::AckFailed { error, .. } => warn!("error acking operation: {error:?}"),
                                     // @TODO: the operation variant should never be included here in the
                                     // system event as it will either be a groups or application event.
                                     StreamEvent::Processed {..} => unreachable!(),
@@ -687,7 +707,7 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
-                            self.register_topic(
+                            self.register_chat_topic(
                                 self.direct_chat_topic(crate::FakeAgentId::from(author)),
                             )
                             .await?;
