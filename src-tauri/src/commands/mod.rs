@@ -9,5 +9,6 @@ pub mod chats;
 pub mod direct_chats;
 pub mod mailbox_state;
 pub mod media;
+pub mod online_peers;
 pub mod settings;
 pub mod voice;

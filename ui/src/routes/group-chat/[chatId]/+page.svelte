@@ -162,7 +162,7 @@
 				{/snippet}
 
 				<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-					<ConnectionStatusIndicator />
+					<ConnectionStatusIndicator {chatId} />
 				</div>
 			</Navbar>
 		{/snippet}

@@ -2,7 +2,8 @@ import { backToHome } from '../../helpers/flows/back-to-home';
 import { createProfiles } from '../../helpers/flows/create-profiles';
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
-import { SYNC_TIMEOUT } from '../../helpers/timeouts';
+import { SYNC_TIMEOUT, UI_TIMEOUT } from '../../helpers/timeouts';
+import { isRemoteMailbox, suspendMailbox } from '../../setup/mailbox-control';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 describe('Adding a member the other members are not contacts with', () => {
@@ -44,5 +45,26 @@ describe('Adding a member the other members are not contacts with', () => {
 		await member.groupInfoPage
 			.memberItem('Cat')
 			.waitForExist({ timeout: SYNC_TIMEOUT });
+	});
+
+	it('reads p2p in the group chip when only the newcomer is online', async function () {
+		if (isRemoteMailbox()) this.skip();
+		await newcomer.homePage
+			.chatListItem('mygroup')
+			.waitForExist({ timeout: SYNC_TIMEOUT });
+		suspendMailbox();
+		await admin.stopApp();
+		// With the admin offline, the newcomer is the only other member online.
+		await member.stopApp();
+		await member.startApp();
+		await member.homePage.ready();
+		await member.homePage.chatListItem('mygroup').click();
+		await member.groupChatPage.ready();
+
+		await member.groupChatPage.connectionStatusIndicator.waitForStatus(
+			'p2p',
+			UI_TIMEOUT,
+			'the group chip did not read p2p with only a non-contact member online',
+		);
 	});
 });
