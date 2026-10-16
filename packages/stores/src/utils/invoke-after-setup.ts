@@ -10,13 +10,12 @@ import {
 // built before it is managed). The error is transient — retry until ready.
 const BACKEND_NOT_READY = 'state not managed';
 
-// The iOS app quiesces its node when backgrounded (releasing SQLite locks to
-// avoid a 0xdead10cc kill) and rebuilds it on foreground. While paused/rebuilding,
-// node-backed commands return this sentinel (see `AppNodeManager::get`); retry until the
-// node is back.
+// The node is torn down and rebuilt when p2p is switched on or off. While it's
+// being rebuilt, node-backed commands return this sentinel (see
+// `AppNodeManager::get`); retry until the node is back.
 const NODE_NOT_READY = 'NodeNotReady';
 
-// The same pause/rebuild window as NODE_NOT_READY, entered one step later: a
+// The same rebuild window as NODE_NOT_READY, entered one step later: a
 // command that got the node just before the teardown then runs its query
 // against that node's already-closed SQLite pool. Left to reject, it poisons
 // the reactive value it feeds — the chat list stops rendering for the rest of
@@ -27,8 +26,8 @@ const NODE_NOT_READY = 'NodeNotReady';
 // error, so an sqlx bump is what would change it.
 const POOL_CLOSED = 'closed pool';
 
-// ~15s: covers both the startup race and node rebuild on foreground (iroh/relay
-// bring-up). While backgrounded the webview is suspended, so no attempts burn.
+// ~15s: covers both the startup race and a node rebuild (iroh/relay bring-up).
+// While backgrounded the webview is suspended, so no attempts burn.
 const MAX_ATTEMPTS = 150;
 const RETRY_DELAY_MS = 100;
 

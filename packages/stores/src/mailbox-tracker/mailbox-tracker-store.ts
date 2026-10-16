@@ -63,9 +63,8 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 	// after a successful `/health` fetch, mDNS-discovered local ones after a port
 	// probe, and local ones are unregistered once their announcement goes away. So
 	// presence in `activeMailboxIds` plus a low error count is enough. Requiring a
-	// recorded success on top would report a freshly rebuilt node as disconnected
-	// until its first poll — iOS tears the node down on background and rebuilds it
-	// on foreground, so that is every single foreground.
+	// recorded success on top would report a freshly built node as disconnected
+	// until its first poll.
 	//
 	// `cloudLastFailureAtMs` lets a consumer tell a failure it just watched happen
 	// from one inherited from a period it wasn't rendering. That distinction is
