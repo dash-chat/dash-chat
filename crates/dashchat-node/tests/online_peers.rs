@@ -6,8 +6,10 @@ use futures::StreamExt;
 
 const TRACING_FILTER: [&str; 2] = ["online_peers=info", "dashchat=info"];
 
-/// Well past a node and its 5 gossip neighbours, so Alice can't sync directly with everyone.
-const GROUP_SIZE: usize = 10;
+/// One more than a node and its 5 gossip neighbours, so Alice can't sync directly with everyone.
+/// No larger: on CI, setting up ten nodes, their contacts and the group already takes about 45s
+/// of nextest's 60s limit, too little for the presence wait.
+const GROUP_SIZE: usize = 7;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn contact_is_online_until_it_shuts_down_and_again_once_it_is_back() {
