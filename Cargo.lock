@@ -2123,6 +2123,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sonix-i18n",
+ "sqlite-gate",
  "sqlx 0.9.0",
  "sysinfo",
  "tauri",
@@ -2218,6 +2219,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "serde_repr",
+ "sqlite-gate",
  "sqlx 0.9.0",
  "tempfile",
  "thiserror 2.0.20",
@@ -4435,7 +4437,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -5802,6 +5804,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sqlite-gate",
  "sqlx 0.9.0",
  "tempfile",
  "tokio",
@@ -10184,16 +10187,6 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "socket2"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
@@ -10310,6 +10303,14 @@ checksum = "1d9efca8738c78ee9484207732f728b1ef517bbb1833d6fc0879ca898a522f6f"
 dependencies = [
  "base64ct",
  "der 0.8.2",
+]
+
+[[package]]
+name = "sqlite-gate"
+version = "0.1.0"
+dependencies = [
+ "sqlx 0.9.0",
+ "tokio",
 ]
 
 [[package]]
@@ -11469,12 +11470,13 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-lifecycle"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-lifecycle?rev=27e2776#27e27760bd85288c4b13d2b92ffa3e2a630cb383"
+source = "git+https://github.com/dash-chat/tauri-plugin-lifecycle?rev=daf9678#daf9678ad40856b0e73043cc21704fca190f7c28"
 dependencies = [
  "jni 0.21.1",
  "serde",
  "tauri",
  "tauri-plugin",
+ "tokio",
 ]
 
 [[package]]
