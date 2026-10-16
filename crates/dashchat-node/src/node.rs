@@ -35,6 +35,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use mailbox_client::manager::{Mailboxes, MailboxesConfig};
 use tokio::task::JoinHandle;
 
+use crate::OnlinePeers;
 use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
     collect_deletable_edit_chain, resolve_message_root,
@@ -228,6 +229,8 @@ pub struct Node {
     pub op_store: OpStore,
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
+
+    pub online_peers: OnlinePeers,
 
     pub config: NodeConfig,
 
@@ -460,7 +463,9 @@ impl Node {
         // === node === //
 
         let (processor_cancel_tx, processor_cancel_rx) = mpsc::channel(1);
+        let online_peers = OnlinePeers::new(node_keys.device_id(), projection.clone());
         let node = Self {
+            online_peers,
             op_store,
             mailboxes,
             config,
@@ -791,7 +796,7 @@ impl Node {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
-        self.register_topic(topic).await?;
+        self.register_chat_topic(topic).await?;
 
         let other_device_id = DeviceId::from(other);
 
@@ -861,7 +866,7 @@ impl Node {
             .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
-        self.register_topic(chat_id).await?;
+        self.register_chat_topic(chat_id).await?;
 
         // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*chat_id).await?;
@@ -1063,7 +1068,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().aliased())))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.register_topic(chat_id).await?;
+        self.register_chat_topic(chat_id).await?;
         Ok(())
     }
 
@@ -1628,6 +1633,9 @@ impl Node {
             let _ = handle.await;
         }
 
+        // While the network is still up, so peers see us leave instead of timing us out.
+        self.online_peers.leave_all().await;
+
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 
@@ -1739,7 +1747,7 @@ impl Node {
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         let fake_agent_id = FakeAgentId::from(device_id);
-        self.register_topic(self.direct_chat_topic(fake_agent_id))
+        self.register_chat_topic(self.direct_chat_topic(fake_agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.local_store
@@ -2142,6 +2150,18 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        for device_id in self
+            .projection
+            .lookup_devices_by_agent_id(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        {
+            self.online_peers
+                .leave(*self.direct_chat_topic(FakeAgentId::from(device_id)))
+                .await;
+            self.online_peers.forget(device_id);
+        }
+
         Ok(())
     }
 
@@ -2158,6 +2178,24 @@ impl Node {
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        let is_contact = self
+            .accepted_contact_agent_ids()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .contains(&agent_id);
+        if is_contact {
+            for device_id in self
+                .projection
+                .lookup_devices_by_agent_id(agent_id)
+                .await
+                .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            {
+                self.join_presence(self.direct_chat_topic(FakeAgentId::from(device_id)))
+                    .await
+                    .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+            }
+        }
 
         Ok(())
     }
@@ -2249,6 +2287,18 @@ impl Node {
             anyhow::bail!("{failures} topic(s) failed to import");
         }
         Ok(())
+    }
+
+    async fn chat_topics(&self) -> anyhow::Result<Vec<ChatId>> {
+        let mut chat_ids = self.projection.get_group_chat_ids().await?;
+        for agent_id in self.accepted_contact_agent_ids().await? {
+            for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+                if !self.projection.is_author_blocked(&device_id).await? {
+                    chat_ids.push(self.direct_chat_topic(FakeAgentId::from(device_id)));
+                }
+            }
+        }
+        Ok(chat_ids)
     }
 
     /// Initialize all stored topics.
@@ -2346,6 +2396,21 @@ impl Node {
         for topic in subscribed_topics.iter() {
             if let Err(err) = self.initialize_topic(*topic).await {
                 error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed topic");
+                failures += 1;
+            }
+        }
+
+        match self.chat_topics().await {
+            Ok(chat_ids) => {
+                for chat_id in chat_ids {
+                    if let Err(err) = self.join_presence(chat_id).await {
+                        error!(chat_id = ?chat_id.aliased(), ?err, "failed to join presence");
+                        failures += 1;
+                    }
+                }
+            }
+            Err(err) => {
+                error!(?err, "failed to look up the chat topics");
                 failures += 1;
             }
         }

@@ -25,7 +25,7 @@ impl Behavior {
     pub async fn initiate_and_establish_contact(&mut self, other: &TestNode) -> anyhow::Result<()> {
         let qr = self.create_add_contact_qr_code().await?;
         other.add_contact(qr).await?;
-        self.accept_next_contact().await?;
+        self.accept_contact_request(Some(other.agent_id())).await?;
 
         // The scanner records the contact asynchronously when it receives our
         // ack (it learns our agent_id only then), so wait for it to land before
@@ -47,6 +47,12 @@ impl Behavior {
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
     pub async fn accept_next_contact(&self) -> anyhow::Result<AgentId> {
+        self.accept_contact_request(None).await
+    }
+
+    /// `from` accepts only a request from the given agent.
+    /// If None, accept any contact request.
+    async fn accept_contact_request(&self, from: Option<AgentId>) -> anyhow::Result<AgentId> {
         let mut watcher = self.watcher.lock().await;
         let agent_id = watcher
             .watch_mapped(Duration::from_secs(30), |n: &Notification| {
@@ -60,6 +66,9 @@ impl Behavior {
                 else {
                     return None;
                 };
+                if from.is_some_and(|from| from != *agent_id) {
+                    return None;
+                }
                 Some(*agent_id)
             })
             .await

@@ -24,6 +24,7 @@ use tokio_stream::{StreamExt, StreamMap};
 use tracing::{error, warn};
 
 use crate::Payload;
+use crate::online_peers::PresenceStream;
 
 type GroupsProcessor = p2panda_stream::groups::Groups<GroupsProcessorArgs<()>, Extensions, LogId>;
 
@@ -56,6 +57,10 @@ pub(crate) enum Command {
     RegisterPeerAddr {
         addr: iroh::EndpointAddr,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
+    },
+    PresenceStream {
+        topic: Topic,
+        reply_tx: oneshot::Sender<Result<PresenceStream, NodeActorError>>,
     },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
@@ -203,6 +208,10 @@ impl Actor {
                             },
                             Command::RegisterPeerAddr { addr, reply_tx } => {
                                 let result = self.handle_register_peer_addr(addr).await;
+                                let _ = reply_tx.send(result);
+                            },
+                            Command::PresenceStream { topic, reply_tx } => {
+                                let result = self.inner.ephemeral_stream(topic).await.map_err(NodeActorError::from);
                                 let _ = reply_tx.send(result);
                             },
                             Command::Shutdown { reply_tx } => {

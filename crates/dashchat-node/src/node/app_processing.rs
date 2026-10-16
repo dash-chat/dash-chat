@@ -95,6 +95,29 @@ impl Node {
         Ok(())
     }
 
+    pub(crate) async fn register_chat_topic(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        self.register_topic(chat_id).await?;
+        self.join_presence(chat_id).await
+    }
+
+    pub(crate) async fn join_presence(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        if !self.config.enable_p2p {
+            return Ok(());
+        }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let command = Command::PresenceStream {
+            topic: (*chat_id).into(),
+            reply_tx,
+        };
+        self.actor_tx
+            .send(command)
+            .await
+            .map_err(|_| anyhow!("node actor gone, cannot join presence"))?;
+        let stream = reply_rx.await??;
+        self.online_peers.join(*chat_id, stream).await;
+        Ok(())
+    }
+
     /// Internal function to start the necessary tasks for processing network activity
     /// for a given topic.
     ///
