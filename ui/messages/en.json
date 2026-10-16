@@ -338,7 +338,7 @@
 	"connectionStatusLocalDescription_other": "You have no Internet connection, but you're connected to {{count}} Local Message Hubs on your network. Messages will be synchronized with them.",
 	"connectionStatusLocalAriaLabel": "Connection status: connected to local message hub. Tap for details.",
 	"connectionStatusP2pTitle": "Peer-to-Peer",
-	"connectionStatusP2pDescription": "You have no Internet connection and no Local Message Hub, but someone in this chat is online peer-to-peer. Messages you send now reach them right away.",
+	"connectionStatusP2pDescription": "You are not connected to the Internet or to a Local Message Hub, but you can connect to people in this chat directly (peer-to-peer). Messages you send now reach them right away.",
 	"connectionStatusP2pAriaLabel": "Connection status: someone in this chat is online peer-to-peer. Tap for details.",
 
 	"help": "Help",

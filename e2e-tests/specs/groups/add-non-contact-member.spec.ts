@@ -6,9 +6,7 @@ import { SYNC_TIMEOUT, UI_TIMEOUT } from '../../helpers/timeouts';
 import { isRemoteMailbox, suspendMailbox } from '../../setup/mailbox-control';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
-describe('Adding a member the other members are not contacts with', function () {
-	this.timeout(300_000);
-
+describe('Adding a member the other members are not contacts with', () => {
 	let admin: Agent;
 	let member: Agent;
 	let newcomer: Agent;
