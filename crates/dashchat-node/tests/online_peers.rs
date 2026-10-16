@@ -2,12 +2,12 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use dashchat_node::{testing::*, *};
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 
 const TRACING_FILTER: [&str; 2] = ["online_peers=info", "dashchat=info"];
 
-/// One more than a node and its 5 gossip neighbours, so Alice can't sync directly with everyone.
-const GROUP_SIZE: usize = 7;
+/// Well past a node and its 5 gossip neighbours, so Alice can't sync directly with everyone.
+const GROUP_SIZE: usize = 10;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn contact_is_online_until_it_shuts_down_and_again_once_it_is_back() {
@@ -25,22 +25,45 @@ async fn contact_is_online_until_it_shuts_down_and_again_once_it_is_back() {
 
     let topic = alice.direct_chat_with(&bobbi);
     let bobbi_device = bobbi.device_id();
-    let mut devices = Box::pin(alice.online_peers.devices(topic.into()));
 
-    wait_until(&mut devices, "bobbi online", |devices| {
-        devices.contains(&bobbi_device)
-    })
-    .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, topic.into()).await;
+            anyhow::ensure!(
+                devices.contains(&bobbi_device),
+                "expected bobbi online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
 
     let store_dir = bobbi.shutdown().await;
-    wait_until(&mut devices, "nobody online", |devices| devices.is_empty()).await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, topic.into()).await;
+            anyhow::ensure!(
+                devices.is_empty(),
+                "expected nobody online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
 
     let bobbi = TestNode::new_at_path(config, "bobbi", store_dir).await;
     introduce_peers([&alice, &bobbi]).await.unwrap();
-    wait_until(&mut devices, "bobbi online again", |devices| {
-        devices.contains(&bobbi_device)
-    })
-    .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, topic.into()).await;
+            anyhow::ensure!(
+                devices.contains(&bobbi_device),
+                "expected bobbi online again, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
 }
 
 /// Each node keeps at most 5 gossip neighbours per topic and only syncs directly with them, yet
@@ -95,11 +118,17 @@ async fn every_member_of_a_large_group_is_online() {
     .unwrap();
 
     let member_devices: BTreeSet<_> = members.iter().map(|member| member.device_id()).collect();
-    let mut devices = Box::pin(alice.online_peers.devices(chat_id.into()));
-    wait_until(&mut devices, "every member online", |devices| {
-        *devices == member_devices
-    })
-    .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, chat_id.into()).await;
+            anyhow::ensure!(
+                devices == member_devices,
+                "expected every member online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -146,53 +175,110 @@ async fn blocked_contact_is_offline_until_unblocked() {
     let direct_chat = alice.direct_chat_with(&bobbi);
     let (alice_device, bobbi_device, cammy_device) =
         (alice.device_id(), bobbi.device_id(), cammy.device_id());
-    let mut alice_direct = Box::pin(alice.online_peers.devices(direct_chat.into()));
-    let mut alice_group = Box::pin(alice.online_peers.devices(group_id.into()));
-    let mut bobbi_direct = Box::pin(bobbi.online_peers.devices(direct_chat.into()));
     let both = BTreeSet::from([bobbi_device, cammy_device]);
 
-    wait_until(&mut alice_direct, "bobbi online", |devices| {
-        devices.contains(&bobbi_device)
-    })
-    .await;
-    wait_until(&mut alice_group, "bobbi and cammy online", |devices| {
-        *devices == both
-    })
-    .await;
-    wait_until(&mut bobbi_direct, "alice online", |devices| {
-        devices.contains(&alice_device)
-    })
-    .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, direct_chat.into()).await;
+            anyhow::ensure!(
+                devices.contains(&bobbi_device),
+                "expected bobbi online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, group_id.into()).await;
+            anyhow::ensure!(
+                devices == both,
+                "expected bobbi and cammy online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&bobbi, direct_chat.into()).await;
+            anyhow::ensure!(
+                devices.contains(&alice_device),
+                "expected alice online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
 
     // At once, through Bye and forgetting the blocked device, rather than by missing heartbeats.
-    let at_once = Duration::from_secs(2);
+    let at_once = PollConfig::seconds(2);
     alice.block_contact(bobbi.agent_id()).await.unwrap();
-    wait_within(&mut alice_direct, "bobbi gone", at_once, |devices| {
-        devices.is_empty()
-    })
-    .await;
-    wait_within(&mut alice_group, "only cammy online", at_once, |devices| {
-        *devices == BTreeSet::from([cammy_device])
-    })
-    .await;
-    wait_within(&mut bobbi_direct, "alice gone", at_once, |devices| {
-        !devices.contains(&alice_device)
-    })
-    .await;
+    at_once
+        .wait_for(|| async {
+            let devices = online_devices(&alice, direct_chat.into()).await;
+            anyhow::ensure!(devices.is_empty(), "expected bobbi gone, saw {devices:?}");
+            Ok(())
+        })
+        .await
+        .unwrap();
+    at_once
+        .wait_for(|| async {
+            let devices = online_devices(&alice, group_id.into()).await;
+            anyhow::ensure!(
+                devices == BTreeSet::from([cammy_device]),
+                "expected only cammy online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    at_once
+        .wait_for(|| async {
+            let devices = online_devices(&bobbi, direct_chat.into()).await;
+            anyhow::ensure!(
+                !devices.contains(&alice_device),
+                "expected alice gone, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
 
     alice.unblock_contact(bobbi.agent_id()).await.unwrap();
-    wait_until(&mut alice_direct, "bobbi back", |devices| {
-        devices.contains(&bobbi_device)
-    })
-    .await;
-    wait_until(&mut alice_group, "bobbi and cammy back", |devices| {
-        *devices == both
-    })
-    .await;
-    wait_until(&mut bobbi_direct, "alice back", |devices| {
-        devices.contains(&alice_device)
-    })
-    .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, direct_chat.into()).await;
+            anyhow::ensure!(
+                devices.contains(&bobbi_device),
+                "expected bobbi back, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, group_id.into()).await;
+            anyhow::ensure!(
+                devices == both,
+                "expected bobbi and cammy back, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&bobbi, direct_chat.into()).await;
+            anyhow::ensure!(
+                devices.contains(&alice_device),
+                "expected alice back, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -205,8 +291,6 @@ async fn contact_is_online_only_once_the_request_is_accepted() {
     introduce_peers([&alice, &bobbi]).await.unwrap();
 
     let direct_chat = alice.direct_chat_with(&bobbi);
-    let mut alice_view = Box::pin(alice.online_peers.devices(direct_chat.into()));
-    let mut bobbi_view = Box::pin(bobbi.online_peers.devices(direct_chat.into()));
 
     let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
@@ -227,20 +311,34 @@ async fn contact_is_online_only_once_the_request_is_accepted() {
         .await
         .unwrap();
     tokio::join!(
-        stays_offline(&mut alice_view, Duration::from_secs(8)),
-        stays_offline(&mut bobbi_view, Duration::from_secs(8)),
+        stays_offline(&alice, direct_chat.into(), Duration::from_secs(8)),
+        stays_offline(&bobbi, direct_chat.into(), Duration::from_secs(8)),
     );
 
     alice.behavior().accept_next_contact().await.unwrap();
     let (alice_device, bobbi_device) = (alice.device_id(), bobbi.device_id());
-    wait_until(&mut alice_view, "bobbi online", |devices| {
-        devices.contains(&bobbi_device)
-    })
-    .await;
-    wait_until(&mut bobbi_view, "alice online", |devices| {
-        devices.contains(&alice_device)
-    })
-    .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, direct_chat.into()).await;
+            anyhow::ensure!(
+                devices.contains(&bobbi_device),
+                "expected bobbi online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&bobbi, direct_chat.into()).await;
+            anyhow::ensure!(
+                devices.contains(&alice_device),
+                "expected alice online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -259,37 +357,63 @@ async fn unblocking_right_after_blocking_keeps_both_online() {
 
     let direct_chat = alice.direct_chat_with(&bobbi);
     let (alice_device, bobbi_device) = (alice.device_id(), bobbi.device_id());
-    let mut alice_view = Box::pin(alice.online_peers.devices(direct_chat.into()));
-    let mut bobbi_view = Box::pin(bobbi.online_peers.devices(direct_chat.into()));
-    wait_until(&mut alice_view, "bobbi online", |devices| {
-        devices.contains(&bobbi_device)
-    })
-    .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, direct_chat.into()).await;
+            anyhow::ensure!(
+                devices.contains(&bobbi_device),
+                "expected bobbi online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
 
     alice.block_contact(bobbi.agent_id()).await.unwrap();
     alice.unblock_contact(bobbi.agent_id()).await.unwrap();
 
-    let at_once = Duration::from_secs(2);
-    wait_within(&mut alice_view, "bobbi back", at_once, |devices| {
-        devices.contains(&bobbi_device)
-    })
-    .await;
-    wait_within(&mut bobbi_view, "alice back", at_once, |devices| {
-        devices.contains(&alice_device)
-    })
-    .await;
+    let at_once = PollConfig::seconds(2);
+    at_once
+        .wait_for(|| async {
+            let devices = online_devices(&alice, direct_chat.into()).await;
+            anyhow::ensure!(
+                devices.contains(&bobbi_device),
+                "expected bobbi back, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    at_once
+        .wait_for(|| async {
+            let devices = online_devices(&bobbi, direct_chat.into()).await;
+            anyhow::ensure!(
+                devices.contains(&alice_device),
+                "expected alice back, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
     // Longer than a heartbeat interval, so a late Bye or clear from the replaced task would show.
     tokio::join!(
-        stays_online(&mut alice_view, bobbi_device, Duration::from_secs(6)),
-        stays_online(&mut bobbi_view, alice_device, Duration::from_secs(6)),
+        stays_online(
+            &alice,
+            direct_chat.into(),
+            bobbi_device,
+            Duration::from_secs(6)
+        ),
+        stays_online(
+            &bobbi,
+            direct_chat.into(),
+            alice_device,
+            Duration::from_secs(6)
+        ),
     );
 }
 
-async fn stays_online(
-    devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
-    device: DeviceId,
-    period: Duration,
-) {
+async fn stays_online(node: &TestNode, topic: TopicId, device: DeviceId, period: Duration) {
+    let mut devices = std::pin::pin!(node.online_peers.devices(topic));
     let _ = tokio::time::timeout(period, async {
         while let Some(current) = devices.next().await {
             assert!(
@@ -301,10 +425,8 @@ async fn stays_online(
     .await;
 }
 
-async fn stays_offline(
-    devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
-    period: Duration,
-) {
+async fn stays_offline(node: &TestNode, topic: TopicId, period: Duration) {
+    let mut devices = std::pin::pin!(node.online_peers.devices(topic));
     let _ = tokio::time::timeout(period, async {
         while let Some(current) = devices.next().await {
             assert!(
@@ -316,33 +438,10 @@ async fn stays_offline(
     .await;
 }
 
-async fn wait_until(
-    devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
-    expected: &str,
-    condition: impl Fn(&BTreeSet<DeviceId>) -> bool,
-) {
-    wait_within(devices, expected, Duration::from_secs(30), condition).await;
-}
-
-async fn wait_within(
-    devices: &mut (impl Stream<Item = BTreeSet<DeviceId>> + Unpin),
-    expected: &str,
-    within: Duration,
-    condition: impl Fn(&BTreeSet<DeviceId>) -> bool,
-) {
-    let mut last_seen = 0;
-    let reached = tokio::time::timeout(within, async {
-        while let Some(current) = devices.next().await {
-            last_seen = current.len();
-            if condition(&current) {
-                return;
-            }
-        }
-        panic!("online peers stream ended");
-    })
-    .await;
-    assert!(
-        reached.is_ok(),
-        "online peers did not reach \"{expected}\" in time (last saw {last_seen})"
-    );
+async fn online_devices(node: &TestNode, topic: TopicId) -> BTreeSet<DeviceId> {
+    let mut devices = std::pin::pin!(node.online_peers.devices(topic));
+    devices
+        .next()
+        .await
+        .expect("the online peers stream yields its current value first")
 }
