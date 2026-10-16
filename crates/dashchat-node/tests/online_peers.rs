@@ -92,13 +92,16 @@ async fn every_member_of_a_large_group_is_online() {
     introduce_peers(std::iter::once(&alice).chain(&members))
         .await
         .unwrap();
-    for member in &members {
-        alice
+    // Each member initiates, so the exchanges can run at once: accepting a request consumes the
+    // acceptor's notifications, and Alice accepting several at a time would drop each other's.
+    futures::future::try_join_all(members.iter().map(|member| async {
+        member
             .behavior()
-            .initiate_and_establish_contact(member)
+            .initiate_and_establish_contact(&alice)
             .await
-            .unwrap();
-    }
+    }))
+    .await
+    .unwrap();
 
     let chat_id = alice
         .create_group(
