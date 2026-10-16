@@ -50,7 +50,8 @@ impl Behavior {
         self.accept_contact_request(None).await
     }
 
-    /// A request notification can come again after it was accepted, so `from` picks the right one.
+    /// `from` accepts only a request from the given agent.
+    /// If None, accept any contact request.
     async fn accept_contact_request(&self, from: Option<AgentId>) -> anyhow::Result<AgentId> {
         let mut watcher = self.watcher.lock().await;
         let agent_id = watcher
