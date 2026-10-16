@@ -98,9 +98,15 @@
 	// }
 </script>
 
-<Page>
+<Page data-testid="group-info-page">
 	{#await $info then info}
-		<Navbar transparent={true}>
+		<Navbar
+			transparent={true}
+			titleClass="min-w-0 flex-1"
+			leftClass="shrink-0"
+			rightClass="shrink-0"
+			centerTitle={false}
+		>
 			{#snippet left()}
 				<NavbarBackLink
 					data-testid="group-info-back"
@@ -109,16 +115,18 @@
 			{/snippet}
 
 			{#snippet title()}
-				<div
-					class="gap-2"
-					style="display: flex; justify-content: start; align-items: center; flex: 1"
-				>
-					<Avatar
-						image={info.image}
-						initials={info.name.slice(0, 2)}
-						size="2.5rem"
-					/>
-					<span>{info.name}</span>
+				<div class="flex w-full min-w-0 items-center justify-start gap-2">
+					<span class="shrink-0">
+						<Avatar
+							image={info.image}
+							initials={info.name.slice(0, 2)}
+							size="2.5rem"
+						/>
+					</span>
+					<span
+						class="flex-1 min-w-0 truncate"
+						data-testid="group-info-header-name">{info.name}</span
+					>
 				</div>
 			{/snippet}
 
