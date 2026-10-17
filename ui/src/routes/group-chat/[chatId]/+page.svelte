@@ -172,7 +172,7 @@
 				{#await $headerData then [info, members]}
 					<div class="column items-center">
 						<div
-							class="outline-card"
+							class="outline-card max-w-full"
 							style="border-radius: 2rem; min-width: 250px"
 						>
 							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
@@ -182,7 +182,7 @@
 									size={80}
 								/>
 								<span
-									class="text-2xl font-semibold break-words text-center"
+									class="text-2xl font-semibold break-words text-center max-w-full"
 									data-testid="group-chat-header-name"
 								>
 									{info.name}
