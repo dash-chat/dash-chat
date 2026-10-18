@@ -571,6 +571,7 @@ mod tests {
             surname: None,
             avatar: None,
             about: None,
+            keybundle: bob.keybundle().await.unwrap(),
         })
         .await
         .unwrap();

@@ -14,6 +14,8 @@ use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
+    pub keybundle: p2panda::spaces::Member,
+
     #[serde(default)]
     pub surname: Option<String>,
     pub avatar: Option<String>,
@@ -51,18 +53,13 @@ pub enum InboxPayload {
         profile: Profile,
         agent_id: AgentId,
         reply_topic: Topic<kind::Inbox>,
-        keybundle: p2panda::spaces::Member,
     },
     /// Sent by the inbox owner back to the scanner over the scanner's private
     /// reply topic, carrying the owner's profile so the scanner learns it
     /// immediately rather than waiting for announcements sync. `agent_id` is the
     /// owner's agent id; the scanner records it against the op author
     /// (device_pubkey), a step toward dropping `agent_id` from the QR code.
-    ContactRequestAccept {
-        profile: Profile,
-        agent_id: AgentId,
-        keybundle: p2panda::spaces::Member,
-    },
+    ContactRequestAccept { profile: Profile, agent_id: AgentId },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

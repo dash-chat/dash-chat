@@ -1867,18 +1867,12 @@ impl Node {
             return Err(AddContactError::ProfileNotCreated);
         };
 
-        let keybundle = self
-            .keybundle()
-            .await
-            .map_err(|e| AddContactError::OwnKeyMaterialMissing(e.to_string()))?;
-
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
                 profile,
                 agent_id: self.agent_id(),
                 reply_topic: reply_inbox.topic.clone(),
-                keybundle,
             }),
             Some(&format!(
                 "add_contact/contact_request({:?})",
@@ -2072,10 +2066,6 @@ impl Node {
             Payload::Inbox(InboxPayload::ContactRequestAccept {
                 profile,
                 agent_id: self.agent_id(),
-                keybundle: self
-                    .keybundle()
-                    .await
-                    .map_err(|e| Error::OwnKeyMaterialMissing(e.to_string()))?,
             }),
             Some("reply_to_contact_request"),
         )
@@ -2694,7 +2684,6 @@ mod forged_contact_request_tests {
                     profile: mallory.my_profile().await.unwrap().unwrap(),
                     agent_id: bobbi.agent_id(),
                     reply_topic: Topic::inbox(),
-                    keybundle: bobbi.keybundle().await.unwrap(),
                 }),
                 None,
             )
@@ -2749,7 +2738,6 @@ mod forged_contact_request_tests {
                     profile: mallory.my_profile().await.unwrap().unwrap(),
                     agent_id: mallory.agent_id(),
                     reply_topic: alice_inbox.topic,
-                    keybundle: mallory.keybundle().await.unwrap(),
                 }),
                 None,
             )
