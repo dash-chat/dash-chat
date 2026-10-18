@@ -313,6 +313,7 @@ async fn test_group_chat() {
             surname: None,
             avatar: None,
             about: None,
+            keybundle: alice.keybundle().await.unwrap(),
         })
     );
 
@@ -328,6 +329,7 @@ async fn test_group_chat() {
             surname: None,
             avatar: None,
             about: None,
+            keybundle: cammy.keybundle().await.unwrap(),
         })
     );
 

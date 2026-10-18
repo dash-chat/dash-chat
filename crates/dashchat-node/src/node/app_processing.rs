@@ -597,9 +597,7 @@ impl Node {
                 }
                 match invitation {
                     InboxPayload::ContactRequest {
-                        agent_id,
-                        keybundle,
-                        ..
+                        agent_id, profile, ..
                     } => {
                         // A request arrived on our advertised inbox. Except for
                         // subscribing to the shared direct-chat topic (so the
@@ -637,13 +635,11 @@ impl Node {
                                 });
                             }
 
-                            self.save_keybundle(keybundle.clone()).await?;
+                            self.save_keybundle(profile.keybundle.clone()).await?;
                         }
                     }
                     InboxPayload::ContactRequestAccept {
-                        agent_id,
-                        keybundle,
-                        ..
+                        agent_id, profile, ..
                     } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
@@ -664,7 +660,7 @@ impl Node {
                                 return Ok(());
                             }
 
-                            self.save_keybundle(keybundle.clone()).await?;
+                            self.save_keybundle(profile.keybundle.clone()).await?;
                             self.establish_contact(author, *agent_id).await?;
 
                             let node = self.clone();
