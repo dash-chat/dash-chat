@@ -6,7 +6,7 @@ use dashchat_node::{Node, Notification};
 use p2panda_core::{cbor::encode_cbor, Body};
 use sqlite_gate::SqliteGate;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 
 use crate::commands::logs::simplify;
 use crate::node::node_context::{NodeContext, NodeRole};
@@ -126,12 +126,6 @@ impl AppNodeManager {
     /// The app-lifetime store of already-notified operations (cheap `Arc` clone).
     pub(crate) fn notified_operations_store(&self) -> NotifiedOperationsStore {
         self.notified_operations_store.clone()
-    }
-
-    /// A receiver that fires whenever the node is swapped (torn down or rebuilt), so
-    /// a long-lived per-node subscription can re-bind to the current node.
-    pub fn subscribe_generation(&self) -> watch::Receiver<u64> {
-        node_slot::subscribe_generation()
     }
 }
 

@@ -45,6 +45,10 @@ fn bump_generation() {
 /// The stream `make` builds on the app's node, switched to the next node after
 /// every swap. While there is none it yields `None` once, so a torn-down node's
 /// last value doesn't outlive it.
+///
+/// A stream that keeps the node it was built on keeps it until the swap, which
+/// comes after the old node's teardown; that teardown closes the node's
+/// resources itself, so a lingering clone delays nothing.
 pub(crate) fn node_stream<S, F>(make: F) -> impl Stream<Item = Option<S::Item>> + Send + 'static
 where
     F: Fn(Node) -> S + Send + 'static,
@@ -59,6 +63,18 @@ where
         })
         .fuse()
         .switch()
+}
+
+/// [`node_stream`] without the no-node marker: while there is no node nothing
+/// is emitted, so a subscriber keeps the last node's value through a swap
+/// instead of seeing a gap until the new node catches up.
+pub(crate) fn node_stream_values<S, F>(make: F) -> impl Stream<Item = S::Item> + Send + 'static
+where
+    F: Fn(Node) -> S + Send + 'static,
+    S: Stream + Send + 'static,
+    S::Item: Send,
+{
+    node_stream(make).filter_map(futures::future::ready)
 }
 
 pub(crate) async fn current_node() -> Option<AppNode> {

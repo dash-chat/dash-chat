@@ -2094,6 +2094,7 @@ dependencies = [
  "anyhow",
  "app_dirs2",
  "async-rx",
+ "async-stream",
  "async-trait",
  "backon",
  "chrono",
