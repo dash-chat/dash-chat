@@ -1090,18 +1090,16 @@ function assignPhones(
 let desktopsLaunched = 0;
 
 /** Launch one more desktop agent, on the next slot past every phone's. */
-export async function setupDesktopAgent(): Promise<{
+export async function setupDesktopAgent(
+	launch: (slot: number) => Promise<WebdriverIO.Browser> = launchDesktopAgent,
+): Promise<{
 	agent: Agent;
 	slot: number;
 }> {
 	desktopsLaunched += 1;
 	const slot = phonePlatforms().length + desktopsLaunched;
 	try {
-		const agent = await setupAgent(
-			await launchDesktopAgent(slot),
-			'desktop',
-			slot,
-		);
+		const agent = await setupAgent(await launch(slot), 'desktop', slot);
 		return { agent, slot };
 	} catch (e) {
 		// A leftover app would keep advertising over mDNS and skew the rest of the run.
