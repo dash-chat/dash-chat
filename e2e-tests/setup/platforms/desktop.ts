@@ -226,11 +226,8 @@ export function readOpenedUrls(slot: number): string[] {
 		.filter(line => line !== '');
 }
 
-/** Launch a desktop agent on `slot` from first launch — a fresh data dir,
- *  its log echoed — and open a WebDriver session to it. */
-export async function launchDesktopAgent(
-	slot: number,
-): Promise<WebdriverIO.Browser> {
+/** Wipe the agent's data dir and echo its log, ready for an app to start on it. */
+export function prepareDesktopAgent(slot: number): void {
 	clearAgentDir(slot);
 	// tauri-plugin-log names the file after productName (tauri.conf.json).
 	loggers.set(
@@ -240,7 +237,12 @@ export async function launchDesktopAgent(
 			path.join(agentDir(slot), 'logs', 'Dash Chat.log'),
 		),
 	);
-	await launchAgentApp(slot);
+}
+
+/** Open a WebDriver session to the app running on `slot`. */
+export async function connectDesktopAgent(
+	slot: number,
+): Promise<WebdriverIO.Browser> {
 	return await remote({
 		hostname: '127.0.0.1',
 		port: agentPort(slot),
@@ -250,6 +252,16 @@ export async function launchDesktopAgent(
 		logLevel: 'warn',
 		waitforTimeout: UI_TIMEOUT,
 	});
+}
+
+/** Launch a desktop agent on `slot` from first launch — a fresh data dir,
+ *  its log echoed — and open a WebDriver session to it. */
+export async function launchDesktopAgent(
+	slot: number,
+): Promise<WebdriverIO.Browser> {
+	prepareDesktopAgent(slot);
+	await launchAgentApp(slot);
+	return await connectDesktopAgent(slot);
 }
 
 /** Kill one desktop agent's app and log echo, and delete what it stored. */
