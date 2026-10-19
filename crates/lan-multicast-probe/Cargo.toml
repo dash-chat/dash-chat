@@ -4,9 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+async-stream = "0.3"
 futures = "0.3"
 local-hub-discovery = { workspace = true }
 log = "0.4"
 socket2 = "0.6"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

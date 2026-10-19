@@ -4,13 +4,14 @@
 //! reject route on 224.0.0.0/4: nobody on the LAN can discover the device.
 
 use std::net::{Ipv4Addr, SocketAddrV4};
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
+use tokio_util::task::AbortOnDropHandle;
 
 /// How often to probe: on macOS, Local Network access can be granted or
 /// revoked at any time.
@@ -25,36 +26,61 @@ const MDNS_V4: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(224, 0, 0, 251), 5
 /// A DNS header asking nothing, which mDNS responders ignore.
 const EMPTY_QUERY: [u8; 12] = [0; 12];
 
-/// Whether every LAN this device is on refuses its mDNS multicast: the current
-/// verdict, then every change. One probe serves every watcher, and it only
-/// probes while someone watches. Must be called within a Tokio runtime.
-pub fn lan_multicast_blocked() -> impl Stream<Item = bool> {
-    WatchStream::new(shared_verdict().subscribe())
+/// Watches whether every LAN this device is on refuses its mDNS multicast.
+/// All the streams alive at once share one probe, which stops when the last of
+/// them is dropped.
+#[derive(Default)]
+pub struct LanMulticastProbe {
+    shared: Mutex<Weak<SharedProbe>>,
 }
 
-fn shared_verdict() -> &'static watch::Sender<bool> {
-    static VERDICT: OnceLock<watch::Sender<bool>> = OnceLock::new();
-    VERDICT.get_or_init(|| {
-        let verdict = watch::Sender::new(false);
-        tokio::spawn(probe_while_watched(verdict.clone()));
-        verdict
-    })
+/// A probe running for as long as some stream holds it.
+struct SharedProbe {
+    verdict: watch::Receiver<bool>,
+    _task: AbortOnDropHandle<()>,
 }
 
-async fn probe_while_watched(verdict: watch::Sender<bool>) {
+impl LanMulticastProbe {
+    /// The current verdict, then every change. Must be called within a Tokio
+    /// runtime.
+    pub fn blocked(&self) -> impl Stream<Item = bool> + 'static {
+        let probe = self.shared_probe();
+        async_stream::stream! {
+            let mut verdicts = WatchStream::new(probe.verdict.clone());
+            while let Some(blocked) = verdicts.next().await {
+                yield blocked;
+            }
+        }
+    }
+
+    /// The probe the live streams share, or a new one if there are none.
+    fn shared_probe(&self) -> Arc<SharedProbe> {
+        let mut shared = self.shared.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(probe) = shared.upgrade() {
+            return probe;
+        }
+        let (verdict_tx, verdict) = watch::channel(false);
+        let probe = Arc::new(SharedProbe {
+            verdict,
+            _task: AbortOnDropHandle::new(tokio::spawn(probe_forever(verdict_tx))),
+        });
+        *shared = Arc::downgrade(&probe);
+        probe
+    }
+}
+
+async fn probe_forever(verdict: watch::Sender<bool>) {
     let mut refused_rounds = 0;
     loop {
-        if verdict.receiver_count() > 0 {
-            match probe_every_lan().await {
-                Some(true) => refused_rounds += 1,
-                Some(false) => refused_rounds = 0,
-                None => {}
-            }
-            let blocked = refused_rounds >= BLOCKED_ROUNDS;
-            if *verdict.borrow() != blocked {
-                log_change(blocked);
-                verdict.send_replace(blocked);
-            }
+        match probe_every_lan().await {
+            Some(true) => refused_rounds += 1,
+            Some(false) => refused_rounds = 0,
+            None => {}
+        }
+        let blocked = refused_rounds >= BLOCKED_ROUNDS;
+        if *verdict.borrow() != blocked {
+            log_change(blocked);
+            verdict.send_replace(blocked);
         }
         tokio::time::sleep(PROBE_INTERVAL).await;
     }
@@ -132,5 +158,16 @@ mod tests {
     #[test]
     fn a_probe_that_could_not_be_set_up_says_nothing() {
         assert_eq!(every_lan_refused(vec![Ok(true), unset_up()]), None);
+    }
+
+    #[tokio::test]
+    async fn live_streams_share_one_probe_until_the_last_is_dropped() {
+        let probe = LanMulticastProbe::default();
+        let first = probe.shared_probe();
+        let second = probe.shared_probe();
+        assert!(Arc::ptr_eq(&first, &second));
+
+        drop((first, second));
+        assert!(probe.shared.lock().unwrap().upgrade().is_none());
     }
 }
