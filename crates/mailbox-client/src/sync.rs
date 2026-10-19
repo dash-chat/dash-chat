@@ -20,19 +20,13 @@ use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
 use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 
-/// Result of [`SyncCoordinator::sync_topics`].
+/// Outcome of a single [`SyncCoordinator::sync_topics`] call. The sync may
+/// have failed partway through, but any topics whose receivers were found to
+/// be closed are always reported so the caller can unsubscribe them.
 #[derive(Debug)]
-pub struct SyncTopicResult<Topic> {
-    /// Topics whose receivers were closed during delivery.
+pub struct SyncTopicOutcome<Topic> {
+    pub result: anyhow::Result<()>,
     pub closed_topics: HashSet<Topic>,
-}
-
-impl<Topic> Default for SyncTopicResult<Topic> {
-    fn default() -> Self {
-        Self {
-            closed_topics: HashSet::new(),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -68,25 +62,40 @@ where
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
         topic_senders: &HashMap<Item::Topic, tokio::sync::mpsc::Sender<Item>>,
-    ) -> anyhow::Result<SyncTopicResult<Item::Topic>>
+    ) -> SyncTopicOutcome<Item::Topic>
     where
-        Item::Topic: std::fmt::Display + Eq + Hash,
+        Item::Topic: std::fmt::Display + Eq + Hash + Clone,
     {
         let mut request = BTreeMap::new();
         let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> =
             BTreeMap::new();
         for topic in topics {
-            let heights =
-                BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
+            let heights = match self.store.get_log_heights(&topic).await {
+                Ok(heights) => BTreeMap::from_iter(heights.into_iter()),
+                Err(err) => {
+                    return SyncTopicOutcome {
+                        result: Err(anyhow::anyhow!("failed to get log heights for {topic}: {err}")),
+                        closed_topics: HashSet::new(),
+                    };
+                }
+            };
             sent_heights.insert(topic, heights.clone());
             request.insert(topic, heights);
         }
 
-        let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
+        let FetchResponse(response) = match mailbox.fetch(FetchRequest(request)).await {
+            Ok(response) => response,
+            Err(err) => {
+                return SyncTopicOutcome {
+                    result: Err(err),
+                    closed_topics: HashSet::new(),
+                };
+            }
+        };
 
         let mut ops_to_publish: Vec<Item> = vec![];
         let mut acks: Vec<(Item::Topic, Item::Author, SeqNum)> = vec![];
-        let mut result: SyncTopicResult<Item::Topic> = SyncTopicResult::default();
+        let mut closed_topics: HashSet<Item::Topic> = HashSet::new();
 
         for (topic, response) in response.into_iter() {
             let FetchTopicResponse { items, missing } = response;
@@ -125,7 +134,7 @@ where
             for item in items {
                 if sender.send(item).await.is_err() {
                     tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
-                    result.closed_topics.insert(topic.clone());
+                    closed_topics.insert(topic.clone());
                     break;
                 }
             }
@@ -134,14 +143,18 @@ where
                 let Some(lowest) = seqs.iter().min() else {
                     continue;
                 };
-                let Some(log) = self
-                    .store
-                    .get_log(&author, &topic, *lowest)
-                    .await
-                    .map_err(|err| anyhow::anyhow!("failed to get log for {topic:?}: {err}"))?
-                else {
-                    tracing::error!(author = ?author, topic = %topic, lowest = ?lowest, "no log found");
-                    continue;
+                let log = match self.store.get_log(&author, &topic, *lowest).await {
+                    Ok(Some(log)) => log,
+                    Ok(None) => {
+                        tracing::error!(author = ?author, topic = %topic, lowest = ?lowest, "no log found");
+                        continue;
+                    }
+                    Err(err) => {
+                        return SyncTopicOutcome {
+                            result: Err(anyhow::anyhow!("failed to get log for {topic:?}: {err}")),
+                            closed_topics,
+                        };
+                    }
                 };
 
                 for seq in &seqs {
@@ -158,14 +171,22 @@ where
             .map(|op| (op.topic(), op.author(), op.seq_num()))
             .collect();
 
-        mailbox.publish(ops_to_publish).await?;
+        if let Err(err) = mailbox.publish(ops_to_publish).await {
+            return SyncTopicOutcome {
+                result: Err(err),
+                closed_topics,
+            };
+        }
 
         acks.extend(publish_acks);
         if let Err(err) = self.sync_tracker.record_synced(&mailbox.id(), &acks).await {
             tracing::error!(?err, mailbox = %&mailbox.id(), "failed to record sync watermarks");
         }
 
-        Ok(result)
+        SyncTopicOutcome {
+            result: Ok(()),
+            closed_topics,
+        }
     }
 
     pub async fn store_fast_push(

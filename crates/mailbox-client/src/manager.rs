@@ -600,14 +600,14 @@ where
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
         let topics_map = self.topics.lock().await.clone();
-        let result = self
+        let outcome = self
             .sync_coordinator
             .sync_topics(topics, mailbox, &topics_map)
-            .await?;
-        for topic in result.closed_topics {
-            self.unsubscribe(topic).await.ok();
+            .await;
+        for topic in &outcome.closed_topics {
+            self.unsubscribe(topic.clone()).await.ok();
         }
-        Ok(())
+        outcome.result
     }
 }
 
@@ -2705,5 +2705,120 @@ mod tests {
         // one start then, not after active_interval.
         tokio::time::sleep(Duration::from_secs(15)).await;
         assert_eq!(slow_polls.load(Ordering::Relaxed), 2);
+    }
+
+    /// A mailbox client that returns items for a topic but always fails to
+    /// publish, simulating a degraded mailbox link.
+    struct FailingPublishClient {
+        id: MailboxId,
+        items_to_fetch: Arc<Mutex<Vec<Msg>>>,
+        fetch_count: Arc<AtomicU32>,
+        fail_next_publish: Arc<AtomicBool>,
+    }
+
+    impl FailingPublishClient {
+        fn new(items: Vec<Msg>) -> (Self, Arc<AtomicU32>) {
+            let fetch_count = Arc::new(AtomicU32::new(0));
+            let client = Self {
+                id: nanoid::nanoid!(),
+                items_to_fetch: Arc::new(Mutex::new(items)),
+                fetch_count: fetch_count.clone(),
+                fail_next_publish: Arc::new(AtomicBool::new(true)),
+            };
+            (client, fetch_count)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for FailingPublishClient {
+        fn id(&self) -> MailboxId {
+            self.id.clone()
+        }
+
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            if self.fail_next_publish.swap(false, Ordering::Relaxed) {
+                anyhow::bail!("simulated publish failure")
+            }
+            Ok(PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            let items = self.items_to_fetch.lock().await.clone();
+            let mut response = BTreeMap::new();
+            for topic in request.0.keys().copied() {
+                if topic == 0u8 {
+                    self.fetch_count.fetch_add(1, Ordering::Relaxed);
+                }
+                response.insert(
+                    topic,
+                    FetchTopicResponse {
+                        items: items.clone(),
+                        missing: HashMap::new(),
+                    },
+                );
+            }
+            Ok(FetchResponse(response))
+        }
+    }
+
+    /// When a topic's receiver is closed and the subsequent publish fails,
+    /// the topic must still be unsubscribed so it is not re-fetched forever.
+    #[tokio::test(start_paused = true)]
+    async fn closed_receiver_unsubscribed_despite_publish_failure() {
+        let mgr = test_mailboxes(test_config());
+
+        // Subscribe and immediately drop the receiver to close the channel.
+        let rx = mgr
+            .subscribe(0u8)
+            .await
+            .unwrap()
+            .expect("subscribed to topic");
+        drop(rx);
+
+        // The mailbox will return one item for the closed topic and then fail
+        // to publish, so `sync_topics` exits with an error before the manager
+        // can process `SyncTopicResult::closed_topics`.
+        let (client, fetch_count) = FailingPublishClient::new(vec![Msg {
+            topic: 0,
+            author: 'a',
+            seq: 0,
+        }]);
+        let client_id = client.id.clone();
+        mgr.register(client).await;
+
+        // Run a single sync through the public path used by the poll loop.
+        let client = mgr
+            .tracked_mailbox(&client_id)
+            .await
+            .unwrap()
+            .client()
+            .await;
+        let result = mgr.sync_topics([0u8].into_iter(), &client).await;
+        assert!(result.is_err(), "expected publish failure to propagate");
+
+        // Because the receiver was closed, the topic should be unsubscribed
+        // even though the overall sync failed. Without the fix it stays in
+        // `self.topics` and would be fetched again on the next poll.
+        assert!(
+            !mgr.subscribed_topics().await.contains(&0u8),
+            "closed topic should be unsubscribed even when publish fails"
+        );
+
+        // A follow-up poll should not fetch the topic again. Once the topic
+        // is unsubscribed, the poll loop would not include it in the next sync.
+        let fetch_count_before = fetch_count.load(Ordering::Relaxed);
+        let result = mgr.sync_topics(std::iter::empty(), &client).await;
+        assert!(
+            result.is_ok(),
+            "follow-up sync with no topics should succeed: {result:?}"
+        );
+        assert_eq!(
+            fetch_count.load(Ordering::Relaxed),
+            fetch_count_before,
+            "topic should not be re-fetched after being unsubscribed"
+        );
     }
 }
