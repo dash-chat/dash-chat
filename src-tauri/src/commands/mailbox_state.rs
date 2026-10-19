@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::time::Duration;
 
 use async_rx::StreamExt as _;
 use async_stream::stream;
@@ -62,14 +63,20 @@ pub fn mailbox_subscribe_sync_state(
     node_stream_values(move |node| {
         let id = mailbox_id.clone();
         stream! {
-            match node.mailboxes.sync_tracker().sync_state(&id).await {
-                Ok(watch) => {
-                    for await state in WatchStream::new(watch) {
-                        yield state;
+            let watch = loop {
+                match node.mailboxes.sync_tracker().sync_state(&id).await {
+                    Ok(watch) => break watch,
+                    Err(err) => {
+                        log::warn!("Retrying the sync state of mailbox {id}: {err:?}");
+                        tokio::time::sleep(SYNC_STATE_RETRY).await;
                     }
                 }
-                Err(err) => log::warn!("No sync state to stream for mailbox {id}: {err:?}"),
+            };
+            for await state in WatchStream::new(watch) {
+                yield state;
             }
         }
     })
 }
+
+const SYNC_STATE_RETRY: Duration = Duration::from_millis(500);
