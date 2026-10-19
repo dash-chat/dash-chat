@@ -3,14 +3,12 @@
 //! without Local Network access (TN3179), and so does a VPN that leaves a
 //! reject route on 224.0.0.0/4: nobody on the LAN can discover the device.
 
+use std::io;
 use std::net::{Ipv4Addr, SocketAddrV4};
-use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
-use futures::{Stream, StreamExt};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::sync::watch;
-use tokio_stream::wrappers::WatchStream;
 use tokio_util::task::AbortOnDropHandle;
 
 /// How often to probe: on macOS, Local Network access can be granted or
@@ -23,49 +21,30 @@ const BLOCKED_ROUNDS: u32 = 2;
 
 const MDNS_V4: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(224, 0, 0, 251), 5353);
 
-/// A DNS header asking nothing, which mDNS responders ignore.
+/// A DNS header asking nothing. Sent with a multicast TTL of 0, it never leaves
+/// this device: the kernel only runs the checks a real send would face.
 const EMPTY_QUERY: [u8; 12] = [0; 12];
 
-/// Watches whether every LAN this device is on refuses its mDNS multicast.
-/// All the streams alive at once share one probe, which stops when the last of
-/// them is dropped.
-#[derive(Default)]
+/// Watches whether every LAN this device is on refuses its mDNS multicast,
+/// probing until dropped.
 pub struct LanMulticastProbe {
-    shared: Mutex<Weak<SharedProbe>>,
-}
-
-/// A probe running for as long as some stream holds it.
-struct SharedProbe {
     verdict: watch::Receiver<bool>,
     _task: AbortOnDropHandle<()>,
 }
 
 impl LanMulticastProbe {
-    /// The current verdict, then every change. Must be called within a Tokio
-    /// runtime.
-    pub fn blocked(&self) -> impl Stream<Item = bool> + 'static {
-        let probe = self.shared_probe();
-        async_stream::stream! {
-            let mut verdicts = WatchStream::new(probe.verdict.clone());
-            while let Some(blocked) = verdicts.next().await {
-                yield blocked;
-            }
+    /// Must be called within a Tokio runtime.
+    pub fn spawn() -> Self {
+        let (verdict_tx, verdict) = watch::channel(false);
+        Self {
+            verdict,
+            _task: AbortOnDropHandle::new(tokio::spawn(probe_forever(verdict_tx))),
         }
     }
 
-    /// The probe the live streams share, or a new one if there are none.
-    fn shared_probe(&self) -> Arc<SharedProbe> {
-        let mut shared = self.shared.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(probe) = shared.upgrade() {
-            return probe;
-        }
-        let (verdict_tx, verdict) = watch::channel(false);
-        let probe = Arc::new(SharedProbe {
-            verdict,
-            _task: AbortOnDropHandle::new(tokio::spawn(probe_forever(verdict_tx))),
-        });
-        *shared = Arc::downgrade(&probe);
-        probe
+    /// The current verdict, and every change for as long as it's held.
+    pub fn blocked(&self) -> watch::Receiver<bool> {
+        self.verdict.clone()
     }
 }
 
@@ -104,7 +83,7 @@ async fn probe_every_lan() -> Option<bool> {
 
 /// One LAN taking multicast is enough, a device with no LAN is offline rather
 /// than blocked, and a probe that couldn't be set up says nothing.
-fn every_lan_refused(probes: Vec<std::io::Result<bool>>) -> Option<bool> {
+fn every_lan_refused(probes: Vec<io::Result<bool>>) -> Option<bool> {
     if probes.is_empty() || probes.iter().any(|probe| matches!(probe, Ok(false))) {
         Some(false)
     } else if probes.iter().any(|probe| probe.is_err()) {
@@ -114,12 +93,26 @@ fn every_lan_refused(probes: Vec<std::io::Result<bool>>) -> Option<bool> {
     }
 }
 
-/// Whether `interface` refuses our multicast. Failing to set up the socket
-/// (out of descriptors, say) is an error, not a refusal.
-fn refuses_multicast(interface: Ipv4Addr) -> std::io::Result<bool> {
+/// Whether `interface` refuses our multicast: macOS's Local Network privacy and
+/// reject routes answer EHOSTUNREACH, firewalls EPERM. Any other failure, such
+/// as running out of descriptors or buffers, is an error, not a refusal.
+fn refuses_multicast(interface: Ipv4Addr) -> io::Result<bool> {
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     socket.set_multicast_if_v4(&interface)?;
-    Ok(socket.send_to(&EMPTY_QUERY, &MDNS_V4.into()).is_err())
+    socket.set_multicast_ttl_v4(0)?;
+    socket.set_multicast_loop_v4(false)?;
+    match socket.send_to(&EMPTY_QUERY, &MDNS_V4.into()) {
+        Ok(_) => Ok(false),
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::HostUnreachable | io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            Ok(true)
+        }
+        Err(err) => Err(err),
+    }
 }
 
 fn log_change(blocked: bool) {
@@ -132,8 +125,6 @@ fn log_change(blocked: bool) {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-
     use super::*;
 
     fn unset_up() -> io::Result<bool> {
@@ -158,16 +149,5 @@ mod tests {
     #[test]
     fn a_probe_that_could_not_be_set_up_says_nothing() {
         assert_eq!(every_lan_refused(vec![Ok(true), unset_up()]), None);
-    }
-
-    #[tokio::test]
-    async fn live_streams_share_one_probe_until_the_last_is_dropped() {
-        let probe = LanMulticastProbe::default();
-        let first = probe.shared_probe();
-        let second = probe.shared_probe();
-        assert!(Arc::ptr_eq(&first, &second));
-
-        drop((first, second));
-        assert!(probe.shared.lock().unwrap().upgrade().is_none());
     }
 }

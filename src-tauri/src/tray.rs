@@ -9,6 +9,7 @@ use tauri::{
     AppHandle, Manager, Runtime, WebviewWindowBuilder,
 };
 
+use tokio_stream::wrappers::WatchStream;
 use tokio_util::task::AbortOnDropHandle;
 
 const TRAY_ID: &str = "dash-chat-tray";
@@ -61,9 +62,11 @@ static LAN_WARNING: Mutex<Option<AbortOnDropHandle<()>>> = Mutex::new(None);
 fn warn_while_lan_blocked<R: Runtime>(app_handle: &AppHandle<R>) -> AbortOnDropHandle<()> {
     let app_handle = app_handle.clone();
     AbortOnDropHandle::new(tokio::spawn(async move {
-        let mut lan_blocked = std::pin::pin!(app_handle
-            .state::<lan_multicast_probe::LanMulticastProbe>()
-            .blocked());
+        let mut lan_blocked = WatchStream::new(
+            app_handle
+                .state::<lan_multicast_probe::LanMulticastProbe>()
+                .blocked(),
+        );
         while let Some(blocked) = lan_blocked.next().await {
             if let Err(err) = set_lan_warning(&app_handle, blocked) {
                 log::error!("Failed to update the tray warning: {err:?}");
