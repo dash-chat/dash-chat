@@ -49,10 +49,9 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 	);
 
 	connectionState = reactive((mailboxId: MailboxId) =>
-		subscribe<MailboxConnectionState>(
-			'mailbox_subscribe_connection_state',
-			{ mailboxId },
-		),
+		subscribe<MailboxConnectionState>('mailbox_subscribe_connection_state', {
+			mailboxId,
+		}),
 	);
 
 	cloudMailboxId = reactive(() =>
