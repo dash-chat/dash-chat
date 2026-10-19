@@ -143,7 +143,7 @@ The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tau
 
 **Frontend Patterns:**
 - Signalium for reactive state management
-- **STRICT: All Tauri commands must be invoked via `invokeAfterSetup()` from `packages/stores/src/utils/invoke-after-setup.ts`, never `invoke()` from `@tauri-apps/api` directly.** At startup the webview can invoke node-backed commands before `async_setup` finishes managing the node; `invokeAfterSetup()` retries the transient "state not managed" error until the backend is ready. Importing `invoke` directly from `@tauri-apps/api/core` (outside `invoke-after-setup.ts` itself) is a defect — flag it in review.
+- **STRICT: All Tauri commands must be invoked via `invokeAfterSetup()` from `packages/stores/src/utils/invoke-after-setup.ts`, never `invoke()` from `@tauri-apps/api` directly.** At startup the webview can invoke node-backed commands before `async_setup` finishes managing the node; `invokeAfterSetup()` retries the transient "state not managed" error until the backend is ready. Importing `invoke` directly from `@tauri-apps/api/core` (outside `invoke-after-setup.ts` itself) is a defect — flag it in review. The one exception is streaming commands: those are `#[subscription]` streams in Rust, called from the stores with `subscribe()` from `tauri-plugin-subscriptions`. They read the node through `node_slot` rather than managed state, so they can't hit "state not managed".
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
