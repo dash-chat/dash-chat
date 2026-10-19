@@ -12,6 +12,8 @@ import {
 	prepareDesktopAgent,
 } from './desktop';
 
+const APP_BUNDLE_NAME = 'DashChatE2E';
+
 /** A desktop agent on `slot` whose Local Network access stays undetermined,
  *  behind the system alert, until `answerLocalNetworkAlert` answers it. */
 export async function launchDesktopAgentWithoutLocalNetworkAccess(
@@ -28,7 +30,7 @@ export async function launchDesktopAgentWithoutLocalNetworkAccess(
  *  Every launch leaves a row in System Settings › Local Network. */
 async function openAsNewMacApp(slot: number): Promise<void> {
 	const port = agentPort(slot);
-	const bundle = path.join(agentDir(slot), 'DashChatE2E.app');
+	const bundle = path.join(agentDir(slot), `${APP_BUNDLE_NAME}.app`);
 	mkdirSync(path.join(bundle, 'Contents', 'MacOS'), { recursive: true });
 	const binary = path.join(bundle, 'Contents', 'MacOS', 'dash-chat');
 	writeFileSync(binary, withFreshMachOUuid(readFileSync(APP_BINARY)), {
@@ -52,16 +54,19 @@ async function openAsNewMacApp(slot: number): Promise<void> {
 	await waitForPortListening(port);
 }
 
-/** `binary` under a new Mach-O UUID. macOS remembers a Local Network answer
- *  by the executable's UUID too, so a build an earlier run allowed would start
- *  allowed under any bundle id. */
+/** Give `binary`, a single-architecture 64-bit Mach-O, a new UUID in place.
+ *  macOS remembers a Local Network answer by the executable's UUID too, so a
+ *  build an earlier run allowed would start allowed under any bundle id. */
 function withFreshMachOUuid(binary: Buffer): Buffer {
+	const MH_MAGIC_64 = 0xfeedfacf;
 	const LC_UUID = 0x1b;
+	if (binary.readUInt32LE(0) !== MH_MAGIC_64) {
+		throw new Error('the e2e build is not a single-architecture 64-bit Mach-O');
+	}
 	const commandCount = binary.readUInt32LE(16);
 	let offset = 32; // mach_header_64
-	for (let i = 0; i < commandCount; i++) {
-		const command = binary.readUInt32LE(offset);
-		if (command === LC_UUID) {
+	for (let i = 0; i < commandCount && offset + 24 <= binary.length; i++) {
+		if (binary.readUInt32LE(offset) === LC_UUID) {
 			randomBytes(16).copy(binary, offset + 8);
 			return binary;
 		}
@@ -75,7 +80,7 @@ function appBundleInfoPlist(bundleId: string): string {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>${bundleId}</string>
-<key>CFBundleName</key><string>Dash Chat E2E</string>
+<key>CFBundleName</key><string>${APP_BUNDLE_NAME}</string>
 <key>CFBundleExecutable</key><string>dash-chat</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>NSLocalNetworkUsageDescription</key><string>Dash Chat e2e run</string>
@@ -100,11 +105,19 @@ export function canAnswerSystemAlerts(): boolean {
 	}
 }
 
-/** Answer the macOS alert asking whether an app may access the local network.
- *  Needs [`canAnswerSystemAlerts`]. */
+/** Answer every pending macOS alert asking whether the e2e app may access the
+ *  local network. macOS names the app by its bundle or its executable, and
+ *  every copy's alert reads the same, so each one gets a click; an alert left
+ *  by a killed app no longer responds. Needs [`canAnswerSystemAlerts`]. */
 export function answerLocalNetworkAlert(button: 'Allow' | 'Don’t Allow'): void {
-	execFileSync('osascript', [
-		'-e',
-		`tell application "System Events" to tell process "UserNotificationCenter" to click button "${button}" of window 1`,
-	]);
+	const script = `
+tell application "System Events" to tell process "UserNotificationCenter"
+	repeat with i from (count of windows) to 1 by -1
+		set question to value of static text 1 of window i
+		if question contains "“${APP_BUNDLE_NAME}” to find devices on local networks" or question contains "“dash-chat” to find devices on local networks" then
+			click button "${button}" of window i
+		end if
+	end repeat
+end tell`;
+	execFileSync('osascript', ['-e', script]);
 }

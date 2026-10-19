@@ -1,4 +1,5 @@
-<!-- The warning sign, in the colour of the app's list icons. -->
+<!-- The warning sign, in the colour of the app's list icons unless `color`
+     (Tailwind text classes) says otherwise. -->
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { mdiAlert } from '@mdi/js';
@@ -8,9 +9,10 @@
 
 	let {
 		size,
+		color,
 		class: className,
 		...rest
-	}: { size: number } & HTMLAttributes<HTMLElement> = $props();
+	}: { size: number; color?: string } & HTMLAttributes<HTMLElement> = $props();
 
 	const theme = $derived(useTheme());
 </script>
@@ -20,9 +22,10 @@
 	src={wrapPathInSvg(mdiAlert)}
 	class={[
 		className,
-		theme === 'ios'
-			? 'text-black dark:text-white'
-			: 'text-md-light-on-surface dark:text-md-dark-on-surface',
+		color ??
+			(theme === 'ios'
+				? 'text-black dark:text-white'
+				: 'text-md-light-on-surface dark:text-md-dark-on-surface'),
 	]}
 	style="font-size: {size}px"
 ></wa-icon>

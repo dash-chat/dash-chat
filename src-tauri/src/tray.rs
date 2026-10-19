@@ -7,10 +7,6 @@ use tauri::{
     AppHandle, Manager, Runtime, WebviewWindowBuilder,
 };
 
-use tokio_stream::wrappers::WatchStream;
-
-use crate::node::node_slot::node_stream;
-
 const TRAY_ID: &str = "dash-chat-tray";
 
 #[cfg(not(target_os = "macos"))]
@@ -58,10 +54,7 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
 fn warn_while_lan_blocked<R: Runtime>(app_handle: &AppHandle<R>) {
     let app_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
-        let mut lan_blocked = std::pin::pin!(node_stream(|node| WatchStream::new(
-            node.lan_multicast.blocked()
-        ))
-        .map(Option::unwrap_or_default));
+        let mut lan_blocked = std::pin::pin!(lan_multicast_probe::lan_multicast_blocked());
         while let Some(blocked) = lan_blocked.next().await {
             if let Err(err) = set_lan_warning(&app_handle, blocked) {
                 log::error!("Failed to update the tray warning: {err:?}");
@@ -177,14 +170,12 @@ fn quit_from_tray(app: &AppHandle<impl Runtime>) {
     });
 }
 
+/// Show the main window on Settings › Offline functionality. The route goes
+/// through the pending navigations, which a window created just now also takes
+/// once its app has loaded.
 fn show_offline_settings<R: Runtime>(app: &AppHandle<R>) -> anyhow::Result<()> {
     show_or_create_main_window(app)?;
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| anyhow::anyhow!("no main window"))?;
-    let mut url = window.url()?;
-    url.set_path("/settings/offline");
-    window.navigate(url)?;
+    crate::pending_navigations::push_route(app, "/settings/offline".to_string());
     Ok(())
 }
 

@@ -9,8 +9,8 @@
  * macOS only, and skips itself unless the terminal running the harness has
  * Accessibility access, which answering the alert needs. Every run leaves a
  * row in System Settings › Local Network, which macOS offers no way to remove.
- * macOS also remembers the answer by the binary's UUID, so a run on the very
- * binary an earlier run allowed starts allowed and fails.
+ * The tests run in order through that system state: the second one answers
+ * the alert the first one left pending.
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import {
@@ -22,8 +22,8 @@ import {
 	setupAgentWithoutLocalNetworkAccess,
 } from '../setup/setup-agents';
 
-/** The node probes the LAN every 3s. */
-const PROBE_MS = 15_000;
+/** The node probes the LAN every 3s and warns after two refused rounds. */
+const PROBE_TIMEOUT_MS = 15_000;
 
 describe('Local hub LAN warning', function () {
 	let agent: Agent;
@@ -36,6 +36,15 @@ describe('Local hub LAN warning', function () {
 		await createProfiles({ Alice: agent });
 	});
 
+	// A system alert left up by a failed test would sit over whatever runs next.
+	after(() => {
+		try {
+			answerLocalNetworkAlert('Allow');
+		} catch {
+			// No system alerts to answer here.
+		}
+	});
+
 	it('warns that phones cannot find the hub while macOS keeps it off the LAN', async () => {
 		await agent.homePage.settingsLink.click();
 		await agent.settingsPage.ready();
@@ -44,7 +53,7 @@ describe('Local hub LAN warning', function () {
 		await agent.offlinePage.setLocalMailboxEnabled(true);
 
 		await agent.offlinePage.localMailboxLanBlocked.waitForDisplayed({
-			timeout: PROBE_MS,
+			timeout: PROBE_TIMEOUT_MS,
 			timeoutMsg: 'no LAN warning while local network access is pending',
 		});
 
@@ -61,7 +70,7 @@ describe('Local hub LAN warning', function () {
 
 		await agent.homePage.settingsHubWarning.waitForDisplayed({
 			reverse: true,
-			timeout: PROBE_MS,
+			timeout: PROBE_TIMEOUT_MS,
 			timeoutMsg: 'the LAN warning stayed after allowing local network access',
 		});
 		await agent.homePage.settingsLink.click();

@@ -1,6 +1,6 @@
 //! Local message hub discovery over mDNS (swarm-discovery), both halves:
 
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::Ipv4Addr;
 use std::sync::LazyLock;
 
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
@@ -62,23 +62,7 @@ pub(crate) fn label_to_mailbox_id(label: &str) -> anyhow::Result<String> {
 
 /// The local IPv4 interfaces to pin mDNS multicast egress to, and the pool the
 /// announce side advertises from.
-pub(crate) fn multicast_interfaces_v4() -> Vec<Ipv4Addr> {
-    if_addrs::get_if_addrs()
-        .map(|interfaces| interfaces.iter().filter_map(mdns_address_v4).collect())
-        .unwrap_or_default()
-}
-
-/// The address to pin multicast to and advertise for `interface`, if it can
-/// carry mDNS at all
-fn mdns_address_v4(interface: &Interface) -> Option<Ipv4Addr> {
-    if interface.is_p2p() {
-        return None;
-    }
-    match interface.ip() {
-        IpAddr::V4(v4) if !v4.is_link_local() => Some(v4),
-        _ => None,
-    }
-}
+pub(crate) use lan_multicast_probe::multicast_interfaces_v4;
 
 /// The IPv4 subnets this host is on, as `(address, prefix length)`. Loopback
 /// is left out: a hub reached over it is on this host, not on a LAN.
@@ -118,37 +102,6 @@ mod tests {
             #[cfg(windows)]
             adapter_name: String::new(),
         }
-    }
-
-    #[test]
-    fn an_interfaces_address_is_where_a_peer_on_the_lan_reaches_us() {
-        let wifi = interface("wlo1", Ipv4Addr::new(192, 168, 0, 105), 24, false);
-
-        assert_eq!(
-            mdns_address_v4(&wifi),
-            Some(Ipv4Addr::new(192, 168, 0, 105))
-        );
-    }
-
-    #[test]
-    fn a_point_to_point_interface_is_not_announced() {
-        let tunnel = interface("wg0", Ipv4Addr::new(10, 8, 0, 2), 32, true);
-
-        assert_eq!(mdns_address_v4(&tunnel), None);
-    }
-
-    #[test]
-    fn a_link_local_address_is_not_announced() {
-        let unconfigured = interface("wlo1", Ipv4Addr::new(169, 254, 3, 4), 16, false);
-
-        assert_eq!(mdns_address_v4(&unconfigured), None);
-    }
-
-    #[test]
-    fn loopback_is_kept_for_the_host_that_has_nothing_else() {
-        let loopback = interface("lo", Ipv4Addr::LOCALHOST, 8, false);
-
-        assert_eq!(mdns_address_v4(&loopback), Some(Ipv4Addr::LOCALHOST));
     }
 
     #[test]

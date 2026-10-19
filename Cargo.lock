@@ -2109,6 +2109,7 @@ dependencies = [
  "image",
  "iroh",
  "jni 0.21.1",
+ "lan-multicast-probe",
  "libc",
  "local-hub-discovery",
  "log",
@@ -2212,7 +2213,6 @@ dependencies = [
  "iroh",
  "iroh-blobs",
  "itertools 0.14.0",
- "lan-multicast-probe",
  "mailbox-client",
  "mailbox-local-server",
  "mailbox-server",
@@ -5508,11 +5508,12 @@ dependencies = [
 name = "lan-multicast-probe"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
+ "futures",
  "if-addrs",
  "log",
  "socket2 0.6.5",
  "tokio",
- "tokio-util",
 ]
 
 [[package]]
@@ -5717,6 +5718,7 @@ dependencies = [
  "data-encoding",
  "futures",
  "if-addrs",
+ "lan-multicast-probe",
  "log",
  "network-watch",
  "swarm-discovery",
