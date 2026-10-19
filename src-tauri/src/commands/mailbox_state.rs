@@ -1,37 +1,36 @@
 use std::collections::BTreeSet;
 
+use async_rx::StreamExt as _;
 use async_stream::stream;
 use dashchat_node::{topic::TopicId, DeviceId};
-use futures::{future, Stream, StreamExt};
+use futures::{Stream, StreamExt};
 use mailbox_client::{manager::MailboxConnectionState, sync_tracker::MailboxSyncState, MailboxId};
 use tauri_plugin_subscriptions::subscription;
 use tokio_stream::wrappers::WatchStream;
 
-use crate::node::node_slot::node_stream;
+use crate::node::node_slot::node_stream_values;
 
 #[subscription]
 pub fn mailbox_subscribe_active_ids() -> impl Stream<Item = BTreeSet<MailboxId>> {
-    node_stream(|node| WatchStream::new(node.mailboxes.active_mailbox_ids()))
-        .filter_map(future::ready)
+    node_stream_values(|node| WatchStream::new(node.mailboxes.active_mailbox_ids()))
 }
 
 #[subscription]
 pub fn mailbox_subscribe_cloud_id() -> impl Stream<Item = Option<MailboxId>> {
     // Recomputed on each active-set change: the cloud id is derived from the
     // active set *and* the tracked mailboxes' urls.
-    node_stream(|node| {
+    node_stream_values(|node| {
         WatchStream::new(node.mailboxes.active_mailbox_ids()).then(move |_| {
             let node = node.clone();
             async move { crate::mailbox::cloud_mailbox_id(&node).await }
         })
     })
-    .filter_map(future::ready)
+    .dedup()
 }
 
 #[subscription]
 pub fn mailbox_subscribe_all_ids() -> impl Stream<Item = BTreeSet<MailboxId>> {
-    node_stream(|node| WatchStream::new(node.mailboxes.sync_tracker().all_mailbox_ids()))
-        .filter_map(future::ready)
+    node_stream_values(|node| WatchStream::new(node.mailboxes.sync_tracker().all_mailbox_ids()))
 }
 
 /// The frontend subscribes per active id, so a mailbox that isn't registered
@@ -41,7 +40,7 @@ pub fn mailbox_subscribe_all_ids() -> impl Stream<Item = BTreeSet<MailboxId>> {
 pub fn mailbox_subscribe_connection_state(
     mailbox_id: MailboxId,
 ) -> impl Stream<Item = MailboxConnectionState> {
-    node_stream(move |node| {
+    node_stream_values(move |node| {
         let id = mailbox_id.clone();
         stream! {
             // Only the watch is kept: the handle holds its sender, so keeping it
@@ -54,22 +53,23 @@ pub fn mailbox_subscribe_connection_state(
             }
         }
     })
-    .filter_map(future::ready)
 }
 
 #[subscription]
 pub fn mailbox_subscribe_sync_state(
     mailbox_id: MailboxId,
 ) -> impl Stream<Item = MailboxSyncState<TopicId, DeviceId>> {
-    node_stream(move |node| {
+    node_stream_values(move |node| {
         let id = mailbox_id.clone();
         stream! {
-            if let Ok(watch) = node.mailboxes.sync_tracker().sync_state(&id).await {
-                for await state in WatchStream::new(watch) {
-                    yield state;
+            match node.mailboxes.sync_tracker().sync_state(&id).await {
+                Ok(watch) => {
+                    for await state in WatchStream::new(watch) {
+                        yield state;
+                    }
                 }
+                Err(err) => log::warn!("No sync state to stream for mailbox {id}: {err:?}"),
             }
         }
     })
-    .filter_map(future::ready)
 }
