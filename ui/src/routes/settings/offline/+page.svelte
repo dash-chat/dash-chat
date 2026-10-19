@@ -17,13 +17,15 @@
 		Toggle,
 		useTheme,
 	} from 'konsta/svelte';
-	import { isAndroid, isMobile } from '$lib/utils/environment';
+	import { isAndroid, isMac, isMobile } from '$lib/utils/environment';
+	import WarningIcon from '$lib/components/WarningIcon.svelte';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
 	const localMailboxEnabled = useReactivePromise(
 		settingsStore.localMailboxEnabled,
 	);
+	const localHubBlocked = useReactivePromise(settingsStore.localHubBlocked);
 	const backgroundModeEnabled = useReactivePromise(
 		settingsStore.backgroundModeEnabled,
 	);
@@ -92,6 +94,22 @@
 				<BlockFooter class="px-4"
 					>{m.localMessageServerDescription()}</BlockFooter
 				>
+				{#await $localHubBlocked then blocked}
+					{#if blocked}
+						<BlockFooter
+							class="mt-4 flex items-center gap-5 px-4"
+							colors={{ textIos: 'text-red-500', textMaterial: 'text-red-500' }}
+							data-testid="offline-local-mailbox-lan-blocked"
+						>
+							<WarningIcon size={32} class="shrink-0" />
+							<span
+								>{isMac
+									? m.localMessageServerLanBlockedMacos()
+									: m.localMessageServerLanBlocked()}</span
+							>
+						</BlockFooter>
+					{/if}
+				{/await}
 			</div>
 		{/if}
 

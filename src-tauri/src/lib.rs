@@ -182,6 +182,7 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
             commands::online_peers::subscribe_to_online_peers,
+            commands::lan_multicast::subscribe_to_lan_multicast_blocked,
             commands::media::save_blob_to_cache,
             commands::voice::transcode_voice_message,
             pending_navigations::take_pending_navigations,

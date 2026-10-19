@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use lan_multicast_probe::LanMulticastProbe;
+
 use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
 use crate::error::{
@@ -231,6 +233,10 @@ pub struct Node {
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
     pub online_peers: OnlinePeers,
+
+    /// Whether this device's mDNS can reach the LAN, for both p2p discovery
+    /// and the local hub.
+    pub lan_multicast: LanMulticastProbe,
 
     pub config: NodeConfig,
 
@@ -466,6 +472,7 @@ impl Node {
         let online_peers = OnlinePeers::new(node_keys.device_id(), projection.clone());
         let node = Self {
             online_peers,
+            lan_multicast: LanMulticastProbe::spawn(),
             op_store,
             mailboxes,
             config,

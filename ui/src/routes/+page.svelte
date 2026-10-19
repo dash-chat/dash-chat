@@ -14,6 +14,7 @@
 	import { goto } from '$app/navigation';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import HubWarningBadge from '$lib/components/HubWarningBadge.svelte';
 	const theme = $derived(useTheme());
 
 	let getStartedVisible = $state(true);
@@ -29,11 +30,13 @@
 		{#snippet left()}
 			{#await $myProfile then myProfile}
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
-					<Avatar
-						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
-						size={42}
-					/>
+					<HubWarningBadge>
+						<Avatar
+							image={myProfile?.avatar}
+							initials={myProfile?.name.slice(0, 2)}
+							size={42}
+						/>
+					</HubWarningBadge>
 				</Link>
 			{/await}
 		{/snippet}

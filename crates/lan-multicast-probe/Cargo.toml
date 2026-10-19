@@ -1,0 +1,11 @@
+[package]
+name = "lan-multicast-probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+if-addrs = "0.15"
+log = "0.4"
+socket2 = "0.6"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }

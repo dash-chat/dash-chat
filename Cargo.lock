@@ -2212,6 +2212,7 @@ dependencies = [
  "iroh",
  "iroh-blobs",
  "itertools 0.14.0",
+ "lan-multicast-probe",
  "mailbox-client",
  "mailbox-local-server",
  "mailbox-server",
@@ -5501,6 +5502,17 @@ dependencies = [
  "bitflags 2.13.2",
  "serde",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "lan-multicast-probe"
+version = "0.1.0"
+dependencies = [
+ "if-addrs",
+ "log",
+ "socket2 0.6.5",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

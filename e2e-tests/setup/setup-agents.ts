@@ -74,6 +74,7 @@ import {
 	resetIosAppState,
 } from './platforms/ios';
 import { iosWifi, iosWifiInfo } from './platforms/ios/wifi';
+import { launchDesktopAgentWithoutLocalNetworkAccess } from './platforms/macos';
 import {
 	type AgentPlatformName,
 	type PhonePlatformName,
@@ -1106,6 +1107,16 @@ export async function setupDesktopAgent(
 		await discardDesktopAgent(slot);
 		throw e;
 	}
+}
+
+/** A macOS desktop agent whose local network access stays undetermined,
+ *  behind the system alert, until `answerLocalNetworkAlert` answers it. */
+export async function setupAgentWithoutLocalNetworkAccess(): Promise<Agent> {
+	const { agent } = await setupDesktopAgent(
+		launchDesktopAgentWithoutLocalNetworkAccess,
+	);
+	specAgents.push(agent);
+	return agent;
 }
 
 /** The agents `setupAgents` built for this spec file. */
