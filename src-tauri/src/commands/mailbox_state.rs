@@ -34,9 +34,8 @@ pub fn mailbox_subscribe_all_ids() -> impl Stream<Item = BTreeSet<MailboxId>> {
     node_stream_values(|node| WatchStream::new(node.mailboxes.sync_tracker().all_mailbox_ids()))
 }
 
-/// The frontend subscribes per active id, so a mailbox that isn't registered
-/// is a race the frontend resolves itself: the active set just changed, and it
-/// subscribes again from that.
+/// Right after a node swap the mailbox may not be registered on the new node
+/// yet, so the lookup waits for the active set to change until it is.
 #[subscription]
 pub fn mailbox_subscribe_connection_state(
     mailbox_id: MailboxId,
@@ -44,13 +43,17 @@ pub fn mailbox_subscribe_connection_state(
     node_stream_values(move |node| {
         let id = mailbox_id.clone();
         stream! {
-            // Only the watch is kept: the handle holds its sender, so keeping it
-            // would hide the mailbox being unregistered.
-            let watch = node.mailboxes.tracked_mailbox(&id).await.map(|mailbox| mailbox.connection_state());
-            if let Some(watch) = watch {
-                for await state in WatchStream::new(watch) {
-                    yield state;
+            let mut active = node.mailboxes.active_mailbox_ids();
+            let watch = loop {
+                if let Some(mailbox) = node.mailboxes.tracked_mailbox(&id).await {
+                    break mailbox.connection_state();
                 }
+                if active.changed().await.is_err() {
+                    return;
+                }
+            };
+            for await state in WatchStream::new(watch) {
+                yield state;
             }
         }
     })
