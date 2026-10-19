@@ -1,7 +1,7 @@
 import { ReactivePromise, reactive } from 'signalium';
+import { subscribe } from 'tauri-plugin-subscriptions';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
-import { subscribeChannel } from '../utils/tauri-channel';
 import {
 	type MailboxConnectionState,
 	type MailboxId,
@@ -41,22 +41,22 @@ export interface IMailboxTrackerStore {
 
 export class MailboxTrackerStore implements IMailboxTrackerStore {
 	activeMailboxIds = reactive(() =>
-		subscribeChannel<MailboxId[]>('mailbox_subscribe_active_ids'),
+		subscribe<MailboxId[]>('mailbox_subscribe_active_ids'),
 	);
 
 	allMailboxIds = reactive(() =>
-		subscribeChannel<MailboxId[]>('mailbox_subscribe_all_ids'),
+		subscribe<MailboxId[]>('mailbox_subscribe_all_ids'),
 	);
 
 	connectionState = reactive((mailboxId: MailboxId) =>
-		subscribeChannel<MailboxConnectionState>(
+		subscribe<MailboxConnectionState>(
 			'mailbox_subscribe_connection_state',
 			{ mailboxId },
 		),
 	);
 
 	cloudMailboxId = reactive(() =>
-		subscribeChannel<MailboxId | null>('mailbox_subscribe_cloud_id'),
+		subscribe<MailboxId | null>('mailbox_subscribe_cloud_id'),
 	);
 
 	// Registration itself proves reachability: the cloud mailbox is only registered
@@ -123,7 +123,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 	});
 
 	syncState = reactive((mailboxId: MailboxId) =>
-		subscribeChannel<MailboxSyncState>('mailbox_subscribe_sync_state', {
+		subscribe<MailboxSyncState>('mailbox_subscribe_sync_state', {
 			mailboxId,
 		}),
 	);
