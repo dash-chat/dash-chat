@@ -3,12 +3,14 @@
 //! without Local Network access (TN3179), and so does a VPN that leaves a
 //! reject route on 224.0.0.0/4: nobody on the LAN can discover the device.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddrV4};
+use std::net::{Ipv4Addr, SocketAddrV4};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use futures::Stream;
-use if_addrs::Interface;
 use socket2::{Domain, Protocol, Socket, Type};
+use tokio::sync::watch;
+use tokio_stream::wrappers::WatchStream;
 
 /// How often to probe: on macOS, Local Network access can be granted or
 /// revoked at any time.
@@ -23,62 +25,75 @@ const MDNS_V4: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(224, 0, 0, 251), 5
 /// A DNS header asking nothing, which mDNS responders ignore.
 const EMPTY_QUERY: [u8; 12] = [0; 12];
 
-/// Whether every LAN this device is on refuses its mDNS multicast
+/// Whether every LAN this device is on refuses its mDNS multicast: the current
+/// verdict, then every change. One probe serves every watcher, and it only
+/// probes while someone watches. Must be called within a Tokio runtime.
 pub fn lan_multicast_blocked() -> impl Stream<Item = bool> {
-    async_stream::stream! {
-        let mut refused_rounds = 0;
-        let mut last_verdict = None;
-        loop {
-            if every_lan_refuses_multicast().await {
-                refused_rounds += 1;
-            } else {
-                refused_rounds = 0;
+    WatchStream::new(shared_verdict().subscribe())
+}
+
+fn shared_verdict() -> &'static watch::Sender<bool> {
+    static VERDICT: OnceLock<watch::Sender<bool>> = OnceLock::new();
+    VERDICT.get_or_init(|| {
+        let verdict = watch::Sender::new(false);
+        tokio::spawn(probe_while_watched(verdict.clone()));
+        verdict
+    })
+}
+
+async fn probe_while_watched(verdict: watch::Sender<bool>) {
+    let mut refused_rounds = 0;
+    loop {
+        if verdict.receiver_count() > 0 {
+            match probe_every_lan().await {
+                Some(true) => refused_rounds += 1,
+                Some(false) => refused_rounds = 0,
+                None => {}
             }
             let blocked = refused_rounds >= BLOCKED_ROUNDS;
-            if last_verdict != Some(blocked) {
-                if last_verdict.is_some() {
-                    log_change(blocked);
-                }
-                last_verdict = Some(blocked);
-                yield blocked;
+            if *verdict.borrow() != blocked {
+                log_change(blocked);
+                verdict.send_replace(blocked);
             }
-            tokio::time::sleep(PROBE_INTERVAL).await;
         }
+        tokio::time::sleep(PROBE_INTERVAL).await;
     }
 }
 
-/// The local IPv4 interfaces that can carry mDNS, loopback included.
-pub fn multicast_interfaces_v4() -> Vec<Ipv4Addr> {
-    if_addrs::get_if_addrs()
-        .map(|interfaces| interfaces.iter().filter_map(mdns_address_v4).collect())
-        .unwrap_or_default()
-}
-
-/// The address to pin multicast to and advertise for `interface`, if it can
-/// carry mDNS at all
-fn mdns_address_v4(interface: &Interface) -> Option<Ipv4Addr> {
-    if interface.is_p2p() {
-        return None;
-    }
-    match interface.ip() {
-        IpAddr::V4(v4) if !v4.is_link_local() => Some(v4),
-        _ => None,
-    }
-}
-
-/// A device with no LAN is not blocked, only offline.
-async fn every_lan_refuses_multicast() -> bool {
-    let lans: Vec<Ipv4Addr> = multicast_interfaces_v4()
+/// Whether every LAN refused this round's probe, or `None` if that can't be
+/// told.
+async fn probe_every_lan() -> Option<bool> {
+    let lans: Vec<Ipv4Addr> = local_hub_discovery::multicast_interfaces_v4()
         .into_iter()
         .filter(|ip| !ip.is_loopback())
         .collect();
-    if lans.is_empty() {
-        return false;
-    }
     // Socket calls block.
-    tokio::task::spawn_blocking(move || lans.into_iter().all(|lan| send_probe(lan).is_err()))
-        .await
-        .unwrap_or(false)
+    tokio::task::spawn_blocking(move || {
+        every_lan_refused(lans.into_iter().map(refuses_multicast).collect())
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// One LAN taking multicast is enough, a device with no LAN is offline rather
+/// than blocked, and a probe that couldn't be set up says nothing.
+fn every_lan_refused(probes: Vec<std::io::Result<bool>>) -> Option<bool> {
+    if probes.is_empty() || probes.iter().any(|probe| matches!(probe, Ok(false))) {
+        Some(false)
+    } else if probes.iter().any(|probe| probe.is_err()) {
+        None
+    } else {
+        Some(true)
+    }
+}
+
+/// Whether `interface` refuses our multicast. Failing to set up the socket
+/// (out of descriptors, say) is an error, not a refusal.
+fn refuses_multicast(interface: Ipv4Addr) -> std::io::Result<bool> {
+    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    socket.set_multicast_if_v4(&interface)?;
+    Ok(socket.send_to(&EMPTY_QUERY, &MDNS_V4.into()).is_err())
 }
 
 fn log_change(blocked: bool) {
@@ -89,64 +104,33 @@ fn log_change(blocked: bool) {
     }
 }
 
-fn send_probe(interface: Ipv4Addr) -> std::io::Result<()> {
-    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
-    socket.set_multicast_if_v4(&interface)?;
-    socket.send_to(&EMPTY_QUERY, &MDNS_V4.into())?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
-    use if_addrs::{IfAddr, IfOperStatus, Ifv4Addr};
+    use std::io;
 
     use super::*;
 
-    fn interface(name: &str, ip: Ipv4Addr, prefixlen: u8, is_p2p: bool) -> Interface {
-        Interface {
-            name: name.to_string(),
-            addr: IfAddr::V4(Ifv4Addr {
-                ip,
-                netmask: Ipv4Addr::from(u32::MAX << (32 - prefixlen)),
-                prefixlen,
-                broadcast: None,
-            }),
-            index: None,
-            oper_status: IfOperStatus::Up,
-            is_p2p,
-            #[cfg(windows)]
-            adapter_name: String::new(),
-        }
-    }
-
-    const WIFI: Ipv4Addr = Ipv4Addr::new(192, 168, 0, 105);
-
-    #[test]
-    fn an_interfaces_address_is_where_a_peer_on_the_lan_reaches_us() {
-        assert_eq!(
-            mdns_address_v4(&interface("wlo1", WIFI, 24, false)),
-            Some(WIFI)
-        );
+    fn unset_up() -> io::Result<bool> {
+        Err(io::Error::from(io::ErrorKind::OutOfMemory))
     }
 
     #[test]
-    fn a_point_to_point_interface_is_not_announced() {
-        let tunnel = interface("wg0", Ipv4Addr::new(10, 8, 0, 2), 32, true);
-
-        assert_eq!(mdns_address_v4(&tunnel), None);
+    fn a_device_with_no_lan_is_offline_not_blocked() {
+        assert_eq!(every_lan_refused(vec![]), Some(false));
     }
 
     #[test]
-    fn a_link_local_address_is_not_announced() {
-        let unconfigured = interface("wlo1", Ipv4Addr::new(169, 254, 3, 4), 16, false);
-
-        assert_eq!(mdns_address_v4(&unconfigured), None);
+    fn one_lan_that_takes_multicast_is_enough() {
+        assert_eq!(every_lan_refused(vec![Ok(true), Ok(false)]), Some(false));
     }
 
     #[test]
-    fn loopback_is_kept_for_the_host_that_has_nothing_else() {
-        let loopback = interface("lo", Ipv4Addr::LOCALHOST, 8, false);
+    fn every_lan_refusing_multicast_is_a_refusal() {
+        assert_eq!(every_lan_refused(vec![Ok(true), Ok(true)]), Some(true));
+    }
 
-        assert_eq!(mdns_address_v4(&loopback), Some(Ipv4Addr::LOCALHOST));
+    #[test]
+    fn a_probe_that_could_not_be_set_up_says_nothing() {
+        assert_eq!(every_lan_refused(vec![Ok(true), unset_up()]), None);
     }
 }

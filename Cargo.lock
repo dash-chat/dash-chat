@@ -5508,12 +5508,12 @@ dependencies = [
 name = "lan-multicast-probe"
 version = "0.1.0"
 dependencies = [
- "async-stream",
  "futures",
- "if-addrs",
+ "local-hub-discovery",
  "log",
  "socket2 0.6.5",
  "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
@@ -5718,7 +5718,6 @@ dependencies = [
  "data-encoding",
  "futures",
  "if-addrs",
- "lan-multicast-probe",
  "log",
  "network-watch",
  "swarm-discovery",

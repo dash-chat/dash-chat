@@ -22,7 +22,7 @@ import {
 	setupAgentWithoutLocalNetworkAccess,
 } from '../setup/setup-agents';
 
-/** The node probes the LAN every 3s and warns after two refused rounds. */
+/** The LAN is probed every 3s and counts as blocked after two refused rounds. */
 const PROBE_TIMEOUT_MS = 15_000;
 
 describe('Local hub LAN warning', function () {

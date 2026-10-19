@@ -1,3 +1,5 @@
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
 use futures::StreamExt;
 use sonix_i18n::t;
 use tauri::image::Image;
@@ -6,6 +8,8 @@ use tauri::{
     menu::{IconMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem},
     AppHandle, Manager, Runtime, WebviewWindowBuilder,
 };
+
+use tokio_util::task::AbortOnDropHandle;
 
 const TRAY_ID: &str = "dash-chat-tray";
 
@@ -47,20 +51,23 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
         })
         .build(app_handle)?;
     tray.set_visible(false)?;
-    warn_while_lan_blocked(app_handle);
     Ok(())
 }
 
-fn warn_while_lan_blocked<R: Runtime>(app_handle: &AppHandle<R>) {
+/// Follows the LAN while the tray is shown, so the hub's warning probes only
+/// while the hub runs.
+static LAN_WARNING: Mutex<Option<AbortOnDropHandle<()>>> = Mutex::new(None);
+
+fn warn_while_lan_blocked<R: Runtime>(app_handle: &AppHandle<R>) -> AbortOnDropHandle<()> {
     let app_handle = app_handle.clone();
-    tauri::async_runtime::spawn(async move {
+    AbortOnDropHandle::new(tokio::spawn(async move {
         let mut lan_blocked = std::pin::pin!(lan_multicast_probe::lan_multicast_blocked());
         while let Some(blocked) = lan_blocked.next().await {
             if let Err(err) = set_lan_warning(&app_handle, blocked) {
                 log::error!("Failed to update the tray warning: {err:?}");
             }
         }
-    });
+    }))
 }
 
 fn tray_menu<R: Runtime>(app_handle: &AppHandle<R>, lan_blocked: bool) -> anyhow::Result<Menu<R>> {
@@ -113,14 +120,21 @@ pub fn show_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
     if let Some(tray) = app_handle.tray_by_id(TRAY_ID) {
         tray.set_visible(true)?;
     }
+    *lan_warning() = Some(warn_while_lan_blocked(app_handle));
     Ok(())
 }
 
 pub fn hide_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
+    lan_warning().take();
+    set_lan_warning(app_handle, false)?;
     if let Some(tray) = app_handle.tray_by_id(TRAY_ID) {
         tray.set_visible(false)?;
     }
     Ok(())
+}
+
+fn lan_warning() -> MutexGuard<'static, Option<AbortOnDropHandle<()>>> {
+    LAN_WARNING.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn set_lan_warning<R: Runtime>(app_handle: &AppHandle<R>, warn: bool) -> anyhow::Result<()> {
