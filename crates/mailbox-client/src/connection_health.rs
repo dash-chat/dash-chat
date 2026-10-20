@@ -179,3 +179,114 @@ impl MailboxConnectionState {
         self.consecutive_errors = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::time::Instant;
+
+    use super::*;
+
+    fn test_config() -> MailboxesConfig {
+        MailboxesConfig {
+            active_interval: Duration::from_secs(5),
+            degraded_interval: Duration::from_secs(30),
+            stopped_interval: Duration::from_secs(300),
+            between_polls_delay: Duration::from_millis(500),
+            sync_debounce: Duration::from_millis(100),
+            degraded_threshold: 2,
+            stopped_threshold: 3,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tracker_starts_active() {
+        let tracker = MailboxConnectionState::new();
+        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.consecutive_errors, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tracker_success_resets_to_active() {
+        let config = test_config();
+        let mut tracker = MailboxConnectionState::new();
+
+        // Accumulate some errors first
+        tracker.record_error(&config, "x".into());
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Degraded);
+
+        // Success resets everything
+        tracker.record_success(&config);
+        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.consecutive_errors, 0);
+        assert!(tracker.last_success_at.is_some());
+        assert!(tracker.last_error.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tracker_error_transitions() {
+        let config = test_config();
+        let mut tracker = MailboxConnectionState::new();
+
+        // 1 error: still Active
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Active);
+        assert_eq!(tracker.consecutive_errors, 1);
+
+        // 2 errors: Degraded
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Degraded);
+        assert_eq!(tracker.consecutive_errors, 2);
+
+        // 3 errors: Stopped
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Stopped);
+        assert_eq!(tracker.consecutive_errors, 3);
+
+        // More errors: stays Stopped
+        tracker.record_error(&config, "x".into());
+        assert_eq!(tracker.status, SyncStatus::Stopped);
+        assert_eq!(tracker.consecutive_errors, 4);
+        assert!(tracker.last_error.is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tracker_next_poll_after_success() {
+        let config = test_config();
+        let mut tracker = MailboxConnectionState::new();
+
+        let before = Instant::now();
+        tracker.record_success(&config);
+        let expected = before + config.active_interval + config.between_polls_delay;
+
+        assert_eq!(tracker.next_poll, expected);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tracker_next_poll_after_errors() {
+        let config = test_config();
+        let mut tracker = MailboxConnectionState::new();
+        let delay = config.between_polls_delay;
+
+        // First error: still Active interval
+        tracker.record_error(&config, "x".into());
+        let expected = Instant::now() + config.active_interval + delay;
+        assert_eq!(tracker.next_poll, expected);
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+
+        // Second error: Degraded interval
+        tracker.record_error(&config, "x".into());
+        let expected = Instant::now() + config.degraded_interval + delay;
+        assert_eq!(tracker.next_poll, expected);
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+
+        // Third error: Stopped interval
+        tracker.record_error(&config, "x".into());
+        let expected = Instant::now() + config.stopped_interval + delay;
+        assert_eq!(tracker.next_poll, expected);
+    }
+}
