@@ -110,3 +110,72 @@ impl<Topic: Ord> Default for PendingRequest<Topic> {
         Self::None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pending_request_accumulates_topics() {
+        let mut pending = PendingRequest::None;
+        pending.merge_poll(Some(1u8));
+        pending.merge_poll(Some(2u8));
+        pending.merge_poll(Some(1u8));
+        
+        if let PendingRequest::PollTopics { topics, .. } = pending {
+            assert_eq!(topics, BTreeSet::from([1u8, 2u8]));
+        } else {
+            panic!("Expected PollTopics");
+        }
+    }
+
+    #[test]
+    fn test_pending_request_all_absorbs_topics() {
+        let mut pending = PendingRequest::None;
+        pending.merge_poll(Some(1u8));
+        pending.merge_poll(None);
+        pending.merge_poll(Some(2u8));
+        
+        match pending {
+            PendingRequest::PollAll { .. } => {},
+            _ => panic!("Expected PollAll"),
+        }
+    }
+
+    #[test]
+    fn test_pending_request_keeps_the_first_debounce() {
+        let debounce = Duration::from_millis(100);
+        let far = Instant::now() + Duration::from_secs(60);
+        let mut pending = PendingRequest::None;
+        
+        let now = Instant::now();
+        pending.merge_poll(Some(1u8));
+        let deadline = now + debounce;
+        
+        pending.merge_poll(Some(2u8));
+        pending.merge_poll(None);
+        
+        let actual = pending.due_at(now, far, debounce);
+        let diff = if actual > deadline {
+            actual - deadline
+        } else {
+            deadline - actual
+        };
+        
+        assert!(diff < Duration::from_millis(1), "Deadline mismatch: actual {:?}, expected {:?}", actual, deadline);
+    }
+
+    #[test]
+    fn test_pending_probe_yields_to_wakeup_and_absorbs_syncs() {
+        let mut pending = PendingRequest::None;
+        pending.merge_poll(Some(1u8));
+        pending.merge_probe();
+        assert_eq!(pending, PendingRequest::Probe);
+        pending.merge_poll(Some(2u8));
+        pending.merge_poll(None);
+        assert_eq!(pending, PendingRequest::Probe);
+        pending.merge_wakeup();
+        pending.merge_probe();
+        assert_eq!(pending, PendingRequest::Wakeup);
+    }
+}
