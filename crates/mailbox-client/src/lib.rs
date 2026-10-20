@@ -6,6 +6,7 @@ mod polling;
 mod registry;
 pub mod store;
 mod sync;
+mod sync_scheduler;
 mod sync_tracker;
 
 pub use connection_health::{LastError, MailboxConnectionState, MailboxesConfig, SyncStatus};

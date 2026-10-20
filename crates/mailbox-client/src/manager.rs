@@ -7,6 +7,7 @@ use crate::polling::PollGuard;
 use crate::registry::Registry;
 use crate::store::MailboxStore;
 use crate::sync::SyncCoordinator;
+use crate::sync_scheduler::{PendingRequest, RequestOutcome};
 use crate::sync_tracker::MailboxSyncTracker;
 use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
@@ -38,7 +39,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
             client: Mutex::new(client),
             connection_state,
             polling: AtomicBool::new(false),
-            pending_request: std::sync::Mutex::new(PendingRequest::None),
+            pending_request: std::sync::Mutex::new(PendingRequest::default()),
             config,
         }
     }
@@ -122,15 +123,15 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         // since each demands a poll now regardless.
         let mut pending = self.pending_request.lock().unwrap();
         if !matches!(*pending, PendingRequest::Wakeup | PendingRequest::Probe) {
-            *pending = PendingRequest::None;
+            *pending = PendingRequest::default();
         }
     }
 
     /// Take the sync request the imminent poll is about to fulfil.
-    fn take_pending_request(&self) -> PendingRequest<Item::Topic> {
+    pub(crate) fn take_pending_request(&self) -> PendingRequest<Item::Topic> {
         std::mem::replace(
             &mut self.pending_request.lock().unwrap(),
-            PendingRequest::None,
+            PendingRequest::default(),
         )
     }
 
@@ -546,16 +547,14 @@ where
         let subscribed = self.subscribed_topics().await;
         // Take the pending sync info here to lock in what this poll will cover.
         // Any requests coming in after this point will be handled by the next poll.
-        let pending = tracked_mailbox.take_pending_request();
-        let probe = pending == PendingRequest::Probe;
-        let topics = match pending {
-            PendingRequest::PollTopics { topics, .. } => {
-                topics.intersection(&subscribed).copied().collect()
-            }
-            PendingRequest::None
-            | PendingRequest::PollAll { .. }
-            | PendingRequest::Wakeup
-            | PendingRequest::Probe => subscribed,
+        let (outcome, probe) = {
+            let mut req = tracked_mailbox.pending_request.lock().unwrap();
+            req.consume()
+        };
+
+        let topics = match outcome {
+            RequestOutcome::Topics(topics) => topics.intersection(&subscribed).copied().collect(),
+            RequestOutcome::All | RequestOutcome::Regular => subscribed,
         };
         if topics.is_empty() {
             tracing::trace!("no topics subscribed, skipping poll for {id}");
@@ -621,84 +620,7 @@ struct NextDue {
     wait: Duration,
 }
 
-/// The poll/wakeup action requested of a mailbox since its last poll. It is
-/// what carries a request past a poll already in flight: that poll's fetch was
-/// built before the request, so the request is only fulfilled by the next one.
-#[derive(Debug, PartialEq, Eq)]
-enum PendingRequest<Topic> {
-    /// No action was requested since last poll: wait for regularly scheduled poll.
-    None,
-
-    /// A specific topic set was requested: poll them once the debounce that
-    /// started with the first request has elapsed.
-    PollTopics {
-        topics: BTreeSet<Topic>,
-        since: Instant,
-    },
-
-    /// Every subscribed topic was requested: poll them once the debounce that
-    /// started with the first request has elapsed.
-    PollAll { since: Instant },
-
-    /// The mailbox was probed: poll every subscribed topic now (no debounce),
-    /// and let the result decide status and backoff.
-    Probe,
-
-    /// The mailbox was woken: set as Active and poll every subscribed topic now (no debounce).
-    Wakeup,
-}
-
-impl<Topic: Ord> PendingRequest<Topic> {
-    /// Accumulate a request for `topic`, or for every subscribed topic when `None`.
-    fn merge_poll(&mut self, topic: Option<Topic>) {
-        match (&mut *self, topic) {
-            (
-                PendingRequest::PollAll { .. } | PendingRequest::Wakeup | PendingRequest::Probe,
-                _,
-            ) => {}
-            (PendingRequest::PollTopics { since, .. }, None) => {
-                *self = PendingRequest::PollAll { since: *since }
-            }
-            (PendingRequest::None, None) => {
-                *self = PendingRequest::PollAll {
-                    since: Instant::now(),
-                }
-            }
-            (PendingRequest::PollTopics { topics, .. }, Some(topic)) => {
-                topics.insert(topic);
-            }
-            (PendingRequest::None, Some(topic)) => {
-                *self = PendingRequest::PollTopics {
-                    topics: BTreeSet::from([topic]),
-                    since: Instant::now(),
-                }
-            }
-        }
-    }
-
-    /// When this request wants the mailbox polled, given the regularly
-    /// scheduled poll at `next_poll`.
-    fn due_at(&self, now: Instant, next_poll: Instant, debounce: Duration) -> Instant {
-        match self {
-            PendingRequest::None => next_poll,
-            PendingRequest::PollTopics { since, .. } | PendingRequest::PollAll { since } => {
-                next_poll.min(*since + debounce)
-            }
-            PendingRequest::Wakeup | PendingRequest::Probe => now,
-        }
-    }
-
-    fn merge_wakeup(&mut self) {
-        *self = PendingRequest::Wakeup;
-    }
-
-    /// A wakeup already promises everything a probe asks for, so it stands.
-    fn merge_probe(&mut self) {
-        if *self != PendingRequest::Wakeup {
-            *self = PendingRequest::Probe;
-        }
-    }
-}
+// (Removed PendingRequest and its impl block)
 
 #[cfg(test)]
 mod tests {
