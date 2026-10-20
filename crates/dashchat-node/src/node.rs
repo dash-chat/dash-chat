@@ -572,7 +572,7 @@ impl Node {
             &self.device_id(),
             Utc::now() + self.config.contact_code_expiry,
         );
-        self.initialize_topic(*inbox_topic.topic)
+        self.initialize_stream(*inbox_topic.topic)
             .await
             .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
         self.local_store
@@ -844,8 +844,7 @@ impl Node {
         topic: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
     ) -> anyhow::Result<()> {
-        self.register_topic(topic).await?;
-        let space = self.streams.create_space(topic).await?;
+        let space = self.register_and_create_space(topic).await?;
         for (member, access) in initial_members {
             if member.id() == *self.device_id() {
                 continue;
@@ -1037,8 +1036,7 @@ impl Node {
 
     pub async fn join_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined space");
-        self.register_topic(chat_id).await?;
-        self.streams.join_space(*chat_id).await?;
+        self.register_and_join_space(chat_id).await?;
         Ok(())
     }
 
@@ -1159,8 +1157,8 @@ impl Node {
         Ok(newest.map(|(_, request)| request))
     }
 
-    pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
-        self.local_store.subscribed_topics().await
+    pub async fn subscribed_spaces(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
+        self.local_store.subscribed_spaces().await
     }
 
     /// Get all messages for a chat from the logs.
@@ -1700,8 +1698,7 @@ impl Node {
     /// Register the shared, idempotent state for a contact identified by their
     /// device pubkey and agent id:
     /// - register the contact as a bootstrap peer,
-    /// - subscribe to their announcements,
-    /// - subscribe to our direct-chat topic, and
+    /// - join their announcements space, and
     /// - stop restoring their inbox our own request was sent to.
     ///
     /// Safe to call repeatedly, so both the initiating `add_contact` path and the
@@ -1717,13 +1714,7 @@ impl Node {
         self.register_bootstrap_node(*device_id)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
-        // Subscribe to the contact's announcements to receive their group
-        // control messages, and to our shared direct-chat topic.
-        self.register_topic(Topic::announcements(agent_id))
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-        let fake_agent_id = FakeAgentId::from(device_id);
-        self.register_topic(self.direct_chat_topic(fake_agent_id))
+        self.register_and_join_space(Topic::announcements(agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.local_store
@@ -1780,12 +1771,6 @@ impl Node {
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
 
-        // Subscribe to the shared direct-chat topic right away so messages sent
-        // before the owner accepts already sync in both directions.
-        self.register_topic(direct_chat_topic_id)
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-
         // SPACES: Register the member in the spaces manager
 
         let inbox_topic = InboxTopic::from_nonce(
@@ -1835,7 +1820,7 @@ impl Node {
         // // XXX: need sleep a little more for all the messages to be processed
         // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
-        self.initialize_topic(*inbox_topic.topic)
+        self.initialize_stream(*inbox_topic.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -1851,7 +1836,7 @@ impl Node {
             expires_at: Utc::now() + self.config.contact_code_expiry,
         };
 
-        self.initialize_topic(*reply_inbox.topic)
+        self.initialize_stream(*reply_inbox.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -2058,7 +2043,7 @@ impl Node {
         else {
             return Ok(());
         };
-        self.initialize_topic(*reply_topic)
+        self.initialize_stream(*reply_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.publish(
@@ -2246,16 +2231,17 @@ impl Node {
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         let mut failures = 0usize;
 
-        self.initialize_topic(
-            *Topic::announcements(self.agent_id())
-                .alias_named(&format!("announce({:?})", self.agent_id().aliased())),
-        )
-        .await?;
+        let subscribed_spaces = self.local_store.subscribed_spaces().await?;
+        let my_announcements = Topic::announcements(self.agent_id())
+            .alias_named(&format!("announce({:?})", self.agent_id().aliased()));
+        if !subscribed_spaces.contains(&*my_announcements) {
+            self.register_and_create_space(my_announcements).await?;
+        }
 
         let advertised_inbox_topics = self.local_store.get_advertised_inbox_topics().await?;
         for topic in advertised_inbox_topics.iter() {
             if let Err(err) = self
-                .initialize_topic(
+                .initialize_stream(
                     *topic
                         .topic
                         .clone()
@@ -2274,7 +2260,7 @@ impl Node {
             .await?;
         for (topic, peer_device) in reply_inbox_topics.iter() {
             if let Err(err) = self
-                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                .initialize_stream(*topic.topic.clone().alias_named(&format!(
                     "reply_inbox({:?},peer={})",
                     self.device_id().aliased(),
                     &hex::encode(&peer_device.as_bytes()[..4])
@@ -2295,7 +2281,7 @@ impl Node {
             .await?
         {
             if let Err(err) = self
-                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                .initialize_stream(*topic.topic.clone().alias_named(&format!(
                     "requested_inbox(peer={})",
                     &hex::encode(&owner.as_bytes()[..4])
                 )))
@@ -2315,7 +2301,7 @@ impl Node {
             .await?
         {
             if let Err(err) = self
-                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                .initialize_stream(*topic.topic.clone().alias_named(&format!(
                     "accepted_inbox(peer={})",
                     &hex::encode(&requester.as_bytes()[..4])
                 )))
@@ -2326,8 +2312,7 @@ impl Node {
             }
         }
 
-        let subscribed_topics = self.local_store.subscribed_topics().await?;
-        for topic in subscribed_topics.iter() {
+        for topic in subscribed_spaces.iter() {
             if let Err(err) = self.initialize_space(*topic).await {
                 error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed space");
                 failures += 1;
@@ -2337,7 +2322,7 @@ impl Node {
         // @TODO: I had to add this so that the device group topic is subscribed to when we later
         // attempt to publish operations to it.
         if let Err(err) = self
-            .initialize_topic(self.device_group_topic().into())
+            .initialize_stream(self.device_group_topic().into())
             .await
         {
             error!(?err, "failed to initialize device group topic");
@@ -2730,7 +2715,7 @@ mod forged_contact_request_tests {
         let qr = alice.create_add_contact_qr_code().await.unwrap();
         let alice_inbox =
             InboxTopic::from_nonce(&qr.device_pubkey, &qr.inbox_nonce, chrono::Utc::now());
-        mallory.initialize_topic(*alice_inbox.topic).await.unwrap();
+        mallory.initialize_stream(*alice_inbox.topic).await.unwrap();
         mallory
             .publish(
                 alice_inbox.topic,
