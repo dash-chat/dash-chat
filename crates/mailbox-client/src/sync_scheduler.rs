@@ -121,7 +121,7 @@ mod tests {
         pending.merge_poll(Some(1u8));
         pending.merge_poll(Some(2u8));
         pending.merge_poll(Some(1u8));
-        
+
         if let PendingRequest::PollTopics { topics, .. } = pending {
             assert_eq!(topics, BTreeSet::from([1u8, 2u8]));
         } else {
@@ -135,9 +135,9 @@ mod tests {
         pending.merge_poll(Some(1u8));
         pending.merge_poll(None);
         pending.merge_poll(Some(2u8));
-        
+
         match pending {
-            PendingRequest::PollAll { .. } => {},
+            PendingRequest::PollAll { .. } => {}
             _ => panic!("Expected PollAll"),
         }
     }
@@ -147,22 +147,27 @@ mod tests {
         let debounce = Duration::from_millis(100);
         let far = Instant::now() + Duration::from_secs(60);
         let mut pending = PendingRequest::None;
-        
+
         let now = Instant::now();
         pending.merge_poll(Some(1u8));
         let deadline = now + debounce;
-        
+
         pending.merge_poll(Some(2u8));
         pending.merge_poll(None);
-        
+
         let actual = pending.due_at(now, far, debounce);
         let diff = if actual > deadline {
             actual - deadline
         } else {
             deadline - actual
         };
-        
-        assert!(diff < Duration::from_millis(1), "Deadline mismatch: actual {:?}, expected {:?}", actual, deadline);
+
+        assert!(
+            diff < Duration::from_millis(1),
+            "Deadline mismatch: actual {:?}, expected {:?}",
+            actual,
+            deadline
+        );
     }
 
     #[test]

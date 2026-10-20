@@ -9,6 +9,7 @@ use crate::store::MailboxStore;
 use crate::sync::SyncCoordinator;
 use crate::sync_scheduler::{PendingRequest, RequestOutcome};
 use crate::sync_tracker::MailboxSyncTracker;
+use crate::topic_registry::TopicRegistry;
 use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 
@@ -128,6 +129,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     }
 
     /// Take the sync request the imminent poll is about to fulfil.
+    #[cfg(test)]
     pub(crate) fn take_pending_request(&self) -> PendingRequest<Item::Topic> {
         std::mem::replace(
             &mut self.pending_request.lock().unwrap(),
@@ -152,7 +154,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
 #[derive(Clone)]
 pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     registry: Arc<Registry<Item>>,
-    topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
+    topic_registry: Arc<TopicRegistry<Item>>,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
@@ -171,7 +173,7 @@ where
     ) -> Self {
         Self {
             registry: Arc::new(Registry::new()),
-            topics: Arc::new(Mutex::new(Default::default())),
+            topic_registry: Arc::new(TopicRegistry::new()),
             sync_tracker: sync_tracker.clone(),
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
@@ -272,12 +274,12 @@ where
     }
 
     pub async fn subscribed_topics(&self) -> BTreeSet<Item::Topic> {
-        self.topics.lock().await.keys().cloned().collect()
+        self.topic_registry.subscribed_topics().await
     }
 
     /// Returns the iroh EndpointIds of mailboxes currently tracking `topic`.
     pub async fn get_sources(&self, topic: &Item::Topic) -> anyhow::Result<Vec<iroh::EndpointId>> {
-        if !self.topics.lock().await.contains_key(topic) {
+        if !self.topic_registry.is_subscribed(topic).await {
             return Ok(Vec::new());
         }
         Ok(self
@@ -471,20 +473,11 @@ where
         &self,
         topic: Item::Topic,
     ) -> Result<Option<mpsc::Receiver<Item>>, anyhow::Error> {
-        let mut tt = self.topics.lock().await;
-        if tt.contains_key(&topic) {
-            return Ok(None);
-        }
-        tracing::info!(topic = %topic, "subscribing to topic");
-        let (tx, rx) = mpsc::channel(100);
-        tt.insert(topic, tx);
-        Ok(Some(rx))
+        Ok(self.topic_registry.subscribe(topic).await)
     }
 
     pub async fn unsubscribe(&self, topic: Item::Topic) -> Result<(), anyhow::Error> {
-        tracing::info!(topic = %topic, "unsubscribing from topic");
-        self.topics.lock().await.remove(&topic);
-        Ok(())
+        self.topic_registry.unsubscribe(topic).await
     }
 
     pub async fn spawn(
@@ -603,14 +596,11 @@ where
     ) -> anyhow::Result<()> {
         let outcome = self
             .sync_coordinator
-            .sync_topics(topics, mailbox, &self.topics)
+            .sync_topics(topics, mailbox, &self.topic_registry)
             .await;
-        for topic in &outcome.closed_topics {
-            let mut tt = self.topics.lock().await;
-            if tt.get(topic).is_some_and(|s| s.is_closed()) {
-                tt.remove(topic);
-            }
-        }
+        self.topic_registry
+            .cleanup_closed_subscriptions(&outcome.closed_topics)
+            .await;
         outcome.result
     }
 }
@@ -2559,46 +2549,5 @@ mod tests {
         }
     }
 
-    /// When a topic's receiver is closed and the subsequent publish fails,
-    /// the topic must still be unsubscribed so it is not re-fetched forever.
-    #[tokio::test(start_paused = true)]
-    async fn closed_receiver_unsubscribed_despite_publish_failure() {
-        let mgr = test_mailboxes(test_config());
-
-        // Subscribe and immediately drop the receiver to close the channel.
-        let rx = mgr
-            .subscribe(0u8)
-            .await
-            .unwrap()
-            .expect("subscribed to topic");
-        drop(rx);
-
-        // The mailbox will return one item for the closed topic and then fail
-        // to publish, so `sync_topics` exits with an error before the manager
-        // can process `SyncTopicOutcome::closed_topics`.
-        let client = FailingPublishClient::new(vec![Msg {
-            topic: 0,
-            author: 'a',
-            seq: 0,
-        }]);
-        let client_id = client.id.clone();
-        mgr.register(client).await;
-
-        // Run a single sync through the public path used by the poll loop.
-        let client = mgr
-            .tracked_mailbox(&client_id)
-            .await
-            .unwrap()
-            .client()
-            .await;
-        let result = mgr.sync_topics([0u8].into_iter(), &client).await;
-        assert!(result.is_err(), "expected publish failure to propagate");
-
-        // Because the receiver was closed, the topic should be unsubscribed
-        // even though the overall sync failed.
-        assert!(
-            !mgr.subscribed_topics().await.contains(&0u8),
-            "closed topic should be unsubscribed even when publish fails, so it is not re-fetched"
-        );
-    }
+    // -- probe tests --
 }

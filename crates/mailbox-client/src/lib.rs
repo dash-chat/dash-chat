@@ -8,6 +8,7 @@ pub mod store;
 mod sync;
 mod sync_scheduler;
 mod sync_tracker;
+mod topic_registry;
 
 pub use connection_health::{LastError, MailboxConnectionState, MailboxesConfig, SyncStatus};
 pub use sync_tracker::{MailboxSyncState, MailboxSyncTracker};

@@ -8,11 +8,9 @@
 //! The coordinator abstracts the specific sync loop logic away from the
 //! main [`crate::manager::Mailboxes`] registry.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
-
-use tokio::sync::{Mutex, mpsc};
 
 use dashchat_utils::SeqNum;
 
@@ -20,6 +18,7 @@ use crate::MailboxId;
 use crate::manager::TrackedMailbox;
 use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
+use crate::topic_registry::TopicRegistry;
 use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 
 /// Outcome of a single [`SyncCoordinator::sync_topics`] call. The sync may
@@ -69,7 +68,7 @@ where
         &self,
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
-        topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
+        topic_registry: &TopicRegistry<Item>,
     ) -> SyncTopicOutcome<Item::Topic>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
@@ -90,7 +89,7 @@ where
 
         for (topic, response) in response.into_iter() {
             let outcome = match self
-                .sync_topic(topic.clone(), response, &sent_heights, topic_senders)
+                .sync_topic(topic.clone(), response, &sent_heights, topic_registry)
                 .await
             {
                 Ok(res) => res,
@@ -210,7 +209,7 @@ where
         topic: Item::Topic,
         response: FetchTopicResponse<Item>,
         sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
-        topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
+        topic_registry: &TopicRegistry<Item>,
     ) -> anyhow::Result<SyncTopicResult<Item>>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
@@ -247,7 +246,7 @@ where
             acks.push((item.topic(), item.author(), item.seq_num()));
         }
 
-        let Some(sender) = topic_senders.lock().await.get(&topic).cloned() else {
+        let Some(sender) = topic_registry.get_sender(&topic).await else {
             tracing::warn!(topic = %topic, "no sender for topic");
             return Ok(SyncTopicResult {
                 ops_to_publish,
@@ -257,11 +256,12 @@ where
         };
 
         for item in items {
-            if sender.send(item).await.is_err() {
+            if sender.send(item.clone()).await.is_err() {
                 tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
                 closed = true;
                 break;
             }
+            ops_to_publish.push(item);
         }
 
         for (author, seqs) in missing {
