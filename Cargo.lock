@@ -5508,6 +5508,7 @@ dependencies = [
 name = "lan-multicast-probe"
 version = "0.1.0"
 dependencies = [
+ "if-addrs",
  "local-hub-discovery",
  "log",
  "socket2 0.6.5",

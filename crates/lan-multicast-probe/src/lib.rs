@@ -1,9 +1,10 @@
 //! Whether this device's mDNS multicast can reach the LAN. macOS refuses it to
-//! an app without Local Network access (TN3179), and so does a VPN with a
-//! reject route on 224.0.0.0/4, while mDNS libraries only log the error.
+//! an app without Local Network access (TN3179), and so do VPN kill switches,
+//! while mDNS libraries only log the error.
 
+use std::collections::HashSet;
 use std::io;
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::net::{IpAddr, Ipv4Addr, SocketAddrV4};
 use std::time::Duration;
 
 use socket2::{Domain, Protocol, Socket, Type};
@@ -56,9 +57,10 @@ async fn probe_forever(blocked_tx: watch::Sender<bool>) {
 }
 
 async fn probe_every_lan() -> Option<bool> {
+    let loopback = loopback_addresses();
     let lans: Vec<Ipv4Addr> = local_hub_discovery::multicast_interfaces_v4()
         .into_iter()
-        .filter(|ip| !ip.is_loopback())
+        .filter(|ip| !loopback.contains(&IpAddr::V4(*ip)))
         .collect();
     tokio::task::spawn_blocking(move || {
         every_lan_refused(lans.into_iter().map(refuses_multicast).collect())
@@ -66,6 +68,22 @@ async fn probe_every_lan() -> Option<bool> {
     .await
     .ok()
     .flatten()
+}
+
+/// Every address on a loopback interface, including aliases like 10.10.10.1
+/// on lo0 that aren't loopback addresses themselves.
+fn loopback_addresses() -> HashSet<IpAddr> {
+    let interfaces = if_addrs::get_if_addrs().unwrap_or_default();
+    let loopback_names: HashSet<&str> = interfaces
+        .iter()
+        .filter(|interface| interface.is_loopback())
+        .map(|interface| interface.name.as_str())
+        .collect();
+    interfaces
+        .iter()
+        .filter(|interface| loopback_names.contains(interface.name.as_str()))
+        .map(|interface| interface.ip())
+        .collect()
 }
 
 fn every_lan_refused(probes: Vec<io::Result<bool>>) -> Option<bool> {
@@ -81,17 +99,21 @@ fn every_lan_refused(probes: Vec<io::Result<bool>>) -> Option<bool> {
 fn refuses_multicast(interface: Ipv4Addr) -> io::Result<bool> {
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     socket.set_multicast_if_v4(&interface)?;
-    // TTL 0 keeps the probe on this device, yet it faces the same checks.
-    socket.set_multicast_ttl_v4(0)?;
+    // Kill switches only refuse packets that would leave the device, so TTL 0
+    // can't tell; TTL 1 keeps the probe on the LAN.
+    socket.set_multicast_ttl_v4(1)?;
     socket.set_multicast_loop_v4(false)?;
     match socket.send_to(&EMPTY_DNS_HEADER, &MDNS_V4.into()) {
         Ok(_) => Ok(false),
-        // Local Network privacy and reject routes answer EHOSTUNREACH, firewalls
-        // EPERM. Other errors, like ENOBUFS, say nothing about the LAN.
+        // Local Network privacy and reject routes answer EHOSTUNREACH, kill
+        // switches ENETUNREACH, firewalls EPERM. Other errors, like ENOBUFS, say
+        // nothing about the LAN.
         Err(err)
             if matches!(
                 err.kind(),
-                io::ErrorKind::HostUnreachable | io::ErrorKind::PermissionDenied
+                io::ErrorKind::HostUnreachable
+                    | io::ErrorKind::NetworkUnreachable
+                    | io::ErrorKind::PermissionDenied
             ) =>
         {
             Ok(true)

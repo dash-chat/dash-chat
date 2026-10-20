@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+if-addrs = "0.15"
 local-hub-discovery = { workspace = true }
 log = "0.4"
 socket2 = "0.6"
