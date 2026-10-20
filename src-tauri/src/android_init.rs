@@ -2,9 +2,12 @@
 //!
 //! iroh's `DnsResolver` reads the system DNS config through JNI (`ndk-context` →
 //! `LinkProperties`), which needs a JVM context installed before the resolver is
-//! built — otherwise the lookup panics ("android context was not initialized")
-//! and falls back to Google's DNS. `tao` 0.35 (via `wry`) no longer installs it,
-//! unlike 0.34, so we must, via [`iroh::dns::install_android_jni_context`].
+//! built — otherwise the lookup panics ("android context was not initialized"),
+//! and our panic hook turns that into an abort. `tao` 0.37 installs the context
+//! when an activity is created, but a process started by a push or the
+//! background service never creates one, so we install it here too, via
+//! [`iroh::dns::install_android_jni_context`]. Our `ndk-context` fork keeps the
+//! first context when tao installs it again (see the root `Cargo.toml`).
 //!
 //! `JNI_OnLoad` runs the moment `System.loadLibrary("tauri_app_lib")` executes,
 //! before any Tauri or activity code, so it is the earliest and most reliable

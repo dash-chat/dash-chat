@@ -18,7 +18,7 @@
 		"prettier": "^3.6.2",
 		"prettier-plugin-svelte": "^3.5.1",
 		"rust-just": "^1.46.0",
-		"svelte": "^5.49.2",
+		"svelte": "^5.57.2",
 		"svelte-language-server": "^0.17.25",
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.45.0",

@@ -1,4 +1,4 @@
-import { ImageBlobReduce } from 'image-blob-reduce';
+import { imageReducer } from '$lib/utils/image';
 
 // HEIC is re-encoded even when that costs bytes: the result has to display.
 const ALWAYS_REENCODED_TYPES = new Set(['image/heic', 'image/heif']);
@@ -12,8 +12,6 @@ const COMPRESSIBLE_TYPES = new Set([
 const MAX_LONG_SIDE_PX = 1920;
 const JPEG_QUALITY = 0.85;
 
-const reduce = new ImageBlobReduce();
-
 /**
  * Re-encode raster images (jpeg/png/webp/heic) to JPEG, scaled so the long side is
  * at most 1920px. Returns the original file if it's not a compressible type,
@@ -24,6 +22,7 @@ export async function compressImage(file: File): Promise<File> {
 
 	let blob: Blob;
 	try {
+		const reduce = await imageReducer();
 		const canvas = await reduce.toCanvas(file, { max: MAX_LONG_SIDE_PX });
 		blob = await encodeJpegOnWhite(canvas);
 	} catch {

@@ -81,6 +81,12 @@ iroh-gossip = { git = "https://github.com/dash-chat/iroh-gossip", rev = "efc565e
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
 tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616" }
+# ndk-context 0.1.1 + rust-mobile/ndk-context PRs #6 and #8 (RwLock-held context,
+# try_* functions) + a second initialize_android_context keeping the first context
+# instead of panicking (dash-chat/ndk-context branch dashchat). android_init.rs
+# installs the context from JNI_OnLoad and tao 0.37 installs it again when the
+# activity is created.
+ndk-context = { git = "https://github.com/dash-chat/ndk-context", rev = "4ed51f9e864f4b380fb4a495637543a785a9d115" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
