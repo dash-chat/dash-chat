@@ -599,10 +599,9 @@ where
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
-        let topics_map = self.topics.lock().await.clone();
         let outcome = self
             .sync_coordinator
-            .sync_topics(topics, mailbox, &topics_map)
+            .sync_topics(topics, mailbox, &self.topics)
             .await;
         for topic in &outcome.closed_topics {
             self.unsubscribe(topic.clone()).await.ok();

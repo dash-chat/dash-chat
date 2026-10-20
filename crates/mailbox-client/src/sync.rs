@@ -12,6 +12,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
 
+use tokio::sync::{Mutex, mpsc};
+
 use dashchat_utils::SeqNum;
 
 use crate::MailboxId;
@@ -61,7 +63,7 @@ where
         &self,
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
-        topic_senders: &HashMap<Item::Topic, tokio::sync::mpsc::Sender<Item>>,
+        topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
     ) -> SyncTopicOutcome<Item::Topic>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
@@ -200,7 +202,7 @@ where
         topic: Item::Topic,
         response: FetchTopicResponse<Item>,
         sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
-        topic_senders: &HashMap<Item::Topic, tokio::sync::mpsc::Sender<Item>>,
+        topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
         ops_to_publish: &mut Vec<Item>,
         acks: &mut Vec<(Item::Topic, Item::Author, SeqNum)>,
         closed_topics: &mut HashSet<Item::Topic>,
@@ -236,7 +238,7 @@ where
             acks.push((item.topic(), item.author(), item.seq_num()));
         }
 
-        let Some(sender) = topic_senders.get(&topic).cloned() else {
+        let Some(sender) = topic_senders.lock().await.get(&topic).cloned() else {
             tracing::warn!(topic = %topic, "no sender for topic");
             return Ok(());
         };
