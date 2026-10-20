@@ -510,19 +510,10 @@ impl Node {
             .await
             .replace(followup_handle);
 
-        // === message ack writer === //
+        // === topics, then message ack writer === //
 
-        if node.config.enable_message_acks {
-            let ack_handle = message_acks::spawn_message_ack_task(
-                node.clone(),
-                node.config.message_ack_debounce,
-                node.message_ack_trigger.clone(),
-            );
-            node.message_ack_handle.lock().await.replace(ack_handle);
-        }
-
-        // === topics === //
-
+        // The ack writer's startup reconciliation publishes into stored chat
+        // spaces, so it must start only after those spaces are rejoined.
         if node.config.defer_stored_topics_initialization {
             // Initialize stored topics on a background task so the node is
             // returned immediately. This keeps app launch responsive while still ensuring all
@@ -541,6 +532,7 @@ impl Node {
                         || async { node.initialize_stored_topics().await },
                     )
                     .await;
+                    node.spawn_message_ack_writer().await;
                 }
             });
             node.stored_topics_init_handle
@@ -549,9 +541,22 @@ impl Node {
                 .replace(init_handle);
         } else {
             node.initialize_stored_topics().await?;
+            node.spawn_message_ack_writer().await;
         }
 
         Ok(node)
+    }
+
+    async fn spawn_message_ack_writer(&self) {
+        if !self.config.enable_message_acks {
+            return;
+        }
+        let ack_handle = message_acks::spawn_message_ack_task(
+            self.clone(),
+            self.config.message_ack_debounce,
+            self.message_ack_trigger.clone(),
+        );
+        self.message_ack_handle.lock().await.replace(ack_handle);
     }
 
     pub fn data_path(&self) -> &PathBuf {
