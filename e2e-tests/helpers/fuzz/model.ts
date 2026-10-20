@@ -502,7 +502,8 @@ export class ExpectedModel {
 	 *  was showing when it went away. */
 	startApp(name: string): void {
 		if (this.stopped.delete(name)) this.catchUp(name);
-		if (!this.cloud.usable) this.startedWithoutCloud.add(name);
+		if (this.cloud.usable) this.startedWithoutCloud.delete(name);
+		else this.startedWithoutCloud.add(name);
 		this.wentHome(name);
 		this.converge();
 	}

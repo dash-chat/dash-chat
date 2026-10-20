@@ -46,16 +46,10 @@ describe('Pure p2p sync (no mailbox)', function () {
 		}
 
 		const chip = agent1.directChatPage.connectionStatusIndicator;
-		await chip.chip.click();
-		await agent1.waitUntil(() => chip.isDialogOpen());
-		await expect(chip.dialogTitle).toHaveText(
+		await chip.expectDialog(
 			await agent1.tr('connectionStatusP2pTitle'),
-		);
-		await expect(chip.dialogDescription).toHaveText(
 			await agent1.tr('connectionStatusP2pDescription'),
 		);
-		await chip.dialogCloseButton.click();
-		await agent1.waitUntil(async () => !(await chip.isDialogOpen()));
 	});
 
 	it('syncs a text message agent1 → agent2 over p2p', async () => {

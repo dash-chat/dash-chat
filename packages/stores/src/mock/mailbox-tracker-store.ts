@@ -63,6 +63,7 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 	connectionStatus = reactive(async () => ({
 		connectedToCloudMailboxServer: true,
 		cloudFailedLastPoll: false,
+		cloudLastSuccessAtMs: Number.POSITIVE_INFINITY,
 		cloudLastFailureAtMs: null,
 		connectedLocalMailboxCount: 0,
 	}));

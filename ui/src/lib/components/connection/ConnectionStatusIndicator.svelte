@@ -7,10 +7,8 @@
 	import { useReactivePromises } from '$lib/stores/use-signal';
 	import { getContext, type Snippet } from 'svelte';
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
-	import {
-		connectionChipStatus,
-		type ConnectionChipStatus,
-	} from './connection-chip';
+	import { connectionChipStatus } from './connection-chip';
+	import type { ConnectionChipStatus } from './connection-chip-status';
 	import { mdiEmoticonPoop } from '@mdi/js';
 	import { Chip, Dialog, DialogButton } from 'konsta/svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -31,14 +29,12 @@
 		onlinePeersStore.onlinePeers(chatId),
 	]);
 
-	const rawIcons: Record<
-		Exclude<ConnectionChipStatus, 'disconnected'>,
-		string
-	> = {
+	const icons: Record<ConnectionChipStatus, string> = {
 		cloud: cloudSvg,
 		pending: cloudSvg,
 		local: localMailboxServerSvg,
 		p2p: p2pSvg,
+		disconnected: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="${mdiEmoticonPoop}" /></svg>`,
 	};
 
 	const ariaLabels: Record<ConnectionChipStatus, () => string> = {
@@ -75,16 +71,6 @@
 	const asTitle = (snippet: Snippet) => snippet as unknown as string;
 </script>
 
-{#snippet icon(status: ConnectionChipStatus)}
-	{#if status === 'disconnected'}
-		<svg viewBox="0 0 24 24" fill="currentColor"
-			><path d={mdiEmoticonPoop} /></svg
-		>
-	{:else}
-		{@html rawIcons[status]}
-	{/if}
-{/snippet}
-
 {#await $chipInputs then [connectionStatus, onlinePeers]}
 	{@const localCount = connectionStatus.connectedLocalMailboxCount}
 	{@const status = connectionChipStatus(
@@ -115,7 +101,7 @@
 			class="connection-status connection-status-{status} flex h-[1em] justify-center *:h-full *:w-auto"
 			aria-hidden="true"
 		>
-			{@render icon(status)}
+			{@html icons[status]}
 		</span>
 	</Chip>
 
@@ -125,7 +111,7 @@
 				class="connection-status-dialog-icon connection-status-dialog-icon-{status} flex h-[1em] justify-center *:h-full *:w-auto"
 				aria-hidden="true"
 			>
-				{@render icon(status)}
+				{@html icons[status]}
 			</span>
 			<span data-testid="connection-status-dialog-title">
 				{titles[status]()}

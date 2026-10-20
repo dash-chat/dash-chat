@@ -18,6 +18,10 @@ import {
 	wifiRequestJoin,
 } from 'tauri-plugin-network-interfaces-api';
 
+import {
+	CONNECTION_CHIP_STATUSES,
+	type ConnectionChipStatus,
+} from '../src/lib/components/connection/connection-chip-status';
 import type { m } from '../src/lib/paraglide/messages.js';
 
 const requestJoinOutcomes = new Map<string, string>();
@@ -57,15 +61,8 @@ function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
-export type RenderedConnectionStatus =
-	| 'pending'
-	| 'cloud'
-	| 'local'
-	| 'p2p'
-	| 'disconnected';
-
 export interface ConnectionStatusSample {
-	status: RenderedConnectionStatus;
+	status: ConnectionChipStatus;
 	/** Epoch ms on the device, so samples can be ordered against each other
 	 * without comparing against the test runner's clock on another machine. */
 	at: number;
@@ -83,11 +80,24 @@ const connectionStatuses: ConnectionStatusSample[] = [];
 let connectionStatusObserver: MutationObserver | undefined;
 let connectionStatusToken: string | undefined;
 
-function currentConnectionStatus(): RenderedConnectionStatus | null {
+function isConnectionChipStatus(
+	status: string | undefined,
+): status is ConnectionChipStatus {
+	return (CONNECTION_CHIP_STATUSES as readonly (string | undefined)[]).includes(
+		status,
+	);
+}
+
+/** The status the connection chip renders, or null while it is not mounted. */
+function connectionStatus(): ConnectionChipStatus | null {
 	const chip = document.querySelector<HTMLElement>(
 		'[data-testid="connection-status"]',
 	);
-	return (chip?.dataset.status as RenderedConnectionStatus | undefined) ?? null;
+	if (!chip) return null;
+	const status = chip.dataset.status;
+	if (!isConnectionChipStatus(status))
+		throw new Error(`connectionStatus: unexpected data-status="${status}"`);
+	return status;
 }
 
 /** Start recording every connection status the indicator renders, returning a
@@ -97,7 +107,7 @@ function currentConnectionStatus(): RenderedConnectionStatus | null {
  * "disconnected" painted on resume and replaced milliseconds later by the
  * backend's re-measurement is invisible to any sampler, but the user sees it. */
 function sampleConnectionStatus(onVisibilityChange: boolean) {
-	const status = currentConnectionStatus();
+	const status = connectionStatus();
 	// Nothing on screen to blame while the chip is not mounted.
 	if (status === null) return;
 	const previous = connectionStatuses[connectionStatuses.length - 1];
@@ -627,6 +637,7 @@ export const testUtils = {
 	failNextVoiceLoad,
 	recordMediaDownloads,
 	photoDownloadMs,
+	connectionStatus,
 	recordConnectionStatus,
 	connectionStatusHistory,
 	recordPhotoVisibility,

@@ -76,17 +76,10 @@ describe('Offline UX', () => {
 			const indicator = agent1.directChatPage.connectionStatusIndicator;
 			expect(await indicator.status()).toBe('cloud');
 
-			await indicator.chip.click();
-			await agent1.waitUntil(() => indicator.isDialogOpen());
-			await expect(indicator.dialogTitle).toHaveText(
+			await indicator.expectDialog(
 				await agent1.tr('connectionStatusCloudTitle'),
-			);
-			await expect(indicator.dialogDescription).toHaveText(
 				await agent1.tr('connectionStatusCloudDescription'),
 			);
-
-			await indicator.dialogCloseButton.click();
-			await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 		});
 	});
 
@@ -142,17 +135,10 @@ describe('Offline UX', () => {
 				{ timeout: 90_000, interval: 1_000 },
 			);
 
-			await indicator.chip.click();
-			await agent1.waitUntil(() => indicator.isDialogOpen());
-			await expect(indicator.dialogTitle).toHaveText(
+			await indicator.expectDialog(
 				await agent1.tr('connectionStatusDisconnectedTitle'),
-			);
-			await expect(indicator.dialogDescription).toHaveText(
 				await agent1.tr('connectionStatusDisconnectedDescription'),
 			);
-
-			await indicator.dialogCloseButton.click();
-			await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 		});
 
 		describe('with local mailbox enabled on the sender', () => {
@@ -176,17 +162,10 @@ describe('Offline UX', () => {
 					{ timeout: 60_000 },
 				);
 
-				await indicator.chip.click();
-				await agent1.waitUntil(() => indicator.isDialogOpen());
-				await expect(indicator.dialogTitle).toHaveText(
+				await indicator.expectDialog(
 					await agent1.tr('connectionStatusLocalTitle'),
-				);
-				await expect(indicator.dialogDescription).toHaveText(
 					await agent1.tr('connectionStatusLocalDescription', { count: 1 }),
 				);
-
-				await indicator.dialogCloseButton.click();
-				await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 			});
 
 			it('a new message advances to the "mailbox" icon once the local mailbox holds it', async () => {

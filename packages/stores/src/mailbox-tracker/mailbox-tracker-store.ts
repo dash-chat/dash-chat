@@ -65,11 +65,12 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 	// recorded success on top would report a freshly built node as disconnected
 	// until its first poll.
 	//
-	// `cloudLastFailureAtMs` lets a consumer tell a failure it just watched happen
-	// from one inherited from a period it wasn't rendering. That distinction is
-	// the whole game: Android denies network to backgrounded apps, so those polls
-	// fail whatever is waiting on the other side, and reporting them on resume is
-	// how a verdict about a connection the user never had reaches the screen.
+	// `cloudLastSuccessAtMs` and `cloudLastFailureAtMs` let a consumer tell a
+	// result it just watched happen from one inherited from a period it wasn't
+	// rendering. That distinction is the whole game: Android denies network to
+	// backgrounded apps, so those polls fail whatever is waiting on the other
+	// side, and reporting them on resume is how a verdict about a connection the
+	// user never had reaches the screen.
 	// Deciding what counts as recent needs to know when the UI resumed painting,
 	// which only the UI knows — so this reports the fact and leaves the judgement
 	// to the caller.
@@ -98,6 +99,12 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		const cloudFailedLastPoll =
 			cloudState !== undefined && cloudState.consecutive_errors > 0;
 
+		const cloudLastSuccess = cloudState?.last_success_at;
+		const cloudLastSuccessAtMs =
+			cloudLastSuccess === undefined || cloudLastSuccess === null
+				? null
+				: Date.parse(cloudLastSuccess);
+
 		const cloudLastFailure = cloudState?.last_error?.at;
 		const cloudLastFailureAtMs =
 			cloudLastFailure === undefined || cloudLastFailure === null
@@ -120,6 +127,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		return {
 			connectedToCloudMailboxServer,
 			cloudFailedLastPoll,
+			cloudLastSuccessAtMs,
 			cloudLastFailureAtMs,
 			connectedLocalMailboxCount,
 		};

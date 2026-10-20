@@ -227,6 +227,17 @@ test('only an app started while the cloud was cut registers it late', () => {
 	assert.equal(m.awaitsCloudRegistration(B), false);
 });
 
+test('a later start with the cloud usable registers it at once', () => {
+	const m = sameLan(A);
+	m.stopApp(A);
+	m.startApp(A);
+	assert.equal(m.awaitsCloudRegistration(A), true);
+	m.stopApp(A);
+	m.setCloudUsable(true);
+	m.startApp(A);
+	assert.equal(m.awaitsCloudRegistration(A), false);
+});
+
 test('phones exchange only topics both subscribe to', () => {
 	const m = sameLan(A, B, C);
 	contacts(m, A, B);
