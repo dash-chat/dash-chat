@@ -607,7 +607,10 @@ where
             .sync_topics(topics, mailbox, &self.topics)
             .await;
         for topic in &outcome.closed_topics {
-            self.unsubscribe(topic.clone()).await.ok();
+            let mut tt = self.topics.lock().await;
+            if tt.get(topic).is_some_and(|s| s.is_closed()) {
+                tt.remove(topic);
+            }
         }
         outcome.result
     }
