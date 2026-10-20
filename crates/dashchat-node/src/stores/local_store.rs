@@ -70,7 +70,7 @@ const MIGRATIONS: &[&str] = &[
         key TEXT PRIMARY KEY,
         value BLOB NOT NULL
     )",
-    "CREATE TABLE IF NOT EXISTS subscribed_topics (
+    "CREATE TABLE IF NOT EXISTS subscribed_spaces (
         topic_id BLOB PRIMARY KEY
     )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
@@ -179,19 +179,30 @@ impl LocalStore {
         })
     }
 
-    pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
+    pub async fn subscribed_spaces(&self) -> anyhow::Result<BTreeSet<TopicId>> {
         let rows: Vec<(Topic<kind::Untyped>,)> =
-            sqlx::query_as("SELECT topic_id FROM subscribed_topics")
+            sqlx::query_as("SELECT topic_id FROM subscribed_spaces")
                 .fetch_all(&self.pool)
                 .await?;
         Ok(rows.into_iter().map(|(id,)| *id).collect())
     }
 
-    pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
+    /// Record that this node participates in a space, so startup rejoins it.
+    ///
+    /// Contract of a row: startup joins the topic (`Node::initialize_space`) and never
+    /// creates it. A row written by a create means p2panda already holds the space; a
+    /// row written by a join may precede the space's control messages, which p2panda
+    /// allows. No further setup is needed for a space with a row.
+    ///
+    /// This store and p2panda's store are separate SQLite databases, so no transaction
+    /// spans both. The two writers (`Node::register_and_join_space`,
+    /// `Node::register_and_create_space`) are therefore ordered so that each is safe
+    /// to repeat after a failure at any step; their comments say why.
+    pub async fn register_space_as_subscribed<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
+        sqlx::query("INSERT OR IGNORE INTO subscribed_spaces (topic_id) VALUES (?)")
             .bind(topic.to_vec())
             .execute(&self.pool)
             .await?;
@@ -202,7 +213,7 @@ impl LocalStore {
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM subscribed_topics WHERE topic_id = ?")
+        sqlx::query("DELETE FROM subscribed_spaces WHERE topic_id = ?")
             .bind(topic.to_vec())
             .execute(&self.pool)
             .await?;

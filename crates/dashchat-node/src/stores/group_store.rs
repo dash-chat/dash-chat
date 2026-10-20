@@ -1,15 +1,14 @@
 use std::sync::LazyLock;
 
-use p2panda::{Hash, VerifyingKey};
+use p2panda::Hash;
 use p2panda_auth::Access;
-use p2panda_auth::group::GroupCrdtState;
 use p2panda_spaces::manager::GLOBAL_GROUPS_CONTEXT_ID;
 use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
-use p2panda_stream::groups::GroupsOperation;
 
 use crate::{ChatId, ChatMember, Topic, TopicId};
 
-type GroupState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
+type GroupState = p2panda_spaces::AuthGroupState<()>;
+// type GroupState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
 
 /// Singleton groups state id.
 pub(crate) static GROUPS_STATE_ID: LazyLock<Hash> =

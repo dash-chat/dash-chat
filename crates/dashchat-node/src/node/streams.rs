@@ -25,7 +25,7 @@ use tokio::task::JoinSet;
 use tokio_stream::StreamMap;
 use tracing::{error, warn};
 
-use crate::{ChatId, Payload};
+use crate::Payload;
 
 // TODO: XXX: be careful with the drop handler
 #[derive(Clone)]
@@ -275,14 +275,12 @@ impl TopicStreams {
             .map_err(|_| StreamsError::DrainClosed)
     }
 
-    #[tracing::instrument(skip(self), fields(chat_id = ?chat_id.aliased()))]
-    pub(crate) async fn create_space(&self, chat_id: ChatId) -> Result<Space, StreamsError> {
-        tracing::info!(chat_id = ?chat_id.aliased(), "create_space");
-        let (publisher, created) = self
-            .publisher(chat_id.into(), StreamIntent::CreateSpace)
-            .await?;
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn create_space(&self, topic: Topic) -> Result<Space, StreamsError> {
+        tracing::info!(topic = ?topic.aliased(), "create_space");
+        let (publisher, created) = self.publisher(topic, StreamIntent::CreateSpace).await?;
         if !created {
-            return Err(StreamsError::SpaceAlreadyExists(chat_id));
+            return Err(StreamsError::SpaceAlreadyExists(topic));
         }
         match publisher {
             Publisher::Space(space) => Ok(space),
@@ -290,6 +288,17 @@ impl TopicStreams {
                 unreachable!("we created the space, so this is a space publisher")
             }
         }
+    }
+
+    /// Whether p2panda has materialized this space locally, because we created it or
+    /// because its control messages have been processed. Joining alone does not count.
+    pub(crate) async fn has_space(&self, topic: Topic) -> Result<bool, StreamsError> {
+        #[allow(deprecated)]
+        let space = self
+            .with_node(async |node| node.spaces_manager().space(topic).await)
+            .await
+            .map_err(SubscribeSpaceError::from)?;
+        Ok(space.is_some())
     }
 
     pub(crate) async fn join_space(&self, topic: Topic) -> Result<Space, StreamsError> {
@@ -611,7 +620,7 @@ pub enum StreamsError {
     Import(#[from] ImportError),
 
     #[error("can't create a space that already exists")]
-    SpaceAlreadyExists(ChatId),
+    SpaceAlreadyExists(Topic),
 
     #[error("topic is already subscribed to as a normal stream, not a space")]
     NotASpace(Topic),

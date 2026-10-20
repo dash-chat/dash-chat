@@ -12,7 +12,7 @@ use tracing::{debug, error, warn};
 use crate::AckedOp;
 use crate::forward_edit_closure;
 use crate::node::publish::warn_if_slow;
-use crate::node::streams::{ProcessedTx, ProcessorError, ProcessorEvent, TopicDrain};
+use crate::node::streams::{ProcessedTx, ProcessorError, ProcessorEvent, Space, TopicDrain};
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
@@ -82,15 +82,35 @@ impl Node {
     ///
     /// Note that some topics are excluded from automatic registration, such as inbox topics.
     /// They have to be registered separately with extra context.
+    ///
+    /// Idempotent.
     #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
-    pub(crate) async fn register_topic<K: AutoRegisteredTopic>(
+    pub(crate) async fn register_and_join_space<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        self.local_store.register_topic_as_subscribed(topic).await?;
-        self.initialize_topic_inner(*topic, false).await?;
-
+        self.local_store.register_space_as_subscribed(topic).await?;
+        self.initialize_space(*topic).await?;
         Ok(())
+    }
+
+    /// Create a space we own, persist it for restart, and import its mailbox stream.
+    ///
+    /// Idempotent, safe to repeat at any point of failure.
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn register_and_create_space<K: AutoRegisteredTopic>(
+        &self,
+        topic: Topic<K>,
+    ) -> anyhow::Result<Space> {
+        let space = if self.streams.has_space(*topic).await? {
+            self.streams.join_space(*topic).await?
+        } else {
+            self.streams.create_space(*topic).await?
+        };
+        self.local_store.register_space_as_subscribed(topic).await?;
+        self.import_mailbox_stream(*topic).await?;
+        self.notify_topic_subscribed(*topic).await;
+        Ok(space)
     }
 
     #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
@@ -100,8 +120,8 @@ impl Node {
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        self.local_store.register_topic_as_subscribed(topic).await?;
-        self.initialize_topic_inner(*topic, true).await?;
+        self.local_store.register_space_as_subscribed(topic).await?;
+        self.initialize_stream(*topic).await?;
 
         Ok(())
     }
@@ -113,8 +133,14 @@ impl Node {
     /// - when creating a new group chat
     /// - when initializing the node, for each existing group chat
     #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
-    pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
-        self.initialize_topic_inner(topic, true).await
+    pub(crate) async fn initialize_stream(&self, topic: TopicId) -> anyhow::Result<()> {
+        topic.alias_numbered();
+
+        tracing::info!(topic = ?topic.aliased(), "initialize topic");
+
+        self.subscribe_to_stream(topic).await?;
+        self.import_mailbox_stream(topic).await?;
+        Ok(())
     }
 
     /// Rejoin a registered space on node startup and import its mailbox stream.
@@ -125,43 +151,28 @@ impl Node {
 
         self.streams.join_space(topic).await?;
         self.import_mailbox_stream(topic).await?;
+        self.notify_topic_subscribed(topic).await;
         Ok(())
     }
 
-    pub(crate) async fn initialize_topic_inner(
-        &self,
-        topic: TopicId,
-        subscribe: bool,
-    ) -> anyhow::Result<()> {
-        topic.alias_numbered();
-
-        tracing::info!(topic = ?topic.aliased(), ?subscribe, "initialize topic");
-
-        if subscribe {
-            self.subscribe_to_topic(topic).await?;
-
-            // Not gated on the subscription being new: publishing into a topic
-            // subscribes it too, without importing its mailbox stream.
-            self.import_mailbox_stream(topic).await?;
-        }
-        Ok(())
-    }
-
-    /// Subscribe to a topic.
-    async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<()> {
-        debug!(topic = ?topic.aliased(), "subscribe to topic");
+    /// Subscribe to a non-Space topic stream.
+    async fn subscribe_to_stream(&self, topic: TopicId) -> anyhow::Result<()> {
+        debug!(topic = ?topic.aliased(), "subscribe to stream");
 
         self.streams.subscribe(topic.into()).await?;
+        self.notify_topic_subscribed(topic).await;
+        Ok(())
+    }
 
+    /// Tell the host (push notifications) that this node now receives traffic for a topic.
+    async fn notify_topic_subscribed(&self, topic: TopicId) {
         if let Some(tx) = &self.topic_subscribed_tx {
             let _ = tx.send(topic).await;
         }
-
-        Ok(())
     }
 
     /// Import external operation stream from a mailbox, unless it is already imported.
-    async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
+    pub(super) async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
         let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
             return Ok(());
         };
@@ -435,10 +446,11 @@ impl Node {
             .await?;
 
         for agent_id in known.into_values() {
-            let topic = Topic::announcements(agent_id);
-            self.initialize_topic(*topic).await.map_err(|err| {
-                anyhow::anyhow!("failed to subscribe to topic for group member: {err}")
-            })?;
+            self.register_and_join_space(Topic::announcements(agent_id))
+                .await
+                .map_err(|err| {
+                    anyhow::anyhow!("failed to subscribe to topic for group member: {err}")
+                })?;
         }
 
         // Notify the frontend so it refetches the chat log and observes the new
@@ -563,7 +575,10 @@ impl Node {
                     if agent_id == &self.agent_id() {
                         continue;
                     }
-                    if let Err(err) = self.register_topic(Topic::announcements(*agent_id)).await {
+                    if let Err(err) = self
+                        .register_and_join_space(Topic::announcements(*agent_id))
+                        .await
+                    {
                         tracing::error!(
                             ?err,
                             agent_id = ?agent_id.aliased(),
@@ -599,12 +614,10 @@ impl Node {
                     InboxPayload::ContactRequest {
                         agent_id, profile, ..
                     } => {
-                        // A request arrived on our advertised inbox. Except for
-                        // subscribing to the shared direct-chat topic (so the
-                        // requester's messages are readable before accepting),
-                        // perform no network side-effects (bootstrap
-                        // registration) and disclose nothing about us until the
-                        // user explicitly accepts (see `accept_contact`). This
+                        // A request arrived on our advertised inbox. Perform no
+                        // network side-effects (bootstrap registration) and
+                        // disclose nothing about us until the user explicitly
+                        // accepts (see `accept_contact`). This
                         // keeps an unsolicited request — e.g. anyone scanning a
                         // shared QR — from amplifying our resources or handing our
                         // profile to every scanner. The request is signed by the
@@ -612,10 +625,6 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
-                            self.register_topic(
-                                self.direct_chat_topic(crate::FakeAgentId::from(author)),
-                            )
-                            .await?;
                             // Mutual add: if we also sent this peer a contact
                             // request, their incoming request is an implicit
                             // acceptance — complete the exchange automatically
