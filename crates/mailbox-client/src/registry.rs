@@ -20,13 +20,6 @@ impl<Item: MailboxItem> Registry<Item> {
         }
     }
 
-    /// Looks up an existing mailbox under `id`; if one is present, `f` is called
-    /// with the existing handle and the returned `TrackedMailbox` is ignored.
-    /// If no mailbox is present, `f` is called with a fresh `TrackedMailbox`
-    /// built from `create`, and the result is inserted under `id`.
-    ///
-    /// Returns the mailbox stored under `id` after the operation, and whether it
-    /// was freshly inserted.
     pub async fn get_or_insert_with<F>(
         &self,
         id: MailboxId,

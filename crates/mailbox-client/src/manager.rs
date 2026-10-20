@@ -212,15 +212,18 @@ where
             }
         }
 
-        // Determine the status to seed a fresh registration with. We load the
-        // persisted status before taking the registry lock so no DB I/O blocks
-        // other registry operations. The atomic compound operation below is
-        // responsible for deciding whether the mailbox already exists.
-        let seeded_status = match self.sync_tracker.get_status(&id).await {
-            Ok(status) => status.unwrap_or(SyncStatus::Active),
-            Err(err) => {
-                tracing::error!(?err, mailbox = %id, "failed to load persisted mailbox status");
-                SyncStatus::Active
+        // If the mailbox is already tracked we don't need to load a persisted
+        // status; the existing TrackedMailbox already owns one. Skip the DB read
+        // on this hot re-registration path.
+        let seeded_status = if self.is_tracked(&id).await {
+            SyncStatus::Active
+        } else {
+            match self.sync_tracker.get_status(&id).await {
+                Ok(status) => status.unwrap_or(SyncStatus::Active),
+                Err(err) => {
+                    tracing::error!(?err, mailbox = %id, "failed to load persisted mailbox status");
+                    SyncStatus::Active
+                }
             }
         };
 
@@ -251,17 +254,11 @@ where
 
     /// Returns `true` if a mailbox with the given id was removed.
     pub async fn unregister(&self, id: &MailboxId) -> bool {
-        // The single compound op removes the entry and returns whether it
-        // existed. Only then do we clear the persisted status, so a concurrent
-        // register cannot observe the removal and recreate a mailbox with the
-        // old persisted status.
         let removed = self.registry.unregister(id).await;
         if removed {
-            // An unregistered mailbox only comes back with fresh evidence (an
-            // mDNS re-announcement), so it earns a fresh Active start with the
-            // full backoff runway instead of a status seeded from history —
-            // otherwise a flaky hub would churn through register, one failed
-            // poll, unregister on every re-browse.
+            // A removed mailbox starts fresh if it later reappears, so we
+            // discard its persisted status to avoid seeding a new registration
+            // with stale backoff state.
             if let Err(err) = self.sync_tracker.clear_status(id).await {
                 tracing::error!(?err, mailbox = %id, "failed to clear mailbox status");
             }
