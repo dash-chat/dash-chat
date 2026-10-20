@@ -14,7 +14,7 @@
 		"test": "node --import tsx --test tests/*.test.ts"
 	},
 	"dependencies": {
-		"@tauri-apps/api": "^2",
+		"@tauri-apps/api": "^2.12.4",
 		"@webbuf/blake3": "^3.0.28",
 		"blakejs": "^1.2.1",
 		"emittery": "^1.2.0",

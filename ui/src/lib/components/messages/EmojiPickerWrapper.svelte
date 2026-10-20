@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	// @ts-ignore
-	import { Picker } from 'emoji-picker-element'; // missing type definition
 
 	interface Props {
 		onEmojiSelected: (emoji: string) => void;
@@ -23,7 +21,9 @@
 		input.dispatchEvent(new Event('input', { bubbles: true }));
 	}
 
-	onMount(() => {
+	onMount(async () => {
+		// @ts-ignore missing type definition
+		const { Picker } = await import('emoji-picker-element');
 		const picker = new Picker({
 			// if not set the library will try and fetch online
 			// i18n requires having one of these per language

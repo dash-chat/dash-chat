@@ -1,11 +1,9 @@
-import { ImageBlobReduce } from 'image-blob-reduce';
+import { imageReducer } from '$lib/utils/image';
 
 const COMPRESSIBLE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 const MAX_LONG_SIDE_PX = 1920;
 const JPEG_QUALITY = 0.85;
-
-const reduce = new ImageBlobReduce();
 
 /**
  * Re-encode raster images (jpeg/png/webp) to JPEG, scaled so the long side is
@@ -17,6 +15,7 @@ export async function compressImage(file: File): Promise<File> {
 
 	let blob: Blob;
 	try {
+		const reduce = await imageReducer();
 		const canvas = await reduce.toCanvas(file, { max: MAX_LONG_SIDE_PX });
 		blob = await encodeJpegOnWhite(canvas);
 	} catch {

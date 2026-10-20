@@ -3,7 +3,6 @@ import { isTauriEnv } from '$lib/utils/environment';
 import { saveFile, shareFile } from '$lib/utils/files';
 import { defaultQrColor } from '$lib/utils/qrcode';
 import { downloadDir } from '@tauri-apps/api/path';
-import QrCreator from 'qr-creator';
 
 const FONT_FAMILY = "-apple-system, 'Segoe UI', Roboto, sans-serif";
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -28,7 +27,7 @@ function roundRect(
 /**
  * Renders the QR share image directly to a canvas and returns PNG bytes.
  */
-function renderQrImage(
+async function renderQrImage(
 	code: string,
 	rawColor: string,
 	name: string,
@@ -39,6 +38,7 @@ function renderQrImage(
 	const isWhite = qrColor === '#ffffff';
 	const qrFill = isWhite ? '#000000' : qrColor;
 	const qrCanvas = document.createElement('canvas');
+	const { default: QrCreator } = await import('qr-creator');
 	QrCreator.render(
 		{
 			text: code,
