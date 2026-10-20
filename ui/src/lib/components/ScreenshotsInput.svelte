@@ -14,6 +14,7 @@
 		max: number;
 		maxBytes: number;
 		disabled?: boolean;
+		labelledBy: string;
 		testId: string;
 	}
 
@@ -23,6 +24,7 @@
 		max,
 		maxBytes,
 		disabled = false,
+		labelledBy,
 		testId,
 	}: Props = $props();
 
@@ -36,6 +38,7 @@
 	// Only the compression phase locks the form: a picker whose dismissal the
 	// webview never reports would otherwise leave it locked for good.
 	async function addImages() {
+		const hadFocus = grid?.contains(document.activeElement) ?? false;
 		pickerOpen = true;
 		let picked: File[] | null;
 		try {
@@ -51,6 +54,7 @@
 		} finally {
 			attaching = false;
 		}
+		if (!hadFocus) return;
 		await tick();
 		focusLastControl();
 	}
@@ -99,6 +103,7 @@
 		focusLastControl();
 	}
 
+	// Relies on each tile rendering one button, with the add tile last.
 	function focusLastControl() {
 		const controls = grid?.querySelectorAll('button') ?? [];
 		[...controls].at(-1)?.focus();
@@ -107,6 +112,8 @@
 
 <div
 	bind:this={grid}
+	role="group"
+	aria-labelledby={labelledBy}
 	class="grid grid-cols-3 gap-2"
 	class:opacity-60={disabled}
 	inert={disabled || attaching}

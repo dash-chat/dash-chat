@@ -16,18 +16,11 @@
 		disabled?: boolean;
 		class?: string;
 	} = $props();
-
-	let button: HTMLButtonElement;
-
-	export function focus() {
-		button.focus();
-	}
 </script>
 
 <!-- WebKit ignores aspect-ratio on a button, so the wrapper carries the size. -->
 <div class="shrink-0 {klass}">
 	<button
-		bind:this={button}
 		type="button"
 		class="flex h-full w-full cursor-pointer items-center justify-center rounded-sm border-2 border-dashed border-[var(--k-hairline-color,rgba(128,128,128,0.4))] bg-transparent text-[var(--k-text-color)] opacity-60 transition-opacity duration-150 enabled:hover:opacity-90 disabled:cursor-default disabled:opacity-30"
 		data-testid={testId}

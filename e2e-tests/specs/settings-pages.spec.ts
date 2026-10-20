@@ -173,6 +173,9 @@ describe('Settings pages', () => {
 		);
 		await expect(page.screenshots()).toBeElementsArrayOfSize(4);
 
+		await page.pickScreenshots([screenshot('g.png')]);
+		await expect(page.screenshots()).toBeElementsArrayOfSize(5);
+
 		await page.back.click();
 		await agent.helpPage.ready();
 		await agent.helpPage.back.click();

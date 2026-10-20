@@ -38,8 +38,14 @@ export async function sendErrorReport(
 	});
 }
 
+/** Mirrors `Screenshot` in the plugin's feedback.rs. */
+interface Screenshot {
+	contentType: string;
+	base64: string;
+}
+
 export async function sendFeedback(feedback: Feedback): Promise<SendOutcome> {
-	const screenshots: Awaited<ReturnType<typeof describeScreenshot>>[] = [];
+	const screenshots: Screenshot[] = [];
 	for (const file of feedback.screenshots) {
 		screenshots.push(await describeScreenshot(file));
 	}
@@ -55,7 +61,7 @@ export async function sendFeedback(feedback: Feedback): Promise<SendOutcome> {
 
 /** Bytes rather than a path, so the image never has to be staged to disk; no
  * name, since the plugin numbers the attachments so none leaves the device. */
-async function describeScreenshot(file: File) {
+async function describeScreenshot(file: File): Promise<Screenshot> {
 	return {
 		contentType: file.type,
 		base64: await base64Of(file),

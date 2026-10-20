@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import ImagesInput from '$lib/components/ImagesInput.svelte';
+	import ScreenshotsInput from '$lib/components/ScreenshotsInput.svelte';
 	import { sendFeedback, type FeedbackReason } from '$lib/utils/error-report';
 	import { showToast } from '$lib/utils/toasts';
 	import {
@@ -122,18 +122,21 @@
 				/>
 			</List>
 
-			<BlockTitle>{m.attachScreenshots()}</BlockTitle>
+			<BlockTitle id="contact-us-screenshots-title"
+				>{m.attachScreenshots()}</BlockTitle
+			>
 			<Block
 				strongIos
 				inset={isWideScreen.value || theme === 'ios'}
 				class="!mb-0"
 			>
-				<ImagesInput
+				<ScreenshotsInput
 					bind:value={screenshots}
 					bind:attaching={attachingScreenshots}
 					max={MAX_SCREENSHOTS}
 					maxBytes={MAX_SCREENSHOT_BYTES}
 					disabled={sending}
+					labelledBy="contact-us-screenshots-title"
 					testId="contact-us-screenshots"
 				/>
 			</Block>
