@@ -78,6 +78,17 @@ impl<Item: MailboxItem> Registry<Item> {
             .collect()
     }
 
+    /// Run a closure against every registered mailbox while holding the lock,
+    /// without cloning the map. The closure must not perform any async work or
+    /// I/O, since it runs under the registry mutex.
+    pub async fn with_all<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>) -> R,
+    {
+        let map = self.mailboxes.lock().await;
+        f(&map)
+    }
+
     pub fn active_ids_rx(&self) -> watch::Receiver<BTreeSet<MailboxId>> {
         self.active_mailbox_ids_tx.subscribe()
     }

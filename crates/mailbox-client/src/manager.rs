@@ -510,32 +510,28 @@ where
     }
 
     async fn find_next_due(&self) -> Option<NextDue> {
-        let mm = self.registry.all().await;
-        if mm.is_empty() {
-            return None;
-        }
-
         let now = Instant::now();
         // A mailbox already being polled isn't due: its `next_poll` only moves
         // once that poll finishes, so leaving it in would schedule it again
         // immediately, over and over.
-        let (id, due) = mm
-            .into_iter()
-            .filter(|(_, t)| !t.is_polling())
-            .map(|(id, t)| (id, t.due_at(now)))
-            .min_by_key(|(_, due)| *due)?;
+        let (id, due) = self
+            .registry
+            .with_all(|mm| {
+                mm.iter()
+                    .filter(|(_, t)| !t.is_polling())
+                    .map(|(id, t)| (id.clone(), t.due_at(now)))
+                    .min_by_key(|(_, due)| *due)
+            })
+            .await?;
 
         Some(NextDue {
-            id: id.clone(),
+            id,
             wait: due.saturating_duration_since(now),
         })
     }
 
     async fn poll_mailbox(&self, id: &MailboxId) -> Option<tokio::task::JoinHandle<()>> {
-        let tracked_mailbox = {
-            let mm = self.registry.all().await;
-            mm.into_iter().find(|(mid, _)| mid == id).map(|(_, t)| t)
-        };
+        let tracked_mailbox = self.registry.get(id).await;
         let Some(tracked_mailbox) = tracked_mailbox else {
             return None;
         };
