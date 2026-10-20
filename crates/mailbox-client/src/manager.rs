@@ -279,11 +279,15 @@ where
         if !self.topics.lock().await.contains_key(topic) {
             return Ok(Vec::new());
         }
-        let mailboxes = self.registry.all().await;
-        Ok(mailboxes
-            .into_iter()
-            .filter_map(|(id, _)| mailbox_server::decode_mailbox_id(&id).ok())
-            .collect())
+        Ok(self
+            .registry
+            .with_all(|mailboxes| {
+                mailboxes
+                    .keys()
+                    .filter_map(|id| mailbox_server::decode_mailbox_id(id).ok())
+                    .collect()
+            })
+            .await)
     }
 
     /// Whether an upload of `hash` to the given registered mailbox would start
@@ -378,9 +382,13 @@ where
     /// Request a sync of every active mailbox, covering only `topic` if given,
     /// or every subscribed topic when `None`.
     pub async fn request_sync(&self, topic: Option<Item::Topic>) {
-        for tracked_mailbox in self.registry.all().await.into_iter().map(|(_, t)| t) {
-            tracked_mailbox.request_sync_if_active(topic);
-        }
+        self.registry
+            .with_all(|mailboxes| {
+                for tracked_mailbox in mailboxes.values() {
+                    tracked_mailbox.request_sync_if_active(topic);
+                }
+            })
+            .await;
         self.nudge_poll_loop();
     }
 
@@ -431,9 +439,13 @@ where
 
     /// Immediately sync every registered mailbox without touching status or backoff.
     pub async fn probe_all(&self) {
-        for tracked_mailbox in self.registry.all().await.into_iter().map(|(_, t)| t) {
-            tracked_mailbox.probe();
-        }
+        self.registry
+            .with_all(|mailboxes| {
+                for tracked_mailbox in mailboxes.values() {
+                    tracked_mailbox.probe();
+                }
+            })
+            .await;
         self.nudge_poll_loop();
     }
 
