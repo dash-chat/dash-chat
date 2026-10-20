@@ -62,7 +62,7 @@ impl<Item: MailboxItem> Registry<Item> {
     pub async fn clear(&self) {
         let mut map = self.mailboxes.lock().await;
         map.clear();
-        let _ = self.active_mailbox_ids_tx.send(BTreeSet::new());
+        self.send_active_ids(&map);
     }
 
     pub async fn get(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
