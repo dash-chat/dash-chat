@@ -32,7 +32,8 @@ use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
-use mailbox_client::manager::{Mailboxes, MailboxesConfig};
+use mailbox_client::MailboxesConfig;
+use mailbox_client::manager::Mailboxes;
 use tokio::task::JoinHandle;
 
 use crate::OnlinePeers;
@@ -403,7 +404,7 @@ impl Node {
         // === mailboxes === //
 
         let sync_tracker = std::sync::Arc::new(
-            mailbox_client::sync_tracker::MailboxSyncTracker::open(
+            mailbox_client::MailboxSyncTracker::open(
                 filesystem.mailbox_sync_tracker_path(),
                 &config.sqlite_gate,
             )

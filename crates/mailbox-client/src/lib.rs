@@ -1,8 +1,15 @@
 pub mod backends;
 pub mod blobs;
+mod connection_health;
 pub mod manager;
+mod polling;
+mod registry;
 pub mod store;
-pub mod sync_tracker;
+mod sync;
+mod sync_tracker;
+
+pub use connection_health::{LastError, MailboxConnectionState, MailboxesConfig, SyncStatus};
+pub use sync_tracker::{MailboxSyncState, MailboxSyncTracker};
 
 pub use blobs::unfetched_blobs::BlobSource;
 pub use blobs::upload_tracker::BlobUploadLifecycle;

@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use anyhow::Context;
+use base64::prelude::*;
 use sentry::protocol::{Attachment, Event, Level};
 use sentry::Envelope;
 use serde::Deserialize;
@@ -23,7 +24,9 @@ pub struct Feedback {
 pub struct Screenshot {
     pub name: String,
     pub content_type: String,
-    pub bytes: Vec<u8>,
+    /// Base64 rather than bytes: a JSON number array costs the webview ~8
+    /// bytes per byte and the parsed `serde_json::Value` ~30.
+    pub base64: String,
 }
 
 #[tauri::command]
@@ -51,8 +54,11 @@ async fn build_feedback(state: &SentryState, feedback: Feedback) -> anyhow::Resu
 
     let mut attachments = Vec::new();
     if let Some(screenshot) = feedback.screenshot {
+        let bytes = BASE64_STANDARD
+            .decode(&screenshot.base64)
+            .context("the screenshot is not base64")?;
         attachments.push(Attachment {
-            buffer: screenshot.bytes,
+            buffer: bytes,
             filename: screenshot.name,
             content_type: Some(screenshot.content_type),
             ty: None,
@@ -107,7 +113,7 @@ mod tests {
             screenshot: screenshot.then(|| Screenshot {
                 name: "screenshot.jpg".into(),
                 content_type: "image/jpeg".into(),
-                bytes: b"\xff\xd8\xff".to_vec(),
+                base64: BASE64_STANDARD.encode(b"\xff\xd8\xff"),
             }),
             include_logs,
         };
