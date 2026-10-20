@@ -8,7 +8,7 @@ pub mod store;
 mod sync;
 mod sync_tracker;
 
-pub use connection_health::{MailboxConnectionState, MailboxesConfig, SyncStatus};
+pub use connection_health::{LastError, MailboxConnectionState, MailboxesConfig, SyncStatus};
 pub use sync_tracker::{MailboxSyncState, MailboxSyncTracker};
 
 pub use blobs::unfetched_blobs::BlobSource;
