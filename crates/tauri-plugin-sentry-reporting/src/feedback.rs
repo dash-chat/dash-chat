@@ -15,14 +15,13 @@ use crate::state::{SendOutcome, Sentry, SentryState};
 pub struct Feedback {
     pub reason: String,
     pub message: String,
-    pub screenshot: Option<Screenshot>,
+    pub screenshots: Vec<Screenshot>,
     pub include_logs: bool,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Screenshot {
-    pub name: String,
     pub content_type: String,
     /// Base64 rather than bytes: a JSON number array costs the webview ~8
     /// bytes per byte and the parsed `serde_json::Value` ~30.
@@ -53,13 +52,20 @@ async fn build_feedback(state: &SentryState, feedback: Feedback) -> anyhow::Resu
         .context("the feedback could not be redacted")?;
 
     let mut attachments = Vec::new();
-    if let Some(screenshot) = feedback.screenshot {
+    for (i, screenshot) in feedback.screenshots.into_iter().enumerate() {
         let bytes = BASE64_STANDARD
             .decode(&screenshot.base64)
             .context("the screenshot is not base64")?;
         attachments.push(Attachment {
+            filename: format!(
+                "screenshot-{}.{}",
+                i + 1,
+                screenshot
+                    .content_type
+                    .strip_prefix("image/")
+                    .unwrap_or("bin")
+            ),
             buffer: bytes,
-            filename: screenshot.name,
             content_type: Some(screenshot.content_type),
             ty: None,
         });
@@ -106,15 +112,18 @@ mod tests {
 
     use crate::testing::plugin;
 
-    fn sent(state: &SentryState, include_logs: bool, screenshot: bool) -> String {
+    fn screenshot() -> Screenshot {
+        Screenshot {
+            content_type: "image/jpeg".into(),
+            base64: BASE64_STANDARD.encode(b"\xff\xd8\xff"),
+        }
+    }
+
+    fn sent(state: &SentryState, include_logs: bool, screenshots: Vec<Screenshot>) -> String {
         let feedback = Feedback {
             reason: "bug".into(),
             message: "it dropped my photo, token secret-abc123".into(),
-            screenshot: screenshot.then(|| Screenshot {
-                name: "screenshot.jpg".into(),
-                content_type: "image/jpeg".into(),
-                base64: BASE64_STANDARD.encode(b"\xff\xd8\xff"),
-            }),
+            screenshots,
             include_logs,
         };
         let envelope = block_on(build_feedback(state, feedback)).expect("no envelope built");
@@ -129,7 +138,7 @@ mod tests {
         std::fs::write(dir.path().join("app.log"), "a line\n").unwrap();
         let state = plugin(dir.path());
 
-        let both = sent(&state, true, true);
+        let both = sent(&state, true, vec![screenshot(), screenshot()]);
         assert!(
             both.contains(r#"{"type":"feedback","length":"#),
             "got: {both}"
@@ -146,12 +155,16 @@ mod tests {
         );
         assert!(both.contains(r#""reason":"bug""#), "got: {both}");
         assert!(
-            both.contains(r#""filename":"screenshot.jpg""#),
+            both.contains(r#""filename":"screenshot-1.jpeg""#),
+            "got: {both}"
+        );
+        assert!(
+            both.contains(r#""filename":"screenshot-2.jpeg""#),
             "got: {both}"
         );
         assert!(both.contains("a line"), "got: {both}");
 
-        let neither = sent(&state, false, false);
+        let neither = sent(&state, false, vec![]);
         assert!(
             !neither.contains(r#""type":"attachment""#),
             "got: {neither}"
@@ -162,7 +175,7 @@ mod tests {
     fn a_missing_log_is_no_attachment() {
         let state = plugin(Path::new("/nonexistent"));
 
-        let sent = sent(&state, true, false);
+        let sent = sent(&state, true, vec![]);
 
         assert!(
             sent.contains(r#"{"type":"feedback","length":"#),

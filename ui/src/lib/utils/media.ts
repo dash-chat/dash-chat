@@ -82,18 +82,20 @@ export const PHOTO_ACCEPT = [...PHOTO_TYPES].join(',');
  * (PHPickerViewController) or the document browser directly; a web `<input
  * type=file>` would instead show a Photo Library / Take Photo / Choose File
  * action sheet. Everywhere else the web input already opens the right picker, so
- * it keeps using it. Resolves with the chosen files, or `null` if dismissed.
+ * it keeps using it. Resolves with at most `limit` of the chosen files, or
+ * `null` if dismissed.
  */
 export async function pickMedia(
 	mode: 'image' | 'document',
 	multiple: boolean,
+	limit = Infinity,
 ): Promise<File[] | null> {
 	if (isIos && isTauriEnv()) {
-		return pickNativeFiles({ mode, multiple });
+		return pickNativeFiles({ mode, multiple, limit });
 	}
 	const accept = mode === 'image' ? PHOTO_ACCEPT : undefined;
 	const list = await pickFiles({ accept, multiple });
-	return list ? Array.from(list) : null;
+	return list ? Array.from(list).slice(0, limit) : null;
 }
 
 /**
@@ -105,7 +107,7 @@ export async function capturePhoto(): Promise<File | null> {
 	return list?.[0] ?? null;
 }
 
-function isVisualFile(file: File): boolean {
+export function isVisualFile(file: File): boolean {
 	return PHOTO_TYPES.has(file.type);
 }
 

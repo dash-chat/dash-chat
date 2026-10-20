@@ -1,6 +1,13 @@
 import { ImageBlobReduce } from 'image-blob-reduce';
 
-const COMPRESSIBLE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+// HEIC is re-encoded even when that costs bytes: the result has to display.
+const ALWAYS_REENCODED_TYPES = new Set(['image/heic', 'image/heif']);
+const COMPRESSIBLE_TYPES = new Set([
+	'image/jpeg',
+	'image/png',
+	'image/webp',
+	...ALWAYS_REENCODED_TYPES,
+]);
 
 const MAX_LONG_SIDE_PX = 1920;
 const JPEG_QUALITY = 0.85;
@@ -8,7 +15,7 @@ const JPEG_QUALITY = 0.85;
 const reduce = new ImageBlobReduce();
 
 /**
- * Re-encode raster images (jpeg/png/webp) to JPEG, scaled so the long side is
+ * Re-encode raster images (jpeg/png/webp/heic) to JPEG, scaled so the long side is
  * at most 1920px. Returns the original file if it's not a compressible type,
  * if the browser can't decode it, or if compression doesn't reduce the size.
  */
@@ -22,7 +29,9 @@ export async function compressImage(file: File): Promise<File> {
 	} catch {
 		return file;
 	}
-	if (blob.size >= file.size) return file;
+	if (blob.size >= file.size && !ALWAYS_REENCODED_TYPES.has(file.type)) {
+		return file;
+	}
 
 	const newName = replaceExtension(file.name, 'jpg');
 	return new File([blob], newName, { type: 'image/jpeg' });

@@ -22,7 +22,7 @@ export type FeedbackReason =
 interface Feedback {
 	reason: FeedbackReason;
 	message: string;
-	screenshot?: File;
+	screenshots: File[];
 	includeLogs: boolean;
 }
 
@@ -43,18 +43,18 @@ export async function sendFeedback(feedback: Feedback): Promise<SendOutcome> {
 		feedback: {
 			reason: feedback.reason,
 			message: feedback.message,
-			screenshot: feedback.screenshot
-				? await describeScreenshot(feedback.screenshot)
-				: undefined,
+			screenshots: await Promise.all(
+				feedback.screenshots.map(describeScreenshot),
+			),
 			includeLogs: feedback.includeLogs,
 		},
 	});
 }
 
-/** Bytes rather than a path, so the image never has to be staged to disk. */
+/** Bytes rather than a path, so the image never has to be staged to disk; no
+ * name, since the plugin numbers the attachments so none leaves the device. */
 async function describeScreenshot(file: File) {
 	return {
-		name: file.name,
 		contentType: file.type,
 		base64: await base64Of(file),
 	};
