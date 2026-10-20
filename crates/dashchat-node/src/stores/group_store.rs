@@ -1,16 +1,12 @@
-use std::sync::LazyLock;
-
 use p2panda::Hash;
 use p2panda_auth::Access;
-use p2panda_store::{SqliteStore, Transaction, groups::GroupsStore};
+use p2panda_spaces::global_groups_id;
+use p2panda_store::{SqliteStore, groups::GroupsStore};
 
 use crate::{ChatId, ChatMember, Topic, TopicId};
 
 type GroupState = p2panda_spaces::AuthGroupState<()>;
 // type GroupState = GroupCrdtState<VerifyingKey, Hash, GroupsOperation, ()>;
-
-/// Singleton groups state id.
-pub(crate) static GROUPS_STATE_ID: LazyLock<Hash> = LazyLock::new(|| Hash::digest(b"TODO"));
 
 #[derive(Clone)]
 pub struct GroupStore {
@@ -41,11 +37,9 @@ impl GroupStore {
     }
 
     async fn auth_state(&self) -> anyhow::Result<GroupState> {
-        // TODO: use transactions properly!
-        let _txn = self.db.begin().await?;
         Ok(self
             .db
-            .get_groups_state_tx(*GROUPS_STATE_ID)
+            .get_groups_state(global_groups_id())
             .await?
             .unwrap_or_default())
     }
