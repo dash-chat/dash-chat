@@ -1109,8 +1109,6 @@ export async function setupDesktopAgent(
 	}
 }
 
-/** A macOS desktop agent whose local network access stays undetermined,
- *  behind the system alert, until `answerLocalNetworkAlert` answers it. */
 export async function setupAgentWithoutLocalNetworkAccess(): Promise<Agent> {
 	const { agent } = await setupDesktopAgent(
 		launchDesktopAgentWithoutLocalNetworkAccess,

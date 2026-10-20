@@ -1,7 +1,6 @@
-//! Whether this device's mDNS multicast can leave it at all, which mDNS
-//! libraries only log about. macOS refuses it with EHOSTUNREACH to an app
-//! without Local Network access (TN3179), and so does a VPN that leaves a
-//! reject route on 224.0.0.0/4: nobody on the LAN can discover the device.
+//! Whether this device's mDNS multicast can reach the LAN. macOS refuses it to
+//! an app without Local Network access (TN3179), and so does a VPN with a
+//! reject route on 224.0.0.0/4, while mDNS libraries only log the error.
 
 use std::io;
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -11,44 +10,35 @@ use socket2::{Domain, Protocol, Socket, Type};
 use tokio::sync::watch;
 use tokio_util::task::AbortOnDropHandle;
 
-/// How often to probe: on macOS, Local Network access can be granted or
-/// revoked at any time.
 const PROBE_INTERVAL: Duration = Duration::from_secs(3);
 
-/// Rounds in a row every LAN must refuse before the LAN counts as blocked, so
-/// a refusal during a network change raises no alarm.
-const BLOCKED_ROUNDS: u32 = 2;
+/// More than one, so a refusal during a network change raises no alarm.
+const REFUSED_ROUNDS_BEFORE_BLOCKED: u32 = 2;
 
 const MDNS_V4: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(224, 0, 0, 251), 5353);
 
-/// A DNS header asking nothing. Sent with a multicast TTL of 0, it never leaves
-/// this device: the kernel only runs the checks a real send would face.
-const EMPTY_QUERY: [u8; 12] = [0; 12];
+const EMPTY_DNS_HEADER: [u8; 12] = [0; 12];
 
-/// Watches whether every LAN this device is on refuses its mDNS multicast,
-/// probing until dropped.
 pub struct LanMulticastProbe {
-    verdict: watch::Receiver<bool>,
+    blocked: watch::Receiver<bool>,
     _task: AbortOnDropHandle<()>,
 }
 
 impl LanMulticastProbe {
-    /// Must be called within a Tokio runtime.
     pub fn spawn() -> Self {
-        let (verdict_tx, verdict) = watch::channel(false);
+        let (blocked_tx, blocked) = watch::channel(false);
         Self {
-            verdict,
-            _task: AbortOnDropHandle::new(tokio::spawn(probe_forever(verdict_tx))),
+            blocked,
+            _task: AbortOnDropHandle::new(tokio::spawn(probe_forever(blocked_tx))),
         }
     }
 
-    /// The current verdict, and every change for as long as it's held.
     pub fn blocked(&self) -> watch::Receiver<bool> {
-        self.verdict.clone()
+        self.blocked.clone()
     }
 }
 
-async fn probe_forever(verdict: watch::Sender<bool>) {
+async fn probe_forever(blocked_tx: watch::Sender<bool>) {
     let mut refused_rounds = 0;
     loop {
         match probe_every_lan().await {
@@ -56,23 +46,20 @@ async fn probe_forever(verdict: watch::Sender<bool>) {
             Some(false) => refused_rounds = 0,
             None => {}
         }
-        let blocked = refused_rounds >= BLOCKED_ROUNDS;
-        if *verdict.borrow() != blocked {
+        let blocked = refused_rounds >= REFUSED_ROUNDS_BEFORE_BLOCKED;
+        if *blocked_tx.borrow() != blocked {
             log_change(blocked);
-            verdict.send_replace(blocked);
+            blocked_tx.send_replace(blocked);
         }
         tokio::time::sleep(PROBE_INTERVAL).await;
     }
 }
 
-/// Whether every LAN refused this round's probe, or `None` if that can't be
-/// told.
 async fn probe_every_lan() -> Option<bool> {
     let lans: Vec<Ipv4Addr> = local_hub_discovery::multicast_interfaces_v4()
         .into_iter()
         .filter(|ip| !ip.is_loopback())
         .collect();
-    // Socket calls block.
     tokio::task::spawn_blocking(move || {
         every_lan_refused(lans.into_iter().map(refuses_multicast).collect())
     })
@@ -81,8 +68,6 @@ async fn probe_every_lan() -> Option<bool> {
     .flatten()
 }
 
-/// One LAN taking multicast is enough, a device with no LAN is offline rather
-/// than blocked, and a probe that couldn't be set up says nothing.
 fn every_lan_refused(probes: Vec<io::Result<bool>>) -> Option<bool> {
     if probes.is_empty() || probes.iter().any(|probe| matches!(probe, Ok(false))) {
         Some(false)
@@ -93,16 +78,16 @@ fn every_lan_refused(probes: Vec<io::Result<bool>>) -> Option<bool> {
     }
 }
 
-/// Whether `interface` refuses our multicast: macOS's Local Network privacy and
-/// reject routes answer EHOSTUNREACH, firewalls EPERM. Any other failure, such
-/// as running out of descriptors or buffers, is an error, not a refusal.
 fn refuses_multicast(interface: Ipv4Addr) -> io::Result<bool> {
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     socket.set_multicast_if_v4(&interface)?;
+    // TTL 0 keeps the probe on this device, yet it faces the same checks.
     socket.set_multicast_ttl_v4(0)?;
     socket.set_multicast_loop_v4(false)?;
-    match socket.send_to(&EMPTY_QUERY, &MDNS_V4.into()) {
+    match socket.send_to(&EMPTY_DNS_HEADER, &MDNS_V4.into()) {
         Ok(_) => Ok(false),
+        // Local Network privacy and reject routes answer EHOSTUNREACH, firewalls
+        // EPERM. Other errors, like ENOBUFS, say nothing about the LAN.
         Err(err)
             if matches!(
                 err.kind(),
@@ -127,7 +112,7 @@ fn log_change(blocked: bool) {
 mod tests {
     use super::*;
 
-    fn unset_up() -> io::Result<bool> {
+    fn probe_not_set_up() -> io::Result<bool> {
         Err(io::Error::from(io::ErrorKind::OutOfMemory))
     }
 
@@ -148,6 +133,6 @@ mod tests {
 
     #[test]
     fn a_probe_that_could_not_be_set_up_says_nothing() {
-        assert_eq!(every_lan_refused(vec![Ok(true), unset_up()]), None);
+        assert_eq!(every_lan_refused(vec![Ok(true), probe_not_set_up()]), None);
     }
 }

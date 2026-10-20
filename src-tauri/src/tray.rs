@@ -1,5 +1,3 @@
-use std::sync::{Mutex, MutexGuard, PoisonError};
-
 use futures::StreamExt;
 use sonix_i18n::t;
 use tauri::image::Image;
@@ -9,8 +7,8 @@ use tauri::{
     AppHandle, Manager, Runtime, WebviewWindowBuilder,
 };
 
+use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
-use tokio_util::task::AbortOnDropHandle;
 
 const TRAY_ID: &str = "dash-chat-tray";
 
@@ -28,7 +26,10 @@ const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon-colored.png");
 const TRAY_WARNING_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon-colored-warning.png");
 
 /// Build the tray icon (hidden by default). Call once during app setup.
-pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
+pub fn setup_tray<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    lan_blocked: watch::Receiver<bool>,
+) -> anyhow::Result<()> {
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(Image::from_bytes(TRAY_ICON_BYTES)?)
         .icon_as_template(cfg!(target_os = "macos"))
@@ -52,27 +53,27 @@ pub fn setup_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
         })
         .build(app_handle)?;
     tray.set_visible(false)?;
+    tauri::async_runtime::spawn(warn_while_lan_blocked(app_handle.clone(), lan_blocked));
     Ok(())
 }
 
-/// Follows the LAN while the tray is shown, so the hub's warning probes only
-/// while the hub runs.
-static LAN_WARNING: Mutex<Option<AbortOnDropHandle<()>>> = Mutex::new(None);
-
-fn warn_while_lan_blocked<R: Runtime>(app_handle: &AppHandle<R>) -> AbortOnDropHandle<()> {
-    let app_handle = app_handle.clone();
-    AbortOnDropHandle::new(tokio::spawn(async move {
-        let mut lan_blocked = WatchStream::new(
-            app_handle
-                .state::<lan_multicast_probe::LanMulticastProbe>()
-                .blocked(),
-        );
-        while let Some(blocked) = lan_blocked.next().await {
-            if let Err(err) = set_lan_warning(&app_handle, blocked) {
+async fn warn_while_lan_blocked<R: Runtime>(
+    app_handle: AppHandle<R>,
+    lan_blocked: watch::Receiver<bool>,
+) {
+    let mut lan_blocked = WatchStream::new(lan_blocked);
+    while let Some(blocked) = lan_blocked.next().await {
+        let app = app_handle.clone();
+        // The tray is main-thread-only on Linux and Windows.
+        let scheduled = app_handle.run_on_main_thread(move || {
+            if let Err(err) = set_lan_warning(&app, blocked) {
                 log::error!("Failed to update the tray warning: {err:?}");
             }
+        });
+        if let Err(err) = scheduled {
+            log::error!("Failed to schedule the tray warning: {err:?}");
         }
-    }))
+    }
 }
 
 fn tray_menu<R: Runtime>(app_handle: &AppHandle<R>, lan_blocked: bool) -> anyhow::Result<Menu<R>> {
@@ -95,8 +96,6 @@ fn tray_menu<R: Runtime>(app_handle: &AppHandle<R>, lan_blocked: bool) -> anyhow
     )?)
 }
 
-/// Says the hub failed, with the platform's caution icon, and leads to the
-/// settings that explain why.
 #[cfg(target_os = "macos")]
 fn lan_blocked_menu_item<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<IconMenuItem<R>> {
     Ok(IconMenuItem::with_id_and_native_icon(
@@ -125,21 +124,14 @@ pub fn show_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
     if let Some(tray) = app_handle.tray_by_id(TRAY_ID) {
         tray.set_visible(true)?;
     }
-    *lan_warning() = Some(warn_while_lan_blocked(app_handle));
     Ok(())
 }
 
 pub fn hide_tray<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Result<()> {
-    lan_warning().take();
-    set_lan_warning(app_handle, false)?;
     if let Some(tray) = app_handle.tray_by_id(TRAY_ID) {
         tray.set_visible(false)?;
     }
     Ok(())
-}
-
-fn lan_warning() -> MutexGuard<'static, Option<AbortOnDropHandle<()>>> {
-    LAN_WARNING.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn set_lan_warning<R: Runtime>(app_handle: &AppHandle<R>, warn: bool) -> anyhow::Result<()> {
@@ -189,11 +181,9 @@ fn quit_from_tray(app: &AppHandle<impl Runtime>) {
     });
 }
 
-/// Show the main window on Settings › Offline functionality. The route goes
-/// through the pending navigations, which a window created just now also takes
-/// once its app has loaded.
 fn show_offline_settings<R: Runtime>(app: &AppHandle<R>) -> anyhow::Result<()> {
     show_or_create_main_window(app)?;
+    // Queued rather than emitted: a window created just now isn't listening yet.
     crate::pending_navigations::push_route(app, "/settings/offline".to_string());
     Ok(())
 }

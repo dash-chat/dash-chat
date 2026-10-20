@@ -1,4 +1,3 @@
-<!-- Badges its children with a warning sign in their bottom-end corner. -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import WarningIcon from './WarningIcon.svelte';

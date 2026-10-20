@@ -110,8 +110,9 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         app_handle.on_menu_event(crate::menu::handle_menu_event);
         crate::menu::install_menu(&app_handle)?;
         app_handle.manage(crate::mailbox::server::LocalMailboxMutex::default());
-        app_handle.manage(lan_multicast_probe::LanMulticastProbe::spawn());
-        crate::tray::setup_tray(&app_handle)?;
+        let lan_multicast_probe = lan_multicast_probe::LanMulticastProbe::spawn();
+        crate::tray::setup_tray(&app_handle, lan_multicast_probe.blocked())?;
+        app_handle.manage(lan_multicast_probe);
 
         #[cfg(target_os = "macos")]
         crate::macos::install_termination_guard();

@@ -115,7 +115,6 @@ pub fn setup(app: &AppHandle) {
     }
 }
 
-/// Queue `route` for the frontend to open.
 pub fn push_route<R: Runtime>(app: &AppHandle<R>, route: String) {
     let queued = app
         .state::<PendingNavigations>()

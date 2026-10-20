@@ -1,5 +1,3 @@
-<!-- The warning sign, in the colour of the app's list icons unless `color`
-     (Tailwind text classes) says otherwise. -->
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { mdiAlert } from '@mdi/js';

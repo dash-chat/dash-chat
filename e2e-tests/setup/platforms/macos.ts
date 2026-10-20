@@ -14,8 +14,6 @@ import {
 
 const APP_BUNDLE_NAME = 'DashChatE2E';
 
-/** A desktop agent on `slot` whose Local Network access stays undetermined,
- *  behind the system alert, until `answerLocalNetworkAlert` answers it. */
 export async function launchDesktopAgentWithoutLocalNetworkAccess(
 	slot: number,
 ): Promise<WebdriverIO.Browser> {
@@ -24,10 +22,8 @@ export async function launchDesktopAgentWithoutLocalNetworkAccess(
 	return await connectDesktopAgent(slot);
 }
 
-/** Launch the e2e build as a macOS app of its own, under a bundle id macOS
- *  has never seen, so that Local Network privacy treats it as a first install.
- *  A process the harness spawns runs on the harness's own access instead.
- *  Every launch leaves a row in System Settings › Local Network. */
+/** A process the harness spawns shares the harness's Local Network access, so
+ *  the agent runs as an app macOS has never seen. */
 async function openAsNewMacApp(slot: number): Promise<void> {
 	const port = agentPort(slot);
 	const bundle = path.join(agentDir(slot), `${APP_BUNDLE_NAME}.app`);
@@ -54,17 +50,16 @@ async function openAsNewMacApp(slot: number): Promise<void> {
 	await waitForPortListening(port);
 }
 
-/** Give `binary`, a single-architecture 64-bit Mach-O, a new UUID in place.
- *  macOS remembers a Local Network answer by the executable's UUID too, so a
- *  build an earlier run allowed would start allowed under any bundle id. */
+/** macOS also remembers a Local Network answer by the executable's UUID. */
 function withFreshMachOUuid(binary: Buffer): Buffer {
 	const MH_MAGIC_64 = 0xfeedfacf;
+	const MACH_HEADER_64_SIZE = 32;
 	const LC_UUID = 0x1b;
 	if (binary.readUInt32LE(0) !== MH_MAGIC_64) {
 		throw new Error('the e2e build is not a single-architecture 64-bit Mach-O');
 	}
 	const commandCount = binary.readUInt32LE(16);
-	let offset = 32; // mach_header_64
+	let offset = MACH_HEADER_64_SIZE;
 	for (let i = 0; i < commandCount && offset + 24 <= binary.length; i++) {
 		if (binary.readUInt32LE(offset) === LC_UUID) {
 			randomBytes(16).copy(binary, offset + 8);
@@ -89,8 +84,6 @@ function appBundleInfoPlist(bundleId: string): string {
 `;
 }
 
-/** Whether the harness can click system alerts on macOS: the terminal running
- *  it has Accessibility access. */
 export function canAnswerSystemAlerts(): boolean {
 	try {
 		return (
@@ -105,19 +98,20 @@ export function canAnswerSystemAlerts(): boolean {
 	}
 }
 
-/** Answer every pending macOS alert asking whether the e2e app may access the
- *  local network. macOS names the app by its bundle or its executable, and
- *  every copy's alert reads the same, so each one gets a click; an alert left
- *  by a killed app no longer responds. Needs [`canAnswerSystemAlerts`]. */
-export function answerLocalNetworkAlert(button: 'Allow' | 'Don’t Allow'): void {
+/** macOS names the app by its bundle or its executable, and alerts left by
+ *  earlier copies read the same, so every match gets a click. */
+export function allowLocalNetworkAlerts(): void {
 	const script = `
-tell application "System Events" to tell process "UserNotificationCenter"
-	repeat with i from (count of windows) to 1 by -1
-		set question to value of static text 1 of window i
-		if question contains "“${APP_BUNDLE_NAME}” to find devices on local networks" or question contains "“dash-chat” to find devices on local networks" then
-			click button "${button}" of window i
-		end if
-	end repeat
+tell application "System Events"
+	if not (exists process "UserNotificationCenter") then return
+	tell process "UserNotificationCenter"
+		repeat with i from (count of windows) to 1 by -1
+			set question to value of static text 1 of window i
+			if question contains "“${APP_BUNDLE_NAME}” to find devices on local networks" or question contains "“dash-chat” to find devices on local networks" then
+				click button "Allow" of window i
+			end if
+		end repeat
+	end tell
 end tell`;
 	execFileSync('osascript', ['-e', script]);
 }

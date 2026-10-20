@@ -1,20 +1,11 @@
 /**
- * The local hub tells its user when phones can't find it, on macOS, where
- * Local Network privacy keeps an app's mDNS off the LAN until the user allows
- * it. The desktop agent runs as an app macOS has never seen, so its access
- * stays undetermined behind the system alert while the hub starts: the hub
- * announces to nobody, and Settings › Offline says so, with a badge on the
- * way there from the home page. Allowing it in the alert clears them.
- *
- * macOS only, and skips itself unless the terminal running the harness has
- * Accessibility access, which answering the alert needs. Every run leaves a
- * row in System Settings › Local Network, which macOS offers no way to remove.
- * The tests run in order through that system state: the second one answers
- * the alert the first one left pending.
+ * The agent's Local Network access stays pending behind the macOS alert, and
+ * the tests share that state in order: the second allows what the first left
+ * pending.
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import {
-	answerLocalNetworkAlert,
+	allowLocalNetworkAlerts,
 	canAnswerSystemAlerts,
 } from '../setup/platforms/macos';
 import {
@@ -22,7 +13,6 @@ import {
 	setupAgentWithoutLocalNetworkAccess,
 } from '../setup/setup-agents';
 
-/** The LAN is probed every 3s and counts as blocked after two refused rounds. */
 const PROBE_TIMEOUT_MS = 15_000;
 
 describe('Local hub LAN warning', function () {
@@ -38,11 +28,7 @@ describe('Local hub LAN warning', function () {
 
 	// A system alert left up by a failed test would sit over whatever runs next.
 	after(() => {
-		try {
-			answerLocalNetworkAlert('Allow');
-		} catch {
-			// No system alerts to answer here.
-		}
+		allowLocalNetworkAlerts();
 	});
 
 	it('warns that phones cannot find the hub while macOS keeps it off the LAN', async () => {
@@ -66,7 +52,7 @@ describe('Local hub LAN warning', function () {
 	});
 
 	it('clears the warning once the user allows local network access', async () => {
-		answerLocalNetworkAlert('Allow');
+		allowLocalNetworkAlerts();
 
 		await agent.homePage.settingsHubWarning.waitForDisplayed({
 			reverse: true,
