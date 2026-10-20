@@ -180,6 +180,9 @@ importers:
       '@choochmeque/tauri-plugin-sharekit-api':
         specifier: ^0.3.0
         version: 0.3.0
+      '@fontsource/roboto':
+        specifier: 5.3.0
+        version: 5.3.0
       '@gbyte/tauri-plugin-ios-photos':
         specifier: github:dash-chat/tauri-plugin-ios-photos#0497602c0917217adea9701b44bef3aeb45e1ad0
         version: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/0497602c0917217adea9701b44bef3aeb45e1ad0
@@ -1117,6 +1120,9 @@ packages:
 
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
+
+  '@fontsource/roboto@5.3.0':
+    resolution: {integrity: sha512-BapRJOWYP+LZ21zp+wBQjfpPYKRoxc4LspJ/RLuI+HSMBD5u/X4O+ESDrSvEqDSy0rAl7GwBJ+09mdc16cVQ1Q==}
 
   '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/0497602c0917217adea9701b44bef3aeb45e1ad0':
     resolution: {gitHosted: true, integrity: sha512-ZQvefMJeM3hFIfHrdE/PTnwK9j+0VyHt9e0xJF2Jk7l/iDjUymtTO7jEtsb1o57edZ3PjWrD3SV/hMxusEamDQ==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/0497602c0917217adea9701b44bef3aeb45e1ad0}
@@ -6620,6 +6626,8 @@ snapshots:
       '@floating-ui/utils': 0.2.10
 
   '@floating-ui/utils@0.2.10': {}
+
+  '@fontsource/roboto@5.3.0': {}
 
   '@gbyte/tauri-plugin-ios-photos@https://codeload.github.com/dash-chat/tauri-plugin-ios-photos/tar.gz/0497602c0917217adea9701b44bef3aeb45e1ad0':
     dependencies:
