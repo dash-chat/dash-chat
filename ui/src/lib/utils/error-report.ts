@@ -56,8 +56,20 @@ async function describeScreenshot(file: File) {
 	return {
 		name: file.name,
 		contentType: file.type,
-		bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+		base64: await base64Of(file),
 	};
+}
+
+function base64Of(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			const dataUrl = reader.result as string;
+			resolve(dataUrl.slice(dataUrl.indexOf(',') + 1));
+		};
+		reader.onerror = () => reject(reader.error);
+		reader.readAsDataURL(file);
+	});
 }
 
 export async function hasPendingCrashReport(): Promise<boolean> {
