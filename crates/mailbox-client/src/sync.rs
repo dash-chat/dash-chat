@@ -90,12 +90,7 @@ where
 
         for (topic, response) in response.into_iter() {
             let outcome = match self
-                .sync_topic(
-                    topic.clone(),
-                    response,
-                    &sent_heights,
-                    topic_senders,
-                )
+                .sync_topic(topic.clone(), response, &sent_heights, topic_senders)
                 .await
             {
                 Ok(res) => res,
