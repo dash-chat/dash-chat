@@ -31,6 +31,12 @@ pub struct SyncTopicOutcome<Topic> {
     pub closed_topics: HashSet<Topic>,
 }
 
+struct SyncTopicResult<Item: crate::MailboxItem> {
+    ops_to_publish: Vec<Item>,
+    acks: Vec<(Item::Topic, Item::Author, SeqNum)>,
+    closed: bool,
+}
+
 #[derive(Clone)]
 pub struct SyncCoordinator<Item, Store>
 where
@@ -83,22 +89,28 @@ where
         let mut closed_topics: HashSet<Item::Topic> = HashSet::new();
 
         for (topic, response) in response.into_iter() {
-            if let Err(err) = self
+            let outcome = match self
                 .sync_topic(
-                    topic,
+                    topic.clone(),
                     response,
                     &sent_heights,
                     topic_senders,
-                    &mut ops_to_publish,
-                    &mut acks,
-                    &mut closed_topics,
                 )
                 .await
             {
-                return SyncTopicOutcome {
-                    result: Err(err),
-                    closed_topics,
-                };
+                Ok(res) => res,
+                Err(err) => {
+                    return SyncTopicOutcome {
+                        result: Err(err),
+                        closed_topics,
+                    };
+                }
+            };
+
+            ops_to_publish.extend(outcome.ops_to_publish);
+            acks.extend(outcome.acks);
+            if outcome.closed {
+                closed_topics.insert(topic);
             }
         }
 
@@ -197,20 +209,22 @@ where
     /// received. Infers ack watermarks, sends received items to the local
     /// receiver, and collects missing operations from the local store for
     /// publishing.
+
     async fn sync_topic(
         &self,
         topic: Item::Topic,
         response: FetchTopicResponse<Item>,
         sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
         topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
-        ops_to_publish: &mut Vec<Item>,
-        acks: &mut Vec<(Item::Topic, Item::Author, SeqNum)>,
-        closed_topics: &mut HashSet<Item::Topic>,
-    ) -> anyhow::Result<()>
+    ) -> anyhow::Result<SyncTopicResult<Item>>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
     {
         let FetchTopicResponse { items, missing } = response;
+        let mut ops_to_publish = vec![];
+        let mut acks = vec![];
+        let mut closed = false;
+
         if items.is_empty() && missing.is_empty() {
             tracing::trace!(topic = %topic, "Syncing with mailbox: nothing to do");
         } else {
@@ -240,13 +254,17 @@ where
 
         let Some(sender) = topic_senders.lock().await.get(&topic).cloned() else {
             tracing::warn!(topic = %topic, "no sender for topic");
-            return Ok(());
+            return Ok(SyncTopicResult {
+                ops_to_publish,
+                acks,
+                closed,
+            });
         };
 
         for item in items {
             if sender.send(item).await.is_err() {
                 tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
-                closed_topics.insert(topic.clone());
+                closed = true;
                 break;
             }
         }
@@ -274,6 +292,10 @@ where
             }
         }
 
-        Ok(())
+        Ok(SyncTopicResult {
+            ops_to_publish,
+            acks,
+            closed,
+        })
     }
 }
