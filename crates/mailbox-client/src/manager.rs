@@ -2624,20 +2624,16 @@ mod tests {
     struct FailingPublishClient {
         id: MailboxId,
         items_to_fetch: Arc<Mutex<Vec<Msg>>>,
-        fetch_count: Arc<AtomicU32>,
         fail_next_publish: Arc<AtomicBool>,
     }
 
     impl FailingPublishClient {
-        fn new(items: Vec<Msg>) -> (Self, Arc<AtomicU32>) {
-            let fetch_count = Arc::new(AtomicU32::new(0));
-            let client = Self {
+        fn new(items: Vec<Msg>) -> Self {
+            Self {
                 id: nanoid::nanoid!(),
                 items_to_fetch: Arc::new(Mutex::new(items)),
-                fetch_count: fetch_count.clone(),
                 fail_next_publish: Arc::new(AtomicBool::new(true)),
-            };
-            (client, fetch_count)
+            }
         }
     }
 
@@ -2661,9 +2657,6 @@ mod tests {
             let items = self.items_to_fetch.lock().await.clone();
             let mut response = BTreeMap::new();
             for topic in request.0.keys().copied() {
-                if topic == 0u8 {
-                    self.fetch_count.fetch_add(1, Ordering::Relaxed);
-                }
                 response.insert(
                     topic,
                     FetchTopicResponse {
@@ -2693,7 +2686,7 @@ mod tests {
         // The mailbox will return one item for the closed topic and then fail
         // to publish, so `sync_topics` exits with an error before the manager
         // can process `SyncTopicOutcome::closed_topics`.
-        let (client, fetch_count) = FailingPublishClient::new(vec![Msg {
+        let client = FailingPublishClient::new(vec![Msg {
             topic: 0,
             author: 'a',
             seq: 0,
