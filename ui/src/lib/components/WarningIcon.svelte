@@ -7,16 +7,22 @@
 
 	let {
 		size,
+		label,
 		color,
 		class: className,
 		...rest
-	}: { size: number; color?: string } & HTMLAttributes<HTMLElement> = $props();
+	}: {
+		size: number;
+		label?: string;
+		color?: string;
+	} & HTMLAttributes<HTMLElement> = $props();
 
 	const theme = $derived(useTheme());
 </script>
 
 <wa-icon
 	{...rest}
+	{label}
 	src={wrapPathInSvg(mdiAlert)}
 	class={[
 		className,

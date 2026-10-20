@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { type SettingsStore } from 'dash-chat-stores';
 	import { getContext, type Snippet } from 'svelte';
+	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import WarningBadge from './WarningBadge.svelte';
 
@@ -10,6 +11,6 @@
 	const localHubBlocked = useReactiveValue(settingsStore.localHubBlocked);
 </script>
 
-<WarningBadge show={$localHubBlocked === true}>
+<WarningBadge show={$localHubBlocked === true} label={m.localHubCantBeFound()}>
 	{@render children()}
 </WarningBadge>

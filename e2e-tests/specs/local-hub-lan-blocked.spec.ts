@@ -17,18 +17,22 @@ const PROBE_TIMEOUT_MS = 15_000;
 
 describe('Local hub LAN warning', function () {
 	let agent: Agent;
+	let alertsMayBeUp = false;
 
 	before(async function () {
 		if (process.platform !== 'darwin' || !canAnswerSystemAlerts()) {
 			this.skip();
 		}
+		alertsMayBeUp = true;
 		agent = await setupAgentWithoutLocalNetworkAccess();
 		await createProfiles({ Alice: agent });
 	});
 
 	// A system alert left up by a failed test would sit over whatever runs next.
 	after(() => {
-		allowLocalNetworkAlerts();
+		if (alertsMayBeUp) {
+			allowLocalNetworkAlerts();
+		}
 	});
 
 	it('warns that phones cannot find the hub while macOS keeps it off the LAN', async () => {

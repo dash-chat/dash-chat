@@ -315,6 +315,7 @@
 	"trayShow": "Show",
 	"trayQuit": "Quit",
 	"trayLanBlocked": "Failed to run Local Message Hub",
+	"localHubCantBeFound": "Nearby devices can't find the Local Message Hub",
 	"localMessageServerLanBlocked": "Nearby devices can't find this Local Message Hub. Turn off any VPN, and check that your firewall lets Dash Chat use the local network.",
 	"localMessageServerLanBlockedMacos": "Nearby devices can't find this Local Message Hub. Turn off any VPN, then open System Settings › Privacy & Security › Local Network and turn the Dash Chat permission on to allow Dash Chat to find devices on local networks. If it is already on, turn it off and on again. If it won't stay on, restart your Mac and try again.",
 	"menuRunLocalMailbox": "Run Local Message Hub",

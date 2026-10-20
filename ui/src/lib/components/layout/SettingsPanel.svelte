@@ -186,6 +186,7 @@
 						{#if $localHubBlocked === true}
 							<WarningIcon
 								size={24}
+								label={m.localHubCantBeFound()}
 								data-testid="settings-offline-hub-warning"
 							/>
 						{/if}
