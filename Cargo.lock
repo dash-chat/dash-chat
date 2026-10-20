@@ -7555,6 +7555,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -7580,6 +7581,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "p2panda-core",
  "petgraph",
@@ -7591,6 +7593,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "blake3",
  "cbor-core",
@@ -7605,6 +7608,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7619,6 +7623,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -7641,6 +7646,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -7668,6 +7674,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7682,6 +7689,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -7699,6 +7707,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "futures-util",
  "indexmap 2.14.2",
@@ -7716,6 +7725,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.7.1"
+source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
 dependencies = [
  "futures-channel",
  "futures-util",
