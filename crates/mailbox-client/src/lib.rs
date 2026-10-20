@@ -1,9 +1,9 @@
 pub mod backends;
 pub mod blobs;
 mod connection_health;
+mod mailbox_registry;
 pub mod manager;
 mod polling;
-mod registry;
 pub mod store;
 mod sync;
 mod sync_scheduler;
