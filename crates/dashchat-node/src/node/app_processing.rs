@@ -624,7 +624,9 @@ impl Node {
                         // scanner's device key (author), so we map that device to
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
-                        if is_advertised_topic && !matches!(source, Source::LocalStore) {
+                        //
+                        // TODO: maybe find a way to not rely on `source`?
+                        if is_advertised_topic && !source.is_local() {
                             // Mutual add: if we also sent this peer a contact
                             // request, their incoming request is an implicit
                             // acceptance — complete the exchange automatically
@@ -655,7 +657,9 @@ impl Node {
                         // Verifying author == expected_ack_author prevents a
                         // third party from injecting a spoofed ack with
                         // an attacker-chosen agent_id/profile.
-                        if is_reply && !matches!(source, Source::LocalStore) {
+                        //
+                        // TODO: maybe find a way to not rely on `source`?
+                        if is_reply && !source.is_local() {
                             let expected = self
                                 .local_store
                                 .get_reply_inbox_expected_ack_author(topic_id)

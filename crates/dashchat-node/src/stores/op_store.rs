@@ -196,7 +196,10 @@ impl OpStore {
     /// intact so log sync stays consistent. Used to enforce tombstones.
     pub async fn delete_body(&self, hash: &Hash) -> anyhow::Result<()> {
         use p2panda_store::operations::OperationStore;
-        OperationStore::<Operation, Hash>::delete_operation_payload(&self.store, hash).await?;
+        p2panda_store::tx!(self.store, {
+            OperationStore::<Operation, Hash>::delete_operation_payload_tx(&self.store, hash)
+                .await?;
+        });
         Ok(())
     }
 
@@ -309,7 +312,7 @@ mod tests {
 
     async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
         let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash>::insert_operation(&store.store, &op.hash, op, log_id)
+        OperationStore::<Operation, Hash>::insert_operation_tx(&store.store, &op.hash, op, log_id)
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();
@@ -338,7 +341,7 @@ mod tests {
         .unwrap_or_else(|| Cursor::new(topic.to_string(), LogHeights::default()));
         cursor.advance(**author, log_id, seq);
         let permit = store.store.begin().await.unwrap();
-        CursorStore::set_cursor(&store.store, &cursor)
+        CursorStore::set_cursor_tx(&store.store, &cursor)
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();
@@ -450,7 +453,7 @@ mod tests {
         };
 
         let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash>::insert_operation(&store.store, &hash, &op, &log_id)
+        OperationStore::<Operation, Hash>::insert_operation_tx(&store.store, &hash, &op, &log_id)
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();
