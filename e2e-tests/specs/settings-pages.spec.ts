@@ -151,13 +151,27 @@ describe('Settings pages', () => {
 		await page.pickScreenshots(
 			['c.png', 'd.png', 'e.png', 'f.png'].map(screenshot),
 		);
-		await agent.toast.expectMessage(await agent.tr('errorTooManyAttachments'));
+		await agent.toast.expectMessage(await agent.tr('errorTooManyScreenshots'));
 		await expect(page.screenshots()).toBeElementsArrayOfSize(5);
 		await expect(page.addScreenshot).not.toBeExisting();
 
 		await page.removeScreenshot(0).click();
 		await expect(page.screenshots()).toBeElementsArrayOfSize(4);
 		await expect(page.addScreenshot).toBeExisting();
+
+		await page.pickScreenshots([
+			{ name: 'notes.txt', mimeType: 'text/plain', bytes: [104, 105] },
+		]);
+		await agent.toast.expectMessage(await agent.tr('errorUnsupportedImage'));
+		await expect(page.screenshots()).toBeElementsArrayOfSize(4);
+
+		await page.pickScreenshots([
+			{ name: 'big.gif', mimeType: 'image/gif', size: 9 * 1024 * 1024 },
+		]);
+		await agent.toast.expectMessage(
+			await agent.tr('errorScreenshotsTooLarge', { max: '8.0 MB' }),
+		);
+		await expect(page.screenshots()).toBeElementsArrayOfSize(4);
 
 		await page.back.click();
 		await agent.helpPage.ready();

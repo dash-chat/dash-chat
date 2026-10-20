@@ -65,7 +65,7 @@ export interface IngestResult {
 // photo path; anything else (videos until <video> rendering exists, and
 // formats with patchy decoder support like HEIC/AVIF/TIFF) stages and
 // sends as a file attachment instead of producing a broken <img> on the
-// recipient.
+// recipient. The contact form reuses the set for what Sentry can preview.
 const PHOTO_TYPES = new Set([
 	'image/jpeg',
 	'image/png',

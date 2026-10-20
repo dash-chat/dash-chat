@@ -10,7 +10,7 @@
 
 	interface Props {
 		value: File[];
-		picking: boolean;
+		attaching: boolean;
 		max: number;
 		maxBytes: number;
 		disabled?: boolean;
@@ -19,30 +19,40 @@
 
 	let {
 		value = $bindable([]),
-		picking = $bindable(false),
+		attaching = $bindable(false),
 		max,
 		maxBytes,
 		disabled = false,
 		testId,
 	}: Props = $props();
 
-	let addThumb = $state<AddThumb>();
+	let grid = $state<HTMLDivElement>();
+	let pickerOpen = $state(false);
 	let destroyed = false;
 	onDestroy(() => {
 		destroyed = true;
 	});
 
+	// Only the compression phase locks the form: a picker whose dismissal the
+	// webview never reports would otherwise leave it locked for good.
 	async function addImages() {
-		picking = true;
+		pickerOpen = true;
+		let picked: File[] | null;
 		try {
 			// One past the free slots, just enough to tell the user they picked too many.
-			const picked = await pickMedia('image', true, max - value.length + 1);
-			if (picked) await attach(picked);
+			picked = await pickMedia('image', true, max - value.length + 1);
 		} finally {
-			picking = false;
+			pickerOpen = false;
+		}
+		if (!picked) return;
+		attaching = true;
+		try {
+			await attach(picked);
+		} finally {
+			attaching = false;
 		}
 		await tick();
-		addThumb?.focus();
+		focusLastControl();
 	}
 
 	/** Compressed one at a time so only a single decoded bitmap is held; support
@@ -59,6 +69,7 @@
 				unsupported = true;
 			} else if (totalBytes(value) + image.size > maxBytes) {
 				tooLarge = true;
+				break;
 			} else {
 				value = [...value, image];
 			}
@@ -68,11 +79,11 @@
 			showToast(m.errorUnsupportedImage(), 'error');
 		} else if (tooLarge) {
 			showToast(
-				m.errorAttachmentTooLarge({ max: formatFileSize(maxBytes) }),
+				m.errorScreenshotsTooLarge({ max: formatFileSize(maxBytes) }),
 				'error',
 			);
 		} else if (tooMany) {
-			showToast(m.errorTooManyAttachments(), 'error');
+			showToast(m.errorTooManyScreenshots(), 'error');
 		}
 	}
 
@@ -81,16 +92,24 @@
 	}
 
 	async function remove(index: number) {
+		const hadFocus = grid?.contains(document.activeElement) ?? false;
 		value = value.filter((_, i) => i !== index);
+		if (!hadFocus) return;
 		await tick();
-		addThumb?.focus();
+		focusLastControl();
+	}
+
+	function focusLastControl() {
+		const controls = grid?.querySelectorAll('button') ?? [];
+		[...controls].at(-1)?.focus();
 	}
 </script>
 
 <div
+	bind:this={grid}
 	class="grid grid-cols-3 gap-2"
 	class:opacity-60={disabled}
-	inert={disabled || picking}
+	inert={disabled || attaching}
 	data-testid={testId}
 >
 	{#each value as image, i (image)}
@@ -109,11 +128,10 @@
 	{/each}
 	{#if value.length < max}
 		<AddThumb
-			bind:this={addThumb}
 			onClick={addImages}
-			label={m.selectImage()}
+			label={m.addImage()}
 			testId="{testId}-add"
-			disabled={picking}
+			disabled={pickerOpen || attaching}
 			class="aspect-square w-full"
 		/>
 	{/if}

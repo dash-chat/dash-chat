@@ -60,10 +60,7 @@ async fn build_feedback(state: &SentryState, feedback: Feedback) -> anyhow::Resu
             filename: format!(
                 "screenshot-{}.{}",
                 i + 1,
-                screenshot
-                    .content_type
-                    .strip_prefix("image/")
-                    .unwrap_or("bin")
+                extension(&screenshot.content_type)
             ),
             buffer: bytes,
             content_type: Some(screenshot.content_type),
@@ -77,6 +74,16 @@ async fn build_feedback(state: &SentryState, feedback: Feedback) -> anyhow::Resu
     }
 
     feedback_envelope(event, &attachments)
+}
+
+fn extension(content_type: &str) -> &'static str {
+    match content_type {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => "bin",
+    }
 }
 
 /// Written out by hand because the Rust SDK has no feedback item
@@ -155,11 +162,11 @@ mod tests {
         );
         assert!(both.contains(r#""reason":"bug""#), "got: {both}");
         assert!(
-            both.contains(r#""filename":"screenshot-1.jpeg""#),
+            both.contains(r#""filename":"screenshot-1.jpg""#),
             "got: {both}"
         );
         assert!(
-            both.contains(r#""filename":"screenshot-2.jpeg""#),
+            both.contains(r#""filename":"screenshot-2.jpg""#),
             "got: {both}"
         );
         assert!(both.contains("a line"), "got: {both}");
@@ -168,6 +175,20 @@ mod tests {
         assert!(
             !neither.contains(r#""type":"attachment""#),
             "got: {neither}"
+        );
+    }
+
+    #[test]
+    fn a_screenshot_of_an_unknown_type_gets_a_neutral_extension() {
+        let state = plugin(Path::new("/nonexistent"));
+        let pdf = Screenshot {
+            content_type: "application/pdf".into(),
+            ..screenshot()
+        };
+        let sent = sent(&state, false, vec![pdf]);
+        assert!(
+            sent.contains(r#""filename":"screenshot-1.bin""#),
+            "got: {sent}"
         );
     }
 

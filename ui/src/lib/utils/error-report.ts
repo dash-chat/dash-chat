@@ -39,13 +39,15 @@ export async function sendErrorReport(
 }
 
 export async function sendFeedback(feedback: Feedback): Promise<SendOutcome> {
+	const screenshots: Awaited<ReturnType<typeof describeScreenshot>>[] = [];
+	for (const file of feedback.screenshots) {
+		screenshots.push(await describeScreenshot(file));
+	}
 	return invokeAfterSetup('plugin:sentry-reporting|send_feedback', {
 		feedback: {
 			reason: feedback.reason,
 			message: feedback.message,
-			screenshots: await Promise.all(
-				feedback.screenshots.map(describeScreenshot),
-			),
+			screenshots,
 			includeLogs: feedback.includeLogs,
 		},
 	});

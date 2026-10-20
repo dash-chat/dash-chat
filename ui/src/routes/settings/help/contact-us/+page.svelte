@@ -26,16 +26,16 @@
 	// Without SENTRY_DSN there is nowhere for a submission to go.
 	const canSend = import.meta.env.VITE_SENTRY_ENABLED;
 	const MAX_SCREENSHOTS = 5;
-	const MAX_SCREENSHOT_BYTES = 16 * 1024 * 1024;
+	const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
 
 	let message = $state('');
 	let reason = $state<FeedbackReason | undefined>();
 	let includeDebugLog = $state(true);
 	let screenshots = $state<File[]>([]);
-	let pickingScreenshots = $state(false);
+	let attachingScreenshots = $state(false);
 	let sending = $state(false);
 	const sendDisabled = $derived(
-		!message || !reason || !canSend || sending || pickingScreenshots,
+		!message || !reason || !canSend || sending || attachingScreenshots,
 	);
 
 	async function handleSubmit() {
@@ -122,7 +122,7 @@
 				/>
 			</List>
 
-			<BlockTitle>{m.attachScreenshot()}</BlockTitle>
+			<BlockTitle>{m.attachScreenshots()}</BlockTitle>
 			<Block
 				strongIos
 				inset={isWideScreen.value || theme === 'ios'}
@@ -130,7 +130,7 @@
 			>
 				<ImagesInput
 					bind:value={screenshots}
-					bind:picking={pickingScreenshots}
+					bind:attaching={attachingScreenshots}
 					max={MAX_SCREENSHOTS}
 					maxBytes={MAX_SCREENSHOT_BYTES}
 					disabled={sending}
