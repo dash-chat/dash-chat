@@ -633,6 +633,8 @@ mod tests {
         testing::{DummyStore, MemStore, Msg},
     };
 
+    // ... (rest of existing helpers: TrackingClient, SlowClient, RecordingClient, etc.)
+
     /// A mailbox client that counts fetch() calls and optionally returns errors.
     struct TrackingClient {
         id: MailboxId,
@@ -2139,44 +2141,7 @@ mod tests {
 
     // -- PendingSync tests --
 
-    #[tokio::test(start_paused = true)]
-    async fn pending_request_accumulates_topics() {
-        let mut pending = PendingRequest::None;
-        pending.merge_poll(Some(1u8));
-        pending.merge_poll(Some(2u8));
-        pending.merge_poll(Some(1u8));
-        assert_eq!(pending, poll_topics([1, 2]));
-    }
-
-    /// A request for every topic can't be narrowed by a later single-topic one.
-    #[tokio::test(start_paused = true)]
-    async fn pending_request_all_absorbs_topics() {
-        let mut pending = PendingRequest::None;
-        pending.merge_poll(Some(1u8));
-        pending.merge_poll(None);
-        pending.merge_poll(Some(2u8));
-        assert_eq!(
-            pending,
-            PendingRequest::PollAll {
-                since: Instant::now()
-            }
-        );
-    }
-
-    /// A burst of requests is polled on the first one's debounce, not the last's.
-    #[tokio::test(start_paused = true)]
-    async fn pending_request_keeps_the_first_debounce() {
-        let debounce = Duration::from_millis(100);
-        let far = Instant::now() + Duration::from_secs(60);
-        let mut pending = PendingRequest::None;
-        pending.merge_poll(Some(1u8));
-        let deadline = Instant::now() + debounce;
-        tokio::time::advance(Duration::from_millis(20)).await;
-        pending.merge_poll(Some(2u8));
-        tokio::time::advance(Duration::from_millis(20)).await;
-        pending.merge_poll(None);
-        assert_eq!(pending.due_at(Instant::now(), far, debounce), deadline);
-    }
+    // (Moved to sync_scheduler.rs)
 
     // -- topic-scoped sync tests --
 
