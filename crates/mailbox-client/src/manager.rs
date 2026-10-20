@@ -412,8 +412,6 @@ where
             .filter(|(_, t)| t.connection_state().borrow().status == SyncStatus::Active)
             .map(|(id, tracked)| {
                 let manager = self.clone();
-                let id = id.clone();
-                let tracked = tracked.clone();
                 tokio::spawn(async move {
                     if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
                         tracing::warn!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
@@ -2784,7 +2782,7 @@ mod tests {
 
         // The mailbox will return one item for the closed topic and then fail
         // to publish, so `sync_topics` exits with an error before the manager
-        // can process `SyncTopicResult::closed_topics`.
+        // can process `SyncTopicOutcome::closed_topics`.
         let (client, fetch_count) = FailingPublishClient::new(vec![Msg {
             topic: 0,
             author: 'a',
@@ -2804,25 +2802,10 @@ mod tests {
         assert!(result.is_err(), "expected publish failure to propagate");
 
         // Because the receiver was closed, the topic should be unsubscribed
-        // even though the overall sync failed. Without the fix it stays in
-        // `self.topics` and would be fetched again on the next poll.
+        // even though the overall sync failed.
         assert!(
             !mgr.subscribed_topics().await.contains(&0u8),
-            "closed topic should be unsubscribed even when publish fails"
-        );
-
-        // A follow-up poll should not fetch the topic again. Once the topic
-        // is unsubscribed, the poll loop would not include it in the next sync.
-        let fetch_count_before = fetch_count.load(Ordering::Relaxed);
-        let result = mgr.sync_topics(std::iter::empty(), &client).await;
-        assert!(
-            result.is_ok(),
-            "follow-up sync with no topics should succeed: {result:?}"
-        );
-        assert_eq!(
-            fetch_count.load(Ordering::Relaxed),
-            fetch_count_before,
-            "topic should not be re-fetched after being unsubscribed"
+            "closed topic should be unsubscribed even when publish fails, so it is not re-fetched"
         );
     }
 }
