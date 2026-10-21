@@ -115,63 +115,55 @@ impl<Topic: Ord> Default for PendingRequest<Topic> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_pending_request_accumulates_topics() {
+    /// A topic request made now (paused time keeps `since` stable).
+    fn poll_topics(topics: impl IntoIterator<Item = u8>) -> PendingRequest<u8> {
+        PendingRequest::PollTopics {
+            topics: topics.into_iter().collect(),
+            since: Instant::now(),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pending_request_accumulates_topics() {
         let mut pending = PendingRequest::None;
         pending.merge_poll(Some(1u8));
         pending.merge_poll(Some(2u8));
         pending.merge_poll(Some(1u8));
-
-        if let PendingRequest::PollTopics { topics, .. } = pending {
-            assert_eq!(topics, BTreeSet::from([1u8, 2u8]));
-        } else {
-            panic!("Expected PollTopics");
-        }
+        assert_eq!(pending, poll_topics([1, 2]));
     }
 
-    #[test]
-    fn test_pending_request_all_absorbs_topics() {
+    /// A request for every topic can't be narrowed by a later single-topic one.
+    #[tokio::test(start_paused = true)]
+    async fn pending_request_all_absorbs_topics() {
         let mut pending = PendingRequest::None;
         pending.merge_poll(Some(1u8));
         pending.merge_poll(None);
         pending.merge_poll(Some(2u8));
-
-        match pending {
-            PendingRequest::PollAll { .. } => {}
-            _ => panic!("Expected PollAll"),
-        }
-    }
-
-    #[test]
-    fn test_pending_request_keeps_the_first_debounce() {
-        let debounce = Duration::from_millis(100);
-        let far = Instant::now() + Duration::from_secs(60);
-        let mut pending = PendingRequest::None;
-
-        let now = Instant::now();
-        pending.merge_poll(Some(1u8));
-        let deadline = now + debounce;
-
-        pending.merge_poll(Some(2u8));
-        pending.merge_poll(None);
-
-        let actual = pending.due_at(now, far, debounce);
-        let diff = if actual > deadline {
-            actual - deadline
-        } else {
-            deadline - actual
-        };
-
-        assert!(
-            diff < Duration::from_millis(1),
-            "Deadline mismatch: actual {:?}, expected {:?}",
-            actual,
-            deadline
+        assert_eq!(
+            pending,
+            PendingRequest::PollAll {
+                since: Instant::now()
+            }
         );
     }
 
+    /// A burst of requests is polled on the first one's debounce, not the last's.
+    #[tokio::test(start_paused = true)]
+    async fn pending_request_keeps_the_first_debounce() {
+        let debounce = Duration::from_millis(100);
+        let far = Instant::now() + Duration::from_secs(60);
+        let mut pending = PendingRequest::None;
+        pending.merge_poll(Some(1u8));
+        let deadline = Instant::now() + debounce;
+        tokio::time::advance(Duration::from_millis(20)).await;
+        pending.merge_poll(Some(2u8));
+        tokio::time::advance(Duration::from_millis(20)).await;
+        pending.merge_poll(None);
+        assert_eq!(pending.due_at(Instant::now(), far, debounce), deadline);
+    }
+
     #[test]
-    fn test_pending_probe_yields_to_wakeup_and_absorbs_syncs() {
+    fn pending_probe_yields_to_wakeup_and_absorbs_syncs() {
         let mut pending = PendingRequest::None;
         pending.merge_poll(Some(1u8));
         pending.merge_probe();
@@ -182,5 +174,31 @@ mod tests {
         pending.merge_wakeup();
         pending.merge_probe();
         assert_eq!(pending, PendingRequest::Wakeup);
+    }
+
+    #[test]
+    fn consume_returns_outcome_and_resets() {
+        let mut pending = PendingRequest::<u8>::None;
+        assert_eq!(pending.consume(), (RequestOutcome::Regular, false));
+        assert_eq!(pending, PendingRequest::None);
+
+        let mut pending = poll_topics([1u8, 2u8]);
+        assert_eq!(
+            pending.consume(),
+            (RequestOutcome::Topics(BTreeSet::from([1u8, 2u8])), false)
+        );
+        assert_eq!(pending, PendingRequest::None);
+
+        let mut pending = PendingRequest::<u8>::PollAll {
+            since: Instant::now(),
+        };
+        assert_eq!(pending.consume(), (RequestOutcome::All, false));
+        assert_eq!(pending, PendingRequest::None);
+
+        let mut pending = PendingRequest::<u8>::Wakeup;
+        assert_eq!(pending.consume(), (RequestOutcome::All, false));
+
+        let mut pending = PendingRequest::<u8>::Probe;
+        assert_eq!(pending.consume(), (RequestOutcome::All, true));
     }
 }
