@@ -349,8 +349,13 @@ impl Node {
         }
 
         if DeviceId::from(operation.author()) == self.device_id() {
+            let log_id = operation.processed().operation.header.extensions.log_id();
             self.mailboxes
-                .publish_fast_push(operation.topic(), self.device_id())
+                .publish_fast_push(
+                    operation.topic(),
+                    self.device_id(),
+                    crate::mailbox::mailbox_log_id(log_id),
+                )
                 .await;
         }
 

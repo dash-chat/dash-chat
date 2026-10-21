@@ -4,7 +4,10 @@
 //! longer to follow; until the sender's network recovers, only the mailbox's
 //! HTTP port is in reach of her uplink.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use dashchat_node::{testing::*, *};
 use mailbox_client::{FetchRequest, FetchResponse, MailboxClient, MailboxItem};
@@ -160,18 +163,16 @@ async fn wait_until_mailbox_holds_message(
         poll_timeout: Duration::from_secs(30),
     }
     .wait_for(|| async {
-        let FetchResponse(topics) = inspector
-            .fetch(FetchRequest(BTreeMap::from([(topic, BTreeMap::new())])))
+        let FetchResponse { items, .. } = inspector
+            .fetch(FetchRequest {
+                topics: BTreeSet::from([topic]),
+                heights: BTreeMap::new(),
+            })
             .await
             .unwrap();
-        topics
-            .get(&topic)
-            .is_some_and(|topic| {
-                topic
-                    .items
-                    .iter()
-                    .any(|op| op.blob_hashes().contains(&photo))
-            })
+        items
+            .iter()
+            .any(|op| op.blob_hashes().contains(&photo))
             .then_some(())
             .ok_or("the photo message has not reached the mailbox")
     })

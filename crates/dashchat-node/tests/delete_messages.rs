@@ -3,7 +3,7 @@
 
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use dashchat_node::{testing::*, *};
 use mailbox_client::{FetchRequest, FetchResponse, MailboxClient, store::MailboxStore};
@@ -230,8 +230,9 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 
     // Neither alice nor bobbi will ever transmit the deleted payloads: the
     // mailbox-facing log view serves the chain ops body-less.
+    let alice_log = mailbox::mailbox_log_id(msg1.extensions.log_id());
     for node in [&alice, &bobbi] {
-        let served = MailboxStore::get_log(&node.op_store, &alice.device_id(), &chat, 0)
+        let served = MailboxStore::get_log(&node.op_store, &alice.device_id(), &alice_log, 0)
             .await
             .unwrap()
             .unwrap();
@@ -251,11 +252,14 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
         // The mailbox's own copies were scrubbed: fetching everything it holds for
         // the chat returns the deleted chain body-less.
         let mb_client = mb.client().await;
-        let FetchResponse(response) = mb_client
-            .fetch(FetchRequest(BTreeMap::from([(*chat, BTreeMap::new())])))
+        let FetchResponse { logs, items, .. } = mb_client
+            .fetch(FetchRequest {
+                topics: BTreeSet::from([*chat]),
+                heights: BTreeMap::new(),
+            })
             .await
             .unwrap();
-        let items = &response.get(&*chat).expect("mailbox knows the topic").items;
+        assert!(logs.contains_key(&*chat), "mailbox knows the topic");
         for hash in [msg1.hash(), edit1.hash()] {
             let item = items
                 .iter()

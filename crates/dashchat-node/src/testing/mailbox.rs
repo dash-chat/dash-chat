@@ -1,5 +1,5 @@
 use mailbox_client::{
-    FetchRequest, FetchResponse, MailboxClient, MailboxId, PublishResponse,
+    FetchRequest, FetchResponse, MailboxClient, MailboxId, PublishResponse, TopicLogs,
     backends::mem::{MemMailbox, MemMailboxClient},
     backends::toy::ToyMailboxClient,
 };
@@ -224,11 +224,12 @@ impl MailboxClient<MailboxOperation> for TestMailboxClient {
 
     async fn publish(
         &self,
+        logs: TopicLogs<MailboxOperation>,
         ops: Vec<MailboxOperation>,
     ) -> Result<PublishResponse<MailboxOperation>, anyhow::Error> {
         match self {
-            Self::Mem(client) => client.publish(ops).await,
-            Self::Toy(client) => client.publish(ops).await,
+            Self::Mem(client) => client.publish(logs, ops).await,
+            Self::Toy(client) => client.publish(logs, ops).await,
         }
     }
 

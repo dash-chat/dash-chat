@@ -1,16 +1,19 @@
 use p2panda::Hash;
-use p2panda::operation::{Header, Operation};
+use p2panda::operation::{Header, LogId, Operation};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
 use crate::{AsBody, DeviceId, SeqNum, TopicId};
 use mailbox_client::MailboxItem;
 
+/// The key a p2panda log id is addressed by in a mailbox: its hash, which is
+/// what a log id is underneath.
+pub fn mailbox_log_id(log_id: LogId) -> Hash {
+    Hash::from_bytes(*log_id.as_bytes())
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
-    // @TODO: topic is only represented on an operation in its hashed form. We can't derive it
-    // from the header so we add it here as an own field on mailbox operation.
-    pub topic: TopicId,
     #[serde(with = "crate::header_serde")]
     pub header: Header,
     pub body: Option<Body>,
@@ -20,6 +23,7 @@ impl MailboxItem for MailboxOperation {
     type Hash = Hash;
     type Author = DeviceId;
     type Topic = TopicId;
+    type LogId = Hash;
 
     fn hash(&self) -> Hash {
         self.header.hash()
@@ -33,8 +37,8 @@ impl MailboxItem for MailboxOperation {
         self.header.seq_num
     }
 
-    fn topic(&self) -> TopicId {
-        self.topic
+    fn log_id(&self) -> Hash {
+        mailbox_log_id(self.header.extensions.log_id())
     }
 
     fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
@@ -142,7 +146,6 @@ mod tests {
         let body = payload.try_into_body().unwrap();
 
         let op = super::MailboxOperation {
-            topic,
             header: make_header(topic),
             body: Some(body),
         };
@@ -155,7 +158,6 @@ mod tests {
     fn mailbox_operation_no_body_returns_empty_hashes() {
         let topic = TopicId::random();
         let op = super::MailboxOperation {
-            topic,
             header: make_header(topic),
             body: None,
         };
@@ -238,10 +240,11 @@ mod tests {
         bobbi.add_mailbox(&mb).await;
         bobbi.register_topic_legacy(chat_id).await.unwrap();
 
-        alice
+        let header = alice
             .send_message_raw(chat_id, "Hello".into())
             .await
             .unwrap();
+        let alice_log = super::mailbox_log_id(header.extensions.log_id());
 
         poll.wait_for(|| async {
             if bobbi.get_messages(chat_id).await.unwrap().len() == 1 {
@@ -273,13 +276,13 @@ mod tests {
         poll.wait_for(|| async {
             let alice_seq = alice_sync
                 .borrow()
-                .get(&*chat_id)
-                .and_then(|m| m.get(&alice_device))
+                .get(&alice_device)
+                .and_then(|m| m.get(&alice_log))
                 .copied();
             let bobbi_seq = bobbi_sync
                 .borrow()
-                .get(&*chat_id)
-                .and_then(|m| m.get(&alice_device))
+                .get(&alice_device)
+                .and_then(|m| m.get(&alice_log))
                 .copied();
             if alice_seq == Some(0) && bobbi_seq == Some(0) {
                 Ok(())

@@ -293,24 +293,18 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
         .await
         .unwrap();
 
-    let synced_before_send = alice
-        .mailboxes
-        .sync_tracker()
-        .get_synced(&mailbox_id, &chat, &alice.device_id())
-        .await
-        .unwrap();
-
-    alice.send_message_raw(chat, "Hello".into()).await.unwrap();
+    let header = alice.send_message_raw(chat, "Hello".into()).await.unwrap();
+    let log = mailbox::mailbox_log_id(header.extensions.log_id());
 
     PollConfig::seconds(5)
         .wait_for(|| async {
             let synced = alice
                 .mailboxes
                 .sync_tracker()
-                .get_synced(&mailbox_id, &chat, &alice.device_id())
+                .get_synced(&mailbox_id, &alice.device_id(), &log)
                 .await
                 .unwrap();
-            (synced > synced_before_send)
+            (synced >= Some(header.seq_num))
                 .then_some(())
                 .ok_or(format!("mailbox still at {synced:?}"))
         })
