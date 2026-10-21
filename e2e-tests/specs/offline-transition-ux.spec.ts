@@ -57,7 +57,7 @@ describe('Offline UX', () => {
 			{ platform: 'any' },
 		]);
 		// This leaves agent1 inside its direct chat with Bob — that's where
-		// MessageStatusIndicator and ConnectionStatusPill are mounted.
+		// MessageStatusIndicator and ConnectionStatusIndicator are mounted.
 		await createProfiles({ Alice: agent1, Bob: agent2 });
 		await exchangeContacts([agent1, agent2]);
 	});

@@ -66,7 +66,7 @@
 	} from '$lib/components/messages/message-helpers';
 	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
 	import { useDeviceId } from '$lib/stores/my-device-id';
-	import ConnectionStatusPill from '$lib/components/connection/ConnectionStatusPill.svelte';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
@@ -361,8 +361,14 @@
 									</Link>
 								{/snippet}
 
-								<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-									<ConnectionStatusPill {chatId} />
+								<!-- The same 44px cell as the home navbar. -->
+								<div
+									class="grid size-11 shrink-0 place-items-center {theme ===
+									'material'
+										? 'me-2'
+										: ''}"
+								>
+									<ConnectionStatusIndicator {chatId} />
 								</div>
 							</Navbar>
 						{/if}

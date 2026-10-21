@@ -24,7 +24,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountGroup } from '@mdi/js';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
-	import ConnectionStatusPill from '$lib/components/connection/ConnectionStatusPill.svelte';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
@@ -161,8 +161,13 @@
 					{/await}
 				{/snippet}
 
-				<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-					<ConnectionStatusPill {chatId} />
+				<!-- The same 44px cell as the home navbar. -->
+				<div
+					class="grid size-11 shrink-0 place-items-center {theme === 'material'
+						? 'me-2'
+						: ''}"
+				>
+					<ConnectionStatusIndicator {chatId} />
 				</div>
 			</Navbar>
 		{/snippet}

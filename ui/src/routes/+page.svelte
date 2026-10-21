@@ -14,7 +14,7 @@
 	import { goto } from '$app/navigation';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
-	import ConnectionStatusIcon from '$lib/components/connection/ConnectionStatusIcon.svelte';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import HubWarningBadge from '$lib/components/HubWarningBadge.svelte';
 
 	const theme = $derived(useTheme());
@@ -27,8 +27,31 @@
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 </script>
 
+{#snippet composeActions()}
+	<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
+		<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
+	</Link>
+	{#if !isWideScreen.value}
+		{#await $chatSummaries then chats}
+			{#if chats.length === 0}
+				<!-- Absolute so it anchors to the navbar's inner row (already relative)
+							and sits below the new-message icon without affecting layout. -->
+				<div class="absolute end-0 top-full mt-2 z-30">
+					<FirstChatTooltip />
+				</div>
+			{/if}
+		{/await}
+	{/if}
+{/snippet}
+
 <Page>
-	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.chats()}
+		titleClass="opacity1"
+		rightClass="order-1"
+		right={theme === 'ios' ? composeActions : undefined}
+		transparent={true}
+	>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
@@ -43,33 +66,12 @@
 			{/await}
 		{/snippet}
 
-		{#snippet right()}
-			<!-- The same 44px cell as the compose button, so the two line up. On
-				Material it stands alone at the edge, inset like the avatar. -->
-			<div
-				class="flex h-11 w-11 items-center justify-center {theme === 'material'
-					? 'me-1'
-					: ''}"
-			>
-				<ConnectionStatusIcon />
-			</div>
-			{#if theme === 'ios'}
-				<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
-					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
-				</Link>
-				{#if !isWideScreen.value}
-					{#await $chatSummaries then chats}
-						{#if chats.length === 0}
-							<!-- Absolute so it anchors to the navbar's inner row (already relative)
-								and sits below the new-message icon without affecting layout. -->
-							<div class="absolute end-0 top-full mt-2 z-30">
-								<FirstChatTooltip />
-							</div>
-						{/if}
-					{/await}
-				{/if}
-			{/if}
-		{/snippet}
+		<!-- A navbar child, not part of the right slot that Konsta wraps in one
+			glass capsule on iOS: the status stands before the capsule (rightClass
+			orders the slot last), in a 44px cell like the compose button. -->
+		<div class="ms-auto me-2 grid size-11 place-items-center">
+			<ConnectionStatusIndicator />
+		</div>
 	</Navbar>
 
 	<UpdaterBanner />
