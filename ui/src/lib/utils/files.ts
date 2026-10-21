@@ -75,14 +75,25 @@ export async function shareFile(
 }
 
 const EXTENSION_MIME: Record<string, string> = {
+	png: 'image/png',
 	jpg: 'image/jpeg',
 	jpeg: 'image/jpeg',
-	png: 'image/png',
-	webp: 'image/webp',
 	gif: 'image/gif',
+	webp: 'image/webp',
+	avif: 'image/avif',
+	bmp: 'image/bmp',
+	heic: 'image/heic',
+	heif: 'image/heif',
+	svg: 'image/svg+xml',
+	mp4: 'video/mp4',
+	mov: 'video/quicktime',
+	webm: 'video/webm',
+	pdf: 'application/pdf',
+	txt: 'text/plain',
 };
 
-function mimeFromName(name: string): string {
+/** The MIME type a file name implies, for files that arrive as bare paths. */
+export function mimeFromName(name: string): string {
 	const ext = name.split('.').pop()?.toLowerCase() ?? '';
 	return EXTENSION_MIME[ext] ?? 'application/octet-stream';
 }
@@ -100,24 +111,26 @@ async function pathToFile(path: string): Promise<File> {
  * file browser directly — skipping the action sheet a web `<input type=file>`
  * would show. The plugin copies each pick into the app cache, so we read the
  * bytes back to rebuild a `File` (the MIME type is inferred from the name since
- * the picker only returns paths).
+ * the picker only returns paths). Only the first `limit` picks are read, since
+ * the plugin can't cap PHPicker's selection itself.
  */
 export async function pickNativeFiles(opts: {
 	mode: 'image' | 'document';
 	multiple: boolean;
+	limit: number;
 }): Promise<File[] | null> {
 	const selection = await open({
 		multiple: opts.multiple,
 		pickerMode: opts.mode,
 	});
-	const paths =
+	const paths: string[] =
 		selection === null
 			? []
 			: Array.isArray(selection)
 				? selection
 				: [selection];
 	if (paths.length === 0) return null;
-	return Promise.all(paths.map(pathToFile));
+	return Promise.all(paths.slice(0, opts.limit).map(pathToFile));
 }
 
 /**
