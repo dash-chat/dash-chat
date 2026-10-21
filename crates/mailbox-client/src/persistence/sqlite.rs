@@ -84,15 +84,6 @@ impl MailboxUrlStore for SqliteMailboxUrlStore {
         .await?;
         Ok(())
     }
-    async fn get_url(&self, id: &MailboxId) -> anyhow::Result<Option<String>> {
-        let row: Option<(String,)> =
-            sqlx::query_as("SELECT url FROM mailbox_url WHERE mailbox_id = ?")
-                .bind(id)
-                .fetch_optional(self.pool.pool())
-                .await?;
-        Ok(row.map(|(u,)| u))
-    }
-
     async fn get_url_inverse(&self, url: &str) -> anyhow::Result<Option<MailboxId>> {
         let row: Option<(String,)> =
             sqlx::query_as("SELECT mailbox_id FROM mailbox_url WHERE url = ? LIMIT 1")
