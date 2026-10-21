@@ -9,7 +9,6 @@
 		{
 			"identifier": "fs:allow-remove",
 			"allow": [{ "path": "$TEMP/*.jpg" }]
-		},
-		"mcp-bridge:default"
+		}
 	]
 }

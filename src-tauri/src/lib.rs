@@ -127,9 +127,10 @@ pub fn run() {
         }
     }
 
-    // MCP bridge for Claude Code to drive the running app, on every platform.
-    // Dev-only: the WebSocket server never starts in production builds. E2E runs
-    // its own multi-instance harness, so skip it there.
+    // MCP bridge for Claude Code to drive the running desktop app. Dev-only:
+    // the WebSocket server never starts in production builds. E2E runs its own
+    // multi-instance harness, so skip it there.
+    #[cfg(desktop)]
     if tauri::is_dev() && !cfg!(feature = "e2e-tests") {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }

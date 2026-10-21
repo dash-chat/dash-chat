@@ -23,7 +23,6 @@ sentry-types = "0.42"
 tauri = { version = "2.12.4", features = ["devtools", "tray-icon", "image-png"] }
 
 tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "347505a15d1607529d1426fe126274a9082e27a9" }
-tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -133,6 +132,9 @@ tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios
 objc2 = "0.6"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+# 0.13 is what compiles against Tauri 2.12 on Windows, and it does not build for
+# Android or iOS, where the bridge has never been used.
+tauri-plugin-mcp-bridge = "0.13"
 tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
