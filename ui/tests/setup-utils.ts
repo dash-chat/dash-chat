@@ -62,7 +62,8 @@ function hasText(selector: string, text: string): boolean {
 }
 
 export interface ConnectionStatusSample {
-	status: ConnectionStatusTag;
+	/** Null while the chip is not mounted, which is how pending renders. */
+	status: ConnectionStatusTag | null;
 	/** Epoch ms on the device, so samples can be ordered against each other
 	 * without comparing against the test runner's clock on another machine. */
 	at: number;
@@ -108,8 +109,6 @@ function connectionStatus(): ConnectionStatusTag | null {
  * backend's re-measurement is invisible to any sampler, but the user sees it. */
 function sampleConnectionStatus(onVisibilityChange: boolean) {
 	const status = connectionStatus();
-	// Nothing on screen to blame while the chip is not mounted.
-	if (status === null) return;
 	const previous = connectionStatuses[connectionStatuses.length - 1];
 	// A visibility transition is always recorded: what was on screen the moment
 	// the page came back is the whole question, and it produces no mutation

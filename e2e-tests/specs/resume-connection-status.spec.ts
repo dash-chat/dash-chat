@@ -84,7 +84,9 @@ describe('Connection status after resuming from the background', function () {
 		if (
 			foreground.some(
 				sample =>
-					sample.status === 'disconnected' || sample.status === 'pending',
+					sample.status === 'disconnected' ||
+					sample.status === 'pending' ||
+					sample.status === null,
 			)
 		) {
 			throw new Error(
