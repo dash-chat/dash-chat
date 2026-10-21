@@ -48,6 +48,9 @@ export async function startAppium(port: number): Promise<ChildProcess> {
 		{
 			stdio: 'ignore',
 			detached: true,
+			// Appium loads the drivers listed in the package.json it finds from
+			// its cwd, and falls back to ~/.appium when there is none.
+			cwd: E2E_DIR,
 			env: {
 				...process.env,
 				LAUNCHER_PID: String(process.pid),

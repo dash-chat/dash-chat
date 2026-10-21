@@ -14,6 +14,7 @@ pub mod util;
 
 mod id;
 pub mod mailbox;
+mod online_peers;
 
 pub mod compat;
 #[cfg(feature = "testing")]
@@ -34,6 +35,7 @@ pub use error::{
 };
 pub use id::*;
 pub use node::{Node, NodeConfig, Notification, OpNotification, SystemNotification};
+pub use online_peers::OnlinePeers;
 pub use p2panda::SigningKey;
 pub use p2panda_spaces::ActorId;
 pub use payload::*;

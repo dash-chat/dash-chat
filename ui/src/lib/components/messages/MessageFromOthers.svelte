@@ -25,6 +25,7 @@
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { useReactiveValue } from '$lib/stores/use-signal';
+	import { connectedToCloudMailboxServer } from '$lib/components/connection/connection-status';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { longpress } from '$lib/actions/longpress';
@@ -94,15 +95,15 @@
 			message.seqNum,
 		),
 	);
-	const connectionStatus = useReactiveValue(
-		mailboxTrackerStore.connectionStatus,
+	const mailboxes = useReactiveValue(
+		mailboxTrackerStore.connectionStatusForAllMailboxes,
 	);
 
 	const isOfflineMessage = $derived(
 		$syncStatus !== undefined &&
-			$connectionStatus !== undefined &&
+			$mailboxes !== undefined &&
 			!$syncStatus.syncedWithCloudMailbox &&
-			!$connectionStatus.connectedToCloudMailboxServer,
+			!connectedToCloudMailboxServer($mailboxes),
 	);
 </script>
 

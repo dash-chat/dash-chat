@@ -10,12 +10,16 @@ const APP_NAME = 'Dash Chat';
 const TEXT_EXTRA =
 	/android\.(title|text|bigText|conversationTitle)=(?:Spannable)?String \((.*)\)$/gm;
 
+/** The package a record was posted by, from its header line: the text after
+ *  a dump's last record runs on into sections that name other packages. */
+const RECORD_PACKAGE = /^0x[0-9a-f]+: pkg=(\S+) /;
+
 const MESSAGING_STYLE =
 	'android.template=String (android.app.Notification$MessagingStyle)';
 
 /** A chat notification's thread: one indexed Bundle per line, oldest first. */
 const THREAD =
-	/^\s*android\.messages=Bundle\[\] \(\d+\)\n((?:\s*\[\d+\] .*\n?)*)/m;
+	/^\s*android\.messages=(?:Bundle|Parcelable)\[\] \(\d+\)\n((?:\s*\[\d+\] .*\n?)*)/m;
 
 /** One message of the thread, with its sender and text as the app posted
  * them. The platform rewrites the notification's own title from these (to
@@ -28,6 +32,8 @@ const MESSAGE = /^\[\d+\] Bundle\[\{.*\bsender=(.*?), text=(.*), time=\d+\}\]$/;
  * notification is already confirmed posted when this runs, so this covers
  * UiAutomator's lag behind the open, not the notification's arrival. */
 const SHADE_RENDER_TIMEOUT = 5_000;
+
+const NOTIFICATION_ROW = 'com.android.systemui:id/expandableNotificationRow';
 
 /** The shade's clear-all affordance, by the ids the stock UI and the OEM
  * skins give it. */
@@ -46,7 +52,7 @@ function dashChatNotifications(dump: string): DeliveredNotification[] {
 	const records = dump
 		.split(/^\s*NotificationRecord\(/m)
 		.slice(1)
-		.filter(record => record.includes(`pkg=${APP_PACKAGE}`));
+		.filter(record => RECORD_PACKAGE.exec(record)?.[1] === APP_PACKAGE);
 	for (const record of records) {
 		const extras = [...record.matchAll(TEXT_EXTRA)];
 		const extra = (key: string) => extras.find(([, k]) => k === key)?.[2];
@@ -89,6 +95,17 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 	private elementFor(textIncludes: string) {
 		const escaped = textIncludes.replace(/"/g, '\\"');
 		return this.agent.$(`android=new UiSelector().textContains("${escaped}")`);
+	}
+
+	/** The innermost shade row holding a text that contains `textIncludes`.
+	 * Taps go to the row, not the text: HiOS swallows a tap on a chat
+	 * notification's title without firing its content intent. */
+	private rowFor(textIncludes: string) {
+		const holdsText = `.//*[contains(@text, "${textIncludes}")]`;
+		return this.agent.$(
+			`//*[@resource-id="${NOTIFICATION_ROW}"][${holdsText}]` +
+				`[not(.//*[@resource-id="${NOTIFICATION_ROW}"][${holdsText}])]`,
+		);
 	}
 
 	private udid(): string {
@@ -172,11 +189,18 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 				timeoutMsg: `the shade has no clear-all button; it renders: ${await this.shadeTexts()}`,
 			});
 			await clearAll.click();
-			await this.agent.waitUntil(() => this.notifications().length === 0, {
-				timeout: SHADE_RENDER_TIMEOUT,
-				timeoutMsg:
-					'the device still holds notifications of ours after clearing the shade',
-			});
+			await this.agent
+				.waitUntil(() => this.notifications().length === 0, {
+					timeout: SHADE_RENDER_TIMEOUT,
+				})
+				.catch(() => {
+					const left = this.notifications()
+						.map(n => `"${n.title} | ${n.body}"`)
+						.join(', ');
+					throw new Error(
+						`the device still holds notifications of ours after clearing the shade: ${left}`,
+					);
+				});
 			await this.restoreWebview();
 		});
 	}
@@ -217,7 +241,7 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 			// to the foreground, retrying the tap, and fail fast otherwise.
 			for (let attempt = 1; attempt <= 3; attempt++) {
 				await this.revealEntry(textIncludes);
-				await this.elementFor(textIncludes).click();
+				await this.rowFor(textIncludes).click();
 				if (await this.appIsForeground(10_000)) return;
 				await this.agent.openNotifications();
 			}

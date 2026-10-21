@@ -299,8 +299,9 @@ export class Composer extends TestHelper {
 	 * sending once more if it has not: an operation arriving in the type→send
 	 * window re-renders the composer and can swallow the keydown, and on a
 	 * phone a tap aimed at the send button can land while the keyboard is
-	 * still animating and miss it. The send() `sending` guard makes the retry
-	 * a no-op when the first send is merely slow. */
+	 * still animating and miss it. A first send that is merely slow is waited
+	 * out instead: once it lands, the send button turns back into the
+	 * attachment one, and a retry tap would wait for it in vain. */
 	async sendAndWaitForClear(text: string): Promise<void> {
 		await this.send();
 		try {
@@ -309,9 +310,9 @@ export class Composer extends TestHelper {
 				{ timeout: 5_000 },
 			);
 		} catch {
-			// A slow device can clear the composer after the wait gave up; the
-			// first send went out then, and its button has already turned back
-			// into the attachment one.
+			await this.agent.waitUntil(async () => !(await this.sendInFlight()), {
+				timeoutMsg: `Sending "${text}" never finished`,
+			});
 			if ((await this.textareaValue()) !== text) return;
 			await this.send();
 			await this.agent.waitUntil(
@@ -351,6 +352,16 @@ export class Composer extends TestHelper {
 				window.innerHeight - bar.getBoundingClientRect().bottom,
 			);
 		}, tid('message-input-textarea'));
+	}
+
+	/** The send button stays disabled, showing a spinner, from its click until
+	 * the app has confirmed or failed the send. */
+	private sendInFlight(): Promise<boolean> {
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector<HTMLButtonElement>(sel)?.disabled ?? false,
+			tid('message-input-send'),
+		);
 	}
 
 	private textareaValue(): Promise<string> {

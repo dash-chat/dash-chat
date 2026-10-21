@@ -1,6 +1,9 @@
 import { ReactivePromise, reactive, relay } from 'signalium';
 
-import type { IMailboxTrackerStore } from '../mailbox-tracker/mailbox-tracker-store';
+import type {
+	AllMailboxesConnectionState,
+	IMailboxTrackerStore,
+} from '../mailbox-tracker/mailbox-tracker-store';
 import {
 	type MailboxConnectionState,
 	type MailboxId,
@@ -60,11 +63,20 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 		): Promise<MailboxId[]> => [MOCK_MAILBOX_ID],
 	);
 
-	connectionStatus = reactive(async () => ({
-		connectedToCloudMailboxServer: true,
-		cloudLastFailureAtMs: null,
-		connectedLocalMailboxCount: 0,
-	}));
+	connectionStatusForAllMailboxes = reactive(
+		async (): Promise<AllMailboxesConnectionState> => ({
+			cloudMailbox: {
+				status: 'Active',
+				consecutive_errors: 0,
+				next_poll_in_ms: 5000,
+				// Far future: this value is computed once, and a success before the
+				// page's last resume would read as unproven rather than connected.
+				last_success_at: '9999-01-01T00:00:00Z',
+				last_error: null,
+			},
+			localMailboxes: [],
+		}),
+	);
 
 	syncStatusForOp = reactive(
 		async (_topicId: TopicId, _author: DeviceId, _seq: number) => ({

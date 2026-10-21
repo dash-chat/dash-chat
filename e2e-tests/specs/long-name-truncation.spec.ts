@@ -4,13 +4,22 @@
  * Verifies that contacts with very long names don't cause horizontal overflow
  * in the chat list, the direct-chat navbar, the contact-request banner, the
  * in-chat peer-name welcome banner, the chat-settings page, the peer profile
- * sheet, and the profile-settings list item.
+ * sheet, the profile-settings list item, the group-chat navbar, and the
+ * group info page.
  */
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
+import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 const LONG_NAME = 'Bartholomew';
 const LONG_SURNAME = 'Wolfeschlegelsteinhausenbergerdorff';
+const LONG_GROUP_NAME =
+	'Wolfeschlegelsteinhausenbergerdorff family reunion planning committee and all the extended cousins of the Bartholomew household';
+// The info page's navbar title stays transparent until the page scrolls, so
+// the description must be tall enough to make it scroll.
+const TALL_GROUP_DESCRIPTION = Array(300)
+	.fill('Bring a dish to share.')
+	.join(' ');
 
 describe('Long name truncation', () => {
 	let agent1: Agent;
@@ -66,7 +75,7 @@ describe('Long name truncation', () => {
 		await agent2.directChatPage.ready();
 
 		await agent2.directChatPage.waitForPeerProfile();
-		expect(await agent2.directChatPage.checkNavbarOverflow()).toEqual([]);
+		expect(await agent2.directChatPage.navbar.checkOverflow()).toEqual([]);
 		expect(await agent2.checkOverflow()).toEqual([]);
 	});
 
@@ -92,6 +101,36 @@ describe('Long name truncation', () => {
 		await agent1.waitUntil(async () =>
 			agent1.profilePage.nameItemContains(LONG_NAME),
 		);
+		expect(await agent1.checkOverflow()).toEqual([]);
+	});
+
+	it('agent1 creates a group with a long name — group navbar has no overflow', async () => {
+		await agent1.profilePage.back.click();
+		await agent1.settingsPage.ready();
+		await agent1.settingsPage.back.click();
+		await createGroup(agent1, LONG_GROUP_NAME, []);
+		await expect(agent1.groupChatPage.infoLink).toHaveText(LONG_GROUP_NAME, {
+			containing: true,
+		});
+		expect(await agent1.groupChatPage.navbar.checkOverflow()).toEqual([]);
+		expect(await agent1.checkOverflow()).toEqual([]);
+	});
+
+	it('scrolls the long-named group info — navbar title truncates', async () => {
+		await agent1.groupChatPage.infoLink.click();
+		await agent1.groupInfoPage.ready();
+		await agent1.groupInfoPage.editLink.click();
+		await agent1.groupInfoEditPage.ready();
+		await agent1.groupInfoEditPage.setDescription(TALL_GROUP_DESCRIPTION);
+		await agent1.groupInfoEditPage.save();
+		await agent1.groupInfoPage.ready();
+		await agent1.groupInfoPage.scrollToBottom();
+		await agent1.groupInfoPage.headerName.waitForDisplayed();
+		// The navbar clips an untruncated title instead of overflowing, which
+		// shows up as the edit link being pushed off screen.
+		expect(
+			await agent1.groupInfoPage.editLink.isDisplayed({ withinViewport: true }),
+		).toBe(true);
 		expect(await agent1.checkOverflow()).toEqual([]);
 	});
 });

@@ -18,6 +18,8 @@ const config = {
 	preprocess: vitePreprocess(),
 	kit: {
 		adapter: adapter({
+			pages: '.build-stage',
+			assets: '.build-stage',
 			fallback: 'index.html',
 		}),
 		// The default version is Date.now(), which changes every chunk hash per build.

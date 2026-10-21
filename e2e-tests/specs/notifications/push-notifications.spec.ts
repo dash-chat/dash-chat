@@ -2,8 +2,10 @@ import {
 	type NotificationHelper,
 	notificationHelperFor,
 } from '../../helpers/components/notifications';
+import { blockAgent } from '../../helpers/flows/block-agent';
 import { deleteAccount } from '../../helpers/flows/delete-account';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
+import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { pushTestingEnabled } from '../../setup/push-server';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -152,13 +154,49 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await receiver.directChatPage.messages.waitForMessage(message);
 	});
 
+	it('shows a group created while the app was in the background', async () => {
+		const groupName = `Group ${Date.now()}`;
+		const message = `hi PUSH_GROUP_${Date.now()}`;
+
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.pause(1_000);
+		await receiver.backgroundApp();
+
+		await sender.directChatPage.back.click();
+		await sender.homePage.ready();
+		await createGroup(sender, groupName, ['Rex']);
+		await sender.groupChatPage.composer.sendMessage(message);
+		// Long enough for the push to reach the extension and for it to finish.
+		await receiver.pause(20_000);
+
+		// Switching back, not tapping: on iOS the extension joined the group in
+		// the shared store, and the still-running app has to catch up on it.
+		await receiver.startApp();
+		await receiver.homePage.chatListItem(groupName).waitForExist();
+		await receiver.homePage.chatListItem(groupName).click();
+		await receiver.groupChatPage.ready();
+		await receiver.groupChatPage.messages.waitForMessage(message);
+
+		// The group's notification would match the later taps on 'Zoe'.
+		await notifications.clear();
+		await receiver.groupChatPage.back.click();
+		await receiver.homePage.ready();
+		await sender.groupChatPage.back.click();
+		await sender.homePage.ready();
+		await sender.homePage.chatListItem('Rex').click();
+		await sender.directChatPage.ready();
+	});
+
 	it('delivers a message push to a force-quit app whose tap cold-starts into the chat', async () => {
 		const marker = `PUSH_QUIT_${Date.now()}`;
 		const message = `hi ${marker}`;
 
 		// Quit from the home page — what a user swiping the app away in the app
 		// switcher does.
-		await receiver.directChatPage.back.click();
+		if (await receiver.directChatPage.back.isDisplayed()) {
+			await receiver.directChatPage.back.click();
+		}
 		await receiver.homePage.ready();
 		await receiver.pause(5_000);
 		await receiver.stopApp();
@@ -232,5 +270,56 @@ describe('Push notifications (real device, end-to-end)', () => {
 			expect.stringContaining('Zoe'),
 		);
 		await receiver.directChatPage.messages.waitForMessage(shadeMessage);
+	});
+
+	it('announces a group the killed app was added to, and a message in it', async () => {
+		const added = await receiver.tr('someoneAddedYouToTheGroup', {
+			name: 'Ben',
+		});
+
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.homePage.openChat('Ben');
+		await receiver.directChatPage.ready();
+		await receiver.directChatPage.acceptContactRequest();
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.pause(5_000);
+		await receiver.stopApp();
+
+		await sender.directChatPage.back.click();
+		await createGroup(sender, 'Group while killed', ['Rex']);
+		await expect(notifications).toHaveDelivered({
+			title: 'Group while killed',
+			body: added,
+		});
+
+		const message = `hi PUSH_GROUP_${Date.now()}`;
+		await sender.groupChatPage.composer.sendMessage(message);
+		await expect(notifications).toHaveDelivered({ body: message });
+	});
+
+	it('announces nothing for a group a blocked contact adds the killed app to', async () => {
+		await receiver.startApp();
+		await receiver.homePage.ready();
+		const newMessage = await receiver.tr('youHaveANewMessage');
+		await receiver.homePage.openChat('Ben');
+		await receiver.directChatPage.ready();
+		await blockAgent(receiver);
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.pause(5_000);
+		await receiver.stopApp();
+
+		await sender.groupChatPage.back.click();
+		await createGroup(sender, 'Group while blocked', ['Rex']);
+		// The block keeps the operation adding Rex from ever arriving, so the
+		// push handler is left waiting for it: the pause outlives its budget,
+		// and what the device holds afterwards is its final answer.
+		await receiver.pause(30_000);
+		await expect(notifications).not.toHaveDelivered({
+			title: 'Group while blocked',
+		});
+		await expect(notifications).not.toHaveDelivered({ title: newMessage });
 	});
 });

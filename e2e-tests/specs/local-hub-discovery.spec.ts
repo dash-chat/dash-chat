@@ -7,7 +7,7 @@
  * LAN the phone is already on. The hub is the standalone
  * `mailbox-local-server` on the host, heard on whatever LAN the host is on —
  * a phone only has to be on the host's Wi-Fi; the cloud mailbox is killed so
- * the chip is on screen and reads the hub. The cases that need a phone's
+ * the chip reads the hub rather than the cloud. The cases that need a phone's
  * Wi-Fi or background skip themselves on desktop, and the host-joins case
  * also needs a network from E2E_WIFI_NETWORKS the host is not on yet.
  * local-hub-discovery-stress walks these and the network moves at random on

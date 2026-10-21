@@ -1,5 +1,5 @@
-//! Reacts to OS network changes: wakes the mailbox poller and republishes
-//! iroh's local addresses everywhere, and forwards the change to iroh on Android.
+//! Reacts to OS network changes: wakes the mailbox poller, forwards the change
+//! to iroh and republishes its local addresses.
 //!
 //! The mailbox manager backs off to slow polling (up to `stopped_interval`)
 //! while offline, so without a nudge a restored connection waits out the full
@@ -12,8 +12,9 @@
 //! iroh cannot detect network changes by itself on Android — its native network
 //! monitor has no working backend there (see [`iroh::Endpoint::network_change`]).
 //! Without this, after a WiFi/cellular switch iroh keeps stale addresses and
-//! sockets and never reconnects until the process restarts. Non-Android
-//! platforms detect changes natively, so iroh is only notified on Android.
+//! sockets and never reconnects until the process restarts. Other platforms
+//! detect changes natively, but not while the process is suspended, so it is
+//! told everywhere.
 //!
 //! Even once it knows of the change, iroh recomputes the addresses it advertises
 //! only when a net report's result differs from the previous one, which an
@@ -50,15 +51,23 @@ pub(crate) fn spawn(
                     return;
                 }
             }
-            tracing::debug!("network-change notifier: probing mailboxes");
-            mailboxes.probe_all().await;
-            mailboxes.reset_uploads();
-            unfetched_blob_trigger.notify_one();
-            if let Some(endpoint) = &endpoint {
-                notify_iroh(endpoint).await;
-            }
+            handle_network_change(endpoint.as_ref(), &mailboxes, &unfetched_blob_trigger).await;
         }
     })
+}
+
+pub(crate) async fn handle_network_change(
+    endpoint: Option<&p2panda::Endpoint>,
+    mailboxes: &Mailboxes<MailboxOperation, OpStore>,
+    unfetched_blob_trigger: &tokio::sync::Notify,
+) {
+    tracing::info!("network-change notifier: probing mailboxes");
+    mailboxes.probe_all().await;
+    mailboxes.reset_uploads();
+    unfetched_blob_trigger.notify_one();
+    if let Some(endpoint) = endpoint {
+        notify_iroh(endpoint).await;
+    }
 }
 
 use std::collections::BTreeSet;
@@ -67,16 +76,9 @@ use std::net::SocketAddr;
 async fn notify_iroh(endpoint: &p2panda::Endpoint) {
     match endpoint.endpoint().await {
         Ok(iroh) => {
-            #[cfg(target_os = "android")]
-            {
-                tracing::info!("network-change notifier: notifying iroh");
-                iroh.network_change().await;
-            }
+            tracing::info!("network-change notifier: notifying iroh");
+            iroh.network_change().await;
             publish_local_addrs(&iroh).await;
-            // Brief, bounded wait for iroh to re-establish; the offline-LAN
-            // case never goes "online", so don't block the loop on it.
-            #[cfg(target_os = "android")]
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), iroh.online()).await;
         }
         Err(err) => {
             tracing::warn!(
@@ -88,18 +90,24 @@ async fn notify_iroh(endpoint: &p2panda::Endpoint) {
 }
 
 /// Registers the current interface addresses with iroh as external addresses
-/// and retracts the ones it still advertises from the previous network.
+/// and retracts the ones it still advertises from the previous network. Adds
+/// before it retracts, so being dropped halfway never leaves iroh advertising
+/// no address at all.
 async fn publish_local_addrs(iroh: &iroh::Endpoint) {
     let current = local_socket_addrs(iroh);
-    for addr in iroh.addr().ip_addrs() {
-        if !current.contains(addr) {
-            iroh.remove_external_addr(addr).await;
-        }
-    }
+    let stale: Vec<SocketAddr> = iroh
+        .addr()
+        .ip_addrs()
+        .filter(|addr| !current.contains(addr))
+        .copied()
+        .collect();
     for addr in &current {
         iroh.add_external_addr(*addr).await;
     }
-    tracing::debug!(addrs = ?current, "network-change notifier: published local addresses");
+    for addr in &stale {
+        iroh.remove_external_addr(addr).await;
+    }
+    tracing::info!(addrs = ?current, "network-change notifier: published local addresses");
 }
 
 /// Every routable interface address paired with the port iroh bound for that

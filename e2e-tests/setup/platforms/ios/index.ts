@@ -15,34 +15,34 @@ import { networkInterfaces, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { syncXcodeEnv } from '../../../scripts/sync-xcode-env';
-import { ASYNC_SCRIPT_TIMEOUT } from '../../helpers/timeouts';
-import { echoLinesWithPrefix } from '../agent-logger';
+import { syncXcodeEnv } from '../../../../scripts/sync-xcode-env';
+import { ASYNC_SCRIPT_TIMEOUT } from '../../../helpers/timeouts';
+import { echoLinesWithPrefix } from '../../agent-logger';
 import {
 	SLOT_PORT_STRIDE,
 	allocatePinnedPort,
 	allocatePinnedPortFrom,
-} from '../allocate-port';
-import { runAppBuild } from '../app-build';
+} from '../../allocate-port';
+import { SKIP_FRONTEND_BUILD, runBuild } from '../../app-build';
 import {
 	type Want,
 	claimAllWhenFreeSync,
 	describeHeld,
 	release,
-} from '../claims';
-import { deviceHasBuild, recordInstalled } from '../device-installs';
-import { envWithoutWdioLoader } from '../harness-env';
-import { E2E_NETWORK_ID } from '../network-id';
-import { E2E_RELAY_URL } from '../relay';
-import { deviceUdid, switchToWebview, waitForTestUtils } from '../webview';
+} from '../../claims';
+import { deviceHasBuild, recordInstalled } from '../../device-installs';
+import { envWithoutWdioLoader } from '../../harness-env';
+import { E2E_NETWORK_ID } from '../../network-id';
+import { E2E_RELAY_URL } from '../../relay';
+import { deviceUdid, switchToWebview, waitForTestUtils } from '../../webview';
 import {
 	type AgentPlatform,
 	type PrepareContext,
 	remoteBakedEnv,
-} from './platform';
+} from '../platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const E2E_DIR = path.resolve(__dirname, '..', '..');
+const E2E_DIR = path.resolve(__dirname, '..', '..', '..');
 
 export const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
 /** What a reachability probe gets before the network counts as having no
@@ -72,14 +72,13 @@ const INTERNET_PROBE_ROUNDS = 2;
 /** Between probes, so a retry outlasts whatever made the last one fail. */
 const INTERNET_PROBE_GAP = 2_000;
 
-const APPIUM_BIN = path.join(E2E_DIR, 'node_modules', '.bin', 'appium');
-// Fixed home for the .ipa the sessions install, copied here by the
-// e2e:build:ios task's export-session-ipa.ts step. The capabilities
+// Fixed home for the .ipa the sessions install, copied here by
+// scripts/export-session-ipa.ts after `tauri ios build`. The capabilities
 // `appium:app` reads are resolved when wdio.conf.ts loads — before onPrepare
 // builds anything — so it can't name a path under the build dir,
 // whose layout the tauri build rearranges (it exports the .ipa to the build
 // dir, then moves it into an arch subdir).
-const SESSION_IPA = path.join(E2E_DIR, '.appium', 'dash-chat-e2e.ipa');
+const SESSION_IPA = path.join(E2E_DIR, '.cache', 'dash-chat-e2e.ipa');
 
 // The app project signs with Automatic signing under this team (see
 // src-tauri/gen/apple/dash-chat.xcodeproj); WebDriverAgent reuses it so Appium
@@ -218,29 +217,6 @@ function claimDevices(slots: number[]): Map<number, string> {
 		});
 	});
 	return udids;
-}
-
-/** Appium keeps its drivers in APPIUM_HOME, not node_modules, so on first run
- *  link in the `appium-xcuitest-driver` devDependency: the version is pinned in
- *  package.json (bump it there, then `pnpm install`) and the link tracks it. The
- *  pin must be a version whose bundled WebDriverAgent compiles on current Xcode,
- *  which needs the appium 3.x server (see the `appium` dep); xcuitest <= 9.x
- *  ships a WDA that fails to build ("xcodebuild failed with code 65"). */
-function ensureXcuitestDriver() {
-	const installed = execSync(
-		`"${APPIUM_BIN}" driver list --installed 2>&1 || true`,
-		{ encoding: 'utf8', cwd: E2E_DIR },
-	);
-	if (installed.includes('xcuitest')) return;
-	const driverPath = path.join(
-		E2E_DIR,
-		'node_modules',
-		'appium-xcuitest-driver',
-	);
-	execSync(`"${APPIUM_BIN}" driver install --source=local "${driverPath}"`, {
-		stdio: 'inherit',
-		cwd: E2E_DIR,
-	});
 }
 
 /** `mobile: queryAppState` value for "the app is not running". */
@@ -498,7 +474,7 @@ const UNTRUSTED_CERTIFICATE = 'Developer App Certificate is not trusted';
 /** Whether a WebDriverAgent launch on `slot` since `since` was refused for
  *  an untrusted developer certificate, as its Xcode test results record. */
 function wdaRefusedCertificate(slot: number, since: number): boolean {
-	const results = path.join(E2E_DIR, '.appium', `wda-${slot}`, 'Logs', 'Test');
+	const results = path.join(E2E_DIR, '.cache', `wda-${slot}`, 'Logs', 'Test');
 	if (!existsSync(results)) return false;
 	return readdirSync(results)
 		.filter(name => name.endsWith('.xcresult'))
@@ -546,7 +522,6 @@ export class IosPlatform implements AgentPlatform {
 		// Same pinned var as AndroidPlatform: a mixed run shares one Appium
 		// server hosting both drivers.
 		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
-		process.env.APPIUM_HOME = path.join(E2E_DIR, '.appium');
 		// Workers reload this module; device provisioning belongs to the
 		// launcher, which claims before any worker starts.
 		this.udids = claimDevices(slots);
@@ -593,7 +568,7 @@ export class IosPlatform implements AgentPlatform {
 				// sessions at once, and two xcodebuilds sharing one DerivedData collide
 				// (WDA "xcodebuild failed with code 65"). Same reason as the per-slot
 				// ports above.
-				'appium:derivedDataPath': path.join(E2E_DIR, '.appium', `wda-${slot}`),
+				'appium:derivedDataPath': path.join(E2E_DIR, '.cache', `wda-${slot}`),
 				'appium:wdaLocalPort': allocatePinnedPortFrom(
 					`_WDIO_WDA_PORT${slot}`,
 					8100 + slot * SLOT_PORT_STRIDE,
@@ -632,8 +607,6 @@ export class IosPlatform implements AgentPlatform {
 	}
 
 	async onPrepare(ctx: PrepareContext) {
-		ensureXcuitestDriver();
-
 		// The app reaches its mailbox and push server at whatever this bakes in.
 		// Against a local mailbox that is the host's LAN address; against a
 		// remote deployment it is that deployment's own mailbox and push server —
@@ -659,13 +632,10 @@ export class IosPlatform implements AgentPlatform {
 			SENTRY_ORG: process.env.SENTRY_ORG,
 			SENTRY_PROJECT: process.env.SENTRY_PROJECT,
 		});
-		// The task's last step (scripts/export-session-ipa.ts) copies the built
-		// .ipa to SESSION_IPA.
-		runAppBuild(
-			'e2e:build:ios',
+		runBuild(
+			`pnpm tauri ios build --debug --features e2e-tests ${SKIP_FRONTEND_BUILD} && node scripts/export-session-ipa.ts`,
 			envWithoutWdioLoader({
 				...bakedEnv,
-				VITE_E2E: 'true',
 				IPHONEOS_DEPLOYMENT_TARGET: '17.0',
 				// Drop debuginfo (a full-debug iOS build is >10GB and fills the disk;
 				// this is compile-time, so it can't break signing). Unlike android,

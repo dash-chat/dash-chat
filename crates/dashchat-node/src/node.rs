@@ -31,9 +31,11 @@ use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc};
 
-use mailbox_client::manager::{Mailboxes, MailboxesConfig};
+use mailbox_client::MailboxesConfig;
+use mailbox_client::manager::Mailboxes;
 use tokio::task::JoinHandle;
 
+use crate::OnlinePeers;
 use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
     collect_deletable_edit_chain, resolve_message_root,
@@ -130,6 +132,9 @@ pub struct NodeConfig {
     /// Whether to import, on a resync, the operations another node over the
     /// same store recorded as processed. On for the iOS app.
     pub import_recorded_operations: bool,
+    /// Every pool the node opens must connect through it, or iOS can suspend
+    /// the app in the middle of that pool's writes.
+    pub sqlite_gate: sqlite_gate::SqliteGate,
 }
 
 impl NodeConfig {
@@ -182,6 +187,7 @@ impl NodeConfig {
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
             import_recorded_operations: false,
+            sqlite_gate: Default::default(),
         }
     }
 
@@ -211,6 +217,7 @@ impl Default for NodeConfig {
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
             import_recorded_operations: false,
+            sqlite_gate: Default::default(),
         }
     }
 }
@@ -222,6 +229,8 @@ pub struct Node {
     pub op_store: OpStore,
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
+
+    pub online_peers: OnlinePeers,
 
     pub config: NodeConfig,
 
@@ -240,6 +249,9 @@ pub struct Node {
 
     pub local_store: LocalStore,
     pub projection: OpProjection,
+    /// Held only so the gate keeps watching these pools for as long as the node lives.
+    _local_pool: sqlite_gate::GatedPool,
+    _op_store_pool: sqlite_gate::GatedPool,
     node_keys: NodeKeys,
 
     filesystem: Filesystem,
@@ -278,13 +290,16 @@ impl Node {
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
-        let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path()).await?;
-        let local_store = LocalStore::new(pool.clone()).await?;
-        let projection = OpProjection::new(pool.clone()).await?;
+        let local_pool =
+            crate::stores::create_sqlite_pool(filesystem.local_store_path(), &config.sqlite_gate)
+                .await?;
+        let local_store = LocalStore::new(local_pool.pool().clone()).await?;
+        let projection = OpProjection::new(local_pool.pool().clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
         Self::init(
             filesystem,
+            local_pool,
             local_store,
             projection,
             node_keys,
@@ -298,6 +313,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?node_keys.device_id().aliased())))]
     pub async fn init(
         filesystem: Filesystem,
+        local_pool: sqlite_gate::GatedPool,
         local_store: LocalStore,
         projection: OpProjection,
         node_keys: NodeKeys,
@@ -327,10 +343,11 @@ impl Node {
         // enough: mailbox media exchange dials the mailbox over iroh.
         let no_networking = !config.enable_p2p && !config.enable_blob_sync;
 
+        let op_store_pool = crate::stores::create_op_store_pool(&url, &config.sqlite_gate).await?;
         let mut builder = P2PandaNode::builder()
             .network_id(config.network_id)
             .credentials(node_keys.credentials())
-            .database_url(&url)
+            .database_pool(op_store_pool.pool().clone())
             // Acknowledge operations explicitly, only once application-layer
             // processing has finished (see `spawn_application_processor_task`).
             .ack_policy(p2panda::node::AckPolicy::Explicit);
@@ -383,8 +400,9 @@ impl Node {
         // === mailboxes === //
 
         let sync_tracker = std::sync::Arc::new(
-            mailbox_client::sync_tracker::MailboxSyncTracker::open(
+            mailbox_client::MailboxSyncTracker::open(
                 filesystem.mailbox_sync_tracker_path(),
+                &config.sqlite_gate,
             )
             .await?,
         );
@@ -442,13 +460,17 @@ impl Node {
         // === node === //
 
         let (processor_cancel_tx, processor_cancel_rx) = mpsc::channel(1);
+        let online_peers = OnlinePeers::new(node_keys.device_id(), projection.clone());
         let node = Self {
+            online_peers,
             op_store,
             mailboxes,
             config,
             filesystem,
             local_store,
             projection,
+            _local_pool: local_pool,
+            _op_store_pool: op_store_pool,
             node_keys,
             notification_tx,
             topic_subscribed_tx,
@@ -636,6 +658,17 @@ impl Node {
     /// (e.g. on unpause / network change).
     pub fn notify_unfetched_blob_followup(&self) {
         self.unfetched_blob_trigger.notify_one();
+    }
+
+    /// Catch up after the process was suspended as after a network change: a
+    /// suspended process misses network changes, and iOS may close its sockets.
+    pub async fn resume(&self) {
+        crate::network_change_notifier::handle_network_change(
+            self.endpoint.as_ref(),
+            &self.mailboxes,
+            &self.unfetched_blob_trigger,
+        )
+        .await;
     }
 
     /// Use the node's device ID as an iroh endpoint id.
@@ -836,7 +869,7 @@ impl Node {
             .await?;
 
         for agent in agents {
-            self.invite_to_group(chat_id, agent).await?;
+            self.invite_to_group(chat_id, agent, None).await?;
         }
         Ok(chat_id)
     }
@@ -857,6 +890,7 @@ impl Node {
                 .run(async move |space| space.add(member.id(), access.level).await)
                 .await??;
         }
+        self.join_presence(topic).await?;
         Ok(())
     }
 
@@ -875,8 +909,16 @@ impl Node {
         Ok(())
     }
 
-    async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
-        let payload = Payload::Chat(ChatPayload::JoinGroup { chat_id });
+    async fn invite_to_group(
+        &self,
+        chat_id: ChatId,
+        person: AgentId,
+        add_member_operation_hash: Option<Hash>,
+    ) -> anyhow::Result<()> {
+        let payload = Payload::Chat(ChatPayload::JoinGroup {
+            chat_id,
+            add_member_operation_hash,
+        });
         tracing::info!(
             "{:?} is inviting {:?} to group {:?}",
             self.device_id().aliased(),
@@ -959,7 +1001,7 @@ impl Node {
                 BTreeMap::from([(DeviceId::from(member), agent_id)]),
             )
             .await?;
-            self.invite_to_group(chat_id, agent_id).await?;
+            self.invite_to_group(chat_id, agent_id, None).await?;
         } else {
             tracing::warn!(
                 "Contact not found (when adding group member): {:?}",
@@ -1046,6 +1088,7 @@ impl Node {
     pub async fn join_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined space");
         self.register_and_join_space(chat_id).await?;
+        self.join_presence(chat_id).await?;
         Ok(())
     }
 
@@ -1621,6 +1664,9 @@ impl Node {
             let _ = handle.await;
         }
 
+        // While the network is still up, so peers see us leave instead of timing us out.
+        self.online_peers.leave_all().await;
+
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 
@@ -1656,13 +1702,12 @@ impl Node {
             handle.abort();
         }
 
-        // Release every held file lock before returning, or iOS SIGKILLs the
-        // suspended app (0xdead10cc). File locks first, slow best-effort endpoint
-        // close last, each time-bounded so none outlasts the suspension window.
+        // File locks first, slow best-effort endpoint close last, each
+        // time-bounded so a rebuild isn't held up by either.
 
-        // iroh-blobs redb store: a file lock like the SQLite pools; fetch loop
-        // aborted above so nothing else is using it now. Absent when blob sync
-        // is disabled (the push extension), which never opens it.
+        // iroh-blobs redb store; fetch loop aborted above so nothing else is
+        // using it now. Absent when blob sync is disabled (the push extension),
+        // which never opens it.
         if let Some(blob_sync) = &self.blob_sync {
             match tokio::time::timeout(
                 std::time::Duration::from_secs(5),
@@ -2120,6 +2165,18 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        for device_id in self
+            .projection
+            .lookup_devices_by_agent_id(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        {
+            self.online_peers
+                .leave(*self.direct_chat_topic(FakeAgentId::from(device_id)))
+                .await;
+            self.online_peers.forget(device_id);
+        }
+
         Ok(())
     }
 
@@ -2136,6 +2193,24 @@ impl Node {
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        let is_contact = self
+            .accepted_contact_agent_ids()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .contains(&agent_id);
+        if is_contact {
+            for device_id in self
+                .projection
+                .lookup_devices_by_agent_id(agent_id)
+                .await
+                .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            {
+                self.join_presence(self.direct_chat_topic(FakeAgentId::from(device_id)))
+                    .await
+                    .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+            }
+        }
 
         Ok(())
     }
@@ -2227,6 +2302,18 @@ impl Node {
             anyhow::bail!("{failures} topic(s) failed to import");
         }
         Ok(())
+    }
+
+    async fn chat_topics(&self) -> anyhow::Result<Vec<ChatId>> {
+        let mut chat_ids = self.projection.get_group_chat_ids().await?;
+        for agent_id in self.accepted_contact_agent_ids().await? {
+            for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+                if !self.projection.is_author_blocked(&device_id).await? {
+                    chat_ids.push(self.direct_chat_topic(FakeAgentId::from(device_id)));
+                }
+            }
+        }
+        Ok(chat_ids)
     }
 
     /// Initialize all stored topics.
@@ -2324,6 +2411,21 @@ impl Node {
         for topic in subscribed_spaces.iter() {
             if let Err(err) = self.initialize_space(*topic).await {
                 error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed space");
+                failures += 1;
+            }
+        }
+
+        match self.chat_topics().await {
+            Ok(chat_ids) => {
+                for chat_id in chat_ids {
+                    if let Err(err) = self.join_presence(chat_id).await {
+                        error!(chat_id = ?chat_id.aliased(), ?err, "failed to join presence");
+                        failures += 1;
+                    }
+                }
+            }
+            Err(err) => {
+                error!(?err, "failed to look up the chat topics");
                 failures += 1;
             }
         }

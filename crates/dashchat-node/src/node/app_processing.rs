@@ -126,6 +126,15 @@ impl Node {
         Ok(())
     }
 
+    pub(crate) async fn join_presence(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        if !self.config.enable_p2p {
+            return Ok(());
+        }
+        let stream = self.streams.ephemeral_stream((*chat_id).into()).await?;
+        self.online_peers.join(*chat_id, stream).await;
+        Ok(())
+    }
+
     /// Internal function to start the necessary tasks for processing network activity
     /// for a given topic.
     ///
@@ -179,7 +188,12 @@ impl Node {
         debug!(topic = ?topic.aliased(), "import mailbox stream");
 
         let stream = Box::pin(ReceiverStream::new(mailbox_rx).map(Operation::from));
-        self.import_stream(topic, stream).await
+        self.import_stream(topic, stream).await?;
+
+        // What the topic already holds is waiting in the mailbox: fetch it
+        // now rather than at the next scheduled poll.
+        self.mailboxes.request_sync(Some(topic.into())).await;
+        Ok(())
     }
 
     pub(super) async fn import_stream(
@@ -492,7 +506,7 @@ impl Node {
                 }
             }
 
-            Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
+            Payload::Chat(ChatPayload::JoinGroup { chat_id, .. }) => {
                 self.join_chat_group(*chat_id)
                     .await
                     .context("failed to join group from invitation")?;

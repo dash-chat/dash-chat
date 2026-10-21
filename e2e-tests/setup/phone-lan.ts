@@ -20,9 +20,8 @@ function drivesWifi(agent: Agent): boolean {
 /**
  * Put the host's card back on its usual network, then every phone on the
  * network the host is on. The card goes first, so a test network is never
- * the host's. Each phone forgets every test network, then every other network
- * it lands on that is clearly not the host's; one that may be the host's is
- * kept, and a phone left off the air gets its radio turned back on. Then
+ * the host's. Each phone gets there from wherever it is (see
+ * `Agent.leaveWifi`), its radio turned back on if it was left off. Then
  * all of them must be on one subnet — two phones on different LANs cannot
  * see each other, which no spec that syncs between them can survive, and
  * which is far cheaper to say here than to diagnose from a sync timeout
@@ -63,7 +62,7 @@ export async function convergeNetworks(agents: Agent[]): Promise<void> {
 }
 
 /** Drop every test network from every phone without waiting for where it
- *  lands: each falls back to the Wi-Fi its user saved on its own. */
+ *  lands: each falls back to the host's network where the phone knows it. */
 export async function forgetTestNetworks(agents: Agent[]): Promise<void> {
 	await Promise.allSettled(
 		agents.filter(drivesWifi).map(agent => agent.forgetWifi()),

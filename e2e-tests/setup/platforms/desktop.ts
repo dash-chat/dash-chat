@@ -18,7 +18,7 @@ import { remote } from 'webdriverio';
 import { UI_TIMEOUT } from '../../helpers/timeouts';
 import { startAgentLogger } from '../agent-logger';
 import { allocatePinnedPort } from '../allocate-port';
-import { runAppBuild } from '../app-build';
+import { SKIP_FRONTEND_BUILD, runBuild } from '../app-build';
 import { killAllE2EProcesses, killAndWait, pidsNamedWithEnv } from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
 import { E2E_NETWORK_ID } from '../network-id';
@@ -42,11 +42,11 @@ const MACOS = process.platform === 'darwin';
 
 export const APP_BINARY = path.join(ROOT, 'target', 'debug', 'dash-chat');
 
-function agentDir(slot: number): string {
+export function agentDir(slot: number): string {
 	return path.join(ROOT, '.dbs', 'e2e', `agent-${slot}`);
 }
 
-function agentPort(slot: number): number {
+export function agentPort(slot: number): number {
 	return allocatePinnedPort(`_WDIO_PORT${slot}`);
 }
 
@@ -111,13 +111,16 @@ const WEBKITGTK_ENV: Record<string, string> = {
 };
 
 export function buildDesktopApp(): void {
-	runAppBuild(
-		'e2e:build:desktop',
+	runBuild(
+		`pnpm tauri build --debug --no-bundle --features e2e-tests ${SKIP_FRONTEND_BUILD}`,
 		envWithoutWdioLoader({
-			VITE_E2E: 'true',
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			E2E_NETWORK_ID,
 			E2E_RELAY_URL,
+			// launchDesktopApp passes the run's own URLs: a baked value is dead and
+			// only ties the binary to one run's mailbox port.
+			MAILBOX_URL: undefined,
+			PUSH_NOTIFICATIONS_SERVER_URL: undefined,
 		}),
 	);
 }
@@ -223,11 +226,8 @@ export function readOpenedUrls(slot: number): string[] {
 		.filter(line => line !== '');
 }
 
-/** Launch a desktop agent on `slot` from first launch — a fresh data dir,
- *  its log echoed — and open a WebDriver session to it. */
-export async function launchDesktopAgent(
-	slot: number,
-): Promise<WebdriverIO.Browser> {
+/** Wipe the agent's data dir and echo its log, ready for an app to start on it. */
+export function prepareDesktopAgent(slot: number): void {
 	clearAgentDir(slot);
 	// tauri-plugin-log names the file after productName (tauri.conf.json).
 	loggers.set(
@@ -237,7 +237,12 @@ export async function launchDesktopAgent(
 			path.join(agentDir(slot), 'logs', 'Dash Chat.log'),
 		),
 	);
-	await launchAgentApp(slot);
+}
+
+/** Open a WebDriver session to the app running on `slot`. */
+export async function connectDesktopAgent(
+	slot: number,
+): Promise<WebdriverIO.Browser> {
 	return await remote({
 		hostname: '127.0.0.1',
 		port: agentPort(slot),
@@ -247,6 +252,16 @@ export async function launchDesktopAgent(
 		logLevel: 'warn',
 		waitforTimeout: UI_TIMEOUT,
 	});
+}
+
+/** Launch a desktop agent on `slot` from first launch — a fresh data dir,
+ *  its log echoed — and open a WebDriver session to it. */
+export async function launchDesktopAgent(
+	slot: number,
+): Promise<WebdriverIO.Browser> {
+	prepareDesktopAgent(slot);
+	await launchAgentApp(slot);
+	return await connectDesktopAgent(slot);
 }
 
 /** Kill one desktop agent's app and log echo, and delete what it stored. */
