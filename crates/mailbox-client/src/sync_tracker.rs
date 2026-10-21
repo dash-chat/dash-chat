@@ -164,10 +164,7 @@ where
         topic: &T,
         author: &A,
     ) -> anyhow::Result<Option<SeqNum>> {
-        let state = self.store.get_sync_state(mailbox).await?;
-        Ok(state
-            .get(topic)
-            .and_then(|authors| authors.get(author).copied()))
+        self.store.get_watermark(mailbox, topic, author).await
     }
 
     /// All `(mailbox_id, seq)` entries for the given (topic, author).

@@ -113,6 +113,20 @@ where
         Ok(state.get(id).cloned().unwrap_or_default())
     }
 
+    async fn get_watermark(
+        &self,
+        id: &MailboxId,
+        topic: &T,
+        author: &A,
+    ) -> anyhow::Result<Option<crate::SeqNum>> {
+        let state = self.sync_state.read().unwrap();
+        Ok(state
+            .get(id)
+            .and_then(|mailbox_state| mailbox_state.get(topic))
+            .and_then(|author_state| author_state.get(author))
+            .copied())
+    }
+
     async fn get_synced_for_log(
         &self,
         topic: &T,
