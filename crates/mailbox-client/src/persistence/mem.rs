@@ -38,6 +38,11 @@ impl MailboxUrlStore for MemMailboxUrlStore {
         }
         Ok(None)
     }
+
+    async fn drop_mailbox(&self, id: &MailboxId) -> anyhow::Result<()> {
+        self.data.write().unwrap().remove(id);
+        Ok(())
+    }
 }
 
 /// In-memory implementation of SyncStore.
