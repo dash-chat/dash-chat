@@ -84,8 +84,8 @@
 	const syncStatus = $derived(
 		useReactiveValue(
 			mailboxTrackerStore.syncStatusForOp,
-			chatId,
 			message.author,
+			message.logId,
 			message.seqNum,
 		),
 	);

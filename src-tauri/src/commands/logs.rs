@@ -62,6 +62,9 @@ pub struct SimplifiedHeader {
 
     topic_id: TopicId,
 
+    /// The log this operation belongs to, which is what mailbox sync state is keyed by.
+    log_id: Hash,
+
     /// p2panda-auth group-control extension, when this operation is a group action
     /// (Create / Add / Remove / Promote / Demote) rather than a chat payload.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,6 +92,7 @@ impl SimplifiedHeader {
             backlink: header.backlink,
             previous,
             topic_id: topic,
+            log_id: Hash::from_bytes(*header.extensions.log_id().as_bytes()),
             auth,
         }
     }
