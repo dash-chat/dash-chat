@@ -16,7 +16,8 @@ use std::sync::Arc;
 
 pub struct SqlitePersistence<T, A> {
     pool: GatedPool,
-    _phantom: std::marker::PhantomData<(T, A)>,
+    mailbox_store: Arc<dyn MailboxUrlStore>,
+    sync_store: Arc<dyn SyncStore<T, A>>,
 }
 
 impl<T, A> SqlitePersistence<T, A>
@@ -37,9 +38,16 @@ where
 
         sqlx::query(SCHEMA).execute(pool.pool()).await?;
 
+        let mailbox_store = Arc::new(SqliteMailboxUrlStore { pool: pool.clone() });
+        let sync_store = Arc::new(SqliteSyncStore::<T, A> {
+            pool: pool.clone(),
+            _phantom: std::marker::PhantomData,
+        });
+
         Ok(Self {
             pool,
-            _phantom: std::marker::PhantomData,
+            mailbox_store,
+            sync_store,
         })
     }
 
@@ -56,15 +64,10 @@ where
     A: ByteSerializable + ByteDeserializable<A>,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore> {
-        Arc::new(SqliteMailboxUrlStore {
-            pool: self.pool.clone(),
-        })
+        self.mailbox_store.clone()
     }
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>> {
-        Arc::new(SqliteSyncStore::<T, A> {
-            pool: self.pool.clone(),
-            _phantom: std::marker::PhantomData,
-        })
+        self.sync_store.clone()
     }
 
     async fn close(&self) {
