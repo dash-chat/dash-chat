@@ -7,8 +7,8 @@
 	import { useReactivePromises } from '$lib/stores/use-signal';
 	import { getContext, type Snippet } from 'svelte';
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
-	import { connectionChipStatus } from './connection-chip';
-	import type { ConnectionChipStatus } from './connection-chip-status';
+	import { connectionStatus, type ConnectionStatus } from './connection-status';
+	import type { ConnectionStatusTag } from './connection-status-tags';
 	import { mdiEmoticonPoop } from '@mdi/js';
 	import { Chip, Dialog, DialogButton } from 'konsta/svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -25,11 +25,11 @@
 	const onlinePeersStore: IOnlinePeersStore = getContext('online-peers-store');
 
 	const chipInputs = useReactivePromises(() => [
-		mailboxTrackerStore.connectionStatus(),
+		mailboxTrackerStore.connectionStatusForAllMailboxes(),
 		onlinePeersStore.onlinePeers(chatId),
 	]);
 
-	const icons: Record<ConnectionChipStatus, string> = {
+	const icons: Record<ConnectionStatusTag, string> = {
 		cloud: cloudSvg,
 		pending: cloudSvg,
 		local: localMailboxServerSvg,
@@ -37,7 +37,7 @@
 		disconnected: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="${mdiEmoticonPoop}" /></svg>`,
 	};
 
-	const ariaLabels: Record<ConnectionChipStatus, () => string> = {
+	const ariaLabels: Record<ConnectionStatusTag, () => string> = {
 		cloud: m.connectionStatusCloudAriaLabel,
 		pending: m.connectionStatusPendingAriaLabel,
 		local: m.connectionStatusLocalAriaLabel,
@@ -45,7 +45,7 @@
 		disconnected: m.connectionStatusDisconnectedAriaLabel,
 	};
 
-	const titles: Record<ConnectionChipStatus, () => string> = {
+	const titles: Record<ConnectionStatusTag, () => string> = {
 		cloud: m.connectionStatusCloudTitle,
 		pending: m.connectionStatusPendingTitle,
 		local: m.connectionStatusLocalTitle,
@@ -53,16 +53,20 @@
 		disconnected: m.connectionStatusDisconnectedTitle,
 	};
 
-	const descriptions: Record<
-		ConnectionChipStatus,
-		(localCount: number) => string
-	> = {
-		cloud: () => m.connectionStatusCloudDescription(),
-		pending: () => m.connectionStatusPendingDescription(),
-		local: count => m.connectionStatusLocalDescription({ count }),
-		p2p: () => m.connectionStatusP2pDescription(),
-		disconnected: () => m.connectionStatusDisconnectedDescription(),
-	};
+	function description(status: ConnectionStatus): string {
+		switch (status.status) {
+			case 'cloud':
+				return m.connectionStatusCloudDescription();
+			case 'pending':
+				return m.connectionStatusPendingDescription();
+			case 'local':
+				return m.connectionStatusLocalDescription({ count: status.count });
+			case 'p2p':
+				return m.connectionStatusP2pDescription();
+			case 'disconnected':
+				return m.connectionStatusDisconnectedDescription();
+		}
+	}
 
 	let dialogOpened = $state(false);
 
@@ -71,16 +75,15 @@
 	const asTitle = (snippet: Snippet) => snippet as unknown as string;
 </script>
 
-{#await $chipInputs then [connectionStatus, onlinePeers]}
-	{@const localCount = connectionStatus.connectedLocalMailboxCount}
-	{@const status = connectionChipStatus(
-		connectionStatus,
+{#await $chipInputs then [mailboxes, onlinePeers]}
+	{@const status = connectionStatus(
+		mailboxes,
 		onlinePeers.length > 0,
 		renderingResumedAt.value,
 	)}
 	<Chip
 		data-testid="connection-status"
-		data-status={status}
+		data-status={status.status}
 		class="p-1 cursor-pointer"
 		colors={{
 			fillBgIos: 'bg-black/10 dark:bg-brand-primary',
@@ -88,7 +91,7 @@
 		}}
 		role="button"
 		tabindex={0}
-		aria-label={ariaLabels[status]()}
+		aria-label={ariaLabels[status.status]()}
 		onClick={() => (dialogOpened = true)}
 		onkeydown={(e: KeyboardEvent) => {
 			if (e.key === 'Enter' || e.key === ' ') {
@@ -98,23 +101,23 @@
 		}}
 	>
 		<span
-			class="connection-status connection-status-{status} flex h-[1em] justify-center *:h-full *:w-auto"
+			class="connection-status connection-status-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
 			aria-hidden="true"
 		>
-			{@html icons[status]}
+			{@html icons[status.status]}
 		</span>
 	</Chip>
 
 	{#snippet titleSlot()}
 		<div class="flex flex-row items-center gap-2">
 			<span
-				class="connection-status-dialog-icon connection-status-dialog-icon-{status} flex h-[1em] justify-center *:h-full *:w-auto"
+				class="connection-status-dialog-icon connection-status-dialog-icon-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
 				aria-hidden="true"
 			>
-				{@html icons[status]}
+				{@html icons[status.status]}
 			</span>
 			<span data-testid="connection-status-dialog-title">
-				{titles[status]()}
+				{titles[status.status]()}
 			</span>
 		</div>
 	{/snippet}
@@ -128,7 +131,7 @@
 				title={asTitle(titleSlot)}
 			>
 				<span data-testid="connection-status-dialog-description">
-					{descriptions[status](localCount)}
+					{description(status)}
 				</span>
 
 				{#snippet buttons()}

@@ -1,4 +1,4 @@
-import type { ConnectionChipStatus as ConnectionStatus } from '../../../ui/src/lib/components/connection/connection-chip-status';
+import type { ConnectionStatusTag as ConnectionStatus } from '../../../ui/src/lib/components/connection/connection-status-tags';
 import type { ConnectionStatusSample } from '../../../ui/tests/setup-utils';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';

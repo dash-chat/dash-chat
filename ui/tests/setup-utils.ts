@@ -19,9 +19,9 @@ import {
 } from 'tauri-plugin-network-interfaces-api';
 
 import {
-	CONNECTION_CHIP_STATUSES,
-	type ConnectionChipStatus,
-} from '../src/lib/components/connection/connection-chip-status';
+	CONNECTION_STATUS_TAGS,
+	type ConnectionStatusTag,
+} from '../src/lib/components/connection/connection-status-tags';
 import type { m } from '../src/lib/paraglide/messages.js';
 
 const requestJoinOutcomes = new Map<string, string>();
@@ -62,7 +62,7 @@ function hasText(selector: string, text: string): boolean {
 }
 
 export interface ConnectionStatusSample {
-	status: ConnectionChipStatus;
+	status: ConnectionStatusTag;
 	/** Epoch ms on the device, so samples can be ordered against each other
 	 * without comparing against the test runner's clock on another machine. */
 	at: number;
@@ -80,22 +80,22 @@ const connectionStatuses: ConnectionStatusSample[] = [];
 let connectionStatusObserver: MutationObserver | undefined;
 let connectionStatusToken: string | undefined;
 
-function isConnectionChipStatus(
+function isConnectionStatusTag(
 	status: string | undefined,
-): status is ConnectionChipStatus {
-	return (CONNECTION_CHIP_STATUSES as readonly (string | undefined)[]).includes(
+): status is ConnectionStatusTag {
+	return (CONNECTION_STATUS_TAGS as readonly (string | undefined)[]).includes(
 		status,
 	);
 }
 
 /** The status the connection chip renders, or null while it is not mounted. */
-function connectionStatus(): ConnectionChipStatus | null {
+function connectionStatus(): ConnectionStatusTag | null {
 	const chip = document.querySelector<HTMLElement>(
 		'[data-testid="connection-status"]',
 	);
 	if (!chip) return null;
 	const status = chip.dataset.status;
-	if (!isConnectionChipStatus(status))
+	if (!isConnectionStatusTag(status))
 		throw new Error(`connectionStatus: unexpected data-status="${status}"`);
 	return status;
 }

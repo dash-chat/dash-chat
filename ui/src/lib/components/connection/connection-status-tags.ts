@@ -1,6 +1,6 @@
 // Kept free of `$lib` imports so the e2e tsconfig can compile it through
 // ui/tests/setup-utils.ts.
-export const CONNECTION_CHIP_STATUSES = [
+export const CONNECTION_STATUS_TAGS = [
 	'cloud',
 	'local',
 	'p2p',
@@ -8,4 +8,4 @@ export const CONNECTION_CHIP_STATUSES = [
 	'pending',
 ] as const;
 
-export type ConnectionChipStatus = (typeof CONNECTION_CHIP_STATUSES)[number];
+export type ConnectionStatusTag = (typeof CONNECTION_STATUS_TAGS)[number];
