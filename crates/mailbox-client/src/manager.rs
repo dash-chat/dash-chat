@@ -129,7 +129,13 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
         }
     }
 
-    /// Take the sync request the imminent poll is about to fulfil.
+    /// Consume the sync request the imminent poll is about to fulfil.
+    pub(crate) fn consume_pending_request(&self) -> (RequestOutcome<Item::Topic>, bool) {
+        self.pending_request.lock().unwrap().consume()
+    }
+
+    /// Take the sync request the imminent poll is about to fulfil, keeping the
+    /// variant detail tests assert on.
     #[cfg(test)]
     pub(crate) fn take_pending_request(&self) -> PendingRequest<Item::Topic> {
         std::mem::replace(
@@ -589,10 +595,7 @@ where
         let subscribed = self.subscribed_topics().await;
         // Take the pending sync info here to lock in what this poll will cover.
         // Any requests coming in after this point will be handled by the next poll.
-        let (outcome, probe) = {
-            let mut req = tracked_mailbox.pending_request.lock().unwrap();
-            req.consume()
-        };
+        let (outcome, probe) = tracked_mailbox.consume_pending_request();
 
         let topics = match outcome {
             RequestOutcome::Topics(topics) => topics.intersection(&subscribed).copied().collect(),
@@ -2636,6 +2639,46 @@ mod tests {
         assert!(
             !mgr.subscribed_topics().await.contains(&0u8),
             "closed topic should be unsubscribed even when publish fails, so it is not re-fetched"
+        );
+    }
+
+    /// A manager spawned from a database path seeds its sync tracker from
+    /// persisted state, and `close()` drains the pool so a reopen sees it.
+    #[tokio::test]
+    async fn spawn_with_db_seeds_tracker_and_close_allows_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sync_state.db");
+        let gate = sqlite_gate::SqliteGate::default();
+
+        let mgr =
+            Mailboxes::<Msg, DummyStore>::spawn_with_db(&path, &gate, DummyStore, test_config())
+                .await
+                .unwrap();
+        let mailbox: crate::MailboxId = "mb1".into();
+        mgr.sync_tracker()
+            .record_synced(&mailbox, &[(7u8, 'a', 3)])
+            .await
+            .unwrap();
+        mgr.close().await;
+
+        let mgr =
+            Mailboxes::<Msg, DummyStore>::spawn_with_db(&path, &gate, DummyStore, test_config())
+                .await
+                .unwrap();
+        assert_eq!(
+            mgr.sync_tracker()
+                .get_synced(&mailbox, &7u8, &'a')
+                .await
+                .unwrap(),
+            Some(3),
+            "reopened manager must seed its tracker from persisted watermarks"
+        );
+        assert!(
+            mgr.sync_tracker()
+                .all_mailbox_ids()
+                .borrow()
+                .contains(&mailbox),
+            "reopened manager must seed all_mailbox_ids from persisted state"
         );
     }
 }
