@@ -62,7 +62,7 @@ pub(crate) fn label_to_mailbox_id(label: &str) -> anyhow::Result<String> {
 
 /// The local IPv4 interfaces to pin mDNS multicast egress to, and the pool the
 /// announce side advertises from.
-pub(crate) fn multicast_interfaces_v4() -> Vec<Ipv4Addr> {
+pub fn multicast_interfaces_v4() -> Vec<Ipv4Addr> {
     if_addrs::get_if_addrs()
         .map(|interfaces| interfaces.iter().filter_map(mdns_address_v4).collect())
         .unwrap_or_default()

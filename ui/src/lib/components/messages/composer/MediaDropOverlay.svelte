@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { isTauriEnv } from '$lib/utils/environment';
+	import { mimeFromName } from '$lib/utils/files';
 	import { getCurrentWebview } from '@tauri-apps/api/webview';
 	import { listen } from '@tauri-apps/api/event';
 
@@ -50,28 +51,6 @@
 		if (files.length > 0) onFiles(files);
 	}
 
-	const MIME_BY_EXTENSION: Record<string, string> = {
-		png: 'image/png',
-		jpg: 'image/jpeg',
-		jpeg: 'image/jpeg',
-		gif: 'image/gif',
-		webp: 'image/webp',
-		avif: 'image/avif',
-		bmp: 'image/bmp',
-		heic: 'image/heic',
-		svg: 'image/svg+xml',
-		mp4: 'video/mp4',
-		mov: 'video/quicktime',
-		webm: 'video/webm',
-		pdf: 'application/pdf',
-		txt: 'text/plain',
-	};
-
-	function mimeForName(name: string): string {
-		const ext = name.split('.').pop()?.toLowerCase() ?? '';
-		return MIME_BY_EXTENSION[ext] ?? 'application/octet-stream';
-	}
-
 	interface DroppedFile {
 		name: string;
 		data: number[];
@@ -102,7 +81,7 @@
 			const files = event.payload.map(
 				f =>
 					new File([new Uint8Array(f.data)], f.name, {
-						type: mimeForName(f.name),
+						type: mimeFromName(f.name),
 					}),
 			);
 			if (files.length > 0) onFiles(files);

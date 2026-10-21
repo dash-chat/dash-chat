@@ -10,6 +10,7 @@ export class SettingsPage extends TestHelper {
 	helpLink = this.el(tid('settings-help-link'));
 	notificationsLink = this.el(tid('settings-notifications-link'));
 	offlineLink = this.el(tid('settings-offline-link'));
+	offlineHubWarning = this.el(tid('settings-offline-hub-warning'));
 
 	async ready() {
 		await this.profileLink.waitForExist();
