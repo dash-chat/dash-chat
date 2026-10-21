@@ -174,26 +174,34 @@ where
         id: &MailboxId,
         watermarks: &[(T, A, SeqNum)],
     ) -> anyhow::Result<()> {
-        // In a real implementation, we'd use a transaction or multi-row insert.
-        // For now, we'll loop.
-        for (t, a, s) in watermarks {
-            let t_bytes = t.encode()?;
-            let a_bytes = a.encode()?;
-            sqlx::query(
-                "INSERT INTO mailbox_sync_state (mailbox_id, topic, author, seq_num, updated_at)
-                 VALUES (?, ?, ?, ?, ?)
-                 ON CONFLICT (mailbox_id, topic, author) DO UPDATE SET
-                    seq_num = MAX(excluded.seq_num, mailbox_sync_state.seq_num),
-                    updated_at = excluded.updated_at",
-            )
-            .bind(id)
-            .bind(t_bytes)
-            .bind(a_bytes)
-            .bind(*s)
-            .bind(chrono::Utc::now().timestamp_millis())
-            .execute(self.pool.pool())
-            .await?;
+        if watermarks.is_empty() {
+            return Ok(());
         }
+        let mut encoded: Vec<(Vec<u8>, Vec<u8>, SeqNum)> = Vec::with_capacity(watermarks.len());
+        for (t, a, s) in watermarks {
+            encoded.push((
+                t.encode().context("encoding topic")?,
+                a.encode().context("encoding author")?,
+                *s,
+            ));
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "INSERT INTO mailbox_sync_state (mailbox_id, topic, author, seq_num, updated_at) ",
+        );
+        query.push_values(&encoded, |mut row, (t_bytes, a_bytes, seq)| {
+            row.push_bind(id)
+                .push_bind(t_bytes)
+                .push_bind(a_bytes)
+                .push_bind(i64::from(*seq))
+                .push_bind(now);
+        });
+        query.push(
+            " ON CONFLICT (mailbox_id, topic, author) DO UPDATE SET
+                seq_num = MAX(excluded.seq_num, mailbox_sync_state.seq_num),
+                updated_at = excluded.updated_at",
+        );
+        query.build().execute(self.pool.pool()).await?;
         Ok(())
     }
     async fn drop_mailbox(&self, id: &MailboxId) -> anyhow::Result<()> {
