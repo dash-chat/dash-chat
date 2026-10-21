@@ -1,7 +1,7 @@
 use crate::MailboxId;
 use crate::connection_health::SyncStatus;
 use crate::persistence::{
-    ByteDeserializable, ByteSerializable, MailboxStore, Persistence, SyncStore,
+    ByteDeserializable, ByteSerializable, MailboxUrlStore, Persistence, SyncStore,
 };
 use anyhow::Context;
 use async_trait::async_trait;
@@ -54,8 +54,8 @@ where
     T: ByteSerializable + ByteDeserializable<T>,
     A: ByteSerializable + ByteDeserializable<A>,
 {
-    fn mailbox_store(&self) -> Arc<dyn MailboxStore> {
-        Arc::new(SqliteMailboxStore {
+    fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore> {
+        Arc::new(SqliteMailboxUrlStore {
             pool: self.pool.clone(),
         })
     }
@@ -67,12 +67,12 @@ where
     }
 }
 
-struct SqliteMailboxStore {
+struct SqliteMailboxUrlStore {
     pool: GatedPool,
 }
 
 #[async_trait]
-impl MailboxStore for SqliteMailboxStore {
+impl MailboxUrlStore for SqliteMailboxUrlStore {
     async fn record_url(&self, id: &MailboxId, url: &str) -> anyhow::Result<()> {
         sqlx::query(
             "INSERT INTO mailbox_url (mailbox_id, url) VALUES (?, ?)
