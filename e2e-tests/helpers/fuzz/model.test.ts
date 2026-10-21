@@ -27,6 +27,11 @@ function phone(name: string) {
 	return { name, mobile: true, notifications: TEXTS };
 }
 
+/** An iPhone, which posts each message on its own. */
+function iphone(name: string) {
+	return { ...phone(name), notifiesEachMessage: true };
+}
+
 /** A desktop, which posts none this way and so is read for none. */
 function desktop(name: string) {
 	return { name, mobile: false, notifications: null };
@@ -718,6 +723,19 @@ test('a chat collapses into one notification, carrying one of its messages', () 
 	// One entry, and what it reads is whichever of them the device wrote
 	// into it last.
 	assert.deepEqual(showing(m, B), [`${A} | sm-1 or ${A} | sm-2`]);
+	m.openedChat(B, chat);
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('an iPhone stacks a notification for each message of a chat', () => {
+	const m = new ExpectedModel([phone(A), iphone(B)], [], false);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.addMessage(chat, A, 'text', 'sm-2');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`, `${A} | sm-2`]);
 	m.openedChat(B, chat);
 	assert.deepEqual(showing(m, B), []);
 });
