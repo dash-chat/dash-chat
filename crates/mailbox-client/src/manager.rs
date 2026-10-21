@@ -161,9 +161,9 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     config: MailboxesConfig,
     nudge: Arc<Notify>,
     sync_coordinator: SyncCoordinator<Item, Store>,
-    /// Owned SQLite persistence when the manager was spawned with a database
-    /// path; held so `close()` can release the underlying pool and file lock.
-    persistence: Option<Arc<SqlitePersistence<Item::Topic, Item::Author>>>,
+    /// Owned persistence when the manager was spawned with a database path;
+    /// held so `close()` can release the underlying pool and file lock.
+    persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
 }
 
 impl<Item: MailboxItem, Store: MailboxStore<Item>> Mailboxes<Item, Store>
@@ -174,7 +174,7 @@ where
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
-        persistence: Option<Arc<SqlitePersistence<Item::Topic, Item::Author>>>,
+        persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     ) -> Self {
         Self {
             mailbox_registry: Arc::new(MailboxRegistry::new()),
@@ -524,7 +524,7 @@ where
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
-        persistence: Option<Arc<SqlitePersistence<Item::Topic, Item::Author>>>,
+        persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     ) -> Self {
         let manager = Self::new(store, sync_tracker, config, persistence);
         let r = manager.clone();
@@ -551,11 +551,11 @@ where
         r
     }
 
-    /// Gracefully close the underlying SQLite pool, if this manager was
+    /// Gracefully close the underlying persistence, if this manager was
     /// spawned with a database path. No-op otherwise.
     pub async fn close(&self) {
         if let Some(persistence) = &self.persistence {
-            persistence.pool().close().await;
+            persistence.close().await;
         }
     }
 
