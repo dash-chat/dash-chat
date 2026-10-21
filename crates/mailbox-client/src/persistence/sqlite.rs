@@ -6,15 +6,17 @@ use crate::persistence::{
 use anyhow::Context;
 use async_trait::async_trait;
 use dashchat_utils::SeqNum;
+use sqlite_gate::{GatedPool, SqliteGate};
 use sqlx::{
     SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 use std::collections::{BTreeSet, HashMap};
+use std::str::FromStr;
 use std::sync::Arc;
 
 pub struct SqlitePersistence<T, A> {
-    pool: SqlitePool,
+    pool: GatedPool,
     _phantom: std::marker::PhantomData<(T, A)>,
 }
 
@@ -24,14 +26,20 @@ where
     A: ByteSerializable + ByteDeserializable<A>,
 {
     pub async fn open_in_memory() -> Self {
-        let pool = SqlitePoolOptions::new()
-            .connect_lazy(":memory:")
+        // Connected through a throwaway gate so the pool type stays GatedPool;
+        // an in-memory database is never suspended. Parsed from the string so
+        // the pool's connections share one in-memory database (shared cache).
+        let opts = SqliteConnectOptions::from_str(":memory:")
+            .expect("failed to parse in-memory connect options");
+        let pool = SqliteGate::default()
+            .connect(SqlitePoolOptions::new(), opts)
+            .await
             .expect("failed to connect to in-memory sqlite");
 
         // To ensure the schema is created on the :memory: database, we must execute the schema
         // on the pool itself. connect_lazy means the pool is shared.
         sqlx::query(SCHEMA)
-            .execute(&pool)
+            .execute(pool.pool())
             .await
             .expect("failed to run schema");
 
@@ -55,14 +63,14 @@ where
         sqlx::query(SCHEMA).execute(pool.pool()).await?;
 
         Ok(Self {
-            pool: pool.pool().clone(),
+            pool,
             _phantom: std::marker::PhantomData,
         })
     }
 
     /// Access the underlying SQLite pool for shutdown.
     pub fn pool(&self) -> &SqlitePool {
-        &self.pool
+        self.pool.pool()
     }
 }
 
@@ -85,7 +93,7 @@ where
 }
 
 struct SqliteMailboxStore {
-    pool: SqlitePool,
+    pool: GatedPool,
 }
 
 #[async_trait]
@@ -97,7 +105,7 @@ impl MailboxStore for SqliteMailboxStore {
         )
         .bind(id)
         .bind(url)
-        .execute(&self.pool)
+        .execute(self.pool.pool())
         .await?;
         Ok(())
     }
@@ -105,7 +113,7 @@ impl MailboxStore for SqliteMailboxStore {
         let row: Option<(String,)> =
             sqlx::query_as("SELECT url FROM mailbox_url WHERE mailbox_id = ?")
                 .bind(id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.pool.pool())
                 .await?;
         Ok(row.map(|(u,)| u))
     }
@@ -114,14 +122,14 @@ impl MailboxStore for SqliteMailboxStore {
         let row: Option<(String,)> =
             sqlx::query_as("SELECT mailbox_id FROM mailbox_url WHERE url = ? LIMIT 1")
                 .bind(url)
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.pool.pool())
                 .await?;
         Ok(row.map(|(m,)| m))
     }
 }
 
 struct SqliteSyncStore<T, A> {
-    pool: SqlitePool,
+    pool: GatedPool,
     _phantom: std::marker::PhantomData<(T, A)>,
 }
 
@@ -141,7 +149,7 @@ where
         .bind(id)
         .bind(status.as_db_str())
         .bind(chrono::Utc::now().timestamp_millis())
-        .execute(&self.pool)
+        .execute(self.pool.pool())
         .await?;
         Ok(())
     }
@@ -149,7 +157,7 @@ where
         let row: Option<(String,)> =
             sqlx::query_as("SELECT status FROM mailbox_status WHERE mailbox_id = ?")
                 .bind(id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.pool.pool())
                 .await?;
         Ok(row.and_then(|(s,)| SyncStatus::from_db_str(&s)))
     }
@@ -157,7 +165,7 @@ where
     async fn clear_status(&self, id: &MailboxId) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM mailbox_status WHERE mailbox_id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(self.pool.pool())
             .await?;
         Ok(())
     }
@@ -183,7 +191,7 @@ where
             .bind(a_bytes)
             .bind(*s)
             .bind(chrono::Utc::now().timestamp_millis())
-            .execute(&self.pool)
+            .execute(self.pool.pool())
             .await?;
         }
         Ok(())
@@ -191,15 +199,15 @@ where
     async fn drop_mailbox(&self, id: &MailboxId) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM mailbox_sync_state WHERE mailbox_id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(self.pool.pool())
             .await?;
         sqlx::query("DELETE FROM mailbox_url WHERE mailbox_id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(self.pool.pool())
             .await?;
         sqlx::query("DELETE FROM mailbox_status WHERE mailbox_id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(self.pool.pool())
             .await?;
         Ok(())
     }
@@ -212,7 +220,7 @@ where
             "SELECT topic, author, seq_num FROM mailbox_sync_state WHERE mailbox_id = ?",
         )
         .bind(id)
-        .fetch_all(&self.pool)
+        .fetch_all(self.pool.pool())
         .await?;
 
         let mut out: HashMap<T, HashMap<A, SeqNum>> = HashMap::new();
@@ -228,7 +236,7 @@ where
     async fn load_all_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>> {
         let rows: Vec<(String,)> =
             sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state")
-                .fetch_all(&self.pool)
+                .fetch_all(self.pool.pool())
                 .await?;
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
@@ -246,7 +254,7 @@ where
         )
         .bind(t_bytes)
         .bind(a_bytes)
-        .fetch_all(&self.pool)
+        .fetch_all(self.pool.pool())
         .await?;
         rows.into_iter()
             .map(|(m, s)| Ok((m, crate::SeqNum::try_from(s)?)))
@@ -272,3 +280,24 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         status     TEXT NOT NULL,
         updated_at INTEGER NOT NULL
     );";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn gate_still_tracks_pool_after_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = SqliteGate::default();
+        let persistence = SqlitePersistence::<u8, char>::open(&dir.path().join("test.db"), &gate)
+            .await
+            .unwrap();
+
+        // With a connection checked out, suspend must hit its deadline rather
+        // than report the pool drained.
+        let conn = persistence.pool().acquire().await.unwrap();
+        let result = gate.suspend(std::time::Duration::from_millis(300)).await;
+        assert!(result.is_err());
+        drop(conn);
+    }
+}
