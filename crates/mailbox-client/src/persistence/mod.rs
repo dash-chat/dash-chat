@@ -50,6 +50,7 @@ where
 }
 
 /// Unified persistence manager that provides access to the underlying stores.
+#[async_trait]
 pub trait Persistence<T, A>: Send + Sync
 where
     T: ByteSerializable,
@@ -57,6 +58,10 @@ where
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore>;
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>>;
+
+    /// Release the underlying storage (e.g. the SQLite pool and its file
+    /// lock). No-op for in-memory persistence.
+    async fn close(&self);
 }
 
 /// Repositories for types that can be serialized to bytes.

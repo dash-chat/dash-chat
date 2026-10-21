@@ -175,6 +175,7 @@ where
     }
 }
 
+#[async_trait]
 impl<T, A> Persistence<T, A> for MemPersistence<T, A>
 where
     T: ByteSerializable,
@@ -187,4 +188,6 @@ where
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>> {
         self.sync_store.clone()
     }
+
+    async fn close(&self) {}
 }

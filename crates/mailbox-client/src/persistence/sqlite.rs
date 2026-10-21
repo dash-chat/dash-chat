@@ -49,6 +49,7 @@ where
     }
 }
 
+#[async_trait]
 impl<T, A> Persistence<T, A> for SqlitePersistence<T, A>
 where
     T: ByteSerializable + ByteDeserializable<T>,
@@ -64,6 +65,10 @@ where
             pool: self.pool.clone(),
             _phantom: std::marker::PhantomData,
         })
+    }
+
+    async fn close(&self) {
+        self.pool.pool().close().await;
     }
 }
 
