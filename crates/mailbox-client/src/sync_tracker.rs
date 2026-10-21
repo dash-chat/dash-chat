@@ -1,4 +1,4 @@
-pub use serde::{Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
@@ -193,13 +193,13 @@ where
     }
 }
 
-pub fn encode<T: Serialize>(value: &T) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn encode<T: Serialize>(value: &T) -> anyhow::Result<Vec<u8>> {
     let mut buf = Vec::new();
     ciborium::into_writer(value, &mut buf)?;
     Ok(buf)
 }
 
-pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> anyhow::Result<T> {
+pub(crate) fn decode<T: DeserializeOwned>(bytes: &[u8]) -> anyhow::Result<T> {
     Ok(ciborium::from_reader(bytes)?)
 }
 
