@@ -28,7 +28,9 @@ tauri-plugin-process = "2.3"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
-tauri-plugin-sharekit = "0.3"
+# Upstream main past 0.4.0-rc.7: its windows crates match Tauri 2.12 (#277),
+# which no published version does, so the Windows build fails on 0.3.1.
+tauri-plugin-sharekit = { git = "https://github.com/Choochmeque/tauri-plugin-sharekit", rev = "00b0f91c19002d769ed96ec8b08d66d1a0606a74" }
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-opener = "2"
