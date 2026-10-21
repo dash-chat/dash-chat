@@ -3,11 +3,11 @@ pub mod blobs;
 mod connection_health;
 mod mailbox_registry;
 pub mod manager;
+pub mod persistence;
 mod polling;
 pub mod store;
 mod sync;
 mod sync_scheduler;
-pub mod persistence;
 mod sync_tracker;
 mod topic_registry;
 

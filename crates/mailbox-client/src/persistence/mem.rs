@@ -18,7 +18,10 @@ impl MemMailboxStore {
 #[async_trait]
 impl MailboxStore for MemMailboxStore {
     async fn record_url(&self, id: &MailboxId, url: &str) -> anyhow::Result<()> {
-        self.data.write().unwrap().insert(id.clone(), url.to_string());
+        self.data
+            .write()
+            .unwrap()
+            .insert(id.clone(), url.to_string());
         Ok(())
     }
 
