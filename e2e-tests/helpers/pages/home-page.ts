@@ -35,6 +35,9 @@ function xpathLiteral(text: string): string {
 
 export class HomePage extends TestHelper {
 	settingsLink = this.el(tid('home-settings-link'));
+	settingsHubWarning = this.el(
+		`${tid('home-settings-link')} ${tid('warning-badge')}`,
+	);
 	newMessageButton = this.el(tid('home-new-message-btn'));
 	firstChatTooltip = this.el(tid('first-chat-tooltip'));
 	chatList = this.el(tid(CHAT_LIST_ID));

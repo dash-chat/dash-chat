@@ -42,11 +42,11 @@ const MACOS = process.platform === 'darwin';
 
 export const APP_BINARY = path.join(ROOT, 'target', 'debug', 'dash-chat');
 
-function agentDir(slot: number): string {
+export function agentDir(slot: number): string {
 	return path.join(ROOT, '.dbs', 'e2e', `agent-${slot}`);
 }
 
-function agentPort(slot: number): number {
+export function agentPort(slot: number): number {
 	return allocatePinnedPort(`_WDIO_PORT${slot}`);
 }
 

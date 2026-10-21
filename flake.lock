@@ -328,6 +328,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-chromedriver-155": {
+      "locked": {
+        "lastModified": 1791928059,
+        "narHash": "sha256-EIaeV34MGBfwfmS0rVXZRq73/HvHnOgGtyxR267Ow/Y=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "a3fd85e95837ce5d2e879357445c6eb5cd02d280",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "a3fd85e95837ce5d2e879357445c6eb5cd02d280",
+        "type": "github"
+      }
+    },
     "nixpkgs-lib": {
       "locked": {
         "lastModified": 1790477367,
@@ -402,6 +418,7 @@
         "nixpkgs-chromedriver-152": "nixpkgs-chromedriver-152",
         "nixpkgs-chromedriver-153": "nixpkgs-chromedriver-153",
         "nixpkgs-chromedriver-154": "nixpkgs-chromedriver-154",
+        "nixpkgs-chromedriver-155": "nixpkgs-chromedriver-155",
         "rust-overlay": "rust-overlay",
         "tauri-plugin-holochain": "tauri-plugin-holochain"
       }
