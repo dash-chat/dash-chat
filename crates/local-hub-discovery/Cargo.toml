@@ -8,7 +8,7 @@ anyhow = "1"
 log = "0.4"
 data-encoding = "2"
 futures = "0.3"
-swarm-discovery = "0.6.3"
+swarm-discovery = "0.6.4"
 if-addrs = "0.15"
 network-watch = { workspace = true }
 tokio = { version = "1", features = ["macros", "net", "rt", "sync", "time"] }

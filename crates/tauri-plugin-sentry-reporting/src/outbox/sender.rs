@@ -112,7 +112,7 @@ fn classify(status: StatusCode, retry_after: Option<Duration>) -> Delivery {
         Delivery::Retry { after: retry_after }
     } else if status == StatusCode::PAYLOAD_TOO_LARGE {
         log::error!(
-            "sentry-reporting: a report was too large for Sentry and is dropped; the attached log tail needs a lower cap"
+            "sentry-reporting: a report was too large for Sentry and is dropped; the screenshot budget or the log tail cap needs lowering"
         );
         Delivery::Rejected {
             status: Some(status),

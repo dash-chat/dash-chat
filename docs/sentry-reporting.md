@@ -186,9 +186,11 @@ Applied at the start of every drain pass, to `held/` and `queued/` alike:
 - entries older than **X days** (matching the mailbox-server blob cleanup window),
 - a cap of **Y entries** or **Z MB**, whichever binds first, evicting oldest-first.
 
-Each entry can carry a screenshot plus a 1 MB log tail, so a chronically offline
-device must not grow without bound. Note the cap has no floor: a single entry
-larger than `MAX_BYTES` is evicted immediately — which is why an evicted entry
+Each entry can carry the screenshots the contact form allows (five, 8 MiB in
+total; the plugin itself caps neither) plus a 10 MB log tail per log
+directory, so a chronically offline device must not grow without bound. Note
+the cap has no floor: a single entry larger than `MAX_BYTES` is evicted
+immediately — which is why an evicted entry
 must resolve to `Dropped`/`Err` and not to "sent".
 
 Envelopes keep their **original event timestamp**. The log tail captured at queue

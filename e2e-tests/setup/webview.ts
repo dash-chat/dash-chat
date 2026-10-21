@@ -32,6 +32,16 @@ export async function switchToWebview(
 	await agent.switchContext(webview!);
 }
 
+/** Whether the session is driving one of the app's webviews rather than the
+ *  native UI. */
+export async function isOnWebview(
+	agent: WebdriverIO.Browser,
+): Promise<boolean> {
+	const context = await agent.getContext();
+	const contextId = typeof context === 'string' ? context : context.id;
+	return contextId.startsWith('WEBVIEW');
+}
+
 /** Wait for window.__test to be registered on a single agent. */
 export async function waitForTestUtils(
 	agent: WebdriverIO.Browser,

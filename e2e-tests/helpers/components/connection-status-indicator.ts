@@ -1,14 +1,9 @@
+import type { ConnectionStatusTag as ConnectionStatus } from '../../../ui/src/lib/components/connection/connection-status-tags';
+import type { ConnectionStatusSample } from '../../../ui/tests/setup-utils';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
-export type ConnectionStatus = 'connected' | 'local' | 'disconnected';
-
-export interface ConnectionStatusSample {
-	status: string;
-	at: number;
-	visibility: 'visible' | 'hidden';
-	onVisibilityChange: boolean;
-}
+export type { ConnectionStatus, ConnectionStatusSample };
 
 /** `status(visibility)@+Nms`, relative to the first sample — the absolute epoch
  *  values are unreadable in a failure message, and what matters is the spacing
@@ -59,15 +54,9 @@ export class ConnectionStatusIndicator extends TestHelper {
 	dialogDescription = this.el(tid('connection-status-dialog-description'));
 	dialogCloseButton = this.el(tid('connection-status-dialog-close'));
 
-	/** Read the chip's data-status. Absence === 'connected'. */
-	async status(): Promise<ConnectionStatus> {
-		return this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (!el) return 'connected';
-			const status = el.dataset.status;
-			if (status === 'local' || status === 'disconnected') return status;
-			throw new Error(`connectionStatus: unexpected data-status="${status}"`);
-		}, tid('connection-status'));
+	/** Read the chip's data-status, or null while it is not mounted. */
+	status(): Promise<ConnectionStatus | null> {
+		return this.agent.execute(() => window.__test.connectionStatus());
 	}
 
 	/** Start recording every status the chip renders. Returns the recording's
@@ -116,17 +105,13 @@ export class ConnectionStatusIndicator extends TestHelper {
 				{ timeout, interval: 200 },
 			);
 		} catch {
-			throw new Error(
-				`${timeoutMsg} (the chip last read ${seen === 'connected' ? 'nothing: it was hidden' : String(seen)})`,
-			);
+			throw new Error(`${timeoutMsg} (the chip last read ${String(seen)})`);
 		}
 	}
 
-	/** Wait until the chip is not showing a local hub — i.e. any state but
-	 *  'local'. Both 'disconnected' and hidden ('connected') mean no local hub
-	 *  is present, which is the whole of what "no hub reachable" asserts; which
-	 *  of the two shows depends on cloud-connection settling, a separate concern
-	 *  the hub budget does not govern. */
+	/** Wait until the chip is not showing a local hub. Which other state it
+	 *  reads instead depends on the cloud connection, so this leaves it open;
+	 *  an unmounted chip (pending is not rendered) shows no hub either. */
 	async waitForNotLocal(timeout: number, timeoutMsg: string): Promise<void> {
 		let seen: ConnectionStatus | null = null;
 		try {
@@ -138,7 +123,7 @@ export class ConnectionStatusIndicator extends TestHelper {
 				{ timeout, interval: 200 },
 			);
 		} catch {
-			throw new Error(`${timeoutMsg} (the chip still read local)`);
+			throw new Error(`${timeoutMsg} (the chip last read ${String(seen)})`);
 		}
 	}
 
@@ -164,8 +149,24 @@ export class ConnectionStatusIndicator extends TestHelper {
 		} catch {
 			throw new Error(`${timeoutMsg} (the dialog last named ${String(seen)})`);
 		} finally {
-			await this.dialogCloseButton.click();
-			await this.agent.waitUntil(async () => !(await this.isDialogOpen()));
+			await this.closeDialog();
 		}
+	}
+
+	/** Open the dialog, check it reads `title` and `description`, then close it. */
+	async expectDialog(title: string, description: string): Promise<void> {
+		await this.chip.click();
+		await this.agent.waitUntil(() => this.isDialogOpen());
+		try {
+			await expect(this.dialogTitle).toHaveText(title);
+			await expect(this.dialogDescription).toHaveText(description);
+		} finally {
+			await this.closeDialog();
+		}
+	}
+
+	private async closeDialog(): Promise<void> {
+		await this.dialogCloseButton.click();
+		await this.agent.waitUntil(async () => !(await this.isDialogOpen()));
 	}
 }

@@ -610,9 +610,14 @@ mod tests {
     #[tokio::test]
     async fn test_initialize_idempotent() {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_initialize_random.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_initialize_random.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let store = LocalStore::new(pool.clone()).await.unwrap();
         let private_key = store.private_key().await.unwrap();
         let agent_id = store.agent_id().await.unwrap();
@@ -626,9 +631,14 @@ mod tests {
         drop(store);
         pool.close().await;
 
-        let pool = create_sqlite_pool(dir.path().join("test_initialize_random.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_initialize_random.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let store = LocalStore::new(pool).await.unwrap();
         assert_eq!(
             store.private_key().await.unwrap().as_bytes(),
@@ -640,9 +650,14 @@ mod tests {
     #[tokio::test]
     async fn test_unfetched_blob_hashes_crud() {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_unfetched.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_unfetched.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let store = LocalStore::new(pool.clone()).await.unwrap();
 
         let mbx_a = "mailbox-a";
@@ -673,9 +688,14 @@ mod tests {
         // Persists across reopen.
         drop(store);
         pool.close().await;
-        let pool = create_sqlite_pool(dir.path().join("test_unfetched.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_unfetched.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let store = LocalStore::new(pool).await.unwrap();
         let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
         assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
@@ -684,9 +704,14 @@ mod tests {
     #[tokio::test]
     async fn test_remove_unfetched_blobs_all_mailboxes() {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_unfetched_all.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_unfetched_all.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let store = LocalStore::new(pool.clone()).await.unwrap();
 
         let h1 = iroh_blobs::Hash::new([1; 32]);
@@ -709,9 +734,14 @@ mod tests {
     #[tokio::test]
     async fn test_requested_inbox_topics_end_on_expiry_or_contact() {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_requested_inbox_topics.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_requested_inbox_topics.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let store = LocalStore::new(pool).await.unwrap();
 
         let now = Utc::now();

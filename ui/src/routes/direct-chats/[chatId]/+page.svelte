@@ -361,8 +361,14 @@
 									</Link>
 								{/snippet}
 
-								<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-									<ConnectionStatusIndicator />
+								<!-- The same 44px cell as the home navbar. -->
+								<div
+									class="grid size-11 shrink-0 place-items-center {theme ===
+									'material'
+										? 'me-2'
+										: ''}"
+								>
+									<ConnectionStatusIndicator {chatId} />
 								</div>
 							</Navbar>
 						{/if}

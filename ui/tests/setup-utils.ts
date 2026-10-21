@@ -18,6 +18,10 @@ import {
 	wifiRequestJoin,
 } from 'tauri-plugin-network-interfaces-api';
 
+import {
+	CONNECTION_STATUS_TAGS,
+	type ConnectionStatusTag,
+} from '../src/lib/components/connection/connection-status-tags';
 import type { m } from '../src/lib/paraglide/messages.js';
 
 const requestJoinOutcomes = new Map<string, string>();
@@ -58,7 +62,8 @@ function hasText(selector: string, text: string): boolean {
 }
 
 export interface ConnectionStatusSample {
-	status: string;
+	/** Null while the chip is not mounted, which is how pending renders. */
+	status: ConnectionStatusTag | null;
 	/** Epoch ms on the device, so samples can be ordered against each other
 	 * without comparing against the test runner's clock on another machine. */
 	at: number;
@@ -76,11 +81,24 @@ const connectionStatuses: ConnectionStatusSample[] = [];
 let connectionStatusObserver: MutationObserver | undefined;
 let connectionStatusToken: string | undefined;
 
-function currentConnectionStatus(): string {
+function isConnectionStatusTag(
+	status: string | undefined,
+): status is ConnectionStatusTag {
+	return (CONNECTION_STATUS_TAGS as readonly (string | undefined)[]).includes(
+		status,
+	);
+}
+
+/** The status the connection chip renders, or null while it is not mounted. */
+function connectionStatus(): ConnectionStatusTag | null {
 	const chip = document.querySelector<HTMLElement>(
 		'[data-testid="connection-status"]',
 	);
-	return chip?.dataset.status ?? 'connected';
+	if (!chip) return null;
+	const status = chip.dataset.status;
+	if (!isConnectionStatusTag(status))
+		throw new Error(`connectionStatus: unexpected data-status="${status}"`);
+	return status;
 }
 
 /** Start recording every connection status the indicator renders, returning a
@@ -90,7 +108,7 @@ function currentConnectionStatus(): string {
  * "disconnected" painted on resume and replaced milliseconds later by the
  * backend's re-measurement is invisible to any sampler, but the user sees it. */
 function sampleConnectionStatus(onVisibilityChange: boolean) {
-	const status = currentConnectionStatus();
+	const status = connectionStatus();
 	const previous = connectionStatuses[connectionStatuses.length - 1];
 	// A visibility transition is always recorded: what was on screen the moment
 	// the page came back is the whole question, and it produces no mutation
@@ -618,6 +636,7 @@ export const testUtils = {
 	failNextVoiceLoad,
 	recordMediaDownloads,
 	photoDownloadMs,
+	connectionStatus,
 	recordConnectionStatus,
 	connectionStatusHistory,
 	recordPhotoVisibility,

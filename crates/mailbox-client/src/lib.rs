@@ -1,8 +1,15 @@
 pub mod backends;
 pub mod blobs;
+mod connection_health;
 pub mod manager;
+mod polling;
+mod registry;
 pub mod store;
-pub mod sync_tracker;
+mod sync;
+mod sync_tracker;
+
+pub use connection_health::{LastError, MailboxConnectionState, MailboxesConfig, SyncStatus};
+pub use sync_tracker::{MailboxSyncState, MailboxSyncTracker};
 
 pub use blobs::unfetched_blobs::BlobSource;
 pub use blobs::upload_tracker::BlobUploadLifecycle;
@@ -26,12 +33,9 @@ use tracing::Instrument;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-    // Setting up a connection on a loaded mobile network alone can take
-    // several seconds, so the connect budget matches Signal's 15 s. The total
-    // covers the connect too.
     let builder = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(20));
+        .connect_timeout(dashchat_utils::HTTP_CONNECT_TIMEOUT)
+        .timeout(dashchat_utils::HTTP_REQUEST_TIMEOUT);
     // The e2e mailbox serves TLS so that a degraded link slows the handshake,
     // which the connect timeout covers, as a real network does. DER because
     // native-tls only parses PEM on macOS and panics on iOS.

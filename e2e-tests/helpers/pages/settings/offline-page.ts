@@ -10,6 +10,7 @@ export class OfflinePage extends TestHelper {
 	toggleInput = this.el(TOGGLE_INPUT_SELECTOR);
 	backgroundModeToggle = this.el(tid('offline-background-mode-toggle'));
 	backgroundModeToggleInput = this.el(BACKGROUND_MODE_TOGGLE_INPUT_SELECTOR);
+	localMailboxLanBlocked = this.el(tid('offline-local-mailbox-lan-blocked'));
 
 	async ready() {
 		// Desktop shows the local-mailbox toggle, Android only the
