@@ -1,6 +1,8 @@
-use crate::connection_health::SyncStatus;
-use crate::persistence::{ByteDeserializable, ByteSerializable, MailboxStore, Persistence, SyncStore};
 use crate::MailboxId;
+use crate::connection_health::SyncStatus;
+use crate::persistence::{
+    ByteDeserializable, ByteSerializable, MailboxStore, Persistence, SyncStore,
+};
 use anyhow::Context;
 use async_trait::async_trait;
 use dashchat_utils::SeqNum;
@@ -25,11 +27,14 @@ where
         let pool = SqlitePoolOptions::new()
             .connect_lazy(":memory:")
             .expect("failed to connect to in-memory sqlite");
-        
+
         // To ensure the schema is created on the :memory: database, we must execute the schema
         // on the pool itself. connect_lazy means the pool is shared.
-        sqlx::query(SCHEMA).execute(&pool).await.expect("failed to run schema");
-        
+        sqlx::query(SCHEMA)
+            .execute(&pool)
+            .await
+            .expect("failed to run schema");
+
         Self {
             pool,
             _phantom: std::marker::PhantomData,
@@ -53,6 +58,11 @@ where
             pool: pool.pool().clone(),
             _phantom: std::marker::PhantomData,
         })
+    }
+
+    /// Access the underlying SQLite pool for shutdown.
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 }
 
@@ -216,9 +226,10 @@ where
         Ok(out)
     }
     async fn load_all_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>> {
-        let rows: Vec<(String,)> = sqlx::query_as("SELECT mailbox_id FROM mailbox_sync_state")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state")
+                .fetch_all(&self.pool)
+                .await?;
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 

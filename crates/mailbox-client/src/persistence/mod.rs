@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-pub mod sqlite;
 pub mod mem;
+pub mod sqlite;
 
 /// Repository for mailbox identity and location.
 #[async_trait]
@@ -44,7 +44,11 @@ where
 }
 
 /// Unified persistence manager that provides access to the underlying stores.
-pub trait Persistence<T, A>: Send + Sync {
+pub trait Persistence<T, A>: Send + Sync
+where
+    T: ByteSerializable,
+    A: ByteSerializable,
+{
     fn mailbox_store(&self) -> Arc<dyn MailboxStore>;
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>>;
 }

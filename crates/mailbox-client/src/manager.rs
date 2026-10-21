@@ -4,6 +4,7 @@ use crate::blobs::unfetched_blobs::reconcile_unfetched_blobs;
 use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::connection_health::{MailboxConnectionState, MailboxesConfig, SyncStatus};
 use crate::mailbox_registry::MailboxRegistry;
+use crate::persistence::{Persistence, sqlite::SqlitePersistence};
 use crate::polling::PollGuard;
 use crate::store::MailboxStore;
 use crate::sync::SyncCoordinator;
@@ -160,6 +161,9 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     config: MailboxesConfig,
     nudge: Arc<Notify>,
     sync_coordinator: SyncCoordinator<Item, Store>,
+    /// Owned SQLite persistence when the manager was spawned with a database
+    /// path; held so `close()` can release the underlying pool and file lock.
+    persistence: Option<Arc<SqlitePersistence<Item::Topic, Item::Author>>>,
 }
 
 impl<Item: MailboxItem, Store: MailboxStore<Item>> Mailboxes<Item, Store>
@@ -170,6 +174,7 @@ where
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
+        persistence: Option<Arc<SqlitePersistence<Item::Topic, Item::Author>>>,
     ) -> Self {
         Self {
             mailbox_registry: Arc::new(MailboxRegistry::new()),
@@ -179,6 +184,7 @@ where
             config,
             nudge: Arc::new(Notify::new()),
             sync_coordinator: SyncCoordinator::new(store, sync_tracker.clone()),
+            persistence,
         }
     }
 
@@ -480,12 +486,47 @@ where
         self.topic_registry.unsubscribe(topic).await
     }
 
+    /// Spawn the poll loop with an externally-created sync tracker.
+    /// Useful for tests and in-memory configurations.
     pub async fn spawn(
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
-        let manager = Self::new(store, sync_tracker, config);
+        Ok(Self::spawn_internal(store, sync_tracker, config, None))
+    }
+
+    /// Spawn the poll loop backed by a SQLite database at `path`.
+    /// The manager owns the persistence so it can release the pool on `close()`.
+    pub async fn spawn_with_db(
+        path: impl AsRef<std::path::Path>,
+        gate: &sqlite_gate::SqliteGate,
+        store: Store,
+        config: MailboxesConfig,
+    ) -> Result<Self, anyhow::Error> {
+        let persistence =
+            Arc::new(SqlitePersistence::<Item::Topic, Item::Author>::open(path, gate).await?);
+        let initial_ids = persistence.sync_store().load_all_ids().await?;
+        let sync_tracker = Arc::new(MailboxSyncTracker::new(
+            persistence.sync_store(),
+            persistence.mailbox_store(),
+            initial_ids,
+        ));
+        Ok(Self::spawn_internal(
+            store,
+            sync_tracker,
+            config,
+            Some(persistence),
+        ))
+    }
+
+    fn spawn_internal(
+        store: Store,
+        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        config: MailboxesConfig,
+        persistence: Option<Arc<SqlitePersistence<Item::Topic, Item::Author>>>,
+    ) -> Self {
+        let manager = Self::new(store, sync_tracker, config, persistence);
         let r = manager.clone();
         tokio::spawn(
             async move {
@@ -507,7 +548,15 @@ where
             .instrument(tracing::info_span!("poll mailboxes")),
         );
 
-        Ok(r)
+        r
+    }
+
+    /// Gracefully close the underlying SQLite pool, if this manager was
+    /// spawned with a database path. No-op otherwise.
+    pub async fn close(&self) {
+        if let Some(persistence) = &self.persistence {
+            persistence.pool().close().await;
+        }
     }
 
     async fn find_next_due(&self) -> Option<NextDue> {
@@ -784,7 +833,7 @@ mod tests {
 
     /// Create a Mailboxes instance without spawning the background loop
     async fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::new(DummyStore, test_sync_tracker(), config)
+        Mailboxes::new(DummyStore, test_sync_tracker(), config, None)
     }
 
     async fn spawn_test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
@@ -2306,7 +2355,7 @@ mod tests {
         config: MailboxesConfig,
         store: MemStore,
     ) -> Mailboxes<Msg, MemStore> {
-        Mailboxes::new(store, test_sync_tracker(), config)
+        Mailboxes::new(store, test_sync_tracker(), config, None)
     }
 
     async fn join(handles: Vec<tokio::task::JoinHandle<()>>) {

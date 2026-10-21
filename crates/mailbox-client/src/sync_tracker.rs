@@ -1,5 +1,4 @@
 pub use serde::{Serialize, de::DeserializeOwned};
-use sqlx::SqlitePool;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
@@ -10,9 +9,7 @@ use tokio::sync::{Mutex, watch};
 use crate::MailboxId;
 use crate::SeqNum;
 use crate::connection_health::SyncStatus;
-use crate::persistence::{
-    ByteDeserializable, ByteSerializable, MailboxStore, Persistence, SyncStore,
-};
+use crate::persistence::{ByteDeserializable, ByteSerializable, MailboxStore, SyncStore};
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
 pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
@@ -199,13 +196,6 @@ where
     }
 }
 
-async fn load_all_ids_sqlite(pool: &SqlitePool) -> anyhow::Result<BTreeSet<MailboxId>> {
-    let rows: Vec<(String,)> = sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state")
-        .fetch_all(pool)
-        .await?;
-    Ok(rows.into_iter().map(|(m,)| m).collect())
-}
-
 pub fn encode<T: Serialize>(value: &T) -> anyhow::Result<Vec<u8>> {
     let mut buf = Vec::new();
     ciborium::into_writer(value, &mut buf)?;
@@ -219,6 +209,7 @@ pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> anyhow::Result<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::Persistence;
     use crate::persistence::sqlite::SqlitePersistence;
     use pretty_assertions::assert_eq;
 
@@ -232,9 +223,10 @@ mod tests {
             Backend::Sqlite => {
                 let dir = tempfile::tempdir().unwrap();
                 let path = dir.path().join("sync_state.db");
-                let persistence = SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
-                    .await
-                    .unwrap();
+                let persistence =
+                    SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
+                        .await
+                        .unwrap();
                 let store = MailboxSyncTracker::<u8, char>::new(
                     persistence.sync_store(),
                     persistence.mailbox_store(),
@@ -392,9 +384,10 @@ mod tests {
         let path = dir.path().join("sync_state.db");
 
         {
-            let persistence = SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
-                .await
-                .unwrap();
+            let persistence =
+                SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
+                    .await
+                    .unwrap();
             let store = MailboxSyncTracker::new(
                 persistence.sync_store(),
                 persistence.mailbox_store(),
@@ -411,9 +404,10 @@ mod tests {
             // store.close().await;
         }
 
-        let persistence = SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
-            .await
-            .unwrap();
+        let persistence =
+            SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
+                .await
+                .unwrap();
         let store = MailboxSyncTracker::new(
             persistence.sync_store(),
             persistence.mailbox_store(),
@@ -458,11 +452,8 @@ mod tests {
     #[tokio::test]
     async fn all_mailbox_ids_watch_updates_on_record_synced_and_drop() {
         let p = crate::persistence::mem::MemPersistence::<u8, char>::new();
-        let store = MailboxSyncTracker::<u8, char>::new(
-            p.sync_store(),
-            p.mailbox_store(),
-            BTreeSet::new(),
-        );
+        let store =
+            MailboxSyncTracker::<u8, char>::new(p.sync_store(), p.mailbox_store(), BTreeSet::new());
         let mut rx = store.all_mailbox_ids();
         assert!(rx.borrow().is_empty());
 
@@ -538,9 +529,10 @@ mod tests {
         let path = dir.path().join("sync_state.db");
 
         {
-            let persistence = SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
-                .await
-                .unwrap();
+            let persistence =
+                SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
+                    .await
+                    .unwrap();
             let store = MailboxSyncTracker::new(
                 persistence.sync_store(),
                 persistence.mailbox_store(),
@@ -553,9 +545,10 @@ mod tests {
             // store.close().await;
         }
 
-        let persistence = SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
-            .await
-            .unwrap();
+        let persistence =
+            SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
+                .await
+                .unwrap();
         let store = MailboxSyncTracker::new(
             persistence.sync_store(),
             persistence.mailbox_store(),
@@ -601,11 +594,8 @@ mod tests {
     #[tokio::test]
     async fn sync_state_watch_updates_on_record_synced() {
         let p = crate::persistence::mem::MemPersistence::<u8, char>::new();
-        let store = MailboxSyncTracker::<u8, char>::new(
-            p.sync_store(),
-            p.mailbox_store(),
-            BTreeSet::new(),
-        );
+        let store =
+            MailboxSyncTracker::<u8, char>::new(p.sync_store(), p.mailbox_store(), BTreeSet::new());
         let mut rx = store.sync_state(&"mb1".into()).await.unwrap();
         assert!(rx.borrow().is_empty());
 
