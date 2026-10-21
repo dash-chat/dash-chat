@@ -150,7 +150,6 @@
 
 <style>
 	.connection-status {
-		color: var(--color-brand-primary);
 		font-size: 28px;
 		width: 35px;
 	}
@@ -186,9 +185,5 @@
 	.connection-status-dialog-icon-cloud,
 	.connection-status-dialog-icon-pending {
 		font-size: 20px;
-	}
-
-	:global(.dark) .connection-status {
-		color: white;
 	}
 </style>

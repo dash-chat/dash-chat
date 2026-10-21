@@ -44,8 +44,13 @@
 		{/snippet}
 
 		{#snippet right()}
-			<!-- The same 44px cell as the compose button, so the two line up. -->
-			<div class="flex h-11 w-11 items-center justify-center">
+			<!-- The same 44px cell as the compose button, so the two line up. On
+				Material it stands alone at the edge, inset like the avatar. -->
+			<div
+				class="flex h-11 w-11 items-center justify-center {theme === 'material'
+					? 'me-1'
+					: ''}"
+			>
 				<ConnectionStatusIcon />
 			</div>
 			{#if theme === 'ios'}
