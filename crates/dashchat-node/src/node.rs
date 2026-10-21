@@ -14,7 +14,8 @@ use crate::error::{
     AddContactError, AddContactResult, Error, RemoveGroupMemberError, ShutdownError,
 };
 use crate::filesystem::Filesystem;
-use crate::node::streams::TopicStreams;
+use crate::membership::{action_adds_member, membership_action};
+use crate::node::streams::{Space, TopicStreams};
 #[cfg(feature = "testing")]
 use crate::testing::TestNode;
 use aliased::Aliasing;
@@ -847,8 +848,6 @@ impl Node {
                 }
             })
             .collect();
-        let agents: Vec<AgentId> = device_to_agent.values().copied().collect();
-
         // The creator must always have Manage access
         initial_members.insert(*self.device_id(), p2panda_auth::Access::manage());
 
@@ -857,7 +856,7 @@ impl Node {
             .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
-        self.create_space(chat_id, initial_members).await?;
+        let added = self.create_space(chat_id, initial_members).await?;
 
         // Ensure that future non-contact members can see every initial member's
         // profile, including the creator's. The creator is the only node that
@@ -868,30 +867,63 @@ impl Node {
         self.introduce_agents_to_group(chat_id, introduced_agents)
             .await?;
 
-        for agent in agents {
-            self.invite_to_group(chat_id, agent, None).await?;
+        for (device_id, agent) in &device_to_agent {
+            let add = added.get(device_id).copied().ok_or_else(|| {
+                anyhow::anyhow!("no operation added {:?} to the group", device_id.aliased())
+            })?;
+            self.invite_to_group(chat_id, *agent, add).await?;
         }
         Ok(chat_id)
     }
 
+    /// Create a space with the given members, returning for each member other than us the
+    /// hash of the operation that admits it.
     async fn create_space(
         &self,
         topic: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<BTreeMap<DeviceId, Hash>> {
         let space = self.register_and_create_space(topic).await?;
+        let mut added = BTreeMap::new();
         for (member, access) in initial_members {
             if member.id() == *self.device_id() {
                 continue;
             }
             // TODO: this erases info about Individual vs Group member.
             // Do we need a proper Group in the Space to account for this?
-            space
-                .run(async move |space| space.add(member.id(), access.level).await)
-                .await??;
+            let add = self
+                .add_member_to_space(&space, member.id(), access.level)
+                .await?;
+            added.insert(DeviceId::from(member.id()), add);
         }
         self.join_presence(topic).await?;
-        Ok(())
+        Ok(added)
+    }
+
+    /// Add a member to a space, returning the hash of the group-auth operation that admits it.
+    async fn add_member_to_space(
+        &self,
+        space: &Space,
+        member: VerifyingKey,
+        access: AccessLevel,
+    ) -> anyhow::Result<Hash> {
+        let hashes = space
+            .run(async move |space| space.add(member, access).await)
+            .await??;
+        for hash in hashes {
+            let Some(operation) = self.op_store.get_operation(&hash).await? else {
+                continue;
+            };
+            let adds_member = membership_action(&operation.header)
+                .is_some_and(|action| action_adds_member(&action, DeviceId::from(member)));
+            if adds_member {
+                return Ok(hash);
+            }
+        }
+        Err(anyhow::anyhow!(
+            "adding {:?} to the space published no operation admitting it",
+            DeviceId::from(member).aliased()
+        ))
     }
 
     /// This is a temporary hack until we have device groups, see docs for [`ChatPayload::IntroduceAgents`].
@@ -913,7 +945,7 @@ impl Node {
         &self,
         chat_id: ChatId,
         person: AgentId,
-        add_member_operation_hash: Option<Hash>,
+        add_member_operation_hash: Hash,
     ) -> anyhow::Result<()> {
         let payload = Payload::Chat(ChatPayload::JoinGroup {
             chat_id,
@@ -949,14 +981,9 @@ impl Node {
         chat_id: ChatId,
         member: VerifyingKey,
         access: p2panda_auth::Access,
-    ) -> anyhow::Result<()> {
-        let member = GroupMember::Individual(member);
-        self.streams
-            .space(chat_id.into())
-            .await?
-            .run(async move |space| space.add(member.id(), access.level).await)
-            .await??;
-        Ok(())
+    ) -> anyhow::Result<Hash> {
+        let space = self.streams.space(chat_id.into()).await?;
+        self.add_member_to_space(&space, member, access.level).await
     }
 
     async fn remove_group_member_from_space(
@@ -985,7 +1012,8 @@ impl Node {
             ));
         }
 
-        self.add_group_member_to_space(chat_id, member, access)
+        let add = self
+            .add_group_member_to_space(chat_id, member, access)
             .await?;
 
         let agent_id = self
@@ -1001,7 +1029,7 @@ impl Node {
                 BTreeMap::from([(DeviceId::from(member), agent_id)]),
             )
             .await?;
-            self.invite_to_group(chat_id, agent_id, None).await?;
+            self.invite_to_group(chat_id, agent_id, add).await?;
         } else {
             tracing::warn!(
                 "Contact not found (when adding group member): {:?}",

@@ -4,8 +4,9 @@
 //! that the JoinGroup names, which the node fetches once it has taken the
 //! JoinGroup in.
 
-use dashchat_node::{ChatId, Node};
-use p2panda::operation::{Header, LogId, Operation};
+use dashchat_node::membership::{action_adds_member, membership_action};
+use dashchat_node::{ChatId, DeviceId, Node};
+use p2panda::operation::{Header, Operation};
 use p2panda_core::{Hash, VerifyingKey};
 use push_notifications_client::types::TopicId as PushTopicId;
 use tauri_plugin_notification::NotificationData;
@@ -19,14 +20,11 @@ pub async fn wait_for_added_us_notification(
     node: &Node,
     join_group: &Header,
     chat_id: ChatId,
-    add_member_operation_hash: Option<Hash>,
+    add_member_operation_hash: Hash,
     deadline: tokio::time::Instant,
 ) -> Option<(NotificationData, Hash)> {
-    let operation = match add_member_operation_hash {
-        Some(hash) => wait_for_operation(node, hash, deadline).await,
-        None => None,
-    };
-    let Some(operation) = operation else {
+    let Some(operation) = wait_for_operation(node, add_member_operation_hash, deadline).await
+    else {
         // A JoinGroup is about its receiver by construction, so there is
         // something to tell them even without the operation. Recorded against
         // the JoinGroup itself: the add operation keeps its slot, so the app
@@ -40,9 +38,9 @@ pub async fn wait_for_added_us_notification(
             join_group.hash(),
         ));
     };
-    if !is_on_group_by_inviter(&operation, chat_id, join_group.verifying_key) {
+    if !is_inviter_adding_us(&operation, join_group.verifying_key, node.device_id()) {
         log::warn!(
-            "The invitation to {} names an operation that is not its inviter's on that group",
+            "The invitation to {} names an operation that is not its inviter adding us",
             chat_id.to_hex()
         );
         return None;
@@ -57,7 +55,7 @@ pub async fn wait_for_added_us_notification(
     // group control operation; its body adds nothing to that.
     notifications::build_notification_data(node, *chat_id, &operation.header, None)
         .await
-        .map(|data| (data, operation.header.hash()))
+        .map(|data| (data, add_member_operation_hash))
 }
 
 async fn wait_for_operation(
@@ -105,11 +103,12 @@ async fn wait_for_group_name(node: &Node, chat_id: ChatId, deadline: tokio::time
     }
 }
 
-/// Whether `operation` was published by `inviter` on `chat_id`'s log, as the
-/// operation a JoinGroup names must be.
-fn is_on_group_by_inviter(operation: &Operation, chat_id: ChatId, inviter: VerifyingKey) -> bool {
+/// Whether `operation` is `inviter`'s and admits this device to a group, as
+/// the operation a JoinGroup names must be.
+fn is_inviter_adding_us(operation: &Operation, inviter: VerifyingKey, me: DeviceId) -> bool {
     operation.header.verifying_key == inviter
-        && operation.header.extensions.log_id() == LogId::from_topic(*chat_id)
+        && membership_action(&operation.header)
+            .is_some_and(|action| action_adds_member(&action, me))
 }
 
 /// Nothing runs once the push handler returns, so the group's messages only

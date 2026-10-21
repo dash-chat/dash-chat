@@ -88,7 +88,7 @@ pub enum ChatPayload {
     JoinGroup {
         chat_id: ChatId,
         /// The Create or Add operation in `chat_id` that adds the invitee
-        add_member_operation_hash: Option<Hash>,
+        add_member_operation_hash: Hash,
     },
 
     Message(ChatMessageContent),

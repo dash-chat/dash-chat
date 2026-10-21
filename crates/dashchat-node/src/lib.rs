@@ -14,6 +14,7 @@ pub mod util;
 
 mod id;
 pub mod mailbox;
+pub mod membership;
 mod online_peers;
 
 pub mod compat;

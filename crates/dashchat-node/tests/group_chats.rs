@@ -3,6 +3,7 @@
 
 #![cfg(test)]
 
+use dashchat_node::membership::{action_adds_member, membership_action};
 use dashchat_node::{testing::*, *};
 
 use maplit::{btreemap, btreeset};
@@ -828,29 +829,22 @@ async fn next_invitation(node: &TestNode) -> (ChatId, p2panda::Hash) {
             },
         )
         .await
-        .map(|(chat_id, hash)| {
-            (
-                chat_id,
-                hash.expect("the invitation names the operation adding the invitee"),
-            )
-        })
         .expect("an invitation arrives")
 }
 
-async fn adds_member(node: &TestNode, operation: p2panda::Hash, _member: DeviceId) -> bool {
-    let _operation = node
+async fn adds_member(node: &TestNode, operation: p2panda::Hash, member: DeviceId) -> bool {
+    let operation = node
         .op_store
         .get_operation(&operation)
         .await
         .unwrap()
         .unwrap();
-    todo!("get the equivalent of what was header.extensions.group_args()")
+    membership_action(&operation.header).is_some_and(|action| action_adds_member(&action, member))
 }
 
 /// After a removal the invitee still holds the operation that added it the
 /// first time, so an invitation names the one it is about.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "p2panda-spaces does not expose the hash of the operation adding a member yet; unignore once it does"]
 async fn test_invitation_names_the_operation_adding_the_invitee() {
     setup();
 
