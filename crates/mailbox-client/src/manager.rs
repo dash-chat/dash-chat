@@ -659,8 +659,6 @@ struct NextDue {
     wait: Duration,
 }
 
-// (Removed PendingRequest and its impl block)
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -2602,6 +2600,49 @@ mod tests {
             }
             Ok(FetchResponse(response))
         }
+    }
+
+    /// When a topic's receiver is closed and the subsequent publish fails,
+    /// the topic must still be unsubscribed so it is not re-fetched forever.
+    #[tokio::test(start_paused = true)]
+    async fn closed_receiver_unsubscribed_despite_publish_failure() {
+        let mgr = test_mailboxes(test_config()).await;
+
+        // Subscribe and immediately drop the receiver to close the channel.
+        let rx = mgr
+            .subscribe(0u8)
+            .await
+            .unwrap()
+            .expect("subscribed to topic");
+        drop(rx);
+
+        // The mailbox will return one item for the closed topic and then fail
+        // to publish, so `sync_topics` exits with an error before the manager
+        // can process `SyncTopicOutcome::closed_topics`.
+        let client = FailingPublishClient::new(vec![Msg {
+            topic: 0,
+            author: 'a',
+            seq: 0,
+        }]);
+        let client_id = client.id.clone();
+        mgr.register(client).await;
+
+        // Run a single sync through the public path used by the poll loop.
+        let client = mgr
+            .tracked_mailbox(&client_id)
+            .await
+            .unwrap()
+            .client()
+            .await;
+        let result = mgr.sync_topics([0u8].into_iter(), &client).await;
+        assert!(result.is_err(), "expected publish failure to propagate");
+
+        // Because the receiver was closed, the topic should be unsubscribed
+        // even though the overall sync failed.
+        assert!(
+            !mgr.subscribed_topics().await.contains(&0u8),
+            "closed topic should be unsubscribed even when publish fails, so it is not re-fetched"
+        );
     }
 
     // -- probe tests --

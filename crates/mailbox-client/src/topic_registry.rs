@@ -62,7 +62,7 @@ mod tests {
     use crate::testing::Msg;
 
     #[tokio::test]
-    async fn test_closed_receiver_unsubscribed() {
+    async fn closed_receiver_unsubscribed() {
         let registry = TopicRegistry::<Msg>::new();
 
         // Subscribe and immediately drop the receiver to close the channel.

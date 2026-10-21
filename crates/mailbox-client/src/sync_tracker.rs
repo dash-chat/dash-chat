@@ -400,7 +400,11 @@ mod tests {
                 .record_synced(&"mb1".into(), &[(7u8, 'b', 4)])
                 .await
                 .unwrap();
-            // store.close().await;
+            store
+                .record_synced(&"mb2".into(), &[(8u8, 'c', 5)])
+                .await
+                .unwrap();
+            persistence.pool().close().await;
         }
 
         let persistence =
@@ -420,7 +424,10 @@ mod tests {
             store.get_synced(&"mb1".into(), &7u8, &'b').await.unwrap(),
             Some(4),
         );
-        // Removed the check for mb2 as it was never recorded in this test.
+        assert_eq!(
+            store.get_synced(&"mb2".into(), &8u8, &'c').await.unwrap(),
+            Some(5),
+        );
 
         let all = store.get_all_for_mailbox(&"mb1".into()).await.unwrap();
         assert_eq!(all.values().map(|m| m.len()).sum::<usize>(), 2);
@@ -446,6 +453,7 @@ mod tests {
 
         let ids = store.all_mailbox_ids().borrow().clone();
         assert!(ids.contains("mb1"));
+        assert!(ids.contains("mb2"));
     }
 
     #[tokio::test]
@@ -541,7 +549,7 @@ mod tests {
                 .record_status(&"mb1".into(), SyncStatus::Degraded)
                 .await
                 .unwrap();
-            // store.close().await;
+            persistence.pool().close().await;
         }
 
         let persistence =
