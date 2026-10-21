@@ -5,12 +5,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     notify_topics_subscribers::notify_topics_subscribers, AppState, Author, Blip, BlipsKey,
-    BlipsKeyPrefix, SeqNum, TopicId, WatermarksKey, BLIPS_TABLE, WATERMARKS_TABLE,
+    BlipsKeyPrefix, LogId, SeqNum, TopicId, TopicLogKey, TopicLogs, WatermarksKey, BLIPS_TABLE,
+    TOPIC_LOGS_TABLE, WATERMARKS_TABLE,
 };
 
 #[derive(Serialize, Deserialize)]
 pub struct StoreBlipsRequest {
-    pub blips: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SeqNum, Blip>>>,
+    /// Which logs belong to which topic. Recorded even when no blips come with
+    /// them, so a topic resolves to every log a client knows under it.
+    #[serde(default)]
+    pub logs: TopicLogs,
+    #[serde(default)]
+    pub blips: BTreeMap<Author, BTreeMap<LogId, BTreeMap<SeqNum, Blip>>>,
     #[serde(default)]
     pub sender_pubkey: Option<iroh::EndpointId>,
     #[serde(default)]
@@ -21,7 +27,7 @@ pub struct StoreBlipsRequest {
 pub struct StoreBlipsResponse {
     /// The resulting contiguity watermark for each log in the request
     /// (`None` when none could be established).
-    pub watermarks: BTreeMap<TopicId, BTreeMap<Author, Option<SeqNum>>>,
+    pub watermarks: BTreeMap<Author, BTreeMap<LogId, Option<SeqNum>>>,
 }
 
 pub async fn store_blips(
@@ -56,11 +62,12 @@ pub async fn store_blips(
 }
 
 type TopicsWithNewBlips = BTreeMap<TopicId, BTreeMap<String, Author>>;
-type ResultingWatermarks = BTreeMap<TopicId, BTreeMap<Author, Option<SeqNum>>>;
+type ResultingWatermarks = BTreeMap<Author, BTreeMap<LogId, Option<SeqNum>>>;
 
-/// Returns a map of topic_id → map of op_id (author:seq) → author for newly inserted blips.
-/// The author is preserved separately so the push-notifications-server can filter the
-/// author out of the subscriber list (devices don't get pushes for their own messages).
+/// Returns a map of topic_id → map of op_id (author:log:seq) → author for newly inserted
+/// blips, for every topic the request associates the log with. The author is preserved
+/// separately so the push-notifications-server can filter the author out of the
+/// subscriber list (devices don't get pushes for their own messages).
 fn store_blips_inner(
     db: &Database,
     request: &StoreBlipsRequest,
@@ -74,6 +81,22 @@ fn store_blips_inner(
     let mut watermarks: ResultingWatermarks = BTreeMap::new();
 
     {
+        let mut topic_logs_table = write_txn
+            .open_table(TOPIC_LOGS_TABLE)
+            .map_err(|e| format!("Failed to open topic logs table: {}", e))?;
+
+        for (topic_id, authors) in &request.logs {
+            for (author, logs) in authors {
+                for log_id in logs {
+                    let key = TopicLogKey::new(topic_id.clone(), author.clone(), log_id.clone())
+                        .map_err(|e| e.to_string())?;
+                    topic_logs_table
+                        .insert(&key, ())
+                        .map_err(|e| format!("Failed to insert topic log: {}", e))?;
+                }
+            }
+        }
+
         let mut blips_table = write_txn
             .open_table(BLIPS_TABLE)
             .map_err(|e| format!("Failed to open blips table: {}", e))?;
@@ -82,12 +105,12 @@ fn store_blips_inner(
             .open_table(WATERMARKS_TABLE)
             .map_err(|e| format!("Failed to open watermarks table: {}", e))?;
 
-        for (topic_id, authors) in &request.blips {
-            for (author, sequences) in authors {
-                let watermarks_key = WatermarksKey::new(topic_id.clone(), author.clone())
+        for (author, logs) in &request.blips {
+            for (log_id, sequences) in logs {
+                let watermarks_key = WatermarksKey::new(author.clone(), log_id.clone())
                     .map_err(|e| e.to_string())?;
 
-                // Get current watermark for this topic:author
+                // Get current watermark for this author:log
                 let current_watermark = watermarks_table
                     .get(&watermarks_key)
                     .map_err(|e| format!("Failed to read watermark: {}", e))?
@@ -97,7 +120,7 @@ fn store_blips_inner(
                 let mut stored_seqs: BTreeSet<SeqNum> = BTreeSet::new();
 
                 for (seq_num, blip) in sequences {
-                    let key = BlipsKey::new_now(topic_id.clone(), author.clone(), *seq_num)
+                    let key = BlipsKey::new_now(author.clone(), log_id.clone(), *seq_num)
                         .map_err(|e| e.to_string())?;
 
                     blips_table
@@ -107,19 +130,19 @@ fn store_blips_inner(
                     blip_count += 1;
                 }
 
-                // Update watermark for this topic:author
+                // Update watermark for this author:log
                 let new_watermark = compute_new_watermark(
                     &blips_table,
-                    topic_id,
                     author,
+                    log_id,
                     current_watermark,
                     &stored_seqs,
                 )?;
 
                 watermarks
-                    .entry(topic_id.clone())
+                    .entry(author.clone())
                     .or_default()
-                    .insert(author.clone(), new_watermark);
+                    .insert(log_id.clone(), new_watermark);
 
                 if let Some(wm) = new_watermark {
                     // Only update if watermark changed or was newly established
@@ -129,15 +152,20 @@ fn store_blips_inner(
                             .map_err(|e| format!("Failed to update watermark: {}", e))?;
                         tracing::debug!(
                             "Updated watermark for {}:{} from {:?} to {}",
-                            topic_id,
                             author,
+                            log_id,
                             current_watermark,
                             wm
                         );
-                        let topic_entry =
-                            topics_with_new_blips.entry(topic_id.clone()).or_default();
-                        for seq in &stored_seqs {
-                            topic_entry.insert(format!("{}:{}", author, seq), author.clone());
+                        for topic_id in topics_of(&request.logs, author, log_id) {
+                            let topic_entry =
+                                topics_with_new_blips.entry(topic_id.clone()).or_default();
+                            for seq in &stored_seqs {
+                                topic_entry.insert(
+                                    format!("{}:{}:{}", author, log_id, seq),
+                                    author.clone(),
+                                );
+                            }
                         }
                     }
                 }
@@ -153,12 +181,24 @@ fn store_blips_inner(
     Ok((topics_with_new_blips, watermarks))
 }
 
+/// The topics the request associates a log with.
+fn topics_of<'a>(logs: &'a TopicLogs, author: &str, log_id: &str) -> Vec<&'a TopicId> {
+    logs.iter()
+        .filter(|(_, authors)| {
+            authors
+                .get(author)
+                .is_some_and(|log_ids| log_ids.contains(log_id))
+        })
+        .map(|(topic_id, _)| topic_id)
+        .collect()
+}
+
 /// Computes the new watermark after storing blips.
 /// Returns None if no watermark can be established (no sequence 0).
 fn compute_new_watermark(
     blips_table: &redb::Table<BlipsKey, &[u8]>,
-    topic_id: &str,
     author: &str,
+    log_id: &str,
     current_watermark: Option<SeqNum>,
     new_sequences: &BTreeSet<SeqNum>,
 ) -> Result<Option<SeqNum>, String> {
@@ -168,7 +208,7 @@ fn compute_new_watermark(
         Some(current_wm) => {
             // Check if new sequences or existing blips don't extend current watermark
             if !new_sequences.contains(&(current_wm + 1))
-                && !blip_exists(blips_table, topic_id, author, current_wm + 1)?
+                && !blip_exists(blips_table, author, log_id, current_wm + 1)?
             {
                 return Ok(Some(current_wm)); // No extension possible
             }
@@ -176,7 +216,7 @@ fn compute_new_watermark(
         }
         None => {
             // No watermark yet - need sequence 0 to start
-            if !new_sequences.contains(&0) && !blip_exists(blips_table, topic_id, author, 0)? {
+            if !new_sequences.contains(&0) && !blip_exists(blips_table, author, log_id, 0)? {
                 return Ok(None); // Can't establish watermark without seq 0
             }
             None // Start from None, first iteration will check seq 0
@@ -188,8 +228,7 @@ fn compute_new_watermark(
         let next_seq = watermark.map_or(0, |w| w + 1);
 
         // First check new sequences (cheaper), then existing blips
-        if new_sequences.contains(&next_seq)
-            || blip_exists(blips_table, topic_id, author, next_seq)?
+        if new_sequences.contains(&next_seq) || blip_exists(blips_table, author, log_id, next_seq)?
         {
             watermark = Some(next_seq);
         } else {
@@ -200,16 +239,16 @@ fn compute_new_watermark(
     Ok(watermark)
 }
 
-/// Checks if a blip exists for the given topic:author:seq
+/// Checks if a blip exists for the given author:log:seq
 fn blip_exists(
     table: &redb::Table<BlipsKey, &[u8]>,
-    topic_id: &str,
     author: &str,
+    log_id: &str,
     seq_num: SeqNum,
 ) -> Result<bool, String> {
-    let prefix = BlipsKeyPrefix::TopicAuthorSeq(topic_id.to_string(), author.to_string(), seq_num);
+    let prefix = BlipsKeyPrefix::AuthorLogSeq(author.to_string(), log_id.to_string(), seq_num);
 
-    // Use range query to check if any blip exists for this topic:author:seq
+    // Use range query to check if any blip exists for this author:log:seq
     let mut iter = table
         .range(prefix.range_start()..=prefix.range_end())
         .map_err(|e| format!("Failed to create iterator: {}", e))?;

@@ -8,6 +8,7 @@ use p2panda_net::NetworkId;
 use push_notifications_client::client::PushNotificationsClient;
 use redb::{Database, TableHandle};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::{future::Future, path::PathBuf};
 use tokio::task::JoinSet;
@@ -25,6 +26,7 @@ mod report;
 mod reports_table;
 mod server_key;
 mod store_blips;
+mod topic_logs_table;
 mod watermark;
 mod watermarks_table;
 
@@ -41,9 +43,7 @@ pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
 pub use blob_sync::{BlobFetchPool, BlobSync};
 pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
 pub use dashchat_utils::FetchConfig;
-pub use get_blips::{
-    get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
-};
+pub use get_blips::{get_blips_for_topics, GetBlipsRequest, GetBlipsResponse};
 pub use register_hashes::{
     record_blob_sources, register_hashes, upload_blob, RegisterHashesRequest,
     RegisterHashesResponse, UploadBlobResponse,
@@ -52,11 +52,18 @@ pub use register_peer::RegisterPeerRequest;
 pub use reports_table::REPORTS_TABLE;
 pub use server_key::{load_or_create_secret_key, SERVER_KEY_TABLE};
 pub use store_blips::{store_blips, StoreBlipsRequest, StoreBlipsResponse};
+pub use topic_logs_table::{TopicLogKey, TopicLogKeyError, TOPIC_LOGS_TABLE};
 pub use watermark::compute_initial_watermarks;
 pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
 pub type TopicId = String;
 pub type Author = String;
+pub type LogId = String;
+
+/// Which logs belong to which topic: `topic → author → log ids`.
+pub type TopicLogs = BTreeMap<TopicId, BTreeMap<Author, BTreeSet<LogId>>>;
+/// The highest sequence number held per log: `author → log id → seq`.
+pub type LogHeights = BTreeMap<Author, BTreeMap<LogId, SeqNum>>;
 
 pub use dashchat_utils::SeqNum;
 
@@ -197,6 +204,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     {
         let _blips_table = write_txn.open_table(BLIPS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
+        let _topic_logs_table = write_txn.open_table(TOPIC_LOGS_TABLE)?;
         let _server_key_table = write_txn.open_table(SERVER_KEY_TABLE)?;
         let _reports_table = write_txn.open_table(REPORTS_TABLE)?;
     }
@@ -213,7 +221,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
 /// Drop tables superseded by a versioned rename. Their key layout no longer
 /// matches, so their rows can never be read, served or pruned.
 fn drop_legacy_tables(write_txn: &redb::WriteTransaction) -> Result<(), redb::Error> {
-    const LEGACY_TABLES: [&str; 2] = ["blips", "watermarks"];
+    const LEGACY_TABLES: [&str; 4] = ["blips", "watermarks", "blips_v2", "watermarks_v2"];
     let legacy: Vec<_> = write_txn
         .list_tables()?
         .filter(|table| LEGACY_TABLES.contains(&table.name()))
@@ -285,6 +293,6 @@ mod tests {
             .map(|table| table.name().to_string())
             .collect();
         assert!(!names.contains(&"blips".to_string()), "{names:?}");
-        assert!(names.contains(&"blips_v2".to_string()), "{names:?}");
+        assert!(names.contains(&"blips_v3".to_string()), "{names:?}");
     }
 }

@@ -100,12 +100,11 @@ mod tests {
                 .as_secs(),
             0,
         ));
-        let old_key = BlipsKey::new("test-topic".into(), "log-1".into(), 0, old_uuid).unwrap();
+        let old_key = BlipsKey::new("author".into(), "log-1".into(), 0, old_uuid).unwrap();
 
         // Insert a recent message (1 day ago)
         let recent_uuid = uuid::Uuid::now_v7();
-        let recent_key =
-            BlipsKey::new("test-topic".into(), "log-1".into(), 1, recent_uuid).unwrap();
+        let recent_key = BlipsKey::new("author".into(), "log-1".into(), 1, recent_uuid).unwrap();
 
         {
             let write_txn = db.begin_write().unwrap();

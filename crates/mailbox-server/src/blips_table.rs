@@ -11,20 +11,20 @@ const SEQ_BYTES: usize = size_of::<SeqNum>();
 /// Error type for blips key operations
 #[derive(Debug, thiserror::Error)]
 pub enum BlipsKeyError {
-    #[error("Topic ID contains invalid character (colon or null): {0}")]
-    InvalidTopicId(String),
     #[error("Author contains invalid character (colon or null): {0}")]
     InvalidAuthor(String),
+    #[error("Log ID contains invalid character (colon or null): {0}")]
+    InvalidLogId(String),
     #[error("Failed to parse key: {0}")]
     ParseError(String),
 }
 
 /// Key for BLIPS_TABLE with binary format for efficient comparison.
 ///
-/// Binary format: `topic_id + 0x00 + author + 0x00 + seq_be4 + uuid_16`
-/// - topic_id: UTF-8 bytes (no null bytes allowed)
-/// - 0x00: null byte delimiter
+/// Binary format: `author + 0x00 + log_id + 0x00 + seq_be4 + uuid_16`
 /// - author: UTF-8 bytes (no null bytes allowed)
+/// - 0x00: null byte delimiter
+/// - log_id: UTF-8 bytes (no null bytes allowed)
 /// - 0x00: null byte delimiter
 /// - seq_be4: sequence number as 4 bytes big-endian
 /// - uuid_16: UUID as 16 raw bytes
@@ -33,8 +33,8 @@ pub enum BlipsKeyError {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BlipsKey {
     // NOTE: order of these fields matters!
-    pub topic_id: String,
     pub author: String,
+    pub log_id: String,
     pub sequence_number: SeqNum,
     pub uuid: Uuid,
 }
@@ -42,20 +42,20 @@ pub struct BlipsKey {
 impl BlipsKey {
     /// Creates a new BlipsKey with validation
     pub fn new(
-        topic_id: String,
         author: String,
+        log_id: String,
         sequence_number: SeqNum,
         uuid: Uuid,
     ) -> Result<Self, BlipsKeyError> {
-        if topic_id.contains(':') || topic_id.contains('\0') {
-            return Err(BlipsKeyError::InvalidTopicId(topic_id));
-        }
         if author.contains(':') || author.contains('\0') {
             return Err(BlipsKeyError::InvalidAuthor(author));
         }
+        if log_id.contains(':') || log_id.contains('\0') {
+            return Err(BlipsKeyError::InvalidLogId(log_id));
+        }
         Ok(Self {
-            topic_id,
             author,
+            log_id,
             sequence_number,
             uuid,
         })
@@ -63,11 +63,11 @@ impl BlipsKey {
 
     /// Creates a new BlipsKey with a fresh UUID v7 timestamp
     pub fn new_now(
-        topic_id: String,
         author: String,
+        log_id: String,
         sequence_number: SeqNum,
     ) -> Result<Self, BlipsKeyError> {
-        Self::new(topic_id, author, sequence_number, Uuid::now_v7())
+        Self::new(author, log_id, sequence_number, Uuid::now_v7())
     }
 
     /// Parses a BlipsKey from its string representation
@@ -80,8 +80,8 @@ impl BlipsKey {
             )));
         }
 
-        let topic_id = parts[0].to_string();
-        let author = parts[1].to_string();
+        let author = parts[0].to_string();
+        let log_id = parts[1].to_string();
         let sequence_number = parts[2].parse::<SeqNum>().map_err(|e| {
             BlipsKeyError::ParseError(format!("Invalid sequence number '{}': {}", parts[2], e))
         })?;
@@ -90,17 +90,17 @@ impl BlipsKey {
         })?;
 
         Ok(Self {
-            topic_id,
             author,
+            log_id,
             sequence_number,
             uuid,
         })
     }
 
-    /// Extracts the WatermarksKey (topic_id:author) from this BlipsKey
+    /// Extracts the WatermarksKey (author:log_id) from this BlipsKey
     pub fn watermarks_key(&self) -> WatermarksKey {
         // Safe to unwrap because BlipsKey already validated no colons
-        WatermarksKey::new(self.topic_id.clone(), self.author.clone()).unwrap()
+        WatermarksKey::new(self.author.clone(), self.log_id.clone()).unwrap()
     }
 }
 
@@ -109,7 +109,7 @@ impl fmt::Display for BlipsKey {
         write!(
             f,
             "{}:{}:{:010}:{}",
-            self.topic_id, self.author, self.sequence_number, self.uuid
+            self.author, self.log_id, self.sequence_number, self.uuid
         )
     }
 }
@@ -126,23 +126,23 @@ impl Value for BlipsKey {
     where
         Self: 'a,
     {
-        // Find first null byte (end of topic_id)
+        // Find first null byte (end of author)
         let first_null = data
             .iter()
             .position(|&b| b == 0)
             .expect("Missing first null delimiter in BlipsKey");
-        let topic_id = std::str::from_utf8(&data[..first_null])
-            .expect("Invalid UTF-8 in topic_id")
+        let author = std::str::from_utf8(&data[..first_null])
+            .expect("Invalid UTF-8 in author")
             .to_string();
 
-        // Find second null byte (end of author)
+        // Find second null byte (end of log_id)
         let rest = &data[first_null + 1..];
         let second_null = rest
             .iter()
             .position(|&b| b == 0)
             .expect("Missing second null delimiter in BlipsKey");
-        let author = std::str::from_utf8(&rest[..second_null])
-            .expect("Invalid UTF-8 in author")
+        let log_id = std::str::from_utf8(&rest[..second_null])
+            .expect("Invalid UTF-8 in log_id")
             .to_string();
 
         // Read sequence number (4 bytes big-endian)
@@ -162,8 +162,8 @@ impl Value for BlipsKey {
         );
 
         BlipsKey {
-            topic_id,
             author,
+            log_id,
             sequence_number,
             uuid,
         }
@@ -174,10 +174,10 @@ impl Value for BlipsKey {
         Self: 'b,
     {
         let mut bytes =
-            Vec::with_capacity(value.topic_id.len() + 1 + value.author.len() + 1 + SEQ_BYTES + 16);
-        bytes.extend_from_slice(value.topic_id.as_bytes());
-        bytes.push(0);
+            Vec::with_capacity(value.author.len() + 1 + value.log_id.len() + 1 + SEQ_BYTES + 16);
         bytes.extend_from_slice(value.author.as_bytes());
+        bytes.push(0);
+        bytes.extend_from_slice(value.log_id.as_bytes());
         bytes.push(0);
         bytes.extend_from_slice(&value.sequence_number.to_be_bytes());
         bytes.extend_from_slice(value.uuid.as_bytes());
@@ -203,60 +203,45 @@ impl Key for BlipsKey {
 /// Partial key for prefix-based range queries on BLIPS_TABLE
 #[derive(Debug, Clone)]
 pub enum BlipsKeyPrefix {
-    /// Match all keys for a topic: "topic_id:"
-    Topic(String),
-    /// Match all keys for a topic:author: "topic_id:author:"
-    TopicAuthor(String, String),
-    /// Match all keys for a topic:author:seq: "topic_id:author:seq:"
-    TopicAuthorSeq(String, String, SeqNum),
+    /// Match all keys for an author's log: "author:log_id:"
+    AuthorLog(String, String),
+    /// Match all keys for one entry of an author's log: "author:log_id:seq:"
+    AuthorLogSeq(String, String, SeqNum),
 }
 
 impl BlipsKeyPrefix {
     /// Returns a BlipsKey for the lower bound of a range query.
-    /// Uses minimal values (empty author, seq 0, nil UUID) for unspecified parts.
+    /// Uses minimal values (seq 0, nil UUID) for unspecified parts.
     pub fn range_start(&self) -> BlipsKey {
         match self {
-            BlipsKeyPrefix::Topic(topic) => BlipsKey {
-                topic_id: topic.clone(),
-                author: String::new(),
+            BlipsKeyPrefix::AuthorLog(author, log_id) => BlipsKey {
+                author: author.clone(),
+                log_id: log_id.clone(),
                 sequence_number: 0,
                 uuid: Uuid::nil(),
             },
-            BlipsKeyPrefix::TopicAuthor(topic, author) => BlipsKey {
-                topic_id: topic.clone(),
+            BlipsKeyPrefix::AuthorLogSeq(author, log_id, seq) => BlipsKey {
                 author: author.clone(),
-                sequence_number: 0,
-                uuid: Uuid::nil(),
-            },
-            BlipsKeyPrefix::TopicAuthorSeq(topic, author, seq) => BlipsKey {
-                topic_id: topic.clone(),
-                author: author.clone(),
+                log_id: log_id.clone(),
                 sequence_number: *seq,
                 uuid: Uuid::nil(),
             },
         }
     }
 
-    /// Returns a BlipsKey for the upper bound of a range query (exclusive).
+    /// Returns a BlipsKey for the upper bound of a range query (inclusive).
     /// Uses maximal values for unspecified parts.
     pub fn range_end(&self) -> BlipsKey {
         match self {
-            BlipsKeyPrefix::Topic(topic) => BlipsKey {
-                topic_id: topic.clone(),
-                // U+FFFF is the highest Unicode code point, sorts after all valid authors
-                author: String::from("\u{FFFF}"),
+            BlipsKeyPrefix::AuthorLog(author, log_id) => BlipsKey {
+                author: author.clone(),
+                log_id: log_id.clone(),
                 sequence_number: SeqNum::MAX,
                 uuid: Uuid::max(),
             },
-            BlipsKeyPrefix::TopicAuthor(topic, author) => BlipsKey {
-                topic_id: topic.clone(),
+            BlipsKeyPrefix::AuthorLogSeq(author, log_id, seq) => BlipsKey {
                 author: author.clone(),
-                sequence_number: SeqNum::MAX,
-                uuid: Uuid::max(),
-            },
-            BlipsKeyPrefix::TopicAuthorSeq(topic, author, seq) => BlipsKey {
-                topic_id: topic.clone(),
-                author: author.clone(),
+                log_id: log_id.clone(),
                 sequence_number: *seq,
                 uuid: Uuid::max(),
             },
@@ -264,14 +249,14 @@ impl BlipsKeyPrefix {
     }
 }
 
-// Database key format: topic_id + 0x00 + author + 0x00 + seq_be4 + uuid_16
+// Database key format: author + 0x00 + log_id + 0x00 + seq_be4 + uuid_16
 // The UUID v7 suffix is used for cleanup based on message age
 // Binary format enables direct byte comparison for efficient database operations
 //
 // The table name carries a version because redb cannot detect a changed key
-// layout: the sequence number used to occupy 8 bytes, and reading those rows
-// with this layout would misparse every key after it.
-pub const BLIPS_TABLE: TableDefinition<BlipsKey, &[u8]> = TableDefinition::new("blips_v2");
+// layout: v2 keyed blips by topic and author, and reading those rows with this
+// layout would misparse every key.
+pub const BLIPS_TABLE: TableDefinition<BlipsKey, &[u8]> = TableDefinition::new("blips_v3");
 
 #[cfg(test)]
 mod tests {
@@ -280,7 +265,7 @@ mod tests {
     #[test]
     fn test_blips_key_roundtrip() {
         let uuid = Uuid::now_v7();
-        let key = BlipsKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
+        let key = BlipsKey::new("author1".into(), "log1".into(), 42, uuid).unwrap();
         let serialized = key.to_string();
         let parsed = BlipsKey::parse(&serialized).unwrap();
         assert_eq!(key, parsed);
@@ -289,7 +274,7 @@ mod tests {
     #[test]
     fn test_blips_key_zero_padding() {
         let uuid = Uuid::now_v7();
-        let key = BlipsKey::new("topic".into(), "author".into(), 5, uuid).unwrap();
+        let key = BlipsKey::new("author".into(), "log".into(), 5, uuid).unwrap();
         let serialized = key.to_string();
         assert!(serialized.contains(":0000000005:"));
     }
@@ -297,45 +282,45 @@ mod tests {
     #[test]
     fn test_blips_key_ordering() {
         let uuid = Uuid::now_v7();
-        let key9 = BlipsKey::new("topic".into(), "author".into(), 9, uuid).unwrap();
-        let key10 = BlipsKey::new("topic".into(), "author".into(), 10, uuid).unwrap();
+        let key9 = BlipsKey::new("author".into(), "log".into(), 9, uuid).unwrap();
+        let key10 = BlipsKey::new("author".into(), "log".into(), 10, uuid).unwrap();
 
         // With zero-padding, 9 should sort before 10
         assert!(key9.to_string() < key10.to_string());
     }
 
     #[test]
-    fn test_blips_key_rejects_colon_in_topic() {
-        let uuid = Uuid::now_v7();
-        let result = BlipsKey::new("topic:bad".into(), "author".into(), 0, uuid);
-        assert!(matches!(result, Err(BlipsKeyError::InvalidTopicId(_))));
-    }
-
-    #[test]
     fn test_blips_key_rejects_colon_in_author() {
         let uuid = Uuid::now_v7();
-        let result = BlipsKey::new("topic".into(), "author:bad".into(), 0, uuid);
+        let result = BlipsKey::new("author:bad".into(), "log".into(), 0, uuid);
         assert!(matches!(result, Err(BlipsKeyError::InvalidAuthor(_))));
     }
 
     #[test]
-    fn test_blips_key_rejects_null_in_topic() {
+    fn test_blips_key_rejects_colon_in_log_id() {
         let uuid = Uuid::now_v7();
-        let result = BlipsKey::new("topic\0bad".into(), "author".into(), 0, uuid);
-        assert!(matches!(result, Err(BlipsKeyError::InvalidTopicId(_))));
+        let result = BlipsKey::new("author".into(), "log:bad".into(), 0, uuid);
+        assert!(matches!(result, Err(BlipsKeyError::InvalidLogId(_))));
     }
 
     #[test]
     fn test_blips_key_rejects_null_in_author() {
         let uuid = Uuid::now_v7();
-        let result = BlipsKey::new("topic".into(), "author\0bad".into(), 0, uuid);
+        let result = BlipsKey::new("author\0bad".into(), "log".into(), 0, uuid);
         assert!(matches!(result, Err(BlipsKeyError::InvalidAuthor(_))));
+    }
+
+    #[test]
+    fn test_blips_key_rejects_null_in_log_id() {
+        let uuid = Uuid::now_v7();
+        let result = BlipsKey::new("author".into(), "log\0bad".into(), 0, uuid);
+        assert!(matches!(result, Err(BlipsKeyError::InvalidLogId(_))));
     }
 
     #[test]
     fn test_blips_key_binary_roundtrip() {
         let uuid = Uuid::now_v7();
-        let key = BlipsKey::new("topic1".into(), "author1".into(), 42, uuid).unwrap();
+        let key = BlipsKey::new("author1".into(), "log1".into(), 42, uuid).unwrap();
         let bytes = BlipsKey::as_bytes(&key);
         let parsed = BlipsKey::from_bytes(&bytes);
         assert_eq!(key, parsed);
@@ -344,17 +329,17 @@ mod tests {
     #[test]
     fn test_watermarks_key_from_blips_key() {
         let uuid = Uuid::now_v7();
-        let blips_key = BlipsKey::new("topic".into(), "author".into(), 42, uuid).unwrap();
+        let blips_key = BlipsKey::new("author".into(), "log".into(), 42, uuid).unwrap();
         let watermarks_key = blips_key.watermarks_key();
-        assert_eq!(watermarks_key.topic_id, "topic");
         assert_eq!(watermarks_key.author, "author");
+        assert_eq!(watermarks_key.log_id, "log");
     }
 
     #[test]
-    fn test_prefix_range_topic() {
-        let prefix = BlipsKeyPrefix::Topic(
-            "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb".into(),
-        );
+    fn test_prefix_range_author_log() {
+        let author = "3cb6797ce981200974303722ca17cbd2691593f2b05fbe5b6152f0b813127a7e";
+        let log = "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb";
+        let prefix = BlipsKeyPrefix::AuthorLog(author.into(), log.into());
         let start = prefix.range_start();
         let end = prefix.range_end();
 
@@ -365,8 +350,8 @@ mod tests {
         );
 
         let key = BlipsKey::new(
-            "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb".into(),
-            "3cb6797ce981200974303722ca17cbd2691593f2b05fbe5b6152f0b813127a7e".into(),
+            author.into(),
+            log.into(),
             0,
             Uuid::parse_str("019be63b-efd7-7200-b7f5-d3d3945e989a").unwrap(),
         )
@@ -385,47 +370,23 @@ mod tests {
             Ordering::Less
         );
 
-        assert_eq!(
-            start.topic_id,
-            "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb"
-        );
-        assert_eq!(start.author, "");
+        // Another log of the same author sorts outside the range.
+        let other = BlipsKey::new(author.into(), "e".repeat(64), 0, Uuid::nil()).unwrap();
+        assert!(end < other);
+
         assert_eq!(start.sequence_number, 0);
         assert_eq!(start.uuid, Uuid::nil());
-
-        assert_eq!(
-            end.topic_id,
-            "d8883c1402ed3c078953620a5bf2afc8fafca9601186e7133ca6b1bf72c35cfb"
-        );
-        assert_eq!(end.author, "\u{ffff}");
-        assert_eq!(end.sequence_number, SeqNum::MAX);
-        assert_eq!(end.uuid, Uuid::max());
-    }
-
-    #[test]
-    fn test_prefix_range_topic_author() {
-        let prefix = BlipsKeyPrefix::TopicAuthor("topic".into(), "author".into());
-        let start = prefix.range_start();
-        let end = prefix.range_end();
-
-        assert_eq!(start.topic_id, "topic");
-        assert_eq!(start.author, "author");
-        assert_eq!(start.sequence_number, 0);
-        assert_eq!(start.uuid, Uuid::nil());
-
-        assert_eq!(end.topic_id, "topic");
-        assert_eq!(end.author, "author");
         assert_eq!(end.sequence_number, SeqNum::MAX);
         assert_eq!(end.uuid, Uuid::max());
     }
 
     #[test]
     fn test_prefix_range_with_seq() {
-        let prefix = BlipsKeyPrefix::TopicAuthorSeq("topic".into(), "author".into(), 5);
+        let prefix = BlipsKeyPrefix::AuthorLogSeq("author".into(), "log".into(), 5);
         let start = prefix.range_start();
 
-        assert_eq!(start.topic_id, "topic");
         assert_eq!(start.author, "author");
+        assert_eq!(start.log_id, "log");
         assert_eq!(start.sequence_number, 5);
         assert_eq!(start.uuid, Uuid::nil());
     }

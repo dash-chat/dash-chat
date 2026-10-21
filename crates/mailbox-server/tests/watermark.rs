@@ -1,49 +1,51 @@
-use mailbox_server::{test_utils::create_test_server, GetBlipsResponse, StoreBlipsResponse};
-use serde_json::json;
+use mailbox_server::{
+    test_utils::{create_test_server, get_request, store_request},
+    GetBlipsResponse, SeqNum, StoreBlipsResponse,
+};
+
+async fn store(
+    server: &axum_test::TestServer,
+    entries: &[(&str, &str, &str, SeqNum, &[u8])],
+) -> StoreBlipsResponse {
+    let response = server
+        .post("/blips/store")
+        .json(&store_request(entries))
+        .await;
+    response.assert_status(axum::http::StatusCode::CREATED);
+    response.json()
+}
+
+async fn get(
+    server: &axum_test::TestServer,
+    topics: &[&str],
+    heights: &[(&str, &str, SeqNum)],
+) -> GetBlipsResponse {
+    let response = server
+        .post("/blips/get")
+        .json(&get_request(topics, heights))
+        .await;
+    response.assert_status_ok();
+    response.json()
+}
 
 #[tokio::test]
 async fn test_watermark_contiguous_store() {
     let (server, _temp_file) = create_test_server().await;
 
-    // Store contiguous sequences 0, 1, 2
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "log-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic", "a", "log-x", 0, b"Message 0"),
+            ("topic", "a", "log-x", 1, b"Message 1"),
+            ("topic", "a", "log-x", 2, b"Message 2"),
+        ],
+    )
+    .await;
 
     // Client says it has up to 5 - server should report missing 3, 4, 5
     // because watermark is 2 (highest contiguous)
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "log-x": 5
-                }
-            }
-        }))
-        .await;
-
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-
-    // Server should report missing 3, 4, 5 (watermark is 2)
-    assert!(topic_response.missing.contains_key("log-x"));
-    let missing_seqs = &topic_response.missing["log-x"];
-    assert_eq!(missing_seqs, &vec![3, 4, 5]);
+    let body = get(&server, &["topic"], &[("a", "log-x", 5)]).await;
+    assert_eq!(body.missing["a"]["log-x"], vec![3, 4, 5]);
 }
 
 #[tokio::test]
@@ -51,239 +53,103 @@ async fn test_watermark_with_gap_does_not_advance() {
     let (server, _temp_file) = create_test_server().await;
 
     // Store sequences with a gap: 0, 1, 3, 4 (missing 2)
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "log-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3"),
-                        "4": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic", "a", "log-x", 0, b"Message 0"),
+            ("topic", "a", "log-x", 1, b"Message 1"),
+            ("topic", "a", "log-x", 3, b"Message 3"),
+            ("topic", "a", "log-x", 4, b"Message 4"),
+        ],
+    )
+    .await;
 
-    // Watermark should be 1 (gap at 2), so if client has up to 4,
-    // server should report missing only 2, because it already has 3, 4
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "log-x": 4
-                }
-            }
-        }))
-        .await;
-
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-
-    // Server should report missing only 2 (watermark is 1, but we have 3 and 4 stored)
-    assert!(topic_response.missing.contains_key("log-x"));
-    let missing_seqs = &topic_response.missing["log-x"];
-    assert_eq!(missing_seqs, &vec![2]);
+    // Only 2 is missing: 3 and 4 are stored even though they are above the watermark.
+    let body = get(&server, &["topic"], &[("a", "log-x", 4)]).await;
+    assert_eq!(body.missing["a"]["log-x"], vec![2]);
 }
 
 #[tokio::test]
 async fn test_watermark_gap_fill_extends_watermark() {
     let (server, _temp_file) = create_test_server().await;
 
-    // First store sequences with gap: 0, 1, 3, 4
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "log-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3"),
-                        "4": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic", "a", "log-x", 0, b"Message 0"),
+            ("topic", "a", "log-x", 1, b"Message 1"),
+            ("topic", "a", "log-x", 3, b"Message 3"),
+            ("topic", "a", "log-x", 4, b"Message 4"),
+        ],
+    )
+    .await;
 
-    // Now fill the gap by storing sequence 2
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "log-x": {
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    // Fill the gap
+    store(&server, &[("topic", "a", "log-x", 2, b"Message 2")]).await;
 
-    // Now watermark should be 4 (0, 1, 2, 3, 4 all contiguous)
-    // Client says it has up to 6 - server should report missing 5, 6
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "log-x": 6
-                }
-            }
-        }))
-        .await;
-
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-
-    // Server should report missing 5, 6 (watermark is now 4)
-    assert!(topic_response.missing.contains_key("log-x"));
-    let missing_seqs = &topic_response.missing["log-x"];
-    assert_eq!(missing_seqs, &vec![5, 6]);
+    // Watermark should now be 4, so only 5 and 6 are missing
+    let body = get(&server, &["topic"], &[("a", "log-x", 6)]).await;
+    assert_eq!(body.missing["a"]["log-x"], vec![5, 6]);
 }
 
 #[tokio::test]
 async fn test_watermark_no_seq_zero() {
     let (server, _temp_file) = create_test_server().await;
 
-    // Store sequences without 0: 1, 2, 3
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "log-x": {
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic", "a", "log-x", 1, b"Message 1"),
+            ("topic", "a", "log-x", 2, b"Message 2"),
+            ("topic", "a", "log-x", 3, b"Message 3"),
+        ],
+    )
+    .await;
 
-    // Without seq 0, no watermark can be established
-    // Client says it has up to 3 - server should report missing only 0 because it already has 1, 2, 3
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "log-x": 3
-                }
-            }
-        }))
-        .await;
-
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-
-    // Server should report only 0 as missing (we have 1, 2, 3 stored)
-    assert!(topic_response.missing.contains_key("log-x"));
-    let missing_seqs = &topic_response.missing["log-x"];
-    assert_eq!(missing_seqs, &vec![0]);
+    // No watermark without seq 0; only 0 is missing since 1-3 are stored.
+    let body = get(&server, &["topic"], &[("a", "log-x", 3)]).await;
+    assert_eq!(body.missing["a"]["log-x"], vec![0]);
 }
 
 #[tokio::test]
 async fn test_watermark_independent_per_log() {
     let (server, _temp_file) = create_test_server().await;
 
-    // Store different sequences for different logs
-    // log-a: 0, 1, 2 (contiguous, watermark = 2)
-    // log-b: 0, 1, 5 (gap at 2, watermark = 1)
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "log-a": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log A - 2")
-                    },
-                    "log-b": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log B - 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log B - 1"),
-                        "5": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Log B - 5")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic", "a", "log-a", 0, b"Log A - 0"),
+            ("topic", "a", "log-a", 1, b"Log A - 1"),
+            ("topic", "a", "log-a", 2, b"Log A - 2"),
+            ("topic", "a", "log-b", 0, b"Log B - 0"),
+            ("topic", "a", "log-b", 1, b"Log B - 1"),
+            ("topic", "a", "log-b", 5, b"Log B - 5"),
+        ],
+    )
+    .await;
 
-    // Client says it has log-a up to 4 and log-b up to 5
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "log-a": 4,
-                    "log-b": 5
-                }
-            }
-        }))
-        .await;
+    let body = get(&server, &["topic"], &[("a", "log-a", 4), ("a", "log-b", 5)]).await;
 
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-
-    // log-a: watermark is 2, client has 4, missing 3, 4
-    let missing_log_a = &topic_response.missing["log-a"];
-    assert_eq!(missing_log_a, &vec![3, 4]);
-
-    // log-b: watermark is 1 (gap at 2), client has 5, missing 2, 3, 4, 5
-    let missing_log_b = &topic_response.missing["log-b"];
-    assert_eq!(missing_log_b, &vec![2, 3, 4]);
+    assert_eq!(body.missing["a"]["log-a"], vec![3, 4]);
+    assert_eq!(body.missing["a"]["log-b"], vec![2, 3, 4]);
 }
 
 #[tokio::test]
 async fn store_response_echoes_resulting_watermarks() {
     let (server, _temp_file) = create_test_server().await;
 
-    let b64 = |b: &[u8]| base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b);
-    let response = server
-        .post("/blips/store")
-        .json(&serde_json::json!({
-            "blips": {
-                "test-topic": {
-                    "log-x": { "0": b64(b"m0"), "1": b64(b"m1") },
-                    "log-y": { "5": b64(b"m5") }
-                }
-            }
-        }))
-        .await;
-    response.assert_status(axum::http::StatusCode::CREATED);
-    let body: StoreBlipsResponse = response.json();
-    assert_eq!(body.watermarks["test-topic"]["log-x"], Some(1));
-    assert_eq!(body.watermarks["test-topic"]["log-y"], None);
+    let body = store(
+        &server,
+        &[
+            ("topic", "a", "log-x", 0, b"m0"),
+            ("topic", "a", "log-x", 1, b"m1"),
+            ("topic", "a", "log-y", 5, b"m5"),
+        ],
+    )
+    .await;
+    assert_eq!(body.watermarks["a"]["log-x"], Some(1));
+    assert_eq!(body.watermarks["a"]["log-y"], None);
 
-    let response = server
-        .post("/blips/store")
-        .json(&serde_json::json!({
-            "blips": {
-                "test-topic": {
-                    "log-x": { "2": b64(b"m2") }
-                }
-            }
-        }))
-        .await;
-    let body: StoreBlipsResponse = response.json();
-    assert_eq!(body.watermarks["test-topic"]["log-x"], Some(2));
+    let body = store(&server, &[("topic", "a", "log-x", 2, b"m2")]).await;
+    assert_eq!(body.watermarks["a"]["log-x"], Some(2));
 }

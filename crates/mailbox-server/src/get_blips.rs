@@ -1,36 +1,40 @@
 use axum::{extract::State, http::StatusCode, Json};
-use redb::{Database, ReadableDatabase};
+use redb::{Database, ReadableDatabase, ReadableTable};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, Author, Blip, BlipsKey, BlipsKeyPrefix, SeqNum, TopicId, WatermarksKey, BLIPS_TABLE,
-    WATERMARKS_TABLE,
+    AppState, Author, Blip, BlipsKey, BlipsKeyPrefix, LogHeights, LogId, SeqNum, TopicId,
+    TopicLogKey, TopicLogs, WatermarksKey, BLIPS_TABLE, TOPIC_LOGS_TABLE, WATERMARKS_TABLE,
 };
 
-// Per-request, per-author cap on the missing-sequence range we
-// materialize. `client_max_seq` comes straight from the (untrusted) request body,
-// so without this a single cheap request forces an arbitrarily large server-side
+// Per-request, per-log cap on the missing-sequence range we materialize.
+// `client_max_seq` comes straight from the (untrusted) request body, so without
+// this a single cheap request forces an arbitrarily large server-side
 // allocation. The client re-requests the next batch on its next sync, so capping
 // is functionally transparent. Raise if logs legitimately outpace this per sync.
-const MAX_MISSING_PER_AUTHOR: SeqNum = 10_000;
+const MAX_MISSING_PER_LOG: SeqNum = 10_000;
 
 #[derive(Serialize, Deserialize)]
 pub struct GetBlipsRequest {
-    pub topics: BTreeMap<TopicId, BTreeMap<Author, SeqNum>>,
+    /// The topics to resolve: every log the server associates with one of them
+    /// is served.
+    pub topics: BTreeSet<TopicId>,
+    /// The highest sequence number the client holds per log. A served log that
+    /// is absent here is sent in full; a log present here is also checked for
+    /// entries the server is missing.
+    #[serde(default)]
+    pub heights: LogHeights,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct GetBlipsForTopicResponse {
-    // The blips that the client does not have
-    pub blips: BTreeMap<Author, BTreeMap<SeqNum, Blip>>,
-    // The blips that the server is missing from the client's request
-    pub missing: BTreeMap<Author, Vec<SeqNum>>,
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct GetBlipsResponse {
-    pub blips_by_topic: BTreeMap<TopicId, GetBlipsForTopicResponse>,
+    /// Which logs each requested topic resolves to.
+    pub logs: TopicLogs,
+    /// The blips that the client does not have.
+    pub blips: BTreeMap<Author, BTreeMap<LogId, BTreeMap<SeqNum, Blip>>>,
+    /// The blips that the server is missing from the client's heights.
+    pub missing: BTreeMap<Author, BTreeMap<LogId, Vec<SeqNum>>>,
 }
 
 pub async fn get_blips_for_topics(
@@ -64,8 +68,6 @@ fn get_blips_for_topics_inner(
     db: &Database,
     request: &GetBlipsRequest,
 ) -> Result<GetBlipsResponse, String> {
-    let mut blips_by_topic: BTreeMap<TopicId, GetBlipsForTopicResponse> = BTreeMap::new();
-
     let read_txn = db
         .begin_read()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
@@ -78,116 +80,125 @@ fn get_blips_for_topics_inner(
         .open_table(WATERMARKS_TABLE)
         .map_err(|e| format!("Failed to open watermarks table: {}", e))?;
 
-    for (topic_id, requested_authors) in &request.topics {
-        let mut topic_authors: BTreeMap<Author, BTreeMap<SeqNum, Blip>> = BTreeMap::new();
-        // Track which sequences we have stored for each requested author
-        // (used to avoid reporting as missing sequences we actually have)
-        let mut stored_seqs_per_author: BTreeMap<Author, BTreeSet<SeqNum>> = BTreeMap::new();
+    let topic_logs_table = read_txn
+        .open_table(TOPIC_LOGS_TABLE)
+        .map_err(|e| format!("Failed to open topic logs table: {}", e))?;
 
-        // Use prefix-based range query to only iterate over blips for this topic
-        let prefix = BlipsKeyPrefix::Topic(topic_id.clone());
+    let mut response = GetBlipsResponse::default();
+    let mut served: BTreeSet<(Author, LogId)> = BTreeSet::new();
 
-        for entry in blips_table
-            .range(prefix.range_start()..=prefix.range_end())
+    for topic_id in &request.topics {
+        let (start, end) = TopicLogKey::topic_range(topic_id);
+        let mut logs: BTreeMap<Author, BTreeSet<LogId>> = BTreeMap::new();
+        for entry in topic_logs_table
+            .range(start..=end)
             .map_err(|e| format!("Failed to create iterator: {}", e))?
         {
-            let (key, value) = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-
-            let blip_key: BlipsKey = key.value();
-            let author = blip_key.author.clone();
-            let seq_num = blip_key.sequence_number;
-
-            // Track sequences we have for requested authors (for missing calculation)
-            if requested_authors.contains_key(&author) {
-                stored_seqs_per_author
-                    .entry(author.clone())
-                    .or_default()
-                    .insert(seq_num);
-            }
-
-            // Check if this author was requested with a specific sequence number filter
-            let should_include = if let Some(min_seq_num) = requested_authors.get(&author) {
-                // Author is in the request: only include if seq_num > min_seq_num
-                seq_num > *min_seq_num
-            } else {
-                // Author is NOT in the request: include all blips for this author
-                // TODO: implement pagination or asynchronous data streaming
-                // (https://www.ruststepbystep.com/how-to-stream-data-asynchronously-in-rust-with-axum/)
-                // to handle huge amounts of blips being returned
-                true
-            };
-
-            if should_include {
-                topic_authors
-                    .entry(author)
-                    .or_insert_with(BTreeMap::new)
-                    .insert(seq_num, Blip::from(value.value().to_vec()));
-            }
+            let (key, _) = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let key: TopicLogKey = key.value();
+            served.insert((key.author.clone(), key.log_id.clone()));
+            logs.entry(key.author).or_default().insert(key.log_id);
         }
+        response.logs.insert(topic_id.clone(), logs);
+    }
 
-        // Calculate missing blips using watermarks and stored sequences
-        let mut missing: BTreeMap<Author, Vec<SeqNum>> = BTreeMap::new();
-        for (author, client_max_seq) in requested_authors {
+    for (author, log_id) in &served {
+        let client_max_seq = request
+            .heights
+            .get(author)
+            .and_then(|logs| logs.get(log_id))
+            .copied();
+        let stored = read_log(&blips_table, author, log_id)?;
+        let new: BTreeMap<SeqNum, Blip> = stored
+            .into_iter()
+            // TODO: implement pagination or asynchronous data streaming
+            // (https://www.ruststepbystep.com/how-to-stream-data-asynchronously-in-rust-with-axum/)
+            // to handle huge amounts of blips being returned
+            .filter(|(seq, _)| client_max_seq.is_none_or(|max| *seq > max))
+            .collect();
+        if !new.is_empty() {
+            response
+                .blips
+                .entry(author.clone())
+                .or_default()
+                .insert(log_id.clone(), new);
+        }
+    }
+
+    for (author, logs) in &request.heights {
+        for (log_id, client_max_seq) in logs {
             let watermarks_key =
-                WatermarksKey::new(topic_id.clone(), author.clone()).map_err(|e| e.to_string())?;
-
-            // Get watermark for this topic:author
+                WatermarksKey::new(author.clone(), log_id.clone()).map_err(|e| e.to_string())?;
             let server_watermark = watermarks_table
                 .get(&watermarks_key)
                 .map_err(|e| format!("Failed to read watermark: {}", e))?
                 .map(|v| v.value());
 
-            // Get sequences we have stored for this author
-            let empty = BTreeSet::new();
-            let stored_seqs = stored_seqs_per_author.get(author).unwrap_or(&empty);
-
             // Compute missing sequences:
             // - Everything 0..=watermark is NOT missing (we had it at some point)
             // - For sequences above watermark
-            let missing_seq_nums: Vec<SeqNum> = match server_watermark {
+            let candidates: Vec<SeqNum> = match server_watermark {
                 // Server has contiguous sequences 0..=watermark
                 Some(watermark) if *client_max_seq > watermark => {
                     let start = watermark.saturating_add(1);
-                    let end =
-                        (*client_max_seq).min(start.saturating_add(MAX_MISSING_PER_AUTHOR - 1));
+                    let end = (*client_max_seq).min(start.saturating_add(MAX_MISSING_PER_LOG - 1));
                     (start..=end).collect()
                 }
                 // client_max_seq <= watermark: server has everything
                 Some(_) => Vec::new(),
                 None => {
                     // No watermark = no contiguous sequences from 0
-                    let end = (*client_max_seq).min(MAX_MISSING_PER_AUTHOR - 1);
+                    let end = (*client_max_seq).min(MAX_MISSING_PER_LOG - 1);
                     (0..=end).collect()
                 }
             };
+            if candidates.is_empty() {
+                continue;
+            }
 
-            // Only include in missing if we don't have this sequence stored
-            let missing_seq_nums: Vec<SeqNum> = missing_seq_nums
+            // Only report sequences we don't have stored at all.
+            let stored = read_log(&blips_table, author, log_id)?;
+            let missing_seq_nums: Vec<SeqNum> = candidates
                 .into_iter()
-                .filter(|seq| !stored_seqs.contains(seq))
+                .filter(|seq| !stored.contains_key(seq))
                 .collect();
 
             if !missing_seq_nums.is_empty() {
                 tracing::debug!(
-                    "Server missing {} blips for author {} in topic {} (sequences: {:?})",
+                    "Server missing {} blips for {}:{} (sequences: {:?})",
                     missing_seq_nums.len(),
                     author,
-                    topic_id,
+                    log_id,
                     missing_seq_nums
                 );
-                missing.insert(author.clone(), missing_seq_nums);
+                response
+                    .missing
+                    .entry(author.clone())
+                    .or_default()
+                    .insert(log_id.clone(), missing_seq_nums);
             }
         }
-
-        blips_by_topic.insert(
-            topic_id.clone(),
-            GetBlipsForTopicResponse {
-                blips: topic_authors,
-                missing,
-            },
-        );
     }
 
     tracing::debug!("Retrieved blips for {} topics", request.topics.len());
-    Ok(GetBlipsResponse { blips_by_topic })
+    Ok(response)
+}
+
+/// Every stored entry of one author's log, by sequence number.
+fn read_log(
+    blips_table: &impl ReadableTable<BlipsKey, &'static [u8]>,
+    author: &str,
+    log_id: &str,
+) -> Result<BTreeMap<SeqNum, Blip>, String> {
+    let prefix = BlipsKeyPrefix::AuthorLog(author.to_string(), log_id.to_string());
+    let mut log = BTreeMap::new();
+    for entry in blips_table
+        .range(prefix.range_start()..=prefix.range_end())
+        .map_err(|e| format!("Failed to create iterator: {}", e))?
+    {
+        let (key, value) = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let key: BlipsKey = key.value();
+        log.insert(key.sequence_number, Blip::from(value.value().to_vec()));
+    }
+    Ok(log)
 }

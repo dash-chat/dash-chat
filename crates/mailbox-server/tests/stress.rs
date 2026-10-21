@@ -1,25 +1,36 @@
 use futures::future::join_all;
-use mailbox_server::{test_utils::create_test_server, Author, GetBlipsResponse, SeqNum, TopicId};
-use serde_json::json;
+use mailbox_server::{
+    test_utils::{create_test_server, get_request, store_request},
+    GetBlipsResponse, SeqNum, StoreBlipsRequest, TopicId,
+};
 use serial_test::serial;
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
-// Helper to create a simple store request with a single message
-fn create_store_request(topic_id: &str, message: &[u8], seq_num: SeqNum) -> serde_json::Value {
-    let message_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, message);
-    json!({
-        "blips": {
-            topic_id: {
-                "author-1": {
-                    seq_num.to_string(): message_b64
-                }
-            }
-        }
-    })
+// Helper to create a simple store request with a single message, in a log
+// named after its topic so each topic has one log of its own.
+fn create_store_request(topic_id: &str, message: &[u8], seq_num: SeqNum) -> StoreBlipsRequest {
+    store_request(&[(topic_id, "author-1", topic_id, seq_num, message)])
+}
+
+fn get_topics_request(topics: &[&str]) -> mailbox_server::GetBlipsRequest {
+    get_request(topics, &[])
+}
+
+/// How many blips the response holds for the logs of `topic_id`.
+fn count_topic_blips(body: &GetBlipsResponse, topic_id: &str) -> usize {
+    body.logs[topic_id]
+        .iter()
+        .flat_map(|(author, logs)| logs.iter().map(move |log| (author, log)))
+        .map(|(author, log)| {
+            body.blips
+                .get(author)
+                .and_then(|logs| logs.get(log))
+                .map_or(0, |log| log.len())
+        })
+        .sum()
 }
 
 // Run this test sequentially to avoid "Too many open files" error when combined with other tests
@@ -67,21 +78,12 @@ async fn stress_test_concurrent_writes() {
         let topic_id = format!("stress-topic-{}", topic_idx);
         let get_response = server
             .post("/blips/get")
-            .json(&json!({
-                "topics": {
-                    topic_id: {}
-                }
-            }))
+            .json(&get_topics_request(&[topic_id]))
             .await;
 
         get_response.assert_status_ok();
         let body: GetBlipsResponse = get_response.json();
-        let topic_authors = &body.blips_by_topic[&format!("stress-topic-{}", topic_idx)];
-        let total_messages: usize = topic_authors
-            .blips
-            .values()
-            .map(|author| author.len())
-            .sum();
+        let total_messages = count_topic_blips(&body, &topic_id);
 
         assert_eq!(
             total_messages,
@@ -131,21 +133,12 @@ async fn stress_test_concurrent_reads() {
             let topic_id_clone = topic_id.clone();
             let response = server_clone
                 .post("/blips/get")
-                .json(&json!({
-                    "topics": {
-                        &topic_id: {}
-                    }
-                }))
+                .json(&get_topics_request(&[topic_id]))
                 .await;
 
             response.assert_status_ok();
             let body: GetBlipsResponse = response.json();
-            let topic_authors = &body.blips_by_topic[&topic_id_clone];
-            let total_messages: usize = topic_authors
-                .blips
-                .values()
-                .map(|author| author.len())
-                .sum();
+            let total_messages = count_topic_blips(&body, &topic_id_clone);
             assert_eq!(total_messages, messages_per_topic as usize);
         };
         tasks.push(task);
@@ -196,11 +189,7 @@ async fn stress_test_mixed_read_write_operations() {
             let task = Box::pin(async move {
                 let response = server_clone
                     .post("/blips/get")
-                    .json(&json!({
-                        "topics": {
-                            topic_id: {}
-                        }
-                    }))
+                    .json(&get_topics_request(&[topic_id]))
                     .await;
 
                 response.assert_status_ok();
@@ -267,21 +256,12 @@ async fn stress_test_large_messages() {
         let topic_id = format!("large-msg-topic-{}", topic_idx);
         let response = server
             .post("/blips/get")
-            .json(&json!({
-                "topics": {
-                    &topic_id: {}
-                }
-            }))
+            .json(&get_topics_request(&[topic_id]))
             .await;
 
         response.assert_status_ok();
         let body: GetBlipsResponse = response.json();
-        let topic_authors = &body.blips_by_topic[&topic_id];
-        let total_messages: usize = topic_authors
-            .blips
-            .values()
-            .map(|author| author.len())
-            .sum();
+        let total_messages = count_topic_blips(&body, &topic_id);
         assert_eq!(total_messages, num_large_messages / 5);
     }
 }
@@ -322,17 +302,12 @@ async fn stress_test_many_topics() {
     // Test retrieving from multiple topics in one request
     let topic_ids: Vec<TopicId> = (0..100).map(|i| format!("many-topics-{}", i)).collect();
 
-    let mut topics_map = BTreeMap::new();
-    for topic_id in &topic_ids {
-        topics_map.insert(topic_id.clone(), BTreeMap::<Author, SeqNum>::new());
-    }
+    let topic_refs: Vec<&str> = topic_ids.iter().map(String::as_str).collect();
 
     let start = Instant::now();
     let response = server
         .post("/blips/get")
-        .json(&json!({
-            "topics": topics_map
-        }))
+        .json(&get_topics_request(&topic_refs))
         .await;
 
     response.assert_status_ok();
@@ -340,14 +315,9 @@ async fn stress_test_many_topics() {
 
     let retrieve_duration = start.elapsed();
 
-    assert_eq!(body.blips_by_topic.len(), 100);
+    assert_eq!(body.logs.len(), 100);
     for topic_id in &topic_ids {
-        let topic_authors = &body.blips_by_topic[topic_id];
-        let total_messages: usize = topic_authors
-            .blips
-            .values()
-            .map(|author| author.len())
-            .sum();
+        let total_messages = count_topic_blips(&body, topic_id);
         assert_eq!(total_messages, messages_per_topic as usize);
     }
 
@@ -388,20 +358,11 @@ async fn stress_test_rapid_sequential_writes() {
     // Verify all messages were stored
     let response = server
         .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                topic_id: {}
-            }
-        }))
+        .json(&get_topics_request(&[topic_id]))
         .await;
 
     response.assert_status_ok();
     let body: GetBlipsResponse = response.json();
-    let topic_authors = &body.blips_by_topic[topic_id];
-    let total_messages: usize = topic_authors
-        .blips
-        .values()
-        .map(|author| author.len())
-        .sum();
+    let total_messages = count_topic_blips(&body, topic_id);
     assert_eq!(total_messages, num_messages as usize);
 }

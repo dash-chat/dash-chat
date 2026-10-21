@@ -1,6 +1,8 @@
 use mailbox_server::{
-    cleanup_old_messages, test_utils::LONG_AGO, BlipsKey, GetBlipsResponse, WatermarksKey,
-    BLIPS_TABLE, WATERMARKS_TABLE,
+    cleanup_old_messages,
+    test_utils::{get_request, LONG_AGO},
+    BlipsKey, GetBlipsResponse, TopicLogKey, WatermarksKey, BLIPS_TABLE, TOPIC_LOGS_TABLE,
+    WATERMARKS_TABLE,
 };
 use redb::{ReadableDatabase, ReadableTable};
 
@@ -18,6 +20,7 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
 
     let topic = "test-topic";
     let author = "author-1";
+    let log = "log-1";
 
     // Step 1: Insert OLD blips directly into DB (will be cleaned up)
     let old_time = std::time::SystemTime::now() - LONG_AGO;
@@ -35,10 +38,18 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
         {
             let mut blips = write_txn.open_table(BLIPS_TABLE).unwrap();
             let mut watermarks = write_txn.open_table(WATERMARKS_TABLE).unwrap();
+            let mut topic_logs = write_txn.open_table(TOPIC_LOGS_TABLE).unwrap();
+
+            topic_logs
+                .insert(
+                    &TopicLogKey::new(topic.into(), author.into(), log.into()).unwrap(),
+                    (),
+                )
+                .unwrap();
 
             // Insert old blips (seq 0, 1, 2)
             for seq in 0..=2 {
-                let key = BlipsKey::new(topic.into(), author.into(), seq, old_uuid).unwrap();
+                let key = BlipsKey::new(author.into(), log.into(), seq, old_uuid).unwrap();
                 blips
                     .insert(&key, format!("old message {}", seq).as_bytes())
                     .unwrap();
@@ -47,14 +58,14 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
             // Insert new blips (seq 3, 4, 5) with current UUID
             let new_uuid = uuid::Uuid::now_v7();
             for seq in 3..=5 {
-                let key = BlipsKey::new(topic.into(), author.into(), seq, new_uuid).unwrap();
+                let key = BlipsKey::new(author.into(), log.into(), seq, new_uuid).unwrap();
                 blips
                     .insert(&key, format!("new message {}", seq).as_bytes())
                     .unwrap();
             }
 
             // Set watermark to 5 (sequences 0-5 are contiguous)
-            let watermark_key = WatermarksKey::new(topic.into(), author.into()).unwrap();
+            let watermark_key = WatermarksKey::new(author.into(), log.into()).unwrap();
             watermarks.insert(&watermark_key, 5).unwrap();
         }
         write_txn.commit().unwrap();
@@ -69,7 +80,7 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
         let count = blips.iter().unwrap().count();
         assert_eq!(count, 6, "Should have 6 blips initially");
 
-        let watermark_key = WatermarksKey::new(topic.into(), author.into()).unwrap();
+        let watermark_key = WatermarksKey::new(author.into(), log.into()).unwrap();
         let watermark = watermarks.get(&watermark_key).unwrap().unwrap().value();
         assert_eq!(watermark, 5);
     }
@@ -91,7 +102,7 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     {
         let read_txn = db.begin_read().unwrap();
         let watermarks = read_txn.open_table(WATERMARKS_TABLE).unwrap();
-        let watermark_key = WatermarksKey::new(topic.into(), author.into()).unwrap();
+        let watermark_key = WatermarksKey::new(author.into(), log.into()).unwrap();
         let watermark = watermarks.get(&watermark_key).unwrap().unwrap().value();
         assert_eq!(watermark, 5, "Watermark should be preserved after cleanup");
     }
@@ -106,37 +117,27 @@ async fn test_cleanup_preserves_watermark_and_missing_response() {
     };
     let server = axum_test::TestServer::new_with_config(app, config).unwrap();
 
+    // Client claims to have up to seq 5
     let get_response = server
         .post("/blips/get")
-        .json(&serde_json::json!({
-            "topics": {
-                "test-topic": {
-                    "author-1": 5  // Client claims to have up to seq 5
-                }
-            }
-        }))
+        .json(&get_request(&[topic], &[(author, log, 5)]))
         .await;
 
     get_response.assert_status_ok();
 
     let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
 
     // Missing should be EMPTY - server "had" 0-5 per watermark, doesn't re-request them
     assert!(
-        topic_response.missing.is_empty(),
+        body.missing.is_empty(),
         "Missing should be empty - watermark covers 0-5, cleanup shouldn't cause re-requests. Got: {:?}",
-        topic_response.missing
+        body.missing
     );
 
     // Blips should be empty - client already has up to 5, no new blips to send
     assert!(
-        topic_response.blips.is_empty()
-            || topic_response
-                .blips
-                .get("author-1")
-                .map_or(true, |b| b.is_empty()),
+        body.blips.is_empty(),
         "No blips should be returned - client already has everything. Got: {:?}",
-        topic_response.blips
+        body.blips
     );
 }

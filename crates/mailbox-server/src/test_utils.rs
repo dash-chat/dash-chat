@@ -5,7 +5,10 @@ use redb::Database;
 use tempfile::NamedTempFile;
 use tokio::task::JoinSet;
 
-use crate::{create_app, BlobSync, BLIPS_TABLE, WATERMARKS_TABLE};
+use crate::{
+    create_app, Blip, BlobSync, GetBlipsRequest, SeqNum, StoreBlipsRequest, BLIPS_TABLE,
+    TOPIC_LOGS_TABLE, WATERMARKS_TABLE,
+};
 
 pub const LONG_AGO: Duration = Duration::from_hours(100 * 24); // 100 days
 
@@ -17,6 +20,7 @@ pub fn create_test_db() -> (Database, NamedTempFile) {
     {
         let _blips_table = write_txn.open_table(BLIPS_TABLE).unwrap();
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE).unwrap();
+        let _topic_logs_table = write_txn.open_table(TOPIC_LOGS_TABLE).unwrap();
     }
     write_txn.commit().unwrap();
 
@@ -50,4 +54,48 @@ pub async fn create_test_server() -> (TestServer, NamedTempFile) {
     };
     let server = TestServer::new_with_config(app, config).unwrap();
     (server, temp_file)
+}
+
+/// A store request of `(topic, author, log, seq, bytes)` entries, associating
+/// each log with its topic.
+pub fn store_request(entries: &[(&str, &str, &str, SeqNum, &[u8])]) -> StoreBlipsRequest {
+    let mut request = StoreBlipsRequest {
+        logs: Default::default(),
+        blips: Default::default(),
+        sender_pubkey: None,
+        signature: Vec::new(),
+    };
+    for (topic, author, log, seq, bytes) in entries {
+        request
+            .logs
+            .entry(topic.to_string())
+            .or_default()
+            .entry(author.to_string())
+            .or_default()
+            .insert(log.to_string());
+        request
+            .blips
+            .entry(author.to_string())
+            .or_default()
+            .entry(log.to_string())
+            .or_default()
+            .insert(*seq, Blip::new(bytes.to_vec()));
+    }
+    request
+}
+
+/// A get request for `topics`, holding `(author, log, seq)` heights.
+pub fn get_request(topics: &[&str], heights: &[(&str, &str, SeqNum)]) -> GetBlipsRequest {
+    let mut request = GetBlipsRequest {
+        topics: topics.iter().map(|t| t.to_string()).collect(),
+        heights: Default::default(),
+    };
+    for (author, log, seq) in heights {
+        request
+            .heights
+            .entry(author.to_string())
+            .or_default()
+            .insert(log.to_string(), *seq);
+    }
+    request
 }

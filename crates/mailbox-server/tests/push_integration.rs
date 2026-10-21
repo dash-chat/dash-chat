@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use axum_test::{TestServer, TestServerConfig, Transport};
-use mailbox_server::test_utils::create_test_db;
+use mailbox_server::test_utils::{create_test_db, store_request};
 use push_notifications_client::client::PushNotificationsClient;
 use push_notifications_client::requests::{AddTopicSubscriptionsRequest, RegisterFcmTokenRequest};
 use push_notifications_client::types::{FcmToken, TopicId, VerifyingKey};
 use push_notifications_server::driver::mem::MemDb;
 use push_notifications_server::fcm_client::{MockFcm, SendResult};
-use serde_json::json;
 
 /// Starts a push notifications server with the given mock FCM on a random port.
 /// Returns the base URL (e.g. "http://127.0.0.1:12345").
@@ -124,22 +123,15 @@ async fn mailbox_store_triggers_push_notification() {
     // Mailbox server connected to the push server
     let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url).await;
 
-    let blip_data = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        b"encrypted-message-payload",
-    );
-
     let resp = mailbox
         .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
-                    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
-                        "0": blip_data
-                    }
-                }
-            }
-        }))
+        .json(&store_request(&[(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "log",
+            0,
+            b"encrypted-message-payload",
+        )]))
         .await;
     resp.assert_status(StatusCode::CREATED);
 
@@ -158,20 +150,15 @@ async fn mailbox_store_no_subscribers_no_push() {
     let push_url = start_push_server(mock_fcm).await;
     let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url).await;
 
-    let blip_data =
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"some-data");
-
     let resp = mailbox
         .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd": {
-                    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
-                        "0": blip_data
-                    }
-                }
-            }
-        }))
+        .json(&store_request(&[(
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "log",
+            0,
+            b"some-data",
+        )]))
         .await;
     resp.assert_status(StatusCode::CREATED);
 
@@ -224,20 +211,13 @@ async fn mailbox_store_duplicate_blip_no_second_push() {
 
     let (mailbox, _tmp, push_tasks) = start_mailbox_server(push_url).await;
 
-    let blip_data = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
+    let store_body = store_request(&[(
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "log",
+        0,
         b"message-content",
-    );
-
-    let store_body = json!({
-        "blips": {
-            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": {
-                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
-                    "0": blip_data
-                }
-            }
-        }
-    });
+    )]);
 
     // First store — should trigger push
     let resp = mailbox.post("/blips/store").json(&store_body).await;

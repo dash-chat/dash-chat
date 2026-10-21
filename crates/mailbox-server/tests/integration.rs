@@ -1,9 +1,8 @@
 use mailbox_server::{
     encode_mailbox_id,
-    test_utils::{create_test_server, test_blob_sync},
-    GetBlipsResponse,
+    test_utils::{create_test_server, get_request, store_request, test_blob_sync},
+    GetBlipsResponse, SeqNum,
 };
-use serde_json::json;
 
 #[tokio::test]
 async fn test_health_check() {
@@ -39,546 +38,355 @@ async fn test_health_check() {
     );
 }
 
+async fn store(server: &axum_test::TestServer, entries: &[(&str, &str, &str, SeqNum, &[u8])]) {
+    server
+        .post("/blips/store")
+        .json(&store_request(entries))
+        .await
+        .assert_status(axum::http::StatusCode::CREATED);
+}
+
+async fn get(
+    server: &axum_test::TestServer,
+    topics: &[&str],
+    heights: &[(&str, &str, SeqNum)],
+) -> GetBlipsResponse {
+    let response = server
+        .post("/blips/get")
+        .json(&get_request(topics, heights))
+        .await;
+    response.assert_status_ok();
+    response.json()
+}
+
 #[tokio::test]
 async fn test_store_and_retrieve_single_message() {
     let (server, _temp_file) = create_test_server().await;
 
-    let message_data = b"Hello, World!";
-    let message_b64 =
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, message_data);
+    store(
+        &server,
+        &[("topic-1", "author-a", "log-a", 0, b"Hello, World!")],
+    )
+    .await;
 
-    let store_response = server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic-1": {
-                    "author-a": {
-                        "0": message_b64
-                    }
-                }
-            }
-        }))
-        .await;
+    let body = get(&server, &["topic-1"], &[]).await;
+    assert_eq!(
+        body.logs["topic-1"]["author-a"],
+        ["log-a".to_string()].into()
+    );
+    assert!(body.missing.is_empty());
 
-    store_response.assert_status(axum::http::StatusCode::CREATED);
-
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic-1": {}
-            }
-        }))
-        .await;
-
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    assert!(body.blips_by_topic.contains_key("test-topic-1"));
-
-    let topic_response = &body.blips_by_topic["test-topic-1"];
-    assert!(topic_response.blips.contains_key("author-a"));
-    assert!(topic_response.missing.is_empty());
-
-    let author_sequences = &topic_response.blips["author-a"];
-    assert!(author_sequences.contains_key(&0));
-
-    let retrieved_message = &author_sequences[&0];
-    assert_eq!(retrieved_message.as_ref(), message_data);
+    let log = &body.blips["author-a"]["log-a"];
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[&0].as_ref(), b"Hello, World!");
 }
 
 #[tokio::test]
-async fn test_store_and_retrieve_multiple_messages_same_topic() {
+async fn test_store_and_retrieve_multiple_messages_same_log() {
     let (server, _temp_file) = create_test_server().await;
 
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic-multi": {
-                    "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"First message".to_vec()),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Second message".to_vec()),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Third message".to_vec()),
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic-multi", "author-1", "log-1", 0, b"First message"),
+            ("topic-multi", "author-1", "log-1", 1, b"Second message"),
+            ("topic-multi", "author-1", "log-1", 2, b"Third message"),
+        ],
+    )
+    .await;
 
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic-multi": {}
-            }
-        }))
-        .await;
+    let body = get(&server, &["topic-multi"], &[]).await;
+    let log = &body.blips["author-1"]["log-1"];
 
-    get_response.assert_status_ok();
+    assert_eq!(log.len(), 3);
+    assert!(body.missing.is_empty());
 
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic-multi"];
-    let author_sequences = &topic_response.blips["author-1"];
-
-    assert_eq!(author_sequences.len(), 3);
-    assert!(topic_response.missing.is_empty());
-
-    assert_eq!(author_sequences[&0].as_ref(), b"First message");
-    assert_eq!(author_sequences[&1].as_ref(), b"Second message");
-    assert_eq!(author_sequences[&2].as_ref(), b"Third message");
+    assert_eq!(log[&0].as_ref(), b"First message");
+    assert_eq!(log[&1].as_ref(), b"Second message");
+    assert_eq!(log[&2].as_ref(), b"Third message");
 }
 
 #[tokio::test]
 async fn test_retrieve_messages_from_multiple_topics() {
     let (server, _temp_file) = create_test_server().await;
 
-    let topic1_msg = b"Topic 1 message";
-    let topic2_msg = b"Topic 2 message";
+    store(
+        &server,
+        &[
+            ("topic-a", "author-1", "log-a", 0, b"Topic A message"),
+            ("topic-b", "author-1", "log-b", 0, b"Topic B message"),
+        ],
+    )
+    .await;
 
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "topic-a": {
-                    "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, topic1_msg)
-                    }
-                },
-                "topic-b": {
-                    "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, topic2_msg)
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    let body = get(&server, &["topic-a", "topic-b"], &[]).await;
 
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "topic-a": {},
-                "topic-b": {}
-            }
-        }))
-        .await;
+    assert_eq!(
+        body.logs["topic-a"]["author-1"],
+        ["log-a".to_string()].into()
+    );
+    assert_eq!(
+        body.logs["topic-b"]["author-1"],
+        ["log-b".to_string()].into()
+    );
+    assert!(body.missing.is_empty());
 
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let blips_for_topics = &body.blips_by_topic;
-
-    assert!(blips_for_topics.contains_key("topic-a"));
-    assert!(blips_for_topics.contains_key("topic-b"));
-
-    let topic_a_response = &blips_for_topics["topic-a"];
-    let topic_b_response = &blips_for_topics["topic-b"];
-
-    assert_eq!(topic_a_response.blips["author-1"].len(), 1);
-    assert_eq!(topic_b_response.blips["author-1"].len(), 1);
-    assert!(topic_a_response.missing.is_empty());
-    assert!(topic_b_response.missing.is_empty());
-
-    let retrieved_a = &topic_a_response.blips["author-1"][&0];
-    let retrieved_b = &topic_b_response.blips["author-1"][&0];
-
-    assert_eq!(retrieved_a.as_ref(), topic1_msg);
-    assert_eq!(retrieved_b.as_ref(), topic2_msg);
+    let logs = &body.blips["author-1"];
+    assert_eq!(logs["log-a"][&0].as_ref(), b"Topic A message");
+    assert_eq!(logs["log-b"][&0].as_ref(), b"Topic B message");
 }
 
 #[tokio::test]
 async fn test_retrieve_empty_topic() {
     let (server, _temp_file) = create_test_server().await;
 
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "non-existent-topic": {}
-            }
-        }))
-        .await;
+    let body = get(&server, &["non-existent-topic"], &[]).await;
 
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let blips_for_topics = &body.blips_by_topic;
-
-    assert!(blips_for_topics.contains_key("non-existent-topic"));
-    let topic_response = &blips_for_topics["non-existent-topic"];
-    assert_eq!(topic_response.blips.len(), 0);
-    assert!(topic_response.missing.is_empty());
+    assert!(body.logs["non-existent-topic"].is_empty());
+    assert!(body.blips.is_empty());
+    assert!(body.missing.is_empty());
 }
 
 #[tokio::test]
 async fn test_topic_isolation() {
     let (server, _temp_file) = create_test_server().await;
 
+    store(
+        &server,
+        &[
+            ("isolated-1", "author-1", "log-1", 0, b"Message 1"),
+            ("isolated-2", "author-1", "log-2", 0, b"Message 2"),
+        ],
+    )
+    .await;
+
+    let body = get(&server, &["isolated-1"], &[]).await;
+
+    assert!(!body.logs.contains_key("isolated-2"));
+    let logs = &body.blips["author-1"];
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs["log-1"].len(), 1);
+    assert!(body.missing.is_empty());
+}
+
+/// A log associated with two topics is stored once and served once per
+/// request, however many of its topics the request names.
+#[tokio::test]
+async fn test_shared_log_served_once() {
+    let (server, _temp_file) = create_test_server().await;
+
+    store(
+        &server,
+        &[
+            ("topic-a", "author-1", "shared", 0, b"Shared 0"),
+            ("topic-b", "author-1", "shared", 0, b"Shared 0"),
+            ("topic-b", "author-1", "shared", 1, b"Shared 1"),
+        ],
+    )
+    .await;
+
+    let body = get(&server, &["topic-a", "topic-b"], &[]).await;
+
+    assert_eq!(
+        body.logs["topic-a"]["author-1"],
+        ["shared".to_string()].into()
+    );
+    assert_eq!(
+        body.logs["topic-b"]["author-1"],
+        ["shared".to_string()].into()
+    );
+    let log = &body.blips["author-1"]["shared"];
+    assert_eq!(log.len(), 2);
+
+    // Knowing the log under one topic is knowing it under all of them.
+    let body = get(&server, &["topic-a"], &[("author-1", "shared", 1)]).await;
+    assert!(body.blips.is_empty());
+    assert!(body.missing.is_empty());
+}
+
+/// Associations are recorded even when a store request carries no blips, so
+/// a topic resolves to every log a client knows under it.
+#[tokio::test]
+async fn test_association_without_blips() {
+    let (server, _temp_file) = create_test_server().await;
+
+    store(
+        &server,
+        &[("topic-a", "author-1", "log-1", 0, b"Message 0")],
+    )
+    .await;
+
+    let mut request = store_request(&[]);
+    request
+        .logs
+        .entry("topic-b".into())
+        .or_default()
+        .entry("author-1".into())
+        .or_default()
+        .insert("log-1".into());
     server
         .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "isolated-topic-1": {
-                    "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1")
-                    }
-                },
-                "isolated-topic-2": {
-                    "author-1": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")
-                    }
-                }
-            }
-        }))
+        .json(&request)
         .await
         .assert_status(axum::http::StatusCode::CREATED);
 
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "isolated-topic-1": {}
-            }
-        }))
-        .await;
-
-    let body: GetBlipsResponse = get_response.json();
-    let blips_for_topics = &body.blips_by_topic;
-
-    let topic_1_response = &blips_for_topics["isolated-topic-1"];
-    assert_eq!(topic_1_response.blips["author-1"].len(), 1);
-    assert!(topic_1_response.missing.is_empty());
-    assert!(!blips_for_topics.contains_key("isolated-topic-2"));
+    let body = get(&server, &["topic-b"], &[]).await;
+    assert_eq!(
+        body.logs["topic-b"]["author-1"],
+        ["log-1".to_string()].into()
+    );
+    assert_eq!(body.blips["author-1"]["log-1"].len(), 1);
 }
 
 #[tokio::test]
 async fn test_sequence_number_filtering() {
     let (server, _temp_file) = create_test_server().await;
 
-    // Store messages with sequence numbers 0, 1, 2, 3, 4
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "author-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3"),
-                        "4": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic", "author-x", "log-x", 0, b"Message 0"),
+            ("topic", "author-x", "log-x", 1, b"Message 1"),
+            ("topic", "author-x", "log-x", 2, b"Message 2"),
+            ("topic", "author-x", "log-x", 3, b"Message 3"),
+            ("topic", "author-x", "log-x", 4, b"Message 4"),
+        ],
+    )
+    .await;
 
     // Request only messages with sequence number > 2
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "author-x": 2
-                }
-            }
-        }))
-        .await;
+    let body = get(&server, &["topic"], &[("author-x", "log-x", 2)]).await;
+    let log = &body.blips["author-x"]["log-x"];
 
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-    let author_sequences = &topic_response.blips["author-x"];
-
-    // Should only get messages 3 and 4
-    assert_eq!(author_sequences.len(), 2);
-    assert!(author_sequences.contains_key(&3));
-    assert!(author_sequences.contains_key(&4));
-    assert!(!author_sequences.contains_key(&2));
-    assert!(!author_sequences.contains_key(&1));
-    assert!(!author_sequences.contains_key(&0));
+    assert_eq!(log.len(), 2);
+    assert!(log.contains_key(&3));
+    assert!(log.contains_key(&4));
 
     // Server has all messages up to 4, client asked for > 2, so no missing
-    assert!(topic_response.missing.is_empty());
+    assert!(body.missing.is_empty());
 
-    let msg3 = &author_sequences[&3];
-    let msg4 = &author_sequences[&4];
-
-    assert_eq!(msg3.as_ref(), b"Message 3");
-    assert_eq!(msg4.as_ref(), b"Message 4");
+    assert_eq!(log[&3].as_ref(), b"Message 3");
+    assert_eq!(log[&4].as_ref(), b"Message 4");
 }
 
 #[tokio::test]
-async fn test_get_returns_all_authors_for_topic() {
+async fn test_get_returns_all_logs_for_topic() {
     let (server, _temp_file) = create_test_server().await;
 
-    // Store messages in multiple authors for the same topic
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "author-a": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - Message 2")
-                    },
-                    "author-b": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author B - Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author B - Message 1")
-                    },
-                    "author-c": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author C - Message 0")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic", "author-a", "log-a", 0, b"author A - Message 0"),
+            ("topic", "author-a", "log-a", 1, b"author A - Message 1"),
+            ("topic", "author-a", "log-a", 2, b"author A - Message 2"),
+            ("topic", "author-b", "log-b", 0, b"author B - Message 0"),
+            ("topic", "author-b", "log-b", 1, b"author B - Message 1"),
+            ("topic", "author-c", "log-c", 0, b"author C - Message 0"),
+        ],
+    )
+    .await;
 
-    // Request only author-a with sequence > 0, but should also get all of author-b and author-c
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "author-a": 0
-                }
-            }
-        }))
-        .await;
+    // Request only author-a's log with sequence > 0, but should also get all of the others
+    let body = get(&server, &["topic"], &[("author-a", "log-a", 0)]).await;
 
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-    let topic_authors = &topic_response.blips;
-
-    // Should have all three authors
-    assert_eq!(topic_authors.len(), 3);
-    assert!(topic_authors.contains_key("author-a"));
-    assert!(topic_authors.contains_key("author-b"));
-    assert!(topic_authors.contains_key("author-c"));
+    assert_eq!(body.logs["topic"].len(), 3);
+    assert_eq!(body.blips.len(), 3);
 
     // author-a should only have messages with seq > 0 (messages 1 and 2)
-    let author_a = &topic_authors["author-a"];
+    let author_a = &body.blips["author-a"]["log-a"];
     assert_eq!(author_a.len(), 2);
     assert!(author_a.contains_key(&1));
     assert!(author_a.contains_key(&2));
-    assert!(!author_a.contains_key(&0));
 
-    // author-b should have ALL messages (was not in request)
-    let author_b = &topic_authors["author-b"];
+    // The logs not in the heights come in full
+    let author_b = &body.blips["author-b"]["log-b"];
     assert_eq!(author_b.len(), 2);
-    assert!(author_b.contains_key(&0));
-    assert!(author_b.contains_key(&1));
-
-    // author-c should have ALL messages (was not in request)
-    let author_c = &topic_authors["author-c"];
+    let author_c = &body.blips["author-c"]["log-c"];
     assert_eq!(author_c.len(), 1);
-    assert!(author_c.contains_key(&0));
 
-    // No missing since server has all messages
-    assert!(topic_response.missing.is_empty());
+    assert!(body.missing.is_empty());
 
-    // Verify content
-    let msg_a1 = &author_a[&1];
-    assert_eq!(msg_a1.as_ref(), b"author A - Message 1");
-
-    let msg_b0 = &author_b[&0];
-    assert_eq!(msg_b0.as_ref(), b"author B - Message 0");
+    assert_eq!(author_a[&1].as_ref(), b"author A - Message 1");
+    assert_eq!(author_b[&0].as_ref(), b"author B - Message 0");
 }
 
 #[tokio::test]
 async fn test_missing_blips_server_behind() {
     let (server, _temp_file) = create_test_server().await;
 
-    // Store only messages 0-2 on server
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "author-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic", "author-x", "log-x", 0, b"Message 0"),
+            ("topic", "author-x", "log-x", 1, b"Message 1"),
+            ("topic", "author-x", "log-x", 2, b"Message 2"),
+        ],
+    )
+    .await;
 
     // Client says it has up to sequence 5
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "author-x": 5
-                }
-            }
-        }))
-        .await;
+    let body = get(&server, &["topic"], &[("author-x", "log-x", 5)]).await;
 
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-
-    // Server should return empty blips (nothing new for client)
-    // The author might not even exist in blips if all were filtered out
-    assert!(topic_response
-        .blips
-        .get("author-x")
-        .map_or(true, |author| author.is_empty()));
-
-    // Server should report missing sequences 3, 4, 5
-    assert!(topic_response.missing.contains_key("author-x"));
-    let missing_seqs = &topic_response.missing["author-x"];
-    assert_eq!(missing_seqs.len(), 3);
-    assert_eq!(missing_seqs, &vec![3, 4, 5]);
+    assert!(body.blips.is_empty());
+    assert_eq!(body.missing["author-x"]["log-x"], vec![3, 4, 5]);
 }
 
 #[tokio::test]
 async fn test_missing_blips_server_has_nothing() {
     let (server, _temp_file) = create_test_server().await;
 
-    // Don't store any blips
+    // Client says it has up to sequence 3 of a log the server has never seen
+    let body = get(&server, &["topic"], &[("author-x", "log-x", 3)]).await;
 
-    // Client says it has up to sequence 3
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "author-x": 3
-                }
-            }
-        }))
-        .await;
-
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-
-    // Server should return empty blips
-    assert!(topic_response.blips.is_empty());
-
-    // Server should report missing all sequences 0-3
-    assert!(topic_response.missing.contains_key("author-x"));
-    let missing_seqs = &topic_response.missing["author-x"];
-    assert_eq!(missing_seqs.len(), 4);
-    assert_eq!(missing_seqs, &vec![0, 1, 2, 3]);
+    assert!(body.blips.is_empty());
+    assert_eq!(body.missing["author-x"]["log-x"], vec![0, 1, 2, 3]);
 }
 
 #[tokio::test]
-async fn test_missing_blips_multiple_authors() {
+async fn test_missing_blips_multiple_logs() {
     let (server, _temp_file) = create_test_server().await;
 
-    // Store blips for author-a (0-1) but nothing for author-b
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "author-a": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"author A - 1")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    store(
+        &server,
+        &[
+            ("topic", "author-a", "log-a", 0, b"author A - 0"),
+            ("topic", "author-a", "log-a", 1, b"author A - 1"),
+        ],
+    )
+    .await;
 
     // Client says it has author-a up to 4 and author-b up to 2
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "author-a": 4,
-                    "author-b": 2
-                }
-            }
-        }))
-        .await;
+    let body = get(
+        &server,
+        &["topic"],
+        &[("author-a", "log-a", 4), ("author-b", "log-b", 2)],
+    )
+    .await;
 
-    get_response.assert_status_ok();
-
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-
-    // Should have missing for both authors
-    assert_eq!(topic_response.missing.len(), 2);
-
-    // author-a: server has 0-1, client has 0-4, missing 2-4
-    let missing_author_a = &topic_response.missing["author-a"];
-    assert_eq!(missing_author_a, &vec![2, 3, 4]);
-
-    // author-b: server has nothing, client has 0-2, missing all
-    let missing_author_b = &topic_response.missing["author-b"];
-    assert_eq!(missing_author_b, &vec![0, 1, 2]);
+    assert_eq!(body.missing.len(), 2);
+    assert_eq!(body.missing["author-a"]["log-a"], vec![2, 3, 4]);
+    assert_eq!(body.missing["author-b"]["log-b"], vec![0, 1, 2]);
 }
 
 #[tokio::test]
 async fn test_no_missing_when_server_is_ahead() {
     let (server, _temp_file) = create_test_server().await;
 
-    // Store messages 0-5
-    server
-        .post("/blips/store")
-        .json(&json!({
-            "blips": {
-                "test-topic": {
-                    "author-x": {
-                        "0": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 0"),
-                        "1": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 1"),
-                        "2": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 2"),
-                        "3": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 3"),
-                        "4": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 4"),
-                        "5": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Message 5")
-                    }
-                }
-            }
-        }))
-        .await
-        .assert_status(axum::http::StatusCode::CREATED);
+    let entries: Vec<(&str, &str, &str, SeqNum, &[u8])> = (0..=5)
+        .map(|seq| ("topic", "author-x", "log-x", seq, b"Message".as_slice()))
+        .collect();
+    store(&server, &entries).await;
 
     // Client says it has up to sequence 2
-    let get_response = server
-        .post("/blips/get")
-        .json(&json!({
-            "topics": {
-                "test-topic": {
-                    "author-x": 2
-                }
-            }
-        }))
-        .await;
+    let body = get(&server, &["topic"], &[("author-x", "log-x", 2)]).await;
 
-    get_response.assert_status_ok();
+    let log = &body.blips["author-x"]["log-x"];
+    assert_eq!(log.len(), 3);
+    assert!(log.contains_key(&3));
+    assert!(log.contains_key(&4));
+    assert!(log.contains_key(&5));
 
-    let body: GetBlipsResponse = get_response.json();
-    let topic_response = &body.blips_by_topic["test-topic"];
-
-    // Server should return messages 3, 4, 5
-    let author_seqs = &topic_response.blips["author-x"];
-    assert_eq!(author_seqs.len(), 3);
-    assert!(author_seqs.contains_key(&3));
-    assert!(author_seqs.contains_key(&4));
-    assert!(author_seqs.contains_key(&5));
-
-    // No missing since server is ahead
-    assert!(topic_response.missing.is_empty());
+    assert!(body.missing.is_empty());
 }
 
 #[tokio::test]
