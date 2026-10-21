@@ -17,15 +17,15 @@ use crate::MailboxId;
 use crate::SeqNum;
 use crate::connection_health::SyncStatus;
 
-const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
+const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state_v2 (
         mailbox_id TEXT NOT NULL,
-        topic      BLOB NOT NULL,
-        author     BLOB NOT NULL,
+        author      BLOB NOT NULL,
+        log_id     BLOB NOT NULL,
         seq_num    INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
-        PRIMARY KEY (mailbox_id, topic, author)
+        PRIMARY KEY (mailbox_id, author, log_id)
     );
-    CREATE INDEX IF NOT EXISTS idx_sync_state_log ON mailbox_sync_state(topic, author);
+    CREATE INDEX IF NOT EXISTS idx_sync_state_log_v2 ON mailbox_sync_state_v2(author, log_id);
     CREATE TABLE IF NOT EXISTS mailbox_url (
         mailbox_id TEXT NOT NULL PRIMARY KEY,
         url        TEXT NOT NULL
@@ -36,17 +36,17 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         updated_at INTEGER NOT NULL
     );";
 
-/// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
-pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
+/// Per-mailbox sync watermarks: `author -> log id -> highest seq num the mailbox holds`.
+pub type MailboxSyncState<A, L> = HashMap<A, HashMap<L, SeqNum>>;
 
 /// Persistent, watch-based tracker for what each mailbox has acknowledged syncing.
 /// SQLite-backed (or in-memory for tests), with watch channels layered on top so
 /// callers can subscribe to live updates.
-pub struct MailboxSyncTracker<T, A> {
+pub struct MailboxSyncTracker<A, L> {
     inner: SyncBackend,
     all_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
-    per_mailbox: Mutex<HashMap<MailboxId, watch::Sender<MailboxSyncState<T, A>>>>,
-    _phantom: PhantomData<fn() -> (T, A)>,
+    per_mailbox: Mutex<HashMap<MailboxId, watch::Sender<MailboxSyncState<A, L>>>>,
+    _phantom: PhantomData<fn() -> (A, L)>,
 }
 
 #[derive(Clone)]
@@ -59,7 +59,7 @@ enum SyncBackend {
 
 #[derive(Default)]
 struct MemRows {
-    /// `(mailbox_id, topic_bytes, author_bytes) -> seq`
+    /// `(mailbox_id, author_bytes, log_id_bytes) -> seq`
     rows: BTreeMap<(MailboxId, Vec<u8>, Vec<u8>), SeqNum>,
     /// `mailbox_id -> base url`
     urls: BTreeMap<MailboxId, String>,
@@ -67,10 +67,10 @@ struct MemRows {
     statuses: BTreeMap<MailboxId, SyncStatus>,
 }
 
-impl<T, A> MailboxSyncTracker<T, A>
+impl<A, L> MailboxSyncTracker<A, L>
 where
-    T: Serialize + DeserializeOwned + Eq + std::hash::Hash + Clone + Send + Sync + 'static,
     A: Serialize + DeserializeOwned + Eq + std::hash::Hash + Clone + Send + Sync + 'static,
+    L: Serialize + DeserializeOwned + Eq + std::hash::Hash + Clone + Send + Sync + 'static,
 {
     pub async fn open(
         path: impl AsRef<Path>,
@@ -122,7 +122,7 @@ where
     pub async fn sync_state(
         &self,
         mailbox: &MailboxId,
-    ) -> anyhow::Result<watch::Receiver<MailboxSyncState<T, A>>> {
+    ) -> anyhow::Result<watch::Receiver<MailboxSyncState<A, L>>> {
         let mut per_mailbox = self.per_mailbox.lock().await;
         if let Some(tx) = per_mailbox.get(mailbox) {
             return Ok(tx.subscribe());
@@ -133,14 +133,14 @@ where
         Ok(rx)
     }
 
-    /// Record a batch of `(topic, author, seq)` watermarks for one mailbox in
+    /// Record a batch of `(author, log_id, seq)` watermarks for one mailbox in
     /// a single SQL statement (multi-row INSERT with upsert). Updates the
     /// per-mailbox sync-state watch (if subscribed) and the all-ids watch
     /// when a new mailbox is observed.
     pub async fn record_synced(
         &self,
         mailbox: &MailboxId,
-        entries: &[(T, A, SeqNum)],
+        entries: &[(A, L, SeqNum)],
     ) -> anyhow::Result<()> {
         if entries.is_empty() {
             return Ok(());
@@ -148,8 +148,8 @@ where
         let mut encoded: Vec<(Vec<u8>, Vec<u8>, SeqNum)> = Vec::with_capacity(entries.len());
         for (t, a, s) in entries {
             encoded.push((
-                encode(t).context("encoding topic")?,
-                encode(a).context("encoding author")?,
+                encode(t).context("encoding author")?,
+                encode(a).context("encoding log_id")?,
                 *s,
             ));
         }
@@ -158,26 +158,26 @@ where
                 let pool = pool.pool();
                 let now = chrono::Utc::now().timestamp_millis();
                 let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-                    "INSERT INTO mailbox_sync_state (mailbox_id, topic, author, seq_num, updated_at) ",
+                    "INSERT INTO mailbox_sync_state_v2 (mailbox_id, author, log_id, seq_num, updated_at) ",
                 );
-                query.push_values(&encoded, |mut row, (topic_bytes, author_bytes, seq)| {
+                query.push_values(&encoded, |mut row, (author_bytes, log_id_bytes, seq)| {
                     row.push_bind(mailbox)
-                        .push_bind(topic_bytes)
                         .push_bind(author_bytes)
+                        .push_bind(log_id_bytes)
                         .push_bind(i64::from(*seq))
                         .push_bind(now);
                 });
                 query.push(
-                    " ON CONFLICT (mailbox_id, topic, author) DO UPDATE SET
-                        seq_num = MAX(excluded.seq_num, mailbox_sync_state.seq_num),
+                    " ON CONFLICT (mailbox_id, author, log_id) DO UPDATE SET
+                        seq_num = MAX(excluded.seq_num, mailbox_sync_state_v2.seq_num),
                         updated_at = excluded.updated_at",
                 );
                 query.build().execute(pool).await?;
             }
             SyncBackend::Mem(rows) => {
                 let mut rows = rows.lock().await;
-                for (topic_bytes, author_bytes, seq) in &encoded {
-                    let key = (mailbox.clone(), topic_bytes.clone(), author_bytes.clone());
+                for (author_bytes, log_id_bytes, seq) in &encoded {
+                    let key = (mailbox.clone(), author_bytes.clone(), log_id_bytes.clone());
                     let entry = rows.rows.entry(key).or_insert(0);
                     if *seq > *entry {
                         *entry = *seq;
@@ -330,21 +330,21 @@ where
     pub async fn get_synced(
         &self,
         mailbox: &MailboxId,
-        topic: &T,
         author: &A,
+        log_id: &L,
     ) -> anyhow::Result<Option<SeqNum>> {
-        let topic_bytes = encode(topic)?;
         let author_bytes = encode(author)?;
+        let log_id_bytes = encode(log_id)?;
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
                 let pool = pool.pool();
                 let row: Option<(i64,)> = sqlx::query_as(
-                    "SELECT seq_num FROM mailbox_sync_state
-                     WHERE mailbox_id = ? AND topic = ? AND author = ?",
+                    "SELECT seq_num FROM mailbox_sync_state_v2
+                     WHERE mailbox_id = ? AND author = ? AND log_id = ?",
                 )
                 .bind(mailbox)
-                .bind(&topic_bytes)
                 .bind(&author_bytes)
+                .bind(&log_id_bytes)
                 .fetch_optional(pool)
                 .await?;
                 Ok(row.map(|(s,)| SeqNum::try_from(s)).transpose()?)
@@ -353,29 +353,29 @@ where
                 let rows = rows.lock().await;
                 Ok(rows
                     .rows
-                    .get(&(mailbox.clone(), topic_bytes, author_bytes))
+                    .get(&(mailbox.clone(), author_bytes, log_id_bytes))
                     .copied())
             }
         }
     }
 
-    /// All `(mailbox_id, seq)` entries for the given (topic, author).
+    /// All `(mailbox_id, seq)` entries for the given (author, log_id).
     pub async fn get_synced_for_log(
         &self,
-        topic: &T,
         author: &A,
+        log_id: &L,
     ) -> anyhow::Result<BTreeMap<MailboxId, SeqNum>> {
-        let topic_bytes = encode(topic)?;
         let author_bytes = encode(author)?;
+        let log_id_bytes = encode(log_id)?;
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
                 let pool = pool.pool();
                 let rows: Vec<(String, i64)> = sqlx::query_as(
-                    "SELECT mailbox_id, seq_num FROM mailbox_sync_state
-                     WHERE topic = ? AND author = ?",
+                    "SELECT mailbox_id, seq_num FROM mailbox_sync_state_v2
+                     WHERE author = ? AND log_id = ?",
                 )
-                .bind(&topic_bytes)
                 .bind(&author_bytes)
+                .bind(&log_id_bytes)
                 .fetch_all(pool)
                 .await?;
                 rows.into_iter()
@@ -387,46 +387,46 @@ where
                 Ok(rows
                     .rows
                     .iter()
-                    .filter(|((_, t, a), _)| t == &topic_bytes && a == &author_bytes)
+                    .filter(|((_, t, a), _)| t == &author_bytes && a == &log_id_bytes)
                     .map(|((m, _, _), s)| (m.clone(), *s))
                     .collect())
             }
         }
     }
 
-    /// All `topic -> author -> seq` entries for the given mailbox.
+    /// All `author -> log_id -> seq` entries for the given mailbox.
     pub async fn get_all_for_mailbox(
         &self,
         mailbox: &MailboxId,
-    ) -> anyhow::Result<MailboxSyncState<T, A>> {
+    ) -> anyhow::Result<MailboxSyncState<A, L>> {
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
                 let pool = pool.pool();
                 let rows: Vec<(Vec<u8>, Vec<u8>, i64)> = sqlx::query_as(
-                    "SELECT topic, author, seq_num FROM mailbox_sync_state
+                    "SELECT author, log_id, seq_num FROM mailbox_sync_state_v2
                      WHERE mailbox_id = ?",
                 )
                 .bind(mailbox)
                 .fetch_all(pool)
                 .await?;
-                let mut out: MailboxSyncState<T, A> = HashMap::new();
+                let mut out: MailboxSyncState<A, L> = HashMap::new();
                 for (t_bytes, a_bytes, s) in rows {
-                    let topic: T = decode(&t_bytes).context("decoding topic")?;
-                    let author: A = decode(&a_bytes).context("decoding author")?;
-                    out.entry(topic)
+                    let author: A = decode(&t_bytes).context("decoding author")?;
+                    let log_id: L = decode(&a_bytes).context("decoding log_id")?;
+                    out.entry(author)
                         .or_default()
-                        .insert(author, SeqNum::try_from(s)?);
+                        .insert(log_id, SeqNum::try_from(s)?);
                 }
                 Ok(out)
             }
             SyncBackend::Mem(rows) => {
                 let rows = rows.lock().await;
-                let mut out: MailboxSyncState<T, A> = HashMap::new();
+                let mut out: MailboxSyncState<A, L> = HashMap::new();
                 for ((m, t_bytes, a_bytes), s) in rows.rows.iter() {
                     if m == mailbox {
-                        let topic: T = decode(t_bytes).context("decoding topic")?;
-                        let author: A = decode(a_bytes).context("decoding author")?;
-                        out.entry(topic).or_default().insert(author, *s);
+                        let author: A = decode(t_bytes).context("decoding author")?;
+                        let log_id: L = decode(a_bytes).context("decoding log_id")?;
+                        out.entry(author).or_default().insert(log_id, *s);
                     }
                 }
                 Ok(out)
@@ -438,7 +438,7 @@ where
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
                 let pool = pool.pool();
-                sqlx::query("DELETE FROM mailbox_sync_state WHERE mailbox_id = ?")
+                sqlx::query("DELETE FROM mailbox_sync_state_v2 WHERE mailbox_id = ?")
                     .bind(mailbox)
                     .execute(pool)
                     .await?;
@@ -465,19 +465,20 @@ where
 }
 
 async fn load_all_ids_sqlite(pool: &SqlitePool) -> anyhow::Result<BTreeSet<MailboxId>> {
-    let rows: Vec<(String,)> = sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state")
-        .fetch_all(pool)
-        .await?;
+    let rows: Vec<(String,)> =
+        sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state_v2")
+            .fetch_all(pool)
+            .await?;
     Ok(rows.into_iter().map(|(m,)| m).collect())
 }
 
-fn encode<T: Serialize>(value: &T) -> anyhow::Result<Vec<u8>> {
+fn encode<A: Serialize>(value: &A) -> anyhow::Result<Vec<u8>> {
     let mut buf = Vec::new();
     ciborium::into_writer(value, &mut buf)?;
     Ok(buf)
 }
 
-fn decode<T: DeserializeOwned>(bytes: &[u8]) -> anyhow::Result<T> {
+fn decode<A: DeserializeOwned>(bytes: &[u8]) -> anyhow::Result<A> {
     Ok(ciborium::from_reader(bytes)?)
 }
 

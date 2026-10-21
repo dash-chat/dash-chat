@@ -12,10 +12,13 @@ pub struct Msg {
     pub seq: SeqNum,
 }
 
+/// A `Msg` lives in the log named after its topic, so for this type a log id
+/// is a topic.
 impl MailboxItem for Msg {
     type Author = char;
     type Hash = (char, SeqNum);
     type Topic = u8;
+    type LogId = u8;
 
     fn hash(&self) -> Self::Hash {
         (self.author, self.seq)
@@ -26,7 +29,7 @@ impl MailboxItem for Msg {
     fn seq_num(&self) -> SeqNum {
         self.seq
     }
-    fn topic(&self) -> Self::Topic {
+    fn log_id(&self) -> Self::LogId {
         self.topic
     }
 }
@@ -93,12 +96,12 @@ impl MailboxStore<Msg> for DummyStore {
     async fn get_log(
         &self,
         _author: &char,
-        _topic: &u8,
+        _log_id: &u8,
         _from: SeqNum,
     ) -> Result<Option<Vec<Msg>>, anyhow::Error> {
         Ok(None)
     }
-    async fn get_log_heights(&self, _topic: &u8) -> Result<Vec<(char, SeqNum)>, anyhow::Error> {
+    async fn get_log_heights(&self, _topic: &u8) -> Result<Vec<(char, u8, SeqNum)>, anyhow::Error> {
         Ok(vec![])
     }
 }
@@ -120,14 +123,14 @@ impl MailboxStore<Msg> for MemStore {
     async fn get_log(
         &self,
         author: &char,
-        topic: &u8,
+        log_id: &u8,
         from: SeqNum,
     ) -> Result<Option<Vec<Msg>>, anyhow::Error> {
         let Some(height) = self
             .heights
             .lock()
             .unwrap()
-            .get(&(*topic, *author))
+            .get(&(*log_id, *author))
             .copied()
         else {
             return Ok(None);
@@ -135,7 +138,7 @@ impl MailboxStore<Msg> for MemStore {
         Ok(Some(
             (from..=height)
                 .map(|seq| Msg {
-                    topic: *topic,
+                    topic: *log_id,
                     author: *author,
                     seq,
                 })
@@ -143,14 +146,14 @@ impl MailboxStore<Msg> for MemStore {
         ))
     }
 
-    async fn get_log_heights(&self, topic: &u8) -> Result<Vec<(char, SeqNum)>, anyhow::Error> {
+    async fn get_log_heights(&self, topic: &u8) -> Result<Vec<(char, u8, SeqNum)>, anyhow::Error> {
         Ok(self
             .heights
             .lock()
             .unwrap()
             .iter()
             .filter(|((t, _), _)| t == topic)
-            .map(|((_, a), h)| (*a, *h))
+            .map(|((t, a), h)| (*a, *t, *h))
             .collect())
     }
 }

@@ -8,7 +8,7 @@
 //! The coordinator abstracts the specific sync loop logic away from the
 //! main [`crate::manager::Mailboxes`] registry.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ use crate::MailboxId;
 use crate::manager::TrackedMailbox;
 use crate::store::MailboxStore;
 use crate::sync_tracker::MailboxSyncTracker;
-use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
+use crate::{FetchRequest, FetchResponse, LogHeights, MailboxClient, TopicLogs};
 
 /// Outcome of a single [`SyncCoordinator::sync_topics`] call. The sync may
 /// have failed partway through, but any topics whose receivers were found to
@@ -31,11 +31,13 @@ pub struct SyncTopicOutcome<Topic> {
     pub closed_topics: HashSet<Topic>,
 }
 
-struct SyncTopicResult<Item: crate::MailboxItem> {
-    ops_to_publish: Vec<Item>,
-    acks: Vec<(Item::Topic, Item::Author, SeqNum)>,
-    closed: bool,
-}
+type Ack<Item> = (
+    <Item as crate::MailboxItem>::Author,
+    <Item as crate::MailboxItem>::LogId,
+    SeqNum,
+);
+
+type TopicSenders<Item> = Mutex<HashMap<<Item as crate::MailboxItem>::Topic, mpsc::Sender<Item>>>;
 
 #[derive(Clone)]
 pub struct SyncCoordinator<Item, Store>
@@ -44,7 +46,7 @@ where
     Store: MailboxStore<Item>,
 {
     store: Store,
-    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    sync_tracker: Arc<MailboxSyncTracker<Item::Author, Item::LogId>>,
 }
 
 impl<Item, Store> SyncCoordinator<Item, Store>
@@ -54,7 +56,7 @@ where
 {
     pub fn new(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::Author, Item::LogId>>,
     ) -> Self {
         Self {
             store,
@@ -69,13 +71,13 @@ where
         &self,
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
-        topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
+        topic_senders: &TopicSenders<Item>,
     ) -> SyncTopicOutcome<Item::Topic>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
     {
-        let (response, sent_heights) = match self.fetch_missing_operations(topics, mailbox).await {
-            Ok(result) => result,
+        let (sent_logs, sent_heights) = match self.local_logs(topics).await {
+            Ok(local) => local,
             Err(err) => {
                 return SyncTopicOutcome {
                     result: Err(err),
@@ -84,37 +86,77 @@ where
             }
         };
 
-        let mut ops_to_publish: Vec<Item> = vec![];
-        let mut acks: Vec<(Item::Topic, Item::Author, SeqNum)> = vec![];
-        let mut closed_topics: HashSet<Item::Topic> = HashSet::new();
+        let request = FetchRequest {
+            topics: sent_logs.keys().cloned().collect(),
+            heights: sent_heights.clone(),
+        };
+        let FetchResponse {
+            logs,
+            items,
+            missing,
+        } = match mailbox.fetch(request).await {
+            Ok(response) => response,
+            Err(err) => {
+                return SyncTopicOutcome {
+                    result: Err(err),
+                    closed_topics: HashSet::new(),
+                };
+            }
+        };
 
-        for (topic, response) in response.into_iter() {
-            let outcome = match self
-                .sync_topic(topic.clone(), response, &sent_heights, topic_senders)
-                .await
-            {
-                Ok(res) => res,
-                Err(err) => {
-                    return SyncTopicOutcome {
-                        result: Err(err),
-                        closed_topics,
-                    };
+        if items.is_empty() && missing.is_empty() {
+            tracing::trace!("Syncing with mailbox: nothing to do");
+        } else {
+            tracing::info!(
+                items = items.len(),
+                missing = missing.values().map(|logs| logs.len()).sum::<usize>(),
+                "fetched operations"
+            );
+        }
+
+        // Sync watermark inference for logs we sent heights for:
+        // if the server returned no `missing` entries for a log, it has the log
+        // contiguously up to at least the height we sent.
+        let mut acks: Vec<Ack<Item>> = vec![];
+        for (author, heights) in &sent_heights {
+            for (log_id, height) in heights {
+                let reported_missing = missing
+                    .get(author)
+                    .is_some_and(|logs| logs.contains_key(log_id));
+                if !reported_missing {
+                    acks.push((*author, *log_id, *height));
                 }
-            };
-
-            ops_to_publish.extend(outcome.ops_to_publish);
-            acks.extend(outcome.acks);
-            if outcome.closed {
-                closed_topics.insert(topic);
             }
         }
 
-        let publish_acks: Vec<(Item::Topic, Item::Author, SeqNum)> = ops_to_publish
+        // Each received item is one the mailbox already has.
+        for item in &items {
+            acks.push((item.author(), item.log_id(), item.seq_num()));
+        }
+
+        let closed_topics = deliver(items, &logs, topic_senders).await;
+
+        let mut ops_to_publish: Vec<Item> = vec![];
+        for (author, logs) in missing {
+            for (log_id, seqs) in logs {
+                match self.collect_missing(&author, &log_id, &seqs).await {
+                    Ok(ops) => ops_to_publish.extend(ops),
+                    Err(err) => {
+                        return SyncTopicOutcome {
+                            result: Err(err),
+                            closed_topics,
+                        };
+                    }
+                }
+            }
+        }
+
+        let publish_acks: Vec<Ack<Item>> = ops_to_publish
             .iter()
-            .map(|op| (op.topic(), op.author(), op.seq_num()))
+            .map(|op| (op.author(), op.log_id(), op.seq_num()))
             .collect();
 
-        if let Err(err) = mailbox.publish(ops_to_publish).await {
+        if let Err(err) = mailbox.publish(sent_logs, ops_to_publish).await {
             return SyncTopicOutcome {
                 result: Err(err),
                 closed_topics,
@@ -138,23 +180,26 @@ where
         tracked: &TrackedMailbox<Item>,
         topic: Item::Topic,
         author: Item::Author,
+        log_id: Item::LogId,
     ) -> anyhow::Result<()> {
-        let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
+        let synced = self.sync_tracker.get_synced(id, &author, &log_id).await?;
         let start = synced.map_or(0, |n| n + 1);
         let ops = self
             .store
-            .get_log(&author, &topic, start)
+            .get_log(&author, &log_id, start)
             .await?
             .unwrap_or_default();
         let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
             return Ok(());
         };
-        let response = tracked.client().await.publish(ops).await?;
+        let logs: TopicLogs<Item> =
+            BTreeMap::from([(topic, BTreeMap::from([(author, BTreeSet::from([log_id]))]))]);
+        let response = tracked.client().await.publish(logs, ops).await?;
 
-        let watermark = response.watermark(&topic, &author);
+        let watermark = response.watermark(&author, &log_id);
         if let Some(wm) = watermark {
             self.sync_tracker
-                .record_synced(id, &[(topic, author, wm)])
+                .record_synced(id, &[(author, log_id, wm)])
                 .await?;
         }
         if watermark.is_none_or(|wm| wm < top) {
@@ -171,126 +216,101 @@ where
 
     // PRIVATE
 
-    /// Build a fetch request from local log heights and query the mailbox for
-    /// operations it holds that we lack (and which operations we hold that it
-    /// lacks). Returns the per-topic mailbox response alongside the heights we
-    /// sent, which is needed later for watermark inference.
-    async fn fetch_missing_operations(
+    /// The logs the local store holds under each topic, and the heights of
+    /// those logs. A log shared by several topics appears once in the heights.
+    async fn local_logs(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-        mailbox: &Arc<dyn MailboxClient<Item>>,
-    ) -> anyhow::Result<(
-        BTreeMap<Item::Topic, FetchTopicResponse<Item>>,
-        BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
-    )>
-    where
-        Item::Topic: std::fmt::Display,
-    {
-        let mut request = BTreeMap::new();
-        let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> =
-            BTreeMap::new();
+    ) -> anyhow::Result<(TopicLogs<Item>, LogHeights<Item>)> {
+        let mut logs: TopicLogs<Item> = BTreeMap::new();
+        let mut heights: LogHeights<Item> = BTreeMap::new();
         for topic in topics {
-            let heights =
-                BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
-            sent_heights.insert(topic, heights.clone());
-            request.insert(topic, heights);
+            let topic_logs = logs.entry(topic).or_default();
+            for (author, log_id, height) in self.store.get_log_heights(&topic).await? {
+                topic_logs.entry(author).or_default().insert(log_id);
+                heights.entry(author).or_default().insert(log_id, height);
+            }
         }
-
-        let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
-        Ok((response, sent_heights))
+        Ok((logs, heights))
     }
 
-    /// Sync a single topic with the mailbox after the fetch response has been
-    /// received. Infers ack watermarks, sends received items to the local
-    /// receiver, and collects missing operations from the local store for
-    /// publishing.
-
-    async fn sync_topic(
+    /// The operations of one log at the given sequence numbers, which the
+    /// mailbox reported missing.
+    async fn collect_missing(
         &self,
-        topic: Item::Topic,
-        response: FetchTopicResponse<Item>,
-        sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
-        topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
-    ) -> anyhow::Result<SyncTopicResult<Item>>
-    where
-        Item::Topic: std::fmt::Display + Eq + Hash + Clone,
-    {
-        let FetchTopicResponse { items, missing } = response;
-        let mut ops_to_publish = vec![];
-        let mut acks = vec![];
-        let mut closed = false;
-
-        if items.is_empty() && missing.is_empty() {
-            tracing::trace!(topic = %topic, "Syncing with mailbox: nothing to do");
-        } else {
-            tracing::info!(
-                topic = %topic,
-                items = items.len(),
-                missing = missing.len(),
-                "fetched operations"
-            );
-        }
-
-        // Sync watermark inference for authors we sent heights for:
-        // if the server returned no `missing` entries for an author, it has the log
-        // contiguously up to at least the height we sent.
-        if let Some(heights) = sent_heights.get(&topic) {
-            for (author, height) in heights {
-                if !missing.contains_key(author) {
-                    acks.push((topic.clone(), *author, *height));
-                }
-            }
-        }
-
-        // Each received item is one the mailbox already has.
-        for item in &items {
-            acks.push((item.topic(), item.author(), item.seq_num()));
-        }
-
-        let Some(sender) = topic_senders.lock().await.get(&topic).cloned() else {
-            tracing::warn!(topic = %topic, "no sender for topic");
-            return Ok(SyncTopicResult {
-                ops_to_publish,
-                acks,
-                closed,
-            });
+        author: &Item::Author,
+        log_id: &Item::LogId,
+        seqs: &[SeqNum],
+    ) -> anyhow::Result<Vec<Item>> {
+        let Some(lowest) = seqs.iter().min() else {
+            return Ok(vec![]);
         };
+        let log = match self.store.get_log(author, log_id, *lowest).await {
+            Ok(Some(log)) => log,
+            Ok(None) => {
+                tracing::error!(?author, ?log_id, ?lowest, "no log found");
+                return Ok(vec![]);
+            }
+            Err(err) => {
+                return Err(anyhow::anyhow!(
+                    "failed to get log {log_id:?} of {author:?}: {err}"
+                ));
+            }
+        };
+        Ok(seqs
+            .iter()
+            .filter_map(|seq| log.get((seq - lowest) as usize).cloned())
+            .collect())
+    }
+}
 
-        for item in items {
-            if sender.send(item).await.is_err() {
-                tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
-                closed = true;
-                break;
+/// Send each fetched item to the receiver of every requested topic its log
+/// belongs to. Returns the topics whose receivers turned out to be closed.
+async fn deliver<Item>(
+    items: Vec<Item>,
+    logs: &TopicLogs<Item>,
+    topic_senders: &TopicSenders<Item>,
+) -> HashSet<Item::Topic>
+where
+    Item: crate::MailboxItem,
+    Item::Topic: std::fmt::Display + Eq + Hash + Clone,
+{
+    let mut closed: HashSet<Item::Topic> = HashSet::new();
+    if items.is_empty() {
+        return closed;
+    }
+
+    let senders = topic_senders.lock().await.clone();
+    let mut log_topics: HashMap<(Item::Author, Item::LogId), Vec<Item::Topic>> = HashMap::new();
+    for (topic, authors) in logs {
+        for (author, log_ids) in authors {
+            for log_id in log_ids {
+                log_topics
+                    .entry((*author, *log_id))
+                    .or_default()
+                    .push(*topic);
             }
         }
+    }
 
-        for (author, seqs) in missing {
-            let Some(lowest) = seqs.iter().min() else {
+    for item in items {
+        let Some(topics) = log_topics.get(&(item.author(), item.log_id())) else {
+            tracing::warn!(hash = ?item.hash(), "fetched item belongs to no requested topic");
+            continue;
+        };
+        for topic in topics {
+            if closed.contains(topic) {
+                continue;
+            }
+            let Some(sender) = senders.get(topic) else {
+                tracing::warn!(topic = %topic, "no sender for topic");
                 continue;
             };
-            let log = match self.store.get_log(&author, &topic, *lowest).await {
-                Ok(Some(log)) => log,
-                Ok(None) => {
-                    tracing::error!(author = ?author, topic = %topic, lowest = ?lowest, "no log found");
-                    continue;
-                }
-                Err(err) => {
-                    return Err(anyhow::anyhow!("failed to get log for {topic:?}: {err}"));
-                }
-            };
-
-            for seq in &seqs {
-                let index = seq - lowest;
-                if let Some(item) = log.get(index as usize) {
-                    ops_to_publish.push(item.clone());
-                }
+            if sender.send(item.clone()).await.is_err() {
+                tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
+                closed.insert(*topic);
             }
         }
-
-        Ok(SyncTopicResult {
-            ops_to_publish,
-            acks,
-            closed,
-        })
     }
+    closed
 }

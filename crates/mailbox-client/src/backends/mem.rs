@@ -1,10 +1,10 @@
 use crate::{
-    FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient, MailboxId, MailboxItem,
-    OptionalItemTraits, PublishResponse,
+    FetchRequest, FetchResponse, MailboxClient, MailboxId, MailboxItem, OptionalItemTraits,
+    PublishResponse, TopicLogs,
 };
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
 };
 
@@ -26,22 +26,42 @@ impl<Item: MailboxItem> MemMailboxClient<Item> {
     }
 }
 
-pub type MemMailboxLogs<Item> = HashMap<
-    <Item as MailboxItem>::Topic,
-    HashMap<<Item as MailboxItem>::Author, BTreeMap<SeqNum, Item>>,
->;
+type Log<Item> = (<Item as MailboxItem>::Author, <Item as MailboxItem>::LogId);
+
+/// What the in-memory mailbox holds: which logs belong to which topic, and
+/// the logs themselves, stored once however many topics they belong to.
+#[derive(Clone)]
+pub struct MemMailboxLogs<Item: MailboxItem> {
+    pub topics: TopicLogs<Item>,
+    pub ops: HashMap<Log<Item>, BTreeMap<SeqNum, Item>>,
+}
+
+impl<Item: MailboxItem> Default for MemMailboxLogs<Item> {
+    fn default() -> Self {
+        Self {
+            topics: BTreeMap::new(),
+            ops: HashMap::new(),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct MemMailbox<Item: MailboxItem> {
     id: MailboxId,
-    ops: Arc<RwLock<MemMailboxLogs<Item>>>,
+    logs: Arc<RwLock<MemMailboxLogs<Item>>>,
+}
+
+impl<Item: MailboxItem> Default for MemMailbox<Item> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<Item: MailboxItem> MemMailbox<Item> {
     pub fn new() -> Self {
         Self {
             id: nanoid::nanoid!(),
-            ops: Arc::new(RwLock::new(HashMap::new())),
+            logs: Arc::new(RwLock::new(MemMailboxLogs::default())),
         }
     }
 
@@ -52,15 +72,16 @@ impl<Item: MailboxItem> MemMailbox<Item> {
         }
     }
 
-    pub async fn log_heights(&self) -> BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> {
-        let ops = self.ops.read().await;
-        let mut log_heights = BTreeMap::new();
-        for (topic, ops) in ops.iter() {
-            let mut topic_heights = BTreeMap::new();
-            for (author, ops) in ops.iter() {
-                topic_heights.insert(*author, ops.len() as SeqNum);
-            }
-            log_heights.insert(*topic, topic_heights);
+    /// The number of operations held per log.
+    pub async fn log_heights(&self) -> BTreeMap<Item::Author, BTreeMap<Item::LogId, SeqNum>> {
+        let logs = self.logs.read().await;
+        let mut log_heights: BTreeMap<Item::Author, BTreeMap<Item::LogId, SeqNum>> =
+            BTreeMap::new();
+        for ((author, log_id), ops) in logs.ops.iter() {
+            log_heights
+                .entry(*author)
+                .or_default()
+                .insert(*log_id, ops.len() as SeqNum);
         }
         log_heights
     }
@@ -76,109 +97,126 @@ where
         self.mailbox.id.clone()
     }
 
-    async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error> {
-        let mut store = self.mailbox.ops.write().await;
-        let mut logs: BTreeSet<(Item::Topic, Item::Author)> = BTreeSet::new();
+    async fn publish(
+        &self,
+        logs: TopicLogs<Item>,
+        ops: Vec<Item>,
+    ) -> Result<PublishResponse<Item>, anyhow::Error> {
+        let mut store = self.mailbox.logs.write().await;
+        for (topic, authors) in logs {
+            let topic_logs = store.topics.entry(topic).or_default();
+            for (author, log_ids) in authors {
+                topic_logs.entry(author).or_default().extend(log_ids);
+            }
+        }
+
+        let mut published: BTreeSet<Log<Item>> = BTreeSet::new();
         for op in ops {
-            let author = op.author();
+            let log = (op.author(), op.log_id());
             let seq_num = op.seq_num();
-            let topic = op.topic();
-            tracing::info!(topic = ?topic, hash = ?op.hash(), "publishing mailbox operation");
-            store
-                .entry(topic)
-                .or_default()
-                .entry(author)
-                .or_default()
-                .insert(seq_num, op);
-            logs.insert((topic, author));
+            tracing::info!(log = ?log, hash = ?op.hash(), "publishing mailbox operation");
+            store.ops.entry(log).or_default().insert(seq_num, op);
+            published.insert(log);
         }
 
         let mut response = PublishResponse::default();
-        for (topic, author) in logs {
+        for (author, log_id) in published {
             let watermark = store
-                .get(&topic)
-                .and_then(|authors| authors.get(&author))
+                .ops
+                .get(&(author, log_id))
                 .and_then(contiguous_watermark);
             response
                 .0
-                .entry(topic)
+                .entry(author)
                 .or_default()
-                .insert(author, watermark);
+                .insert(log_id, watermark);
         }
         Ok(response)
     }
 
     async fn fetch(&self, request: FetchRequest<Item>) -> anyhow::Result<FetchResponse<Item>> {
-        let mailbox_ops = self.mailbox.ops.read().await;
+        let store = self.mailbox.logs.read().await;
 
-        let mut response = BTreeMap::new();
-
-        for (topic, provided_authors) in request.0.into_iter() {
-            let _empty_map = HashMap::new();
-            let mailbox_authors = mailbox_ops.get(&topic).unwrap_or(&_empty_map);
-
-            let mut new = vec![];
-            let mut missing = HashMap::new();
-            let all_authors = mailbox_authors
-                .keys()
-                .cloned()
-                .chain(provided_authors.keys().cloned())
-                .collect::<HashSet<_>>();
-            for author in all_authors {
-                let mut gaps = vec![];
-                let mailbox_slots = mailbox_authors.get(&author).cloned();
-                let provided_height = provided_authors.get(&author).cloned();
-
-                match (mailbox_slots, provided_height) {
-                    (Some(mailbox_slots), Some(provided_height)) => {
-                        let last_seq = mailbox_slots
-                            .last_key_value()
-                            .map(|(seq, _)| *seq)
-                            .unwrap_or(0);
-
-                        let max = provided_height.max(last_seq);
-                        for i in 0..=max {
-                            if let Some(op) = mailbox_slots.get(&i) {
-                                if i > provided_height {
-                                    new.push(op.clone());
-                                }
-                            } else {
-                                gaps.push(i);
-                            }
-                        }
-                    }
-                    (Some(mailbox_slots), None) => {
-                        new.extend(mailbox_slots.values().cloned());
-                    }
-                    (None, Some(provided_height)) => {
-                        gaps.extend(0..=provided_height);
-                    }
-                    (None, None) => {
-                        // empty mailbox, empty node store, return nothing...
-                    }
-                }
-                if !gaps.is_empty() {
-                    missing.insert(author, gaps);
+        let mut response = FetchResponse::default();
+        let mut served: BTreeSet<Log<Item>> = BTreeSet::new();
+        for topic in request.topics {
+            let logs = store.topics.get(&topic).cloned().unwrap_or_default();
+            for (author, log_ids) in &logs {
+                for log_id in log_ids {
+                    served.insert((*author, *log_id));
                 }
             }
-
-            tracing::info!(
-                topic = ?topic,
-                num = new.len(),
-                hashes = ?new.iter().map(|op: &Item| op.hash()).collect::<Vec<_>>(),
-                "fetching mailbox operations"
-            );
-
-            response.insert(
-                topic,
-                FetchTopicResponse {
-                    items: new,
-                    missing,
-                },
-            );
+            response.logs.insert(topic, logs);
         }
 
-        Ok(FetchResponse(response))
+        let provided: BTreeSet<Log<Item>> = request
+            .heights
+            .iter()
+            .flat_map(|(author, logs)| logs.keys().map(move |log_id| (*author, *log_id)))
+            .collect();
+
+        for log in served.union(&provided) {
+            let (author, log_id) = *log;
+            let mut gaps = vec![];
+            let mailbox_slots = store.ops.get(log).filter(|_| served.contains(log));
+            let provided_height = request
+                .heights
+                .get(&author)
+                .and_then(|logs| logs.get(&log_id))
+                .copied();
+
+            match (mailbox_slots, provided_height) {
+                (Some(mailbox_slots), Some(provided_height)) => {
+                    let last_seq = mailbox_slots
+                        .last_key_value()
+                        .map(|(seq, _)| *seq)
+                        .unwrap_or(0);
+
+                    let max = provided_height.max(last_seq);
+                    for i in 0..=max {
+                        if let Some(op) = mailbox_slots.get(&i) {
+                            if i > provided_height {
+                                response.items.push(op.clone());
+                            }
+                        } else {
+                            gaps.push(i);
+                        }
+                    }
+                }
+                (Some(mailbox_slots), None) => {
+                    response.items.extend(mailbox_slots.values().cloned());
+                }
+                (None, Some(provided_height)) => {
+                    let held = store.ops.get(log);
+                    gaps.extend(
+                        (0..=provided_height)
+                            .filter(|seq| !held.is_some_and(|slots| slots.contains_key(seq))),
+                    );
+                }
+                (None, None) => {
+                    // empty mailbox, empty node store, return nothing...
+                }
+            }
+            if !gaps.is_empty() {
+                response
+                    .missing
+                    .entry(author)
+                    .or_default()
+                    .insert(log_id, gaps);
+            }
+        }
+
+        tracing::info!(
+            num = response.items.len(),
+            hashes = ?response.items.iter().map(|op: &Item| op.hash()).collect::<Vec<_>>(),
+            "fetching mailbox operations"
+        );
+
+        Ok(FetchResponse {
+            logs: response.logs,
+            items: response.items,
+            missing: response.missing,
+        })
     }
 }
 
@@ -186,7 +224,7 @@ where
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::{FetchTopicResponse, testing::Msg};
+    use crate::testing::Msg;
 
     use super::*;
 
@@ -194,41 +232,78 @@ mod tests {
         Msg { topic, author, seq }
     }
 
+    /// `Msg`s live in the log named after their topic.
+    fn logs(msgs: &[Msg]) -> TopicLogs<Msg> {
+        let mut logs: TopicLogs<Msg> = BTreeMap::new();
+        for m in msgs {
+            logs.entry(m.topic)
+                .or_default()
+                .entry(m.author)
+                .or_default()
+                .insert(m.topic);
+        }
+        logs
+    }
+
+    async fn publish(client: &MemMailboxClient<Msg>, msgs: Vec<Msg>) -> PublishResponse<Msg> {
+        client.publish(logs(&msgs), msgs).await.unwrap()
+    }
+
     #[tokio::test]
     async fn publish_echoes_contiguous_watermark() {
         let client = MemMailbox::<Msg>::new().client();
 
-        let response = client
-            .publish(vec![msg(0, 'a', 0), msg(0, 'a', 1), msg(0, 'a', 3)])
-            .await
-            .unwrap();
-        assert_eq!(response.watermark(&0, &'a'), Some(1));
+        let response = publish(
+            &client,
+            vec![msg(0, 'a', 0), msg(0, 'a', 1), msg(0, 'a', 3)],
+        )
+        .await;
+        assert_eq!(response.watermark(&'a', &0), Some(1));
 
-        let response = client.publish(vec![msg(0, 'a', 2)]).await.unwrap();
-        assert_eq!(response.watermark(&0, &'a'), Some(3));
+        let response = publish(&client, vec![msg(0, 'a', 2)]).await;
+        assert_eq!(response.watermark(&'a', &0), Some(3));
 
-        let response = client.publish(vec![msg(1, 'b', 5)]).await.unwrap();
-        assert_eq!(response.watermark(&1, &'b'), None);
+        let response = publish(&client, vec![msg(1, 'b', 5)]).await;
+        assert_eq!(response.watermark(&'b', &1), None);
     }
 
     pub type MsgTopic = u8;
 
+    #[derive(Debug, PartialEq, Eq, Default)]
+    struct Fetched {
+        items: Vec<Msg>,
+        missing: BTreeMap<(char, u8), Vec<SeqNum>>,
+    }
+
+    /// Fetch one topic, giving the heights of the `(author, log)` pairs.
     async fn fetch(
         client: &MemMailboxClient<Msg>,
         topic: MsgTopic,
-        authors: &[(char, SeqNum)],
-    ) -> anyhow::Result<FetchTopicResponse<Msg>> {
-        let FetchResponse(mut r) = client.fetch(r(topic, authors)).await?;
-        let rr = r.remove(&topic).unwrap();
-        assert!(r.is_empty());
-        Ok(rr)
-    }
-
-    fn r(topic: MsgTopic, authors: &[(char, SeqNum)]) -> FetchRequest<Msg> {
-        FetchRequest(BTreeMap::from([(
-            topic,
-            BTreeMap::from_iter(authors.into_iter().cloned()),
-        )]))
+        heights: &[(char, u8, SeqNum)],
+    ) -> Fetched {
+        let mut request = FetchRequest {
+            topics: BTreeSet::from([topic]),
+            heights: BTreeMap::new(),
+        };
+        for (author, log, seq) in heights {
+            request
+                .heights
+                .entry(*author)
+                .or_default()
+                .insert(*log, *seq);
+        }
+        let response = client.fetch(request).await.unwrap();
+        Fetched {
+            items: response.items,
+            missing: response
+                .missing
+                .into_iter()
+                .flat_map(|(author, logs)| {
+                    logs.into_iter()
+                        .map(move |(log, seqs)| ((author, log), seqs))
+                })
+                .collect(),
+        }
     }
 
     fn m(topic: MsgTopic, author: char, seq: SeqNum) -> Msg {
@@ -248,20 +323,20 @@ mod tests {
         let t = 11;
 
         assert_eq!(
-            fetch(&client, t, &[(a, 1)]).await.unwrap(),
-            FetchTopicResponse {
+            fetch(&client, t, &[(a, t, 1)]).await,
+            Fetched {
                 items: vec![],
-                missing: HashMap::from([(a, vec![0, 1])]),
+                missing: BTreeMap::from([((a, t), vec![0, 1])]),
             }
         );
 
-        client.publish(mm(t, a, 0..2)).await.unwrap();
+        publish(&client, mm(t, a, 0..2)).await;
 
         assert_eq!(
-            fetch(&client, t, &[]).await.unwrap(),
-            FetchTopicResponse {
+            fetch(&client, t, &[]).await,
+            Fetched {
                 items: mm(t, a, 0..2),
-                missing: HashMap::new(),
+                missing: BTreeMap::new(),
             }
         );
     }
@@ -274,76 +349,94 @@ mod tests {
         let a = '.';
         let tt: [MsgTopic; 3] = [11, 22, 33];
 
-        let empty = FetchTopicResponse {
-            items: vec![],
-            missing: HashMap::new(),
-        };
-        assert_eq!(fetch(&client, tt[0], &[]).await.unwrap(), empty);
-        assert_eq!(fetch(&client, tt[1], &[]).await.unwrap(), empty);
-        assert_eq!(fetch(&client, tt[2], &[]).await.unwrap(), empty);
+        let empty = Fetched::default();
+        assert_eq!(fetch(&client, tt[0], &[]).await, empty);
+        assert_eq!(fetch(&client, tt[1], &[]).await, empty);
+        assert_eq!(fetch(&client, tt[2], &[]).await, empty);
 
         // only the first half
-        client.publish(mm(tt[0], a, 0..2)).await.unwrap();
+        publish(&client, mm(tt[0], a, 0..2)).await;
         // only the last half
-        client.publish(mm(tt[1], a, 2..4)).await.unwrap();
+        publish(&client, mm(tt[1], a, 2..4)).await;
         // both halves
-        client.publish(mm(tt[2], a, 0..4)).await.unwrap();
+        publish(&client, mm(tt[2], a, 0..4)).await;
 
         assert_eq!(
-            fetch(&client, tt[0], &[(a, 3)]).await.unwrap(),
-            FetchTopicResponse {
+            fetch(&client, tt[0], &[(a, tt[0], 3)]).await,
+            Fetched {
                 items: vec![],
-                missing: HashMap::from([(a, vec![2, 3])]),
+                missing: BTreeMap::from([((a, tt[0]), vec![2, 3])]),
             }
         );
         assert_eq!(
-            fetch(&client, tt[1], &[(a, 3)]).await.unwrap(),
-            FetchTopicResponse {
+            fetch(&client, tt[1], &[(a, tt[1], 3)]).await,
+            Fetched {
                 items: vec![],
-                missing: HashMap::from([(a, vec![0, 1])]),
+                missing: BTreeMap::from([((a, tt[1]), vec![0, 1])]),
             }
         );
-        assert_eq!(fetch(&client, tt[2], &[(a, 3)]).await.unwrap(), empty);
+        assert_eq!(fetch(&client, tt[2], &[(a, tt[2], 3)]).await, empty);
 
         assert_eq!(
-            fetch(&client, tt[0], &[(a, 4)]).await.unwrap(),
-            FetchTopicResponse {
+            fetch(&client, tt[0], &[(a, tt[0], 4)]).await,
+            Fetched {
                 items: vec![],
-                missing: HashMap::from([(a, vec![2, 3, 4])]),
+                missing: BTreeMap::from([((a, tt[0]), vec![2, 3, 4])]),
             }
         );
         assert_eq!(
-            fetch(&client, tt[1], &[(a, 4)]).await.unwrap(),
-            FetchTopicResponse {
+            fetch(&client, tt[1], &[(a, tt[1], 4)]).await,
+            Fetched {
                 items: vec![],
-                missing: HashMap::from([(a, vec![0, 1, 4])]),
+                missing: BTreeMap::from([((a, tt[1]), vec![0, 1, 4])]),
             }
         );
         assert_eq!(
-            fetch(&client, tt[2], &[(a, 4)]).await.unwrap(),
-            FetchTopicResponse {
+            fetch(&client, tt[2], &[(a, tt[2], 4)]).await,
+            Fetched {
                 items: vec![],
-                missing: HashMap::from([(a, vec![4])]),
+                missing: BTreeMap::from([((a, tt[2]), vec![4])]),
             }
         );
 
-        client.publish(vec![m(tt[0], a, 4)]).await.unwrap();
-        client.publish(vec![m(tt[1], a, 4)]).await.unwrap();
-        client.publish(vec![m(tt[2], a, 4)]).await.unwrap();
+        publish(&client, vec![m(tt[0], a, 4)]).await;
+        publish(&client, vec![m(tt[1], a, 4)]).await;
+        publish(&client, vec![m(tt[2], a, 4)]).await;
         assert_eq!(
-            fetch(&client, tt[0], &[(a, 3)]).await.unwrap(),
-            FetchTopicResponse {
+            fetch(&client, tt[0], &[(a, tt[0], 3)]).await,
+            Fetched {
                 items: vec![m(tt[0], a, 4)],
-                missing: HashMap::from([(a, vec![2, 3])]),
+                missing: BTreeMap::from([((a, tt[0]), vec![2, 3])]),
             }
         );
         assert_eq!(
-            fetch(&client, tt[1], &[(a, 3)]).await.unwrap(),
-            FetchTopicResponse {
+            fetch(&client, tt[1], &[(a, tt[1], 3)]).await,
+            Fetched {
                 items: vec![m(tt[1], a, 4)],
-                missing: HashMap::from([(a, vec![0, 1])]),
+                missing: BTreeMap::from([((a, tt[1]), vec![0, 1])]),
             }
         );
+    }
+
+    /// A log known under another topic is neither re-sent nor reported
+    /// missing when a topic it is newly associated with is fetched.
+    #[tokio::test]
+    async fn test_mem_shared_log() {
+        let mailbox = MemMailbox::<Msg>::new();
+        let client = mailbox.client();
+
+        publish(&client, mm(1, 'a', 0..3)).await;
+
+        // Associate log 1 with topic 2 as well, without publishing anything.
+        let shared: TopicLogs<Msg> =
+            BTreeMap::from([(2, BTreeMap::from([('a', BTreeSet::from([1u8]))]))]);
+        client.publish(shared, vec![]).await.unwrap();
+
+        let fetched = fetch(&client, 2, &[('a', 1, 2)]).await;
+        assert_eq!(fetched, Fetched::default());
+
+        let fetched = fetch(&client, 2, &[]).await;
+        assert_eq!(fetched.items, mm(1, 'a', 0..3));
     }
 }
 

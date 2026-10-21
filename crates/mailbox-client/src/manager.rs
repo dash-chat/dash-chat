@@ -152,7 +152,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
 pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     registry: Arc<Registry<Item>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
-    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    sync_tracker: Arc<MailboxSyncTracker<Item::Author, Item::LogId>>,
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
@@ -165,7 +165,7 @@ where
 {
     fn new(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::Author, Item::LogId>>,
         config: MailboxesConfig,
     ) -> Self {
         Self {
@@ -185,7 +185,7 @@ where
     }
 
     /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
-    pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::Topic, Item::Author>> {
+    pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::Author, Item::LogId>> {
         &self.sync_tracker
     }
 
@@ -404,6 +404,7 @@ where
         &self,
         topic: Item::Topic,
         author: Item::Author,
+        log_id: Item::LogId,
     ) -> Vec<tokio::task::JoinHandle<()>> {
         let mailboxes = self.registry.all().await;
 
@@ -413,7 +414,10 @@ where
             .map(|(id, tracked)| {
                 let manager = self.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
+                    if let Err(err) = manager
+                        .store_fast_push(&id, &tracked, topic, author, log_id)
+                        .await
+                    {
                         tracing::warn!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
                         tracked.request_sync_if_active(Some(topic));
                         manager.nudge_poll_loop();
@@ -429,9 +433,10 @@ where
         tracked: &TrackedMailbox<Item>,
         topic: Item::Topic,
         author: Item::Author,
+        log_id: Item::LogId,
     ) -> anyhow::Result<()> {
         self.sync_coordinator
-            .store_fast_push(id, tracked, topic, author)
+            .store_fast_push(id, tracked, topic, author, log_id)
             .await
     }
 
@@ -488,7 +493,7 @@ where
 
     pub async fn spawn(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::Author, Item::LogId>>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
         let manager = Self::new(store, sync_tracker, config);
@@ -735,7 +740,11 @@ mod tests {
         fn id(&self) -> MailboxId {
             self.id.clone()
         }
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+        async fn publish(
+            &self,
+            _logs: TopicLogs<Msg>,
+            _ops: Vec<Msg>,
+        ) -> Result<PublishResponse<Msg>, anyhow::Error> {
             Ok(PublishResponse::default())
         }
         async fn fetch(
@@ -746,7 +755,7 @@ mod tests {
             if self.should_fail {
                 Err(anyhow::anyhow!("simulated failure"))
             } else {
-                Ok(FetchResponse(BTreeMap::new()))
+                Ok(FetchResponse::default())
             }
         }
     }
@@ -801,7 +810,11 @@ mod tests {
         fn id(&self) -> MailboxId {
             self.id.clone()
         }
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+        async fn publish(
+            &self,
+            _logs: TopicLogs<Msg>,
+            _ops: Vec<Msg>,
+        ) -> Result<PublishResponse<Msg>, anyhow::Error> {
             Ok(PublishResponse::default())
         }
         async fn fetch(
@@ -813,7 +826,7 @@ mod tests {
             if self.should_fail {
                 Err(anyhow::anyhow!("simulated failure"))
             } else {
-                Ok(FetchResponse(BTreeMap::new()))
+                Ok(FetchResponse::default())
             }
         }
     }
@@ -823,7 +836,11 @@ mod tests {
         fn id(&self) -> MailboxId {
             self.id.clone()
         }
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+        async fn publish(
+            &self,
+            _logs: TopicLogs<Msg>,
+            _ops: Vec<Msg>,
+        ) -> Result<PublishResponse<Msg>, anyhow::Error> {
             Ok(PublishResponse::default())
         }
         async fn fetch(
@@ -833,8 +850,8 @@ mod tests {
             self.fetched_topics
                 .lock()
                 .await
-                .push(request.0.keys().copied().collect());
-            Ok(FetchResponse(BTreeMap::new()))
+                .push(request.topics.iter().copied().collect());
+            Ok(FetchResponse::default())
         }
     }
 
@@ -850,7 +867,7 @@ mod tests {
         }
     }
 
-    fn test_sync_tracker() -> Arc<MailboxSyncTracker<u8, char>> {
+    fn test_sync_tracker() -> Arc<MailboxSyncTracker<char, u8>> {
         Arc::new(MailboxSyncTracker::in_memory())
     }
 
@@ -1912,7 +1929,11 @@ mod tests {
         fn id(&self) -> MailboxId {
             self.id.clone()
         }
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+        async fn publish(
+            &self,
+            _logs: TopicLogs<Msg>,
+            _ops: Vec<Msg>,
+        ) -> Result<PublishResponse<Msg>, anyhow::Error> {
             Ok(PublishResponse::default())
         }
         async fn fetch(
@@ -1946,7 +1967,11 @@ mod tests {
         fn id(&self) -> MailboxId {
             self.id.clone()
         }
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+        async fn publish(
+            &self,
+            _logs: TopicLogs<Msg>,
+            _ops: Vec<Msg>,
+        ) -> Result<PublishResponse<Msg>, anyhow::Error> {
             Ok(PublishResponse::default())
         }
         async fn fetch(
@@ -2351,7 +2376,7 @@ mod tests {
 
     // -- sync_after_publish tests --
 
-    type EchoSeqs = Arc<std::sync::Mutex<BTreeMap<(u8, char), BTreeSet<SeqNum>>>>;
+    type EchoSeqs = Arc<std::sync::Mutex<BTreeMap<(char, u8), BTreeSet<SeqNum>>>>;
     type Published = Arc<std::sync::Mutex<Vec<Vec<Msg>>>>;
 
     /// A mailbox client that stores published ops and echoes the resulting
@@ -2383,7 +2408,11 @@ mod tests {
             self.id.clone()
         }
 
-        async fn publish(&self, ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+        async fn publish(
+            &self,
+            _logs: TopicLogs<Msg>,
+            ops: Vec<Msg>,
+        ) -> Result<PublishResponse<Msg>, anyhow::Error> {
             if self.fail_stores {
                 anyhow::bail!("simulated store failure");
             }
@@ -2391,22 +2420,22 @@ mod tests {
             let mut seqs = self.seqs.lock().unwrap();
             let mut logs = BTreeSet::new();
             for op in ops {
-                seqs.entry((op.topic, op.author))
+                seqs.entry((op.author, op.log_id()))
                     .or_default()
                     .insert(op.seq);
-                logs.insert((op.topic, op.author));
+                logs.insert((op.author, op.log_id()));
             }
             let mut response = PublishResponse::default();
-            for (topic, author) in logs {
+            for (author, log_id) in logs {
                 let mut wm = None;
-                for &s in &seqs[&(topic, author)] {
+                for &s in &seqs[&(author, log_id)] {
                     if s == wm.map_or(0, |w| w + 1) {
                         wm = Some(s);
                     } else {
                         break;
                     }
                 }
-                response.0.entry(topic).or_default().insert(author, wm);
+                response.0.entry(author).or_default().insert(log_id, wm);
             }
             Ok(response)
         }
@@ -2415,7 +2444,7 @@ mod tests {
             &self,
             _request: FetchRequest<Msg>,
         ) -> Result<FetchResponse<Msg>, anyhow::Error> {
-            Ok(FetchResponse(Default::default()))
+            Ok(FetchResponse::default())
         }
     }
 
@@ -2445,18 +2474,18 @@ mod tests {
         let mgr = test_mailboxes_with_store(test_config(), store);
         let (client, seqs, published) = EchoClient::new(false);
         let id = client.id();
-        seqs.lock().unwrap().insert((0, 'a'), (0..=4).collect());
+        seqs.lock().unwrap().insert(('a', 0), (0..=4).collect());
         mgr.register(client).await;
         mgr.sync_tracker()
-            .record_synced(&id, &[(0, 'a', 4)])
+            .record_synced(&id, &[('a', 0, 4)])
             .await
             .unwrap();
 
-        join(mgr.publish_fast_push(0, 'a').await).await;
+        join(mgr.publish_fast_push(0, 'a', 0).await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [5])]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.sync_tracker().get_synced(&id, &'a', &0).await.unwrap(),
             Some(5)
         );
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2472,11 +2501,11 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
-        join(mgr.publish_fast_push(0, 'a').await).await;
+        join(mgr.publish_fast_push(0, 'a', 0).await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [0])]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.sync_tracker().get_synced(&id, &'a', &0).await.unwrap(),
             Some(0)
         );
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2490,18 +2519,18 @@ mod tests {
         let mgr = test_mailboxes_with_store(test_config(), store);
         let (client, seqs, published) = EchoClient::new(false);
         let id = client.id();
-        seqs.lock().unwrap().insert((0, 'a'), (0..=1).collect());
+        seqs.lock().unwrap().insert(('a', 0), (0..=1).collect());
         mgr.register(client).await;
         mgr.sync_tracker()
-            .record_synced(&id, &[(0, 'a', 1)])
+            .record_synced(&id, &[('a', 0, 1)])
             .await
             .unwrap();
 
-        join(mgr.publish_fast_push(0, 'a').await).await;
+        join(mgr.publish_fast_push(0, 'a', 0).await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', 2..=5)]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.sync_tracker().get_synced(&id, &'a', &0).await.unwrap(),
             Some(5)
         );
     }
@@ -2517,15 +2546,15 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
         mgr.sync_tracker()
-            .record_synced(&id, &[(0, 'a', 4)])
+            .record_synced(&id, &[('a', 0, 4)])
             .await
             .unwrap();
 
-        join(mgr.publish_fast_push(0, 'a').await).await;
+        join(mgr.publish_fast_push(0, 'a', 0).await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [5])]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.sync_tracker().get_synced(&id, &'a', &0).await.unwrap(),
             Some(4)
         );
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2541,7 +2570,7 @@ mod tests {
         let id = client.id();
         mgr.register(client).await;
 
-        join(mgr.publish_fast_push(0, 'a').await).await;
+        join(mgr.publish_fast_push(0, 'a', 0).await).await;
 
         assert!(published.lock().unwrap().is_empty());
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2557,14 +2586,14 @@ mod tests {
         let mgr = test_mailboxes_with_store(test_config(), store);
         let (client, seqs, published) = EchoClient::new(false);
         let id = client.id();
-        seqs.lock().unwrap().insert((0, 'a'), (0..=5).collect());
+        seqs.lock().unwrap().insert(('a', 0), (0..=5).collect());
         mgr.register(client).await;
 
-        join(mgr.publish_fast_push(0, 'a').await).await;
+        join(mgr.publish_fast_push(0, 'a', 0).await).await;
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', 0..=2)]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.sync_tracker().get_synced(&id, &'a', &0).await.unwrap(),
             Some(5)
         );
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2587,7 +2616,7 @@ mod tests {
             SyncStatus::Active
         );
 
-        join(mgr.publish_fast_push(0, 'a').await).await;
+        join(mgr.publish_fast_push(0, 'a', 0).await).await;
 
         assert!(published.lock().unwrap().is_empty());
         assert_eq!(tracked.take_pending_request(), PendingRequest::None);
@@ -2646,7 +2675,11 @@ mod tests {
             self.id.clone()
         }
 
-        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+        async fn publish(
+            &self,
+            _logs: TopicLogs<Msg>,
+            _ops: Vec<Msg>,
+        ) -> Result<PublishResponse<Msg>, anyhow::Error> {
             if self.fail_next_publish.swap(false, Ordering::Relaxed) {
                 anyhow::bail!("simulated publish failure")
             }
@@ -2658,17 +2691,18 @@ mod tests {
             request: FetchRequest<Msg>,
         ) -> Result<FetchResponse<Msg>, anyhow::Error> {
             let items = self.items_to_fetch.lock().await.clone();
-            let mut response = BTreeMap::new();
-            for topic in request.0.keys().copied() {
-                response.insert(
-                    topic,
-                    FetchTopicResponse {
-                        items: items.clone(),
-                        missing: HashMap::new(),
-                    },
-                );
+            let mut response = FetchResponse::default();
+            for topic in request.topics {
+                let topic_logs = response.logs.entry(topic).or_default();
+                for item in &items {
+                    topic_logs
+                        .entry(item.author)
+                        .or_default()
+                        .insert(item.log_id());
+                }
             }
-            Ok(FetchResponse(response))
+            response.items = items;
+            Ok(response)
         }
     }
 

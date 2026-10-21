@@ -56,19 +56,27 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
         None
     }
 
-    /// Publish operations to the mailbox during topic sync.
+    /// Publish operations to the mailbox during topic sync, telling it which
+    /// logs belong to which topic. The associations are recorded even for logs
+    /// no operation is published for, so the mailbox resolves a topic to every
+    /// log this node knows under it.
     /// Different mailbox implementations have different semantics for this,
     /// for instance separate storage for logs vs blobs.
-    async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error>;
+    async fn publish(
+        &self,
+        logs: TopicLogs<Item>,
+        ops: Vec<Item>,
+    ) -> Result<PublishResponse<Item>, anyhow::Error>;
 
     /// Fetch operations from the mailbox for the given topics.
     ///
-    /// The inner map associated each author with the height of their locally stored log.
-    /// The height represents the highest sequence number stored for that author, meaning that the mailbox
-    /// should only return operations with a higher sequence for that author.
-    /// NOTE that this is a subtractive, not additive, filter, meaning that any authors not included
-    /// in the `min_heights` list will have their *entire* log returned, including if `min_heights` is empty.
-    /// This is so that the mailbox is used for author discovery as well.
+    /// The mailbox resolves each topic to the logs it knows under it and returns
+    /// those logs' operations above the heights given for them. The heights
+    /// represent the highest sequence number stored locally per log, regardless
+    /// of topic. NOTE that this is a subtractive, not additive, filter, meaning
+    /// that any log not included in the heights will be returned *entirely*,
+    /// including if the heights are empty. This is so that the mailbox is used
+    /// for log discovery as well.
     /// The intention is that all data is encrypted and only decipherable by valid recipients.
     async fn fetch(
         &self,
@@ -97,22 +105,51 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     }
 }
 
+/// Which logs belong to which topic: `topic → author → log ids`.
+pub type TopicLogs<Item> = BTreeMap<
+    <Item as MailboxItem>::Topic,
+    BTreeMap<<Item as MailboxItem>::Author, BTreeSet<<Item as MailboxItem>::LogId>>,
+>;
+
+/// The highest sequence number held per log: `author → log id → seq`.
+pub type LogHeights<Item> =
+    BTreeMap<<Item as MailboxItem>::Author, BTreeMap<<Item as MailboxItem>::LogId, SeqNum>>;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(deserialize = "Item: DeserializeOwned"))]
-pub struct FetchRequest<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopicRequest<Item>>);
-
-pub type FetchTopicRequest<Item> = BTreeMap<<Item as MailboxItem>::Author, SeqNum>;
+pub struct FetchRequest<Item: MailboxItem> {
+    pub topics: BTreeSet<Item::Topic>,
+    pub heights: LogHeights<Item>,
+}
 
 /// Returned by the `fetch` method.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(deserialize = "Item: DeserializeOwned"))]
-pub struct FetchResponse<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopicResponse<Item>>);
+pub struct FetchResponse<Item: MailboxItem> {
+    /// Which logs each requested topic resolves to.
+    pub logs: TopicLogs<Item>,
+    /// The operations not held locally that were fetched.
+    pub items: Vec<Item>,
+    /// The operations held locally that are missing from the mailbox,
+    /// and which this node should now publish.
+    pub missing: BTreeMap<Item::Author, BTreeMap<Item::LogId, Vec<SeqNum>>>,
+}
+
+impl<Item: MailboxItem> Default for FetchResponse<Item> {
+    fn default() -> Self {
+        Self {
+            logs: BTreeMap::new(),
+            items: Vec::new(),
+            missing: BTreeMap::new(),
+        }
+    }
+}
 
 /// Returned by the `publish` method: for each log in the request, the mailbox's
 /// resulting contiguity watermark (`None` when none could be established).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublishResponse<Item: MailboxItem>(
-    pub BTreeMap<Item::Topic, BTreeMap<Item::Author, Option<SeqNum>>>,
+    pub BTreeMap<Item::Author, BTreeMap<Item::LogId, Option<SeqNum>>>,
 );
 
 impl<Item: MailboxItem> Default for PublishResponse<Item> {
@@ -122,24 +159,13 @@ impl<Item: MailboxItem> Default for PublishResponse<Item> {
 }
 
 impl<Item: MailboxItem> PublishResponse<Item> {
-    pub fn watermark(&self, topic: &Item::Topic, author: &Item::Author) -> Option<SeqNum> {
+    pub fn watermark(&self, author: &Item::Author, log_id: &Item::LogId) -> Option<SeqNum> {
         self.0
-            .get(topic)
-            .and_then(|m| m.get(author))
+            .get(author)
+            .and_then(|m| m.get(log_id))
             .copied()
             .flatten()
     }
-}
-
-/// Returned by the `fetch` method.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(bound(deserialize = "Item: DeserializeOwned"))]
-pub struct FetchTopicResponse<Item: MailboxItem> {
-    /// The operations not held locally that were fetched.
-    pub items: Vec<Item>,
-    /// The operations held locally that are missing from the mailbox,
-    /// and which this node should now publish.
-    pub missing: HashMap<<Item as MailboxItem>::Author, Vec<SeqNum>>,
 }
 
 pub type MailboxId = String;
@@ -187,11 +213,12 @@ pub trait MailboxItem:
     type Hash: ItemTraits;
     type Author: MailboxKey;
     type Topic: MailboxKey;
+    type LogId: MailboxKey;
 
     fn seq_num(&self) -> SeqNum;
     fn hash(&self) -> Self::Hash;
     fn author(&self) -> Self::Author;
-    fn topic(&self) -> Self::Topic;
+    fn log_id(&self) -> Self::LogId;
     fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
         Vec::new()
     }
@@ -230,6 +257,16 @@ impl UnfetchedBlobTracker for NoopUnfetchedBlobTracker {
 }
 
 impl MailboxKey for p2panda_core::Topic {
+    fn to_mailbox_key(&self) -> String {
+        self.to_hex()
+    }
+
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
+        Ok(key.parse()?)
+    }
+}
+
+impl MailboxKey for p2panda_core::Hash {
     fn to_mailbox_key(&self) -> String {
         self.to_hex()
     }

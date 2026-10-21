@@ -1,5 +1,5 @@
 use dashchat_utils::SeqNum;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use mailbox_server::{
@@ -7,8 +7,8 @@ use mailbox_server::{
 };
 
 use crate::{
-    BlobUploadLifecycle, FetchRequest, FetchResponse, FetchTopicResponse, HTTP_CLIENT,
-    MailboxClient, MailboxId, MailboxItem, MailboxKey, PublishResponse,
+    BlobUploadLifecycle, FetchRequest, FetchResponse, HTTP_CLIENT, MailboxClient, MailboxId,
+    MailboxItem, MailboxKey, PublishResponse, TopicLogs,
 };
 
 /// Client-side timeout for a single blob upload, larger than the default HTTP
@@ -279,36 +279,53 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         Some(self.base_url.clone())
     }
 
-    async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error> {
-        if ops.is_empty() {
+    async fn publish(
+        &self,
+        logs: TopicLogs<Item>,
+        ops: Vec<Item>,
+    ) -> Result<PublishResponse<Item>, anyhow::Error> {
+        if ops.is_empty() && logs.is_empty() {
             return Ok(PublishResponse::default());
         }
 
-        // Group operations by topic -> author -> seq_num
-        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, Blip>>> = BTreeMap::new();
+        let mut request = StoreBlipsRequest {
+            logs: BTreeMap::new(),
+            blips: BTreeMap::new(),
+            sender_pubkey: Some(self.sender_pubkey),
+            signature: Vec::new(),
+        };
+
+        for (topic, authors) in logs {
+            let topic_logs = request.logs.entry(topic.to_mailbox_key()).or_default();
+            for (author, log_ids) in authors {
+                topic_logs.insert(
+                    author.to_mailbox_key(),
+                    log_ids
+                        .iter()
+                        .map(|log_id| log_id.to_mailbox_key())
+                        .collect(),
+                );
+            }
+        }
 
         let blob_hashes: Vec<iroh_blobs::Hash> =
             ops.iter().flat_map(|op| op.blob_hashes()).collect();
 
         for op in ops {
-            let topic_id = op.topic().to_mailbox_key();
-            let log_id = op.author().to_mailbox_key();
+            let author = op.author().to_mailbox_key();
+            let log_id = op.log_id().to_mailbox_key();
             let seq_num = op.seq_num();
             let blip = Self::serialize_operation(&op)?;
 
-            blips
-                .entry(topic_id)
+            request
+                .blips
+                .entry(author)
                 .or_default()
                 .entry(log_id)
                 .or_default()
                 .insert(seq_num, blip);
         }
 
-        let request = StoreBlipsRequest {
-            blips,
-            sender_pubkey: Some(self.sender_pubkey),
-            signature: Vec::new(),
-        };
         let response = HTTP_CLIENT
             .post(format!("{}/blips/store", self.base_url))
             .json(&request)
@@ -320,11 +337,15 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
             self.store_blobs(blob_hashes).await?;
 
             let mut result = PublishResponse::default();
-            for (topic_str, authors) in response.watermarks {
-                let topic = Item::Topic::from_mailbox_key(&topic_str)?;
-                for (author_str, watermark) in authors {
-                    let author = Item::Author::from_mailbox_key(&author_str)?;
-                    result.0.entry(topic).or_default().insert(author, watermark);
+            for (author_str, logs) in response.watermarks {
+                let author = Item::Author::from_mailbox_key(&author_str)?;
+                for (log_str, watermark) in logs {
+                    let log_id = Item::LogId::from_mailbox_key(&log_str)?;
+                    result
+                        .0
+                        .entry(author)
+                        .or_default()
+                        .insert(log_id, watermark);
                 }
             }
             Ok(result)
@@ -368,21 +389,23 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         &self,
         request: FetchRequest<Item>,
     ) -> Result<FetchResponse<Item>, anyhow::Error> {
-        // Convert FetchRequest to GetBlipsRequest
-        let mut topics: BTreeMap<String, BTreeMap<String, SeqNum>> = BTreeMap::new();
-
-        for (topic, authors) in request.0.iter() {
-            let topic_id = topic.to_mailbox_key();
-            let mut author_map: BTreeMap<String, SeqNum> = BTreeMap::new();
-
-            for (author, height) in authors.iter() {
-                author_map.insert(author.to_mailbox_key(), *height);
-            }
-
-            topics.insert(topic_id, author_map);
+        let mut get_request = GetBlipsRequest {
+            topics: request
+                .topics
+                .iter()
+                .map(|topic| topic.to_mailbox_key())
+                .collect(),
+            heights: BTreeMap::new(),
+        };
+        for (author, logs) in &request.heights {
+            get_request.heights.insert(
+                author.to_mailbox_key(),
+                logs.iter()
+                    .map(|(log_id, height)| (log_id.to_mailbox_key(), *height))
+                    .collect(),
+            );
         }
 
-        let get_request = GetBlipsRequest { topics };
         let response = HTTP_CLIENT
             .post(format!("{}/blips/get", self.base_url))
             .json(&get_request)
@@ -401,30 +424,41 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
 
         let response = response.json::<GetBlipsResponse>().await?;
 
-        // Convert GetBlipsResponse to FetchResponse
-        let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
+        let mut result = FetchResponse::default();
 
-        for (topic_id_str, topic_response) in response.blips_by_topic {
-            let topic = Item::Topic::from_mailbox_key(&topic_id_str)?;
-
-            // Deserialize blips to operations
-            let items: Vec<Item> = topic_response
-                .blips
-                .into_values()
-                .flat_map(Self::decode_log)
-                .collect();
-
-            // Convert missing map
-            let mut missing: HashMap<Item::Author, Vec<SeqNum>> = HashMap::new();
-            for (author_str, seq_nums) in topic_response.missing {
+        for (topic_str, authors) in response.logs {
+            let topic = Item::Topic::from_mailbox_key(&topic_str)?;
+            let mut topic_logs = BTreeMap::new();
+            for (author_str, log_strs) in authors {
                 let author = Item::Author::from_mailbox_key(&author_str)?;
-                missing.insert(author, seq_nums);
+                let log_ids = log_strs
+                    .iter()
+                    .map(|log_str| Item::LogId::from_mailbox_key(log_str))
+                    .collect::<Result<_, _>>()?;
+                topic_logs.insert(author, log_ids);
             }
-
-            result.insert(topic, FetchTopicResponse { items, missing });
+            result.logs.insert(topic, topic_logs);
         }
 
-        Ok(FetchResponse(result))
+        for logs in response.blips.into_values() {
+            for seq_blips in logs.into_values() {
+                result.items.extend(Self::decode_log(seq_blips));
+            }
+        }
+
+        for (author_str, logs) in response.missing {
+            let author = Item::Author::from_mailbox_key(&author_str)?;
+            for (log_str, seq_nums) in logs {
+                let log_id = Item::LogId::from_mailbox_key(&log_str)?;
+                result
+                    .missing
+                    .entry(author)
+                    .or_default()
+                    .insert(log_id, seq_nums);
+            }
+        }
+
+        Ok(result)
     }
 }
 
@@ -469,17 +503,36 @@ mod tests {
 
     type StoredBlips = BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, mailbox_server::Blip>>>;
 
+    #[derive(Default)]
+    struct FakeStore {
+        logs: mailbox_server::TopicLogs,
+        blips: StoredBlips,
+    }
+
     fn msg(topic: u8, author: char, seq: SeqNum) -> crate::testing::Msg {
         crate::testing::Msg { topic, author, seq }
     }
 
+    /// `Msg`s live in the log named after their topic.
+    fn logs_of(msgs: &[crate::testing::Msg]) -> TopicLogs<crate::testing::Msg> {
+        let mut logs: TopicLogs<crate::testing::Msg> = BTreeMap::new();
+        for m in msgs {
+            logs.entry(m.topic)
+                .or_default()
+                .entry(m.author)
+                .or_default()
+                .insert(m.topic);
+        }
+        logs
+    }
+
     /// Spawn a fake mailbox server on a free port. It only stores blips and
     /// echoes them back, plus computes simple contiguous watermarks; the
-    /// `missing` vector is always empty because callers only need to verify
-    /// that topic/author keys encode and decode correctly through the toy
+    /// `missing` map is always empty because callers only need to verify
+    /// that topic/author/log keys encode and decode correctly through the toy
     /// client. Returns the server's base URL and shared storage.
-    async fn spawn_fake_mailbox_server() -> (String, Arc<Mutex<StoredBlips>>) {
-        let stored: Arc<Mutex<StoredBlips>> = Arc::new(Mutex::new(BTreeMap::new()));
+    async fn spawn_fake_mailbox_server() -> (String, Arc<Mutex<FakeStore>>) {
+        let stored: Arc<Mutex<FakeStore>> = Arc::new(Mutex::new(FakeStore::default()));
         let stored_in_store = stored.clone();
         let stored_in_get = stored.clone();
 
@@ -489,16 +542,20 @@ mod tests {
                 axum::routing::post(
                     move |axum::Json(req): axum::Json<mailbox_server::StoreBlipsRequest>| async move {
                         let mut stored = stored_in_store.lock().unwrap();
+                        for (topic, authors) in req.logs {
+                            let topic_logs = stored.logs.entry(topic).or_default();
+                            for (author, log_ids) in authors {
+                                topic_logs.entry(author).or_default().extend(log_ids);
+                            }
+                        }
                         let mut watermarks: BTreeMap<String, BTreeMap<String, Option<SeqNum>>> =
                             BTreeMap::new();
-                        for (topic, authors) in req.blips {
-                            let topic_entry = stored.entry(topic.clone()).or_default();
-                            let mut topic_watermarks: BTreeMap<String, Option<SeqNum>> =
-                                BTreeMap::new();
-                            for (author, seqs) in authors {
-                                let author_entry = topic_entry.entry(author.clone()).or_default();
+                        for (author, logs) in req.blips {
+                            let author_entry = stored.blips.entry(author.clone()).or_default();
+                            for (log_id, seqs) in logs {
+                                let log_entry = author_entry.entry(log_id.clone()).or_default();
                                 for (seq, blip) in &seqs {
-                                    author_entry.insert(*seq, blip.clone());
+                                    log_entry.insert(*seq, blip.clone());
                                 }
                                 let watermark = seqs
                                     .keys()
@@ -507,9 +564,11 @@ mod tests {
                                     .map(|(_, seq)| seq)
                                     .copied()
                                     .last();
-                                topic_watermarks.insert(author, watermark);
+                                watermarks
+                                    .entry(author.clone())
+                                    .or_default()
+                                    .insert(log_id, watermark);
                             }
-                            watermarks.insert(topic, topic_watermarks);
                         }
                         axum::Json(mailbox_server::StoreBlipsResponse { watermarks })
                     },
@@ -520,42 +579,38 @@ mod tests {
                 axum::routing::post(
                     move |axum::Json(req): axum::Json<mailbox_server::GetBlipsRequest>| async move {
                         let stored = stored_in_get.lock().unwrap();
-                        let mut blips_by_topic: BTreeMap<
-                            String,
-                            mailbox_server::GetBlipsForTopicResponse,
-                        > = BTreeMap::new();
-                        for (topic, authors) in req.topics {
-                            let mut topic_blips: BTreeMap<String, BTreeMap<SeqNum, mailbox_server::Blip>> =
-                                BTreeMap::new();
-                            let mut missing: BTreeMap<String, Vec<SeqNum>> = BTreeMap::new();
-                            if let Some(topic_entry) = stored.get(&topic) {
-                                for (author, min_seq) in authors {
-                                    if let Some(author_entry) = topic_entry.get(&author) {
-                                        let filtered: BTreeMap<SeqNum, mailbox_server::Blip> =
-                                            author_entry
-                                                .iter()
-                                                .filter(|(seq, _)| **seq > min_seq)
-                                                .map(|(seq, blip)| (*seq, blip.clone()))
-                                                .collect();
-                                        topic_blips.insert(author, filtered);
-                                    } else {
-                                        missing.insert(author, Vec::new());
-                                    }
-                                }
-                            } else {
-                                for (author, _) in authors {
-                                    missing.insert(author, Vec::new());
+                        let mut response = mailbox_server::GetBlipsResponse::default();
+                        for topic in req.topics {
+                            let logs = stored.logs.get(&topic).cloned().unwrap_or_default();
+                            for (author, log_ids) in &logs {
+                                for log_id in log_ids {
+                                    let min_seq = req
+                                        .heights
+                                        .get(author)
+                                        .and_then(|logs| logs.get(log_id))
+                                        .copied();
+                                    let Some(log) = stored
+                                        .blips
+                                        .get(author)
+                                        .and_then(|logs| logs.get(log_id))
+                                    else {
+                                        continue;
+                                    };
+                                    let filtered: BTreeMap<SeqNum, mailbox_server::Blip> = log
+                                        .iter()
+                                        .filter(|(seq, _)| min_seq.is_none_or(|min| **seq > min))
+                                        .map(|(seq, blip)| (*seq, blip.clone()))
+                                        .collect();
+                                    response
+                                        .blips
+                                        .entry(author.clone())
+                                        .or_default()
+                                        .insert(log_id.clone(), filtered);
                                 }
                             }
-                            blips_by_topic.insert(
-                                topic,
-                                mailbox_server::GetBlipsForTopicResponse {
-                                    blips: topic_blips,
-                                    missing,
-                                },
-                            );
+                            response.logs.insert(topic, logs);
                         }
-                        axum::Json(mailbox_server::GetBlipsResponse { blips_by_topic })
+                        axum::Json(response)
                     },
                 ),
             );
@@ -616,39 +671,44 @@ mod tests {
             crate::testing::noop_upload_lifecycle(),
         );
 
-        let response = client
-            .publish(vec![msg(42, 'a', 0), msg(42, 'a', 1), msg(42, 'b', 0)])
-            .await
-            .unwrap();
+        let msgs = vec![msg(42, 'a', 0), msg(42, 'a', 1), msg(42, 'b', 0)];
+        let response = client.publish(logs_of(&msgs), msgs).await.unwrap();
 
-        // The watermark response decoded the string keys back to Msg's Topic
-        // and Author types.
-        assert_eq!(response.watermark(&42, &'a'), Some(1));
-        assert_eq!(response.watermark(&42, &'b'), Some(0));
+        // The watermark response decoded the string keys back to Msg's Author
+        // and LogId types.
+        assert_eq!(response.watermark(&'a', &42), Some(1));
+        assert_eq!(response.watermark(&'b', &42), Some(0));
 
         // The keys were encoded as bare strings, not JSON arrays/objects.
         let stored = stored.lock().unwrap();
-        assert_eq!(stored.keys().collect::<Vec<_>>(), vec!["42"]);
+        assert_eq!(stored.logs.keys().collect::<Vec<_>>(), vec!["42"]);
         let author_keys: std::collections::BTreeSet<&str> =
-            stored["42"].keys().map(|s| s.as_str()).collect();
+            stored.blips.keys().map(|s| s.as_str()).collect();
         assert_eq!(author_keys, ["a", "b"].iter().copied().collect());
+        assert_eq!(stored.blips["a"].keys().collect::<Vec<_>>(), vec!["42"]);
         drop(stored);
 
-        // Fetch back the items above the reported local height.
-        let request = FetchRequest(BTreeMap::from([(
-            42u8,
-            BTreeMap::from([('a', 0), ('b', 0)]),
-        )]));
+        // Fetch back the items above the reported local heights.
+        let request = FetchRequest {
+            topics: std::collections::BTreeSet::from([42u8]),
+            heights: BTreeMap::from([
+                ('a', BTreeMap::from([(42u8, 0)])),
+                ('b', BTreeMap::from([(42u8, 0)])),
+            ]),
+        };
         let response = client.fetch(request).await.unwrap();
 
-        let topic_response = response.0.get(&42).expect("topic 42");
-        let author_a_seqs: Vec<SeqNum> = topic_response
+        assert_eq!(
+            response.logs[&42][&'a'],
+            std::collections::BTreeSet::from([42u8])
+        );
+        let author_a_seqs: Vec<SeqNum> = response
             .items
             .iter()
             .filter(|m| m.author() == 'a')
             .map(|m| m.seq_num())
             .collect();
-        let author_b_seqs: Vec<SeqNum> = topic_response
+        let author_b_seqs: Vec<SeqNum> = response
             .items
             .iter()
             .filter(|m| m.author() == 'b')
