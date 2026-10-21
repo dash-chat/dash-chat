@@ -25,10 +25,6 @@ impl MailboxUrlStore for MemMailboxUrlStore {
         Ok(())
     }
 
-    async fn get_url(&self, id: &MailboxId) -> anyhow::Result<Option<String>> {
-        Ok(self.data.read().unwrap().get(id).cloned())
-    }
-
     async fn get_url_inverse(&self, url: &str) -> anyhow::Result<Option<MailboxId>> {
         let data = self.data.read().unwrap();
         for (id, v) in data.iter() {
@@ -152,16 +148,7 @@ where
 
     async fn load_all_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>> {
         let state = self.sync_state.read().unwrap();
-        let mut ids = BTreeSet::new();
-        for id in state.keys() {
-            ids.insert(id.clone());
-        }
-        // Also include IDs from status if they aren't in sync_state
-        let status = self.status.read().unwrap();
-        for id in status.keys() {
-            ids.insert(id.clone());
-        }
-        Ok(ids)
+        Ok(state.keys().cloned().collect())
     }
 }
 

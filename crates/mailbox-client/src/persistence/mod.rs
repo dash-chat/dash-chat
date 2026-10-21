@@ -11,7 +11,6 @@ pub mod sqlite;
 #[async_trait]
 pub trait MailboxUrlStore: Send + Sync {
     async fn record_url(&self, id: &MailboxId, url: &str) -> anyhow::Result<()>;
-    async fn get_url(&self, id: &MailboxId) -> anyhow::Result<Option<String>>;
     async fn get_url_inverse(&self, url: &str) -> anyhow::Result<Option<MailboxId>>;
     async fn drop_mailbox(&self, id: &MailboxId) -> anyhow::Result<()>;
 }

@@ -670,8 +670,6 @@ mod tests {
         testing::{DummyStore, MemStore, Msg},
     };
 
-    // ... (rest of existing helpers: TrackingClient, SlowClient, RecordingClient, etc.)
-
     /// A mailbox client that counts fetch() calls and optionally returns errors.
     struct TrackingClient {
         id: MailboxId,
@@ -2182,10 +2180,6 @@ mod tests {
         );
     }
 
-    // -- PendingSync tests --
-
-    // (Moved to sync_scheduler.rs)
-
     // -- topic-scoped sync tests --
 
     /// A publish only needs its own topic synced, so a requested sync fetches
@@ -2644,6 +2638,4 @@ mod tests {
             "closed topic should be unsubscribed even when publish fails, so it is not re-fetched"
         );
     }
-
-    // -- probe tests --
 }
