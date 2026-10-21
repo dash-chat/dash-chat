@@ -22,7 +22,7 @@ export type FeedbackReason =
 interface Feedback {
 	reason: FeedbackReason;
 	message: string;
-	screenshot?: File;
+	screenshots: File[];
 	includeLogs: boolean;
 }
 
@@ -38,23 +38,31 @@ export async function sendErrorReport(
 	});
 }
 
+/** Mirrors `Screenshot` in the plugin's feedback.rs. */
+interface Screenshot {
+	contentType: string;
+	base64: string;
+}
+
 export async function sendFeedback(feedback: Feedback): Promise<SendOutcome> {
+	const screenshots: Screenshot[] = [];
+	for (const file of feedback.screenshots) {
+		screenshots.push(await describeScreenshot(file));
+	}
 	return invokeAfterSetup('plugin:sentry-reporting|send_feedback', {
 		feedback: {
 			reason: feedback.reason,
 			message: feedback.message,
-			screenshot: feedback.screenshot
-				? await describeScreenshot(feedback.screenshot)
-				: undefined,
+			screenshots,
 			includeLogs: feedback.includeLogs,
 		},
 	});
 }
 
-/** Bytes rather than a path, so the image never has to be staged to disk. */
-async function describeScreenshot(file: File) {
+/** Bytes rather than a path, so the image never has to be staged to disk; no
+ * name, since the plugin numbers the attachments so none leaves the device. */
+async function describeScreenshot(file: File): Promise<Screenshot> {
 	return {
-		name: file.name,
 		contentType: file.type,
 		base64: await base64Of(file),
 	};
