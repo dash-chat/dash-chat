@@ -2111,6 +2111,7 @@ dependencies = [
  "image",
  "iroh",
  "jni 0.21.1",
+ "lan-multicast-probe",
  "libc",
  "local-hub-discovery",
  "log",
@@ -5505,6 +5506,18 @@ checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
 dependencies = [
  "bitflags 2.13.2",
  "serde",
+]
+
+[[package]]
+name = "lan-multicast-probe"
+version = "0.1.0"
+dependencies = [
+ "if-addrs",
+ "local-hub-discovery",
+ "log",
+ "socket2 0.6.5",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
