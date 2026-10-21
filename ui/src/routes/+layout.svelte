@@ -202,6 +202,7 @@
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page
 	useKeepAlive(chatsStore.allChatsSummaries);
+	useKeepAlive(mailboxTrackerStore.connectionStatusForAllMailboxes);
 
 	// Nothing routed renders until the device id has resolved: pages read it
 	// synchronously (useDeviceId), and a notification-tap navigation can mount

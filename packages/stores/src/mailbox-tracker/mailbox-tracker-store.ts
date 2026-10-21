@@ -20,6 +20,7 @@ export interface IMailboxTrackerStore {
 	connectionState(
 		mailboxId: MailboxId,
 	): ReactivePromise<MailboxConnectionState>;
+	connectionStatusForAllMailboxes(): ReactivePromise<AllMailboxesConnectionState>;
 	syncState(mailboxId: MailboxId): ReactivePromise<MailboxSyncState>;
 	syncStateForLog(
 		topicId: TopicId,

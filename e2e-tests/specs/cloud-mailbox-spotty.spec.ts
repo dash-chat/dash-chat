@@ -76,17 +76,8 @@ describe('Cloud mailbox on a spotty link', function () {
 		await messages().waitForMessageStatus('slowly does it', ['mailbox']);
 	});
 
-	it('reads pending and then disconnected while the link hangs, holds the message back, and hands it over once the link heals', async () => {
+	it('reads disconnected while the link hangs, holds the message back, and hands it over once the link heals', async () => {
 		await hangMailboxLink();
-		await chip().waitForStatus(
-			'pending',
-			MAILBOX_HUNG_MS,
-			'the chip did not read pending once a poll over the hung link timed out',
-		);
-		await chip().expectDialog(
-			await agent.tr('connectionStatusPendingTitle'),
-			await agent.tr('connectionStatusPendingDescription'),
-		);
 		await expectDisconnected('the link hung', MAILBOX_HUNG_MS);
 		await sendHeldBack('while you were hanging');
 		await healMailboxLink();
