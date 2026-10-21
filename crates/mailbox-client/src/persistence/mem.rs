@@ -2,12 +2,12 @@ use super::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, RwLock};
 
-/// In-memory implementation of MailboxStore.
-pub struct MemMailboxStore {
+/// In-memory implementation of MailboxUrlStore.
+pub struct MemMailboxUrlStore {
     data: RwLock<HashMap<MailboxId, String>>,
 }
 
-impl MemMailboxStore {
+impl MemMailboxUrlStore {
     pub fn new() -> Self {
         Self {
             data: RwLock::new(HashMap::new()),
@@ -16,7 +16,7 @@ impl MemMailboxStore {
 }
 
 #[async_trait]
-impl MailboxStore for MemMailboxStore {
+impl MailboxUrlStore for MemMailboxUrlStore {
     async fn record_url(&self, id: &MailboxId, url: &str) -> anyhow::Result<()> {
         self.data
             .write()
@@ -166,7 +166,7 @@ where
     T: ByteSerializable,
     A: ByteSerializable,
 {
-    mailbox_store: Arc<MemMailboxStore>,
+    mailbox_store: Arc<MemMailboxUrlStore>,
     sync_store: Arc<MemSyncStore<T, A>>,
 }
 
@@ -177,7 +177,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            mailbox_store: Arc::new(MemMailboxStore::new()),
+            mailbox_store: Arc::new(MemMailboxUrlStore::new()),
             sync_store: Arc::new(MemSyncStore::new()),
         }
     }
@@ -188,7 +188,7 @@ where
     T: ByteSerializable,
     A: ByteSerializable,
 {
-    fn mailbox_store(&self) -> Arc<dyn MailboxStore> {
+    fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore> {
         self.mailbox_store.clone()
     }
 

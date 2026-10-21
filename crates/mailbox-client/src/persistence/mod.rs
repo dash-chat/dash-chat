@@ -9,7 +9,7 @@ pub mod sqlite;
 
 /// Repository for mailbox identity and location.
 #[async_trait]
-pub trait MailboxStore: Send + Sync {
+pub trait MailboxUrlStore: Send + Sync {
     async fn record_url(&self, id: &MailboxId, url: &str) -> anyhow::Result<()>;
     async fn get_url(&self, id: &MailboxId) -> anyhow::Result<Option<String>>;
     async fn get_url_inverse(&self, url: &str) -> anyhow::Result<Option<MailboxId>>;
@@ -55,7 +55,7 @@ where
     T: ByteSerializable,
     A: ByteSerializable,
 {
-    fn mailbox_store(&self) -> Arc<dyn MailboxStore>;
+    fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore>;
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>>;
 }
 

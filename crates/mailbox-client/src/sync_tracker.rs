@@ -9,7 +9,7 @@ use tokio::sync::{Mutex, watch};
 use crate::MailboxId;
 use crate::SeqNum;
 use crate::connection_health::SyncStatus;
-use crate::persistence::{ByteDeserializable, ByteSerializable, MailboxStore, SyncStore};
+use crate::persistence::{ByteDeserializable, ByteSerializable, MailboxUrlStore, SyncStore};
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
 pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
@@ -19,7 +19,7 @@ pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
 /// callers can subscribe to live updates.
 pub struct MailboxSyncTracker<T, A> {
     store: Arc<dyn SyncStore<T, A>>,
-    mailbox_store: Arc<dyn MailboxStore>,
+    mailbox_store: Arc<dyn MailboxUrlStore>,
     all_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
     per_mailbox: Mutex<HashMap<MailboxId, watch::Sender<MailboxSyncState<T, A>>>>,
     _phantom: PhantomData<fn() -> (T, A)>,
@@ -46,7 +46,7 @@ where
 {
     pub fn new(
         store: Arc<dyn SyncStore<T, A>>,
-        mailbox_store: Arc<dyn MailboxStore>,
+        mailbox_store: Arc<dyn MailboxUrlStore>,
         initial_ids: BTreeSet<MailboxId>,
     ) -> Self {
         let (all_ids_tx, _) = watch::channel(initial_ids);
