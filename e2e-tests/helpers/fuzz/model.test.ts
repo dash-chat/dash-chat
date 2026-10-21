@@ -212,6 +212,32 @@ test('a stopped agent gains nothing until its app starts again', () => {
 	assert.equal(m.view(B, chat).messages.length, 1);
 });
 
+test('only an app started while the cloud was cut registers it late', () => {
+	const m = sameLan(A, B);
+	m.setCloudUsable(true);
+	m.stopApp(A);
+	m.stopApp(B);
+	m.startApp(A);
+	m.setCloudUsable(false);
+	m.startApp(B);
+	m.setCloudUsable(true);
+	assert.equal(m.awaitsCloudRegistration(A), false);
+	assert.equal(m.awaitsCloudRegistration(B), true);
+	m.registeredWithCloud(B);
+	assert.equal(m.awaitsCloudRegistration(B), false);
+});
+
+test('a later start with the cloud usable registers it at once', () => {
+	const m = sameLan(A);
+	m.stopApp(A);
+	m.startApp(A);
+	assert.equal(m.awaitsCloudRegistration(A), true);
+	m.stopApp(A);
+	m.setCloudUsable(true);
+	m.startApp(A);
+	assert.equal(m.awaitsCloudRegistration(A), false);
+});
+
 test('phones exchange only topics both subscribe to', () => {
 	const m = sameLan(A, B, C);
 	contacts(m, A, B);

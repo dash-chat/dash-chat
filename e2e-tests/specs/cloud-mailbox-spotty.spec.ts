@@ -1,7 +1,7 @@
 /**
  * The cloud mailbox on a spotty link: the server keeps running while the
  * link to it turns slow, hangs, or refuses connections, the way a mailbox
- * behind a struggling connection does. The chip may only stay hidden while
+ * behind a struggling connection does. The chip may only read cloud while
  * the mailbox actually answers, and a message the mailbox cannot take stays
  * pending until it can. One agent in a solo group, so the chip is on screen.
  */
@@ -36,9 +36,9 @@ describe('Cloud mailbox on a spotty link', function () {
 
 	async function expectConnected(after: string, within: number): Promise<void> {
 		await chip().waitForStatus(
-			'connected',
+			'cloud',
 			within,
-			`the chip did not hide within ${within / 1_000}s after ${after}`,
+			`the chip did not read cloud within ${within / 1_000}s after ${after}`,
 		);
 	}
 
@@ -71,13 +71,22 @@ describe('Cloud mailbox on a spotty link', function () {
 	it('stays connected and hands over a message over a slow link', async () => {
 		await slowMailboxLink();
 		await agent.pause(SLOW_SETTLE_MS);
-		expect(await chip().status()).toBe('connected');
+		expect(await chip().status()).toBe('cloud');
 		await agent.groupChatPage.composer.sendMessage('slowly does it');
 		await messages().waitForMessageStatus('slowly does it', ['mailbox']);
 	});
 
-	it('reads disconnected while the link hangs, holds the message back, and hands it over once the link heals', async () => {
+	it('reads pending and then disconnected while the link hangs, holds the message back, and hands it over once the link heals', async () => {
 		await hangMailboxLink();
+		await chip().waitForStatus(
+			'pending',
+			MAILBOX_HUNG_MS,
+			'the chip did not read pending once a poll over the hung link timed out',
+		);
+		await chip().expectDialog(
+			await agent.tr('connectionStatusPendingTitle'),
+			await agent.tr('connectionStatusPendingDescription'),
+		);
 		await expectDisconnected('the link hung', MAILBOX_HUNG_MS);
 		await sendHeldBack('while you were hanging');
 		await healMailboxLink();

@@ -306,6 +306,10 @@ export class ExpectedModel {
 	 *  phones reach it — so what varies is only whether agents can reach it
 	 *  right now. */
 	readonly cloud: { usable: boolean };
+	/** An app only syncs with the cloud once it has registered it, which a cold
+	 *  start that fails retries with a backoff the link healing does not cut
+	 *  short. */
+	private readonly startedWithoutCloud = new Set<string>();
 	/** Whether the run can degrade the link to it, which keeps the cloud
 	 *  moves out of a run whose mailbox the proxy does not front. */
 	readonly cloudDegradable: boolean;
@@ -498,6 +502,8 @@ export class ExpectedModel {
 	 *  was showing when it went away. */
 	startApp(name: string): void {
 		if (this.stopped.delete(name)) this.catchUp(name);
+		if (this.cloud.usable) this.startedWithoutCloud.delete(name);
+		else this.startedWithoutCloud.add(name);
 		this.wentHome(name);
 		this.converge();
 	}
@@ -557,6 +563,14 @@ export class ExpectedModel {
 	setCloudUsable(usable: boolean): void {
 		this.cloud.usable = usable;
 		this.converge();
+	}
+
+	awaitsCloudRegistration(name: string): boolean {
+		return this.startedWithoutCloud.has(name);
+	}
+
+	registeredWithCloud(name: string): void {
+		this.startedWithoutCloud.delete(name);
 	}
 
 	/** Whether every agent has a members-less group to read its connection

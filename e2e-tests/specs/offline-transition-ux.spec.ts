@@ -7,7 +7,7 @@
  *
  * Visible states under test:
  *   - Message status: "unsent" → "sending" → "mailbox" → "delivered"
- *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
+ *   - Navbar chip:    cloud → disconnected → local → cloud
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
@@ -63,7 +63,7 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox online', () => {
-		it('sends a message, peer receives it, sender shows delivered, and the navbar chip stays hidden', async () => {
+		it('sends a message, peer receives it, sender shows delivered, and the navbar chip reads cloud and explains it', async () => {
 			await agent1.directChatPage.composer.sendMessage('online hello');
 			await agent2.directChatPage.messages.waitForMessage('online hello');
 
@@ -73,9 +73,13 @@ describe('Offline UX', () => {
 				'online hello',
 				['delivered'],
 			);
-			expect(
-				await agent1.directChatPage.connectionStatusIndicator.status(),
-			).toBe('connected');
+			const indicator = agent1.directChatPage.connectionStatusIndicator;
+			expect(await indicator.status()).toBe('cloud');
+
+			await indicator.expectDialog(
+				await agent1.tr('connectionStatusCloudTitle'),
+				await agent1.tr('connectionStatusCloudDescription'),
+			);
 		});
 	});
 
@@ -131,17 +135,10 @@ describe('Offline UX', () => {
 				{ timeout: 90_000, interval: 1_000 },
 			);
 
-			await indicator.chip.click();
-			await agent1.waitUntil(() => indicator.isDialogOpen());
-			await expect(indicator.dialogTitle).toHaveText(
+			await indicator.expectDialog(
 				await agent1.tr('connectionStatusDisconnectedTitle'),
-			);
-			await expect(indicator.dialogDescription).toHaveText(
 				await agent1.tr('connectionStatusDisconnectedDescription'),
 			);
-
-			await indicator.dialogCloseButton.click();
-			await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 		});
 
 		describe('with local mailbox enabled on the sender', () => {
@@ -165,17 +162,10 @@ describe('Offline UX', () => {
 					{ timeout: 60_000 },
 				);
 
-				await indicator.chip.click();
-				await agent1.waitUntil(() => indicator.isDialogOpen());
-				await expect(indicator.dialogTitle).toHaveText(
+				await indicator.expectDialog(
 					await agent1.tr('connectionStatusLocalTitle'),
-				);
-				await expect(indicator.dialogDescription).toHaveText(
 					await agent1.tr('connectionStatusLocalDescription', { count: 1 }),
 				);
-
-				await indicator.dialogCloseButton.click();
-				await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
 			});
 
 			it('a new message advances to the "mailbox" icon once the local mailbox holds it', async () => {
@@ -191,11 +181,11 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox back online', () => {
-		it('navbar chip hides again and the pending message advances to delivered once the peer receives it', async () => {
+		it('navbar chip reads cloud again and the pending message advances to delivered once the peer receives it', async () => {
 			await agent1.waitUntil(
 				async () =>
 					(await agent1.directChatPage.connectionStatusIndicator.status()) ===
-					'connected',
+					'cloud',
 				{ timeout: 30_000 },
 			);
 			await agent2.directChatPage.messages.waitForMessage('offline hello');
