@@ -7,6 +7,7 @@ mod polling;
 pub mod store;
 mod sync;
 mod sync_scheduler;
+pub mod persistence;
 mod sync_tracker;
 mod topic_registry;
 

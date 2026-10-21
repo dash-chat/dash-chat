@@ -765,7 +765,13 @@ mod tests {
     }
 
     fn test_sync_tracker() -> Arc<MailboxSyncTracker<u8, char>> {
-        Arc::new(MailboxSyncTracker::in_memory())
+        use crate::persistence::Persistence;
+        let store = crate::persistence::mem::MemPersistence::<u8, char>::new();
+        Arc::new(MailboxSyncTracker::<u8, char>::new(
+            store.sync_store(),
+            store.mailbox_store(),
+            BTreeSet::new(),
+        ))
     }
 
     /// A topic request made now (paused time keeps `since` stable).
@@ -777,7 +783,7 @@ mod tests {
     }
 
     /// Create a Mailboxes instance without spawning the background loop
-    fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
+    async fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
         Mailboxes::new(DummyStore, test_sync_tracker(), config)
     }
 
@@ -831,7 +837,7 @@ mod tests {
         let url = server.server_address().unwrap().to_string();
         let url = url.trim_end_matches('/').to_string();
 
-        let mailboxes = test_mailboxes(test_config());
+        let mailboxes = test_mailboxes(test_config()).await;
         let id: MailboxId = "test-mbx".into();
         let hash = iroh_blobs::Hash::new(b"coordinated blob");
 
@@ -880,13 +886,13 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn find_next_due_empty() {
-        let mgr = test_mailboxes(test_config());
+        let mgr = test_mailboxes(test_config()).await;
         assert!(mgr.find_next_due().await.is_none());
     }
 
     #[tokio::test(start_paused = true)]
     async fn find_next_due_single_new_mailbox() {
-        let mgr = test_mailboxes(test_config());
+        let mgr = test_mailboxes(test_config()).await;
         let mb = MemMailbox::<Msg>::new();
         let client = mb.client();
         let client_id = client.id();
@@ -901,7 +907,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn find_next_due_picks_earliest() {
         let config = test_config();
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         // Register first mailbox
         let mb1 = MemMailbox::<Msg>::new();
@@ -934,7 +940,7 @@ mod tests {
     async fn find_next_due_returns_wait_duration() {
         let config = test_config();
         let delay = config.between_polls_delay;
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let mb = MemMailbox::<Msg>::new();
         let client = mb.client();
@@ -966,7 +972,7 @@ mod tests {
     async fn find_next_due_respects_degraded_interval() {
         let config = test_config();
         let delay = config.between_polls_delay;
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let mb = MemMailbox::<Msg>::new();
         let client = mb.client();
@@ -989,7 +995,7 @@ mod tests {
     async fn find_next_due_respects_stopped_interval() {
         let config = test_config();
         let delay = config.between_polls_delay;
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let mb = MemMailbox::<Msg>::new();
         let client = mb.client();
@@ -1013,7 +1019,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn find_next_due_overdue_returns_zero() {
         let config = test_config();
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let mb = MemMailbox::<Msg>::new();
         let client = mb.client();
@@ -1040,7 +1046,7 @@ mod tests {
     async fn find_next_due_multiple_different_statuses() {
         let config = test_config();
         let delay = config.between_polls_delay;
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         // Register three mailboxes
         let mb_a = MemMailbox::<Msg>::new();
@@ -1088,7 +1094,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn find_next_due_after_clear() {
-        let mgr = test_mailboxes(test_config());
+        let mgr = test_mailboxes(test_config()).await;
 
         let mb = MemMailbox::<Msg>::new();
         mgr.register(mb.client()).await;
@@ -1102,7 +1108,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn active_mailbox_ids_updates_on_register_and_clear() {
-        let mgr = test_mailboxes(test_config());
+        let mgr = test_mailboxes(test_config()).await;
         let mut rx = mgr.active_mailbox_ids();
         assert!(rx.borrow().is_empty());
 
@@ -1120,7 +1126,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn active_mailbox_ids_subscribed_after_register_sees_registered() {
-        let mgr = test_mailboxes(test_config());
+        let mgr = test_mailboxes(test_config()).await;
 
         let mb = MemMailbox::<Msg>::new();
         let id = mb.client().id();
@@ -1137,7 +1143,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn re_register_preserves_connection_state_subscribers() {
         let config = test_config();
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let mb = MemMailbox::<Msg>::new();
         let client = mb.client();
@@ -1220,7 +1226,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn wakeup_mailbox_resets_status_and_schedule() {
         let config = test_config();
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let mb = MemMailbox::<Msg>::new();
         let client = mb.client();
@@ -1255,7 +1261,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn request_sync_leaves_backed_off_mailboxes_on_their_schedule() {
         let config = test_config();
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let active = MemMailbox::<Msg>::new();
         let active_id = active.client().id();
@@ -1300,7 +1306,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn request_sync_coalesces_a_burst_onto_the_first_deadline() {
         let config = test_config();
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let mb = MemMailbox::<Msg>::new();
         let id = mb.client().id();
@@ -1675,7 +1681,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn register_seeds_status_from_persisted_history() {
         let config = test_config();
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let (client, _polls) = TrackingClient::new(true);
         let id = client.id.clone();
@@ -1782,7 +1788,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn unregister_forgets_persisted_status() {
         let config = test_config();
-        let mgr = test_mailboxes(config.clone());
+        let mgr = test_mailboxes(config.clone()).await;
 
         let mb = MemMailbox::<Msg>::new();
         let id = mb.client().id();
@@ -2296,7 +2302,7 @@ mod tests {
         }
     }
 
-    fn test_mailboxes_with_store(
+    async fn test_mailboxes_with_store(
         config: MailboxesConfig,
         store: MemStore,
     ) -> Mailboxes<Msg, MemStore> {
@@ -2319,7 +2325,7 @@ mod tests {
     async fn publish_to_synced_mailbox_stores_directly() {
         let store = MemStore::default();
         store.set_height(0, 'a', 5);
-        let mgr = test_mailboxes_with_store(test_config(), store);
+        let mgr = test_mailboxes_with_store(test_config(), store).await;
         let (client, seqs, published) = EchoClient::new(false);
         let id = client.id();
         seqs.lock().unwrap().insert((0, 'a'), (0..=4).collect());
@@ -2344,7 +2350,7 @@ mod tests {
     async fn first_publish_stores_directly_from_zero() {
         let store = MemStore::default();
         store.set_height(0, 'a', 0);
-        let mgr = test_mailboxes_with_store(test_config(), store);
+        let mgr = test_mailboxes_with_store(test_config(), store).await;
         let (client, _seqs, published) = EchoClient::new(false);
         let id = client.id();
         mgr.register(client).await;
@@ -2364,7 +2370,7 @@ mod tests {
     async fn publish_delta_covers_everything_above_the_watermark() {
         let store = MemStore::default();
         store.set_height(0, 'a', 5);
-        let mgr = test_mailboxes_with_store(test_config(), store);
+        let mgr = test_mailboxes_with_store(test_config(), store).await;
         let (client, seqs, published) = EchoClient::new(false);
         let id = client.id();
         seqs.lock().unwrap().insert((0, 'a'), (0..=1).collect());
@@ -2389,7 +2395,7 @@ mod tests {
     async fn watermark_echo_behind_push_schedules_full_sync() {
         let store = MemStore::default();
         store.set_height(0, 'a', 5);
-        let mgr = test_mailboxes_with_store(test_config(), store);
+        let mgr = test_mailboxes_with_store(test_config(), store).await;
         let (client, _seqs, published) = EchoClient::new(false);
         let id = client.id();
         mgr.register(client).await;
@@ -2413,7 +2419,7 @@ mod tests {
     async fn failed_direct_store_schedules_full_sync() {
         let store = MemStore::default();
         store.set_height(0, 'a', 0);
-        let mgr = test_mailboxes_with_store(test_config(), store);
+        let mgr = test_mailboxes_with_store(test_config(), store).await;
         let (client, _seqs, published) = EchoClient::new(true);
         let id = client.id();
         mgr.register(client).await;
@@ -2431,7 +2437,7 @@ mod tests {
     async fn echo_ahead_of_push_is_accepted() {
         let store = MemStore::default();
         store.set_height(0, 'a', 2);
-        let mgr = test_mailboxes_with_store(test_config(), store);
+        let mgr = test_mailboxes_with_store(test_config(), store).await;
         let (client, seqs, published) = EchoClient::new(false);
         let id = client.id();
         seqs.lock().unwrap().insert((0, 'a'), (0..=5).collect());
@@ -2452,7 +2458,7 @@ mod tests {
     async fn inactive_mailboxes_are_not_stored_to() {
         let store = MemStore::default();
         store.set_height(0, 'a', 0);
-        let mgr = test_mailboxes_with_store(test_config(), store);
+        let mgr = test_mailboxes_with_store(test_config(), store).await;
         let (client, _seqs, published) = EchoClient::new(false);
         let id = client.id();
         mgr.register(client).await;
