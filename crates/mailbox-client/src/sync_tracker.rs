@@ -232,7 +232,9 @@ mod tests {
                 (Some(dir), store)
             }
             Backend::Mem => {
-                let persistence = SqlitePersistence::<u8, char>::open_in_memory().await;
+                // Mock-time-safe in-memory backend; a sqlx :memory: pool would
+                // deadlock under tokio::test(start_paused = true).
+                let persistence = crate::persistence::mem::MemPersistence::<u8, char>::new();
                 let store = MailboxSyncTracker::<u8, char>::new(
                     persistence.sync_store(),
                     persistence.mailbox_store(),
