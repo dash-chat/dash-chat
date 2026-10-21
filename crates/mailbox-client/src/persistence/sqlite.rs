@@ -233,6 +233,26 @@ where
         }
         Ok(out)
     }
+    async fn get_watermark(
+        &self,
+        id: &MailboxId,
+        topic: &T,
+        author: &A,
+    ) -> anyhow::Result<Option<SeqNum>> {
+        let t_bytes = topic.encode()?;
+        let a_bytes = author.encode()?;
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT seq_num FROM mailbox_sync_state
+             WHERE mailbox_id = ? AND topic = ? AND author = ?",
+        )
+        .bind(id)
+        .bind(&t_bytes)
+        .bind(&a_bytes)
+        .fetch_optional(self.pool.pool())
+        .await?;
+        Ok(row.map(|(s,)| SeqNum::try_from(s)).transpose()?)
+    }
+
     async fn load_all_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>> {
         let rows: Vec<(String,)> =
             sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state")

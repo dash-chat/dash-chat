@@ -35,6 +35,12 @@ where
         &self,
         id: &MailboxId,
     ) -> anyhow::Result<std::collections::HashMap<T, std::collections::HashMap<A, crate::SeqNum>>>;
+    async fn get_watermark(
+        &self,
+        id: &MailboxId,
+        topic: &T,
+        author: &A,
+    ) -> anyhow::Result<Option<crate::SeqNum>>;
     async fn get_synced_for_log(
         &self,
         topic: &T,
