@@ -256,12 +256,11 @@ where
         };
 
         for item in items {
-            if sender.send(item.clone()).await.is_err() {
+            if sender.send(item).await.is_err() {
                 tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
                 closed = true;
                 break;
             }
-            ops_to_publish.push(item);
         }
 
         for (author, seqs) in missing {
