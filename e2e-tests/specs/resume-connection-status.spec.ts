@@ -53,7 +53,7 @@ describe('Connection status after resuming from the background', function () {
 		// the thing this spec is about.
 
 		// A members-less group chat is the cheapest way to a page where
-		// ConnectionStatusIndicator is mounted.
+		// ConnectionStatusPill is mounted.
 		await createGroup(agent, 'Solo Group', []);
 	});
 

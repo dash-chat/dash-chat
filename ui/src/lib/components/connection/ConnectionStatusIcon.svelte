@@ -1,32 +1,39 @@
 <script lang="ts">
 	import type {
+		AgentId,
 		ChatId,
 		IOnlinePeersStore,
 		MailboxTrackerStore,
 	} from 'dash-chat-stores';
+	import { reactive } from 'signalium';
 	import { useReactivePromises } from '$lib/stores/use-signal';
 	import { getContext, type Snippet } from 'svelte';
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { connectionStatus, type ConnectionStatus } from './connection-status';
 	import type { ConnectionStatusTag } from './connection-status-tags';
 	import { mdiEmoticonPoop } from '@mdi/js';
-	import { Chip, Dialog, DialogButton } from 'konsta/svelte';
+	import { Dialog, DialogButton } from 'konsta/svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { onActivate } from '$lib/utils/keyboard';
 	import cloudSvg from '$lib/assets/connection-status/cloud.svg?raw';
 	import localMailboxServerSvg from '$lib/assets/connection-status/localmailboxserver.svg?raw';
 	import p2pSvg from '$lib/assets/connection-status/p2p.svg?raw';
 
-	let { chatId }: { chatId: ChatId } = $props();
+	/** Without a `chatId` there is no peer to be directly connected to, so the
+	 * status never reads p2p. */
+	let { chatId }: { chatId?: ChatId } = $props();
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
 	);
 	const onlinePeersStore: IOnlinePeersStore = getContext('online-peers-store');
 
-	const chipInputs = useReactivePromises(() => [
+	const noPeers = reactive(async (): Promise<AgentId[]> => []);
+
+	const inputs = useReactivePromises(() => [
 		mailboxTrackerStore.connectionStatusForAllMailboxes(),
-		onlinePeersStore.onlinePeers(chatId),
+		chatId === undefined ? noPeers() : onlinePeersStore.onlinePeers(chatId),
 	]);
 
 	const icons: Record<ConnectionStatusTag, string> = {
@@ -75,76 +82,70 @@
 	const asTitle = (snippet: Snippet) => snippet as unknown as string;
 </script>
 
-{#await $chipInputs then [mailboxes, onlinePeers]}
+{#await $inputs then [mailboxes, onlinePeers]}
 	{@const status = connectionStatus(
 		mailboxes,
 		onlinePeers.length > 0,
 		renderingResumedAt.value,
 	)}
-	<Chip
-		data-testid="connection-status"
-		data-status={status.status}
-		class="p-1 cursor-pointer"
-		colors={{
-			fillBgIos: 'bg-black/10 dark:bg-brand-primary',
-			fillBgMaterial: 'bg-md-light-secondary-container dark:bg-brand-primary',
-		}}
-		role="button"
-		tabindex={0}
-		aria-label={ariaLabels[status.status]()}
-		onClick={() => (dialogOpened = true)}
-		onkeydown={(e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				e.preventDefault();
-				dialogOpened = true;
-			}
-		}}
-	>
+	<!-- Pending is not rendered until the designer decides how it should look. -->
+	{#if status.status !== 'pending'}
 		<span
-			class="connection-status connection-status-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
-			aria-hidden="true"
+			data-testid="connection-status"
+			data-status={status.status}
+			class="flex cursor-pointer"
+			role="button"
+			tabindex={0}
+			aria-label={ariaLabels[status.status]()}
+			onclick={() => (dialogOpened = true)}
+			onkeydown={onActivate(() => (dialogOpened = true))}
 		>
-			{@html icons[status.status]}
-		</span>
-	</Chip>
-
-	{#snippet titleSlot()}
-		<div class="flex flex-row items-center gap-2">
 			<span
-				class="connection-status-dialog-icon connection-status-dialog-icon-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
+				class="connection-status connection-status-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
 				aria-hidden="true"
 			>
 				{@html icons[status.status]}
 			</span>
-			<span data-testid="connection-status-dialog-title">
-				{titles[status.status]()}
-			</span>
-		</div>
-	{/snippet}
+		</span>
 
-	<Modal bind:opened={dialogOpened}>
-		{#snippet children(modal)}
-			<Dialog
-				data-testid="connection-status-dialog"
-				opened={modal.opened}
-				onBackdropClick={modal.close}
-				title={asTitle(titleSlot)}
-			>
-				<span data-testid="connection-status-dialog-description">
-					{description(status)}
+		{#snippet titleSlot()}
+			<div class="flex flex-row items-center gap-2">
+				<span
+					class="connection-status-dialog-icon connection-status-dialog-icon-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
+					aria-hidden="true"
+				>
+					{@html icons[status.status]}
 				</span>
-
-				{#snippet buttons()}
-					<DialogButton
-						data-testid="connection-status-dialog-close"
-						onClick={modal.close}
-					>
-						{m.close()}
-					</DialogButton>
-				{/snippet}
-			</Dialog>
+				<span data-testid="connection-status-dialog-title">
+					{titles[status.status]()}
+				</span>
+			</div>
 		{/snippet}
-	</Modal>
+
+		<Modal bind:opened={dialogOpened}>
+			{#snippet children(modal)}
+				<Dialog
+					data-testid="connection-status-dialog"
+					opened={modal.opened}
+					onBackdropClick={modal.close}
+					title={asTitle(titleSlot)}
+				>
+					<span data-testid="connection-status-dialog-description">
+						{description(status)}
+					</span>
+
+					{#snippet buttons()}
+						<DialogButton
+							data-testid="connection-status-dialog-close"
+							onClick={modal.close}
+						>
+							{m.close()}
+						</DialogButton>
+					{/snippet}
+				</Dialog>
+			{/snippet}
+		</Modal>
+	{/if}
 {/await}
 
 <style>

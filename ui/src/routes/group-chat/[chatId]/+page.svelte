@@ -24,7 +24,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountGroup } from '@mdi/js';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
-	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
+	import ConnectionStatusPill from '$lib/components/connection/ConnectionStatusPill.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
@@ -162,7 +162,7 @@
 				{/snippet}
 
 				<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-					<ConnectionStatusIndicator {chatId} />
+					<ConnectionStatusPill {chatId} />
 				</div>
 			</Navbar>
 		{/snippet}

@@ -14,7 +14,9 @@
 	import { goto } from '$app/navigation';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import ConnectionStatusIcon from '$lib/components/connection/ConnectionStatusIcon.svelte';
 	import HubWarningBadge from '$lib/components/HubWarningBadge.svelte';
+
 	const theme = $derived(useTheme());
 
 	let getStartedVisible = $state(true);
@@ -42,6 +44,10 @@
 		{/snippet}
 
 		{#snippet right()}
+			<!-- The same 44px cell as the compose button, so the two line up. -->
+			<div class="flex h-11 w-11 items-center justify-center">
+				<ConnectionStatusIcon />
+			</div>
 			{#if theme === 'ios'}
 				<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
 					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
