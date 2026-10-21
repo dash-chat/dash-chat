@@ -19,8 +19,22 @@ pub trait MailboxUrlStore: Send + Sync {
 #[async_trait]
 pub trait SyncStore<T, A>: Send + Sync
 where
-    T: ByteSerializable,
-    A: ByteSerializable,
+    T: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
+    A: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
 {
     async fn record_status(&self, id: &MailboxId, status: SyncStatus) -> anyhow::Result<()>;
     async fn get_status(&self, id: &MailboxId) -> anyhow::Result<Option<SyncStatus>>;
@@ -53,8 +67,22 @@ where
 #[async_trait]
 pub trait Persistence<T, A>: Send + Sync
 where
-    T: ByteSerializable,
-    A: ByteSerializable,
+    T: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
+    A: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore>;
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>>;
@@ -64,29 +92,12 @@ where
     async fn close(&self);
 }
 
-/// Repositories for types that can be serialized to bytes.
-pub trait ByteSerializable: Send + Sync + Eq + std::hash::Hash + Clone + 'static {
-    fn encode(&self) -> anyhow::Result<Vec<u8>>;
+pub(crate) fn encode<T: serde::Serialize>(value: &T) -> anyhow::Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    ciborium::into_writer(value, &mut buf)?;
+    Ok(buf)
 }
 
-impl<T> ByteSerializable for T
-where
-    T: serde::Serialize + Send + Sync + Eq + std::hash::Hash + Clone + 'static,
-{
-    fn encode(&self) -> anyhow::Result<Vec<u8>> {
-        crate::sync_tracker::encode(self)
-    }
-}
-
-pub trait ByteDeserializable<T>: Send + Sync {
-    fn decode(bytes: &[u8]) -> anyhow::Result<T>;
-}
-
-impl<T> ByteDeserializable<T> for T
-where
-    T: serde::de::DeserializeOwned + Send + Sync + Eq + std::hash::Hash + Clone + 'static,
-{
-    fn decode(bytes: &[u8]) -> anyhow::Result<T> {
-        crate::sync_tracker::decode(bytes)
-    }
+pub(crate) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> anyhow::Result<T> {
+    Ok(ciborium::from_reader(bytes)?)
 }

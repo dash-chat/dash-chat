@@ -1,4 +1,3 @@
-use serde::{Serialize, de::DeserializeOwned};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
@@ -9,7 +8,7 @@ use tokio::sync::{Mutex, watch};
 use crate::MailboxId;
 use crate::SeqNum;
 use crate::connection_health::SyncStatus;
-use crate::persistence::{ByteDeserializable, ByteSerializable, MailboxUrlStore, SyncStore};
+use crate::persistence::{MailboxUrlStore, SyncStore};
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
 pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
@@ -27,16 +26,16 @@ pub struct MailboxSyncTracker<T, A> {
 
 impl<T, A> MailboxSyncTracker<T, A>
 where
-    T: ByteSerializable
-        + ByteDeserializable<T>
+    T: serde::Serialize
+        + serde::de::DeserializeOwned
         + Eq
         + std::hash::Hash
         + Clone
         + Send
         + Sync
         + 'static,
-    A: ByteSerializable
-        + ByteDeserializable<A>
+    A: serde::Serialize
+        + serde::de::DeserializeOwned
         + Eq
         + std::hash::Hash
         + Clone
@@ -192,16 +191,6 @@ where
         self.per_mailbox.lock().await.remove(mailbox);
         Ok(())
     }
-}
-
-pub(crate) fn encode<T: Serialize>(value: &T) -> anyhow::Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    ciborium::into_writer(value, &mut buf)?;
-    Ok(buf)
-}
-
-pub(crate) fn decode<T: DeserializeOwned>(bytes: &[u8]) -> anyhow::Result<T> {
-    Ok(ciborium::from_reader(bytes)?)
 }
 
 #[cfg(test)]
