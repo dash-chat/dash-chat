@@ -3,7 +3,7 @@ pub mod blobs;
 mod connection_health;
 mod mailbox_registry;
 pub mod manager;
-pub mod persistence;
+pub(crate) mod persistence;
 mod polling;
 pub mod store;
 mod sync;

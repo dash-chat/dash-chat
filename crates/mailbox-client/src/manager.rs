@@ -489,7 +489,8 @@ where
     }
 
     pub async fn unsubscribe(&self, topic: Item::Topic) -> Result<(), anyhow::Error> {
-        self.topic_registry.unsubscribe(topic).await
+        self.topic_registry.unsubscribe(topic).await;
+        Ok(())
     }
 
     /// Spawn the poll loop with an externally-created sync tracker.
