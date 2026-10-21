@@ -71,6 +71,9 @@ iroh = { version = "1.0.0", default-features = false, features = [
 iroh-blobs = "0.103.0"
 
 [patch.crates-io]
+# tao 0.37.1 + tauri-apps/tao#1376: forwards the URL that cold-launches the iOS
+# app, which tao drops on the scene lifecycle (dash-chat/tao branch dashchat)
+tao = { git = "https://github.com/dash-chat/tao", rev = "69ae7dba9271dc05e5746e2e7fff8997bd5c77b9" }
 iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
 # Fork of iroh main (1.2.0 + PR #4512, the relay-backpressure fix) carrying the
 # iroh#4390 pending_open_paths fix (dash-chat/iroh branch dashchat)
