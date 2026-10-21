@@ -1,8 +1,6 @@
 use crate::MailboxId;
 use crate::connection_health::SyncStatus;
-use crate::persistence::{
-    ByteDeserializable, ByteSerializable, MailboxUrlStore, Persistence, SyncStore,
-};
+use crate::persistence::{MailboxUrlStore, Persistence, SyncStore, decode, encode};
 use anyhow::Context;
 use async_trait::async_trait;
 use dashchat_utils::SeqNum;
@@ -22,8 +20,22 @@ pub struct SqlitePersistence<T, A> {
 
 impl<T, A> SqlitePersistence<T, A>
 where
-    T: ByteSerializable + ByteDeserializable<T>,
-    A: ByteSerializable + ByteDeserializable<A>,
+    T: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
+    A: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
 {
     pub async fn open(
         path: impl AsRef<std::path::Path>,
@@ -60,8 +72,22 @@ where
 #[async_trait]
 impl<T, A> Persistence<T, A> for SqlitePersistence<T, A>
 where
-    T: ByteSerializable + ByteDeserializable<T>,
-    A: ByteSerializable + ByteDeserializable<A>,
+    T: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
+    A: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore> {
         self.mailbox_store.clone()
@@ -118,8 +144,22 @@ struct SqliteSyncStore<T, A> {
 #[async_trait]
 impl<T, A> SyncStore<T, A> for SqliteSyncStore<T, A>
 where
-    T: ByteSerializable + ByteDeserializable<T>,
-    A: ByteSerializable + ByteDeserializable<A>,
+    T: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
+    A: serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sync
+        + Eq
+        + std::hash::Hash
+        + Clone
+        + 'static,
 {
     async fn record_status(&self, id: &MailboxId, status: SyncStatus) -> anyhow::Result<()> {
         sqlx::query(
@@ -162,8 +202,8 @@ where
         let mut encoded: Vec<(Vec<u8>, Vec<u8>, SeqNum)> = Vec::with_capacity(watermarks.len());
         for (t, a, s) in watermarks {
             encoded.push((
-                t.encode().context("encoding topic")?,
-                a.encode().context("encoding author")?,
+                encode(t).context("encoding topic")?,
+                encode(a).context("encoding author")?,
                 *s,
             ));
         }
@@ -211,8 +251,8 @@ where
 
         let mut out: HashMap<T, HashMap<A, SeqNum>> = HashMap::new();
         for (t_bytes, a_bytes, s) in rows {
-            let topic = T::decode(&t_bytes).context("decoding topic")?;
-            let author = A::decode(&a_bytes).context("decoding author")?;
+            let topic = decode(&t_bytes).context("decoding topic")?;
+            let author = decode(&a_bytes).context("decoding author")?;
             out.entry(topic)
                 .or_default()
                 .insert(author, SeqNum::try_from(s)?);
@@ -225,8 +265,8 @@ where
         topic: &T,
         author: &A,
     ) -> anyhow::Result<Option<SeqNum>> {
-        let t_bytes = topic.encode()?;
-        let a_bytes = author.encode()?;
+        let t_bytes = encode(topic)?;
+        let a_bytes = encode(author)?;
         let row: Option<(i64,)> = sqlx::query_as(
             "SELECT seq_num FROM mailbox_sync_state
              WHERE mailbox_id = ? AND topic = ? AND author = ?",
@@ -252,8 +292,8 @@ where
         topic: &T,
         author: &A,
     ) -> anyhow::Result<std::collections::BTreeMap<MailboxId, crate::SeqNum>> {
-        let t_bytes = topic.encode()?;
-        let a_bytes = author.encode()?;
+        let t_bytes = encode(topic)?;
+        let a_bytes = encode(author)?;
         let rows: Vec<(String, i64)> = sqlx::query_as(
             "SELECT mailbox_id, seq_num FROM mailbox_sync_state
              WHERE topic = ? AND author = ?",
