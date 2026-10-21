@@ -6,13 +6,12 @@ use crate::persistence::{
 use anyhow::Context;
 use async_trait::async_trait;
 use dashchat_utils::SeqNum;
-use sqlite_gate::{GatedPool, SqliteGate};
+use sqlite_gate::GatedPool;
 use sqlx::{
     SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 use std::collections::{BTreeSet, HashMap};
-use std::str::FromStr;
 use std::sync::Arc;
 
 pub struct SqlitePersistence<T, A> {
@@ -25,30 +24,6 @@ where
     T: ByteSerializable + ByteDeserializable<T>,
     A: ByteSerializable + ByteDeserializable<A>,
 {
-    pub async fn open_in_memory() -> Self {
-        // Connected through a throwaway gate so the pool type stays GatedPool;
-        // an in-memory database is never suspended. Parsed from the string so
-        // the pool's connections share one in-memory database (shared cache).
-        let opts = SqliteConnectOptions::from_str(":memory:")
-            .expect("failed to parse in-memory connect options");
-        let pool = SqliteGate::default()
-            .connect(SqlitePoolOptions::new(), opts)
-            .await
-            .expect("failed to connect to in-memory sqlite");
-
-        // To ensure the schema is created on the :memory: database, we must execute the schema
-        // on the pool itself. connect_lazy means the pool is shared.
-        sqlx::query(SCHEMA)
-            .execute(pool.pool())
-            .await
-            .expect("failed to run schema");
-
-        Self {
-            pool,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-
     pub async fn open(
         path: impl AsRef<std::path::Path>,
         gate: &sqlite_gate::SqliteGate,
@@ -316,7 +291,7 @@ mod tests {
     #[tokio::test]
     async fn gate_still_tracks_pool_after_open() {
         let dir = tempfile::tempdir().unwrap();
-        let gate = SqliteGate::default();
+        let gate = sqlite_gate::SqliteGate::default();
         let persistence = SqlitePersistence::<u8, char>::open(&dir.path().join("test.db"), &gate)
             .await
             .unwrap();
