@@ -8,6 +8,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddrV4};
 use std::time::Duration;
 
 use socket2::{Domain, Protocol, Socket, Type};
+use tokio::net::UdpSocket;
 use tokio::sync::watch;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -58,16 +59,13 @@ async fn probe_forever(blocked_tx: watch::Sender<bool>) {
 
 async fn probe_every_lan() -> Option<bool> {
     let loopback = loopback_addresses();
-    let lans: Vec<Ipv4Addr> = local_hub_discovery::multicast_interfaces_v4()
-        .into_iter()
-        .filter(|ip| !loopback.contains(&IpAddr::V4(*ip)))
-        .collect();
-    tokio::task::spawn_blocking(move || {
-        every_lan_refused(lans.into_iter().map(refuses_multicast).collect())
-    })
-    .await
-    .ok()
-    .flatten()
+    let mut probes = Vec::new();
+    for lan in local_hub_discovery::multicast_interfaces_v4() {
+        if !loopback.contains(&IpAddr::V4(lan)) {
+            probes.push(refuses_multicast(lan).await);
+        }
+    }
+    every_lan_refused(probes)
 }
 
 /// Every address on a loopback interface, including aliases like 10.10.10.1
@@ -96,14 +94,16 @@ fn every_lan_refused(probes: Vec<io::Result<bool>>) -> Option<bool> {
     }
 }
 
-fn refuses_multicast(interface: Ipv4Addr) -> io::Result<bool> {
+async fn refuses_multicast(interface: Ipv4Addr) -> io::Result<bool> {
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     socket.set_multicast_if_v4(&interface)?;
     // Kill switches only refuse packets that would leave the device, so TTL 0
     // can't tell; TTL 1 keeps the probe on the LAN.
     socket.set_multicast_ttl_v4(1)?;
     socket.set_multicast_loop_v4(false)?;
-    match socket.send_to(&EMPTY_DNS_HEADER, &MDNS_V4.into()) {
+    socket.set_nonblocking(true)?;
+    let socket = UdpSocket::from_std(socket.into())?;
+    match socket.send_to(&EMPTY_DNS_HEADER, MDNS_V4).await {
         Ok(_) => Ok(false),
         // Local Network privacy and reject routes answer EHOSTUNREACH, kill
         // switches ENETUNREACH, firewalls EPERM. Other errors, like ENOBUFS, say

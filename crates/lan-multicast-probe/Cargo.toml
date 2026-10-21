@@ -8,5 +8,5 @@ if-addrs = "0.15"
 local-hub-discovery = { workspace = true }
 log = "0.4"
 socket2 = "0.6"
-tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio = { version = "1", features = ["net", "rt", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
