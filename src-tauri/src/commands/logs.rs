@@ -1,5 +1,4 @@
 use dashchat_node::{DeviceId, Payload, SeqNum, TopicId};
-use p2panda::groups::GroupsArgs;
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
 use p2panda_core::cbor::decode_cbor;
@@ -69,6 +68,9 @@ pub struct SimplifiedHeader {
     auth: Option<GroupsArgs>,
 }
 
+// TODO: this is a placeholder for whatever state will be passed in after p2panda-spaces refactor.
+pub type GroupsArgs = ();
+
 impl SimplifiedHeader {
     /// Convert a p2panda::Header into a SimplifiedHeader.
     ///
@@ -76,11 +78,10 @@ impl SimplifiedHeader {
     /// form of a LogId) we need to pass this in as a separate argument.
     pub fn from_header(topic: TopicId, header: Header) -> Self {
         // Only operations contain groups args in their extension have dependency requirements.
-        let auth = header.extensions.group_args();
-        let previous = auth
-            .as_ref()
-            .map(|args| args.dependencies.clone())
-            .unwrap_or_default();
+        todo!("get the equivalent of what was header.extensions.group_args()");
+        let auth = None;
+        let previous = vec![];
+
         SimplifiedHeader {
             verifying_key: header.verifying_key,
             timestamp: header.extensions.timestamp(),

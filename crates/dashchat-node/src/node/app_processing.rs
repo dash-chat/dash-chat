@@ -12,7 +12,7 @@ use tracing::{debug, error, warn};
 use crate::AckedOp;
 use crate::forward_edit_closure;
 use crate::node::publish::warn_if_slow;
-use crate::node::streams::{ProcessedTx, ProcessorError, ProcessorEvent, TopicDrain};
+use crate::node::streams::{ProcessedTx, ProcessorError, ProcessorEvent, Space, TopicDrain};
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
@@ -77,16 +77,51 @@ pub enum SystemNotification {
 
 impl Node {
     /// Register a topic as subscribed in the database, and initialize it.
-    /// When the node restarts, the topic will be reinitialized.
+    /// When the node restarts, the topic will be rejoined as a space by
+    /// [`Self::initialize_space`]: every auto-registered topic is a space.
     ///
     /// Note that some topics are excluded from automatic registration, such as inbox topics.
     /// They have to be registered separately with extra context.
-    pub(crate) async fn register_topic<K: AutoRegisteredTopic>(
+    ///
+    /// Idempotent.
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn register_and_join_space<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        self.local_store.register_topic_as_subscribed(topic).await?;
-        self.initialize_topic(*topic).await?;
+        self.local_store.register_space_as_subscribed(topic).await?;
+        self.initialize_space(*topic).await?;
+        Ok(())
+    }
+
+    /// Create a space we own, persist it for restart, and import its mailbox stream.
+    ///
+    /// Idempotent, safe to repeat at any point of failure.
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn register_and_create_space<K: AutoRegisteredTopic>(
+        &self,
+        topic: Topic<K>,
+    ) -> anyhow::Result<Space> {
+        let space = if self.streams.has_space(*topic).await? {
+            self.streams.join_space(*topic).await?
+        } else {
+            self.streams.create_space(*topic).await?
+        };
+        self.local_store.register_space_as_subscribed(topic).await?;
+        self.import_mailbox_stream(*topic).await?;
+        self.notify_topic_subscribed(*topic).await;
+        Ok(space)
+    }
+
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    #[cfg(feature = "testing")]
+    #[deprecated = "must refactor all tests to use spaces"]
+    pub async fn register_topic_legacy<K: AutoRegisteredTopic>(
+        &self,
+        topic: Topic<K>,
+    ) -> anyhow::Result<()> {
+        self.local_store.register_space_as_subscribed(topic).await?;
+        self.initialize_stream(*topic).await?;
 
         Ok(())
     }
@@ -97,31 +132,47 @@ impl Node {
     /// This must be called:
     /// - when creating a new group chat
     /// - when initializing the node, for each existing group chat
-    pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn initialize_stream(&self, topic: TopicId) -> anyhow::Result<()> {
         topic.alias_numbered();
 
-        self.subscribe_to_topic(topic).await?;
-        // Not gated on the subscription being new: publishing into a topic
-        // subscribes it too, without importing its mailbox stream.
+        tracing::info!(topic = ?topic.aliased(), "initialize topic");
+
+        self.subscribe_to_stream(topic).await?;
         self.import_mailbox_stream(topic).await?;
         Ok(())
     }
 
-    /// Subscribe to a topic.
-    async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<()> {
-        debug!(topic = ?topic.aliased(), "subscribe to topic");
+    /// Rejoin a registered space on node startup and import its mailbox stream.
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn initialize_space(&self, topic: TopicId) -> anyhow::Result<()> {
+        topic.alias_numbered();
+        tracing::info!(topic = ?topic.aliased(), "initialize space");
 
-        self.streams.subscribe(topic.into()).await?;
-
-        if let Some(tx) = &self.topic_subscribed_tx {
-            let _ = tx.send(topic).await;
-        }
-
+        self.streams.join_space(topic).await?;
+        self.import_mailbox_stream(topic).await?;
+        self.notify_topic_subscribed(topic).await;
         Ok(())
     }
 
+    /// Subscribe to a non-Space topic stream.
+    async fn subscribe_to_stream(&self, topic: TopicId) -> anyhow::Result<()> {
+        debug!(topic = ?topic.aliased(), "subscribe to stream");
+
+        self.streams.subscribe(topic.into()).await?;
+        self.notify_topic_subscribed(topic).await;
+        Ok(())
+    }
+
+    /// Tell the host (push notifications) that this node now receives traffic for a topic.
+    async fn notify_topic_subscribed(&self, topic: TopicId) {
+        if let Some(tx) = &self.topic_subscribed_tx {
+            let _ = tx.send(topic).await;
+        }
+    }
+
     /// Import external operation stream from a mailbox, unless it is already imported.
-    async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
+    pub(super) async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
         let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
             return Ok(());
         };
@@ -192,14 +243,12 @@ impl Node {
         tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "operation processing");
 
         let result = if self.recorded_for_app(&operation).await {
-            match operation.message() {
-                Payload::GroupControl(_) => self.process_groups(&operation, &source).await,
-                _ => self.process_app(&operation, &source).await,
-            }
-            .map_err(|err| ProcessorError::App(err.to_string()))
+            self.process_app(&operation, &source)
+                .await
+                .map_err(|err| ProcessorError::App(err.to_string()))
         } else {
-            Err(ProcessorError::App(
-                "failed to record the operation for the app".into(),
+            Err(ProcessorError::System(
+                "failed to record the operation for the app".to_string(),
             ))
         };
 
@@ -397,10 +446,11 @@ impl Node {
             .await?;
 
         for agent_id in known.into_values() {
-            let topic = Topic::announcements(agent_id);
-            self.initialize_topic(*topic).await.map_err(|err| {
-                anyhow::anyhow!("failed to subscribe to topic for group member: {err}")
-            })?;
+            self.register_and_join_space(Topic::announcements(agent_id))
+                .await
+                .map_err(|err| {
+                    anyhow::anyhow!("failed to subscribe to topic for group member: {err}")
+                })?;
         }
 
         // Notify the frontend so it refetches the chat log and observes the new
@@ -507,7 +557,7 @@ impl Node {
         // If a receiver is processing this, the tombstone may have been processed prior,
         // so we want to drop the payload now and not process it.
         if self
-            .enforce_tombstone(topic, &operation.event.operation)
+            .enforce_tombstone(topic, &operation.processed().operation)
             .await?
         {
             // The payload is tombstoned, so we must not process it. Return early.
@@ -520,15 +570,15 @@ impl Node {
         let payload = operation.message();
 
         match &payload {
-            Payload::GroupControl(_) => {
-                // Nothing to do.
-            }
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 for (_, agent_id) in agents {
                     if agent_id == &self.agent_id() {
                         continue;
                     }
-                    if let Err(err) = self.register_topic(Topic::announcements(*agent_id)).await {
+                    if let Err(err) = self
+                        .register_and_join_space(Topic::announcements(*agent_id))
+                        .await
+                    {
                         tracing::error!(
                             ?err,
                             agent_id = ?agent_id.aliased(),
@@ -539,7 +589,7 @@ impl Node {
             }
 
             Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
-                self.join_group(*chat_id)
+                self.join_chat_group(*chat_id)
                     .await
                     .context("failed to join group from invitation")?;
             }
@@ -561,13 +611,13 @@ impl Node {
                     return Ok(());
                 }
                 match invitation {
-                    InboxPayload::ContactRequest { agent_id, .. } => {
-                        // A request arrived on our advertised inbox. Except for
-                        // subscribing to the shared direct-chat topic (so the
-                        // requester's messages are readable before accepting),
-                        // perform no network side-effects (bootstrap
-                        // registration) and disclose nothing about us until the
-                        // user explicitly accepts (see `accept_contact`). This
+                    InboxPayload::ContactRequest {
+                        agent_id, profile, ..
+                    } => {
+                        // A request arrived on our advertised inbox. Perform no
+                        // network side-effects (bootstrap registration) and
+                        // disclose nothing about us until the user explicitly
+                        // accepts (see `accept_contact`). This
                         // keeps an unsolicited request — e.g. anyone scanning a
                         // shared QR — from amplifying our resources or handing our
                         // profile to every scanner. The request is signed by the
@@ -575,10 +625,6 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
-                            self.register_topic(
-                                self.direct_chat_topic(crate::FakeAgentId::from(author)),
-                            )
-                            .await?;
                             // Mutual add: if we also sent this peer a contact
                             // request, their incoming request is an implicit
                             // acceptance — complete the exchange automatically
@@ -597,9 +643,13 @@ impl Node {
                                     }
                                 });
                             }
+
+                            self.save_keybundle(profile.keybundle.clone()).await?;
                         }
                     }
-                    InboxPayload::ContactRequestAccept { agent_id, .. } => {
+                    InboxPayload::ContactRequestAccept {
+                        agent_id, profile, ..
+                    } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
@@ -618,6 +668,8 @@ impl Node {
                                 );
                                 return Ok(());
                             }
+
+                            self.save_keybundle(profile.keybundle.clone()).await?;
                             self.establish_contact(author, *agent_id).await?;
 
                             let node = self.clone();
@@ -625,6 +677,14 @@ impl Node {
                             tokio::spawn(async move {
                                 let topic_id =
                                     node.direct_chat_topic(crate::FakeAgentId::from(author));
+
+                                if let Err(err) = node.join_space(topic_id).await {
+                                    tracing::error!(
+                                        ?err,
+                                        "direct chat space was subscribed improperly, can't proceed"
+                                    );
+                                    return;
+                                }
                                 if let Err(err) = node.publish_add_contact(agent_id, topic_id).await
                                 {
                                     tracing::warn!(?err, "failed to record accepted contact");

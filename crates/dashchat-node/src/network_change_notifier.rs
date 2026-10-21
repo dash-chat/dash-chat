@@ -50,7 +50,7 @@ pub(crate) fn spawn(
                     return;
                 }
             }
-            tracing::info!("network-change notifier: probing mailboxes");
+            tracing::debug!("network-change notifier: probing mailboxes");
             mailboxes.probe_all().await;
             mailboxes.reset_uploads();
             unfetched_blob_trigger.notify_one();
@@ -99,7 +99,7 @@ async fn publish_local_addrs(iroh: &iroh::Endpoint) {
     for addr in &current {
         iroh.add_external_addr(*addr).await;
     }
-    tracing::info!(addrs = ?current, "network-change notifier: published local addresses");
+    tracing::debug!(addrs = ?current, "network-change notifier: published local addresses");
 }
 
 /// Every routable interface address paired with the port iroh bound for that

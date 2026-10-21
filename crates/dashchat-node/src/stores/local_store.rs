@@ -19,25 +19,49 @@ const IDENTITY_SECRET_KEY: &str = "identity_secret";
 const AGENT_ID_KEY: &str = "agent_id";
 
 /// Distinguishes the roles an inbox topic can play for this node.
+///
+/// Through a normal flow between Alice and Bob, the roles show
+/// up in the following order:
+///
+/// - Alice creates a QR code for inbox X as role `Advertised`
+/// - Bob scans, then:
+///     - Bob creates inbox Y as role `Reply`
+///     - Bob publishes ContactRequest (declaring Y) to X
+///     - Bob registers X as role `Requested`
+/// - Alice receives ContactRequest on X and subscribes to the direct chat topic
+/// - Alice accepts the request (either via UI or mutual request) and:
+///     - Alice publishes ContactRequestAccept to Y
+///     - Alice registers Y as role `Accepted`
+/// - Bob receives ContactRequestAccept on Y, finishing contact request flow
+/// - Bob drops X
+///
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[repr(i64)]
 enum InboxRole {
     /// An inbox we advertise in our QR code and receive contact requests on.
+    ///
+    /// The QR creator's own inbox.
     Advertised = 0,
     /// A private inbox we minted while scanning someone's QR, used only to
     /// receive their `ContactRequestAccept`. Never pruned: a late acceptance —
     /// possibly of an older request, after a re-scan — is matched by topic
     /// whatever its expiry, so pruning one would strand that request.
+    ///
+    /// The QR scanner's own inbox.
     Reply = 1,
     /// A requester's private reply inbox that we published our
     /// `ContactRequestAccept` into. Kept subscribed across restarts until the
     /// code expires, so a requester that only reaches us directly can still
     /// sync it from us.
+    ///
+    /// The QR creator's subscription to the scanner's inbox.
     Accepted = 2,
     /// The advertised inbox of a device whose QR we scanned, where our
     /// `ContactRequest` lives. Restored at startup until they become a contact
     /// or the code expires, so a request that didn't sync before a restart still
     /// reaches them.
+    ///
+    /// The QR scanner's subscription to the creator's inbox.
     Requested = 3,
 }
 
@@ -46,7 +70,7 @@ const MIGRATIONS: &[&str] = &[
         key TEXT PRIMARY KEY,
         value BLOB NOT NULL
     )",
-    "CREATE TABLE IF NOT EXISTS subscribed_topics (
+    "CREATE TABLE IF NOT EXISTS subscribed_spaces (
         topic_id BLOB PRIMARY KEY
     )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
@@ -155,19 +179,30 @@ impl LocalStore {
         })
     }
 
-    pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
+    pub async fn subscribed_spaces(&self) -> anyhow::Result<BTreeSet<TopicId>> {
         let rows: Vec<(Topic<kind::Untyped>,)> =
-            sqlx::query_as("SELECT topic_id FROM subscribed_topics")
+            sqlx::query_as("SELECT topic_id FROM subscribed_spaces")
                 .fetch_all(&self.pool)
                 .await?;
         Ok(rows.into_iter().map(|(id,)| *id).collect())
     }
 
-    pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
+    /// Record that this node participates in a space, so startup rejoins it.
+    ///
+    /// Contract of a row: startup joins the topic (`Node::initialize_space`) and never
+    /// creates it. A row written by a create means p2panda already holds the space; a
+    /// row written by a join may precede the space's control messages, which p2panda
+    /// allows. No further setup is needed for a space with a row.
+    ///
+    /// This store and p2panda's store are separate SQLite databases, so no transaction
+    /// spans both. The two writers (`Node::register_and_join_space`,
+    /// `Node::register_and_create_space`) are therefore ordered so that each is safe
+    /// to repeat after a failure at any step; their comments say why.
+    pub async fn register_space_as_subscribed<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
+        sqlx::query("INSERT OR IGNORE INTO subscribed_spaces (topic_id) VALUES (?)")
             .bind(topic.to_vec())
             .execute(&self.pool)
             .await?;
@@ -178,7 +213,7 @@ impl LocalStore {
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM subscribed_topics WHERE topic_id = ?")
+        sqlx::query("DELETE FROM subscribed_spaces WHERE topic_id = ?")
             .bind(topic.to_vec())
             .execute(&self.pool)
             .await?;

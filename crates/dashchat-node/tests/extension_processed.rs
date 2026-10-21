@@ -110,7 +110,7 @@ async fn a_group_operation_the_extension_applied_first_is_processed() {
             .unwrap();
     }
     let chat = alice
-        .create_group(maplit::btreemap! {
+        .create_chat_group(maplit::btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await

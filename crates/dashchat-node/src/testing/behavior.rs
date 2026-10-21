@@ -91,7 +91,7 @@ impl Behavior {
             .context("no group invitation found")?;
 
         tracing::info!(?chat_id, "accepted group invitation");
-        self.node.join_group(chat_id).await?;
+        self.node.join_chat_group(chat_id).await?;
         tracing::info!(?chat_id, "joined group");
         Ok(chat_id)
     }
