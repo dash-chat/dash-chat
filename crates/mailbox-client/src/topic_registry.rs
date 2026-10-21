@@ -28,10 +28,9 @@ where
         Some(rx)
     }
 
-    pub async fn unsubscribe(&self, topic: Item::Topic) -> Result<(), anyhow::Error> {
+    pub async fn unsubscribe(&self, topic: Item::Topic) {
         info!(topic = %topic, "unsubscribing from topic");
         self.topics.lock().await.remove(&topic);
-        Ok(())
     }
 
     pub async fn subscribed_topics(&self) -> BTreeSet<Item::Topic> {
