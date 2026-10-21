@@ -41,7 +41,7 @@ use crate::chat::{
 use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
+use crate::stores::{LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
@@ -240,7 +240,6 @@ pub struct Node {
 
     pub local_store: LocalStore,
     pub projection: OpProjection,
-    group_store: GroupStore,
     node_keys: NodeKeys,
 
     filesystem: Filesystem,
@@ -379,7 +378,6 @@ impl Node {
         // @TODO: I didn't look too closely into if these stores are needed yet. It's possible we
         // can reduce the need for these wrappers by either moving generally useful methods into
         // p2panda or finding alternative routes to achieve the same queries.
-        let group_store = GroupStore::new(store.clone());
         let op_store = OpStore::from_sqlite(store.clone());
 
         // === mailboxes === //
@@ -451,7 +449,6 @@ impl Node {
             filesystem,
             local_store,
             projection,
-            group_store,
             node_keys,
             notification_tx,
             topic_subscribed_tx,
@@ -940,10 +937,7 @@ impl Node {
         member: VerifyingKey,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
-        // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads(*chat_id).await?;
-
-        if deps.is_empty() {
+        if self.get_group_members(chat_id).await?.is_empty() {
             return Err(anyhow::anyhow!(
                 "group must be known locally before adding member: {chat_id:?}"
             ));
@@ -998,11 +992,21 @@ impl Node {
         chat_id: ChatId,
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let members = self
-            .group_store
-            .members(chat_id)
+            .streams
+            .space(chat_id.into())
             .await?
+            .run(async move |space| space.members().await)
+            .await??
             .into_iter()
-            .map(|(m, a)| (DeviceId::from(m), a))
+            .map(|(member, level)| {
+                (
+                    DeviceId::from(member),
+                    Access {
+                        conditions: None,
+                        level,
+                    },
+                )
+            })
             .collect();
         Ok(members)
     }
