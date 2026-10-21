@@ -187,6 +187,7 @@ where
 
     pub async fn drop_mailbox(&self, mailbox: &MailboxId) -> anyhow::Result<()> {
         self.store.drop_mailbox(mailbox).await?;
+        self.mailbox_store.drop_mailbox(mailbox).await?;
         self.all_ids_tx.send_if_modified(|ids| ids.remove(mailbox));
         self.per_mailbox.lock().await.remove(mailbox);
         Ok(())
@@ -356,6 +357,14 @@ mod tests {
             .record_synced(&"mb2".into(), &[(7u8, 'a', 2)])
             .await
             .unwrap();
+        store
+            .record_url(&"mb1".into(), "https://one.example")
+            .await
+            .unwrap();
+        store
+            .record_url(&"mb2".into(), "https://two.example")
+            .await
+            .unwrap();
         store.drop_mailbox(&"mb1".into()).await.unwrap();
         assert_eq!(
             store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
@@ -364,6 +373,21 @@ mod tests {
         assert_eq!(
             store.get_synced(&"mb2".into(), &7u8, &'a').await.unwrap(),
             Some(2)
+        );
+        assert_eq!(
+            store
+                .mailbox_id_for_url("https://one.example")
+                .await
+                .unwrap(),
+            None,
+            "dropped mailbox's URL must be removed"
+        );
+        assert_eq!(
+            store
+                .mailbox_id_for_url("https://two.example")
+                .await
+                .unwrap(),
+            Some("mb2".to_string())
         );
     }
 

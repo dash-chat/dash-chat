@@ -101,6 +101,14 @@ impl MailboxUrlStore for SqliteMailboxUrlStore {
                 .await?;
         Ok(row.map(|(m,)| m))
     }
+
+    async fn drop_mailbox(&self, id: &MailboxId) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM mailbox_url WHERE mailbox_id = ?")
+            .bind(id)
+            .execute(self.pool.pool())
+            .await?;
+        Ok(())
+    }
 }
 
 struct SqliteSyncStore<T, A> {
@@ -181,10 +189,6 @@ where
     }
     async fn drop_mailbox(&self, id: &MailboxId) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM mailbox_sync_state WHERE mailbox_id = ?")
-            .bind(id)
-            .execute(self.pool.pool())
-            .await?;
-        sqlx::query("DELETE FROM mailbox_url WHERE mailbox_id = ?")
             .bind(id)
             .execute(self.pool.pool())
             .await?;
