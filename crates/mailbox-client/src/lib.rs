@@ -63,12 +63,12 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
 
     /// Fetch operations from the mailbox for the given topics.
     ///
-    /// The inner map associated each author with the height of their locally stored log.
-    /// The height represents the highest sequence number stored for that author, meaning that the mailbox
-    /// should only return operations with a higher sequence for that author.
-    /// NOTE that this is a subtractive, not additive, filter, meaning that any authors not included
-    /// in the `min_heights` list will have their *entire* log returned, including if `min_heights` is empty.
-    /// This is so that the mailbox is used for author discovery as well.
+    /// The inner map associates each log with its locally stored height.
+    /// The height represents the highest sequence number stored for that log, meaning that the mailbox
+    /// should only return operations with a higher sequence for that log.
+    /// NOTE that this is a subtractive, not additive, filter, meaning that any logs not included
+    /// in the `min_heights` list will be returned *entirely*, including if `min_heights` is empty.
+    /// This is so that the mailbox is used for log discovery as well.
     /// The intention is that all data is encrypted and only decipherable by valid recipients.
     async fn fetch(
         &self,
@@ -101,7 +101,7 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
 #[serde(bound(deserialize = "Item: DeserializeOwned"))]
 pub struct FetchRequest<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopicRequest<Item>>);
 
-pub type FetchTopicRequest<Item> = BTreeMap<<Item as MailboxItem>::Author, SeqNum>;
+pub type FetchTopicRequest<Item> = BTreeMap<<Item as MailboxItem>::Log, SeqNum>;
 
 /// Returned by the `fetch` method.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -112,7 +112,7 @@ pub struct FetchResponse<Item: MailboxItem>(pub BTreeMap<Item::Topic, FetchTopic
 /// resulting contiguity watermark (`None` when none could be established).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublishResponse<Item: MailboxItem>(
-    pub BTreeMap<Item::Topic, BTreeMap<Item::Author, Option<SeqNum>>>,
+    pub BTreeMap<Item::Topic, BTreeMap<Item::Log, Option<SeqNum>>>,
 );
 
 impl<Item: MailboxItem> Default for PublishResponse<Item> {
@@ -122,10 +122,10 @@ impl<Item: MailboxItem> Default for PublishResponse<Item> {
 }
 
 impl<Item: MailboxItem> PublishResponse<Item> {
-    pub fn watermark(&self, topic: &Item::Topic, author: &Item::Author) -> Option<SeqNum> {
+    pub fn watermark(&self, topic: &Item::Topic, log: &Item::Log) -> Option<SeqNum> {
         self.0
             .get(topic)
-            .and_then(|m| m.get(author))
+            .and_then(|m| m.get(log))
             .copied()
             .flatten()
     }
@@ -139,7 +139,7 @@ pub struct FetchTopicResponse<Item: MailboxItem> {
     pub items: Vec<Item>,
     /// The operations held locally that are missing from the mailbox,
     /// and which this node should now publish.
-    pub missing: HashMap<<Item as MailboxItem>::Author, Vec<SeqNum>>,
+    pub missing: HashMap<<Item as MailboxItem>::Log, Vec<SeqNum>>,
 }
 
 pub type MailboxId = String;
@@ -164,7 +164,7 @@ impl<T> ItemTraits for T where
 {
 }
 
-/// How a `Topic` or `Author` maps to a string key for addressing a log inside
+/// How a `Topic` or `Log` maps to a string key for addressing a log inside
 /// a mailbox.
 ///
 /// This key is persisted server-side and shared across client versions, so the
@@ -172,7 +172,7 @@ impl<T> ItemTraits for T where
 /// mailbox-server (`mailbox-server`) places additional constraints on keys:
 /// they must not contain `:` or NUL, and topic keys used for push notifications
 /// must pass a 64-character lowercase-hex validation (`validate_hex32`). The
-/// production implementations (`TopicId` below and `DeviceId` in `dashchat-node`)
+/// production implementations (`TopicId` below and `Log` in `dashchat-node`)
 /// satisfy those constraints; test-only fixtures (e.g. `u8`/`char` for
 /// `crate::testing::Msg`) are intentionally minimal and are not sent to a real
 /// mailbox.
@@ -185,12 +185,15 @@ pub trait MailboxItem:
     Clone + std::fmt::Debug + Serialize + DeserializeOwned + Send + Sync + 'static
 {
     type Hash: ItemTraits;
-    type Author: MailboxKey;
+    /// A full specification of the log an item belongs to within its topic.
+    /// For p2panda operations that is the author together with the log id,
+    /// since one author writes several logs into one topic.
+    type Log: MailboxKey;
     type Topic: MailboxKey;
 
     fn seq_num(&self) -> SeqNum;
     fn hash(&self) -> Self::Hash;
-    fn author(&self) -> Self::Author;
+    fn log(&self) -> Self::Log;
     fn topic(&self) -> Self::Topic;
     fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
         Vec::new()

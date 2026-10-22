@@ -230,8 +230,9 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 
     // Neither alice nor bobbi will ever transmit the deleted payloads: the
     // mailbox-facing log view serves the chain ops body-less.
+    let alice_log = Log::new(alice.device_id(), LogId::from_topic(*chat));
     for node in [&alice, &bobbi] {
-        let served = MailboxStore::get_log(&node.op_store, &alice.device_id(), &chat, 0)
+        let served = MailboxStore::get_log(&node.op_store, &alice_log, &chat, 0)
             .await
             .unwrap()
             .unwrap();

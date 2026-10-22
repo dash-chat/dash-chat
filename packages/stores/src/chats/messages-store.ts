@@ -5,7 +5,7 @@ import { ContactsStore } from '../contacts/contacts-store';
 import { MessageAckStore } from '../message-acks/message-ack-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { AgentId, DeviceId, Hash } from '../p2panda/types';
+import { AgentId, DeviceId, Hash, LogId } from '../p2panda/types';
 import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
@@ -43,6 +43,7 @@ export interface Message {
 	content: MessageDisplay;
 	timestamp: number;
 	author: DeviceId;
+	logId: LogId;
 	seqNum: number;
 	replyQuote?: MessageReply;
 	/** Set only on the viewer's own messages */
@@ -53,6 +54,7 @@ export type Bodyless = {
 	hash: string;
 	timestamp: number;
 	author: DeviceId;
+	logId: LogId;
 	seqNum: number;
 };
 
@@ -95,6 +97,7 @@ export class MessagesStore {
 			message.deliveryStatus = await this.messageAckStore.deliveryStatus(
 				this.chatId,
 				message.author,
+				message.logId,
 				message.seqNum,
 			);
 		}
@@ -323,6 +326,7 @@ function logsToMessages(
 			messages[op.hash] = {
 				hash: op.hash,
 				author,
+				logId: op.header.log_id,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
 			};
@@ -381,6 +385,7 @@ function logsToMessages(
 					editHistory: [],
 				},
 				author,
+				logId: op.header.log_id,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
 				replyQuote: replyQuote,
@@ -476,6 +481,7 @@ function placeholderFor(message: Bodyless): Message {
 		hash: message.hash,
 		content: 'deleted-for-everyone',
 		author: message.author,
+		logId: message.logId,
 		seqNum: message.seqNum,
 		timestamp: message.timestamp,
 	};
