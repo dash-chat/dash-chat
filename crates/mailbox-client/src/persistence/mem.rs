@@ -99,8 +99,8 @@ where
         let mailbox_state = state.entry(id.clone()).or_default();
 
         for (topic, author, seq) in watermarks {
-            let author_state = mailbox_state.entry(topic.clone()).or_default();
-            let current = author_state.entry(author.clone()).or_insert(0);
+            let author_state = mailbox_state.entry(*topic).or_default();
+            let current = author_state.entry(*author).or_insert(0);
             *current = (*current).max(*seq);
         }
         Ok(())

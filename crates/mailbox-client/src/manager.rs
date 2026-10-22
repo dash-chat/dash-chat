@@ -170,6 +170,9 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     /// Owned persistence when the manager was spawned with a database path;
     /// held so `close()` can release the underlying pool and file lock.
     persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
+    /// The poll loop's handle, taken by `close()` to stop the loop before the
+    /// persistence pool is released.
+    poll_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl<Item: MailboxItem, Store: MailboxStore<Item>> Mailboxes<Item, Store>
@@ -191,6 +194,7 @@ where
             nudge: Arc::new(Notify::new()),
             sync_coordinator: SyncCoordinator::new(store, sync_tracker.clone()),
             persistence,
+            poll_loop: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -535,7 +539,7 @@ where
     ) -> Self {
         let manager = Self::new(store, sync_tracker, config, persistence);
         let r = manager.clone();
-        tokio::spawn(
+        let handle = tokio::spawn(
             async move {
                 loop {
                     match manager.find_next_due().await {
@@ -554,13 +558,17 @@ where
             }
             .instrument(tracing::info_span!("poll mailboxes")),
         );
+        *r.poll_loop.lock().unwrap() = Some(handle);
 
         r
     }
 
-    /// Gracefully close the underlying persistence, if this manager was
-    /// spawned with a database path. No-op otherwise.
+    /// Stop the poll loop and release the underlying persistence, if this
+    /// manager was spawned with a database path. No-op otherwise.
     pub async fn close(&self) {
+        if let Some(handle) = self.poll_loop.lock().unwrap().take() {
+            handle.abort();
+        }
         if let Some(persistence) = &self.persistence {
             persistence.close().await;
         }
@@ -2642,7 +2650,8 @@ mod tests {
     }
 
     /// A manager spawned from a database path seeds its sync tracker from
-    /// persisted state, and `close()` drains the pool so a reopen sees it.
+    /// persisted state, and `close()` stops the poll loop and drains the pool
+    /// so a reopen sees it.
     #[tokio::test]
     async fn spawn_with_db_seeds_tracker_and_close_allows_reopen() {
         let dir = tempfile::tempdir().unwrap();
@@ -2658,7 +2667,18 @@ mod tests {
             .record_synced(&mailbox, &[(7u8, 'a', 3)])
             .await
             .unwrap();
+
+        let loop_handle = mgr
+            .poll_loop
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|h| h.abort_handle());
         mgr.close().await;
+        assert!(
+            loop_handle.is_some_and(|h| h.is_finished()),
+            "close() must stop the poll loop"
+        );
 
         let mgr =
             Mailboxes::<Msg, DummyStore>::spawn_with_db(&path, &gate, DummyStore, test_config())
