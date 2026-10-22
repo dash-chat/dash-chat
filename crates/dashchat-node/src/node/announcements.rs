@@ -1,48 +1,107 @@
 use std::collections::BTreeSet;
 
+use aliased::Aliasing;
 use p2panda::AccessLevel;
+use tracing::warn;
 
-use crate::{DeviceId, Topic};
+use crate::{DeviceId, Topic, TopicId};
+
+/// Lets a sync round settle so one run covers all of it.
+const SYNC_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(500);
 
 impl crate::Node {
-    /// Make the readers of my announcements space exactly the devices of my
-    /// accepted, unblocked contacts, so my profile reaches them. A diff against
-    /// the space's current members, so repeating it, or running it for a
-    /// duplicate device group operation, changes nothing.
-    pub(crate) async fn sync_announcements_readers(&self) -> anyhow::Result<()> {
-        let _guard = self.announcements_sync.lock().await;
-        let topic = Topic::announcements(self.agent_id());
+    /// Ask the readers task to run [`Self::sync_announcements_readers`]. Off the
+    /// processor, which must not wait on the space operations it publishes, and
+    /// coalesced, since a sync round raises many of these at once.
+    pub(crate) fn trigger_announcements_readers_sync(&self) {
+        self.announcements_readers_trigger.notify_one();
+    }
 
-        let mut wanted = BTreeSet::new();
-        for agent_id in self.accepted_contact_agent_ids().await? {
-            for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
-                if !self.projection.is_author_blocked(&device_id).await? {
-                    wanted.insert(device_id);
+    /// Spawn the task that keeps the readers in sync: once now, so a crash
+    /// between acknowledging an operation and the sync it triggered is caught
+    /// up, then on every trigger.
+    pub(crate) async fn spawn_announcements_readers_task(&self) {
+        let node = self.clone();
+        let trigger = self.announcements_readers_trigger.clone();
+        let handle = tokio::spawn(async move {
+            loop {
+                if let Err(err) = node.sync_announcements_readers().await {
+                    warn!(
+                        ?err,
+                        "failed to sync the readers of the announcements space"
+                    );
                 }
+                trigger.notified().await;
+                tokio::time::sleep(SYNC_DEBOUNCE).await;
             }
-        }
+        });
+        self.announcements_readers_handle
+            .lock()
+            .await
+            .replace(handle);
+    }
+
+    /// Give every device of my contacts, and every member of a chat I am in,
+    /// Read access to my announcements space, so my profile reaches them.
+    /// Nobody is ever removed: a blocked contact must not be able to tell.
+    /// Only the devices not yet members are added, so repeating this changes
+    /// nothing. A device whose key bundle has not arrived yet is skipped and
+    /// picked up when it does.
+    pub(crate) async fn sync_announcements_readers(&self) -> anyhow::Result<()> {
+        let topic = Topic::announcements(self.agent_id());
 
         let current: BTreeSet<DeviceId> = self
             .space_members(*topic)
             .await?
             .into_iter()
             .map(|(device_id, _)| device_id)
-            .filter(|device_id| *device_id != self.device_id())
             .collect();
+        let mut wanted = self.announcements_readers_wanted().await?;
+        wanted.remove(&self.device_id());
 
         let space = self.streams.space(*topic).await?;
         for device_id in wanted.difference(&current) {
             let member = **device_id;
-            space
+            let added = space
                 .run(async move |space| space.add(member, AccessLevel::Read).await)
-                .await??;
-        }
-        for device_id in current.difference(&wanted) {
-            let member = **device_id;
-            space
-                .run(async move |space| space.remove(member).await)
-                .await??;
+                .await?;
+            if let Err(err) = added {
+                warn!(
+                    device_id = ?device_id.aliased(),
+                    ?err,
+                    "could not add a reader to the announcements space"
+                );
+            }
         }
         Ok(())
+    }
+
+    async fn announcements_readers_wanted(&self) -> anyhow::Result<BTreeSet<DeviceId>> {
+        let mut wanted = BTreeSet::new();
+        for agent_id in self.accepted_contact_agent_ids().await? {
+            wanted.extend(self.projection.lookup_devices_by_agent_id(agent_id).await?);
+        }
+        for topic in self.subscribed_chat_spaces().await? {
+            let Ok(members) = self.space_members(topic).await else {
+                continue;
+            };
+            wanted.extend(members.into_iter().map(|(device_id, _)| device_id));
+        }
+        Ok(wanted)
+    }
+
+    /// The spaces I am subscribed to that are chats: every subscribed space
+    /// that is not the announcements space of an agent I know of.
+    async fn subscribed_chat_spaces(&self) -> anyhow::Result<BTreeSet<TopicId>> {
+        let announcements: BTreeSet<TopicId> = self
+            .projection
+            .all_contact_agent_ids()
+            .await?
+            .into_iter()
+            .chain([self.agent_id()])
+            .map(|agent_id| *Topic::announcements(agent_id))
+            .collect();
+        let subscribed = self.local_store.subscribed_spaces().await?;
+        Ok(subscribed.difference(&announcements).copied().collect())
     }
 }

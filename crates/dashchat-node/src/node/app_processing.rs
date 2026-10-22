@@ -228,6 +228,10 @@ impl Node {
                             )
                             .await;
                         }
+                        Some(ProcessorEvent::SpaceMembersChanged { .. })
+                        | Some(ProcessorEvent::MemberKeyBundle(_)) => {
+                            node.trigger_announcements_readers_sync();
+                        }
                         Some(ProcessorEvent::ImportFailed { topic, error }) => {
                             error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
                             if let Err(err) = node.mailboxes.unsubscribe(topic).await {
@@ -515,22 +519,8 @@ impl Node {
                     .context("failed to join group from invitation")?;
             }
 
-            Payload::DeviceGroup(
-                DeviceGroupPayload::AddContact { .. }
-                | DeviceGroupPayload::BlockAgent(_)
-                | DeviceGroupPayload::UnblockAgent(_),
-            ) => {
-                // Spawned: updating the readers publishes into the space, which
-                // must not wait on this processor.
-                let node = self.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = node.sync_announcements_readers().await {
-                        warn!(
-                            ?err,
-                            "failed to sync the readers of the announcements space"
-                        );
-                    }
-                });
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact { .. }) => {
+                self.trigger_announcements_readers_sync();
             }
 
             Payload::Inbox(invitation) => {
