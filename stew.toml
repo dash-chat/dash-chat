@@ -1,2 +1,8 @@
 # https://github.com/maackle/stew
 
+version = "0.1.0"
+
+[members]
+jade = "jade <jade@hopepunk.me>"
+guillem = "guillem.cordoba <guillem.cordoba@gmail.com>"
+michael = "Michael Dougherty <maackle.d@gmail.com>"
