@@ -10,6 +10,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, warn};
 
 use crate::AckedOp;
+use crate::Log;
 use crate::forward_edit_closure;
 use crate::node::publish::warn_if_slow;
 use crate::node::streams::{ProcessedTx, ProcessorError, ProcessorEvent, Space, TopicDrain};
@@ -349,8 +350,10 @@ impl Node {
         }
 
         if DeviceId::from(operation.author()) == self.device_id() {
+            let log_id = operation.processed().header().extensions.log_id();
+            let log = Log::new(self.device_id(), log_id);
             self.mailboxes
-                .publish_fast_push(operation.topic(), self.device_id())
+                .publish_fast_push(operation.topic(), log)
                 .await;
         }
 
