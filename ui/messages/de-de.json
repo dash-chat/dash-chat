@@ -174,7 +174,7 @@
     "reasonFeatureRequest": "Angebotsanfrage",
     "reasonQuestion": "Frage",
     "reasonOther": "Sonstige",
-    "includeDebugLog": "Erfasse debug log.",
+    "includeDebugLog": "Include debug log.",
     "whatsThis": "Was ist das?",
     "haveYouReadOurFaq": "Haben Sie unsere FAQ gelesen?",
     "sendErrorReport": "Fehler melden",
