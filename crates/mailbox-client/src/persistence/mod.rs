@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 pub mod mem;
 pub mod sqlite;
 
