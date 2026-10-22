@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+#[cfg(any(test, feature = "testing"))]
 pub mod mem;
 pub mod sqlite;
 
@@ -19,22 +20,8 @@ pub trait MailboxUrlStore: Send + Sync {
 #[async_trait]
 pub trait SyncStore<T, A>: Send + Sync
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     async fn record_status(&self, id: &MailboxId, status: SyncStatus) -> anyhow::Result<()>;
     async fn get_status(&self, id: &MailboxId) -> anyhow::Result<Option<SyncStatus>>;
@@ -67,22 +54,8 @@ where
 #[async_trait]
 pub trait Persistence<T, A>: Send + Sync
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore>;
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>>;

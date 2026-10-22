@@ -44,22 +44,8 @@ impl MailboxUrlStore for MemMailboxUrlStore {
 /// In-memory implementation of SyncStore.
 pub struct MemSyncStore<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     status: RwLock<HashMap<MailboxId, SyncStatus>>,
     sync_state: RwLock<HashMap<MailboxId, HashMap<T, HashMap<A, crate::SeqNum>>>>,
@@ -67,22 +53,8 @@ where
 
 impl<T, A> MemSyncStore<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -95,22 +67,8 @@ where
 #[async_trait]
 impl<T, A> SyncStore<T, A> for MemSyncStore<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     async fn record_status(&self, id: &MailboxId, status: SyncStatus) -> anyhow::Result<()> {
         self.status.write().unwrap().insert(id.clone(), status);
@@ -197,22 +155,8 @@ where
 /// In-memory persistence implementation.
 pub struct MemPersistence<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     mailbox_store: Arc<MemMailboxUrlStore>,
     sync_store: Arc<MemSyncStore<T, A>>,
@@ -220,22 +164,8 @@ where
 
 impl<T, A> MemPersistence<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -248,22 +178,8 @@ where
 #[async_trait]
 impl<T, A> Persistence<T, A> for MemPersistence<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore> {
         self.mailbox_store.clone()

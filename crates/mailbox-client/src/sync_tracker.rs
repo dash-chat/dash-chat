@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    marker::PhantomData,
     sync::Arc,
 };
 use tokio::sync::{Mutex, watch};
@@ -13,37 +12,21 @@ use crate::persistence::{MailboxUrlStore, SyncStore};
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
 pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
 
-/// Persistent, watch-based tracker for what each mailbox has acknowledged syncing.
-/// SQLite-backed (or in-memory for tests), with watch channels layered on top so
-/// callers can subscribe to live updates.
+/// Watch-based tracker for what each mailbox has acknowledged syncing, backed
+/// by a persistence store (SQLite in production, in-memory for tests).
 pub struct MailboxSyncTracker<T, A> {
     store: Arc<dyn SyncStore<T, A>>,
     mailbox_store: Arc<dyn MailboxUrlStore>,
     all_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
     per_mailbox: Mutex<HashMap<MailboxId, watch::Sender<MailboxSyncState<T, A>>>>,
-    _phantom: PhantomData<fn() -> (T, A)>,
 }
 
 impl<T, A> MailboxSyncTracker<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
-    pub fn new(
+    pub(crate) fn new(
         store: Arc<dyn SyncStore<T, A>>,
         mailbox_store: Arc<dyn MailboxUrlStore>,
         initial_ids: BTreeSet<MailboxId>,
@@ -54,7 +37,6 @@ where
             mailbox_store,
             all_ids_tx,
             per_mailbox: Mutex::new(HashMap::new()),
-            _phantom: PhantomData,
         }
     }
 
@@ -180,8 +162,7 @@ where
         &self,
         mailbox: &MailboxId,
     ) -> anyhow::Result<MailboxSyncState<T, A>> {
-        let state = self.store.get_sync_state(mailbox).await?;
-        Ok(state)
+        self.store.get_sync_state(mailbox).await
     }
 
     pub async fn drop_mailbox(&self, mailbox: &MailboxId) -> anyhow::Result<()> {
@@ -417,7 +398,7 @@ mod tests {
                 .record_synced(&"mb2".into(), &[(8u8, 'c', 5)])
                 .await
                 .unwrap();
-            persistence.pool().close().await;
+            persistence.close().await;
         }
 
         let persistence =
@@ -562,7 +543,7 @@ mod tests {
                 .record_status(&"mb1".into(), SyncStatus::Degraded)
                 .await
                 .unwrap();
-            persistence.pool().close().await;
+            persistence.close().await;
         }
 
         let persistence =
