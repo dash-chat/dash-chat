@@ -68,7 +68,6 @@ impl TestNode {
         if config.create_profile {
             node.set_profile(Profile {
                 name: name.to_string(),
-                keybundle: node.keybundle().await.unwrap(),
                 surname: None,
                 avatar: None,
                 about: None,
