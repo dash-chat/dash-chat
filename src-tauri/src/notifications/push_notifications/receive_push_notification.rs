@@ -231,7 +231,7 @@ async fn handle_push_notification(
     // chat log holds anything worth a notification.
     let chat_log = dashchat_node::LogId::from(LogId::from_topic(topic_id));
     if !log_hex.is_empty() && log_hex != chat_log.to_hex() {
-        log::info!("Ignoring a push for a control log of {topic_hex}.");
+        log::debug!("Ignoring a push for a control log of {topic_hex}.");
         return Ok(None);
     }
 
