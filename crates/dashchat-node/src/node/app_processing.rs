@@ -515,6 +515,24 @@ impl Node {
                     .context("failed to join group from invitation")?;
             }
 
+            Payload::DeviceGroup(
+                DeviceGroupPayload::AddContact { .. }
+                | DeviceGroupPayload::BlockAgent(_)
+                | DeviceGroupPayload::UnblockAgent(_),
+            ) => {
+                // Spawned: updating the readers publishes into the space, which
+                // must not wait on this processor.
+                let node = self.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = node.sync_announcements_readers().await {
+                        warn!(
+                            ?err,
+                            "failed to sync the readers of the announcements space"
+                        );
+                    }
+                });
+            }
+
             Payload::Inbox(invitation) => {
                 let topic_id = TopicId::from(topic);
                 let all_advertised_topics = self.local_store.get_advertised_inbox_topics().await?;

@@ -1,3 +1,4 @@
+mod announcements;
 mod app_processing;
 mod message_acks;
 pub(crate) mod publish;
@@ -242,6 +243,7 @@ pub struct Node {
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    announcements_sync: Arc<Mutex<()>>,
 
     /// All bootstrap nodes we have registered on our node.
     ///
@@ -479,6 +481,7 @@ impl Node {
             processor_cancel_tx,
             processor_handle: Default::default(),
             stored_topics_init_handle: Default::default(),
+            announcements_sync: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
@@ -2448,6 +2451,15 @@ impl Node {
                 error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed space");
                 failures += 1;
             }
+        }
+
+        // A crash between acknowledging a device group operation and the
+        // reader update it spawned is caught up here.
+        if let Err(err) = self.sync_announcements_readers().await {
+            error!(
+                ?err,
+                "failed to sync the readers of the announcements space"
+            );
         }
 
         match self.chat_topics().await {
