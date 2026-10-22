@@ -243,7 +243,8 @@ pub struct Node {
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    announcements_sync: Arc<Mutex<()>>,
+    announcements_readers_trigger: Arc<tokio::sync::Notify>,
+    announcements_readers_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 
     /// All bootstrap nodes we have registered on our node.
     ///
@@ -481,7 +482,8 @@ impl Node {
             processor_cancel_tx,
             processor_handle: Default::default(),
             stored_topics_init_handle: Default::default(),
-            announcements_sync: Default::default(),
+            announcements_readers_trigger: Default::default(),
+            announcements_readers_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
@@ -556,6 +558,7 @@ impl Node {
                     )
                     .await;
                     node.spawn_message_ack_writer().await;
+                    node.spawn_announcements_readers_task().await;
                 }
             });
             node.stored_topics_init_handle
@@ -565,6 +568,7 @@ impl Node {
         } else {
             node.initialize_stored_topics().await?;
             node.spawn_message_ack_writer().await;
+            node.spawn_announcements_readers_task().await;
         }
 
         Ok(node)
@@ -1736,6 +1740,10 @@ impl Node {
             handle.abort();
         }
 
+        if let Some(handle) = self.announcements_readers_handle.lock().await.take() {
+            handle.abort();
+        }
+
         if let Some(handle) = self.network_change_handle.lock().await.take() {
             handle.abort();
         }
@@ -2451,15 +2459,6 @@ impl Node {
                 error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed space");
                 failures += 1;
             }
-        }
-
-        // A crash between acknowledging a device group operation and the
-        // reader update it spawned is caught up here.
-        if let Err(err) = self.sync_announcements_readers().await {
-            error!(
-                ?err,
-                "failed to sync the readers of the announcements space"
-            );
         }
 
         match self.chat_topics().await {
