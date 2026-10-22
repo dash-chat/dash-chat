@@ -84,14 +84,14 @@ where
             tx.send_if_modified(|state| {
                 let mut changed = false;
                 for (t, a, s) in entries {
-                    let map = state.entry(t.clone()).or_default();
+                    let map = state.entry(*t).or_default();
                     match map.get_mut(a) {
                         Some(entry) if *s > *entry => {
                             *entry = *s;
                             changed = true;
                         }
                         None => {
-                            map.insert(a.clone(), *s);
+                            map.insert(*a, *s);
                             changed = true;
                         }
                         _ => {}
