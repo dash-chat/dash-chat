@@ -1,19 +1,19 @@
 use crate::MailboxItem;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 use tracing::info;
 
 pub struct TopicRegistry<Item: MailboxItem> {
-    topics: std::sync::Arc<tokio::sync::Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
+    topics: Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
 }
 
 impl<Item: MailboxItem> TopicRegistry<Item>
 where
-    Item::Topic: std::fmt::Display + Eq + std::hash::Hash,
+    Item::Topic: std::fmt::Display,
 {
     pub fn new() -> Self {
         Self {
-            topics: std::sync::Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            topics: Mutex::new(HashMap::new()),
         }
     }
 

@@ -5,10 +5,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use dashchat_utils::SeqNum;
 use sqlite_gate::GatedPool;
-use sqlx::{
-    SqlitePool,
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
-};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -20,22 +17,8 @@ pub struct SqlitePersistence<T, A> {
 
 impl<T, A> SqlitePersistence<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     pub async fn open(
         path: impl AsRef<std::path::Path>,
@@ -64,7 +47,8 @@ where
     }
 
     /// Access the underlying SQLite pool for shutdown.
-    pub fn pool(&self) -> &SqlitePool {
+    #[cfg(test)]
+    pub(crate) fn pool(&self) -> &sqlx::SqlitePool {
         self.pool.pool()
     }
 }
@@ -72,22 +56,8 @@ where
 #[async_trait]
 impl<T, A> Persistence<T, A> for SqlitePersistence<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore> {
         self.mailbox_store.clone()
@@ -144,22 +114,8 @@ struct SqliteSyncStore<T, A> {
 #[async_trait]
 impl<T, A> SyncStore<T, A> for SqliteSyncStore<T, A>
 where
-    T: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
-    A: serde::Serialize
-        + serde::de::DeserializeOwned
-        + Send
-        + Sync
-        + Eq
-        + std::hash::Hash
-        + Clone
-        + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
     async fn record_status(&self, id: &MailboxId, status: SyncStatus) -> anyhow::Result<()> {
         sqlx::query(

@@ -39,18 +39,17 @@ pub enum PendingRequest<Topic> {
     Wakeup,
 }
 
-impl<Topic: Ord + Clone> PendingRequest<Topic> {
+impl<Topic: Ord> PendingRequest<Topic> {
     /// Convert the current pending request into an outcome for the upcoming poll.
     pub fn consume(&mut self) -> (RequestOutcome<Topic>, bool) {
         let is_probe = matches!(self, PendingRequest::Probe);
-        let outcome = match &self {
-            PendingRequest::PollTopics { topics, .. } => RequestOutcome::Topics(topics.clone()),
+        let outcome = match std::mem::take(self) {
+            PendingRequest::PollTopics { topics, .. } => RequestOutcome::Topics(topics),
             PendingRequest::PollAll { .. } | PendingRequest::Wakeup | PendingRequest::Probe => {
                 RequestOutcome::All
             }
             PendingRequest::None => RequestOutcome::Regular,
         };
-        *self = PendingRequest::default();
         (outcome, is_probe)
     }
 
