@@ -33,7 +33,7 @@ pub struct SyncTopicOutcome<Topic> {
 
 struct SyncTopicResult<Item: crate::MailboxItem> {
     ops_to_publish: Vec<Item>,
-    acks: Vec<(Item::Topic, Item::Author, SeqNum)>,
+    acks: Vec<(Item::Topic, Item::Log, SeqNum)>,
     closed: bool,
 }
 
@@ -44,7 +44,7 @@ where
     Store: MailboxStore<Item>,
 {
     store: Store,
-    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Log>>,
 }
 
 impl<Item, Store> SyncCoordinator<Item, Store>
@@ -54,7 +54,7 @@ where
 {
     pub fn new(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Log>>,
     ) -> Self {
         Self {
             store,
@@ -85,7 +85,7 @@ where
         };
 
         let mut ops_to_publish: Vec<Item> = vec![];
-        let mut acks: Vec<(Item::Topic, Item::Author, SeqNum)> = vec![];
+        let mut acks: Vec<(Item::Topic, Item::Log, SeqNum)> = vec![];
         let mut closed_topics: HashSet<Item::Topic> = HashSet::new();
 
         for (topic, response) in response.into_iter() {
@@ -109,9 +109,9 @@ where
             }
         }
 
-        let publish_acks: Vec<(Item::Topic, Item::Author, SeqNum)> = ops_to_publish
+        let publish_acks: Vec<(Item::Topic, Item::Log, SeqNum)> = ops_to_publish
             .iter()
-            .map(|op| (op.topic(), op.author(), op.seq_num()))
+            .map(|op| (op.topic(), op.log(), op.seq_num()))
             .collect();
 
         if let Err(err) = mailbox.publish(ops_to_publish).await {
@@ -137,13 +137,13 @@ where
         id: &MailboxId,
         tracked: &TrackedMailbox<Item>,
         topic: Item::Topic,
-        author: Item::Author,
+        log: Item::Log,
     ) -> anyhow::Result<()> {
-        let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
+        let synced = self.sync_tracker.get_synced(id, &topic, &log).await?;
         let start = synced.map_or(0, |n| n + 1);
         let ops = self
             .store
-            .get_log(&author, &topic, start)
+            .get_log(&log, &topic, start)
             .await?
             .unwrap_or_default();
         let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
@@ -151,10 +151,10 @@ where
         };
         let response = tracked.client().await.publish(ops).await?;
 
-        let watermark = response.watermark(&topic, &author);
+        let watermark = response.watermark(&topic, &log);
         if let Some(wm) = watermark {
             self.sync_tracker
-                .record_synced(id, &[(topic, author, wm)])
+                .record_synced(id, &[(topic, log, wm)])
                 .await?;
         }
         if watermark.is_none_or(|wm| wm < top) {
@@ -181,14 +181,13 @@ where
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<(
         BTreeMap<Item::Topic, FetchTopicResponse<Item>>,
-        BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
+        BTreeMap<Item::Topic, BTreeMap<Item::Log, SeqNum>>,
     )>
     where
         Item::Topic: std::fmt::Display,
     {
         let mut request = BTreeMap::new();
-        let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> =
-            BTreeMap::new();
+        let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Log, SeqNum>> = BTreeMap::new();
         for topic in topics {
             let heights =
                 BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
@@ -209,7 +208,7 @@ where
         &self,
         topic: Item::Topic,
         response: FetchTopicResponse<Item>,
-        sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
+        sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Log, SeqNum>>,
         topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
     ) -> anyhow::Result<SyncTopicResult<Item>>
     where
@@ -244,7 +243,7 @@ where
 
         // Each received item is one the mailbox already has.
         for item in &items {
-            acks.push((item.topic(), item.author(), item.seq_num()));
+            acks.push((item.topic(), item.log(), item.seq_num()));
         }
 
         let Some(sender) = topic_senders.lock().await.get(&topic).cloned() else {

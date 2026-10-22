@@ -28,7 +28,7 @@ impl<Item: MailboxItem> MemMailboxClient<Item> {
 
 pub type MemMailboxLogs<Item> = HashMap<
     <Item as MailboxItem>::Topic,
-    HashMap<<Item as MailboxItem>::Author, BTreeMap<SeqNum, Item>>,
+    HashMap<<Item as MailboxItem>::Log, BTreeMap<SeqNum, Item>>,
 >;
 
 #[derive(Clone)]
@@ -52,7 +52,7 @@ impl<Item: MailboxItem> MemMailbox<Item> {
         }
     }
 
-    pub async fn log_heights(&self) -> BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> {
+    pub async fn log_heights(&self) -> BTreeMap<Item::Topic, BTreeMap<Item::Log, SeqNum>> {
         let ops = self.ops.read().await;
         let mut log_heights = BTreeMap::new();
         for (topic, ops) in ops.iter() {
@@ -78,9 +78,9 @@ where
 
     async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error> {
         let mut store = self.mailbox.ops.write().await;
-        let mut logs: BTreeSet<(Item::Topic, Item::Author)> = BTreeSet::new();
+        let mut logs: BTreeSet<(Item::Topic, Item::Log)> = BTreeSet::new();
         for op in ops {
-            let author = op.author();
+            let author = op.log();
             let seq_num = op.seq_num();
             let topic = op.topic();
             tracing::info!(topic = ?topic, hash = ?op.hash(), "publishing mailbox operation");

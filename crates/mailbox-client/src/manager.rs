@@ -152,7 +152,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
 pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     registry: Arc<Registry<Item>>,
     topics: Arc<Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>>,
-    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Log>>,
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
@@ -165,7 +165,7 @@ where
 {
     fn new(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Log>>,
         config: MailboxesConfig,
     ) -> Self {
         Self {
@@ -185,7 +185,7 @@ where
     }
 
     /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
-    pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::Topic, Item::Author>> {
+    pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::Topic, Item::Log>> {
         &self.sync_tracker
     }
 
@@ -392,7 +392,7 @@ where
         self.nudge_poll_loop();
     }
 
-    /// Deliver ops just published in `topic` by `author` (the local device) to
+    /// Deliver ops the local device just published to `log` in `topic` to
     /// every active mailbox with a direct store, skipping the fetch roundtrip.
     /// A failed store, or a watermark echo short of what was pushed,
     /// falls back to a scheduled sync.
@@ -403,7 +403,7 @@ where
     pub async fn publish_fast_push(
         &self,
         topic: Item::Topic,
-        author: Item::Author,
+        log: Item::Log,
     ) -> Vec<tokio::task::JoinHandle<()>> {
         let mailboxes = self.registry.all().await;
 
@@ -413,7 +413,7 @@ where
             .map(|(id, tracked)| {
                 let manager = self.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
+                    if let Err(err) = manager.store_fast_push(&id, &tracked, topic, log).await {
                         tracing::warn!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
                         tracked.request_sync_if_active(Some(topic));
                         manager.nudge_poll_loop();
@@ -428,10 +428,10 @@ where
         id: &MailboxId,
         tracked: &TrackedMailbox<Item>,
         topic: Item::Topic,
-        author: Item::Author,
+        log: Item::Log,
     ) -> anyhow::Result<()> {
         self.sync_coordinator
-            .store_fast_push(id, tracked, topic, author)
+            .store_fast_push(id, tracked, topic, log)
             .await
     }
 
@@ -488,7 +488,7 @@ where
 
     pub async fn spawn(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Log>>,
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
         let manager = Self::new(store, sync_tracker, config);

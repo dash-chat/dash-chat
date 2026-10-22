@@ -292,7 +292,7 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
 
         for op in ops {
             let topic_id = op.topic().to_mailbox_key();
-            let log_id = op.author().to_mailbox_key();
+            let log_id = op.log().to_mailbox_key();
             let seq_num = op.seq_num();
             let blip = Self::serialize_operation(&op)?;
 
@@ -323,7 +323,7 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
             for (topic_str, authors) in response.watermarks {
                 let topic = Item::Topic::from_mailbox_key(&topic_str)?;
                 for (author_str, watermark) in authors {
-                    let author = Item::Author::from_mailbox_key(&author_str)?;
+                    let author = Item::Log::from_mailbox_key(&author_str)?;
                     result.0.entry(topic).or_default().insert(author, watermark);
                 }
             }
@@ -415,9 +415,9 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
                 .collect();
 
             // Convert missing map
-            let mut missing: HashMap<Item::Author, Vec<SeqNum>> = HashMap::new();
+            let mut missing: HashMap<Item::Log, Vec<SeqNum>> = HashMap::new();
             for (author_str, seq_nums) in topic_response.missing {
-                let author = Item::Author::from_mailbox_key(&author_str)?;
+                let author = Item::Log::from_mailbox_key(&author_str)?;
                 missing.insert(author, seq_nums);
             }
 
@@ -622,7 +622,7 @@ mod tests {
             .unwrap();
 
         // The watermark response decoded the string keys back to Msg's Topic
-        // and Author types.
+        // and Log types.
         assert_eq!(response.watermark(&42, &'a'), Some(1));
         assert_eq!(response.watermark(&42, &'b'), Some(0));
 
@@ -645,13 +645,13 @@ mod tests {
         let author_a_seqs: Vec<SeqNum> = topic_response
             .items
             .iter()
-            .filter(|m| m.author() == 'a')
+            .filter(|m| m.log() == 'a')
             .map(|m| m.seq_num())
             .collect();
         let author_b_seqs: Vec<SeqNum> = topic_response
             .items
             .iter()
-            .filter(|m| m.author() == 'b')
+            .filter(|m| m.log() == 'b')
             .map(|m| m.seq_num())
             .collect();
         assert_eq!(author_a_seqs, vec![1]);
