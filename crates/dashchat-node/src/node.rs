@@ -1061,9 +1061,16 @@ impl Node {
         &self,
         chat_id: ChatId,
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        self.space_members(chat_id.into()).await
+    }
+
+    pub async fn space_members(
+        &self,
+        topic: TopicId,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
         let members = self
             .streams
-            .space(chat_id.into())
+            .space(topic)
             .await?
             .run(async move |space| space.members().await)
             .await??
