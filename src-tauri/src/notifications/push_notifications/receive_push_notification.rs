@@ -198,7 +198,7 @@ async fn handle_push_notification(
     app_data_root: PathBuf,
     handler_deadline: tokio::time::Instant,
 ) -> anyhow::Result<Option<NotificationData>> {
-    // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
+    // Title = topic ID (hex), Body = operation ID ("author_hex.log_hex:seq_num")
     let topic_hex = notification
         .title
         .as_deref()
@@ -208,10 +208,11 @@ async fn handle_push_notification(
         .as_deref()
         .context("notification has no body")?;
 
-    let (author_hex, seq_str) = op_id
+    let (log_key, seq_str) = op_id
         .split_once(':')
         .context("op_id missing ':' separator")?;
     let seq_num: SeqNum = seq_str.parse().context("failed to parse seq_num")?;
+    let (author_hex, log_hex) = log_key.split_once('.').unwrap_or((log_key, ""));
 
     let author_bytes: [u8; 32] = hex::decode(author_hex)
         .context("failed to hex-decode author")?
@@ -225,6 +226,14 @@ async fn handle_push_notification(
         .try_into()
         .map_err(|_| anyhow!("topic_id bytes are not 32 bytes long"))?;
     let topic_id = TopicId::try_from(topic_bytes)?;
+
+    // Space, group and key bundle logs reach the mailbox too, but only the
+    // chat log holds anything worth a notification.
+    let chat_log = dashchat_node::LogId::from(LogId::from_topic(topic_id));
+    if !log_hex.is_empty() && log_hex != chat_log.to_hex() {
+        log::info!("Ignoring a push for a control log of {topic_hex}.");
+        return Ok(None);
+    }
 
     let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
     // The setting alone, unlike `are_notifications_enabled`: there is no app
