@@ -1,11 +1,12 @@
 import { ReactivePromise, reactive } from 'signalium';
 import { subscribe } from 'tauri-plugin-subscriptions';
 
-import type { DeviceId, TopicId } from '../p2panda/types';
+import type { DeviceId, LogId, TopicId } from '../p2panda/types';
 import {
 	type MailboxConnectionState,
 	type MailboxId,
 	type MailboxSyncState,
+	mailboxLogKey,
 } from './types';
 
 export interface AllMailboxesConnectionState {
@@ -25,15 +26,18 @@ export interface IMailboxTrackerStore {
 	syncStateForLog(
 		topicId: TopicId,
 		author: DeviceId,
+		logId: LogId,
 	): ReactivePromise<Record<MailboxId, number>>;
 	syncedMailboxesForOp(
 		topicId: TopicId,
 		author: DeviceId,
+		logId: LogId,
 		seq: number,
 	): ReactivePromise<MailboxId[]>;
 	syncStatusForOp(
 		topicId: TopicId,
 		author: DeviceId,
+		logId: LogId,
 		seq: number,
 	): ReactivePromise<{
 		syncedWithCloudMailbox: boolean;
@@ -87,18 +91,20 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		}),
 	);
 
-	/// Per-(topic, author) view across every mailbox we've ever synced with.
+	/// Per-log view across every mailbox we've ever synced with.
 	/// Recomputes when `allMailboxIds` or any per-mailbox `syncState` changes.
 	syncStateForLog = reactive(
 		async (
 			topicId: TopicId,
 			author: DeviceId,
+			logId: LogId,
 		): Promise<Record<MailboxId, number>> => {
 			const ids = await this.allMailboxIds();
 			const out: Record<MailboxId, number> = {};
+			const logKey = mailboxLogKey(author, logId);
 			for (const id of ids) {
 				const sync = await this.syncState(id);
-				const seq = sync[topicId]?.[author];
+				const seq = sync[topicId]?.[logKey];
 				if (seq !== undefined) {
 					out[id] = seq;
 				}
@@ -107,14 +113,15 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 		},
 	);
 
-	/// IDs of mailboxes that have synced at least up to `seq` for the (topic, author) log.
+	/// IDs of mailboxes that have synced at least up to `seq` of the author's log.
 	syncedMailboxesForOp = reactive(
 		async (
 			topicId: TopicId,
 			author: DeviceId,
+			logId: LogId,
 			seq: number,
 		): Promise<MailboxId[]> => {
-			const map = await this.syncStateForLog(topicId, author);
+			const map = await this.syncStateForLog(topicId, author, logId);
 			return Object.entries(map)
 				.filter(([, mailboxSeq]) => mailboxSeq >= seq)
 				.map(([mailboxId]) => mailboxId);
@@ -122,10 +129,11 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 	);
 
 	syncStatusForOp = reactive(
-		async (topicId: TopicId, author: DeviceId, seq: number) => {
+		async (topicId: TopicId, author: DeviceId, logId: LogId, seq: number) => {
 			const syncedMailboxes = await this.syncedMailboxesForOp(
 				topicId,
 				author,
+				logId,
 				seq,
 			);
 
