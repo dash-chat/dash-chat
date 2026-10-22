@@ -132,3 +132,98 @@ async fn test_profiles_sync_between_contacts() {
     .await
     .unwrap();
 }
+
+/// A contact's device reads my announcements space, so my profile reaches
+/// them; blocking the contact removes it and unblocking re-adds it.
+#[tokio::test(flavor = "multi_thread")]
+async fn contacts_read_my_announcements_space() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(NodeConfig::testing(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let reads_announcements_of = |reader: &TestNode, owner: &TestNode| {
+        let reader = reader.clone();
+        let owner = owner.clone();
+        async move {
+            let members = owner
+                .space_members(Topic::announcements(owner.agent_id()).into())
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok::<_, String>(members.contains(&(reader.device_id(), p2panda_auth::Access::read())))
+        }
+    };
+
+    poll.wait_for(|| async {
+        for (reader, owner) in [(&bobbi, &alice), (&alice, &bobbi)] {
+            if !reads_announcements_of(reader, owner).await? {
+                return Err(format!(
+                    "{:?} does not yet read {:?}",
+                    reader.device_id(),
+                    owner.device_id()
+                ));
+            }
+        }
+        Ok(())
+    })
+    .await
+    .unwrap();
+
+    let profile = Profile {
+        name: "Alice".to_string(),
+        surname: Some("Alice Surname".to_string()),
+        avatar: None,
+        about: None,
+        keybundle: alice.keybundle().await.unwrap(),
+    };
+    alice.set_profile(profile.clone()).await.unwrap();
+    poll.wait_for(|| async {
+        let found = bobbi
+            .get_profile(alice.agent_id())
+            .await
+            .map_err(|e| e.to_string())?;
+        if found.as_ref() == Some(&profile) {
+            Ok(())
+        } else {
+            Err(format!("bobbi has {found:?}"))
+        }
+    })
+    .await
+    .unwrap();
+
+    alice.block_contact(bobbi.agent_id()).await.unwrap();
+    poll.wait_for(|| async {
+        if reads_announcements_of(&bobbi, &alice).await? {
+            Err("bobbi still reads alice's announcements".to_string())
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .unwrap();
+
+    alice.unblock_contact(bobbi.agent_id()).await.unwrap();
+    poll.wait_for(|| async {
+        if reads_announcements_of(&bobbi, &alice).await? {
+            Ok(())
+        } else {
+            Err("bobbi does not read alice's announcements again".to_string())
+        }
+    })
+    .await
+    .unwrap();
+}
