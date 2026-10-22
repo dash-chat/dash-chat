@@ -41,11 +41,13 @@ impl crate::Node {
             .replace(handle);
     }
 
-    /// Give every device of my contacts, and every member of a chat I am in,
-    /// Read access to my announcements space, so my profile reaches them.
+    /// Ensures that every device of my contacts, and every member of a chat I am in,
+    /// has read access to my announcements space, so my profile reaches them.
     /// Nobody is ever removed: a blocked contact must not be able to tell.
-    /// Only the devices not yet members are added, so repeating this changes
-    /// nothing. A device whose key bundle has not arrived yet is skipped and
+    ///
+    /// Idempotent.
+    ///
+    /// A device whose key bundle has not arrived yet is skipped and
     /// picked up when it does.
     pub(crate) async fn sync_announcements_readers(&self) -> anyhow::Result<()> {
         let topic = Topic::announcements(self.agent_id());
@@ -76,6 +78,7 @@ impl crate::Node {
         Ok(())
     }
 
+    /// The devices I want to be able to read my announcements space.
     async fn announcements_readers_wanted(&self) -> anyhow::Result<BTreeSet<DeviceId>> {
         let mut wanted = BTreeSet::new();
         for agent_id in self.accepted_contact_agent_ids().await? {
@@ -90,8 +93,8 @@ impl crate::Node {
         Ok(wanted)
     }
 
-    /// The spaces I am subscribed to that are chats: every subscribed space
-    /// that is not the announcements space of an agent I know of.
+    /// The spaces I am subscribed to that are not for announcements,
+    /// used to determine which devices I want to be able to read my announcements space.
     async fn subscribed_chat_spaces(&self) -> anyhow::Result<BTreeSet<TopicId>> {
         let announcements: BTreeSet<TopicId> = self
             .projection
