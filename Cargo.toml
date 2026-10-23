@@ -29,6 +29,7 @@ sqlite-gate = { path = "crates/sqlite-gate" }
 panic-policy = { path = "crates/panic-policy" }
 network-watch = { path = "crates/network-watch" }
 mailbox-client = { path = "crates/mailbox-client" }
+mailboxes-manager = { path = "crates/mailboxes-manager" }
 opus-transcode = { path = "crates/opus-transcode" }
 tauri-plugin-sentry-reporting = { path = "crates/tauri-plugin-sentry-reporting" }
 mailbox-server = { path = "crates/mailbox-server" }

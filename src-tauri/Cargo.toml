@@ -46,6 +46,7 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
+mailboxes-manager = { workspace = true }
 network-watch = { workspace = true }
 # Discovery runs on every platform; only the hub server itself is desktop-only.
 local-hub-discovery = { workspace = true }

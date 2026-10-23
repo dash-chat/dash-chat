@@ -1,20 +1,26 @@
+use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
-use crate::blobs::unfetched_blobs::reconcile_unfetched_blobs;
+use mailbox_client::store::MailboxStore;
+use mailbox_client::sync::SyncCoordinator;
+use mailbox_client::sync_scheduler::{PendingRequest, RequestOutcome};
+use mailbox_client::topic_registry::TopicRegistry;
+use mailbox_client::{
+    BlobReader, MailboxClient, MailboxConnectionState, MailboxId, MailboxItem, MailboxesConfig,
+    OptionalItemTraits, SyncStatus, UnfetchedBlobTracker,
+};
+use tokio::sync::{Mutex, Notify, mpsc, watch};
+use tokio::time::Instant;
+use tracing::Instrument;
+
+use crate::blobs::unfetched_blobs::{BlobSource, reconcile_unfetched_blobs};
 use crate::blobs::upload_tracker::BlobUploadTracker;
-use crate::connection_health::{MailboxConnectionState, MailboxesConfig, SyncStatus};
 use crate::mailbox_registry::MailboxRegistry;
 use crate::persistence::{Persistence, sqlite::SqlitePersistence};
 use crate::polling::PollGuard;
-use crate::store::MailboxStore;
-use crate::sync::SyncCoordinator;
-use crate::sync_scheduler::{PendingRequest, RequestOutcome};
 use crate::sync_tracker::MailboxSyncTracker;
-use crate::topic_registry::TopicRegistry;
-use tokio::sync::{Notify, watch};
-use tokio::time::Instant;
-
-use super::*;
 
 /// Per-mailbox handle owning the client and its tracker. Held inside `Mailboxes`
 /// as `Arc<TrackedMailbox<...>>` so cheap clones can be handed out to subscribers.
@@ -192,7 +198,7 @@ where
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
-            sync_coordinator: SyncCoordinator::new(store, sync_tracker.clone()),
+            sync_coordinator: SyncCoordinator::new(store),
             persistence,
             poll_loop: Arc::new(std::sync::Mutex::new(None)),
         }
@@ -449,9 +455,32 @@ where
         topic: Item::Topic,
         author: Item::Author,
     ) -> anyhow::Result<()> {
-        self.sync_coordinator
-            .store_fast_push(id, tracked, topic, author)
-            .await
+        let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
+        let ops = self
+            .sync_coordinator
+            .fast_push_ops(synced, topic, author)
+            .await?;
+        let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
+            return Ok(());
+        };
+        let client = tracked.client().await;
+        let response = client.publish(ops).await?;
+        let watermark = response.watermark(&topic, &author);
+        if let Some(wm) = watermark {
+            self.sync_tracker
+                .record_synced(id, &[(topic, author, wm)])
+                .await?;
+        }
+        if watermark.is_none_or(|wm| wm < top) {
+            tracing::warn!(
+                mailbox = %id,
+                pushed = top,
+                echoed = ?watermark,
+                "mailbox watermark behind after direct store"
+            );
+            anyhow::bail!("mailbox watermark {watermark:?} behind published seq {top}");
+        }
+        Ok(())
     }
 
     /// Immediately sync every registered mailbox without touching status or backoff.
@@ -668,7 +697,11 @@ where
         self.topic_registry
             .cleanup_closed_subscriptions(&outcome.closed_topics)
             .await;
-        outcome.result
+        let acks = outcome.result?;
+        if let Err(err) = self.sync_tracker.record_synced(&mailbox.id(), &acks).await {
+            tracing::error!(?err, mailbox = %mailbox.id(), "failed to record sync watermarks");
+        }
+        Ok(())
     }
 }
 
@@ -682,8 +715,11 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use super::*;
-    use crate::{
-        BlobReader,
+    use std::collections::{BTreeMap, HashMap};
+
+    use mailbox_client::{
+        BlobReader, FetchRequest, FetchResponse, FetchTopicResponse, NoopUnfetchedBlobTracker,
+        PublishResponse, SeqNum,
         backends::{mem::MemMailbox, toy::ToyMailboxClient},
         testing::{DummyStore, MemStore, Msg},
     };
@@ -913,7 +949,7 @@ mod tests {
             id.clone(),
             url,
             iroh::SecretKey::generate().public(),
-            Arc::new(crate::NoopUnfetchedBlobTracker),
+            Arc::new(NoopUnfetchedBlobTracker),
             mailboxes.upload_tracker(),
         )
         .with_blob_reader(reader.clone());
@@ -932,7 +968,7 @@ mod tests {
             .push_blobs(
                 vec![hash],
                 failing_reader,
-                Arc::new(crate::NoopUnfetchedBlobTracker),
+                Arc::new(NoopUnfetchedBlobTracker),
             )
             .await
             .unwrap();
@@ -2668,7 +2704,7 @@ mod tests {
             Mailboxes::<Msg, DummyStore>::spawn_with_db(&path, &gate, DummyStore, test_config())
                 .await
                 .unwrap();
-        let mailbox: crate::MailboxId = "mb1".into();
+        let mailbox: MailboxId = "mb1".into();
         mgr.sync_tracker()
             .record_synced(&mailbox, &[(7u8, 'a', 3)])
             .await
