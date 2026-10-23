@@ -264,3 +264,180 @@ where
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{MemStore, Msg};
+    use crate::{MailboxId, PublishResponse, topic_registry::TopicRegistry};
+    use std::collections::HashMap;
+
+    fn new_coordinator(store: MemStore) -> SyncCoordinator<Msg, MemStore> {
+        SyncCoordinator::new(store)
+    }
+
+    #[tokio::test]
+    async fn fast_push_ops_with_nothing_above_the_watermark_returns_empty() {
+        // Watermark at the log's height: nothing newer to push.
+        let store = MemStore::default();
+        store.set_height(0, 'a', 4);
+        let coordinator = new_coordinator(store);
+        let ops = coordinator.fast_push_ops(Some(4), 0, 'a').await.unwrap();
+        assert!(ops.is_empty());
+
+        // Log absent entirely.
+        let coordinator = new_coordinator(MemStore::default());
+        let ops = coordinator.fast_push_ops(None, 0, 'a').await.unwrap();
+        assert!(ops.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fast_push_ops_returns_the_delta_above_the_watermark() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 4);
+        let coordinator = new_coordinator(store);
+
+        let ops = coordinator.fast_push_ops(Some(1), 0, 'a').await.unwrap();
+        assert_eq!(
+            ops,
+            (2..=4)
+                .map(|seq| Msg {
+                    topic: 0,
+                    author: 'a',
+                    seq
+                })
+                .collect::<Vec<_>>()
+        );
+
+        // No watermark recorded yet: the whole log from zero.
+        let ops = coordinator.fast_push_ops(None, 0, 'a').await.unwrap();
+        assert_eq!(ops.len(), 5);
+        assert_eq!(ops[0].seq, 0);
+    }
+
+    struct StubClient {
+        fetch_response: FetchResponse<Msg>,
+        published: Arc<std::sync::Mutex<Vec<Vec<Msg>>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for StubClient {
+        fn id(&self) -> MailboxId {
+            "stub".into()
+        }
+
+        async fn publish(&self, ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            self.published.lock().unwrap().push(ops);
+            Ok(PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            Ok(self.fetch_response.clone())
+        }
+    }
+
+    struct FailingFetchClient;
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for FailingFetchClient {
+        fn id(&self) -> MailboxId {
+            "failing".into()
+        }
+
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            anyhow::bail!("fetch failed")
+        }
+    }
+
+    #[tokio::test]
+    async fn sync_topics_publishes_missing_delivers_items_and_reports_acks() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 4);
+        let coordinator = new_coordinator(store);
+
+        // The mailbox holds one op from 'b' we lack, and lacks our seqs 3-4.
+        let fetch_response = FetchResponse(BTreeMap::from([(
+            0u8,
+            FetchTopicResponse {
+                items: vec![Msg {
+                    topic: 0,
+                    author: 'b',
+                    seq: 0,
+                }],
+                missing: HashMap::from([('a', vec![3, 4])]),
+            },
+        )]));
+        let published = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let client: Arc<dyn MailboxClient<Msg>> = Arc::new(StubClient {
+            fetch_response,
+            published: published.clone(),
+        });
+
+        let topic_registry = TopicRegistry::new();
+        let mut rx = topic_registry.subscribe(0).await.unwrap();
+
+        let outcome = coordinator
+            .sync_topics([0u8].into_iter(), &client, &topic_registry)
+            .await;
+
+        // The mailbox's missing ops were published from the local log.
+        assert_eq!(
+            published.lock().unwrap().as_slice(),
+            &[vec![
+                Msg {
+                    topic: 0,
+                    author: 'a',
+                    seq: 3
+                },
+                Msg {
+                    topic: 0,
+                    author: 'a',
+                    seq: 4
+                },
+            ]]
+        );
+
+        // The inbound item was delivered to the topic's receiver.
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            Msg {
+                topic: 0,
+                author: 'b',
+                seq: 0
+            }
+        );
+
+        assert!(outcome.closed_topics.is_empty());
+        // Received items and published ops are acked; no height inference for
+        // 'a', since the mailbox reported missing seqs for them.
+        assert_eq!(
+            outcome.result.unwrap(),
+            vec![(0, 'b', 0), (0, 'a', 3), (0, 'a', 4)]
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_topics_reports_fetch_failure() {
+        let coordinator = new_coordinator(MemStore::default());
+        let client: Arc<dyn MailboxClient<Msg>> = Arc::new(FailingFetchClient);
+        let topic_registry = TopicRegistry::new();
+        topic_registry.subscribe(0).await.unwrap();
+
+        let outcome = coordinator
+            .sync_topics([0u8].into_iter(), &client, &topic_registry)
+            .await;
+
+        assert!(outcome.result.is_err());
+        assert!(outcome.closed_topics.is_empty());
+    }
+}

@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-aliased = { workspace = true }
 dashchat-utils = { workspace = true }
 anyhow = "1"
 async-trait = "0.1.85"
@@ -32,7 +31,6 @@ axum = { version = "0.8", features = ["json"] }
 mailbox-server = { path = "../mailbox-server", features = ["test_utils"] }
 mailbox-client = { path = ".", features = ["testing"] }
 pretty_assertions = "1.4.1"
-tempfile = "3.24"
 tokio = { version = "1.43.0", features = ["test-util"] }
 
 

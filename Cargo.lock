@@ -5807,7 +5807,6 @@ dependencies = [
 name = "mailbox-client"
 version = "0.1.0"
 dependencies = [
- "aliased",
  "anyhow",
  "async-trait",
  "axum",
@@ -5827,7 +5826,6 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
