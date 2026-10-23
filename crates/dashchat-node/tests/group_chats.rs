@@ -715,7 +715,6 @@ async fn test_non_admin_cannot_remove_admin() {
 /// Joining a group announces it, and a membership change announces that: the
 /// group list and member list in the UI refresh from these alone.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn test_group_events() {
     setup();
 
