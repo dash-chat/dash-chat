@@ -718,7 +718,8 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
 
     use mailbox_client::{
-        BlobReader, FetchRequest, FetchResponse, FetchTopicResponse, PublishResponse, SeqNum,
+        BlobReader, FetchRequest, FetchResponse, FetchTopicResponse, NoopUnfetchedBlobTracker,
+        PublishResponse, SeqNum,
         backends::{mem::MemMailbox, toy::ToyMailboxClient},
         testing::{DummyStore, MemStore, Msg},
     };
@@ -948,7 +949,7 @@ mod tests {
             id.clone(),
             url,
             iroh::SecretKey::generate().public(),
-            Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            Arc::new(NoopUnfetchedBlobTracker),
             mailboxes.upload_tracker(),
         )
         .with_blob_reader(reader.clone());
@@ -967,7 +968,7 @@ mod tests {
             .push_blobs(
                 vec![hash],
                 failing_reader,
-                Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+                Arc::new(NoopUnfetchedBlobTracker),
             )
             .await
             .unwrap();
@@ -2703,7 +2704,7 @@ mod tests {
             Mailboxes::<Msg, DummyStore>::spawn_with_db(&path, &gate, DummyStore, test_config())
                 .await
                 .unwrap();
-        let mailbox: mailbox_client::MailboxId = "mb1".into();
+        let mailbox: MailboxId = "mb1".into();
         mgr.sync_tracker()
             .record_synced(&mailbox, &[(7u8, 'a', 3)])
             .await

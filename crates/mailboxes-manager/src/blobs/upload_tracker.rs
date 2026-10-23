@@ -27,10 +27,7 @@ enum UploadAttempt {
 
 impl BlobUploadTracker {
     pub fn new() -> Self {
-        Self {
-            uploads: std::sync::Mutex::new(HashMap::new()),
-            next_claim: std::sync::atomic::AtomicU64::new(0),
-        }
+        Self::default()
     }
 
     /// Mark an upload of `hash` to `base_url` in flight if it may start now,
