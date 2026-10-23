@@ -2,8 +2,9 @@
 //!
 //! This module provides the `SyncCoordinator`, which manages the high-level
 //! sync protocol between the local node and mailbox servers. It handles
-//! fetching operations for subscribed topics, updating sync watermarks,
-//! and coordinating "fast-push" announcements to ensure data consistency.
+//! fetching operations for subscribed topics and publishing the operations
+//! the mailbox is missing, reporting sync watermarks and fast-push outcomes
+//! for the caller to record.
 //!
 //! The coordinator abstracts the specific sync loop logic away from the
 //! main [`crate::manager::Mailboxes`] registry.
@@ -14,10 +15,7 @@ use std::sync::Arc;
 
 use dashchat_utils::SeqNum;
 
-use crate::MailboxId;
-use crate::manager::TrackedMailbox;
 use crate::store::MailboxStore;
-use crate::sync_tracker::MailboxSyncTracker;
 use crate::topic_registry::TopicRegistry;
 use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 
@@ -25,9 +23,22 @@ use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 /// have failed partway through, but any topics whose receivers were found to
 /// be closed are always reported so the caller can unsubscribe them.
 #[derive(Debug)]
-pub struct SyncTopicOutcome<Topic> {
+pub struct SyncTopicOutcome<Topic, Author> {
     pub result: anyhow::Result<()>,
+    /// Watermarks for the caller to record for the mailbox. Empty when the
+    /// sync failed partway through: a failed sync records nothing.
+    pub acks: Vec<(Topic, Author, SeqNum)>,
     pub closed_topics: HashSet<Topic>,
+}
+
+/// Outcome of a successful [`SyncCoordinator::store_fast_push`], for the
+/// caller to record and judge.
+#[derive(Debug)]
+pub struct FastPushOutcome {
+    /// The mailbox's echoed contiguity watermark, if it gave one.
+    pub watermark: Option<SeqNum>,
+    /// The highest seq pushed; `None` when the local log had nothing new.
+    pub pushed_top: Option<SeqNum>,
 }
 
 struct SyncTopicResult<Item: crate::MailboxItem> {
@@ -37,13 +48,9 @@ struct SyncTopicResult<Item: crate::MailboxItem> {
 }
 
 #[derive(Clone)]
-pub struct SyncCoordinator<Item, Store>
-where
-    Item: crate::MailboxItem,
-    Store: MailboxStore<Item>,
-{
+pub struct SyncCoordinator<Item, Store> {
     store: Store,
-    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    phantom: std::marker::PhantomData<fn() -> Item>,
 }
 
 impl<Item, Store> SyncCoordinator<Item, Store>
@@ -51,13 +58,10 @@ where
     Item: crate::MailboxItem,
     Store: MailboxStore<Item>,
 {
-    pub fn new(
-        store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
-    ) -> Self {
+    pub fn new(store: Store) -> Self {
         Self {
             store,
-            sync_tracker,
+            phantom: std::marker::PhantomData,
         }
     }
 
@@ -69,7 +73,7 @@ where
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
         topic_registry: &TopicRegistry<Item>,
-    ) -> SyncTopicOutcome<Item::Topic>
+    ) -> SyncTopicOutcome<Item::Topic, Item::Author>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
     {
@@ -78,6 +82,7 @@ where
             Err(err) => {
                 return SyncTopicOutcome {
                     result: Err(err),
+                    acks: Vec::new(),
                     closed_topics: HashSet::new(),
                 };
             }
@@ -96,6 +101,7 @@ where
                 Err(err) => {
                     return SyncTopicOutcome {
                         result: Err(err),
+                        acks: Vec::new(),
                         closed_topics,
                     };
                 }
@@ -116,29 +122,27 @@ where
         if let Err(err) = mailbox.publish(ops_to_publish).await {
             return SyncTopicOutcome {
                 result: Err(err),
+                acks: Vec::new(),
                 closed_topics,
             };
         }
 
         acks.extend(publish_acks);
-        if let Err(err) = self.sync_tracker.record_synced(&mailbox.id(), &acks).await {
-            tracing::error!(?err, mailbox = %&mailbox.id(), "failed to record sync watermarks");
-        }
 
         SyncTopicOutcome {
             result: Ok(()),
+            acks,
             closed_topics,
         }
     }
 
     pub async fn store_fast_push(
         &self,
-        id: &MailboxId,
-        tracked: &TrackedMailbox<Item>,
+        client: &Arc<dyn MailboxClient<Item>>,
+        synced: Option<SeqNum>,
         topic: Item::Topic,
         author: Item::Author,
-    ) -> anyhow::Result<()> {
-        let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
+    ) -> anyhow::Result<FastPushOutcome> {
         let start = synced.map_or(0, |n| n + 1);
         let ops = self
             .store
@@ -146,26 +150,16 @@ where
             .await?
             .unwrap_or_default();
         let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
-            return Ok(());
+            return Ok(FastPushOutcome {
+                watermark: None,
+                pushed_top: None,
+            });
         };
-        let response = tracked.client().await.publish(ops).await?;
-
-        let watermark = response.watermark(&topic, &author);
-        if let Some(wm) = watermark {
-            self.sync_tracker
-                .record_synced(id, &[(topic, author, wm)])
-                .await?;
-        }
-        if watermark.is_none_or(|wm| wm < top) {
-            tracing::warn!(
-                mailbox = %id,
-                pushed = top,
-                echoed = ?watermark,
-                "mailbox watermark behind after direct store"
-            );
-            anyhow::bail!("mailbox watermark {watermark:?} behind published seq {top}");
-        }
-        Ok(())
+        let response = client.publish(ops).await?;
+        Ok(FastPushOutcome {
+            watermark: response.watermark(&topic, &author),
+            pushed_top: Some(top),
+        })
     }
 
     // PRIVATE

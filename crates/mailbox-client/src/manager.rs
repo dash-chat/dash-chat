@@ -192,7 +192,7 @@ where
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
-            sync_coordinator: SyncCoordinator::new(store, sync_tracker.clone()),
+            sync_coordinator: SyncCoordinator::new(store),
             persistence,
             poll_loop: Arc::new(std::sync::Mutex::new(None)),
         }
@@ -449,9 +449,32 @@ where
         topic: Item::Topic,
         author: Item::Author,
     ) -> anyhow::Result<()> {
-        self.sync_coordinator
-            .store_fast_push(id, tracked, topic, author)
-            .await
+        let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
+        let client = tracked.client().await;
+        let outcome = self
+            .sync_coordinator
+            .store_fast_push(&client, synced, topic, author)
+            .await?;
+        if let Some(watermark) = outcome.watermark {
+            self.sync_tracker
+                .record_synced(id, &[(topic, author, watermark)])
+                .await?;
+        }
+        if let Some(top) = outcome.pushed_top
+            && outcome.watermark.is_none_or(|wm| wm < top)
+        {
+            tracing::warn!(
+                mailbox = %id,
+                pushed = top,
+                echoed = ?outcome.watermark,
+                "mailbox watermark behind after direct store"
+            );
+            anyhow::bail!(
+                "mailbox watermark {:?} behind published seq {top}",
+                outcome.watermark
+            );
+        }
+        Ok(())
     }
 
     /// Immediately sync every registered mailbox without touching status or backoff.
@@ -668,6 +691,15 @@ where
         self.topic_registry
             .cleanup_closed_subscriptions(&outcome.closed_topics)
             .await;
+        if outcome.result.is_ok() {
+            if let Err(err) = self
+                .sync_tracker
+                .record_synced(&mailbox.id(), &outcome.acks)
+                .await
+            {
+                tracing::error!(?err, mailbox = %mailbox.id(), "failed to record sync watermarks");
+            }
+        }
         outcome.result
     }
 }
