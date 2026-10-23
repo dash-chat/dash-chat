@@ -114,19 +114,6 @@ impl Node {
         Ok(space)
     }
 
-    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
-    #[cfg(feature = "testing")]
-    #[deprecated = "must refactor all tests to use spaces"]
-    pub async fn register_topic_legacy<K: AutoRegisteredTopic>(
-        &self,
-        topic: Topic<K>,
-    ) -> anyhow::Result<()> {
-        self.local_store.register_space_as_subscribed(topic).await?;
-        self.initialize_stream(*topic).await?;
-
-        Ok(())
-    }
-
     pub(crate) async fn join_presence(&self, chat_id: ChatId) -> anyhow::Result<()> {
         if !self.config.enable_p2p {
             return Ok(());
