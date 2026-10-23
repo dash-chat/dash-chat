@@ -7,7 +7,7 @@ use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::provider::events::{
     ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
 };
-use mailboxes_manager::manager::Mailboxes;
+use mailboxes_manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
 use p2panda_store::SqliteStore;
 use std::{

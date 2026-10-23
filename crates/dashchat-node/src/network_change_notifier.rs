@@ -27,7 +27,7 @@
 
 use tokio::task::JoinHandle;
 
-use mailboxes_manager::manager::Mailboxes;
+use mailboxes_manager::Mailboxes;
 
 use crate::mailbox::MailboxOperation;
 use crate::stores::OpStore;

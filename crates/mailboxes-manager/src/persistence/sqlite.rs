@@ -7,6 +7,25 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
+/// DB encoding of `SyncStatus`; these strings are on-disk data and must not
+/// change.
+fn status_to_db(status: SyncStatus) -> &'static str {
+    match status {
+        SyncStatus::Active => "active",
+        SyncStatus::Degraded => "degraded",
+        SyncStatus::Stopped => "stopped",
+    }
+}
+
+fn status_from_db(s: &str) -> Option<SyncStatus> {
+    match s {
+        "active" => Some(SyncStatus::Active),
+        "degraded" => Some(SyncStatus::Degraded),
+        "stopped" => Some(SyncStatus::Stopped),
+        _ => None,
+    }
+}
+
 pub struct SqlitePersistence<T, A> {
     pool: GatedPool,
     mailbox_store: Arc<dyn MailboxUrlStore>,
@@ -123,7 +142,7 @@ where
                 updated_at = excluded.updated_at",
         )
         .bind(id)
-        .bind(status.as_db_str())
+        .bind(status_to_db(status))
         .bind(chrono::Utc::now().timestamp_millis())
         .execute(self.pool.pool())
         .await?;
@@ -135,7 +154,7 @@ where
                 .bind(id)
                 .fetch_optional(self.pool.pool())
                 .await?;
-        Ok(row.and_then(|(s,)| SyncStatus::from_db_str(&s)))
+        Ok(row.and_then(|(s,)| status_from_db(&s)))
     }
 
     async fn clear_status(&self, id: &MailboxId) -> anyhow::Result<()> {

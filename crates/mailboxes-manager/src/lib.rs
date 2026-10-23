@@ -13,4 +13,5 @@ mod polling;
 mod sync_tracker;
 
 pub use blobs::unfetched_blobs::BlobSource;
+pub use manager::Mailboxes;
 pub use sync_tracker::{MailboxSyncState, MailboxSyncTracker};

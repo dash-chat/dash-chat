@@ -213,6 +213,7 @@ fn setup_photo_delivery_tracing() {
             "dashchat=info",
             "mailbox_server=info",
             "mailbox_client=info",
+            "mailboxes_manager=info",
             "p2panda_stream=warn",
             "p2panda_auth=warn",
             "p2panda_spaces=warn",

@@ -3,8 +3,9 @@
 //! This module provides the `SyncCoordinator`, which manages the high-level
 //! sync protocol between the local node and mailbox servers. It handles
 //! fetching operations for subscribed topics and publishing the operations
-//! the mailbox is missing, reporting sync watermarks and fast-push outcomes
-//! for the caller to record.
+//! the mailbox is missing, reporting sync watermarks for the caller to
+//! record, and computes fast-push deltas (the ops above a mailbox's confirmed
+//! watermark); publishing those stays with the caller.
 //!
 //! The coordinator abstracts the specific sync loop logic away from the
 //! `mailboxes-manager` crate's `Mailboxes` registry.

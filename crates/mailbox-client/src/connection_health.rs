@@ -51,28 +51,11 @@ pub enum SyncStatus {
 }
 
 impl SyncStatus {
-    pub fn interval(&self, config: &MailboxesConfig) -> Duration {
+    pub(crate) fn interval(&self, config: &MailboxesConfig) -> Duration {
         match self {
             SyncStatus::Active => config.active_interval,
             SyncStatus::Degraded => config.degraded_interval,
             SyncStatus::Stopped => config.stopped_interval,
-        }
-    }
-
-    pub fn as_db_str(&self) -> &'static str {
-        match self {
-            SyncStatus::Active => "active",
-            SyncStatus::Degraded => "degraded",
-            SyncStatus::Stopped => "stopped",
-        }
-    }
-
-    pub fn from_db_str(s: &str) -> Option<Self> {
-        match s {
-            "active" => Some(SyncStatus::Active),
-            "degraded" => Some(SyncStatus::Degraded),
-            "stopped" => Some(SyncStatus::Stopped),
-            _ => None,
         }
     }
 }
@@ -104,6 +87,9 @@ fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::
 }
 
 impl MailboxConnectionState {
+    /// Not part of the intended surface: callers outside this crate are tests
+    /// (`mailboxes-manager`'s). Use `seeded` for a status-aware start.
+    #[doc(hidden)]
     pub fn new() -> Self {
         Self {
             status: SyncStatus::Active,
