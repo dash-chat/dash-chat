@@ -39,7 +39,7 @@ impl DeviceId {
     }
 }
 
-impl mailboxes_manager::MailboxKey for DeviceId {
+impl mailbox_client::MailboxKey for DeviceId {
     fn to_mailbox_key(&self) -> String {
         self.to_hex()
     }
@@ -147,7 +147,7 @@ impl sqlx::Decode<'_, Sqlite> for AgentId {
 
 #[cfg(test)]
 mod tests {
-    use mailboxes_manager::MailboxKey;
+    use mailbox_client::MailboxKey;
     use p2panda::SigningKey;
 
     use super::*;

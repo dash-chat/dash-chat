@@ -1,4 +1,4 @@
-use mailboxes_manager::{
+use mailbox_client::{
     FetchRequest, FetchResponse, MailboxClient, MailboxId, PublishResponse,
     backends::mem::{MemMailbox, MemMailboxClient},
     backends::toy::ToyMailboxClient,
@@ -146,7 +146,7 @@ impl TestMailbox {
 pub async fn wait_for_mailbox_health(url: &str) {
     let health = format!("{url}/health");
     for _ in 0..100 {
-        if let Ok(resp) = mailboxes_manager::HTTP_CLIENT.get(&health).send().await {
+        if let Ok(resp) = mailbox_client::HTTP_CLIENT.get(&health).send().await {
             if resp.status().is_success() {
                 return;
             }
@@ -162,8 +162,8 @@ async fn inspection_client(url: &str) -> ToyMailboxClient<MailboxOperation> {
         health.mailbox_id,
         url,
         iroh::SecretKey::generate().public(),
-        Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
-        mailboxes_manager::testing::noop_upload_lifecycle(),
+        Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+        mailbox_client::testing::noop_upload_lifecycle(),
     )
 }
 

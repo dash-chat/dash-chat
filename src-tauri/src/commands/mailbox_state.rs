@@ -5,7 +5,8 @@ use async_rx::StreamExt as _;
 use async_stream::stream;
 use dashchat_node::{topic::TopicId, DeviceId};
 use futures::{Stream, StreamExt};
-use mailboxes_manager::{MailboxConnectionState, MailboxId, MailboxSyncState};
+use mailbox_client::{MailboxConnectionState, MailboxId};
+use mailboxes_manager::MailboxSyncState;
 use tauri_plugin_subscriptions::subscription;
 use tokio_stream::wrappers::WatchStream;
 

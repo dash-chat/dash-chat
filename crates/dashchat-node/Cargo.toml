@@ -11,6 +11,7 @@ serde_bytes = "0.11"
 serde_json = "1"
 serde_repr = "0.1"
 
+mailbox-client = { workspace = true }
 mailboxes-manager = { workspace = true }
 mailbox-server = { workspace = true }
 reporting = { workspace = true }
@@ -68,5 +69,5 @@ p2panda-store = { workspace = true, features = ["test_utils"] }
 [features]
 default = ["instrument"]
 instrument = []
-testing = ["tempfile", "nanoid", "p2panda-store/test_utils", "mailboxes-manager/testing"]
+testing = ["tempfile", "nanoid", "p2panda-store/test_utils", "mailbox-client/testing"]
 p2p = []

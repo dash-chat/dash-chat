@@ -7,7 +7,7 @@
 //! for the caller to record.
 //!
 //! The coordinator abstracts the specific sync loop logic away from the
-//! main [`crate::manager::Mailboxes`] registry.
+//! `mailboxes-manager` crate's `Mailboxes` registry.
 
 use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
@@ -24,21 +24,10 @@ use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 /// be closed are always reported so the caller can unsubscribe them.
 #[derive(Debug)]
 pub struct SyncTopicOutcome<Topic, Author> {
-    pub result: anyhow::Result<()>,
-    /// Watermarks for the caller to record for the mailbox. Empty when the
-    /// sync failed partway through: a failed sync records nothing.
-    pub acks: Vec<(Topic, Author, SeqNum)>,
+    /// Watermarks for the caller to record for the mailbox. A failed sync
+    /// carries no acks: it records nothing.
+    pub result: anyhow::Result<Vec<(Topic, Author, SeqNum)>>,
     pub closed_topics: HashSet<Topic>,
-}
-
-/// Outcome of a successful [`SyncCoordinator::store_fast_push`], for the
-/// caller to record and judge.
-#[derive(Debug)]
-pub struct FastPushOutcome {
-    /// The mailbox's echoed contiguity watermark, if it gave one.
-    pub watermark: Option<SeqNum>,
-    /// The highest seq pushed; `None` when the local log had nothing new.
-    pub pushed_top: Option<SeqNum>,
 }
 
 struct SyncTopicResult<Item: crate::MailboxItem> {
@@ -82,7 +71,6 @@ where
             Err(err) => {
                 return SyncTopicOutcome {
                     result: Err(err),
-                    acks: Vec::new(),
                     closed_topics: HashSet::new(),
                 };
             }
@@ -101,7 +89,6 @@ where
                 Err(err) => {
                     return SyncTopicOutcome {
                         result: Err(err),
-                        acks: Vec::new(),
                         closed_topics,
                     };
                 }
@@ -122,7 +109,6 @@ where
         if let Err(err) = mailbox.publish(ops_to_publish).await {
             return SyncTopicOutcome {
                 result: Err(err),
-                acks: Vec::new(),
                 closed_topics,
             };
         }
@@ -130,36 +116,27 @@ where
         acks.extend(publish_acks);
 
         SyncTopicOutcome {
-            result: Ok(()),
-            acks,
+            result: Ok(acks),
             closed_topics,
         }
     }
 
-    pub async fn store_fast_push(
+    /// Collect the ops a fast push to a mailbox would send for (`topic`,
+    /// `author`): everything in the local log above `synced`, the watermark
+    /// the mailbox last confirmed. Publishing and recording stay with the
+    /// caller.
+    pub async fn fast_push_ops(
         &self,
-        client: &Arc<dyn MailboxClient<Item>>,
         synced: Option<SeqNum>,
         topic: Item::Topic,
         author: Item::Author,
-    ) -> anyhow::Result<FastPushOutcome> {
+    ) -> anyhow::Result<Vec<Item>> {
         let start = synced.map_or(0, |n| n + 1);
-        let ops = self
+        Ok(self
             .store
             .get_log(&author, &topic, start)
             .await?
-            .unwrap_or_default();
-        let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
-            return Ok(FastPushOutcome {
-                watermark: None,
-                pushed_top: None,
-            });
-        };
-        let response = client.publish(ops).await?;
-        Ok(FastPushOutcome {
-            watermark: response.watermark(&topic, &author),
-            pushed_top: Some(top),
-        })
+            .unwrap_or_default())
     }
 
     // PRIVATE

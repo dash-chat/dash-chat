@@ -456,29 +456,29 @@ where
         author: Item::Author,
     ) -> anyhow::Result<()> {
         let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
-        let client = tracked.client().await;
-        let outcome = self
+        let ops = self
             .sync_coordinator
-            .store_fast_push(&client, synced, topic, author)
+            .fast_push_ops(synced, topic, author)
             .await?;
-        if let Some(watermark) = outcome.watermark {
+        let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
+            return Ok(());
+        };
+        let client = tracked.client().await;
+        let response = client.publish(ops).await?;
+        let watermark = response.watermark(&topic, &author);
+        if let Some(wm) = watermark {
             self.sync_tracker
-                .record_synced(id, &[(topic, author, watermark)])
+                .record_synced(id, &[(topic, author, wm)])
                 .await?;
         }
-        if let Some(top) = outcome.pushed_top
-            && outcome.watermark.is_none_or(|wm| wm < top)
-        {
+        if watermark.is_none_or(|wm| wm < top) {
             tracing::warn!(
                 mailbox = %id,
                 pushed = top,
-                echoed = ?outcome.watermark,
+                echoed = ?watermark,
                 "mailbox watermark behind after direct store"
             );
-            anyhow::bail!(
-                "mailbox watermark {:?} behind published seq {top}",
-                outcome.watermark
-            );
+            anyhow::bail!("mailbox watermark {watermark:?} behind published seq {top}");
         }
         Ok(())
     }
@@ -697,16 +697,11 @@ where
         self.topic_registry
             .cleanup_closed_subscriptions(&outcome.closed_topics)
             .await;
-        if outcome.result.is_ok() {
-            if let Err(err) = self
-                .sync_tracker
-                .record_synced(&mailbox.id(), &outcome.acks)
-                .await
-            {
-                tracing::error!(?err, mailbox = %mailbox.id(), "failed to record sync watermarks");
-            }
+        let acks = outcome.result?;
+        if let Err(err) = self.sync_tracker.record_synced(&mailbox.id(), &acks).await {
+            tracing::error!(?err, mailbox = %mailbox.id(), "failed to record sync watermarks");
         }
-        outcome.result
+        Ok(())
     }
 }
 

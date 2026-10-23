@@ -32,7 +32,7 @@ use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
-use mailboxes_manager::MailboxesConfig;
+use mailbox_client::MailboxesConfig;
 use mailboxes_manager::manager::Mailboxes;
 use tokio::task::JoinHandle;
 
@@ -634,7 +634,7 @@ impl Node {
 
     pub fn unfetched_blob_tracker(
         &self,
-    ) -> std::sync::Arc<dyn mailboxes_manager::UnfetchedBlobTracker> {
+    ) -> std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker> {
         crate::LocalStoreBlobTracker::new(self.local_store.clone())
     }
 
@@ -642,7 +642,7 @@ impl Node {
     /// client to upload blob bytes inline. Reads error when blob sync is disabled
     /// (e.g. the push extension), which makes the client fall back to announcing
     /// hashes only.
-    pub fn blob_reader(&self) -> std::sync::Arc<dyn mailboxes_manager::BlobReader> {
+    pub fn blob_reader(&self) -> std::sync::Arc<dyn mailbox_client::BlobReader> {
         std::sync::Arc::new(NodeBlobReader {
             blob_sync: self.blob_sync.clone(),
         })
@@ -2603,13 +2603,13 @@ impl Node {
     }
 }
 
-/// [`mailboxes_manager::BlobReader`] backed by the node's blob store.
+/// [`mailbox_client::BlobReader`] backed by the node's blob store.
 struct NodeBlobReader {
     blob_sync: Option<BlobSync>,
 }
 
 #[async_trait::async_trait]
-impl mailboxes_manager::BlobReader for NodeBlobReader {
+impl mailbox_client::BlobReader for NodeBlobReader {
     async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
         let blob_sync = self
             .blob_sync

@@ -5,7 +5,7 @@ use dashchat_node::{
     testing::{wait_for_mailbox_health, *},
     *,
 };
-use mailboxes_manager::backends::toy::ToyMailboxClient;
+use mailbox_client::backends::toy::ToyMailboxClient;
 
 mod common;
 
@@ -72,7 +72,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             mailbox_id.clone(),
             &url,
             alice.endpoint_id(),
-            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
             alice.mailboxes.upload_tracker(),
         ))
         .await;
@@ -82,7 +82,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
-            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
             bobbi.mailboxes.upload_tracker(),
         ))
         .await;
@@ -159,7 +159,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
-            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
             bobbi.mailboxes.upload_tracker(),
         ))
         .await;
@@ -300,7 +300,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
-            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
             bobbi.mailboxes.upload_tracker(),
         ))
         .await;

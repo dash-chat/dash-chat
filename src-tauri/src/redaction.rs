@@ -673,7 +673,7 @@ mod tests {
 
     #[test]
     fn preserves_mailbox_module_path() {
-        let input = "mailboxes_manager::manager crates/mailboxes-manager/src/manager.rs:719";
+        let input = "mailbox_client::manager crates/mailboxes-manager/src/manager.rs:719";
         assert_eq!(redact(input), input);
     }
 

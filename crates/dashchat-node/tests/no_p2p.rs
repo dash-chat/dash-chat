@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailboxes_manager::backends::toy::ToyMailboxClient;
+use mailbox_client::backends::toy::ToyMailboxClient;
 
 mod common;
 
@@ -110,7 +110,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             alice.endpoint_id(),
-            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
             alice.mailboxes.upload_tracker(),
         ))
         .await;
@@ -125,7 +125,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
-            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
             bobbi.mailboxes.upload_tracker(),
         ))
         .await;
@@ -196,7 +196,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             mailbox_id.clone(),
             &url,
             bobbi.endpoint_id(),
-            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
             bobbi.mailboxes.upload_tracker(),
         ))
         .await;
