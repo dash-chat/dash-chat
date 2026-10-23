@@ -461,7 +461,6 @@ async fn test_admin_removes_themself_when_they_are_the_only_member() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn test_admin_removes_themself_there_is_another_admin() {
     setup();
 
@@ -493,6 +492,18 @@ async fn test_admin_removes_themself_there_is_another_admin() {
     poll.consistency([&alice, &bobbi], &[chat_id.into()])
         .await
         .unwrap();
+    // The chat log and the space's control log arrive separately: wait until
+    // bobbi's node knows he is a member who can act.
+    assert_group_members(
+        &poll,
+        &[(&bobbi, "bobbi")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (bobbi.device_id(), Access::manage()),
+        ],
+    )
+    .await;
 
     bobbi
         .remove_group_member(chat_id, *bobbi.device_id())
@@ -513,7 +524,6 @@ async fn test_admin_removes_themself_there_is_another_admin() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
     setup();
 
@@ -544,7 +554,7 @@ async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
+#[ignore = "p2panda-auth lets only a manager remove anyone, themself included; leaving as a non-admin needs a decision"]
 async fn test_non_admin_removes_themself() {
     setup();
 
@@ -597,7 +607,6 @@ async fn test_non_admin_removes_themself() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn test_admin_removes_non_admin() {
     setup();
 
@@ -649,7 +658,6 @@ async fn test_admin_removes_non_admin() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn test_non_admin_cannot_remove_admin() {
     setup();
 
@@ -695,8 +703,8 @@ async fn test_non_admin_cannot_remove_admin() {
 
     let result = bobbi.remove_group_member(chat_id, *alice.device_id()).await;
     assert!(
-        matches!(result, Ok(())),
-        "Expected remove call to return OK, because this should enque an operation that will be resolved later, but got error: {result:?}"
+        result.is_err(),
+        "expected the space to reject a removal by a non-admin, but got ok"
     );
 
     assert_group_members(
