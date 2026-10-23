@@ -1,12 +1,15 @@
 pub mod backends;
 pub mod blobs;
 mod connection_health;
+mod mailbox_registry;
 pub mod manager;
+pub(crate) mod persistence;
 mod polling;
-mod registry;
 pub mod store;
 mod sync;
+mod sync_scheduler;
 mod sync_tracker;
+mod topic_registry;
 
 pub use connection_health::{LastError, MailboxConnectionState, MailboxesConfig, SyncStatus};
 pub use sync_tracker::{MailboxSyncState, MailboxSyncTracker};
