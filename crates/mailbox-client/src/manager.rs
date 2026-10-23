@@ -565,9 +565,15 @@ where
 
     /// Stop the poll loop and release the underlying persistence, if this
     /// manager was spawned with a database path. No-op otherwise.
+    ///
+    /// Poll tasks already in flight are not drained: they may still be running
+    /// against the closed pool and will log errors through shutdown.
     pub async fn close(&self) {
-        if let Some(handle) = self.poll_loop.lock().unwrap().take() {
+        let handle = self.poll_loop.lock().unwrap().take();
+        if let Some(handle) = handle {
             handle.abort();
+            // JoinError::Cancelled; the loop is now definitely stopped.
+            let _ = handle.await;
         }
         if let Some(persistence) = &self.persistence {
             persistence.close().await;
