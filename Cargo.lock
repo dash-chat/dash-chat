@@ -5825,10 +5825,8 @@ dependencies = [
  "reporting",
  "reqwest 0.12.28",
  "serde",
- "serde_json",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -5895,11 +5893,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "axum",
  "bytes",
  "chrono",
  "ciborium",
- "dashchat-utils",
  "iroh",
  "iroh-blobs",
  "mailbox-client",
