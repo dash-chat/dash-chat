@@ -1,21 +1,14 @@
 pub mod backends;
 pub mod blobs;
 mod connection_health;
-mod mailbox_registry;
-pub mod manager;
-pub(crate) mod persistence;
-mod polling;
 pub mod store;
-mod sync;
-mod sync_scheduler;
-mod sync_tracker;
-mod topic_registry;
+pub mod sync;
+pub mod sync_scheduler;
+pub mod topic_registry;
 
 pub use connection_health::{LastError, MailboxConnectionState, MailboxesConfig, SyncStatus};
-pub use sync_tracker::{MailboxSyncState, MailboxSyncTracker};
 
-pub use blobs::unfetched_blobs::BlobSource;
-pub use blobs::upload_tracker::BlobUploadLifecycle;
+pub use blobs::upload_lifecycle::BlobUploadLifecycle;
 pub use mailbox_server::RegisterPeerRequest;
 
 /// Test helpers and fixtures. Available outside `#[cfg(test)]` so dependent
@@ -24,14 +17,11 @@ pub use mailbox_server::RegisterPeerRequest;
 pub mod testing;
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     sync::Arc,
-    time::Duration,
 };
 
 use once_cell::sync::Lazy;
-use tokio::sync::{Mutex, mpsc};
-use tracing::Instrument;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 

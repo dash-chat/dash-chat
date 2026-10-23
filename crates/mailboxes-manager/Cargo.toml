@@ -1,0 +1,35 @@
+[package]
+name = "mailboxes-manager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mailbox-client = { workspace = true }
+dashchat-utils = { workspace = true }
+sqlite-gate = { workspace = true }
+anyhow = "1"
+async-trait = "0.1.85"
+chrono = { version = "0.4.42", features = ["serde"] }
+ciborium = "0.2.2"
+nanoid = "0"
+serde = { workspace = true }
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite"] }
+tokio = { version = "1.43.0", features = ["full"] }
+tracing = "0.1.41"
+bytes = { workspace = true }
+reporting = { workspace = true }
+mailbox-server = { path = "../mailbox-server", default-features = false }
+iroh = { version = "1.0.0", default-features = false, features = ["tls-ring"] }
+iroh-blobs = "0.103.0"
+
+[dev-dependencies]
+axum = { version = "0.8", features = ["json"] }
+mailbox-client = { path = "../mailbox-client", features = ["testing"] }
+mailbox-server = { path = "../mailbox-server", features = ["test_utils"] }
+pretty_assertions = "1.4.1"
+tempfile = "3.24"
+tokio = { version = "1.43.0", features = ["test-util"] }
+
+[features]
+e2e-test-ca = ["mailbox-client/e2e-test-ca"]
+testing = ["mailbox-client/testing"]

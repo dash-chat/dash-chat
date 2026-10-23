@@ -1,9 +1,9 @@
-use crate::MailboxId;
-use crate::connection_health::SyncStatus;
 use crate::persistence::{MailboxUrlStore, Persistence, SyncStore, decode, encode};
 use anyhow::Context;
 use async_trait::async_trait;
 use dashchat_utils::SeqNum;
+use mailbox_client::MailboxId;
+use mailbox_client::SyncStatus;
 use sqlite_gate::GatedPool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::collections::{BTreeSet, HashMap};
@@ -17,8 +17,8 @@ pub struct SqlitePersistence<T, A> {
 
 impl<T, A> SqlitePersistence<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: mailbox_client::ItemTraits + 'static,
+    A: mailbox_client::ItemTraits + 'static,
 {
     pub async fn open(
         path: impl AsRef<std::path::Path>,
@@ -56,8 +56,8 @@ where
 #[async_trait]
 impl<T, A> Persistence<T, A> for SqlitePersistence<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: mailbox_client::ItemTraits + 'static,
+    A: mailbox_client::ItemTraits + 'static,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore> {
         self.mailbox_store.clone()
@@ -114,8 +114,8 @@ struct SqliteSyncStore<T, A> {
 #[async_trait]
 impl<T, A> SyncStore<T, A> for SqliteSyncStore<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: mailbox_client::ItemTraits + 'static,
+    A: mailbox_client::ItemTraits + 'static,
 {
     async fn record_status(&self, id: &MailboxId, status: SyncStatus) -> anyhow::Result<()> {
         sqlx::query(
@@ -247,7 +247,7 @@ where
         &self,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<std::collections::BTreeMap<MailboxId, crate::SeqNum>> {
+    ) -> anyhow::Result<std::collections::BTreeMap<MailboxId, mailbox_client::SeqNum>> {
         let t_bytes = encode(topic)?;
         let a_bytes = encode(author)?;
         let rows: Vec<(String, i64)> = sqlx::query_as(
@@ -259,7 +259,7 @@ where
         .fetch_all(self.pool.pool())
         .await?;
         rows.into_iter()
-            .map(|(m, s)| Ok((m, crate::SeqNum::try_from(s)?)))
+            .map(|(m, s)| Ok((m, mailbox_client::SeqNum::try_from(s)?)))
             .collect()
     }
 }

@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use dashchat_node::{testing::*, *};
-use mailbox_client::{FetchRequest, FetchResponse, MailboxClient, store::MailboxStore};
+use mailboxes_manager::{FetchRequest, FetchResponse, MailboxClient, store::MailboxStore};
 use maplit::btreemap;
 use p2panda::Hash;
 use p2panda::operation::LogId;

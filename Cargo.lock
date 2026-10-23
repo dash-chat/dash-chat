@@ -2115,9 +2115,9 @@ dependencies = [
  "libc",
  "local-hub-discovery",
  "log",
- "mailbox-client",
  "mailbox-local-server",
  "mailbox-server",
+ "mailboxes-manager",
  "nanoid 0.4.0",
  "ndk-sys 0.6.0+11769913",
  "netdev 0.43.0",
@@ -2215,9 +2215,9 @@ dependencies = [
  "iroh",
  "iroh-blobs",
  "itertools 0.14.0",
- "mailbox-client",
  "mailbox-local-server",
  "mailbox-server",
+ "mailboxes-manager",
  "maplit",
  "nanoid 0.4.0",
  "network-watch",
@@ -5811,7 +5811,6 @@ dependencies = [
  "axum",
  "bytes",
  "chrono",
- "ciborium",
  "dashchat-utils",
  "derive_more 1.0.0",
  "iroh",
@@ -5826,8 +5825,6 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sqlite-gate",
- "sqlx 0.9.0",
  "tempfile",
  "tokio",
  "tracing",
@@ -5890,6 +5887,32 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "mailboxes-manager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "bytes",
+ "chrono",
+ "ciborium",
+ "dashchat-utils",
+ "iroh",
+ "iroh-blobs",
+ "mailbox-client",
+ "mailbox-server",
+ "nanoid 0.4.0",
+ "pretty_assertions",
+ "reporting",
+ "serde",
+ "sqlite-gate",
+ "sqlx 0.9.0",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
