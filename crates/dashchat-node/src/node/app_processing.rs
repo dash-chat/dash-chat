@@ -54,7 +54,7 @@ pub struct OpNotification {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum SystemNotification {
-    /// A group chat was added (its group was created with an admin).
+    /// A group chat was added: its creator introduced the initial members.
     GroupChatAdded { chat_id: ChatId },
     /// Members of a group chat were added, removed, promoted or demoted.
     GroupMembersChanged { chat_id: ChatId },
@@ -228,8 +228,13 @@ impl Node {
                             )
                             .await;
                         }
-                        Some(ProcessorEvent::SpaceMembersChanged { .. })
-                        | Some(ProcessorEvent::MemberKeyBundle(_)) => {
+                        Some(ProcessorEvent::SpaceMembersChanged { topic }) => {
+                            node.trigger_announcements_readers_sync();
+                            if let Err(err) = node.notify_group_members_changed(topic).await {
+                                warn!(topic = ?topic.aliased(), ?err, "failed to announce a membership change");
+                            }
+                        }
+                        Some(ProcessorEvent::MemberKeyBundle(_)) => {
                             node.trigger_announcements_readers_sync();
                         }
                         Some(ProcessorEvent::ImportFailed { topic, error }) => {
@@ -461,8 +466,8 @@ impl Node {
             .await
         {
             // Continue processing.
-            Ok(event) => {
-                if let Some(event) = event {
+            Ok(events) => {
+                for event in events {
                     self.notify_system_event(event).await?;
                 }
             }
@@ -833,6 +838,17 @@ impl Node {
             }
             .into(),
         );
+        Ok(())
+    }
+
+    /// Tell the frontend a group chat's membership changed. Membership changes
+    /// of other spaces (direct chats, announcements) are of no interest to it.
+    async fn notify_group_members_changed(&self, topic: TopicId) -> anyhow::Result<()> {
+        let chat_id = ChatId::from_topic_id(topic)?;
+        if self.projection.is_group_chat(chat_id).await? {
+            self.notify_system_event(SystemNotification::GroupMembersChanged { chat_id })
+                .await?;
+        }
         Ok(())
     }
 
