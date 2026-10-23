@@ -29,7 +29,3 @@ mailbox-server = { path = "../mailbox-server", features = ["test_utils"] }
 pretty_assertions = "1.4.1"
 tempfile = "3.24"
 tokio = { version = "1.43.0", features = ["test-util"] }
-
-[features]
-e2e-test-ca = ["mailbox-client/e2e-test-ca"]
-testing = ["mailbox-client/testing"]

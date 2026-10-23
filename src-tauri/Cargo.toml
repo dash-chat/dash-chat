@@ -45,6 +45,7 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
+mailbox-client = { workspace = true }
 mailboxes-manager = { workspace = true }
 network-watch = { workspace = true }
 # Discovery runs on every platform; only the hub server itself is desktop-only.
@@ -149,7 +150,7 @@ lan-multicast-probe = { workspace = true }
 [features]
 e2e-tests = [
   "dashchat-node/testing",
-  "mailboxes-manager/e2e-test-ca",
+  "mailbox-client/e2e-test-ca",
   "dep:tauri-plugin-wdio-webdriver",
   "tauri-plugin-network-interfaces/wifi-control",
 ]

@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use dashchat_node::mailbox::MailboxOperation;
 use dashchat_node::testing::{TestNode, wait_for_mailbox_health};
+use mailbox_client::backends::toy::ToyMailboxClient;
 use mailbox_local_server::LocalMailboxServer;
 use mailbox_server::FetchConfig;
-use mailboxes_manager::backends::toy::ToyMailboxClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
@@ -59,7 +59,7 @@ pub async fn spawn_relay_mailbox(
 /// the cloud mailbox runs. Stops when dropped.
 pub struct StandaloneMailbox {
     pub url: String,
-    pub id: mailboxes_manager::MailboxId,
+    pub id: mailbox_client::MailboxId,
     pub endpoint_addr: iroh::EndpointAddr,
     _dir: tempfile::TempDir,
     _stop: tokio::sync::oneshot::Sender<()>,
@@ -195,7 +195,7 @@ async fn copy_throttled(
 /// its address.
 pub fn app_mailbox_client(
     node: &TestNode,
-    mailbox_id: &mailboxes_manager::MailboxId,
+    mailbox_id: &mailbox_client::MailboxId,
     url: &str,
 ) -> ToyMailboxClient<MailboxOperation> {
     ToyMailboxClient::new(
@@ -210,14 +210,14 @@ pub fn app_mailbox_client(
 
 /// A client for reading what a mailbox holds, independent of any node.
 pub fn inspection_client(
-    mailbox_id: &mailboxes_manager::MailboxId,
+    mailbox_id: &mailbox_client::MailboxId,
     url: &str,
 ) -> ToyMailboxClient<MailboxOperation> {
     ToyMailboxClient::new(
         mailbox_id.clone(),
         url,
         iroh::SecretKey::generate().public(),
-        Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
-        mailboxes_manager::testing::noop_upload_lifecycle(),
+        Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+        mailbox_client::testing::noop_upload_lifecycle(),
     )
 }
