@@ -10,7 +10,7 @@ use p2panda_store::operations::OperationStore;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, mpsc::Receiver};
 
-use mailbox_client::MailboxClient;
+use mailboxes_manager::MailboxClient;
 
 use crate::{
     AgentId, DeviceGroupPayload, NodeConfig, Notification, Payload, Profile, ReportContactPayload,

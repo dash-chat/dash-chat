@@ -4,7 +4,7 @@ use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
 use crate::{AsBody, DeviceId, SeqNum, TopicId};
-use mailbox_client::MailboxItem;
+use mailboxes_manager::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
@@ -67,7 +67,7 @@ impl From<MailboxOperation> for Operation {
 /// A mailbox server's canonical id (its EndpointId) and dialing address, as
 /// reported by its `/health` endpoint.
 pub struct MailboxHealth {
-    pub mailbox_id: mailbox_client::MailboxId,
+    pub mailbox_id: mailboxes_manager::MailboxId,
     pub endpoint_addr: iroh::EndpointAddr,
 }
 
@@ -76,7 +76,7 @@ pub struct MailboxHealth {
 /// addresses) for the p2panda address book.
 pub async fn fetch_mailbox_health(base_url: &str) -> anyhow::Result<MailboxHealth> {
     let url = format!("{}/health", base_url.trim_end_matches('/'));
-    let resp = mailbox_client::HTTP_CLIENT
+    let resp = mailboxes_manager::HTTP_CLIENT
         .get(&url)
         .send()
         .await?
@@ -95,9 +95,9 @@ impl crate::Node {
     pub async fn register_with_mailbox(&self, base_url: &str) -> anyhow::Result<()> {
         let our_addr = self.iroh_endpoint().await?.addr();
         let url = format!("{}/peers/register", base_url.trim_end_matches('/'));
-        mailbox_client::HTTP_CLIENT
+        mailboxes_manager::HTTP_CLIENT
             .post(&url)
-            .json(&mailbox_client::RegisterPeerRequest { addr: our_addr })
+            .json(&mailboxes_manager::RegisterPeerRequest { addr: our_addr })
             .send()
             .await?
             .error_for_status()?;
@@ -110,7 +110,7 @@ impl crate::Node {
 mod tests {
 
     use crate::{testing::*, *};
-    use mailbox_client::MailboxItem as _;
+    use mailboxes_manager::MailboxItem as _;
 
     fn make_header(topic: TopicId) -> p2panda::operation::Header {
         use p2panda::operation::{Extensions, Header, LogId};
@@ -172,6 +172,7 @@ mod tests {
             &[
                 "dashchat=info",
                 "mailbox_client=debug",
+                "mailboxes_manager=debug",
                 "p2panda_stream=warn",
                 "p2panda_auth=warn",
                 "p2panda_spaces=warn",
@@ -252,6 +253,7 @@ mod tests {
             &[
                 "dashchat=info",
                 "mailbox_client=info",
+                "mailboxes_manager=info",
                 "p2panda_stream=warn",
             ],
             true,

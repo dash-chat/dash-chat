@@ -7,7 +7,7 @@
 use std::{collections::BTreeMap, time::Duration};
 
 use dashchat_node::{testing::*, *};
-use mailbox_client::{FetchRequest, FetchResponse, MailboxClient, MailboxItem};
+use mailboxes_manager::{FetchRequest, FetchResponse, MailboxClient, MailboxItem};
 
 mod common;
 

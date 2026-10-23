@@ -44,17 +44,17 @@ impl MailboxUrlStore for MemMailboxUrlStore {
 /// In-memory implementation of SyncStore.
 pub struct MemSyncStore<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: mailbox_client::ItemTraits + 'static,
+    A: mailbox_client::ItemTraits + 'static,
 {
     status: RwLock<HashMap<MailboxId, SyncStatus>>,
-    sync_state: RwLock<HashMap<MailboxId, HashMap<T, HashMap<A, crate::SeqNum>>>>,
+    sync_state: RwLock<HashMap<MailboxId, HashMap<T, HashMap<A, mailbox_client::SeqNum>>>>,
 }
 
 impl<T, A> MemSyncStore<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: mailbox_client::ItemTraits + 'static,
+    A: mailbox_client::ItemTraits + 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -67,8 +67,8 @@ where
 #[async_trait]
 impl<T, A> SyncStore<T, A> for MemSyncStore<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: mailbox_client::ItemTraits + 'static,
+    A: mailbox_client::ItemTraits + 'static,
 {
     async fn record_status(&self, id: &MailboxId, status: SyncStatus) -> anyhow::Result<()> {
         self.status.write().unwrap().insert(id.clone(), status);
@@ -93,7 +93,7 @@ where
     async fn record_synced(
         &self,
         id: &MailboxId,
-        watermarks: &[(T, A, crate::SeqNum)],
+        watermarks: &[(T, A, mailbox_client::SeqNum)],
     ) -> anyhow::Result<()> {
         let mut state = self.sync_state.write().unwrap();
         let mailbox_state = state.entry(id.clone()).or_default();
@@ -109,7 +109,7 @@ where
     async fn get_sync_state(
         &self,
         id: &MailboxId,
-    ) -> anyhow::Result<HashMap<T, HashMap<A, crate::SeqNum>>> {
+    ) -> anyhow::Result<HashMap<T, HashMap<A, mailbox_client::SeqNum>>> {
         let state = self.sync_state.read().unwrap();
         Ok(state.get(id).cloned().unwrap_or_default())
     }
@@ -119,7 +119,7 @@ where
         id: &MailboxId,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<Option<crate::SeqNum>> {
+    ) -> anyhow::Result<Option<mailbox_client::SeqNum>> {
         let state = self.sync_state.read().unwrap();
         Ok(state
             .get(id)
@@ -132,7 +132,7 @@ where
         &self,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<BTreeMap<MailboxId, crate::SeqNum>> {
+    ) -> anyhow::Result<BTreeMap<MailboxId, mailbox_client::SeqNum>> {
         let state = self.sync_state.read().unwrap();
         let mut results = BTreeMap::new();
 
@@ -155,8 +155,8 @@ where
 /// In-memory persistence implementation.
 pub struct MemPersistence<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: mailbox_client::ItemTraits + 'static,
+    A: mailbox_client::ItemTraits + 'static,
 {
     mailbox_store: Arc<MemMailboxUrlStore>,
     sync_store: Arc<MemSyncStore<T, A>>,
@@ -164,8 +164,8 @@ where
 
 impl<T, A> MemPersistence<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: mailbox_client::ItemTraits + 'static,
+    A: mailbox_client::ItemTraits + 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -178,8 +178,8 @@ where
 #[async_trait]
 impl<T, A> Persistence<T, A> for MemPersistence<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: mailbox_client::ItemTraits + 'static,
+    A: mailbox_client::ItemTraits + 'static,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore> {
         self.mailbox_store.clone()

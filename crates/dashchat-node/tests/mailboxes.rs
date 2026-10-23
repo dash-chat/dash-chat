@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::backends::toy::ToyMailboxClient;
+use mailboxes_manager::backends::toy::ToyMailboxClient;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn mailbox_late_join() {
@@ -106,7 +106,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
-            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
             alice.mailboxes.upload_tracker(),
         ))
         .await;
@@ -115,7 +115,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
-            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
             bobbi.mailboxes.upload_tracker(),
         ))
         .await;
@@ -159,7 +159,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
-            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
             alice.mailboxes.upload_tracker(),
         ))
         .await;
@@ -168,7 +168,7 @@ async fn test_mailbox_restart_relay() {
             "mailbox-1".into(),
             &url,
             dummy_key(),
-            std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            std::sync::Arc::new(mailboxes_manager::NoopUnfetchedBlobTracker),
             bobbi.mailboxes.upload_tracker(),
         ))
         .await;

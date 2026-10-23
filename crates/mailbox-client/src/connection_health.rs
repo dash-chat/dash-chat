@@ -51,7 +51,7 @@ pub enum SyncStatus {
 }
 
 impl SyncStatus {
-    pub(crate) fn interval(&self, config: &MailboxesConfig) -> Duration {
+    pub fn interval(&self, config: &MailboxesConfig) -> Duration {
         match self {
             SyncStatus::Active => config.active_interval,
             SyncStatus::Degraded => config.degraded_interval,
@@ -59,7 +59,7 @@ impl SyncStatus {
         }
     }
 
-    pub(crate) fn as_db_str(&self) -> &'static str {
+    pub fn as_db_str(&self) -> &'static str {
         match self {
             SyncStatus::Active => "active",
             SyncStatus::Degraded => "degraded",
@@ -67,7 +67,7 @@ impl SyncStatus {
         }
     }
 
-    pub(crate) fn from_db_str(s: &str) -> Option<Self> {
+    pub fn from_db_str(s: &str) -> Option<Self> {
         match s {
             "active" => Some(SyncStatus::Active),
             "degraded" => Some(SyncStatus::Degraded),
@@ -104,7 +104,7 @@ fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::
 }
 
 impl MailboxConnectionState {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             status: SyncStatus::Active,
             consecutive_errors: 0,
@@ -118,7 +118,7 @@ impl MailboxConnectionState {
     /// at that status's interval instead of climbing there again from Active,
     /// while the immediate first poll still gives a recovered mailbox its
     /// instant comeback.
-    pub(crate) fn seeded(status: SyncStatus, config: &MailboxesConfig) -> Self {
+    pub fn seeded(status: SyncStatus, config: &MailboxesConfig) -> Self {
         let consecutive_errors = match status {
             SyncStatus::Active => 0,
             SyncStatus::Degraded => config.degraded_threshold,
@@ -131,7 +131,7 @@ impl MailboxConnectionState {
         }
     }
 
-    pub(crate) fn record_success(&mut self, config: &MailboxesConfig) {
+    pub fn record_success(&mut self, config: &MailboxesConfig) {
         self.consecutive_errors = 0;
         self.status = SyncStatus::Active;
         self.next_poll = Instant::now() + config.active_interval + config.between_polls_delay;
@@ -139,7 +139,7 @@ impl MailboxConnectionState {
         self.last_error = None;
     }
 
-    pub(crate) fn record_error(&mut self, config: &MailboxesConfig, err: String) {
+    pub fn record_error(&mut self, config: &MailboxesConfig, err: String) {
         self.consecutive_errors += 1;
         self.status = if self.consecutive_errors >= config.stopped_threshold {
             SyncStatus::Stopped
@@ -155,7 +155,7 @@ impl MailboxConnectionState {
     /// A failed probe confirms what the status already said; it is not a step
     /// further into backoff, and it never defers the scheduled poll, so a
     /// storm of probes can't keep the status from ever being re-judged.
-    pub(crate) fn record_probe_error(&mut self, config: &MailboxesConfig, err: String) {
+    pub fn record_probe_error(&mut self, config: &MailboxesConfig, err: String) {
         let after_probe =
             Instant::now() + self.status.interval(config) + config.between_polls_delay;
         self.next_poll = self.next_poll.min(after_probe);
@@ -169,12 +169,12 @@ impl MailboxConnectionState {
         });
     }
 
-    pub(crate) fn reschedule(&mut self, config: &MailboxesConfig) {
+    pub fn reschedule(&mut self, config: &MailboxesConfig) {
         self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
     }
 
     /// Treat this mailbox as healthy again
-    pub(crate) fn wakeup(&mut self) {
+    pub fn wakeup(&mut self) {
         self.status = SyncStatus::Active;
         self.consecutive_errors = 0;
     }

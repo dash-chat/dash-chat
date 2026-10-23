@@ -169,7 +169,7 @@ async fn handle_push_notifications_with_fallback_messages(
 /// fast enough to flip the connection status on a brief hiccup.
 async fn reconnect_cloud_mailbox(
     node: &dashchat_node::Node,
-    cloud_id: &mut Option<mailbox_client::MailboxId>,
+    cloud_id: &mut Option<mailboxes_manager::MailboxId>,
     attempt: &mut Option<crate::setup::CloudMailboxAttempt>,
 ) {
     if cloud_id.is_none() {
@@ -188,7 +188,7 @@ async fn reconnect_cloud_mailbox(
         return;
     };
     let status = mailbox.connection_state().borrow().status;
-    if status != mailbox_client::SyncStatus::Active {
+    if status != mailboxes_manager::SyncStatus::Active {
         node.mailboxes.probe(id).await;
     }
 }

@@ -47,7 +47,7 @@ pub fn default_mailbox_url() -> String {
 /// `None` only when the cloud mailbox has never been reached on this device.
 pub(crate) async fn cloud_mailbox_id(
     node: &dashchat_node::Node,
-) -> Option<mailbox_client::MailboxId> {
+) -> Option<mailboxes_manager::MailboxId> {
     let cloud_url = default_mailbox_url();
     let ids = node.mailboxes.active_mailbox_ids().borrow().clone();
     for id in ids {
@@ -163,7 +163,7 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, add
     let url = hub_url(addr);
     node.mailboxes
         .register(
-            mailbox_client::backends::toy::ToyMailboxClient::new(
+            mailboxes_manager::backends::toy::ToyMailboxClient::new(
                 id.clone(),
                 url.clone(),
                 node.endpoint_id(),

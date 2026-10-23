@@ -222,7 +222,7 @@ impl OpStore {
 }
 
 #[async_trait::async_trait]
-impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
+impl mailboxes_manager::store::MailboxStore<MailboxOperation> for OpStore {
     async fn get_log(
         &self,
         author: &DeviceId,
@@ -346,7 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn mailbox_get_log_distinguishes_absent_from_up_to_date() {
-        use mailbox_client::store::MailboxStore;
+        use mailboxes_manager::store::MailboxStore;
 
         let store = OpStore::temporary_sqlite().await.unwrap();
         let topic = TopicId::random();
@@ -387,7 +387,7 @@ mod tests {
     /// p2panda's ack cursor.
     #[tokio::test]
     async fn mailbox_get_log_truncates_at_first_unacked_op() {
-        use mailbox_client::store::MailboxStore;
+        use mailboxes_manager::store::MailboxStore;
 
         let store = OpStore::temporary_sqlite().await.unwrap();
         let topic = TopicId::random();
