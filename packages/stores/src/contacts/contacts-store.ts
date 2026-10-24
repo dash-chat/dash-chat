@@ -10,7 +10,7 @@ import { IContactsClient, Profile } from './contacts-client';
 
 // Must match `NodeConfig::contact_code_expiry`: past it the node no longer
 // treats our request as pending, so the peer's request isn't auto-accepted.
-const CONTACT_CODE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+export const CONTACT_CODE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface ContactRequest {
 	profile: Profile;

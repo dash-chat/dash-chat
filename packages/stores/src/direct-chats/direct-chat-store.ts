@@ -3,7 +3,11 @@ import { reactive } from 'signalium';
 import { type IMessagesClient } from '../chats/messages-client';
 import { Message, MessagesStore } from '../chats/messages-store';
 import { fullName } from '../contacts/contacts-client';
-import { ContactReport, ContactsStore } from '../contacts/contacts-store';
+import {
+	CONTACT_CODE_EXPIRY_MS,
+	ContactReport,
+	ContactsStore,
+} from '../contacts/contacts-store';
 import { MessageAckStore } from '../message-acks/message-ack-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
@@ -88,6 +92,20 @@ export class DirectChatStore {
 	contactRequest = reactive(async () => {
 		const contactRequests = await this.contactsStore.contactRequests();
 		return contactRequests.find(request => request.chatId === this.chatId);
+	});
+
+	// TODO: pre-contact: until the peer accepts, this chat has no space to
+	// publish into (the acceptor creates it), so the page hides the composer
+	// while our request is unanswered. Remove once pre-accept messages can be
+	// sent (queued or otherwise).
+	pendingOutgoingRequest = reactive(async () => {
+		if ((await this.contact()) !== undefined) return undefined;
+		const request = await this.outgoingRequest();
+		if (request === undefined) return undefined;
+		if (Date.now() - request.timestamp >= CONTACT_CODE_EXPIRY_MS) {
+			return undefined;
+		}
+		return request;
 	});
 
 	groupedEvents = reactive(async () => {

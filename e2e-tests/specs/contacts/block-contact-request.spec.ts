@@ -62,7 +62,9 @@ describe('pending contact request', () => {
 		await expect(agent1.homePage.unreadBadge).toHaveText('1');
 	});
 
-	it('hides messages received while the request is pending behind a disclosure', async () => {
+	// TODO: pre-contact: re-enable the skipped steps below once a requester can
+	// send messages before the request is accepted.
+	it.skip('hides messages received while the request is pending behind a disclosure', async () => {
 		await agent2.directChatPage.composer.sendMessage('hello one');
 		await agent2.directChatPage.composer.sendMessage('hello two');
 
@@ -85,7 +87,7 @@ describe('pending contact request', () => {
 		).toBe(false);
 	});
 
-	it('reveals and re-hides the messages with the toggle', async () => {
+	it.skip('reveals and re-hides the messages with the toggle', async () => {
 		await agent1.directChatPage.toggleRequestMessages();
 		await agent1.directChatPage.messages.waitForMessage('hello one');
 		await agent1.directChatPage.messages.waitForMessage('hello two');
@@ -95,7 +97,7 @@ describe('pending contact request', () => {
 		await agent1.directChatPage.messages.waitForMessageGone('hello two');
 	});
 
-	it('keeps the messages unread and collapses again on re-entry', async () => {
+	it.skip('keeps the messages unread and collapses again on re-entry', async () => {
 		await agent1.directChatPage.back.click();
 		await agent1.homePage.ready();
 
@@ -113,7 +115,16 @@ describe('pending contact request', () => {
 	});
 
 	it('shows the messages normally after accepting the request', async () => {
+		await agent1.homePage.openChat('Bob');
+		await agent1.directChatPage.ready();
 		await agent1.directChatPage.acceptContactRequest();
+		// TODO: pre-contact: Bob can only write once Alice has accepted; these
+		// sends move back above the accept when pre-accept messaging returns.
+		await agent2.directChatPage.composer.messageInput.waitForExist({
+			timeout: SYNC_TIMEOUT,
+		});
+		await agent2.directChatPage.composer.sendMessage('hello one');
+		await agent2.directChatPage.composer.sendMessage('hello two');
 		await agent1.directChatPage.messages.waitForMessage('hello one');
 		await agent1.directChatPage.messages.waitForMessage('hello two');
 		await agent1.waitUntil(
