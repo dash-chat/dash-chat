@@ -29,9 +29,6 @@ const MIGRATIONS: &[&str] = &[
         profile BLOB NULL,
         blocked BOOLEAN NOT NULL DEFAULT FALSE
     )",
-    "CREATE TABLE IF NOT EXISTS subscribed_topics (
-        topic_id BLOB PRIMARY KEY
-    )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
         topic_id BLOB NOT NULL PRIMARY KEY,
         expires_at_nanos INTEGER NOT NULL
