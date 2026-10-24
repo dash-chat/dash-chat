@@ -22,6 +22,8 @@ export class DirectChatPage extends TestHelper {
 	peerAvatar = this.el(tid('direct-chat-peer-avatar'));
 	nameNotVerifiedPill = this.el(tid('direct-chat-name-not-verified'));
 	acceptButton = this.el(tid('direct-chat-accept-btn'));
+	// TODO: pre-contact: goes away with the AwaitingAcceptanceBar.
+	awaitingAcceptBar = this.el(tid('direct-chat-awaiting-accept'));
 	requestMessages = this.el(tid('direct-chat-request-messages'));
 	requestMessagesToggle = this.el(tid('direct-chat-request-messages-toggle'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
