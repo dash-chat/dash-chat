@@ -400,8 +400,11 @@ async fn blocked_author_is_not_acked() {
     );
 }
 
+/// TODO: pre-contact: the requester has no space to publish into until the
+/// acceptor creates it, so nothing of theirs can be acked before acceptance by
+/// construction. Once pre-accept messages are possible again this should go
+/// back to sending one before the accept and checking it is only acked after.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "the requester cannot publish into the direct chat space before the acceptor creates it; rework once the membership story is settled"]
 async fn direct_chat_is_not_acked_until_contact_accepted() {
     setup();
 
@@ -414,33 +417,27 @@ async fn direct_chat_is_not_acked_until_contact_accepted() {
     bobbi.add_contact(qr).await.unwrap();
 
     let chat = bobbi.direct_chat_with(&alice);
-    let header = bobbi
+    bobbi
         .send_message_raw(chat, "Hello before accept".into())
         .await
-        .unwrap();
+        .expect_err("the requester must not be able to publish before the contact is accepted");
 
-    // Alice processes the message but must not reveal that pre-accept.
+    alice.behavior().accept_next_contact().await.unwrap();
+
+    // Bobbi can publish once the accept has arrived and alice's space has been
+    // processed; a failed publish leaves nothing behind, so retrying is safe.
+    let sent = tokio::sync::Mutex::new(None);
     poll.wait_for(|| async {
-        let delta = alice
-            .projection
-            .ack_delta(chat.into(), alice.device_id())
+        let header = bobbi
+            .send_message_raw(chat, "Hello after accept".into())
             .await
-            .unwrap();
-        delta
-            .contains_key(&bobbi.device_id())
-            .then_some(())
-            .ok_or("alice has not processed the message yet")
+            .map_err(|e| e.to_string())?;
+        *sent.lock().await = Some(header);
+        Ok(())
     })
     .await
     .unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    assert!(
-        ack_maps_authored_by(&alice, chat, alice.device_id())
-            .await
-            .is_empty()
-    );
-
-    alice.behavior().accept_next_contact().await.unwrap();
+    let header = sent.lock().await.take().unwrap();
 
     wait_for_delivered(&poll, &bobbi, chat, bobbi.device_id(), header.seq_num).await;
 }
