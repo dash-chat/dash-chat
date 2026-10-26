@@ -142,7 +142,7 @@ pub(super) async fn get_log_heights_by_author(
 mod tests {
     use maplit::btreemap;
 
-    use crate::{NodeConfig, Topic, testing::TestNode};
+    use crate::{NodeConfig, testing::TestNode};
 
     use super::*;
 

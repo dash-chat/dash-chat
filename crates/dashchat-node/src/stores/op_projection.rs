@@ -9,10 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::{
-    AckedOp, AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload,
-    Topic,
-};
+use crate::{AckedOp, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic};
 use crate::{
     AgentId, DeleteCandidate, DeviceId, Profile, SystemNotification, TopicId, forward_edit_closure,
 };
@@ -494,20 +491,6 @@ impl OpProjection {
 
             Payload::Chat(ChatPayload::SetProfile(profile)) => {
                 self.reduce_profile(author, profile, operation).await?
-            }
-
-            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-
-                tracing::debug!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
-
-                self.save_profile(author, profile.clone(), operation_timestamp(operation))
-                    .await?;
-                None
             }
 
             Payload::DeviceGroup(p) => match p {
