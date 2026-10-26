@@ -87,7 +87,7 @@ iroh-gossip = { git = "https://github.com/dash-chat/iroh-gossip", rev = "efc565e
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "a415a74db8f09350abd7e1a733c2b0c30e4730be" }
 # ndk-context 0.1.1 + rust-mobile/ndk-context PRs #6 and #8 (RwLock-held context,
 # try_* functions) + a second initialize_android_context keeping the first context
 # instead of panicking (dash-chat/ndk-context branch dashchat). android_init.rs

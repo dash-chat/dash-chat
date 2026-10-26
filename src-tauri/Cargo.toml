@@ -41,7 +41,7 @@ tauri-plugin-sentry-reporting = { workspace = true }
 tauri-plugin-subscriptions = { git = "https://github.com/dash-chat/tauri-plugin-subscriptions", rev = "30d1a889a4d7fca0a28bc9d77a7662b6f95cec29" }
 
 tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "6163645a2c730338cadc0d9def0ff3091be0515b" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616", features = [
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "a415a74db8f09350abd7e1a733c2b0c30e4730be", features = [
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
