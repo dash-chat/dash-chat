@@ -209,26 +209,33 @@ async fn burst_of_messages_coalesces_into_few_acks() {
 
     let chat = alice.direct_chat_with(&bobbi);
 
-    let mut last = None;
+    let mut headers = vec![];
     for i in 0..5 {
-        last = Some(
+        headers.push(
             alice
                 .send_message_raw(chat, format!("msg {i}").as_str().into())
                 .await
                 .unwrap(),
         );
     }
-    let last = last.unwrap();
+    let (first, last) = (&headers[0], &headers[4]);
 
     wait_for_delivered(&poll, &alice, chat, alice.device_id(), last.seq_num).await;
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    // The debounce coalesces the burst: far fewer acks than messages.
+    // The debounce coalesces the burst: far fewer acks than messages. The
+    // profile alice pushed into the chat when it was made has an ack of its own.
     let maps = ack_maps_authored_by(&alice, chat, bobbi.device_id()).await;
+    let burst_acks = maps
+        .iter()
+        .filter(|acks| {
+            acks.get(&alice.device_id())
+                .is_some_and(|op| op.seq >= first.seq_num)
+        })
+        .count();
     assert!(
-        maps.len() <= 2,
-        "expected at most 2 acks for a 5-message burst, got {}",
-        maps.len()
+        burst_acks <= 2,
+        "expected at most 2 acks for a 5-message burst, got {burst_acks}: {maps:?}"
     );
 }
 
@@ -389,14 +396,18 @@ async fn blocked_author_is_not_acked() {
     .unwrap();
 
     let chat = alice.direct_chat_with(&bobbi);
-    alice.send_message_raw(chat, "Hello?".into()).await.unwrap();
+    let header = alice.send_message_raw(chat, "Hello?".into()).await.unwrap();
 
-    // Give several debounce windows; no ack from bobbi may appear.
+    // Give several debounce windows; the profile alice pushed into the chat
+    // when it was made was acked before the block, but nothing after it may be.
     tokio::time::sleep(Duration::from_secs(3)).await;
+    let acked = ack_maps_authored_by(&bobbi, chat, bobbi.device_id()).await;
     assert!(
-        ack_maps_authored_by(&bobbi, chat, bobbi.device_id())
-            .await
-            .is_empty()
+        acked.iter().all(|acks| {
+            acks.get(&alice.device_id())
+                .is_none_or(|op| op.seq < header.seq_num)
+        }),
+        "{acked:?}"
     );
 }
 

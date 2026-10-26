@@ -805,6 +805,7 @@ impl Node {
             (GroupMember::Individual(*other_device_id), Access::write()),
         ];
         self.create_space(topic, initial_members).await?;
+        self.publish_my_profile_to(topic).await?;
 
         tracing::info!(
             my_actor = ?my_actor.aliased(),

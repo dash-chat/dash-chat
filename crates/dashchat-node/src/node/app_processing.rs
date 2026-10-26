@@ -610,6 +610,12 @@ impl Node {
                                     tracing::warn!(?err, "failed to record accepted contact");
                                     return;
                                 }
+                                if let Err(err) = node.publish_my_profile_to(topic_id).await {
+                                    tracing::warn!(
+                                        ?err,
+                                        "failed to push my profile to the new direct chat"
+                                    );
+                                }
                                 // Messages they sent before we recorded the
                                 // acceptance were processed but dropped by the
                                 // ack filter; now that they are a contact,
