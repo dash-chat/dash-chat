@@ -128,6 +128,12 @@ pub enum ChatPayload {
 
     GroupInfo(GroupInfo),
 
+    /// The author's current profile, published into every chat they are in
+    /// so that it reaches exactly the people who can already see their
+    /// messages. The profile belongs to the author's agent; the latest by
+    /// operation timestamp across all chats and devices wins.
+    SetProfile(Profile),
+
     /// Used to tell other group members about agents they may not know about
     /// (typically because they aren't contacts), so they can subscribe to those
     /// agents' announcements topics and see their profiles. The inviter publishes
@@ -218,6 +224,9 @@ pub struct PendingContactRequest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
+    /// My own profile, the record of truth that my devices share. The copies
+    /// in [`ChatPayload::SetProfile`] are how it reaches other people.
+    SetProfile(Profile),
     AddContact {
         agent_id: AgentId,
         direct_chat_topic_id: ChatId,

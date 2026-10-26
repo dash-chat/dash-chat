@@ -60,6 +60,12 @@ pub enum SystemNotification {
     GroupMembersChanged { chat_id: ChatId },
     /// Devices were introduced as belonging to agents.
     AgentsIntroduced { agents: BTreeMap<DeviceId, AgentId> },
+    /// A device published a newer profile. `agent_id` is absent while the
+    /// device's agent is still unknown.
+    ProfileChanged {
+        device_id: DeviceId,
+        agent_id: Option<AgentId>,
+    },
     /// A new tombstone has been created.
     Tombstones {
         topic: TopicId,
@@ -509,6 +515,17 @@ impl Node {
                 self.join_chat_group(*chat_id)
                     .await
                     .context("failed to join group from invitation")?;
+                // Push my profile into the new space.
+                // Spawned: publishing needs this processor.
+                if !source.is_local() {
+                    let node = self.clone();
+                    let chat_id = *chat_id;
+                    tokio::spawn(async move {
+                        if let Err(err) = node.publish_my_profile_to(chat_id).await {
+                            tracing::warn!(?err, "failed to push my profile to a joined group");
+                        }
+                    });
+                }
             }
 
             Payload::DeviceGroup(DeviceGroupPayload::AddContact { .. }) => {

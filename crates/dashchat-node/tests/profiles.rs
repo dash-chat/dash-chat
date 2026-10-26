@@ -1,4 +1,5 @@
 use dashchat_node::{testing::*, *};
+use p2panda::operation::LogId;
 
 const TRACING_FILTER: [&str; 4] = [
     "dashchat=info",
@@ -103,36 +104,66 @@ async fn test_profiles_sync_between_contacts() {
 
     bobbi.behavior().accept_next_contact().await.unwrap();
 
-    // Bob has joined the group via his inbox topic
     poll.wait_for(|| async {
-        bobbi
-            .op_store
-            .get_log(
-                &alice.device_id(),
-                &Topic::announcements(alice.agent_id()).into(),
-                None,
-            )
+        let found = bobbi
+            .get_profile(alice.agent_id())
             .await
-            .map_err(|_| "failed to get log")?
-            .iter()
-            .find(|op| {
-                let p = Payload::try_from_body(op.body.as_ref().unwrap()).unwrap();
-                matches!(
-                    p,
-                    Payload::Announcements(AnnouncementsPayload::SetProfile(p)) if p == profile
-                )
-            })
-            .ok_or("no profile found")
-            .map(|_| ())
+            .map_err(|e| e.to_string())?;
+        if found.as_ref() == Some(&profile) {
+            Ok(())
+        } else {
+            Err(format!("bobbi has {found:?}"))
+        }
     })
     .await
     .unwrap();
 }
 
-/// A contact's device reads my announcements space, so my profile reaches
-/// them. Blocking the contact leaves that in place, so they cannot tell.
+fn named(name: &str) -> Profile {
+    Profile {
+        name: name.to_string(),
+        surname: None,
+        avatar: None,
+        about: None,
+    }
+}
+
+/// The profiles `node` itself published to `topic`, oldest first.
+async fn published_profiles(node: &TestNode, topic: TopicId) -> Vec<Profile> {
+    node.op_store
+        .get_log(&node.device_id(), &LogId::from_topic(topic), None)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter_map(|op| Payload::try_from_body(op.body.as_ref()?).ok())
+        .filter_map(|payload| match payload {
+            Payload::Chat(ChatPayload::SetProfile(profile))
+            | Payload::DeviceGroup(DeviceGroupPayload::SetProfile(profile)) => Some(profile),
+            _ => None,
+        })
+        .collect()
+}
+
+async fn wait_for_profile(poll: &PollConfig, viewer: &TestNode, of: &TestNode, expected: &Profile) {
+    poll.wait_for(|| async {
+        let found = viewer
+            .get_profile(of.agent_id())
+            .await
+            .map_err(|e| e.to_string())?;
+        if found.as_ref() == Some(expected) {
+            Ok(())
+        } else {
+            Err(format!("{:?} has {found:?}", viewer.device_id()))
+        }
+    })
+    .await
+    .unwrap();
+}
+
+/// My profile reaches a contact over our direct chat. While they are blocked,
+/// updates skip that chat; unblocking pushes the current one to them.
 #[tokio::test(flavor = "multi_thread")]
-async fn contacts_read_my_announcements_space() {
+async fn profile_reaches_contacts_unless_blocked() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
     let poll = PollConfig::default();
@@ -152,65 +183,38 @@ async fn contacts_read_my_announcements_space() {
         .await
         .unwrap();
 
-    let reads_announcements_of = |reader: &TestNode, owner: &TestNode| {
-        let reader = reader.clone();
-        let owner = owner.clone();
-        async move {
-            let members = owner
-                .space_members(Topic::announcements(owner.agent_id()).into())
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok::<_, String>(members.contains(&(reader.device_id(), p2panda_auth::Access::read())))
-        }
-    };
-
-    poll.wait_for(|| async {
-        for (reader, owner) in [(&bobbi, &alice), (&alice, &bobbi)] {
-            if !reads_announcements_of(reader, owner).await? {
-                return Err(format!(
-                    "{:?} does not yet read {:?}",
-                    reader.device_id(),
-                    owner.device_id()
-                ));
-            }
-        }
-        Ok(())
-    })
-    .await
-    .unwrap();
-
-    let profile = Profile {
-        name: "Alice".to_string(),
-        surname: Some("Alice Surname".to_string()),
-        avatar: None,
-        about: None,
-    };
-    alice.set_profile(profile.clone()).await.unwrap();
-    poll.wait_for(|| async {
-        let found = bobbi
-            .get_profile(alice.agent_id())
-            .await
-            .map_err(|e| e.to_string())?;
-        if found.as_ref() == Some(&profile) {
-            Ok(())
-        } else {
-            Err(format!("bobbi has {found:?}"))
-        }
-    })
-    .await
-    .unwrap();
+    let first = named("Alice");
+    alice.set_profile(first.clone()).await.unwrap();
+    wait_for_profile(&poll, &bobbi, &alice, &first).await;
 
     alice.block_contact(bobbi.agent_id()).await.unwrap();
-    poll.consistency([&alice], &[alice.device_group_topic().into()])
-        .await
-        .unwrap();
-    assert!(reads_announcements_of(&bobbi, &alice).await.unwrap());
+    let hidden = named("Alice, hidden");
+    alice.set_profile(hidden.clone()).await.unwrap();
+
+    let direct_chat = alice.direct_chat_with(&bobbi);
+    assert_eq!(
+        published_profiles(&alice, direct_chat.into()).await,
+        vec![first.clone()]
+    );
+    assert!(
+        published_profiles(&alice, alice.device_group_topic().into())
+            .await
+            .contains(&hidden)
+    );
+    assert_eq!(alice.my_profile().await.unwrap(), Some(hidden.clone()));
+
+    alice.unblock_contact(bobbi.agent_id()).await.unwrap();
+    assert_eq!(
+        published_profiles(&alice, direct_chat.into()).await,
+        vec![first, hidden.clone()]
+    );
+    wait_for_profile(&poll, &bobbi, &alice, &hidden).await;
 }
 
-/// Fellow members of a group I am in read my announcements space, whether or
-/// not they are my contacts.
+/// Fellow members of a group I am in get my profile through the group,
+/// whether or not they are my contacts, and even when I have blocked them.
 #[tokio::test(flavor = "multi_thread")]
-async fn group_members_read_my_announcements_space() {
+async fn profile_reaches_group_members() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
     let poll = PollConfig::default();
@@ -276,39 +280,15 @@ async fn group_members_read_my_announcements_space() {
         .await
         .unwrap();
 
-    poll.wait_for(|| async {
-        for (reader, owner) in [(&cammy, &alice), (&alice, &cammy)] {
-            let members = owner
-                .space_members(Topic::announcements(owner.agent_id()).into())
-                .await
-                .map_err(|e| e.to_string())?;
-            if !members.contains(&(reader.device_id(), p2panda_auth::Access::read())) {
-                return Err(format!("{members:?}"));
-            }
-        }
-        Ok(())
-    })
-    .await
-    .unwrap();
+    // The profile cammy joined with reached alice, who is not her contact.
+    wait_for_profile(&poll, &alice, &cammy, &named("cammy")).await;
 
-    let profile = Profile {
-        name: "Alice".to_string(),
-        surname: None,
-        avatar: None,
-        about: None,
-    };
+    alice.block_contact(bobbi.agent_id()).await.unwrap();
+    let profile = named("Alice");
     alice.set_profile(profile.clone()).await.unwrap();
-    poll.wait_for(|| async {
-        let found = cammy
-            .get_profile(alice.agent_id())
-            .await
-            .map_err(|e| e.to_string())?;
-        if found.as_ref() == Some(&profile) {
-            Ok(())
-        } else {
-            Err(format!("cammy has {found:?}"))
-        }
-    })
-    .await
-    .unwrap();
+    assert_eq!(
+        published_profiles(&alice, chat.into()).await,
+        vec![named("alice"), profile.clone()]
+    );
+    wait_for_profile(&poll, &cammy, &alice, &profile).await;
 }
