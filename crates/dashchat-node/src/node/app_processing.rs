@@ -222,13 +222,9 @@ impl Node {
                             .await;
                         }
                         Some(ProcessorEvent::SpaceMembersChanged { topic }) => {
-                            node.trigger_announcements_readers_sync();
                             if let Err(err) = node.notify_group_members_changed(topic).await {
                                 warn!(topic = ?topic.aliased(), ?err, "failed to announce a membership change");
                             }
-                        }
-                        Some(ProcessorEvent::MemberKeyBundle(_)) => {
-                            node.trigger_announcements_readers_sync();
                         }
                         Some(ProcessorEvent::ImportFailed { topic, error }) => {
                             error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
@@ -493,24 +489,6 @@ impl Node {
         let payload = operation.message();
 
         match &payload {
-            Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
-                for (_, agent_id) in agents {
-                    if agent_id == &self.agent_id() {
-                        continue;
-                    }
-                    if let Err(err) = self
-                        .register_and_join_space(Topic::announcements(*agent_id))
-                        .await
-                    {
-                        tracing::error!(
-                            ?err,
-                            agent_id = ?agent_id.aliased(),
-                            "failed to register announcements topic for IntroduceAgents"
-                        );
-                    }
-                }
-            }
-
             Payload::Chat(ChatPayload::JoinGroup { chat_id, .. }) => {
                 self.join_chat_group(*chat_id)
                     .await
@@ -526,10 +504,6 @@ impl Node {
                         }
                     });
                 }
-            }
-
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { .. }) => {
-                self.trigger_announcements_readers_sync();
             }
 
             Payload::Inbox(invitation) => {
@@ -616,7 +590,7 @@ impl Node {
                             }
 
                             self.save_keybundle(keybundle.clone()).await?;
-                            self.establish_contact(author, *agent_id).await?;
+                            self.establish_contact(author).await?;
 
                             let node = self.clone();
                             let agent_id = *agent_id;
@@ -846,7 +820,7 @@ impl Node {
     }
 
     /// Tell the frontend a group chat's membership changed. Membership changes
-    /// of other spaces (direct chats, announcements) are of no interest to it.
+    /// of other spaces (direct chats) are of no interest to it.
     async fn notify_group_members_changed(&self, topic: TopicId) -> anyhow::Result<()> {
         let chat_id = ChatId::from_topic_id(topic)?;
         if self.projection.is_group_chat(chat_id).await? {

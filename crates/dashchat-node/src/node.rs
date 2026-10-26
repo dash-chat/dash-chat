@@ -1,4 +1,3 @@
-mod announcements;
 mod app_processing;
 mod message_acks;
 mod profile;
@@ -244,8 +243,6 @@ pub struct Node {
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    announcements_readers_trigger: Arc<tokio::sync::Notify>,
-    announcements_readers_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 
     /// All bootstrap nodes we have registered on our node.
     ///
@@ -483,8 +480,6 @@ impl Node {
             processor_cancel_tx,
             processor_handle: Default::default(),
             stored_topics_init_handle: Default::default(),
-            announcements_readers_trigger: Default::default(),
-            announcements_readers_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
             blob_fetch_handle: Default::default(),
@@ -559,7 +554,6 @@ impl Node {
                     )
                     .await;
                     node.spawn_message_ack_writer().await;
-                    node.spawn_announcements_readers_task().await;
                 }
             });
             node.stored_topics_init_handle
@@ -569,7 +563,6 @@ impl Node {
         } else {
             node.initialize_stored_topics().await?;
             node.spawn_message_ack_writer().await;
-            node.spawn_announcements_readers_task().await;
         }
 
         Ok(node)
@@ -1031,8 +1024,7 @@ impl Node {
             .await?;
         if let Some(agent_id) = agent_id {
             // Tell existing group members about the new member's agent_id so
-            // they can subscribe to its announcements topic and see its profile,
-            // even before the new member has come online to announce itself.
+            // they can attribute its profile and messages to it.
             self.introduce_agents_to_group(
                 chat_id,
                 BTreeMap::from([(DeviceId::from(member), agent_id)]),
@@ -1706,10 +1698,6 @@ impl Node {
             handle.abort();
         }
 
-        if let Some(handle) = self.announcements_readers_handle.lock().await.take() {
-            handle.abort();
-        }
-
         if let Some(handle) = self.network_change_handle.lock().await.take() {
             handle.abort();
         }
@@ -1762,27 +1750,19 @@ impl Node {
     }
 
     /// Register the shared, idempotent state for a contact identified by their
-    /// device pubkey and agent id:
-    /// - register the contact as a bootstrap peer,
-    /// - join their announcements space, and
+    /// device pubkey:
+    /// - register the contact as a bootstrap peer, and
     /// - stop restoring their inbox our own request was sent to.
     ///
     /// Safe to call repeatedly, so both the initiating `add_contact` path and the
     /// inbox request/ack handlers can call it.
-    pub(crate) async fn establish_contact(
-        &self,
-        device_id: DeviceId,
-        agent_id: AgentId,
-    ) -> Result<(), Error> {
+    pub(crate) async fn establish_contact(&self, device_id: DeviceId) -> Result<(), Error> {
         // Register the contact as a bootstrap so p2panda discovery can reach it
         // directly over the internet (relay + pkarr), rather than depending on a
         // mutually-reachable mailbox to introduce the two nodes.
         self.register_bootstrap_node(*device_id)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
-        self.register_and_join_space(Topic::announcements(agent_id))
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.local_store
             .remove_requested_inbox_topics_of(device_id)
             .await
@@ -2017,7 +1997,7 @@ impl Node {
                     agent_id.aliased()
                 ))
             })?;
-        self.establish_contact(device_pubkey, agent_id).await?;
+        self.establish_contact(device_pubkey).await?;
 
         // Reply to the requester with our profile over their private reply
         // topic. This is the point at which we first disclose our profile and
@@ -2100,7 +2080,7 @@ impl Node {
 
     /// Reply to an incoming contact request by sending our profile to the
     /// scanner's private reply topic, so the scanner learns it immediately over
-    /// the inbox rather than waiting for announcements sync. We stay subscribed
+    /// the inbox rather than waiting for chat sync. We stay subscribed
     /// to the reply topic across restarts, since without a mailbox the scanner
     /// can only sync it from us.
     pub(crate) async fn reply_to_contact_request(
@@ -2353,22 +2333,16 @@ impl Node {
 
     /// Initialize all stored topics.
     ///
-    /// Failures loading the topic lists from `local_store` and the announcements
-    /// topic initialization are propagated, causing the caller to retry the
-    /// whole call. Once the lists are loaded, per-topic failures in the loops
-    /// are logged and skipped so one bad topic does not starve the rest; the
-    /// function returns an error at the end if any of those loops failed, so
-    /// the deferred init retry path will re-run it.
+    /// Failures loading the topic lists from `local_store` are propagated,
+    /// causing the caller to retry the whole call. Once the lists are loaded,
+    /// per-topic failures in the loops are logged and skipped so one bad topic
+    /// does not starve the rest; the function returns an error at the end if
+    /// any of those loops failed, so the deferred init retry path will re-run
+    /// it.
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         let mut failures = 0usize;
 
         let subscribed_spaces = self.local_store.subscribed_spaces().await?;
-        let my_announcements = Topic::announcements(self.agent_id())
-            .alias_named(&format!("announce({:?})", self.agent_id().aliased()));
-        if !subscribed_spaces.contains(&*my_announcements) {
-            self.register_and_create_space(my_announcements).await?;
-        }
-
         let advertised_inbox_topics = self.local_store.get_advertised_inbox_topics().await?;
         for topic in advertised_inbox_topics.iter() {
             if let Err(err) = self
