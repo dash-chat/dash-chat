@@ -400,12 +400,12 @@ async fn blocked_author_is_not_acked() {
     );
 }
 
-/// TODO: pre-contact: the spec for pre-accept messaging. The requester has no
+/// TODO: pre-accept: the spec for pre-accept messaging. The requester has no
 /// space to publish into until the acceptor creates it, so this cannot run
 /// until pre-accept messages are possible again; un-ignore it then and delete
 /// `direct_chat_requester_cannot_publish_before_accept`.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "TODO: pre-contact: the requester cannot publish into the direct chat space before the acceptor creates it"]
+#[ignore = "TODO: pre-accept: the requester cannot publish into the direct chat space before the acceptor creates it"]
 async fn direct_chat_is_not_acked_until_contact_accepted() {
     setup();
 
@@ -449,7 +449,7 @@ async fn direct_chat_is_not_acked_until_contact_accepted() {
     wait_for_delivered(&poll, &bobbi, chat, bobbi.device_id(), header.seq_num).await;
 }
 
-/// TODO: pre-contact: the stopgap while pre-accept messaging is disabled.
+/// TODO: pre-accept: the stopgap while pre-accept messaging is disabled.
 /// Delete once `direct_chat_is_not_acked_until_contact_accepted` runs again.
 #[tokio::test(flavor = "multi_thread")]
 async fn direct_chat_requester_cannot_publish_before_accept() {

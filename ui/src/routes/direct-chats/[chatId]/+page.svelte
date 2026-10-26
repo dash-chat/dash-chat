@@ -92,7 +92,7 @@
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const peerName = useReactivePromise(store.peerName);
 	const contactRequest = useReactivePromise(store.contactRequest);
-	// TODO: pre-contact: remove with the AwaitingAcceptanceBar.
+	// TODO: pre-accept: remove with the AwaitingAcceptanceBar.
 	const pendingOutgoingRequest = useReactiveValue(store.pendingOutgoingRequest);
 	const messageGroups = useReactivePromise(store.groupedEvents);
 	const readMessageHashes = useReactivePromise(
