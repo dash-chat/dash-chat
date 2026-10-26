@@ -70,8 +70,7 @@ describe('Contact profile disclosure', () => {
 		await alice.directChatPage.waitForPeerProfile();
 
 		// Bob's view of Alice resolves from the QR placeholder to her real profile
-		// once the accept, contact establishment and Alice's announcements sync over
-		// p2p.
+		// once the accept and contact establishment sync over p2p.
 		await bob.directChatPage.waitForPeerProfile();
 	});
 });

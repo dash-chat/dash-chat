@@ -1,5 +1,5 @@
-/** Changing the name you go by. It reaches everyone that syncs your
- *  announcements, so every device that hears it starts calling you that —
+/** Changing the name you go by. It reaches everyone that you share a chat with,
+ *  so every device that hears it starts calling you that —
  *  in its chat list, in its pickers and on its notifications — while one that
  *  has not still uses the name it was given before. */
 import { type Real, backToChatList, log } from '../agents';
