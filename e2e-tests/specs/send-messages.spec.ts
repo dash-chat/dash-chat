@@ -1,5 +1,9 @@
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../helpers/flows/exchange-contacts';
+import {
+	PRE_ACCEPT_MESSAGING,
+	itPreAccept,
+} from '../helpers/pre-accept-messaging';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
@@ -28,18 +32,23 @@ describe('Full messaging flow', () => {
 		await agent1.directChatPage.ready();
 		// TODO: pre-contact: until Bob accepts, the chat has no space to publish
 		// into, so Alice gets a waiting bar instead of the composer.
-		await agent1.directChatPage.awaitingAcceptBar.waitForExist();
-		expect(await agent1.directChatPage.composer.messageInput.isExisting()).toBe(
-			false,
-		);
+		if (!PRE_ACCEPT_MESSAGING) {
+			await agent1.directChatPage.awaitingAcceptBar.waitForExist();
+			expect(
+				await agent1.directChatPage.composer.messageInput.isExisting(),
+			).toBe(false);
+		}
 	});
 
-	// TODO: pre-contact: re-enable the skipped steps below once a requester can
-	// send messages before the request is accepted.
-	it.skip('lets Alice send messages before Bob accepts the request', async () => {
-		await agent1.directChatPage.composer.sendMessage('Hello before accept!');
-		await agent1.directChatPage.messages.waitForMessage('Hello before accept!');
-	});
+	itPreAccept(
+		'lets Alice send messages before Bob accepts the request',
+		async () => {
+			await agent1.directChatPage.composer.sendMessage('Hello before accept!');
+			await agent1.directChatPage.messages.waitForMessage(
+				'Hello before accept!',
+			);
+		},
+	);
 
 	it('shows Bob the pending request', async () => {
 		await agent2.addContactPage.back.click();
@@ -48,31 +57,40 @@ describe('Full messaging flow', () => {
 		await agent2.directChatPage.acceptButton.waitForExist();
 	});
 
-	it.skip('hides Alice’s messages from Bob behind a disclosure until he reveals them', async () => {
-		// The request is still unanswered: the accept bar is showing while the
-		// pre-accept message stays hidden behind the request-messages disclosure.
-		await agent2.directChatPage.requestMessagesToggle.waitForExist();
-		expect(
-			await agent2.directChatPage.messages.messageAreaContains(
+	itPreAccept(
+		'hides Alice’s messages from Bob behind a disclosure until he reveals them',
+		async () => {
+			// The request is still unanswered: the accept bar is showing while the
+			// pre-accept message stays hidden behind the request-messages disclosure.
+			await agent2.directChatPage.acceptButton.waitForExist();
+			await agent2.directChatPage.requestMessagesToggle.waitForExist();
+			expect(
+				await agent2.directChatPage.messages.messageAreaContains(
+					'Hello before accept!',
+				),
+			).toBe(false);
+			await agent2.directChatPage.toggleRequestMessages();
+			await agent2.directChatPage.messages.waitForMessage(
 				'Hello before accept!',
-			),
-		).toBe(false);
-		await agent2.directChatPage.toggleRequestMessages();
-		await agent2.directChatPage.messages.waitForMessage('Hello before accept!');
-	});
+			);
+		},
+	);
 
-	it.skip('does not show the message as delivered while the request is pending', async () => {
-		// Bob received the message, but must not reveal that before accepting:
-		// the indicator settles on the mailbox state and stays there.
-		await agent1.directChatPage.messages.waitForMessageStatus(
-			'Hello before accept!',
-			['mailbox'],
-		);
-		await agent1.pause(3_000);
-		expect(
-			await agent1.directChatPage.messageStatusFor('Hello before accept!'),
-		).toBe('mailbox');
-	});
+	itPreAccept(
+		'does not show the message as delivered while the request is pending',
+		async () => {
+			// Bob received the message, but must not reveal that before accepting:
+			// the indicator settles on the mailbox state and stays there.
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'Hello before accept!',
+				['mailbox'],
+			);
+			await agent1.pause(3_000);
+			expect(
+				await agent1.directChatPage.messageStatusFor('Hello before accept!'),
+			).toBe('mailbox');
+		},
+	);
 
 	it('summarizes the chat as a message request while it is pending', async () => {
 		await agent2.directChatPage.back.click();
@@ -90,17 +108,22 @@ describe('Full messaging flow', () => {
 		await agent2.directChatPage.composer.messageInput.waitForExist();
 		await agent2.directChatPage.acceptButton.waitForExist({ reverse: true });
 		// TODO: pre-contact: Alice gets her composer back with the acceptance.
-		await agent1.directChatPage.composer.messageInput.waitForExist({
-			timeout: SYNC_TIMEOUT,
-		});
+		if (!PRE_ACCEPT_MESSAGING) {
+			await agent1.directChatPage.composer.messageInput.waitForExist({
+				timeout: SYNC_TIMEOUT,
+			});
+		}
 	});
 
-	it.skip('marks the pre-accept message delivered once Bob has accepted', async () => {
-		await agent1.directChatPage.messages.waitForMessageStatus(
-			'Hello before accept!',
-			['delivered'],
-		);
-	});
+	itPreAccept(
+		'marks the pre-accept message delivered once Bob has accepted',
+		async () => {
+			await agent1.directChatPage.messages.waitForMessageStatus(
+				'Hello before accept!',
+				['delivered'],
+			);
+		},
+	);
 
 	it('sends a message from Alice to Bob', async () => {
 		await agent1.directChatPage.composer.sendMessage('Hello from Alice!');
