@@ -1,6 +1,6 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.20.13",
+	"version": "0.20.14",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
@@ -43,6 +43,9 @@
 			"files": {
 				"Resources/Assets.car": "icons/Assets.car"
 			}
+		},
+		"android": {
+			"versionCode": 21001
 		},
 		"iOS": {
 			"minimumSystemVersion": "17.0"
