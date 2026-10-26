@@ -1,4 +1,3 @@
-import { personalTopicFor } from '../topics';
 import { LocalStorageLogsClient, chatIdForDevices } from './client';
 
 export const DEMO_IDS = {
@@ -61,9 +60,9 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 
 	// 1. My profile
 	logsClient.createSync(
-		personalTopicFor(DEMO_IDS.MY_AGENT_ID),
+		DEMO_IDS.DEVICE_GROUP_TOPIC,
 		{
-			type: 'Announcements',
+			type: 'DeviceGroupPayload',
 			payload: {
 				type: 'SetProfile',
 				payload: {
@@ -77,13 +76,13 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 		minutesAgo(120),
 	);
 
-	// 2. Contact profiles (each written by their own device)
+	// 2. Contact profiles (each written by their own device into our direct chat)
 	for (const contact of CONTACTS) {
 		const contactLogsClient = new LocalStorageLogsClient(contact.deviceId);
 		contactLogsClient.createSync(
-			personalTopicFor(contact.agentId),
+			chatIdForDevices(DEMO_IDS.MY_DEVICE_ID, contact.deviceId),
 			{
-				type: 'Announcements',
+				type: 'Chat',
 				payload: {
 					type: 'SetProfile',
 					payload: {
