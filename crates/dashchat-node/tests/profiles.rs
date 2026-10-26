@@ -160,8 +160,9 @@ async fn wait_for_profile(poll: &PollConfig, viewer: &TestNode, of: &TestNode, e
     .unwrap();
 }
 
-/// My profile reaches a contact over our direct chat. While they are blocked,
-/// updates skip that chat; unblocking pushes the current one to them.
+/// My profile reaches a contact over our direct chat, starting with the one I
+/// have when the chat is made. While they are blocked, updates skip that
+/// chat; unblocking pushes the current one to them.
 #[tokio::test(flavor = "multi_thread")]
 async fn profile_reaches_contacts_unless_blocked() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
@@ -183,6 +184,22 @@ async fn profile_reaches_contacts_unless_blocked() {
         .await
         .unwrap();
 
+    let direct_chat = alice.direct_chat_with(&bobbi);
+    poll.wait_for(|| async {
+        let published = published_profiles(&bobbi, direct_chat.into()).await;
+        if published == vec![named("bobbi")] {
+            Ok(())
+        } else {
+            Err(format!("{published:?}"))
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        published_profiles(&alice, direct_chat.into()).await,
+        vec![named("alice")]
+    );
+
     let first = named("Alice");
     alice.set_profile(first.clone()).await.unwrap();
     wait_for_profile(&poll, &bobbi, &alice, &first).await;
@@ -191,10 +208,9 @@ async fn profile_reaches_contacts_unless_blocked() {
     let hidden = named("Alice, hidden");
     alice.set_profile(hidden.clone()).await.unwrap();
 
-    let direct_chat = alice.direct_chat_with(&bobbi);
     assert_eq!(
         published_profiles(&alice, direct_chat.into()).await,
-        vec![first.clone()]
+        vec![named("alice"), first.clone()]
     );
     assert!(
         published_profiles(&alice, alice.device_group_topic().into())
@@ -206,7 +222,7 @@ async fn profile_reaches_contacts_unless_blocked() {
     alice.unblock_contact(bobbi.agent_id()).await.unwrap();
     assert_eq!(
         published_profiles(&alice, direct_chat.into()).await,
-        vec![first, hidden.clone()]
+        vec![named("alice"), first, hidden.clone()]
     );
     wait_for_profile(&poll, &bobbi, &alice, &hidden).await;
 }
