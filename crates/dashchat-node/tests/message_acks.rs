@@ -400,12 +400,59 @@ async fn blocked_author_is_not_acked() {
     );
 }
 
-/// TODO: pre-contact: the requester has no space to publish into until the
-/// acceptor creates it, so nothing of theirs can be acked before acceptance by
-/// construction. Once pre-accept messages are possible again this should go
-/// back to sending one before the accept and checking it is only acked after.
+/// TODO: pre-contact: the spec for pre-accept messaging. The requester has no
+/// space to publish into until the acceptor creates it, so this cannot run
+/// until pre-accept messages are possible again; un-ignore it then and delete
+/// `direct_chat_requester_cannot_publish_before_accept`.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "TODO: pre-contact: the requester cannot publish into the direct chat space before the acceptor creates it"]
 async fn direct_chat_is_not_acked_until_contact_accepted() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    let chat = bobbi.direct_chat_with(&alice);
+    let header = bobbi
+        .send_message_raw(chat, "Hello before accept".into())
+        .await
+        .unwrap();
+
+    // Alice processes the message but must not reveal that pre-accept.
+    poll.wait_for(|| async {
+        let delta = alice
+            .projection
+            .ack_delta(chat.into(), alice.device_id())
+            .await
+            .unwrap();
+        delta
+            .contains_key(&bobbi.device_id())
+            .then_some(())
+            .ok_or("alice has not processed the message yet")
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(
+        ack_maps_authored_by(&alice, chat, alice.device_id())
+            .await
+            .is_empty()
+    );
+
+    alice.behavior().accept_next_contact().await.unwrap();
+
+    wait_for_delivered(&poll, &bobbi, chat, bobbi.device_id(), header.seq_num).await;
+}
+
+/// TODO: pre-contact: the stopgap while pre-accept messaging is disabled.
+/// Delete once `direct_chat_is_not_acked_until_contact_accepted` runs again.
+#[tokio::test(flavor = "multi_thread")]
+async fn direct_chat_requester_cannot_publish_before_accept() {
     setup();
 
     let poll = PollConfig::default();
@@ -433,7 +480,7 @@ async fn direct_chat_is_not_acked_until_contact_accepted() {
             .await
             .map_err(|e| e.to_string())?;
         *sent.lock().await = Some(header);
-        Ok(())
+        Ok::<(), String>(())
     })
     .await
     .unwrap();
