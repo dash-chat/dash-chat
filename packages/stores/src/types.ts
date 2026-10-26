@@ -226,6 +226,7 @@ export type ChatPayload =
 			payload: { chat_id: string; add_member_operation_hash: Hash };
 	  }
 	| { type: 'GroupInfo'; payload: GroupInfo }
+	| { type: 'SetProfile'; payload: Profile }
 	| { type: 'MessageAck'; payload: MessageAckPayload }
 	| { type: 'IntroduceAgents'; payload: { agents: Record<DeviceId, AgentId> } };
 
@@ -275,6 +276,11 @@ export type SystemEvent =
 	| { type: 'GroupMembersChanged'; payload: { chat_id: ChatId } }
 	| { type: 'AgentsIntroduced'; payload: { agents: Record<DeviceId, AgentId> } }
 	| {
+			type: 'ProfileChanged';
+			/** `agent_id` is null while the device's agent is unknown. */
+			payload: { device_id: DeviceId; agent_id: AgentId | null };
+	  }
+	| {
 			type: 'Tombstones';
 			payload: {
 				topic: TopicId;
@@ -300,6 +306,7 @@ export interface Tombstone {
 export type Tombstones = Record<Hash, TombstoneReason>;
 
 export type DeviceGroupPayload =
+	| { type: 'SetProfile'; payload: Profile }
 	| {
 			type: 'AddContact';
 			payload: { agent_id: AgentId; direct_chat_topic_id: ChatId };
