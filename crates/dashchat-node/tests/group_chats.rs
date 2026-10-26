@@ -289,47 +289,29 @@ async fn test_group_chat() {
         Some("Hello".into())
     );
 
-    // Ensure that the two members who aren't contacts can see each others' profiles.
-
-    poll.consistency(
-        [&cammy, &alice],
-        &[
-            Topic::announcements(alice.agent_id()).into(),
-            Topic::announcements(cammy.agent_id()).into(),
-        ],
-    )
+    // Ensure that the two members who aren't contacts can see each others'
+    // profiles: each pushed theirs into the group on creating or joining it.
+    let named = |name: &str| Profile {
+        name: name.to_string(),
+        surname: None,
+        avatar: None,
+        about: None,
+    };
+    poll.wait_for(|| async {
+        let alice_profile = cammy.get_profile(alice.agent_id()).await.unwrap();
+        let cammy_profile = alice.get_profile(cammy.agent_id()).await.unwrap();
+        if alice_profile.as_ref() == Some(&named("alice"))
+            && cammy_profile.as_ref() == Some(&named("cammy"))
+        {
+            Ok(())
+        } else {
+            Err(format!(
+                "alice: {alice_profile:?}, cammy: {cammy_profile:?}"
+            ))
+        }
+    })
     .await
     .unwrap();
-
-    let alice_profile = cammy
-        .projection
-        .get_profile(alice.agent_id())
-        .await
-        .unwrap();
-    assert_eq!(
-        alice_profile,
-        Some(Profile {
-            name: "alice".to_string(),
-            surname: None,
-            avatar: None,
-            about: None,
-        })
-    );
-
-    let cammy_profile = alice
-        .projection
-        .get_profile(cammy.agent_id())
-        .await
-        .unwrap();
-    assert_eq!(
-        cammy_profile,
-        Some(Profile {
-            name: "cammy".to_string(),
-            surname: None,
-            avatar: None,
-            about: None,
-        })
-    );
 
     // shutdown alice
 
