@@ -4,8 +4,6 @@ export * from './p2panda/simplified-types.js';
 export * from './p2panda/tauri-logs-client.js';
 export * from './p2panda/types.js';
 
-export * from './topics.js';
-
 export * from './mock/index.js';
 export * from './types.js';
 
