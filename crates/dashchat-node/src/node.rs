@@ -1,6 +1,7 @@
 mod announcements;
 mod app_processing;
 mod message_acks;
+mod profile;
 pub(crate) mod publish;
 mod report;
 pub(crate) mod streams;
@@ -44,7 +45,7 @@ use crate::chat::{
 };
 use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
-use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
+use crate::payload::{ChatPayload, InboxPayload, Payload};
 use crate::stores::{LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
@@ -864,6 +865,7 @@ impl Node {
             .collect();
 
         let added = self.create_space(chat_id, initial_members).await?;
+        self.publish_my_profile_to(chat_id).await?;
 
         // Ensure that future non-contact members can see every initial member's
         // profile, including the creator's. The creator is the only node that
@@ -1138,27 +1140,6 @@ impl Node {
         self.projection.get_group_chat_ids().await
     }
 
-    pub async fn set_profile(&self, profile: Profile) -> Result<Header, crate::Error> {
-        let header = self
-            .publish(
-                Topic::announcements(self.agent_id()),
-                Payload::Announcements(AnnouncementsPayload::SetProfile(profile)),
-                Some(&format!("set_profile({:?})", self.device_id().aliased())),
-            )
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
-
-        Ok(header)
-    }
-
-    pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        self.projection.get_profile(self.agent_id()).await
-    }
-
-    pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
-        self.projection.get_profile(agent_id).await
-    }
-
     pub async fn keybundle(&self) -> anyhow::Result<p2panda::spaces::Member> {
         Ok(self.streams.with_node(async |node| node.me().await).await?)
     }
@@ -1201,22 +1182,7 @@ impl Node {
     /// contacts, unlike the projection's `devices` table which also records
     /// pre-accept contact requests).
     pub async fn accepted_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
-        // FIXME: use all local device IDs
-        let log_id = self.device_group_topic().into();
-        let mut agents = BTreeSet::new();
-        for op in self
-            .op_store
-            .get_log(&self.device_id(), &log_id, None)
-            .await?
-        {
-            let Some(body) = op.body else { continue };
-            if let Ok(Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id, .. })) =
-                Payload::try_from_body(&body)
-            {
-                agents.insert(agent_id);
-            }
-        }
-        Ok(agents)
+        Ok(self.accepted_contacts().await?.into_keys().collect())
     }
 
     /// The contact request we sent from any of our devices by scanning
@@ -2266,6 +2232,18 @@ impl Node {
                 self.join_presence(self.direct_chat_topic(FakeAgentId::from(device_id)))
                     .await
                     .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+            }
+            // Profile updates skipped them while they were blocked.
+            let direct_chat = self
+                .accepted_contacts()
+                .await
+                .map_err(|e| Error::AuthorOperation(e.to_string()))?
+                .get(&agent_id)
+                .copied();
+            if let Some(chat_id) = direct_chat {
+                self.publish_my_profile_to(chat_id)
+                    .await
+                    .map_err(|e| Error::AuthorOperation(e.to_string()))?;
             }
         }
 

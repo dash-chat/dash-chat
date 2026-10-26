@@ -26,7 +26,6 @@ const MIGRATIONS: &[&str] = &[
     )",
     "CREATE TABLE IF NOT EXISTS agents (
         agent_id BLOB PRIMARY KEY,
-        profile BLOB NULL,
         blocked BOOLEAN NOT NULL DEFAULT FALSE
     )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
@@ -49,6 +48,11 @@ const MIGRATIONS: &[&str] = &[
         op_hash BLOB NOT NULL,
         PRIMARY KEY (topic_id, author_device_id)
     )",
+    "CREATE TABLE IF NOT EXISTS device_profiles (
+        device_id BLOB NOT NULL PRIMARY KEY,
+        profile BLOB NOT NULL,
+        timestamp INTEGER NOT NULL
+    )",
     "CREATE TABLE IF NOT EXISTS message_acks (
         topic_id BLOB NOT NULL,
         acker_device_id BLOB NOT NULL,
@@ -58,6 +62,10 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (topic_id, acker_device_id, author_device_id)
     )",
 ];
+
+fn operation_timestamp(operation: &ProcessedOperation<Payload>) -> u64 {
+    operation.processed().header().extensions.timestamp().into()
+}
 
 /// Why an operation was tombstoned.
 //
@@ -205,13 +213,29 @@ impl OpProjection {
         Ok(row.map(|(blocked,)| blocked).unwrap_or(false))
     }
 
+    pub async fn is_agent_blocked(&self, agent_id: AgentId) -> anyhow::Result<bool> {
+        let row: Option<(bool,)> = sqlx::query_as("SELECT blocked FROM agents WHERE agent_id = ?")
+            .bind(agent_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|(blocked,)| blocked).unwrap_or(false))
+    }
+
+    /// The newest profile published by any device known to belong to the agent.
     pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
-        let row: Option<(Option<Profile>,)> =
-            sqlx::query_as("SELECT profile FROM agents WHERE agent_id = ?")
-                .bind(agent_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.and_then(|(profile,)| profile))
+        let row: Option<(Profile,)> = sqlx::query_as(
+            "
+            SELECT profile FROM device_profiles
+            JOIN devices ON device_profiles.device_id = devices.device_id
+            WHERE devices.agent_id = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+            ",
+        )
+        .bind(agent_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(profile,)| profile))
     }
 
     pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
@@ -468,6 +492,10 @@ impl OpProjection {
                 }
             }
 
+            Payload::Chat(ChatPayload::SetProfile(profile)) => {
+                self.reduce_profile(author, profile, operation).await?
+            }
+
             Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
                 // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
                 let agent_id =
@@ -477,13 +505,19 @@ impl OpProjection {
 
                 tracing::debug!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
-                self.save_profile(agent_id, profile.clone()).await?;
+                self.save_profile(author, profile.clone(), operation_timestamp(operation))
+                    .await?;
                 None
             }
 
             Payload::DeviceGroup(p) => match p {
+                // Only my own devices write to my device group.
+                DeviceGroupPayload::SetProfile(profile) => {
+                    self.save_agent_mapping(author, me).await?;
+                    self.reduce_profile(author, profile, operation).await?
+                }
                 DeviceGroupPayload::AddContact { agent_id, .. } => {
-                    self.save_agent_mapping(author, *agent_id).await?;
+                    self.ensure_agent(*agent_id).await?;
                     None
                 }
                 DeviceGroupPayload::BlockAgent(agent_id) => {
@@ -516,7 +550,8 @@ impl OpProjection {
                 agent_id, profile, ..
             }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
-                self.save_profile(*agent_id, profile.clone()).await?;
+                self.save_profile(author, profile.clone(), operation_timestamp(operation))
+                    .await?;
                 Some(SystemNotification::AgentsIntroduced {
                     agents: BTreeMap::from([(author, *agent_id)]),
                 })
@@ -541,6 +576,26 @@ impl OpProjection {
     }
 
     // === helpers === //
+
+    /// Record a profile `author` published, notifying when it is newer than
+    /// the one held for that device.
+    async fn reduce_profile(
+        &self,
+        author: DeviceId,
+        profile: &Profile,
+        operation: &ProcessedOperation<Payload>,
+    ) -> anyhow::Result<Option<SystemNotification>> {
+        let changed = self
+            .save_profile(author, profile.clone(), operation_timestamp(operation))
+            .await?;
+        if !changed {
+            return Ok(None);
+        }
+        Ok(Some(SystemNotification::ProfileChanged {
+            device_id: author,
+            agent_id: self.lookup_contact_by_device_id(author).await?,
+        }))
+    }
 
     /// While the contact is blocked, invalidate all operations from them except for the necessary ones.
     async fn enforce_blocklist(
@@ -657,18 +712,50 @@ impl OpProjection {
         Ok(())
     }
 
-    async fn save_profile(&self, agent_id: AgentId, profile: Profile) -> anyhow::Result<()> {
+    async fn ensure_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO agents (agent_id) VALUES (?)")
+            .bind(agent_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Keep the newest profile per device. The same profile reaches us once
+    /// per chat it was published to, and an older one may arrive after a newer
+    /// one, so a write only lands when `timestamp` is newer than the row's.
+    /// Returns whether the held profile differs from before.
+    async fn save_profile(
+        &self,
+        device_id: DeviceId,
+        profile: Profile,
+        timestamp: u64,
+    ) -> anyhow::Result<bool> {
+        let current: Option<(Profile, i64)> =
+            sqlx::query_as("SELECT profile, timestamp FROM device_profiles WHERE device_id = ?")
+                .bind(device_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        let timestamp = i64::try_from(timestamp)?;
+        if let Some((_, held)) = current
+            && held >= timestamp
+        {
+            return Ok(false);
+        }
+        let changed = current.is_none_or(|(held, _)| held != profile);
         sqlx::query(
             "
-            INSERT INTO agents (agent_id, profile) VALUES (?, ?) 
-            ON CONFLICT(agent_id) DO UPDATE SET profile = excluded.profile
-        ",
+            INSERT INTO device_profiles (device_id, profile, timestamp) VALUES (?, ?, ?)
+            ON CONFLICT(device_id) DO UPDATE SET
+                profile = excluded.profile,
+                timestamp = excluded.timestamp
+            ",
         )
-        .bind(agent_id)
+        .bind(device_id)
         .bind(profile)
+        .bind(timestamp)
         .execute(&self.pool)
         .await?;
-        Ok(())
+        Ok(changed)
     }
 
     async fn block_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
@@ -907,6 +994,47 @@ mod tests {
         // OS reclaims it when the test process exits.
         std::mem::forget(dir);
         OpProjection::new(pool).await.unwrap()
+    }
+
+    fn profile(name: &str) -> Profile {
+        Profile {
+            name: name.to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        }
+    }
+
+    /// A profile only lands when newer than the device's, and an agent's
+    /// profile is the newest across its devices.
+    #[tokio::test]
+    async fn test_newest_profile_wins() {
+        let db = projection().await;
+        let agent_a = agent(1);
+        let (d1, d2) = (device(10), device(11));
+        db.save_agent_mapping(d1, agent_a).await.unwrap();
+        db.save_agent_mapping(d2, agent_a).await.unwrap();
+
+        assert!(db.save_profile(d1, profile("second"), 20).await.unwrap());
+        assert!(!db.save_profile(d1, profile("first"), 10).await.unwrap());
+        assert!(!db.save_profile(d1, profile("second"), 21).await.unwrap());
+        assert_eq!(
+            db.get_profile(agent_a).await.unwrap(),
+            Some(profile("second"))
+        );
+
+        assert!(db.save_profile(d2, profile("third"), 30).await.unwrap());
+        assert_eq!(
+            db.get_profile(agent_a).await.unwrap(),
+            Some(profile("third"))
+        );
+
+        assert!(
+            db.save_profile(device(99), profile("stranger"), 40)
+                .await
+                .unwrap()
+        );
+        assert_eq!(db.get_profile(agent(2)).await.unwrap(), None);
     }
 
     /// Blocking an agent blocks every device that maps to it, and unblocking
