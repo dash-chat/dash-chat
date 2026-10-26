@@ -79,7 +79,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 		// request notification is already posted, so the re-read returns the
 		// current set right away; the pause is what gives a message push time to
 		// arrive and fail this.
-		// TODO: pre-contact: there is no space to publish into before the accept
+		// TODO: pre-accept: there is no space to publish into before the accept
 		// for now, so this check is suspended.
 		const preAcceptMessage = `hi PUSH_PREACCEPT_${Date.now()}`;
 		if (PRE_ACCEPT_MESSAGING) {

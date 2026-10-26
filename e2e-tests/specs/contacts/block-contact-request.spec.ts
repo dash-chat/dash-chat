@@ -123,14 +123,14 @@ describe('pending contact request', () => {
 	);
 
 	it('shows the messages normally after accepting the request', async () => {
-		// TODO: pre-contact: the skipped steps above would have left Alice in the
+		// TODO: pre-accept: the skipped steps above would have left Alice in the
 		// chat already.
 		if (!PRE_ACCEPT_MESSAGING) {
 			await agent1.homePage.openChat('Bob');
 			await agent1.directChatPage.ready();
 		}
 		await agent1.directChatPage.acceptContactRequest();
-		// TODO: pre-contact: Bob can only write once Alice has accepted; the
+		// TODO: pre-accept: Bob can only write once Alice has accepted; the
 		// skipped steps above send these before the accept.
 		if (!PRE_ACCEPT_MESSAGING) {
 			await agent2.directChatPage.composer.messageInput.waitForExist({

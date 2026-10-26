@@ -9,7 +9,7 @@
 	let { name }: Props = $props();
 </script>
 
-<!-- TODO: pre-contact: stands in for the composer while our contact request
+<!-- TODO: pre-accept: stands in for the composer while our contact request
 is unanswered, because the chat has no space to publish into until the peer
 accepts. Remove once pre-accept messages can be sent. -->
 <div class="px-6 py-3" data-testid="direct-chat-awaiting-accept">

@@ -30,7 +30,7 @@ describe('Full messaging flow', () => {
 		const bobLink = await agent2.addContactPage.getAddContactLink();
 		await agent1.addContactPage.enterAddContactLink(bobLink);
 		await agent1.directChatPage.ready();
-		// TODO: pre-contact: until Bob accepts, the chat has no space to publish
+		// TODO: pre-accept: until Bob accepts, the chat has no space to publish
 		// into, so Alice gets a waiting bar instead of the composer.
 		if (!PRE_ACCEPT_MESSAGING) {
 			await agent1.directChatPage.awaitingAcceptBar.waitForExist();
@@ -107,7 +107,7 @@ describe('Full messaging flow', () => {
 		await agent2.directChatPage.acceptConfirm.click();
 		await agent2.directChatPage.composer.messageInput.waitForExist();
 		await agent2.directChatPage.acceptButton.waitForExist({ reverse: true });
-		// TODO: pre-contact: Alice gets her composer back with the acceptance.
+		// TODO: pre-accept: Alice gets her composer back with the acceptance.
 		if (!PRE_ACCEPT_MESSAGING) {
 			await agent1.directChatPage.composer.messageInput.waitForExist({
 				timeout: SYNC_TIMEOUT,

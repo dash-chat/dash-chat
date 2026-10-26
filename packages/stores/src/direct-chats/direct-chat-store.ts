@@ -94,7 +94,7 @@ export class DirectChatStore {
 		return contactRequests.find(request => request.chatId === this.chatId);
 	});
 
-	// TODO: pre-contact: until the peer accepts, this chat has no space to
+	// TODO: pre-accept: until the peer accepts, this chat has no space to
 	// publish into (the acceptor creates it), so the page hides the composer
 	// while our request is unanswered. Remove once pre-accept messages can be
 	// sent (queued or otherwise).
