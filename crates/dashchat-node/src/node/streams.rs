@@ -51,7 +51,7 @@ pub enum ProcessorEvent {
 /// This is a thin wrapper around the p2panda node API which holds all publish handles.
 /// Every subscription stream is merged into the [`Drain`], which is created at the same
 /// time as `Streams`.
-pub struct Streams {
+pub struct TopicStreams {
     /// p2panda node. Taken by [`shutdown`](Self::shutdown): dropping it stops p2panda's
     /// network actors, which share the operation store's pool.
     node: tokio::sync::RwLock<Option<p2panda::Node>>,
@@ -86,12 +86,15 @@ enum DrainCommand {
     },
 }
 
-impl Streams {
-    pub(crate) fn new(node: p2panda::Node, stream_cursor_prefix: Option<String>) -> (Self, Drain) {
+impl TopicStreams {
+    pub(crate) fn new(
+        node: p2panda::Node,
+        stream_cursor_prefix: Option<String>,
+    ) -> (Self, TopicDrain) {
         let (drain_tx, command_rx) = mpsc::unbounded_channel();
         let processed = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
-        let drain = Drain {
+        let drain = TopicDrain {
             streams: Default::default(),
             processed: processed.clone(),
             command_rx,
@@ -284,7 +287,7 @@ impl Streams {
 /// subscription, so such a publish can wait on the very drain it is blocking (see
 /// `late_joiner_syncing_crossing_replies_can_hit_target_not_found` in `tests/reply_messages.rs`,
 /// which hangs this way).
-pub(crate) struct Drain {
+pub(crate) struct TopicDrain {
     /// All subscription streams.
     streams: StreamMap<Topic, StreamSubscription<Payload>>,
 
@@ -297,7 +300,7 @@ pub(crate) struct Drain {
     import_tasks: JoinSet<Option<(Topic, ImportError)>>,
 }
 
-impl Drain {
+impl TopicDrain {
     /// Wait for the next event to process, handling subscription changes in the meantime.
     ///
     /// Returns `None` once [`Streams`] has been dropped. Cancel safe.
@@ -489,11 +492,11 @@ mod tests {
     use futures::future::join_all;
     use p2panda::{Node, Topic};
 
-    use crate::node::actor::{Drain, ProcessError, ProcessorEvent, StreamsError};
+    use crate::node::streams::{ProcessError, ProcessorEvent, StreamsError, TopicDrain};
     use crate::testing::setup_tracing;
     use crate::{ChatMessageContent, ChatPayload, Payload};
 
-    use super::Streams;
+    use super::TopicStreams;
 
     fn chat(message: &str) -> Payload {
         Payload::Chat(ChatPayload::Message(ChatMessageContent::text_only(message)))
@@ -519,8 +522,8 @@ mod tests {
             .await
             .unwrap();
 
-        let (alice_streams, alice_drain) = Streams::new(alice, None);
-        let (bobbi_streams, bobbi_drain) = Streams::new(bobbi, None);
+        let (alice_streams, alice_drain) = TopicStreams::new(alice, None);
+        let (bobbi_streams, bobbi_drain) = TopicStreams::new(bobbi, None);
 
         // Both alice and bobbi subscribe to topics a & b.
         for topic in [topic_a, topic_b] {
@@ -583,7 +586,7 @@ mod tests {
     }
 
     /// Pull the drain forever, acknowledging every operation as processed.
-    fn spawn_acking_drain(mut drain: Drain) -> tokio::task::JoinHandle<()> {
+    fn spawn_acking_drain(mut drain: TopicDrain) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             while let Some(event) = drain.next().await {
                 if let ProcessorEvent::Operation {
@@ -601,7 +604,7 @@ mod tests {
     async fn concurrent_publishes_form_one_log() {
         setup_tracing(&["dashchat=info"], true);
         let topic = Topic::random();
-        let (streams, drain) = Streams::new(spawn_node().await, None);
+        let (streams, drain) = TopicStreams::new(spawn_node().await, None);
         let streams = Arc::new(streams);
         let drain_task = spawn_acking_drain(drain);
 
@@ -634,7 +637,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn racing_subscribes_open_a_topic_once() {
         let topic = Topic::random();
-        let (streams, _drain) = Streams::new(spawn_node().await, None);
+        let (streams, _drain) = TopicStreams::new(spawn_node().await, None);
         let streams = Arc::new(streams);
 
         let subscribes = (0..4).map(|_| {
@@ -652,7 +655,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn shutdown_fails_in_flight_publish_and_refuses_new_ones() {
         let topic = Topic::random();
-        let (streams, drain) = Streams::new(spawn_node().await, None);
+        let (streams, drain) = TopicStreams::new(spawn_node().await, None);
 
         let in_flight = streams
             .publish(topic, chat("never processed"))
