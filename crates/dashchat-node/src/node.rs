@@ -1,8 +1,8 @@
-pub(crate) mod actor;
 mod app_processing;
 mod message_acks;
 pub(crate) mod publish;
 mod report;
+pub(crate) mod streams;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
@@ -14,7 +14,7 @@ use crate::error::{
     AddContactError, AddContactResult, Error, RemoveGroupMemberError, ShutdownError,
 };
 use crate::filesystem::Filesystem;
-use crate::node::actor::Streams;
+use crate::node::streams::TopicStreams;
 #[cfg(feature = "testing")]
 use crate::testing::TestNode;
 use aliased::Aliasing;
@@ -228,7 +228,7 @@ pub struct Node {
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
-    streams: Arc<Streams>,
+    streams: Arc<TopicStreams>,
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -371,7 +371,7 @@ impl Node {
             false => Some(p2panda_node.endpoint()?),
         };
 
-        let (streams, drain) = Streams::new(p2panda_node, config.stream_cursor_prefix.clone());
+        let (streams, drain) = TopicStreams::new(p2panda_node, config.stream_cursor_prefix.clone());
         let streams = Arc::new(streams);
 
         // === stores === //
@@ -1576,7 +1576,7 @@ impl Node {
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
         // Stop any deferred stored-topic initialization before we tear down
-        // the actor or clear mailboxes, so it cannot race SQLite pool closure
+        // the p2panda node or clear mailboxes, so it cannot race SQLite pool closure
         // or re-insert topics into mailboxes after clear().
         if let Some(handle) = self.stored_topics_init_handle.lock().await.take() {
             handle.abort();
@@ -1595,7 +1595,7 @@ impl Node {
                 "failed to send cancel signal to application processor: {}",
                 err
             );
-            return Err(ShutdownError::ActorShutdown(Box::new(err)));
+            return Err(ShutdownError::ProcessorCancel(Box::new(err)));
         }
 
         if let Some(handle) = self.processor_handle.lock().await.take() {
