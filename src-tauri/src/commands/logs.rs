@@ -1,8 +1,10 @@
 use dashchat_node::{DeviceId, Payload, SeqNum, TopicId};
 use p2panda::operation::{Header, LogId};
 use p2panda::{Hash, VerifyingKey};
+use p2panda_auth::group::GroupAction;
 use p2panda_core::cbor::decode_cbor;
 use p2panda_core::Timestamp;
+use p2panda_spaces::SpacesArgs;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tauri::State;
 
@@ -68,11 +70,33 @@ pub struct SimplifiedHeader {
     /// p2panda-auth group-control extension, when this operation is a group action
     /// (Create / Add / Remove / Promote / Demote) rather than a chat payload.
     #[serde(skip_serializing_if = "Option::is_none")]
-    auth: Option<GroupsArgs>,
+    auth: Option<AuthData>,
 }
 
-// TODO: this is a placeholder for whatever state will be passed in after p2panda-spaces refactor.
-pub type GroupsArgs = ();
+/// Group control data read by the frontend.
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
+pub struct AuthData {
+    pub group_id: VerifyingKey,
+    pub action: GroupAction<VerifyingKey, ()>,
+    pub dependencies: Vec<Hash>,
+}
+
+impl AuthData {
+    fn from_spaces_args(args: &SpacesArgs<()>) -> Option<Self> {
+        match args {
+            SpacesArgs::Group {
+                group_id,
+                group_action,
+                auth_dependencies,
+            } => Some(AuthData {
+                group_id: *group_id,
+                action: group_action.clone(),
+                dependencies: auth_dependencies.clone(),
+            }),
+            _ => None,
+        }
+    }
+}
 
 impl SimplifiedHeader {
     /// Convert a p2panda::Header into a SimplifiedHeader.
@@ -80,10 +104,12 @@ impl SimplifiedHeader {
     /// As a p2panda::Header does not contain the raw topic (only the hashed representation in the
     /// form of a LogId) we need to pass this in as a separate argument.
     pub fn from_header(topic: TopicId, header: Header) -> Self {
-        // Only operations contain groups args in their extension have dependency requirements.
-        todo!("get the equivalent of what was header.extensions.group_args()");
-        let auth = None;
-        let previous = vec![];
+        let spaces_args = header.extensions.spaces_args();
+        let auth = spaces_args.as_ref().and_then(AuthData::from_spaces_args);
+        let previous = spaces_args
+            .as_ref()
+            .map(SpacesArgs::dependencies)
+            .unwrap_or_default();
 
         SimplifiedHeader {
             verifying_key: header.verifying_key,
@@ -212,4 +238,64 @@ pub async fn get_authors(
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
     Ok(authors)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use p2panda::operation::Extensions;
+    use p2panda::SigningKey;
+    use p2panda_auth::group::GroupMember;
+    use p2panda_auth::Access;
+
+    #[test]
+    fn group_control_op_exposes_the_old_groups_args_shape() {
+        let topic = TopicId::random();
+        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+        let member = SigningKey::from_bytes(&[2u8; 32]).verifying_key();
+        let dependency = Hash::digest(b"dependency");
+        let args = SpacesArgs::Group {
+            group_id: signing_key.verifying_key(),
+            group_action: GroupAction::Add {
+                member: GroupMember::Individual(member),
+                access: Access::write(),
+            },
+            auth_dependencies: vec![dependency],
+        };
+        let header = Header::builder().build(
+            &signing_key,
+            Extensions::builder(LogId::from_topic(topic)).build_space(args),
+        );
+
+        let simplified = SimplifiedHeader::from_header(topic, header);
+        let json = serde_json::to_value(&simplified).unwrap();
+
+        assert_eq!(json["previous"], serde_json::json!([dependency]));
+        assert_eq!(
+            json["auth"]["group_id"],
+            serde_json::json!(signing_key.verifying_key())
+        );
+        assert_eq!(
+            json["auth"]["dependencies"],
+            serde_json::json!([dependency])
+        );
+        assert_eq!(
+            json["auth"]["action"]["Add"]["member"]["Individual"],
+            serde_json::json!(member)
+        );
+    }
+
+    #[test]
+    fn plain_op_has_no_auth() {
+        let topic = TopicId::random();
+        let header = Header::builder().build(
+            &SigningKey::from_bytes(&[1u8; 32]),
+            Extensions::builder(LogId::from_topic(topic)).build(),
+        );
+
+        let json = serde_json::to_value(SimplifiedHeader::from_header(topic, header)).unwrap();
+
+        assert_eq!(json["previous"], serde_json::json!([]));
+        assert!(json.get("auth").is_none());
+    }
 }
