@@ -215,7 +215,6 @@ async fn test_block_and_unblock_contact() {
 /// and removes bobbi. Alice must be notified of the group-info and
 /// group-control ops (and see their effects) but never of the chat message.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn test_blocked_group_member_control_and_info_still_apply() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
@@ -320,19 +319,26 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
         .unwrap();
 
     // Collect every notification alice emitted for cammy's post-block ops.
-    let from_cammy: Vec<OpNotification> = {
+    // Membership changes arrive as a system notification that names no author,
+    // so cammy's removal of bobbi is the only one that can be in the buffer.
+    let mut from_cammy: Vec<OpNotification> = vec![];
+    let mut members_changed = false;
+    {
         let mut watcher = alice.watcher.lock().await;
-        let mut collected = vec![];
         while let Ok(n) = watcher.try_recv() {
-            let Some(n) = n.op().cloned() else {
-                continue;
-            };
-            if notification_author(&n) == cammy.device_id() {
-                collected.push(n);
+            match n {
+                Notification::Op(n) if notification_author(&n) == cammy.device_id() => {
+                    from_cammy.push(n)
+                }
+                Notification::System(SystemNotification::GroupMembersChanged { chat_id })
+                    if chat_id == chat =>
+                {
+                    members_changed = true
+                }
+                _ => {}
             }
         }
-        collected
-    };
+    }
 
     // The blocked chat message was never surfaced to alice...
     assert!(
@@ -347,11 +353,10 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
         "alice must still process a blocked group member's group-info update",
     );
 
-    todo!("check that alice still sees cammy's space control messages");
-    // assert!(
-    //     from_cammy.iter().any(is_group_control),
-    //     "alice must still process a blocked group member's group-control action",
-    // );
+    assert!(
+        members_changed,
+        "alice must still process a blocked group member's group-control action",
+    );
 
     // The effects are visible in alice's durable state: the group is renamed and
     // bobbi has been removed.
