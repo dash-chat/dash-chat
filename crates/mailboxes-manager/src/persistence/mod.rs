@@ -1,6 +1,5 @@
-use crate::MailboxId;
-use crate::connection_health::SyncStatus;
 use async_trait::async_trait;
+use mailbox_client::{ItemTraits, MailboxId, SeqNum, SyncStatus};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -20,8 +19,8 @@ pub trait MailboxUrlStore: Send + Sync {
 #[async_trait]
 pub trait SyncStore<T, A>: Send + Sync
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: ItemTraits + 'static,
+    A: ItemTraits + 'static,
 {
     async fn record_status(&self, id: &MailboxId, status: SyncStatus) -> anyhow::Result<()>;
     async fn get_status(&self, id: &MailboxId) -> anyhow::Result<Option<SyncStatus>>;
@@ -30,23 +29,23 @@ where
     async fn record_synced(
         &self,
         id: &MailboxId,
-        watermarks: &[(T, A, crate::SeqNum)],
+        watermarks: &[(T, A, SeqNum)],
     ) -> anyhow::Result<()>;
     async fn get_sync_state(
         &self,
         id: &MailboxId,
-    ) -> anyhow::Result<std::collections::HashMap<T, std::collections::HashMap<A, crate::SeqNum>>>;
+    ) -> anyhow::Result<std::collections::HashMap<T, std::collections::HashMap<A, SeqNum>>>;
     async fn get_watermark(
         &self,
         id: &MailboxId,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<Option<crate::SeqNum>>;
+    ) -> anyhow::Result<Option<SeqNum>>;
     async fn get_synced_for_log(
         &self,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<std::collections::BTreeMap<MailboxId, crate::SeqNum>>;
+    ) -> anyhow::Result<std::collections::BTreeMap<MailboxId, SeqNum>>;
     async fn load_all_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>>;
 }
 
@@ -54,8 +53,8 @@ where
 #[async_trait]
 pub trait Persistence<T, A>: Send + Sync
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: ItemTraits + 'static,
+    A: ItemTraits + 'static,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore>;
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>>;

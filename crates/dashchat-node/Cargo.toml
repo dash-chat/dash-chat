@@ -12,6 +12,7 @@ serde_json = "1"
 serde_repr = "0.1"
 
 mailbox-client = { workspace = true }
+mailboxes-manager = { workspace = true }
 mailbox-server = { workspace = true }
 reporting = { workspace = true }
 

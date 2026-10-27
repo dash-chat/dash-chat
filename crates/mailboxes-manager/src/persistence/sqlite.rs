@@ -1,13 +1,30 @@
-use crate::MailboxId;
-use crate::connection_health::SyncStatus;
 use crate::persistence::{MailboxUrlStore, Persistence, SyncStore, decode, encode};
 use anyhow::Context;
 use async_trait::async_trait;
-use dashchat_utils::SeqNum;
+use mailbox_client::{ItemTraits, MailboxId, SeqNum, SyncStatus};
 use sqlite_gate::GatedPool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
+
+/// DB encoding of `SyncStatus`; these strings are on-disk data and must not
+/// change.
+fn status_to_db(status: SyncStatus) -> &'static str {
+    match status {
+        SyncStatus::Active => "active",
+        SyncStatus::Degraded => "degraded",
+        SyncStatus::Stopped => "stopped",
+    }
+}
+
+fn status_from_db(s: &str) -> Option<SyncStatus> {
+    match s {
+        "active" => Some(SyncStatus::Active),
+        "degraded" => Some(SyncStatus::Degraded),
+        "stopped" => Some(SyncStatus::Stopped),
+        _ => None,
+    }
+}
 
 pub struct SqlitePersistence<T, A> {
     pool: GatedPool,
@@ -17,8 +34,8 @@ pub struct SqlitePersistence<T, A> {
 
 impl<T, A> SqlitePersistence<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: ItemTraits + 'static,
+    A: ItemTraits + 'static,
 {
     pub async fn open(
         path: impl AsRef<std::path::Path>,
@@ -56,8 +73,8 @@ where
 #[async_trait]
 impl<T, A> Persistence<T, A> for SqlitePersistence<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: ItemTraits + 'static,
+    A: ItemTraits + 'static,
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore> {
         self.mailbox_store.clone()
@@ -114,8 +131,8 @@ struct SqliteSyncStore<T, A> {
 #[async_trait]
 impl<T, A> SyncStore<T, A> for SqliteSyncStore<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: ItemTraits + 'static,
+    A: ItemTraits + 'static,
 {
     async fn record_status(&self, id: &MailboxId, status: SyncStatus) -> anyhow::Result<()> {
         sqlx::query(
@@ -125,7 +142,7 @@ where
                 updated_at = excluded.updated_at",
         )
         .bind(id)
-        .bind(status.as_db_str())
+        .bind(status_to_db(status))
         .bind(chrono::Utc::now().timestamp_millis())
         .execute(self.pool.pool())
         .await?;
@@ -137,7 +154,7 @@ where
                 .bind(id)
                 .fetch_optional(self.pool.pool())
                 .await?;
-        Ok(row.and_then(|(s,)| SyncStatus::from_db_str(&s)))
+        Ok(row.and_then(|(s,)| status_from_db(&s)))
     }
 
     async fn clear_status(&self, id: &MailboxId) -> anyhow::Result<()> {
@@ -247,7 +264,7 @@ where
         &self,
         topic: &T,
         author: &A,
-    ) -> anyhow::Result<std::collections::BTreeMap<MailboxId, crate::SeqNum>> {
+    ) -> anyhow::Result<std::collections::BTreeMap<MailboxId, SeqNum>> {
         let t_bytes = encode(topic)?;
         let a_bytes = encode(author)?;
         let rows: Vec<(String, i64)> = sqlx::query_as(
@@ -259,7 +276,7 @@ where
         .fetch_all(self.pool.pool())
         .await?;
         rows.into_iter()
-            .map(|(m, s)| Ok((m, crate::SeqNum::try_from(s)?)))
+            .map(|(m, s)| Ok((m, SeqNum::try_from(s)?)))
             .collect()
     }
 }

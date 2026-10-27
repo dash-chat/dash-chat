@@ -33,7 +33,7 @@ use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 use mailbox_client::MailboxesConfig;
-use mailbox_client::manager::Mailboxes;
+use mailboxes_manager::Mailboxes;
 use tokio::task::JoinHandle;
 
 use crate::OnlinePeers;

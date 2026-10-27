@@ -4,10 +4,8 @@ use std::{
 };
 use tokio::sync::{Mutex, watch};
 
-use crate::MailboxId;
-use crate::SeqNum;
-use crate::connection_health::SyncStatus;
 use crate::persistence::{MailboxUrlStore, SyncStore};
+use mailbox_client::{ItemTraits, MailboxId, SeqNum, SyncStatus};
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
 pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
@@ -23,8 +21,8 @@ pub struct MailboxSyncTracker<T, A> {
 
 impl<T, A> MailboxSyncTracker<T, A>
 where
-    T: crate::ItemTraits + 'static,
-    A: crate::ItemTraits + 'static,
+    T: ItemTraits + 'static,
+    A: ItemTraits + 'static,
 {
     pub(crate) fn new(
         store: Arc<dyn SyncStore<T, A>>,
