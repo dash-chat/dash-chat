@@ -228,6 +228,10 @@ impl Node {
                             )
                             .await;
                         }
+                        Some(ProcessorEvent::SpaceMembersChanged { .. })
+                        | Some(ProcessorEvent::MemberKeyBundle(_)) => {
+                            node.trigger_announcements_readers_sync();
+                        }
                         Some(ProcessorEvent::ImportFailed { topic, error }) => {
                             error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
                             if let Err(err) = node.mailboxes.unsubscribe(topic).await {
@@ -513,6 +517,10 @@ impl Node {
                 self.join_chat_group(*chat_id)
                     .await
                     .context("failed to join group from invitation")?;
+            }
+
+            Payload::DeviceGroup(DeviceGroupPayload::AddContact { .. }) => {
+                self.trigger_announcements_readers_sync();
             }
 
             Payload::Inbox(invitation) => {
