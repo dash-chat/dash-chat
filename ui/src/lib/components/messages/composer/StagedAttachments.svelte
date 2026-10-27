@@ -2,11 +2,12 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiClose, mdiPlus } from '@mdi/js';
+	import { mdiClose } from '@mdi/js';
 	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
-	import StagedThumb from './StagedThumb.svelte';
+	import StagedThumb from '$lib/components/StagedThumb.svelte';
+	import AddThumb from '$lib/components/AddThumb.svelte';
 	import { objectUrl } from '$lib/actions/object-url';
 
 	interface Props {
@@ -51,8 +52,10 @@
 			{#if media.kind === 'photos'}
 				{#each media.items as photo, i (photo)}
 					<StagedThumb
+						removeLabel={m.removeAttachment()}
 						onRemove={() => removePhoto(i)}
 						removeTestId="message-input-remove-attachment-{i}"
+						class="h-[120px] w-[120px]"
 					>
 						<img
 							use:objectUrl={photo}
@@ -62,22 +65,20 @@
 					</StagedThumb>
 				{/each}
 				{#if media.items.length < MAX_STAGED_PHOTOS}
-					<button
-						type="button"
-						class="add-more flex h-[120px] w-[120px] shrink-0 items-center justify-center"
-						data-testid="message-input-add-more"
-						aria-label={m.addMoreAttachments()}
+					<AddThumb
+						onClick={onAddMore}
+						label={m.addMoreAttachments()}
+						testId="message-input-add-more"
 						disabled={loadingMedia}
-						onclick={onAddMore}
-					>
-						<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
-					</button>
+						class="h-[120px] w-[120px]"
+					/>
 				{/if}
 			{:else}
 				<StagedThumb
+					removeLabel={m.removeAttachment()}
 					onRemove={clear}
 					removeTestId="message-input-remove-attachment-0"
-					class="flex flex-col items-center justify-center gap-2 p-2"
+					class="flex h-[120px] w-[120px] flex-col items-center justify-center gap-2 p-2"
 				>
 					<ExtensionSheet name={media.file.name} />
 					<span class="staged-file-name line-clamp-2 text-center break-all"
@@ -90,27 +91,6 @@
 {/if}
 
 <style>
-	.add-more {
-		border-radius: 4px;
-		border: 2px dashed var(--k-hairline-color, rgba(128, 128, 128, 0.4));
-		background: transparent;
-		cursor: pointer;
-		color: var(--k-text-color);
-		opacity: 0.6;
-		transition: opacity 0.15s ease;
-	}
-	.add-more:disabled {
-		cursor: default;
-		opacity: 0.3;
-	}
-	.add-more:not(:disabled):hover {
-		opacity: 0.9;
-	}
-	.add-more :global(wa-icon) {
-		width: 28px;
-		height: 28px;
-	}
-
 	.staged-file-name {
 		font-size: 11px;
 		line-height: 1.3;

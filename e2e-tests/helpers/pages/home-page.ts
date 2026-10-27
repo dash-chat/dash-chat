@@ -1,3 +1,4 @@
+import { checkOverflow } from '../review/checks';
 import { tid } from '../selectors';
 import { TestHelper } from './test-helper';
 
@@ -34,6 +35,9 @@ function xpathLiteral(text: string): string {
 
 export class HomePage extends TestHelper {
 	settingsLink = this.el(tid('home-settings-link'));
+	settingsHubWarning = this.el(
+		`${tid('home-settings-link')} ${tid('warning-badge')}`,
+	);
 	newMessageButton = this.el(tid('home-new-message-btn'));
 	firstChatTooltip = this.el(tid('first-chat-tooltip'));
 	chatList = this.el(tid(CHAT_LIST_ID));
@@ -185,32 +189,6 @@ export class HomePage extends TestHelper {
 
 	/** Returns descriptions of any chat-list items overflowing their container. */
 	checkChatListOverflow(): Promise<string[]> {
-		return this.agent.execute((selector: string) => {
-			const issues: string[] = [];
-			const list = document.querySelector(selector);
-			if (!list) {
-				issues.push('Chat list not found');
-				return issues;
-			}
-			if (list.scrollWidth > list.clientWidth + 2) {
-				issues.push('Chat list container has horizontal overflow');
-			}
-			list.querySelectorAll<HTMLElement>('*').forEach(el => {
-				const style = window.getComputedStyle(el);
-				const clipped =
-					style.overflowX === 'hidden' ||
-					style.overflowX === 'clip' ||
-					style.overflow === 'hidden' ||
-					style.overflow === 'clip' ||
-					style.textOverflow === 'ellipsis';
-				if (clipped) return;
-				if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
-					const text = el.textContent?.substring(0, 60).trim();
-					if (text)
-						issues.push(`Overflow in <${el.tagName.toLowerCase()}>: "${text}"`);
-				}
-			});
-			return issues.slice(0, 10);
-		}, tid(CHAT_LIST_ID));
+		return checkOverflow(this.agent, tid(CHAT_LIST_ID));
 	}
 }

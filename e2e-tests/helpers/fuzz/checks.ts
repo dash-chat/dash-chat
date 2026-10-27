@@ -12,7 +12,7 @@ import {
 	describeContent,
 } from '../components/notifications/content';
 import type { ChatRow } from '../pages/home-page';
-import { MAILBOX_HEALED_MS } from '../timeouts';
+import { CLOUD_REGISTRATION_RETRY_MS, MAILBOX_HEALED_MS } from '../timeouts';
 import {
 	type ChatPage,
 	type Real,
@@ -299,8 +299,8 @@ export async function expectHubs(
 	const expected = m.expectedHubs(sa.name);
 	if (expected === 0) {
 		// A hub that left the LAN must drop off the chip within the budget. It
-		// may read 'disconnected' or, while the cloud connection is still
-		// settling after a restart or resume, be hidden — both mean no local
+		// may read 'cloud', 'disconnected' or, while the cloud connection is still
+		// settling after a restart or resume, 'pending' — all mean no local
 		// hub, which is all this asserts.
 		await chip.waitForNotLocal(
 			DEPARTURE_MS,
@@ -330,7 +330,7 @@ export async function checkHubs(
 	await expectHubs(m, sa, after);
 }
 
-/** Wait until `sa`'s chip shows what the model says of the cloud: hidden
+/** Wait until `sa`'s chip shows what the model says of the cloud: cloud
  *  while its link is usable, disconnected otherwise. For runs with no hub
  *  to show. Assumes the agent is on its chip chat. */
 export async function expectCloud(
@@ -341,11 +341,15 @@ export async function expectCloud(
 ): Promise<void> {
 	const chip = sa.agent.groupChatPage.connectionStatusIndicator;
 	if (m.cloudUsable()) {
+		const budget = m.awaitsCloudRegistration(sa.name)
+			? within + CLOUD_REGISTRATION_RETRY_MS
+			: within;
 		await chip.waitForStatus(
-			'connected',
-			within,
-			`${sa.name}: the chip did not hide within ${within / 1_000}s after ${after}`,
+			'cloud',
+			budget,
+			`${sa.name}: the chip did not read cloud within ${budget / 1_000}s after ${after}`,
 		);
+		m.registeredWithCloud(sa.name);
 		return;
 	}
 	await chip.waitForStatus(

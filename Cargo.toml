@@ -25,6 +25,7 @@ tracing = "0.1"
 
 dashchat-compat = { path = "crates/dashchat-compat" }
 dashchat-utils = { path = "crates/dashchat-utils" }
+sqlite-gate = { path = "crates/sqlite-gate" }
 panic-policy = { path = "crates/panic-policy" }
 network-watch = { path = "crates/network-watch" }
 mailbox-client = { path = "crates/mailbox-client" }
@@ -33,6 +34,7 @@ tauri-plugin-sentry-reporting = { path = "crates/tauri-plugin-sentry-reporting" 
 mailbox-server = { path = "crates/mailbox-server" }
 mailbox-local-server = { path = "crates/mailbox-local-server" }
 local-hub-discovery = { path = "crates/local-hub-discovery" }
+lan-multicast-probe = { path = "crates/lan-multicast-probe" }
 reporting = { path = "crates/reporting" }
 
 # p2panda 0.7.1 with the offline-node backport and the groups extension API,
@@ -41,13 +43,13 @@ reporting = { path = "crates/reporting" }
 #   extension sharing one database file stop refusing each other's writes with
 #   "database is locked".
 # - The `custom_cursor_name` param to `stream_from` (p2panda#1408).
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "7ce4dd08" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "7ce4dd08", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "2159c616" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "2159c616", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "7ce4dd08" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "7ce4dd08" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "7ce4dd08", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "2159c616" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "2159c616" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "2159c616", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -55,9 +57,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "7ce4dd08"
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "7ce4dd08" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "7ce4dd08" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "7ce4dd08" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "2159c616" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "2159c616" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "2159c616" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [
@@ -66,6 +68,9 @@ iroh = { version = "1.0.0", default-features = false, features = [
 iroh-blobs = "0.103.0"
 
 [patch.crates-io]
+# tao 0.37.1 + tauri-apps/tao#1376: forwards the URL that cold-launches the iOS
+# app, which tao drops on the scene lifecycle (dash-chat/tao branch dashchat)
+tao = { git = "https://github.com/dash-chat/tao", rev = "69ae7dba9271dc05e5746e2e7fff8997bd5c77b9" }
 iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
 # Fork of iroh main (1.2.0 + PR #4512, the relay-backpressure fix) carrying the
 # iroh#4390 pending_open_paths fix (dash-chat/iroh branch dashchat)
@@ -80,9 +85,12 @@ iroh-gossip = { git = "https://github.com/dash-chat/iroh-gossip", rev = "efc565e
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
 tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616" }
-# swarm-discovery 0.6.3 + a non-fatal default-interface multicast join, so a
-# hub on a host without a default route (an offline hotspot) can still start
-swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = "1cf4c14c67b60bf8c020b5cc002fd7f438492199" }
+# ndk-context 0.1.1 + rust-mobile/ndk-context PRs #6 and #8 (RwLock-held context,
+# try_* functions) + a second initialize_android_context keeping the first context
+# instead of panicking (dash-chat/ndk-context branch dashchat). android_init.rs
+# installs the context from JNI_OnLoad and tao 0.37 installs it again when the
+# activity is created.
+ndk-context = { git = "https://github.com/dash-chat/ndk-context", rev = "4ed51f9e864f4b380fb4a495637543a785a9d115" }
 
 # [patch."https://github.com/dash-chat/p2panda"]
 # p2panda = { path = "/home/michael/work/p2panda/p2panda" }

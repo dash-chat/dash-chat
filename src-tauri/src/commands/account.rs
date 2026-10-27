@@ -1,5 +1,6 @@
 #[cfg(mobile)]
 use dashchat_node::Node;
+#[cfg(desktop)]
 use tauri::Manager;
 use tauri::{AppHandle, State};
 
@@ -15,7 +16,10 @@ pub async fn delete_account(
     let node = app_node_manager.get().await?;
 
     #[cfg(mobile)]
-    unregister_fcm_token(&app, &node).await;
+    match unregister_fcm_token(&node).await {
+        Ok(()) => log::info!("Unregistered FCM token from push notifications server."),
+        Err(e) => log::error!("Failed to unregister FCM token, deleting the account anyway: {e:?}"),
+    }
 
     node.shutdown().await.map_err(|e| {
         log::error!("Failed to shutdown node while trying to delete account: {e:?}");
@@ -60,14 +64,13 @@ pub async fn delete_account(
 }
 
 #[cfg(mobile)]
-async fn unregister_fcm_token(app: &AppHandle, node: &Node) {
+async fn unregister_fcm_token(node: &Node) -> anyhow::Result<()> {
     use push_notifications_client::client::PushNotificationsClient;
     use push_notifications_client::types::VerifyingKey;
 
-    let client = app.state::<PushNotificationsClient>();
+    let client = PushNotificationsClient::new(
+        crate::notifications::push_notifications::push_notifications_url(),
+    )?;
     let verifying_key = VerifyingKey::from(node.device_id().to_string());
-    match client.unregister_fcm_token(verifying_key).await {
-        Ok(()) => log::info!("Unregistered FCM token from push notifications server."),
-        Err(e) => log::error!("Failed to unregister FCM token: {e:?}"),
-    }
+    client.unregister_fcm_token(verifying_key).await
 }

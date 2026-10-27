@@ -7,39 +7,33 @@ import {
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { envInt } from '../../helpers/utils';
-import { echoLinesWithPrefix } from '../agent-logger';
-import { allocatePinnedPort } from '../allocate-port';
-import { runAppBuild } from '../app-build';
+import { envInt } from '../../../helpers/utils';
+import { echoLinesWithPrefix } from '../../agent-logger';
+import { allocatePinnedPort } from '../../allocate-port';
+import { SKIP_FRONTEND_BUILD, runBuild } from '../../app-build';
 import {
 	type Want,
 	claimAllWhenFreeSync,
 	describeHeld,
 	release,
-} from '../claims';
-import { hashFile } from '../device-installs';
-import { envWithoutWdioLoader } from '../harness-env';
-import { E2E_NETWORK_ID } from '../network-id';
-import { E2E_RELAY_URL } from '../relay';
-import {
-	WIFI_REASSOCIATE_MS,
-	type WifiInfo,
-	hostNetworkVerdict,
-	networkOf,
-	waitForWifi,
-} from '../wifi';
+} from '../../claims';
+import { hashFile } from '../../device-installs';
+import { envWithoutWdioLoader } from '../../harness-env';
+import { E2E_NETWORK_ID } from '../../network-id';
+import { E2E_RELAY_URL } from '../../relay';
 import {
 	type AgentPlatform,
 	type PrepareContext,
 	remoteBakedEnv,
-} from './platform';
+} from '../platform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..', '..', '..');
-const E2E_DIR = path.resolve(__dirname, '..', '..');
+const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const E2E_DIR = path.resolve(__dirname, '..', '..', '..');
 
 const APK_DIR = path.join(ROOT, 'src-tauri/gen/android/app/build/outputs/apk');
 const GRADLE_INTERMEDIATES = path.join(
@@ -74,19 +68,14 @@ const DEVICE_PUSH_PORT = 3201;
 /** `android` = physical device, `android-emulator` = running emulator. */
 export type AndroidKind = 'android' | 'android-emulator';
 
-/** Appium's extension home — the uiautomator2 driver installs here, not in
- *  node_modules. Without it appium falls back to the pnpm workspace, where
- *  npm-driven driver installs break on pnpm-managed packages. */
-const APPIUM_HOME = path.join(E2E_DIR, '.appium');
-
 /** Flake-pinned chromedrivers (one per device WebView major), provided at
  *  this path by the androidDev shellHook; Appium picks the matching one per
  *  device. */
-const CHROMEDRIVERS_DIR = path.join(E2E_DIR, '.appium', 'chromedrivers');
+const CHROMEDRIVERS_DIR = path.join(E2E_DIR, '.cache', 'chromedrivers');
 
-// Lives in .appium, not .dbs/e2e: onPrepare wipes .dbs/e2e after the launcher
+// Lives in .cache, not .dbs/e2e: onPrepare wipes .dbs/e2e after the launcher
 // (config load) has already written the capture.
-const ANDROID_ENV_FILE = path.join(E2E_DIR, '.appium', 'android-env.json');
+const ANDROID_ENV_FILE = path.join(E2E_DIR, '.cache', 'android-env.json');
 
 /** Env the android commands (adb, boot-emulator, the APK build) run with:
  *  process.env when the harness already has the androidDev shell's tools,
@@ -258,31 +247,6 @@ function bootMissingEmulators(needed: number) {
 		throw err;
 	}
 	console.log('Emulators ready.');
-}
-
-/** Appium keeps its drivers in APPIUM_HOME, not node_modules, so on first run
- *  link in the `appium-uiautomator2-driver` devDependency; the version is pinned
- *  in package.json and the link tracks it. */
-function ensureUiautomator2Driver() {
-	const installed = execSync(
-		'pnpm exec appium driver list --installed 2>&1 || true',
-		{
-			encoding: 'utf8',
-			cwd: E2E_DIR,
-			env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
-		},
-	);
-	if (installed.includes('uiautomator2')) return;
-	const driverPath = path.join(
-		E2E_DIR,
-		'node_modules',
-		'appium-uiautomator2-driver',
-	);
-	execSync(`pnpm exec appium driver install --source=local "${driverPath}"`, {
-		stdio: 'inherit',
-		cwd: E2E_DIR,
-		env: envWithoutWdioLoader({ APPIUM_HOME }, androidEnv),
-	});
 }
 
 function connectedDevices(): string[] {
@@ -576,14 +540,100 @@ function adbInstall(udid: string, apk: string, flags = ''): void {
 	});
 }
 
-/** Kill the app on `udid` and wait for its process to die. Unlike
- *  `force-stop`, `stop-app` leaves the package eligible for FCM delivery. */
-export function stopAndroidApp(udid: string): void {
-	execSync(
-		`adb -s ${udid} shell "am stop-app ${APP_PACKAGE} && ` +
-			`until ! pidof ${APP_PACKAGE} >/dev/null; do sleep 0.2; done"`,
-		{ stdio: 'ignore', timeout: 30_000, env: androidEnv },
+/** How long the app gets to die after being told to exit. */
+const APP_EXIT_MS = 10_000;
+
+/** How long a JDWP handshake gets before the VM is taken to be frozen. */
+const JDWP_HANDSHAKE_MS = 3_000;
+
+/** Kill the app on `udid` and wait for its process to die. It is told to exit
+ *  over JDWP, which the debuggable e2e APK answers on every Android version:
+ *  unlike `force-stop` that leaves the package eligible for FCM delivery, and
+ *  unlike `am crash` it is no crash, two of which in quick succession, or a
+ *  dozen in half a day, make Android refuse every background start — a push
+ *  included. The cached-apps freezer stops a backgrounded app's JDWP thread
+ *  with the rest of it, so an app that does not answer is brought to the
+ *  front, which thaws it, and told again. One that outlives the exit is
+ *  force-stopped, and says so. */
+export async function stopAndroidApp(udid: string): Promise<void> {
+	const pid = androidAppPid(udid);
+	if (pid === '') return;
+	if (!(await exitOverJdwp(udid, pid)) && androidAppPid(udid) === pid) {
+		adbShell(udid, `am start -n ${APP_PACKAGE}/.MainActivity`);
+		await exitOverJdwp(udid, pid);
+	}
+	if (await androidAppGone(udid, APP_EXIT_MS)) return;
+	console.warn(
+		`[android] ${udid}: the app outlived its JDWP exit; force-stopping it, ` +
+			'which leaves it stopped: no push wakes it before its next launch',
 	);
+	adbShell(udid, `am force-stop ${APP_PACKAGE}`);
+	if (!(await androidAppGone(udid, APP_EXIT_MS))) {
+		throw new Error(`device ${udid}: the app survived a force-stop`);
+	}
+}
+
+/** The pid of the app's main process on `udid`, '' when it is not running. */
+function androidAppPid(udid: string): string {
+	return adbShell(udid, `"pidof ${APP_PACKAGE} || true"`).trim();
+}
+
+async function androidAppGone(
+	udid: string,
+	withinMs: number,
+): Promise<boolean> {
+	const deadline = Date.now() + withinMs;
+	while (androidAppPid(udid) !== '') {
+		if (Date.now() > deadline) return false;
+		await new Promise(resolve => setTimeout(resolve, 200));
+	}
+	return true;
+}
+
+/** Send JDWP's VirtualMachine.Exit (command set 1, command 10, exit code 0)
+ *  to the VM of process `pid`, once its handshake has echoed back; whether
+ *  it did. Whether the VM obeyed is left to the process outliving it. A
+ *  process gone before the forward is one that did not answer. */
+async function exitOverJdwp(udid: string, pid: string): Promise<boolean> {
+	let port: string;
+	try {
+		port = execSync(`adb -s ${udid} forward tcp:0 jdwp:${pid}`, {
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'ignore'],
+			env: androidEnv,
+		}).trim();
+	} catch {
+		return false;
+	}
+	const exitCommand = Buffer.from([
+		0, 0, 0, 15, 0, 0, 0, 1, 0, 1, 10, 0, 0, 0, 0,
+	]);
+	try {
+		return await new Promise<boolean>(resolve => {
+			const socket = net.connect(Number(port), '127.0.0.1', () =>
+				socket.write('JDWP-Handshake'),
+			);
+			let handshaken = false;
+			socket.on('data', () => {
+				if (handshaken) return;
+				handshaken = true;
+				socket.write(exitCommand);
+			});
+			const timer = setTimeout(() => done(), JDWP_HANDSHAKE_MS);
+			const done = () => {
+				clearTimeout(timer);
+				socket.destroy();
+				resolve(handshaken);
+			};
+			socket.on('close', done);
+			socket.on('error', done);
+		});
+	} finally {
+		execSync(`adb -s ${udid} forward --remove tcp:${port}`, {
+			stdio: 'ignore',
+			env: androidEnv,
+		});
+	}
 }
 
 /** Put the notification permission the session's autoGrantPermissions
@@ -626,197 +676,27 @@ export function isAndroidAppRunning(udid: string): boolean {
 }
 
 /** Press the home button: the app is backgrounded but its process stays
- *  alive, so the background service can keep syncing — unlike am stop-app,
+ *  alive, so the background service can keep syncing — unlike stopAndroidApp,
  *  which tears the app down. */
 export function pressAndroidHome(udid: string): void {
 	adbShell(udid, 'input keyevent KEYCODE_HOME');
 }
 
-export function androidWifiInfo(udid: string): WifiInfo {
-	const [address, prefixLength] = androidWifiInterface(udid);
-	return {
-		ssid: androidWifiSsid(udid),
-		address,
-		network: networkOf(address, prefixLength),
-	};
+export function pressAndroidBack(udid: string): void {
+	adbShell(udid, 'input keyevent KEYCODE_BACK');
 }
 
 /** Whether the device reaches the internet over its current network: a TCP
  *  connection to a public address opens. */
 export function androidHasInternet(udid: string): boolean {
 	try {
-		adbShell(udid, 'nc -z -w 3 1.1.1.1 443');
+		// No `-z`: older toybox nc (Android 12) rejects it. An empty stdin
+		// closes the connection as soon as it opens.
+		adbShell(udid, "'nc -w 3 1.1.1.1 443 </dev/null'");
 		return true;
 	} catch {
 		return false;
 	}
-}
-
-/** The IPv4 address and prefix length of wlan0; '' and 0 while it has none.
- *  While wifi is down the interface itself disappears and adb exits
- *  non-zero, which is the same "no address yet" answer as an empty match. */
-function androidWifiInterface(udid: string): [string, number] {
-	try {
-		const out = adbShell(udid, 'ip -4 addr show wlan0');
-		const match = out.match(/inet (\d+\.\d+\.\d+\.\d+)\/(\d+)/);
-		return match === null ? ['', 0] : [match[1], Number(match[2])];
-	} catch {
-		return ['', 0];
-	}
-}
-
-function androidWifiAddress(udid: string): string {
-	return androidWifiInterface(udid)[0];
-}
-
-/** Quote `value` for the device's shell, through the host shell that `adb
- *  shell` hands it to first: the host strips the double quotes, the device the
- *  single ones, and the text arrives verbatim. */
-function deviceShellQuote(value: string): string {
-	const single = `'${value.replace(/'/g, "'\\''")}'`;
-	return `"${single.replace(/(["$`\\])/g, '\\$1')}"`;
-}
-
-/** The SSID the device is associated with, or '' while it is on none. */
-export function androidWifiSsid(udid: string): string {
-	try {
-		return (
-			adbShell(udid, 'cmd wifi status').match(
-				/Wifi is connected to "(.*)"/,
-			)?.[1] ?? ''
-		);
-	} catch {
-		return '';
-	}
-}
-
-/** Join `ssid` (an empty `passphrase` means an open network), saving it on
- *  the device if it is new, and resolve with the IPv4 address obtained on it. */
-async function connectAndroidWifi(
-	udid: string,
-	ssid: string,
-	passphrase: string,
-): Promise<string> {
-	const security =
-		passphrase === '' ? 'open' : `wpa2 ${deviceShellQuote(passphrase)}`;
-	adbShell(udid, 'svc wifi enable');
-	adbShell(
-		udid,
-		`cmd wifi connect-network ${deviceShellQuote(ssid)} ${security}`,
-	);
-	await waitForWifi(
-		() => (androidWifiSsid(udid) === ssid ? ssid : ''),
-		`device never associated with "${ssid}" within ${WIFI_REASSOCIATE_MS / 1_000}s; is it in range, and are the credentials right?`,
-	);
-	return await waitForWifi(
-		() => androidWifiAddress(udid),
-		`device never obtained a wifi address ${WIFI_REASSOCIATE_MS / 1_000}s after joining "${ssid}"`,
-	);
-}
-
-/** Forget every saved network named in `ssids`, without waiting for where
- *  the device lands. */
-export function forgetAndroidWifi(udid: string, ssids: string[]): void {
-	const wanted = new Set(ssids);
-	for (const line of adbShell(udid, 'cmd wifi list-networks').split('\n')) {
-		const match = line.match(/^(\d+)\s+(.+?)\s+\S+\s*$/);
-		if (match !== null && wanted.has(match[2])) {
-			adbShell(udid, `cmd wifi forget-network ${match[1]}`);
-		}
-	}
-}
-
-/** Join `ssid` as the one test network saved on the device — every other of
- *  `testNetworks` is forgotten once it is on — and resolve with the IPv4 address
- *  obtained on it. */
-export async function joinAndroidWifi(
-	udid: string,
-	ssid: string,
-	passphrase: string,
-	testNetworks: string[],
-): Promise<string> {
-	const address = await connectAndroidWifi(udid, ssid, passphrase);
-	forgetAndroidWifi(
-		udid,
-		testNetworks.filter(other => other !== ssid),
-	);
-	return address;
-}
-
-/** Get the device onto the network the host is on from wherever it is: radio
- *  on, every one of `testNetworks` forgotten, and then every other network it
- *  lands on that is clearly not the host's forgotten in turn. Once it is
- *  surely on the host's network every other saved network goes too, so all it
- *  can ever fall back to is that one; while that is unsure nothing more is
- *  forgotten, and the caller's reachability check names the network. */
-export async function leaveAndroidWifi(
-	udid: string,
-	testNetworks: string[],
-): Promise<WifiInfo> {
-	adbShell(udid, 'svc wifi enable');
-	forgetAndroidWifi(udid, testNetworks);
-	let left: WifiInfo | null = null;
-	for (;;) {
-		const info = await settledAndroidWifi(udid, left);
-		const verdict = hostNetworkVerdict(info.address);
-		if (verdict === 'host') forgetAndroidWifiExcept(udid, info.ssid);
-		if (verdict !== 'elsewhere') return info;
-		forgetAndroidWifi(udid, [info.ssid]);
-		left = info;
-	}
-}
-
-/** Where the device is once it is associated and holds an address, on a
- *  network other than `left`: the SSID changes before the interface drops
- *  the old address, so both have to have moved on. */
-async function settledAndroidWifi(
-	udid: string,
-	left: WifiInfo | null,
-): Promise<WifiInfo> {
-	await waitForWifi(
-		() => {
-			const { ssid, address } = androidWifiInfo(udid);
-			if (ssid === '' || address === '') return '';
-			if (left !== null && (ssid === left.ssid || address === left.address)) {
-				return '';
-			}
-			return ssid;
-		},
-		`device settled on no network the host can reach within ${WIFI_REASSOCIATE_MS / 1_000}s; ` +
-			"save the host's Wi-Fi on it once by hand",
-	);
-	return androidWifiInfo(udid);
-}
-
-/** Forget every saved network but `keep`. A network is listed once per
- *  security type it accepts, so its id can come up twice. */
-function forgetAndroidWifiExcept(udid: string, keep: string): void {
-	const ids = new Set<string>();
-	for (const line of adbShell(udid, 'cmd wifi list-networks').split('\n')) {
-		const match = line.match(/^(\d+)\s+(.+?)\s+\S+\s*$/);
-		if (match !== null && match[2] !== keep) ids.add(match[1]);
-	}
-	for (const id of ids) adbShell(udid, `cmd wifi forget-network ${id}`);
-}
-
-/** Turn Wi-Fi off and resolve once the device holds no Wi-Fi address: the
- *  radio takes a moment to drop after the command returns, and a peer that
- *  sends in that moment still gets through. */
-export async function disableAndroidWifi(udid: string): Promise<void> {
-	adbShell(udid, 'svc wifi disable');
-	await waitForWifi(
-		() => (androidWifiAddress(udid) === '' ? 'off' : ''),
-		`device still held a wifi address ${WIFI_REASSOCIATE_MS / 1_000}s after disabling`,
-	);
-}
-
-/** Turn Wi-Fi on and resolve with the IPv4 address the device came back on. */
-export function enableAndroidWifi(udid: string): Promise<string> {
-	adbShell(udid, 'svc wifi enable');
-	return waitForWifi(
-		() => androidWifiAddress(udid),
-		`device never regained a wifi address ${WIFI_REASSOCIATE_MS / 1_000}s after re-enabling`,
-	);
 }
 
 /**
@@ -838,7 +718,6 @@ export class AndroidPlatform implements AgentPlatform {
 		ensureAndroidEnv();
 		this.slots = [...kindBySlot.keys()];
 		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
-		process.env.APPIUM_HOME = APPIUM_HOME;
 		// Workers reload this module; device provisioning belongs to the
 		// launcher, which claims before any worker starts.
 		if (process.env.WDIO_WORKER_ID === undefined) {
@@ -897,8 +776,6 @@ export class AndroidPlatform implements AgentPlatform {
 	}
 
 	async onPrepare(ctx: PrepareContext) {
-		ensureUiautomator2Driver();
-
 		// Build the e2e APKs only for the claimed devices' architectures.
 		// Debuginfo is dropped and symbols stripped (debug_assertions stays
 		// on, which is what makes the webview inspectable) — with them the
@@ -926,7 +803,6 @@ export class AndroidPlatform implements AgentPlatform {
 			...mailboxEnv,
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
-			E2E_ANDROID_TARGETS: [...targets].join(' '),
 		};
 		// Gradle packages incrementally, patching the previous APK in place and
 		// leaving holes where replaced entries were: an e2e APK built over a dev
@@ -941,8 +817,8 @@ export class AndroidPlatform implements AgentPlatform {
 		for (const dir of NATIVE_LIB_INTERMEDIATES) {
 			rmSync(dir, { recursive: true, force: true });
 		}
-		runAppBuild(
-			'e2e:build:android',
+		runBuild(
+			`pnpm tauri android build --debug --apk --split-per-abi --features e2e-tests -t ${[...targets].join(' ')} ${SKIP_FRONTEND_BUILD}`,
 			envWithoutWdioLoader(bakedEnv, androidEnv),
 		);
 

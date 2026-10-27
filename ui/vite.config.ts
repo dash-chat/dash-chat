@@ -3,7 +3,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 // Resolve signalium's development ESM build for production builds
 const require = createRequire(import.meta.url);
@@ -61,6 +61,9 @@ export default defineConfig(async () => ({
 	//
 	// 1. prevent Vite from obscuring rust errors
 	clearScreen: false,
+	test: {
+		include: ['src/**/*.test.ts'],
+	},
 	// 2. tauri expects a fixed port; fail fast if it is already taken
 	server: {
 		port: uiPort,

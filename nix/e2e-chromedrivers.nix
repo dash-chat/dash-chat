@@ -5,10 +5,18 @@
     { inputs', pkgs, ... }:
     {
       # One chromedriver per e2e Android device WebView major (physical
-      # phones on 149-153, the emulator image on 124), each from its own
+      # phones on 149-155, the emulator image on 124), each from its own
       # pinned nixpkgs rev. The e2e harness materializes this via
       # `nix build --out-link` and points Appium at it.
       packages.e2e-chromedrivers = pkgs.linkFarm "e2e-chromedrivers" [
+        {
+          name = "chromedriver-155";
+          path = "${inputs'.nixpkgs-chromedriver-155.legacyPackages.chromedriver}/bin/chromedriver";
+        }
+        {
+          name = "chromedriver-154";
+          path = "${inputs'.nixpkgs-chromedriver-154.legacyPackages.chromedriver}/bin/chromedriver";
+        }
         {
           name = "chromedriver-153";
           path = "${inputs'.nixpkgs-chromedriver-153.legacyPackages.chromedriver}/bin/chromedriver";
