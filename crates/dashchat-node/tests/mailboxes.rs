@@ -266,7 +266,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
     let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config, "alice").await;
     let chat = alice
-        .create_group(std::collections::BTreeMap::new())
+        .create_chat_group(std::collections::BTreeMap::new())
         .await
         .unwrap();
 

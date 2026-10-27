@@ -2,7 +2,6 @@ use aliased::Aliasing;
 use dashchat_utils::SeqNum;
 use derive_more::derive::{Deref, From};
 use p2panda::Hash;
-use p2panda::groups::GroupsArgs;
 use p2panda::operation::Header;
 use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
@@ -432,7 +431,7 @@ impl OpProjection {
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
-                self.validate_delete(topic, &operation.event.operation.header, hashes, node)
+                self.validate_delete(topic, &operation.processed().header(), hashes, node)
                     .await?;
                 for hash in hashes {
                     self.add_tombstone(topic.into(), *hash, TombstoneReason::DeletedForEveryone)
@@ -453,7 +452,7 @@ impl OpProjection {
                 // late edits from lingering too. Edits of live messages are
                 // validated later in `process_app`.
                 if let Some(reason) = self.tombstone_reason(topic.into(), *edit_hash).await? {
-                    let self_hash = operation.event.operation.header.hash();
+                    let self_hash = operation.processed().header().hash();
                     self.add_tombstone(topic.into(), self_hash, reason).await?;
                     Some(SystemNotification::Tombstones {
                         topic: topic.into(),
@@ -472,7 +471,7 @@ impl OpProjection {
                         anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
                     })?);
 
-                tracing::info!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
+                tracing::debug!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
                 self.save_profile(agent_id, profile.clone()).await?;
                 None
@@ -509,37 +508,14 @@ impl OpProjection {
             Payload::Inbox(InboxPayload::ContactRequest {
                 agent_id, profile, ..
             })
-            | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
+            | Payload::Inbox(InboxPayload::ContactRequestAccept {
+                agent_id, profile, ..
+            }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
                 Some(SystemNotification::AgentsIntroduced {
                     agents: BTreeMap::from([(author, *agent_id)]),
                 })
-            }
-
-            // We define group chats as topics which contain a CreateGroup that makes at least
-            // one member an admin.
-            //
-            // 1:1 chats are also group chats, but both members have only Write access,
-            // meaning nobody will ever have admin access.
-            //
-            // TODO: this needs to be much more clearly defined, see https://hackmd.io/1S2xtZfXTo6N5WinzCnqWw
-            Payload::GroupControl(GroupsArgs { action, .. }) => {
-                let chat_id = ChatId::from_topic_id(topic)?;
-                match action {
-                    GroupAction::Create { initial_members } => {
-                        let has_admin = initial_members
-                            .iter()
-                            .any(|(_, access)| *access == p2panda_auth::Access::manage());
-                        if has_admin {
-                            self.mark_group_as_group_chat(chat_id).await?;
-                            Some(SystemNotification::GroupChatAdded { chat_id })
-                        } else {
-                            None
-                        }
-                    }
-                    _ => Some(SystemNotification::GroupMembersChanged { chat_id }),
-                }
             }
 
             _ => {
@@ -550,7 +526,7 @@ impl OpProjection {
 
         if let Payload::Chat(chat_payload) = &payload {
             if !matches!(chat_payload, ChatPayload::MessageAck { .. }) {
-                let header = &operation.event.operation.header;
+                let header = &operation.processed().header();
                 self.record_chat_log_head(topic, author, header.seq_num, header.hash())
                     .await?;
             }
@@ -569,8 +545,6 @@ impl OpProjection {
         let author = DeviceId::from(operation.author());
         if self.is_author_blocked(&author).await? {
             let allow = match operation.message() {
-                // Group control messages are necessary to maintain group chats.
-                Payload::GroupControl(_) => true,
                 // Group info messages are necessary to maintain group chats.
                 Payload::Chat(ChatPayload::GroupInfo(_)) => true,
                 // All other operations are invalid.

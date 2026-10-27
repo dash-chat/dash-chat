@@ -248,7 +248,7 @@ async fn group_chat_messages_are_acked_by_members() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(maplit::btreemap! {
+        .create_chat_group(maplit::btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await

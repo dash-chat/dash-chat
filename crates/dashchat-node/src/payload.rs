@@ -1,8 +1,6 @@
 use dashchat_utils::SeqNum;
-use p2panda::groups::GroupsArgs;
+use p2panda::Hash;
 use p2panda::operation::Header;
-use p2panda::{Hash, VerifyingKey};
-use p2panda_auth::group::GroupAction;
 use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
@@ -16,6 +14,8 @@ use crate::{AgentId, AsBody, Cbor, ChatMessageContent, ChatReaction, DeviceId};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
+    pub keybundle: p2panda::spaces::Member,
+
     #[serde(default)]
     pub surname: Option<String>,
     pub avatar: Option<String>,
@@ -254,25 +254,6 @@ pub enum Payload {
     /// Data only seen within your private device group.
     /// No other person sees these.
     DeviceGroup(DeviceGroupPayload),
-
-    // @TODO: this will be removed once spaces is integrated into p2panda node as they will move
-    // onto the provided extension type.
-    /// Groups control message.
-    GroupControl(GroupsArgs),
-}
-
-impl Payload {
-    pub fn group_control(
-        group_id: ChatId,
-        action: GroupAction<VerifyingKey, ()>,
-        dependencies: Vec<Hash>,
-    ) -> anyhow::Result<Self> {
-        Ok(Payload::GroupControl(GroupsArgs {
-            group_id: group_id.to_group_pubkey()?,
-            action,
-            dependencies,
-        }))
-    }
 }
 
 impl Cbor for Payload {}
