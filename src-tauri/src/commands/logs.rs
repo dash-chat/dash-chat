@@ -70,26 +70,25 @@ pub struct SimplifiedHeader {
     /// p2panda-auth group-control extension, when this operation is a group action
     /// (Create / Add / Remove / Promote / Demote) rather than a chat payload.
     #[serde(skip_serializing_if = "Option::is_none")]
-    auth: Option<GroupsArgs>,
+    auth: Option<AuthData>,
 }
 
-/// The shape of the former `p2panda_auth::GroupsExtensionArgs`, which the frontend still reads,
-/// rebuilt from the group-control variant of the spaces extension.
+/// Group control data read by the frontend.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub struct GroupsArgs {
+pub struct AuthData {
     pub group_id: VerifyingKey,
     pub action: GroupAction<VerifyingKey, ()>,
     pub dependencies: Vec<Hash>,
 }
 
-impl GroupsArgs {
+impl AuthData {
     fn from_spaces_args(args: &SpacesArgs<()>) -> Option<Self> {
         match args {
             SpacesArgs::Group {
                 group_id,
                 group_action,
                 auth_dependencies,
-            } => Some(GroupsArgs {
+            } => Some(AuthData {
                 group_id: *group_id,
                 action: group_action.clone(),
                 dependencies: auth_dependencies.clone(),
@@ -106,7 +105,7 @@ impl SimplifiedHeader {
     /// form of a LogId) we need to pass this in as a separate argument.
     pub fn from_header(topic: TopicId, header: Header) -> Self {
         let spaces_args = header.extensions.spaces_args();
-        let auth = spaces_args.as_ref().and_then(GroupsArgs::from_spaces_args);
+        let auth = spaces_args.as_ref().and_then(AuthData::from_spaces_args);
         let previous = spaces_args
             .as_ref()
             .map(SpacesArgs::dependencies)
