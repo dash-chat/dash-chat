@@ -208,7 +208,7 @@ async fn test_group_chat() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -313,6 +313,7 @@ async fn test_group_chat() {
             surname: None,
             avatar: None,
             about: None,
+            keybundle: alice.keybundle().await.unwrap(),
         })
     );
 
@@ -328,6 +329,7 @@ async fn test_group_chat() {
             surname: None,
             avatar: None,
             about: None,
+            keybundle: cammy.keybundle().await.unwrap(),
         })
     );
 
@@ -337,6 +339,62 @@ async fn test_group_chat() {
     let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;
     let alice_members = alice.get_group_members(chat_id).await.unwrap();
     assert_eq!(alice_members, expected_members);
+}
+
+/// A restarted node must rejoin its group chats as spaces, not plain streams.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_chat_space_survives_restart() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let alice_dir = alice.shutdown().await;
+    let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir)
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    // Fails with `NotASpace` if the restart opened the chat as a plain stream.
+    alice.join_space(chat_id).await.unwrap();
+
+    alice
+        .send_message_raw(chat_id, "after restart".into())
+        .await
+        .unwrap();
+
+    poll.wait_for(|| async {
+        let msgs = bobbi.get_messages(chat_id).await.unwrap().len();
+        (msgs == 1).then_some(()).ok_or(msgs)
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -355,7 +413,7 @@ async fn test_group_chat_registered_in_op_projection() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -391,7 +449,7 @@ async fn test_admin_removes_themself_when_they_are_the_only_member() {
     let alice = make_node(&mailbox, "alice").await;
 
     let chat_id = alice
-        .create_group(btreemap! {})
+        .create_chat_group(btreemap! {})
         .await
         .unwrap()
         .alias_named("groupchat");
@@ -421,7 +479,7 @@ async fn test_admin_removes_themself_there_is_another_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -472,7 +530,7 @@ async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
@@ -504,7 +562,7 @@ async fn test_non_admin_removes_themself() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
@@ -557,7 +615,7 @@ async fn test_admin_removes_non_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
@@ -615,7 +673,7 @@ async fn test_non_admin_cannot_remove_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *andi.device_id() => p2panda_auth::Access::manage(),
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
@@ -681,7 +739,7 @@ async fn test_group_events() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => Access::manage(),
         })
         .await

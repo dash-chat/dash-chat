@@ -14,6 +14,9 @@ pub enum Error {
     #[error("Failed to register bootstrap node: {0}")]
     RegisterBootstrap(String),
 
+    #[error("Failed to retrieve own key material: {0}")]
+    OwnKeyMaterialMissing(String),
+
     #[error("Failed to author operation: {0}")]
     AuthorOperation(String),
 
@@ -32,6 +35,9 @@ pub enum Error {
 pub enum AddContactError {
     #[error("Profile must be created before adding contacts")]
     ProfileNotCreated,
+
+    #[error("The node's own key material is missing, can't add contact")]
+    OwnKeyMaterialMissing(String),
 
     #[error("Cannot add yourself as a contact")]
     CannotAddSelf,

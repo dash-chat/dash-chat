@@ -32,10 +32,6 @@ fn is_group_info(notification: &OpNotification) -> bool {
     )
 }
 
-fn is_group_control(notification: &OpNotification) -> bool {
-    matches!(&notification.payload, Some(Payload::GroupControl(_)))
-}
-
 fn notification_author(notification: &OpNotification) -> DeviceId {
     DeviceId::from(notification.header.verifying_key)
 }
@@ -253,7 +249,7 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
     // cammy is an admin so she can perform a group-control action (removing
     // bobbi); bobbi is a plain member.
     let chat = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => Access::write(),
             *cammy.device_id() => Access::manage(),
         })
@@ -349,10 +345,12 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
         from_cammy.iter().any(is_group_info),
         "alice must still process a blocked group member's group-info update",
     );
-    assert!(
-        from_cammy.iter().any(is_group_control),
-        "alice must still process a blocked group member's group-control action",
-    );
+
+    todo!("check that alice still sees cammy's space control messages");
+    // assert!(
+    //     from_cammy.iter().any(is_group_control),
+    //     "alice must still process a blocked group member's group-control action",
+    // );
 
     // The effects are visible in alice's durable state: the group is renamed and
     // bobbi has been removed.

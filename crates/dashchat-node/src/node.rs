@@ -23,7 +23,7 @@ use chrono::{Duration, Utc};
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
-use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
+use p2panda::{AccessLevel, Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
@@ -510,19 +510,10 @@ impl Node {
             .await
             .replace(followup_handle);
 
-        // === message ack writer === //
+        // === topics, then message ack writer === //
 
-        if node.config.enable_message_acks {
-            let ack_handle = message_acks::spawn_message_ack_task(
-                node.clone(),
-                node.config.message_ack_debounce,
-                node.message_ack_trigger.clone(),
-            );
-            node.message_ack_handle.lock().await.replace(ack_handle);
-        }
-
-        // === topics === //
-
+        // The ack writer's startup reconciliation publishes into stored chat
+        // spaces, so it must start only after those spaces are rejoined.
         if node.config.defer_stored_topics_initialization {
             // Initialize stored topics on a background task so the node is
             // returned immediately. This keeps app launch responsive while still ensuring all
@@ -541,6 +532,7 @@ impl Node {
                         || async { node.initialize_stored_topics().await },
                     )
                     .await;
+                    node.spawn_message_ack_writer().await;
                 }
             });
             node.stored_topics_init_handle
@@ -549,9 +541,22 @@ impl Node {
                 .replace(init_handle);
         } else {
             node.initialize_stored_topics().await?;
+            node.spawn_message_ack_writer().await;
         }
 
         Ok(node)
+    }
+
+    async fn spawn_message_ack_writer(&self) {
+        if !self.config.enable_message_acks {
+            return;
+        }
+        let ack_handle = message_acks::spawn_message_ack_task(
+            self.clone(),
+            self.config.message_ack_debounce,
+            self.message_ack_trigger.clone(),
+        );
+        self.message_ack_handle.lock().await.replace(ack_handle);
     }
 
     pub fn data_path(&self) -> &PathBuf {
@@ -572,7 +577,7 @@ impl Node {
             &self.device_id(),
             Utc::now() + self.config.contact_code_expiry,
         );
-        self.initialize_topic(*inbox_topic.topic)
+        self.initialize_stream(*inbox_topic.topic)
             .await
             .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
         self.local_store
@@ -751,27 +756,23 @@ impl Node {
 
     /// Create a new direct chat Space.
     /// Note that only one node should create the space!
+    ///
+    /// TODO: use a tie breaker in case both nodes created a space, so that one
+    ///       gets deterministically abandoned and both nodes choose the same space.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn create_direct_chat_space(&self, other: FakeAgentId) -> anyhow::Result<()> {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
-        self.register_topic(topic).await?;
 
         let other_device_id = DeviceId::from(other);
 
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads(*topic).await?;
         let initial_members = vec![
             (GroupMember::Individual(*self.device_id()), Access::write()),
             (GroupMember::Individual(*other_device_id), Access::write()),
         ];
-        self.publish(
-            topic,
-            Payload::group_control(topic, GroupAction::Create { initial_members }, deps)?,
-            Some(&format!("create_direct_chat_space({:?})", topic.aliased())),
-        )
-        .await?;
+        self.create_space(topic, initial_members).await?;
 
         tracing::info!(
             my_actor = ?my_actor.aliased(),
@@ -785,7 +786,7 @@ impl Node {
         Ok(())
     }
 
-    pub async fn create_group(
+    pub async fn create_chat_group(
         &self,
         mut initial_members: BTreeMap<VerifyingKey, p2panda_auth::Access>,
     ) -> anyhow::Result<ChatId> {
@@ -826,16 +827,7 @@ impl Node {
             .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
-        self.register_topic(chat_id).await?;
-
-        // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads(*chat_id).await?;
-        self.publish(
-            chat_id,
-            Payload::group_control(chat_id, GroupAction::Create { initial_members }, deps)?,
-            Some(&format!("create_group({:?})", chat_id.aliased())),
-        )
-        .await?;
+        self.create_space(chat_id, initial_members).await?;
 
         // Ensure that future non-contact members can see every initial member's
         // profile, including the creator's. The creator is the only node that
@@ -850,6 +842,25 @@ impl Node {
             self.invite_to_group(chat_id, agent).await?;
         }
         Ok(chat_id)
+    }
+
+    async fn create_space(
+        &self,
+        topic: ChatId,
+        initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
+    ) -> anyhow::Result<()> {
+        let space = self.register_and_create_space(topic).await?;
+        for (member, access) in initial_members {
+            if member.id() == *self.device_id() {
+                continue;
+            }
+            // TODO: this erases info about Individual vs Group member.
+            // Do we need a proper Group in the Space to account for this?
+            space
+                .run(async move |space| space.add(member.id(), access.level).await)
+                .await??;
+        }
+        Ok(())
     }
 
     /// This is a temporary hack until we have device groups, see docs for [`ChatPayload::IntroduceAgents`].
@@ -894,6 +905,35 @@ impl Node {
         Ok(())
     }
 
+    async fn add_group_member_to_space(
+        &self,
+        chat_id: ChatId,
+        member: VerifyingKey,
+        access: p2panda_auth::Access,
+    ) -> anyhow::Result<()> {
+        let member = GroupMember::Individual(member);
+        self.streams
+            .space(chat_id.into())
+            .await?
+            .run(async move |space| space.add(member.id(), access.level).await)
+            .await??;
+        Ok(())
+    }
+
+    async fn remove_group_member_from_space(
+        &self,
+        chat_id: ChatId,
+        member: VerifyingKey,
+    ) -> anyhow::Result<()> {
+        let member = GroupMember::Individual(member);
+        self.streams
+            .space(chat_id.into())
+            .await?
+            .run(async move |space| space.remove(member.id()).await)
+            .await??;
+        Ok(())
+    }
+
     pub async fn add_group_member(
         &self,
         chat_id: ChatId,
@@ -909,19 +949,8 @@ impl Node {
             ));
         }
 
-        self.publish(
-            chat_id,
-            Payload::group_control(
-                chat_id,
-                GroupAction::Add {
-                    member: GroupMember::Individual(member),
-                    access,
-                },
-                deps,
-            )?,
-            Some(&format!("add_group_member({:?})", chat_id.aliased())),
-        )
-        .await?;
+        self.add_group_member_to_space(chat_id, member, access)
+            .await?;
 
         let agent_id = self
             .projection
@@ -952,7 +981,6 @@ impl Node {
         chat_id: ChatId,
         member: VerifyingKey,
     ) -> Result<(), RemoveGroupMemberError> {
-        // TODO: this should use a transaction, but the race is not a big deal here
         let member_id = DeviceId::from(member);
         if !self.has_other_admins(chat_id, member_id).await?
             && !self.is_only_member(chat_id, member_id).await?
@@ -960,19 +988,8 @@ impl Node {
             return Err(RemoveGroupMemberError::LastAdmin);
         }
 
-        let deps = self.group_store.heads(*chat_id).await?;
-        self.publish(
-            chat_id,
-            Payload::group_control(
-                chat_id,
-                GroupAction::Remove {
-                    member: GroupMember::Individual(member),
-                },
-                deps,
-            )?,
-            Some(&format!("remove_group_member({:?})", chat_id.aliased())),
-        )
-        .await?;
+        self.remove_group_member_from_space(chat_id, member).await?;
+
         Ok(())
     }
 
@@ -1016,9 +1033,15 @@ impl Node {
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().aliased())))]
-    pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
+    pub async fn join_chat_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.register_topic(chat_id).await?;
+        self.join_space(chat_id).await?;
+        Ok(())
+    }
+
+    pub async fn join_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        tracing::info!(?chat_id, "joined space");
+        self.register_and_join_space(chat_id).await?;
         Ok(())
     }
 
@@ -1045,6 +1068,17 @@ impl Node {
 
     pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
         self.projection.get_profile(agent_id).await
+    }
+
+    pub async fn keybundle(&self) -> anyhow::Result<p2panda::spaces::Member> {
+        Ok(self.streams.with_node(async |node| node.me().await).await?)
+    }
+
+    pub async fn save_keybundle(&self, keybundle: p2panda::spaces::Member) -> anyhow::Result<()> {
+        self.streams
+            .with_node(async |node| node.register_member(keybundle).await)
+            .await?;
+        Ok(())
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
@@ -1128,8 +1162,8 @@ impl Node {
         Ok(newest.map(|(_, request)| request))
     }
 
-    pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
-        self.local_store.subscribed_topics().await
+    pub async fn subscribed_spaces(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
+        self.local_store.subscribed_spaces().await
     }
 
     /// Get all messages for a chat from the logs.
@@ -1669,8 +1703,7 @@ impl Node {
     /// Register the shared, idempotent state for a contact identified by their
     /// device pubkey and agent id:
     /// - register the contact as a bootstrap peer,
-    /// - subscribe to their announcements,
-    /// - subscribe to our direct-chat topic, and
+    /// - join their announcements space, and
     /// - stop restoring their inbox our own request was sent to.
     ///
     /// Safe to call repeatedly, so both the initiating `add_contact` path and the
@@ -1686,13 +1719,7 @@ impl Node {
         self.register_bootstrap_node(*device_id)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
-        // Subscribe to the contact's announcements to receive their group
-        // control messages, and to our shared direct-chat topic.
-        self.register_topic(Topic::announcements(agent_id))
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-        let fake_agent_id = FakeAgentId::from(device_id);
-        self.register_topic(self.direct_chat_topic(fake_agent_id))
+        self.register_and_join_space(Topic::announcements(agent_id))
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.local_store
@@ -1749,12 +1776,6 @@ impl Node {
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
 
-        // Subscribe to the shared direct-chat topic right away so messages sent
-        // before the owner accepts already sync in both directions.
-        self.register_topic(direct_chat_topic_id)
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-
         // SPACES: Register the member in the spaces manager
 
         let inbox_topic = InboxTopic::from_nonce(
@@ -1804,7 +1825,7 @@ impl Node {
         // // XXX: need sleep a little more for all the messages to be processed
         // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
-        self.initialize_topic(*inbox_topic.topic)
+        self.initialize_stream(*inbox_topic.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -1820,7 +1841,7 @@ impl Node {
             expires_at: Utc::now() + self.config.contact_code_expiry,
         };
 
-        self.initialize_topic(*reply_inbox.topic)
+        self.initialize_stream(*reply_inbox.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -2027,7 +2048,7 @@ impl Node {
         else {
             return Ok(());
         };
-        self.initialize_topic(*reply_topic)
+        self.initialize_stream(*reply_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
         self.publish(
@@ -2215,16 +2236,17 @@ impl Node {
     async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
         let mut failures = 0usize;
 
-        self.initialize_topic(
-            *Topic::announcements(self.agent_id())
-                .alias_named(&format!("announce({:?})", self.agent_id().aliased())),
-        )
-        .await?;
+        let subscribed_spaces = self.local_store.subscribed_spaces().await?;
+        let my_announcements = Topic::announcements(self.agent_id())
+            .alias_named(&format!("announce({:?})", self.agent_id().aliased()));
+        if !subscribed_spaces.contains(&*my_announcements) {
+            self.register_and_create_space(my_announcements).await?;
+        }
 
         let advertised_inbox_topics = self.local_store.get_advertised_inbox_topics().await?;
         for topic in advertised_inbox_topics.iter() {
             if let Err(err) = self
-                .initialize_topic(
+                .initialize_stream(
                     *topic
                         .topic
                         .clone()
@@ -2243,7 +2265,7 @@ impl Node {
             .await?;
         for (topic, peer_device) in reply_inbox_topics.iter() {
             if let Err(err) = self
-                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                .initialize_stream(*topic.topic.clone().alias_named(&format!(
                     "reply_inbox({:?},peer={})",
                     self.device_id().aliased(),
                     &hex::encode(&peer_device.as_bytes()[..4])
@@ -2264,7 +2286,7 @@ impl Node {
             .await?
         {
             if let Err(err) = self
-                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                .initialize_stream(*topic.topic.clone().alias_named(&format!(
                     "requested_inbox(peer={})",
                     &hex::encode(&owner.as_bytes()[..4])
                 )))
@@ -2284,7 +2306,7 @@ impl Node {
             .await?
         {
             if let Err(err) = self
-                .initialize_topic(*topic.topic.clone().alias_named(&format!(
+                .initialize_stream(*topic.topic.clone().alias_named(&format!(
                     "accepted_inbox(peer={})",
                     &hex::encode(&requester.as_bytes()[..4])
                 )))
@@ -2295,10 +2317,9 @@ impl Node {
             }
         }
 
-        let subscribed_topics = self.local_store.subscribed_topics().await?;
-        for topic in subscribed_topics.iter() {
-            if let Err(err) = self.initialize_topic(*topic).await {
-                error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed topic");
+        for topic in subscribed_spaces.iter() {
+            if let Err(err) = self.initialize_space(*topic).await {
+                error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed space");
                 failures += 1;
             }
         }
@@ -2306,7 +2327,7 @@ impl Node {
         // @TODO: I had to add this so that the device group topic is subscribed to when we later
         // attempt to publish operations to it.
         if let Err(err) = self
-            .initialize_topic(self.device_group_topic().into())
+            .initialize_stream(self.device_group_topic().into())
             .await
         {
             error!(?err, "failed to initialize device group topic");
@@ -2699,7 +2720,7 @@ mod forged_contact_request_tests {
         let qr = alice.create_add_contact_qr_code().await.unwrap();
         let alice_inbox =
             InboxTopic::from_nonce(&qr.device_pubkey, &qr.inbox_nonce, chrono::Utc::now());
-        mallory.initialize_topic(*alice_inbox.topic).await.unwrap();
+        mallory.initialize_stream(*alice_inbox.topic).await.unwrap();
         mallory
             .publish(
                 alice_inbox.topic,
