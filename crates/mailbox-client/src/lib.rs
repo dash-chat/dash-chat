@@ -1,8 +1,8 @@
 pub mod backends;
 pub mod blobs;
 mod connection_health;
+pub mod operation_delivery;
 pub mod store;
-pub mod sync;
 pub mod sync_scheduler;
 pub mod topic_registry;
 

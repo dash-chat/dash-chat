@@ -1,13 +1,13 @@
-//! Sync coordination for mailbox clients.
+//! Per-mailbox delivery of operations.
 //!
-//! This module provides the `SyncCoordinator`, which manages the high-level
-//! sync protocol between the local node and mailbox servers. It handles
-//! fetching operations for subscribed topics and publishing the operations
-//! the mailbox is missing, reporting sync watermarks for the caller to
-//! record, and computes fast-push deltas (the ops above a mailbox's confirmed
+//! This module provides `OperationDelivery`: the high-level protocol for
+//! delivering operations to one mailbox server. It handles fetching
+//! operations for subscribed topics and publishing the operations the
+//! mailbox is missing, reporting sync watermarks for the caller to record,
+//! and computes fast-push deltas (the ops above a mailbox's confirmed
 //! watermark); publishing those stays with the caller.
 //!
-//! The coordinator abstracts the specific sync loop logic away from the
+//! The delivery engine abstracts the specific sync loop logic away from the
 //! `mailboxes-manager` crate's `Mailboxes` registry.
 
 use std::collections::{BTreeMap, HashSet};
@@ -20,7 +20,7 @@ use crate::store::MailboxStore;
 use crate::topic_registry::TopicRegistry;
 use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 
-/// Outcome of a single [`SyncCoordinator::sync_topics`] call. The sync may
+/// Outcome of a single [`OperationDelivery::sync_topics`] call. The sync may
 /// have failed partway through, but any topics whose receivers were found to
 /// be closed are always reported so the caller can unsubscribe them.
 #[derive(Debug)]
@@ -38,12 +38,12 @@ struct SyncTopicResult<Item: crate::MailboxItem> {
 }
 
 #[derive(Clone)]
-pub struct SyncCoordinator<Item, Store> {
+pub struct OperationDelivery<Item, Store> {
     store: Store,
     phantom: std::marker::PhantomData<fn() -> Item>,
 }
 
-impl<Item, Store> SyncCoordinator<Item, Store>
+impl<Item, Store> OperationDelivery<Item, Store>
 where
     Item: crate::MailboxItem,
     Store: MailboxStore<Item>,
@@ -273,8 +273,8 @@ mod tests {
     use crate::{MailboxId, PublishResponse, topic_registry::TopicRegistry};
     use std::collections::HashMap;
 
-    fn new_coordinator(store: MemStore) -> SyncCoordinator<Msg, MemStore> {
-        SyncCoordinator::new(store)
+    fn new_coordinator(store: MemStore) -> OperationDelivery<Msg, MemStore> {
+        OperationDelivery::new(store)
     }
 
     #[tokio::test]

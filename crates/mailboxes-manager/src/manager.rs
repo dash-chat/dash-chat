@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use mailbox_client::operation_delivery::OperationDelivery;
 use mailbox_client::store::MailboxStore;
-use mailbox_client::sync::SyncCoordinator;
 use mailbox_client::sync_scheduler::{PendingRequest, RequestOutcome};
 use mailbox_client::topic_registry::TopicRegistry;
 use mailbox_client::{
@@ -172,7 +172,7 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
-    sync_coordinator: SyncCoordinator<Item, Store>,
+    operation_delivery: OperationDelivery<Item, Store>,
     /// Owned persistence when the manager was spawned with a database path;
     /// held so `close()` can release the underlying pool and file lock.
     persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
@@ -198,7 +198,7 @@ where
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
-            sync_coordinator: SyncCoordinator::new(store),
+            operation_delivery: OperationDelivery::new(store),
             persistence,
             poll_loop: Arc::new(std::sync::Mutex::new(None)),
         }
@@ -457,7 +457,7 @@ where
     ) -> anyhow::Result<()> {
         let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
         let ops = self
-            .sync_coordinator
+            .operation_delivery
             .fast_push_ops(synced, topic, author)
             .await?;
         let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
@@ -691,7 +691,7 @@ where
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
         let outcome = self
-            .sync_coordinator
+            .operation_delivery
             .sync_topics(topics, mailbox, &self.topic_registry)
             .await;
         self.topic_registry
