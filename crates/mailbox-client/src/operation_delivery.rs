@@ -39,8 +39,8 @@ struct SyncTopicResult<Item: crate::MailboxItem> {
 
 #[derive(Clone)]
 pub struct OperationDelivery<Item, Store> {
+    client: Arc<dyn MailboxClient<Item>>,
     store: Store,
-    phantom: std::marker::PhantomData<fn() -> Item>,
 }
 
 impl<Item, Store> OperationDelivery<Item, Store>
@@ -48,11 +48,8 @@ where
     Item: crate::MailboxItem,
     Store: MailboxStore<Item>,
 {
-    pub fn new(store: Store) -> Self {
-        Self {
-            store,
-            phantom: std::marker::PhantomData,
-        }
+    pub fn new(client: Arc<dyn MailboxClient<Item>>, store: Store) -> Self {
+        Self { client, store }
     }
 
     /// Immediately sync the given topics with the given mailbox:
@@ -61,13 +58,12 @@ where
     pub async fn sync_topics(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-        mailbox: &Arc<dyn MailboxClient<Item>>,
         topic_registry: &TopicRegistry<Item>,
     ) -> SyncTopicOutcome<Item::Topic, Item::Author>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
     {
-        let (response, sent_heights) = match self.fetch_missing_operations(topics, mailbox).await {
+        let (response, sent_heights) = match self.fetch_missing_operations(topics).await {
             Ok(result) => result,
             Err(err) => {
                 return SyncTopicOutcome {
@@ -107,7 +103,7 @@ where
             .map(|op| (op.topic(), op.author(), op.seq_num()))
             .collect();
 
-        if let Err(err) = mailbox.publish(ops_to_publish).await {
+        if let Err(err) = self.client.publish(ops_to_publish).await {
             return SyncTopicOutcome {
                 result: Err(err),
                 closed_topics,
@@ -149,7 +145,6 @@ where
     async fn fetch_missing_operations(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-        mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<(
         BTreeMap<Item::Topic, FetchTopicResponse<Item>>,
         BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
@@ -167,7 +162,7 @@ where
             request.insert(topic, heights);
         }
 
-        let FetchResponse(response) = mailbox.fetch(FetchRequest(request)).await?;
+        let FetchResponse(response) = self.client.fetch(FetchRequest(request)).await?;
         Ok((response, sent_heights))
     }
 
@@ -273,8 +268,31 @@ mod tests {
     use crate::{MailboxId, PublishResponse, topic_registry::TopicRegistry};
     use std::collections::HashMap;
 
-    fn new_coordinator(store: MemStore) -> OperationDelivery<Msg, MemStore> {
-        OperationDelivery::new(store)
+    fn new_delivery(
+        client: Arc<dyn MailboxClient<Msg>>,
+        store: MemStore,
+    ) -> OperationDelivery<Msg, MemStore> {
+        OperationDelivery::new(client, store)
+    }
+
+    struct NoopClient;
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for NoopClient {
+        fn id(&self) -> MailboxId {
+            "noop".into()
+        }
+
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            Ok(FetchResponse(Default::default()))
+        }
     }
 
     #[tokio::test]
@@ -282,13 +300,13 @@ mod tests {
         // Watermark at the log's height: nothing newer to push.
         let store = MemStore::default();
         store.set_height(0, 'a', 4);
-        let coordinator = new_coordinator(store);
-        let ops = coordinator.fast_push_ops(Some(4), 0, 'a').await.unwrap();
+        let delivery = new_delivery(Arc::new(NoopClient), store);
+        let ops = delivery.fast_push_ops(Some(4), 0, 'a').await.unwrap();
         assert!(ops.is_empty());
 
         // Log absent entirely.
-        let coordinator = new_coordinator(MemStore::default());
-        let ops = coordinator.fast_push_ops(None, 0, 'a').await.unwrap();
+        let delivery = new_delivery(Arc::new(NoopClient), MemStore::default());
+        let ops = delivery.fast_push_ops(None, 0, 'a').await.unwrap();
         assert!(ops.is_empty());
     }
 
@@ -296,9 +314,9 @@ mod tests {
     async fn fast_push_ops_returns_the_delta_above_the_watermark() {
         let store = MemStore::default();
         store.set_height(0, 'a', 4);
-        let coordinator = new_coordinator(store);
+        let delivery = new_delivery(Arc::new(NoopClient), store);
 
-        let ops = coordinator.fast_push_ops(Some(1), 0, 'a').await.unwrap();
+        let ops = delivery.fast_push_ops(Some(1), 0, 'a').await.unwrap();
         assert_eq!(
             ops,
             (2..=4)
@@ -311,7 +329,7 @@ mod tests {
         );
 
         // No watermark recorded yet: the whole log from zero.
-        let ops = coordinator.fast_push_ops(None, 0, 'a').await.unwrap();
+        let ops = delivery.fast_push_ops(None, 0, 'a').await.unwrap();
         assert_eq!(ops.len(), 5);
         assert_eq!(ops[0].seq, 0);
     }
@@ -364,7 +382,6 @@ mod tests {
     async fn sync_topics_publishes_missing_delivers_items_and_reports_acks() {
         let store = MemStore::default();
         store.set_height(0, 'a', 4);
-        let coordinator = new_coordinator(store);
 
         // The mailbox holds one op from 'b' we lack, and lacks our seqs 3-4.
         let fetch_response = FetchResponse(BTreeMap::from([(
@@ -387,8 +404,9 @@ mod tests {
         let topic_registry = TopicRegistry::new();
         let mut rx = topic_registry.subscribe(0).await.unwrap();
 
-        let outcome = coordinator
-            .sync_topics([0u8].into_iter(), &client, &topic_registry)
+        let delivery = new_delivery(client, store);
+        let outcome = delivery
+            .sync_topics([0u8].into_iter(), &topic_registry)
             .await;
 
         // The mailbox's missing ops were published from the local log.
@@ -429,13 +447,13 @@ mod tests {
 
     #[tokio::test]
     async fn sync_topics_reports_fetch_failure() {
-        let coordinator = new_coordinator(MemStore::default());
         let client: Arc<dyn MailboxClient<Msg>> = Arc::new(FailingFetchClient);
+        let delivery = new_delivery(client, MemStore::default());
         let topic_registry = TopicRegistry::new();
         topic_registry.subscribe(0).await.unwrap();
 
-        let outcome = coordinator
-            .sync_topics([0u8].into_iter(), &client, &topic_registry)
+        let outcome = delivery
+            .sync_topics([0u8].into_iter(), &topic_registry)
             .await;
 
         assert!(outcome.result.is_err());

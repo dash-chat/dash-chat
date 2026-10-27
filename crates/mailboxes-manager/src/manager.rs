@@ -172,13 +172,13 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
-    operation_delivery: OperationDelivery<Item, Store>,
     /// Owned persistence when the manager was spawned with a database path;
     /// held so `close()` can release the underlying pool and file lock.
     persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     /// The poll loop's handle, taken by `close()` to stop the loop before the
     /// persistence pool is released.
     poll_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    store: Store,
 }
 
 impl<Item: MailboxItem, Store: MailboxStore<Item>> Mailboxes<Item, Store>
@@ -198,7 +198,7 @@ where
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
-            operation_delivery: OperationDelivery::new(store),
+            store,
             persistence,
             poll_loop: Arc::new(std::sync::Mutex::new(None)),
         }
@@ -456,14 +456,12 @@ where
         author: Item::Author,
     ) -> anyhow::Result<()> {
         let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
-        let ops = self
-            .operation_delivery
-            .fast_push_ops(synced, topic, author)
-            .await?;
+        let client = tracked.client().await;
+        let delivery = OperationDelivery::new(client.clone(), self.store.clone());
+        let ops = delivery.fast_push_ops(synced, topic, author).await?;
         let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
             return Ok(());
         };
-        let client = tracked.client().await;
         let response = client.publish(ops).await?;
         let watermark = response.watermark(&topic, &author);
         if let Some(wm) = watermark {
@@ -690,10 +688,8 @@ where
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
-        let outcome = self
-            .operation_delivery
-            .sync_topics(topics, mailbox, &self.topic_registry)
-            .await;
+        let delivery = OperationDelivery::new(mailbox.clone(), self.store.clone());
+        let outcome = delivery.sync_topics(topics, &self.topic_registry).await;
         self.topic_registry
             .cleanup_closed_subscriptions(&outcome.closed_topics)
             .await;
