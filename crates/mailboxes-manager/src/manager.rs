@@ -693,7 +693,7 @@ where
         mailbox: &Arc<dyn MailboxClient<Item>>,
     ) -> anyhow::Result<()> {
         let delivery = OperationDelivery::new(mailbox.clone(), self.store.clone());
-        let outcome = delivery.sync_topics(topics, &self.topic_registry).await;
+        let outcome = delivery.sync(topics, &self.topic_registry).await;
         self.topic_registry
             .cleanup_closed_subscriptions(&outcome.closed_topics)
             .await;

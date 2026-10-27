@@ -2,10 +2,9 @@
 //!
 //! This module provides `OperationDelivery`: the high-level protocol for
 //! delivering operations to one mailbox server. It handles fetching
-//! operations for subscribed topics and publishing the operations the
-//! mailbox is missing, reporting sync watermarks for the caller to record,
-//! and computes fast-push deltas (the ops above a mailbox's confirmed
-//! watermark); publishing those stays with the caller.
+//! operations for subscribed topics, publishing the operations the mailbox
+//! is missing (in syncs and direct pushes), and reporting sync watermarks
+//! and confirmed echoes for the caller to record.
 //!
 //! The delivery engine abstracts the specific sync loop logic away from the
 //! `mailboxes-manager` crate's `Mailboxes` registry.
@@ -20,11 +19,11 @@ use crate::store::MailboxStore;
 use crate::topic_registry::TopicRegistry;
 use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 
-/// Outcome of a single [`OperationDelivery::sync_topics`] call. The sync may
+/// Outcome of a single [`OperationDelivery::sync`] call. The sync may
 /// have failed partway through, but any topics whose subscribers were found
 /// to be closed are always reported so the caller can unsubscribe them.
 #[derive(Debug)]
-pub struct SyncTopicOutcome<Topic, Author> {
+pub struct SyncOutcome<Topic, Author> {
     /// Watermarks for the caller to record for the mailbox. A failed sync
     /// carries no acks: it records nothing.
     pub result: Result<Vec<(Topic, Author, SeqNum)>, DeliveryError>,
@@ -62,7 +61,7 @@ impl DeliveryError {
     }
 }
 
-struct SyncTopicResult<Item: crate::MailboxItem> {
+struct SyncResult<Item: crate::MailboxItem> {
     ops_to_publish: Vec<Item>,
     acks: Vec<(Item::Topic, Item::Author, SeqNum)>,
     closed: bool,
@@ -81,6 +80,7 @@ impl<Item, Store> OperationDelivery<Item, Store>
 where
     Item: crate::MailboxItem,
     Store: MailboxStore<Item>,
+    Item::Topic: std::fmt::Display,
 {
     pub fn new(client: Arc<dyn MailboxClient<Item>>, store: Store) -> Self {
         Self { client, store }
@@ -92,18 +92,15 @@ where
     ///
     /// Inbound items go straight to the topics' subscribers, snapshotted from
     /// `topic_registry` when the sync starts.
-    pub async fn sync_topics(
+    pub async fn sync(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
         topic_registry: &TopicRegistry<Item>,
-    ) -> SyncTopicOutcome<Item::Topic, Item::Author>
-    where
-        Item::Topic: std::fmt::Display + Eq + Hash + Clone,
-    {
+    ) -> SyncOutcome<Item::Topic, Item::Author> {
         let (response, sent_heights) = match self.fetch_missing_operations(topics).await {
             Ok(result) => result,
             Err(err) => {
-                return SyncTopicOutcome {
+                return SyncOutcome {
                     result: Err(err),
                     closed_topics: HashSet::new(),
                 };
@@ -117,12 +114,12 @@ where
         for (topic, response) in response.into_iter() {
             let sender = topic_registry.get_sender(&topic).await;
             let outcome = match self
-                .sync_topic(topic.clone(), response, &sent_heights, sender)
+                .sync_one_topic(topic.clone(), response, &sent_heights, sender)
                 .await
             {
                 Ok(res) => res,
                 Err(err) => {
-                    return SyncTopicOutcome {
+                    return SyncOutcome {
                         result: Err(err),
                         closed_topics,
                     };
@@ -142,18 +139,44 @@ where
             .collect();
 
         if !ops_to_publish.is_empty() {
-            if let Err(err) = self.client.publish(ops_to_publish).await {
-                let err = DeliveryError::Mailbox(err);
-                return SyncTopicOutcome {
-                    result: Err(err),
+            let response = match self.client.publish(ops_to_publish).await {
+                Ok(response) => response,
+                Err(err) => {
+                    return SyncOutcome {
+                        result: Err(DeliveryError::Mailbox(err)),
+                        closed_topics,
+                    };
+                }
+            };
+
+            // Only confirmed ops are acked: a log whose echoed watermark is
+            // short (or absent) contributes nothing and fails the sync, so
+            // the caller retries it instead of trusting unconfirmed sends.
+            let mut short: Option<(Item::Topic, Item::Author, SeqNum, Option<SeqNum>)> = None;
+            for (topic, author, seq) in publish_acks {
+                let echoed = response.watermark(&topic, &author);
+                if echoed.is_some_and(|wm| wm >= seq) {
+                    acks.push((topic, author, seq));
+                } else if short.is_none() {
+                    short = Some((topic, author, seq, echoed));
+                }
+            }
+            if let Some((topic, author, pushed, echoed)) = short {
+                tracing::warn!(
+                    %topic,
+                    pushed,
+                    echoed = ?echoed,
+                    "mailbox watermark behind after sync publish"
+                );
+                let _ = author;
+                return SyncOutcome {
+                    result: Err(DeliveryError::WatermarkBehind { pushed, echoed }),
                     closed_topics,
                 };
             }
-
-            acks.extend(publish_acks);
         }
 
-        SyncTopicOutcome {
+        SyncOutcome {
             result: Ok(acks),
             closed_topics,
         }
@@ -254,13 +277,13 @@ where
     /// receiver, and collects missing operations from the local store for
     /// publishing.
 
-    async fn sync_topic(
+    async fn sync_one_topic(
         &self,
         topic: Item::Topic,
         response: FetchTopicResponse<Item>,
         sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
         sender: Option<tokio::sync::mpsc::Sender<Item>>,
-    ) -> Result<SyncTopicResult<Item>, DeliveryError>
+    ) -> Result<SyncResult<Item>, DeliveryError>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
     {
@@ -331,7 +354,7 @@ where
             }
         }
 
-        Ok(SyncTopicResult {
+        Ok(SyncResult {
             ops_to_publish,
             acks,
             closed,
@@ -343,7 +366,7 @@ where
 mod tests {
     use super::*;
     use crate::testing::{MemStore, Msg};
-    use crate::{MailboxId, PublishResponse, topic_registry::TopicRegistry};
+    use crate::{MailboxId, MailboxItem, PublishResponse, topic_registry::TopicRegistry};
     use std::collections::HashMap;
 
     fn new_delivery(
@@ -424,8 +447,17 @@ mod tests {
         }
 
         async fn publish(&self, ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            let mut response = PublishResponse::default();
+            for op in &ops {
+                // Echo each published seq: this stub stores contiguously.
+                response
+                    .0
+                    .entry(op.topic())
+                    .or_default()
+                    .insert(op.author(), Some(op.seq_num()));
+            }
             self.published.lock().unwrap().push(ops);
-            Ok(PublishResponse::default())
+            Ok(response)
         }
 
         async fn fetch(
@@ -457,7 +489,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sync_topics_publishes_missing_delivers_items_and_reports_acks() {
+    async fn sync_publishes_missing_delivers_items_and_reports_acks() {
         let store = MemStore::default();
         store.set_height(0, 'a', 4);
 
@@ -483,9 +515,7 @@ mod tests {
         let mut rx = topic_registry.subscribe(0).await.unwrap();
 
         let delivery = new_delivery(client, store);
-        let outcome = delivery
-            .sync_topics([0u8].into_iter(), &topic_registry)
-            .await;
+        let outcome = delivery.sync([0u8].into_iter(), &topic_registry).await;
 
         // The mailbox's missing ops were published from the local log.
         assert_eq!(
@@ -523,14 +553,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sync_topics_reports_fetch_failure() {
+    async fn sync_reports_fetch_failure() {
         let client: Arc<dyn MailboxClient<Msg>> = Arc::new(FailingFetchClient);
         let delivery = new_delivery(client, MemStore::default());
         let topic_registry = TopicRegistry::new();
 
-        let outcome = delivery
-            .sync_topics([0u8].into_iter(), &topic_registry)
-            .await;
+        let outcome = delivery.sync([0u8].into_iter(), &topic_registry).await;
 
         assert!(outcome.result.is_err());
     }
@@ -632,6 +660,72 @@ mod tests {
             .collect()
     }
 
+    /// A client whose publish echoes a watermark short of the pushed top.
+    struct ShortEchoClient;
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for ShortEchoClient {
+        fn id(&self) -> MailboxId {
+            "short-echo".into()
+        }
+
+        async fn publish(&self, ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            let mut response = PublishResponse::default();
+            for op in &ops {
+                let short = op.seq_num().saturating_sub(1);
+                response
+                    .0
+                    .entry(op.topic())
+                    .or_default()
+                    .insert(op.author(), Some(short));
+            }
+            Ok(response)
+        }
+
+        async fn fetch(
+            &self,
+            request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            // Report everything advertised as missing, so the sync publishes.
+            let response = request
+                .0
+                .iter()
+                .map(|(topic, authors)| {
+                    let missing = authors
+                        .iter()
+                        .map(|(author, height)| (*author, vec![*height]))
+                        .collect();
+                    (
+                        *topic,
+                        FetchTopicResponse {
+                            items: Vec::new(),
+                            missing,
+                        },
+                    )
+                })
+                .collect();
+            Ok(FetchResponse(response))
+        }
+    }
+
+    #[tokio::test]
+    async fn sync_with_a_short_publish_echo_fails_and_acks_nothing_published() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 2);
+        let delivery = new_delivery(Arc::new(ShortEchoClient), store);
+        let topic_registry = TopicRegistry::new();
+
+        let outcome = delivery.sync([0u8].into_iter(), &topic_registry).await;
+
+        assert!(matches!(
+            outcome.result.unwrap_err(),
+            DeliveryError::WatermarkBehind {
+                pushed: 2,
+                echoed: Some(1)
+            }
+        ));
+    }
+
     /// A store whose reads fail, to pin the Local arm of `DeliveryError`.
     #[derive(Clone)]
     struct FailingStore;
@@ -658,9 +752,7 @@ mod tests {
         let client: Arc<dyn MailboxClient<Msg>> = Arc::new(FailingFetchClient);
         let delivery = new_delivery(client, MemStore::default());
         let topic_registry = TopicRegistry::new();
-        let outcome = delivery
-            .sync_topics([0u8].into_iter(), &topic_registry)
-            .await;
+        let outcome = delivery.sync([0u8].into_iter(), &topic_registry).await;
         let err = outcome.result.unwrap_err();
         assert!(
             err.is_mailbox_fault(),
