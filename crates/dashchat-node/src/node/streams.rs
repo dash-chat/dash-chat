@@ -3,15 +3,16 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use aliased::Aliasing;
 use derive_more::derive::From;
-use futures::future::join;
+use futures::future::{BoxFuture, Shared, join};
 use futures::{FutureExt, Stream, StreamExt};
 use p2panda::network::NetworkError;
 use p2panda::node::{CreateSpaceError, CreateStreamError, SubscribeSpaceError};
 use p2panda::operation::{Extensions, LogId, Operation};
-use p2panda::spaces::SpaceSubscription;
+use p2panda::spaces::{PendingSpace, SpaceSubscription};
 use p2panda::streams::{
     EphemeralStreamPublisher, EphemeralStreamSubscription, ImportError, ProcessedOperation,
     PublishError, PublishFuture, Source, StreamEvent, StreamFrom, StreamPublisher,
@@ -29,17 +30,53 @@ use tracing::{error, warn};
 
 use crate::Payload;
 
-// TODO: XXX: be careful with the drop handler
+const SPACE_JOIN_TIMEOUT: Duration = Duration::from_secs(30);
+
+type JoinedSpace = Shared<BoxFuture<'static, Option<Arc<p2panda::spaces::Space<Payload>>>>>;
+
+/// A space we created or subscribed to.
+///
+/// The topic publisher is available from the start, so operations can be imported into the
+/// topic before we are admitted. The space API itself (`run`) waits for p2panda to report us
+/// joined, which for a subscribed space happens once the admitting control messages arrive.
 #[derive(Clone)]
-pub struct Space(Arc<p2panda::spaces::Space<Payload>>);
+pub struct Space {
+    topic: Topic,
+    tx: StreamPublisher<Payload>,
+    joined: JoinedSpace,
+}
 
 impl Space {
-    pub fn new(space: p2panda::spaces::Space<Payload>) -> Self {
-        Self(Arc::new(space))
+    pub fn created(topic: Topic, space: p2panda::spaces::Space<Payload>) -> Self {
+        Self {
+            topic,
+            tx: space.publisher().clone(),
+            joined: futures::future::ready(Some(Arc::new(space)))
+                .boxed()
+                .shared(),
+        }
+    }
+
+    pub fn pending(topic: Topic, space: PendingSpace<Payload>) -> Self {
+        Self {
+            topic,
+            tx: space.publisher().clone(),
+            joined: async move {
+                match space.joined().await {
+                    Ok(space) => Some(Arc::new(space)),
+                    Err(err) => {
+                        warn!(topic = ?topic.aliased(), ?err, "waiting to join space failed");
+                        None
+                    }
+                }
+            }
+            .boxed()
+            .shared(),
+        }
     }
 
     pub fn publisher(&self) -> &StreamPublisher<Payload> {
-        self.0.publisher()
+        &self.tx
     }
 
     /// Run a Space function on its own task and await it.
@@ -49,14 +86,18 @@ impl Space {
     pub async fn run<T, E, F>(
         &self,
         f: impl FnOnce(Arc<p2panda::spaces::Space<Payload>>) -> F + Send + 'static,
-    ) -> Result<Result<T, E>, tokio::task::JoinError>
+    ) -> Result<Result<T, E>, StreamsError>
     where
         T: Send + 'static,
         E: Send + 'static,
         F: Future<Output = Result<T, E>> + Send + 'static,
     {
-        let space = self.0.clone();
-        tokio::spawn(async move { f(space).await }).await
+        let space = tokio::time::timeout(SPACE_JOIN_TIMEOUT, self.joined.clone())
+            .await
+            .ok()
+            .flatten()
+            .ok_or(StreamsError::SpaceNotJoined(self.topic))?;
+        Ok(tokio::spawn(async move { f(space).await }).await?)
     }
 }
 
@@ -252,7 +293,7 @@ impl TopicStreams {
                     .with_node(async |node| node.create_space(topic).await)
                     .await?;
                 (
-                    Publisher::Space(Space::new(space)),
+                    Publisher::Space(Space::created(topic, space)),
                     Subscriber::Space(subscriber),
                 )
             }
@@ -260,7 +301,7 @@ impl TopicStreams {
                 let (space, subscriber) =
                     self.with_node(async |node| node.space(topic).await).await?;
                 (
-                    Publisher::Space(Space::new(space)),
+                    Publisher::Space(Space::pending(topic, space)),
                     Subscriber::Space(subscriber),
                 )
             }
@@ -301,11 +342,11 @@ impl TopicStreams {
     /// because its control messages have been processed. Joining alone does not count.
     pub(crate) async fn has_space(&self, topic: Topic) -> Result<bool, StreamsError> {
         #[allow(deprecated)]
-        let space = self
-            .with_node(async |node| node.spaces_manager().space(topic).await)
+        let has_space = self
+            .with_node(async |node| node.spaces_manager().has_space(topic).await)
             .await
             .map_err(SubscribeSpaceError::from)?;
-        Ok(space.is_some())
+        Ok(has_space)
     }
 
     pub(crate) async fn join_space(&self, topic: Topic) -> Result<Space, StreamsError> {
@@ -650,6 +691,12 @@ pub enum StreamsError {
 
     #[error("topic must be subscribed to first")]
     NotSubscribed(p2panda::Topic),
+
+    #[error("not (yet) a member of space {0:?}")]
+    SpaceNotJoined(Topic),
+
+    #[error("space task failed: {0}")]
+    SpaceTask(#[from] tokio::task::JoinError),
 
     #[error("stream drain is gone")]
     DrainClosed,

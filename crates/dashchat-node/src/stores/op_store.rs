@@ -88,9 +88,13 @@ impl OpStore {
         use p2panda_store::cursors::CursorStore;
         // The ack cursor is persisted by p2panda under the topic's string
         // representation (see `StreamSubscription`'s internal `Acked`).
-        let cursor =
-            CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(&self.store, topic.to_string())
-                .await?;
+        let cursor = p2panda_store::tx!(self.store, {
+            CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
+                &self.store,
+                topic.to_string(),
+            )
+            .await?
+        });
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
     }
 
@@ -357,7 +361,8 @@ mod tests {
         use p2panda_core::logs::LogHeights;
         use p2panda_store::cursors::CursorStore;
 
-        let mut cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(
+        let permit = store.store.begin().await.unwrap();
+        let mut cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
             &store.store,
             topic.to_string(),
         )
@@ -365,7 +370,6 @@ mod tests {
         .unwrap()
         .unwrap_or_else(|| Cursor::new(topic.to_string(), LogHeights::default()));
         cursor.advance(**author, log_id, seq);
-        let permit = store.store.begin().await.unwrap();
         CursorStore::set_cursor_tx(&store.store, &cursor)
             .await
             .unwrap();
