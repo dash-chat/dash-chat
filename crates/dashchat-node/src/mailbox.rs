@@ -3,7 +3,7 @@ use p2panda::operation::{Header, Operation};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{AsBody, DeviceId, SeqNum, TopicId};
+use crate::{AsBody, Log, SeqNum, TopicId};
 use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -18,15 +18,18 @@ pub struct MailboxOperation {
 
 impl MailboxItem for MailboxOperation {
     type Hash = Hash;
-    type Author = DeviceId;
+    type Log = Log;
     type Topic = TopicId;
 
     fn hash(&self) -> Hash {
         self.header.hash()
     }
 
-    fn author(&self) -> DeviceId {
-        self.header.verifying_key.into()
+    fn log(&self) -> Log {
+        Log::new(
+            self.header.verifying_key.into(),
+            self.header.extensions.log_id(),
+        )
     }
 
     fn seq_num(&self) -> SeqNum {
@@ -254,7 +257,10 @@ mod tests {
         .unwrap();
 
         let mailbox_id = mb.id().await;
-        let alice_device: crate::DeviceId = alice.device_id();
+        let alice_log = Log::new(
+            alice.device_id(),
+            p2panda::operation::LogId::from_topic(*chat_id),
+        );
 
         // The mailbox should have recorded alice's seq 0 from both sides.
         let alice_sync = alice
@@ -274,12 +280,12 @@ mod tests {
             let alice_seq = alice_sync
                 .borrow()
                 .get(&*chat_id)
-                .and_then(|m| m.get(&alice_device))
+                .and_then(|m| m.get(&alice_log))
                 .copied();
             let bobbi_seq = bobbi_sync
                 .borrow()
                 .get(&*chat_id)
-                .and_then(|m| m.get(&alice_device))
+                .and_then(|m| m.get(&alice_log))
                 .copied();
             if alice_seq == Some(0) && bobbi_seq == Some(0) {
                 Ok(())

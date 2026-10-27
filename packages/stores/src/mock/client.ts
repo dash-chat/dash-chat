@@ -85,6 +85,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 			seq_num: lastOperation ? lastOperation.header.seq_num + 1 : 0,
 			timestamp: timestamp ?? Math.floor(Date.now() / 1000),
 			topic_id: topicId,
+			log_id: topicId,
 		};
 
 		const headerHash = hash(header);

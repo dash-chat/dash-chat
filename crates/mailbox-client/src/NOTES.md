@@ -2,7 +2,7 @@
 
 ## sync
 
-- for each (topic, author) in op store:
+- for each (topic, log) in op store:
     - check highest seq num stored vs what mailbox has, via check() API call
         - specifically, this is the highest contiguous seq num stored on the mailbox, so that gaps can be filled in
     - send encrypted ops to mailbox keyed by (topic, author, seq)
