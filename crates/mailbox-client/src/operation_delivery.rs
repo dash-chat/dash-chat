@@ -21,8 +21,8 @@ use crate::topic_registry::TopicRegistry;
 use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 
 /// Outcome of a single [`OperationDelivery::sync_topics`] call. The sync may
-/// have failed partway through, but any topics whose receivers were found to
-/// be closed are always reported so the caller can unsubscribe them.
+/// have failed partway through, but any topics whose subscribers were found
+/// to be closed are always reported so the caller can unsubscribe them.
 #[derive(Debug)]
 pub struct SyncTopicOutcome<Topic, Author> {
     /// Watermarks for the caller to record for the mailbox. A failed sync
@@ -59,7 +59,10 @@ struct SyncTopicResult<Item: crate::MailboxItem> {
 }
 
 #[derive(Clone)]
-pub struct OperationDelivery<Item, Store> {
+pub struct OperationDelivery<Item, Store>
+where
+    Item: crate::MailboxItem,
+{
     client: Arc<dyn MailboxClient<Item>>,
     store: Store,
 }
@@ -76,6 +79,9 @@ where
     /// Immediately sync the given topics with the given mailbox:
     /// - Ensure all items held by the mailbox are fetched
     /// - Publish any items that the mailbox is missing to the mailbox
+    ///
+    /// Inbound items go straight to the topics' subscribers, snapshotted from
+    /// `topic_registry` when the sync starts.
     pub async fn sync_topics(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
@@ -99,8 +105,9 @@ where
         let mut closed_topics: HashSet<Item::Topic> = HashSet::new();
 
         for (topic, response) in response.into_iter() {
+            let sender = topic_registry.get_sender(&topic).await;
             let outcome = match self
-                .sync_topic(topic.clone(), response, &sent_heights, topic_registry)
+                .sync_topic(topic.clone(), response, &sent_heights, sender)
                 .await
             {
                 Ok(res) => res,
@@ -124,15 +131,17 @@ where
             .map(|op| (op.topic(), op.author(), op.seq_num()))
             .collect();
 
-        if let Err(err) = self.client.publish(ops_to_publish).await {
-            let err = DeliveryError::Mailbox(err);
-            return SyncTopicOutcome {
-                result: Err(err),
-                closed_topics,
-            };
-        }
+        if !ops_to_publish.is_empty() {
+            if let Err(err) = self.client.publish(ops_to_publish).await {
+                let err = DeliveryError::Mailbox(err);
+                return SyncTopicOutcome {
+                    result: Err(err),
+                    closed_topics,
+                };
+            }
 
-        acks.extend(publish_acks);
+            acks.extend(publish_acks);
+        }
 
         SyncTopicOutcome {
             result: Ok(acks),
@@ -211,7 +220,7 @@ where
         topic: Item::Topic,
         response: FetchTopicResponse<Item>,
         sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
-        topic_registry: &TopicRegistry<Item>,
+        sender: Option<tokio::sync::mpsc::Sender<Item>>,
     ) -> Result<SyncTopicResult<Item>, DeliveryError>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
@@ -248,20 +257,13 @@ where
             acks.push((item.topic(), item.author(), item.seq_num()));
         }
 
-        let Some(sender) = topic_registry.get_sender(&topic).await else {
-            tracing::warn!(topic = %topic, "no sender for topic");
-            return Ok(SyncTopicResult {
-                ops_to_publish,
-                acks,
-                closed,
-            });
-        };
-
-        for item in items {
-            if sender.send(item).await.is_err() {
-                tracing::error!(topic = %topic, "mailbox receiver closed, unsubscribing topic");
-                closed = true;
-                break;
+        if let Some(sender) = sender {
+            for item in &items {
+                if sender.send(item.clone()).await.is_err() {
+                    tracing::error!(topic = %topic, "topic receiver closed");
+                    closed = true;
+                    break;
+                }
             }
         }
 
@@ -463,7 +465,7 @@ mod tests {
             ]]
         );
 
-        // The inbound item was delivered to the topic's receiver.
+        // The inbound item was delivered to the topic's subscriber.
         assert_eq!(
             rx.try_recv().unwrap(),
             Msg {
@@ -473,7 +475,6 @@ mod tests {
             }
         );
 
-        assert!(outcome.closed_topics.is_empty());
         // Received items and published ops are acked; no height inference for
         // 'a', since the mailbox reported missing seqs for them.
         assert_eq!(
@@ -487,14 +488,12 @@ mod tests {
         let client: Arc<dyn MailboxClient<Msg>> = Arc::new(FailingFetchClient);
         let delivery = new_delivery(client, MemStore::default());
         let topic_registry = TopicRegistry::new();
-        topic_registry.subscribe(0).await.unwrap();
 
         let outcome = delivery
             .sync_topics([0u8].into_iter(), &topic_registry)
             .await;
 
         assert!(outcome.result.is_err());
-        assert!(outcome.closed_topics.is_empty());
     }
 
     /// A store whose reads fail, to pin the Local arm of `DeliveryError`.
@@ -521,9 +520,8 @@ mod tests {
     async fn delivery_error_distinguishes_mailbox_faults_from_local_ones() {
         // A fetch failure is evidence about the mailbox.
         let client: Arc<dyn MailboxClient<Msg>> = Arc::new(FailingFetchClient);
-        let delivery = OperationDelivery::new(client, MemStore::default());
+        let delivery = new_delivery(client, MemStore::default());
         let topic_registry = TopicRegistry::new();
-        topic_registry.subscribe(0).await.unwrap();
         let outcome = delivery
             .sync_topics([0u8].into_iter(), &topic_registry)
             .await;

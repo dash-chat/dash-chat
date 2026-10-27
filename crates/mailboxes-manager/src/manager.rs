@@ -2634,12 +2634,19 @@ mod tests {
         ) -> Result<FetchResponse<Msg>, anyhow::Error> {
             let items = self.items_to_fetch.lock().await.clone();
             let mut response = BTreeMap::new();
-            for topic in request.0.keys().copied() {
+            for (topic, authors) in &request.0 {
+                // Report the advertised height itself as missing: the mailbox
+                // lags by one op, so the sync has something to publish (and
+                // fail).
+                let missing = authors
+                    .keys()
+                    .map(|author| (*author, vec![authors[author]]))
+                    .collect();
                 response.insert(
-                    topic,
+                    *topic,
                     FetchTopicResponse {
                         items: items.clone(),
-                        missing: HashMap::new(),
+                        missing,
                     },
                 );
             }
@@ -2651,7 +2658,13 @@ mod tests {
     /// the topic must still be unsubscribed so it is not re-fetched forever.
     #[tokio::test(start_paused = true)]
     async fn closed_receiver_unsubscribed_despite_publish_failure() {
-        let mgr = test_mailboxes(test_config());
+        // The local log must hold an op the mailbox reports missing, so the
+        // sync has something to publish (and fail): DummyStore's
+        // `get_log_heights` advertises nothing.
+        let store = MemStore::default();
+        store.set_height(0, 'a', 0);
+        let mgr: Mailboxes<Msg, MemStore> =
+            Mailboxes::new(store, test_sync_tracker(), test_config(), None);
 
         // Subscribe and immediately drop the receiver to close the channel.
         let rx = mgr
@@ -2661,9 +2674,10 @@ mod tests {
             .expect("subscribed to topic");
         drop(rx);
 
-        // The mailbox will return one item for the closed topic and then fail
-        // to publish, so `sync_topics` exits with an error before the manager
-        // can process `SyncTopicOutcome::closed_topics`.
+        // The mailbox will return one item for the closed topic and report
+        // the locally held op (seq 0) as missing, so the sync attempts to
+        // publish it — and fails: `sync_topics` exits with an error before
+        // the manager can process `SyncTopicOutcome::closed_topics`.
         let client = FailingPublishClient::new(vec![Msg {
             topic: 0,
             author: 'a',
