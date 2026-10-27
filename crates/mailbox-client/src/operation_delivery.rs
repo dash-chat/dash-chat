@@ -43,12 +43,22 @@ pub enum DeliveryError {
     /// Reading the local operation store failed.
     #[error("local store failed: {0}")]
     Local(anyhow::Error),
+    /// The publish succeeded but the mailbox's echoed watermark fell short of
+    /// what was pushed: its log is not contiguous up to the pushed seq, so
+    /// the watermark must not advance past the echo.
+    #[error("mailbox watermark {echoed:?} behind published seq {pushed}")]
+    WatermarkBehind {
+        pushed: SeqNum,
+        echoed: Option<SeqNum>,
+    },
 }
 
 impl DeliveryError {
-    /// Whether this failure says anything about the mailbox's reachability.
+    /// Whether this failure says anything about the mailbox's reachability or
+    /// integrity. A short watermark echo is the mailbox's doing as much as a
+    /// failed request is.
     pub fn is_mailbox_fault(&self) -> bool {
-        matches!(self, DeliveryError::Mailbox(_))
+        !matches!(self, DeliveryError::Local(_))
     }
 }
 
@@ -149,11 +159,42 @@ where
         }
     }
 
-    /// Collect the ops a fast push to a mailbox would send for (`topic`,
+    /// New ops exist locally for (`topic`, `author`). Push everything above
+    /// `synced` — the watermark the mailbox last confirmed — and return the
+    /// watermark the mailbox echoed back. `Ok(None)` means the log had
+    /// nothing new. Fails with [`DeliveryError::WatermarkBehind`] when the
+    /// echo falls short of the pushed top.
+    pub async fn publish(
+        &self,
+        topic: Item::Topic,
+        author: Item::Author,
+        synced: Option<SeqNum>,
+    ) -> Result<Option<SeqNum>, DeliveryError> {
+        let ops = self.fast_push_ops(synced, topic, author).await?;
+        let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
+            return Ok(None);
+        };
+        let response = self
+            .client
+            .publish(ops)
+            .await
+            .map_err(DeliveryError::Mailbox)?;
+        let echoed = response.watermark(&topic, &author);
+        if echoed.is_none_or(|wm| wm < top) {
+            return Err(DeliveryError::WatermarkBehind {
+                pushed: top,
+                echoed,
+            });
+        }
+        Ok(echoed)
+    }
+
+    // PRIVATE
+
+    /// Collect the ops a push to the mailbox would send for (`topic`,
     /// `author`): everything in the local log above `synced`, the watermark
-    /// the mailbox last confirmed. Publishing and recording stay with the
-    /// caller.
-    pub async fn fast_push_ops(
+    /// the mailbox last confirmed.
+    async fn fast_push_ops(
         &self,
         synced: Option<SeqNum>,
         topic: Item::Topic,
@@ -167,8 +208,6 @@ where
             .map_err(DeliveryError::Local)?
             .unwrap_or_default())
     }
-
-    // PRIVATE
 
     /// Build a fetch request from local log heights and query the mailbox for
     /// operations it holds that we lack (and which operations we hold that it
@@ -494,6 +533,103 @@ mod tests {
             .await;
 
         assert!(outcome.result.is_err());
+    }
+
+    /// A client that echoes a watermark for published ops.
+    struct EchoClient {
+        watermark: Option<SeqNum>,
+        published: Arc<std::sync::Mutex<Vec<Vec<Msg>>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for EchoClient {
+        fn id(&self) -> MailboxId {
+            "echo".into()
+        }
+
+        async fn publish(&self, ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            self.published.lock().unwrap().push(ops);
+            let mut response = PublishResponse::default();
+            if let Some(wm) = self.watermark {
+                response.0.entry(0u8).or_default().insert('a', Some(wm));
+            }
+            Ok(response)
+        }
+
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            Ok(FetchResponse(Default::default()))
+        }
+    }
+
+    fn publish_setup(
+        height: SeqNum,
+        watermark: Option<SeqNum>,
+    ) -> (
+        OperationDelivery<Msg, MemStore>,
+        Arc<std::sync::Mutex<Vec<Vec<Msg>>>>,
+    ) {
+        let store = MemStore::default();
+        store.set_height(0, 'a', height);
+        let published = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let delivery = new_delivery(
+            Arc::new(EchoClient {
+                watermark,
+                published: published.clone(),
+            }),
+            store,
+        );
+        (delivery, published)
+    }
+
+    #[tokio::test]
+    async fn publish_pushes_the_delta_and_returns_the_echoed_watermark() {
+        let (delivery, published) = publish_setup(4, Some(4));
+
+        let result = delivery.publish(0, 'a', Some(1)).await.unwrap();
+
+        assert_eq!(result, Some(4));
+        let pushed = published.lock().unwrap();
+        assert_eq!(published_seqs(&pushed), vec![vec![2, 3, 4]]);
+    }
+
+    #[tokio::test]
+    async fn publish_with_a_short_echo_fails_and_advances_nothing() {
+        let (delivery, published) = publish_setup(4, Some(2));
+
+        let err = delivery.publish(0, 'a', Some(1)).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            DeliveryError::WatermarkBehind {
+                pushed: 4,
+                echoed: Some(2)
+            }
+        ));
+        assert!(
+            err.is_mailbox_fault(),
+            "a short echo is evidence about the mailbox"
+        );
+        assert_eq!(published.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn publish_with_nothing_new_publishes_nothing() {
+        let (delivery, published) = publish_setup(4, Some(4));
+
+        let result = delivery.publish(0, 'a', Some(4)).await.unwrap();
+
+        assert_eq!(result, None);
+        assert!(published.lock().unwrap().is_empty());
+    }
+
+    fn published_seqs(published: &[Vec<Msg>]) -> Vec<Vec<SeqNum>> {
+        published
+            .iter()
+            .map(|batch| batch.iter().map(|m| m.seq).collect())
+            .collect()
     }
 
     /// A store whose reads fail, to pin the Local arm of `DeliveryError`.

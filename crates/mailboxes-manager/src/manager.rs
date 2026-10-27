@@ -457,31 +457,32 @@ where
     ) -> anyhow::Result<()> {
         let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
         let client = tracked.client().await;
-        let delivery = OperationDelivery::new(client.clone(), self.store.clone());
-        let ops = delivery
-            .fast_push_ops(synced, topic, author)
-            .await
-            .map_err(|err| anyhow::anyhow!(err))?;
-        let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
-            return Ok(());
-        };
-        let response = client.publish(ops).await?;
-        let watermark = response.watermark(&topic, &author);
-        if let Some(wm) = watermark {
-            self.sync_tracker
-                .record_synced(id, &[(topic, author, wm)])
-                .await?;
+        let delivery = OperationDelivery::new(client, self.store.clone());
+        match delivery.publish(topic, author, synced).await {
+            Ok(Some(watermark)) => {
+                self.sync_tracker
+                    .record_synced(id, &[(topic, author, watermark)])
+                    .await?;
+                Ok(())
+            }
+            // Nothing new in the log.
+            Ok(None) => Ok(()),
+            Err(
+                err @ mailbox_client::operation_delivery::DeliveryError::WatermarkBehind {
+                    pushed,
+                    echoed,
+                },
+            ) => {
+                tracing::warn!(
+                    mailbox = %id,
+                    pushed,
+                    echoed = ?echoed,
+                    "mailbox watermark behind after direct store"
+                );
+                Err(anyhow::anyhow!(err))
+            }
+            Err(err) => Err(anyhow::anyhow!(err)),
         }
-        if watermark.is_none_or(|wm| wm < top) {
-            tracing::warn!(
-                mailbox = %id,
-                pushed = top,
-                echoed = ?watermark,
-                "mailbox watermark behind after direct store"
-            );
-            anyhow::bail!("mailbox watermark {watermark:?} behind published seq {top}");
-        }
-        Ok(())
     }
 
     /// Immediately sync every registered mailbox without touching status or backoff.
