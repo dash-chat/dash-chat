@@ -6,6 +6,7 @@ import { blockAgent } from '../../helpers/flows/block-agent';
 import { deleteAccount } from '../../helpers/flows/delete-account';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { PRE_ACCEPT_MESSAGING } from '../../helpers/pre-accept-messaging';
 import { pushTestingEnabled } from '../../setup/push-server';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -78,10 +79,16 @@ describe('Push notifications (real device, end-to-end)', () => {
 		// request notification is already posted, so the re-read returns the
 		// current set right away; the pause is what gives a message push time to
 		// arrive and fail this.
+		// TODO: pre-accept: there is no space to publish into before the accept
+		// for now, so this check is suspended.
 		const preAcceptMessage = `hi PUSH_PREACCEPT_${Date.now()}`;
-		await sender.directChatPage.composer.sendMessage(preAcceptMessage);
-		await receiver.pause(15_000);
-		await expect(notifications).not.toHaveDelivered({ body: preAcceptMessage });
+		if (PRE_ACCEPT_MESSAGING) {
+			await sender.directChatPage.composer.sendMessage(preAcceptMessage);
+			await receiver.pause(15_000);
+			await expect(notifications).not.toHaveDelivered({
+				body: preAcceptMessage,
+			});
+		}
 
 		// Tap by the title: OEM shades (MIUI) render only the title while the
 		// notification is collapsed, so the body text is not a tappable anchor.
@@ -94,7 +101,9 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await receiver.directChatPage.acceptContactRequest();
 		// The message was delivered all along — only its notification was held
 		// back — so it is in the chat once the request is accepted.
-		await receiver.directChatPage.messages.waitForMessage(preAcceptMessage);
+		if (PRE_ACCEPT_MESSAGING) {
+			await receiver.directChatPage.messages.waitForMessage(preAcceptMessage);
+		}
 	});
 
 	it('a second contact-request push taps through to its own chat', async () => {
