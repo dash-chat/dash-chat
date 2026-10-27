@@ -458,7 +458,10 @@ where
         let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
         let client = tracked.client().await;
         let delivery = OperationDelivery::new(client.clone(), self.store.clone());
-        let ops = delivery.fast_push_ops(synced, topic, author).await?;
+        let ops = delivery
+            .fast_push_ops(synced, topic, author)
+            .await
+            .map_err(|err| anyhow::anyhow!(err))?;
         let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
             return Ok(());
         };
@@ -693,7 +696,7 @@ where
         self.topic_registry
             .cleanup_closed_subscriptions(&outcome.closed_topics)
             .await;
-        let acks = outcome.result?;
+        let acks = outcome.result.map_err(|err| anyhow::anyhow!(err))?;
         if let Err(err) = self.sync_tracker.record_synced(&mailbox.id(), &acks).await {
             tracing::error!(?err, mailbox = %mailbox.id(), "failed to record sync watermarks");
         }

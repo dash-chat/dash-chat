@@ -35,7 +35,7 @@ dashchat-utils = { workspace = true }
 sqlite-gate = { workspace = true }
 network-watch = { workspace = true }
 ed25519-dalek = { workspace = true }
-thiserror = "2.0"
+thiserror = { workspace = true }
 async-trait = "0.1.85"
 derive_more = { version = "1.0.0", features = ["full"] }
 futures = "0.3"

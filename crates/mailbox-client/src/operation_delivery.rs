@@ -27,8 +27,29 @@ use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 pub struct SyncTopicOutcome<Topic, Author> {
     /// Watermarks for the caller to record for the mailbox. A failed sync
     /// carries no acks: it records nothing.
-    pub result: anyhow::Result<Vec<(Topic, Author, SeqNum)>>,
+    pub result: Result<Vec<(Topic, Author, SeqNum)>, DeliveryError>,
     pub closed_topics: HashSet<Topic>,
+}
+
+/// How delivery to the mailbox failed. The `Mailbox`/`Local` split is what
+/// the caller's connection-health judgement needs: a `Mailbox` failure is
+/// evidence about the mailbox's reachability; a `Local` failure (the op
+/// store) says nothing about the mailbox at all.
+#[derive(Debug, thiserror::Error)]
+pub enum DeliveryError {
+    /// The mailbox rejected or could not complete the fetch/publish exchange.
+    #[error("mailbox exchange failed: {0}")]
+    Mailbox(anyhow::Error),
+    /// Reading the local operation store failed.
+    #[error("local store failed: {0}")]
+    Local(anyhow::Error),
+}
+
+impl DeliveryError {
+    /// Whether this failure says anything about the mailbox's reachability.
+    pub fn is_mailbox_fault(&self) -> bool {
+        matches!(self, DeliveryError::Mailbox(_))
+    }
 }
 
 struct SyncTopicResult<Item: crate::MailboxItem> {
@@ -104,6 +125,7 @@ where
             .collect();
 
         if let Err(err) = self.client.publish(ops_to_publish).await {
+            let err = DeliveryError::Mailbox(err);
             return SyncTopicOutcome {
                 result: Err(err),
                 closed_topics,
@@ -127,12 +149,13 @@ where
         synced: Option<SeqNum>,
         topic: Item::Topic,
         author: Item::Author,
-    ) -> anyhow::Result<Vec<Item>> {
+    ) -> Result<Vec<Item>, DeliveryError> {
         let start = synced.map_or(0, |n| n + 1);
         Ok(self
             .store
             .get_log(&author, &topic, start)
-            .await?
+            .await
+            .map_err(DeliveryError::Local)?
             .unwrap_or_default())
     }
 
@@ -145,10 +168,13 @@ where
     async fn fetch_missing_operations(
         &self,
         topics: impl Iterator<Item = Item::Topic>,
-    ) -> anyhow::Result<(
-        BTreeMap<Item::Topic, FetchTopicResponse<Item>>,
-        BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
-    )>
+    ) -> Result<
+        (
+            BTreeMap<Item::Topic, FetchTopicResponse<Item>>,
+            BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
+        ),
+        DeliveryError,
+    >
     where
         Item::Topic: std::fmt::Display,
     {
@@ -156,13 +182,22 @@ where
         let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> =
             BTreeMap::new();
         for topic in topics {
-            let heights =
-                BTreeMap::from_iter(self.store.get_log_heights(&topic).await?.into_iter());
+            let heights = BTreeMap::from_iter(
+                self.store
+                    .get_log_heights(&topic)
+                    .await
+                    .map_err(DeliveryError::Local)?
+                    .into_iter(),
+            );
             sent_heights.insert(topic, heights.clone());
             request.insert(topic, heights);
         }
 
-        let FetchResponse(response) = self.client.fetch(FetchRequest(request)).await?;
+        let FetchResponse(response) = self
+            .client
+            .fetch(FetchRequest(request))
+            .await
+            .map_err(DeliveryError::Mailbox)?;
         Ok((response, sent_heights))
     }
 
@@ -177,7 +212,7 @@ where
         response: FetchTopicResponse<Item>,
         sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
         topic_registry: &TopicRegistry<Item>,
-    ) -> anyhow::Result<SyncTopicResult<Item>>
+    ) -> Result<SyncTopicResult<Item>, DeliveryError>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
     {
@@ -241,7 +276,9 @@ where
                     continue;
                 }
                 Err(err) => {
-                    return Err(anyhow::anyhow!("failed to get log for {topic:?}: {err}"));
+                    return Err(DeliveryError::Local(
+                        err.context(format!("failed to get log for {topic}")),
+                    ));
                 }
             };
 
@@ -458,5 +495,50 @@ mod tests {
 
         assert!(outcome.result.is_err());
         assert!(outcome.closed_topics.is_empty());
+    }
+
+    /// A store whose reads fail, to pin the Local arm of `DeliveryError`.
+    #[derive(Clone)]
+    struct FailingStore;
+
+    #[async_trait::async_trait]
+    impl crate::store::MailboxStore<Msg> for FailingStore {
+        async fn get_log(
+            &self,
+            _author: &char,
+            _topic: &u8,
+            _from: SeqNum,
+        ) -> Result<Option<Vec<Msg>>, anyhow::Error> {
+            anyhow::bail!("store read failed")
+        }
+
+        async fn get_log_heights(&self, _topic: &u8) -> Result<Vec<(char, SeqNum)>, anyhow::Error> {
+            anyhow::bail!("store read failed")
+        }
+    }
+
+    #[tokio::test]
+    async fn delivery_error_distinguishes_mailbox_faults_from_local_ones() {
+        // A fetch failure is evidence about the mailbox.
+        let client: Arc<dyn MailboxClient<Msg>> = Arc::new(FailingFetchClient);
+        let delivery = OperationDelivery::new(client, MemStore::default());
+        let topic_registry = TopicRegistry::new();
+        topic_registry.subscribe(0).await.unwrap();
+        let outcome = delivery
+            .sync_topics([0u8].into_iter(), &topic_registry)
+            .await;
+        let err = outcome.result.unwrap_err();
+        assert!(
+            err.is_mailbox_fault(),
+            "fetch failure should be a mailbox fault"
+        );
+
+        // A store failure is not: the mailbox may be perfectly healthy.
+        let delivery = OperationDelivery::new(Arc::new(NoopClient), FailingStore);
+        let err = delivery.fast_push_ops(None, 0, 'a').await.unwrap_err();
+        assert!(
+            !err.is_mailbox_fault(),
+            "store failure should not be blamed on the mailbox"
+        );
     }
 }
