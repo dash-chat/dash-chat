@@ -965,7 +965,7 @@ dependencies = [
  "bitflags 2.13.2",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease 0.2.37",
  "proc-macro2",
@@ -4433,7 +4433,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -5227,15 +5227,6 @@ name = "itertools"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
 dependencies = [
  "either",
 ]
@@ -6803,7 +6794,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.5.0",
+ "proc-macro-crate 2.0.2",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -7592,7 +7583,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -7618,7 +7609,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "p2panda-core",
  "petgraph",
@@ -7630,7 +7621,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "blake3",
  "cbor-core",
@@ -7645,7 +7636,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7660,7 +7651,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -7683,7 +7674,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -7711,7 +7702,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7727,7 +7718,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -7745,7 +7736,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "futures-util",
  "indexmap 2.14.2",
@@ -7763,7 +7754,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=9bf66a5ec69ea78c#9bf66a5ec69ea78c8855ffc7adca69835a5cca27"
+source = "git+https://github.com/dash-chat/p2panda?rev=2d41a3e4#2d41a3e4c68b1a04469bc03d9d4ccad28e5b4174"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -10177,16 +10168,6 @@ checksum = "9f7916fc008ca5542385b89a3d3ce689953c143e9304a9bf8beec1de48994c0d"
 dependencies = [
  "libc",
  "winapi",
-]
-
-[[package]]
-name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
 ]
 
 [[package]]
