@@ -1,3 +1,5 @@
+#[cfg(target_os = "android")]
+mod fetching_push_notification_data;
 #[cfg(mobile)]
 mod group_invitation;
 #[cfg(mobile)]

@@ -103,6 +103,8 @@ This is a pnpm workspace with multiple packages:
 - **e2e-tests/**: WebdriverIO E2E test suite
 - **crates/dashchat-node/**: Core p2p backend logic (Rust)
 - **crates/mailbox-server/**: HTTP server for offline message storage
+- **crates/mailbox-client/**: Per-mailbox protocol client (Rust)
+- **crates/mailboxes-manager/**: Cross-mailbox orchestration (Rust)
 - **src-tauri/**: Tauri application wrapper and integration layer
 
 ### Backend Architecture (Rust)
@@ -115,7 +117,9 @@ The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tau
 
 **mailbox-server** is the stateful HTTP relay that holds serialized p2panda operations (blobs) on behalf of offline peers until they reconnect. It supports bidirectional sync — clients pull blobs they are missing and push blobs the server is missing in the same exchange — runs a background cleanup task that drops blobs older than 7 days, and optionally forwards arrival notifications to a push-notifications-server so devices wake up to fetch new traffic. Deployable either as a standalone cloud service or spawned in-process by the Tauri app for LAN-only operation.
 
-**mailbox-client** is the async client the Node uses to talk to a mailbox-server (cloud or local), with a single API regardless of how the server is reached.
+**mailbox-client** is the per-mailbox layer: the `MailboxClient` protocol for talking to one mailbox-server (cloud or local) — publishing and fetching operations, announcing and uploading blobs — plus the pieces that protocol is built from: the sync coordinator (one mailbox's fetch/publish exchange), the connection-health state machine, and per-mailbox sync-scheduling primitives. Its HTTP (toy) and in-memory backends also live here.
+
+**mailboxes-manager** is the cross-mailbox layer the Node drives. It registers and tracks every mailbox, runs the poll loop that keeps subscribed topics synced (a bidirectional fetch + publish exchange per mailbox, scheduled by connection health with degraded/stopped backoff and a fast-push path for freshly published operations), persists per-mailbox sync watermarks, and tracks blob uploads with dedup and retry backoff. It depends one-way on mailbox-client; downstream crates import each concept from whichever of the two owns it.
 
 **push-notifications-server** registers FCM device tokens per topic and dispatches notifications when the mailbox-server tells it new blobs have arrived for a topic a device is subscribed to. **push-notifications-client** is the small HTTP client both the mailbox-server (for forwarding arrivals) and the Tauri app (for registering tokens) use to reach it.
 

@@ -2,32 +2,32 @@
 //!
 //! This module provides the `SyncCoordinator`, which manages the high-level
 //! sync protocol between the local node and mailbox servers. It handles
-//! fetching operations for subscribed topics, updating sync watermarks,
-//! and coordinating "fast-push" announcements to ensure data consistency.
+//! fetching operations for subscribed topics and publishing the operations
+//! the mailbox is missing, reporting sync watermarks for the caller to
+//! record, and computes fast-push deltas (the ops above a mailbox's confirmed
+//! watermark); publishing those stays with the caller.
 //!
 //! The coordinator abstracts the specific sync loop logic away from the
-//! main [`crate::manager::Mailboxes`] registry.
+//! `mailboxes-manager` crate's `Mailboxes` registry.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, mpsc};
-
 use dashchat_utils::SeqNum;
 
-use crate::MailboxId;
-use crate::manager::TrackedMailbox;
 use crate::store::MailboxStore;
-use crate::sync_tracker::MailboxSyncTracker;
+use crate::topic_registry::TopicRegistry;
 use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 
 /// Outcome of a single [`SyncCoordinator::sync_topics`] call. The sync may
 /// have failed partway through, but any topics whose receivers were found to
 /// be closed are always reported so the caller can unsubscribe them.
 #[derive(Debug)]
-pub struct SyncTopicOutcome<Topic> {
-    pub result: anyhow::Result<()>,
+pub struct SyncTopicOutcome<Topic, Log> {
+    /// Watermarks for the caller to record for the mailbox. A failed sync
+    /// carries no acks: it records nothing.
+    pub result: anyhow::Result<Vec<(Topic, Log, SeqNum)>>,
     pub closed_topics: HashSet<Topic>,
 }
 
@@ -38,13 +38,9 @@ struct SyncTopicResult<Item: crate::MailboxItem> {
 }
 
 #[derive(Clone)]
-pub struct SyncCoordinator<Item, Store>
-where
-    Item: crate::MailboxItem,
-    Store: MailboxStore<Item>,
-{
+pub struct SyncCoordinator<Item, Store> {
     store: Store,
-    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Log>>,
+    phantom: std::marker::PhantomData<fn() -> Item>,
 }
 
 impl<Item, Store> SyncCoordinator<Item, Store>
@@ -52,13 +48,10 @@ where
     Item: crate::MailboxItem,
     Store: MailboxStore<Item>,
 {
-    pub fn new(
-        store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Log>>,
-    ) -> Self {
+    pub fn new(store: Store) -> Self {
         Self {
             store,
-            sync_tracker,
+            phantom: std::marker::PhantomData,
         }
     }
 
@@ -69,8 +62,8 @@ where
         &self,
         topics: impl Iterator<Item = Item::Topic>,
         mailbox: &Arc<dyn MailboxClient<Item>>,
-        topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
-    ) -> SyncTopicOutcome<Item::Topic>
+        topic_registry: &TopicRegistry<Item>,
+    ) -> SyncTopicOutcome<Item::Topic, Item::Log>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
     {
@@ -90,7 +83,7 @@ where
 
         for (topic, response) in response.into_iter() {
             let outcome = match self
-                .sync_topic(topic.clone(), response, &sent_heights, topic_senders)
+                .sync_topic(topic.clone(), response, &sent_heights, topic_registry)
                 .await
             {
                 Ok(res) => res,
@@ -122,51 +115,29 @@ where
         }
 
         acks.extend(publish_acks);
-        if let Err(err) = self.sync_tracker.record_synced(&mailbox.id(), &acks).await {
-            tracing::error!(?err, mailbox = %&mailbox.id(), "failed to record sync watermarks");
-        }
 
         SyncTopicOutcome {
-            result: Ok(()),
+            result: Ok(acks),
             closed_topics,
         }
     }
 
-    pub async fn store_fast_push(
+    /// Collect the ops a fast push to a mailbox would send for (`topic`,
+    /// `log`): everything in the local log above `synced`, the watermark
+    /// the mailbox last confirmed. Publishing and recording stay with the
+    /// caller.
+    pub async fn fast_push_ops(
         &self,
-        id: &MailboxId,
-        tracked: &TrackedMailbox<Item>,
+        synced: Option<SeqNum>,
         topic: Item::Topic,
         log: Item::Log,
-    ) -> anyhow::Result<()> {
-        let synced = self.sync_tracker.get_synced(id, &topic, &log).await?;
+    ) -> anyhow::Result<Vec<Item>> {
         let start = synced.map_or(0, |n| n + 1);
-        let ops = self
+        Ok(self
             .store
             .get_log(&log, &topic, start)
             .await?
-            .unwrap_or_default();
-        let Some(top) = ops.iter().map(|op| op.seq_num()).max() else {
-            return Ok(());
-        };
-        let response = tracked.client().await.publish(ops).await?;
-
-        let watermark = response.watermark(&topic, &log);
-        if let Some(wm) = watermark {
-            self.sync_tracker
-                .record_synced(id, &[(topic, log, wm)])
-                .await?;
-        }
-        if watermark.is_none_or(|wm| wm < top) {
-            tracing::warn!(
-                mailbox = %id,
-                pushed = top,
-                echoed = ?watermark,
-                "mailbox watermark behind after direct store"
-            );
-            anyhow::bail!("mailbox watermark {watermark:?} behind published seq {top}");
-        }
-        Ok(())
+            .unwrap_or_default())
     }
 
     // PRIVATE
@@ -209,7 +180,7 @@ where
         topic: Item::Topic,
         response: FetchTopicResponse<Item>,
         sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Log, SeqNum>>,
-        topic_senders: &Mutex<HashMap<Item::Topic, mpsc::Sender<Item>>>,
+        topic_registry: &TopicRegistry<Item>,
     ) -> anyhow::Result<SyncTopicResult<Item>>
     where
         Item::Topic: std::fmt::Display + Eq + Hash + Clone,
@@ -246,7 +217,7 @@ where
             acks.push((item.topic(), item.log(), item.seq_num()));
         }
 
-        let Some(sender) = topic_senders.lock().await.get(&topic).cloned() else {
+        let Some(sender) = topic_registry.get_sender(&topic).await else {
             tracing::warn!(topic = %topic, "no sender for topic");
             return Ok(SyncTopicResult {
                 ops_to_publish,
@@ -291,5 +262,182 @@ where
             acks,
             closed,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{MemStore, Msg};
+    use crate::{MailboxId, PublishResponse, topic_registry::TopicRegistry};
+    use std::collections::HashMap;
+
+    fn new_coordinator(store: MemStore) -> SyncCoordinator<Msg, MemStore> {
+        SyncCoordinator::new(store)
+    }
+
+    #[tokio::test]
+    async fn fast_push_ops_with_nothing_above_the_watermark_returns_empty() {
+        // Watermark at the log's height: nothing newer to push.
+        let store = MemStore::default();
+        store.set_height(0, 'a', 4);
+        let coordinator = new_coordinator(store);
+        let ops = coordinator.fast_push_ops(Some(4), 0, 'a').await.unwrap();
+        assert!(ops.is_empty());
+
+        // Log absent entirely.
+        let coordinator = new_coordinator(MemStore::default());
+        let ops = coordinator.fast_push_ops(None, 0, 'a').await.unwrap();
+        assert!(ops.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fast_push_ops_returns_the_delta_above_the_watermark() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 4);
+        let coordinator = new_coordinator(store);
+
+        let ops = coordinator.fast_push_ops(Some(1), 0, 'a').await.unwrap();
+        assert_eq!(
+            ops,
+            (2..=4)
+                .map(|seq| Msg {
+                    topic: 0,
+                    author: 'a',
+                    seq
+                })
+                .collect::<Vec<_>>()
+        );
+
+        // No watermark recorded yet: the whole log from zero.
+        let ops = coordinator.fast_push_ops(None, 0, 'a').await.unwrap();
+        assert_eq!(ops.len(), 5);
+        assert_eq!(ops[0].seq, 0);
+    }
+
+    struct StubClient {
+        fetch_response: FetchResponse<Msg>,
+        published: Arc<std::sync::Mutex<Vec<Vec<Msg>>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for StubClient {
+        fn id(&self) -> MailboxId {
+            "stub".into()
+        }
+
+        async fn publish(&self, ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            self.published.lock().unwrap().push(ops);
+            Ok(PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            Ok(self.fetch_response.clone())
+        }
+    }
+
+    struct FailingFetchClient;
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for FailingFetchClient {
+        fn id(&self) -> MailboxId {
+            "failing".into()
+        }
+
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            anyhow::bail!("fetch failed")
+        }
+    }
+
+    #[tokio::test]
+    async fn sync_topics_publishes_missing_delivers_items_and_reports_acks() {
+        let store = MemStore::default();
+        store.set_height(0, 'a', 4);
+        let coordinator = new_coordinator(store);
+
+        // The mailbox holds one op from 'b' we lack, and lacks our seqs 3-4.
+        let fetch_response = FetchResponse(BTreeMap::from([(
+            0u8,
+            FetchTopicResponse {
+                items: vec![Msg {
+                    topic: 0,
+                    author: 'b',
+                    seq: 0,
+                }],
+                missing: HashMap::from([('a', vec![3, 4])]),
+            },
+        )]));
+        let published = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let client: Arc<dyn MailboxClient<Msg>> = Arc::new(StubClient {
+            fetch_response,
+            published: published.clone(),
+        });
+
+        let topic_registry = TopicRegistry::new();
+        let mut rx = topic_registry.subscribe(0).await.unwrap();
+
+        let outcome = coordinator
+            .sync_topics([0u8].into_iter(), &client, &topic_registry)
+            .await;
+
+        // The mailbox's missing ops were published from the local log.
+        assert_eq!(
+            published.lock().unwrap().as_slice(),
+            &[vec![
+                Msg {
+                    topic: 0,
+                    author: 'a',
+                    seq: 3
+                },
+                Msg {
+                    topic: 0,
+                    author: 'a',
+                    seq: 4
+                },
+            ]]
+        );
+
+        // The inbound item was delivered to the topic's receiver.
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            Msg {
+                topic: 0,
+                author: 'b',
+                seq: 0
+            }
+        );
+
+        assert!(outcome.closed_topics.is_empty());
+        // Received items and published ops are acked; no height inference for
+        // 'a', since the mailbox reported missing seqs for them.
+        assert_eq!(
+            outcome.result.unwrap(),
+            vec![(0, 'b', 0), (0, 'a', 3), (0, 'a', 4)]
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_topics_reports_fetch_failure() {
+        let coordinator = new_coordinator(MemStore::default());
+        let client: Arc<dyn MailboxClient<Msg>> = Arc::new(FailingFetchClient);
+        let topic_registry = TopicRegistry::new();
+        topic_registry.subscribe(0).await.unwrap();
+
+        let outcome = coordinator
+            .sync_topics([0u8].into_iter(), &client, &topic_registry)
+            .await;
+
+        assert!(outcome.result.is_err());
+        assert!(outcome.closed_topics.is_empty());
     }
 }

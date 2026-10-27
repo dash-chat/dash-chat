@@ -2,16 +2,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use tokio::sync::{Mutex, watch};
 
+use mailbox_client::{MailboxId, MailboxItem};
+
 use super::manager::TrackedMailbox;
-use super::{MailboxId, MailboxItem};
 
 /// Internal registry for managing a collection of tracked mailboxes.
-pub struct Registry<Item: MailboxItem> {
+pub struct MailboxRegistry<Item: MailboxItem> {
     pub(crate) mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>>>,
     active_mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
 }
 
-impl<Item: MailboxItem> Registry<Item> {
+impl<Item: MailboxItem> MailboxRegistry<Item> {
     pub fn new() -> Self {
         let (tx, _) = watch::channel(BTreeSet::new());
         Self {
