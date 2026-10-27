@@ -1,114 +1,42 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    marker::PhantomData,
-    path::Path,
     sync::Arc,
-};
-
-use anyhow::Context;
-use serde::{Serialize, de::DeserializeOwned};
-use sqlx::{
-    SqlitePool,
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 use tokio::sync::{Mutex, watch};
 
 use crate::MailboxId;
 use crate::SeqNum;
 use crate::connection_health::SyncStatus;
-
-const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
-        mailbox_id TEXT NOT NULL,
-        topic      BLOB NOT NULL,
-        author     BLOB NOT NULL,
-        seq_num    INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (mailbox_id, topic, author)
-    );
-    CREATE INDEX IF NOT EXISTS idx_sync_state_log ON mailbox_sync_state(topic, author);
-    CREATE TABLE IF NOT EXISTS mailbox_url (
-        mailbox_id TEXT NOT NULL PRIMARY KEY,
-        url        TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS mailbox_status (
-        mailbox_id TEXT NOT NULL PRIMARY KEY,
-        status     TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-    );";
+use crate::persistence::{MailboxUrlStore, SyncStore};
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
 pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
 
-/// Persistent, watch-based tracker for what each mailbox has acknowledged syncing.
-/// SQLite-backed (or in-memory for tests), with watch channels layered on top so
-/// callers can subscribe to live updates.
+/// Watch-based tracker for what each mailbox has acknowledged syncing, backed
+/// by a persistence store (SQLite in production, in-memory for tests).
 pub struct MailboxSyncTracker<T, A> {
-    inner: SyncBackend,
+    store: Arc<dyn SyncStore<T, A>>,
+    mailbox_store: Arc<dyn MailboxUrlStore>,
     all_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
     per_mailbox: Mutex<HashMap<MailboxId, watch::Sender<MailboxSyncState<T, A>>>>,
-    _phantom: PhantomData<fn() -> (T, A)>,
-}
-
-#[derive(Clone)]
-enum SyncBackend {
-    Sqlite(sqlite_gate::GatedPool),
-    /// In-memory variant for tests that run under `tokio::test(start_paused = true)`,
-    /// where sqlx's pool internals deadlock with mock time.
-    Mem(Arc<Mutex<MemRows>>),
-}
-
-#[derive(Default)]
-struct MemRows {
-    /// `(mailbox_id, topic_bytes, author_bytes) -> seq`
-    rows: BTreeMap<(MailboxId, Vec<u8>, Vec<u8>), SeqNum>,
-    /// `mailbox_id -> base url`
-    urls: BTreeMap<MailboxId, String>,
-    /// `mailbox_id -> last known sync status`
-    statuses: BTreeMap<MailboxId, SyncStatus>,
 }
 
 impl<T, A> MailboxSyncTracker<T, A>
 where
-    T: Serialize + DeserializeOwned + Eq + std::hash::Hash + Clone + Send + Sync + 'static,
-    A: Serialize + DeserializeOwned + Eq + std::hash::Hash + Clone + Send + Sync + 'static,
+    T: crate::ItemTraits + 'static,
+    A: crate::ItemTraits + 'static,
 {
-    pub async fn open(
-        path: impl AsRef<Path>,
-        gate: &sqlite_gate::SqliteGate,
-    ) -> anyhow::Result<Self> {
-        let opts = SqliteConnectOptions::new()
-            .filename(path.as_ref())
-            .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(sqlite_gate::BUSY_TIMEOUT);
-        let pool = gate.connect(SqlitePoolOptions::new(), opts).await?;
-        sqlx::query(SCHEMA).execute(pool.pool()).await?;
-
-        let initial_ids = load_all_ids_sqlite(pool.pool()).await?;
+    pub(crate) fn new(
+        store: Arc<dyn SyncStore<T, A>>,
+        mailbox_store: Arc<dyn MailboxUrlStore>,
+        initial_ids: BTreeSet<MailboxId>,
+    ) -> Self {
         let (all_ids_tx, _) = watch::channel(initial_ids);
-        Ok(Self {
-            inner: SyncBackend::Sqlite(pool),
-            all_ids_tx,
-            per_mailbox: Mutex::new(HashMap::new()),
-            _phantom: PhantomData,
-        })
-    }
-
-    /// In-memory variant for tests that need to avoid sqlx's pool internals
-    /// (e.g. tokio mock-time tests where the pool's acquire_timeout would fire).
-    pub fn in_memory() -> Self {
-        let (all_ids_tx, _) = watch::channel(BTreeSet::new());
         Self {
-            inner: SyncBackend::Mem(Arc::new(Mutex::new(MemRows::default()))),
+            store,
+            mailbox_store,
             all_ids_tx,
             per_mailbox: Mutex::new(HashMap::new()),
-            _phantom: PhantomData,
-        }
-    }
-
-    pub async fn close(&self) {
-        if let SyncBackend::Sqlite(pool) = &self.inner {
-            pool.pool().close().await;
         }
     }
 
@@ -145,46 +73,8 @@ where
         if entries.is_empty() {
             return Ok(());
         }
-        let mut encoded: Vec<(Vec<u8>, Vec<u8>, SeqNum)> = Vec::with_capacity(entries.len());
-        for (t, a, s) in entries {
-            encoded.push((
-                encode(t).context("encoding topic")?,
-                encode(a).context("encoding author")?,
-                *s,
-            ));
-        }
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                let now = chrono::Utc::now().timestamp_millis();
-                let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-                    "INSERT INTO mailbox_sync_state (mailbox_id, topic, author, seq_num, updated_at) ",
-                );
-                query.push_values(&encoded, |mut row, (topic_bytes, author_bytes, seq)| {
-                    row.push_bind(mailbox)
-                        .push_bind(topic_bytes)
-                        .push_bind(author_bytes)
-                        .push_bind(i64::from(*seq))
-                        .push_bind(now);
-                });
-                query.push(
-                    " ON CONFLICT (mailbox_id, topic, author) DO UPDATE SET
-                        seq_num = MAX(excluded.seq_num, mailbox_sync_state.seq_num),
-                        updated_at = excluded.updated_at",
-                );
-                query.build().execute(pool).await?;
-            }
-            SyncBackend::Mem(rows) => {
-                let mut rows = rows.lock().await;
-                for (topic_bytes, author_bytes, seq) in &encoded {
-                    let key = (mailbox.clone(), topic_bytes.clone(), author_bytes.clone());
-                    let entry = rows.rows.entry(key).or_insert(0);
-                    if *seq > *entry {
-                        *entry = *seq;
-                    }
-                }
-            }
-        }
+
+        self.store.record_synced(mailbox, entries).await?;
 
         self.all_ids_tx
             .send_if_modified(|ids| ids.insert(mailbox.clone()));
@@ -194,14 +84,14 @@ where
             tx.send_if_modified(|state| {
                 let mut changed = false;
                 for (t, a, s) in entries {
-                    let map = state.entry(t.clone()).or_default();
+                    let map = state.entry(*t).or_default();
                     match map.get_mut(a) {
                         Some(entry) if *s > *entry => {
                             *entry = *s;
                             changed = true;
                         }
                         None => {
-                            map.insert(a.clone(), *s);
+                            map.insert(*a, *s);
                             changed = true;
                         }
                         _ => {}
@@ -210,33 +100,13 @@ where
                 changed
             });
         }
-
         Ok(())
     }
-
     /// Persist the base URL a mailbox is reached at, so the mailbox can later be
     /// identified by URL even when it is not currently registered (e.g. the
     /// cloud mailbox after a cold start while its server is unreachable).
     pub async fn record_url(&self, mailbox: &MailboxId, url: &str) -> anyhow::Result<()> {
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                sqlx::query(
-                    "INSERT INTO mailbox_url (mailbox_id, url) VALUES (?, ?)
-                     ON CONFLICT (mailbox_id) DO UPDATE SET url = excluded.url",
-                )
-                .bind(mailbox)
-                .bind(url)
-                .execute(pool)
-                .await?;
-            }
-            SyncBackend::Mem(rows) => {
-                rows.lock()
-                    .await
-                    .urls
-                    .insert(mailbox.clone(), url.to_string());
-            }
-        }
+        self.mailbox_store.record_url(mailbox, url).await?;
         Ok(())
     }
 
@@ -248,83 +118,25 @@ where
         mailbox: &MailboxId,
         status: SyncStatus,
     ) -> anyhow::Result<()> {
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                sqlx::query(
-                    "INSERT INTO mailbox_status (mailbox_id, status, updated_at) VALUES (?, ?, ?)
-                     ON CONFLICT (mailbox_id) DO UPDATE SET
-                        status = excluded.status,
-                        updated_at = excluded.updated_at",
-                )
-                .bind(mailbox)
-                .bind(status.as_db_str())
-                .bind(chrono::Utc::now().timestamp_millis())
-                .execute(pool)
-                .await?;
-            }
-            SyncBackend::Mem(rows) => {
-                rows.lock().await.statuses.insert(mailbox.clone(), status);
-            }
-        }
+        self.store.record_status(mailbox, status).await?;
         Ok(())
     }
 
     /// The last recorded sync status for a mailbox, if any.
     pub async fn get_status(&self, mailbox: &MailboxId) -> anyhow::Result<Option<SyncStatus>> {
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                let row: Option<(String,)> =
-                    sqlx::query_as("SELECT status FROM mailbox_status WHERE mailbox_id = ?")
-                        .bind(mailbox)
-                        .fetch_optional(pool)
-                        .await?;
-                Ok(row.and_then(|(s,)| SyncStatus::from_db_str(&s)))
-            }
-            SyncBackend::Mem(rows) => Ok(rows.lock().await.statuses.get(mailbox).copied()),
-        }
+        self.store.get_status(mailbox).await
     }
 
     /// Forget the persisted status for a mailbox, so its next registration
     /// starts from Active.
     pub async fn clear_status(&self, mailbox: &MailboxId) -> anyhow::Result<()> {
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                sqlx::query("DELETE FROM mailbox_status WHERE mailbox_id = ?")
-                    .bind(mailbox)
-                    .execute(pool)
-                    .await?;
-            }
-            SyncBackend::Mem(rows) => {
-                rows.lock().await.statuses.remove(mailbox);
-            }
-        }
+        self.store.clear_status(mailbox).await?;
         Ok(())
     }
 
     /// The id of the mailbox last recorded at `url`, if any.
     pub async fn mailbox_id_for_url(&self, url: &str) -> anyhow::Result<Option<MailboxId>> {
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                let row: Option<(String,)> =
-                    sqlx::query_as("SELECT mailbox_id FROM mailbox_url WHERE url = ? LIMIT 1")
-                        .bind(url)
-                        .fetch_optional(pool)
-                        .await?;
-                Ok(row.map(|(m,)| m))
-            }
-            SyncBackend::Mem(rows) => {
-                let rows = rows.lock().await;
-                Ok(rows
-                    .urls
-                    .iter()
-                    .find(|(_, u)| u.as_str() == url)
-                    .map(|(m, _)| m.clone()))
-            }
-        }
+        self.mailbox_store.get_url_inverse(url).await
     }
 
     pub async fn get_synced(
@@ -333,30 +145,7 @@ where
         topic: &T,
         author: &A,
     ) -> anyhow::Result<Option<SeqNum>> {
-        let topic_bytes = encode(topic)?;
-        let author_bytes = encode(author)?;
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                let row: Option<(i64,)> = sqlx::query_as(
-                    "SELECT seq_num FROM mailbox_sync_state
-                     WHERE mailbox_id = ? AND topic = ? AND author = ?",
-                )
-                .bind(mailbox)
-                .bind(&topic_bytes)
-                .bind(&author_bytes)
-                .fetch_optional(pool)
-                .await?;
-                Ok(row.map(|(s,)| SeqNum::try_from(s)).transpose()?)
-            }
-            SyncBackend::Mem(rows) => {
-                let rows = rows.lock().await;
-                Ok(rows
-                    .rows
-                    .get(&(mailbox.clone(), topic_bytes, author_bytes))
-                    .copied())
-            }
-        }
+        self.store.get_watermark(mailbox, topic, author).await
     }
 
     /// All `(mailbox_id, seq)` entries for the given (topic, author).
@@ -365,33 +154,7 @@ where
         topic: &T,
         author: &A,
     ) -> anyhow::Result<BTreeMap<MailboxId, SeqNum>> {
-        let topic_bytes = encode(topic)?;
-        let author_bytes = encode(author)?;
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                let rows: Vec<(String, i64)> = sqlx::query_as(
-                    "SELECT mailbox_id, seq_num FROM mailbox_sync_state
-                     WHERE topic = ? AND author = ?",
-                )
-                .bind(&topic_bytes)
-                .bind(&author_bytes)
-                .fetch_all(pool)
-                .await?;
-                rows.into_iter()
-                    .map(|(m, s)| Ok((m, SeqNum::try_from(s)?)))
-                    .collect()
-            }
-            SyncBackend::Mem(rows) => {
-                let rows = rows.lock().await;
-                Ok(rows
-                    .rows
-                    .iter()
-                    .filter(|((_, t, a), _)| t == &topic_bytes && a == &author_bytes)
-                    .map(|((m, _, _), s)| (m.clone(), *s))
-                    .collect())
-            }
-        }
+        self.store.get_synced_for_log(topic, author).await
     }
 
     /// All `topic -> author -> seq` entries for the given mailbox.
@@ -399,91 +162,23 @@ where
         &self,
         mailbox: &MailboxId,
     ) -> anyhow::Result<MailboxSyncState<T, A>> {
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                let rows: Vec<(Vec<u8>, Vec<u8>, i64)> = sqlx::query_as(
-                    "SELECT topic, author, seq_num FROM mailbox_sync_state
-                     WHERE mailbox_id = ?",
-                )
-                .bind(mailbox)
-                .fetch_all(pool)
-                .await?;
-                let mut out: MailboxSyncState<T, A> = HashMap::new();
-                for (t_bytes, a_bytes, s) in rows {
-                    let topic: T = decode(&t_bytes).context("decoding topic")?;
-                    let author: A = decode(&a_bytes).context("decoding author")?;
-                    out.entry(topic)
-                        .or_default()
-                        .insert(author, SeqNum::try_from(s)?);
-                }
-                Ok(out)
-            }
-            SyncBackend::Mem(rows) => {
-                let rows = rows.lock().await;
-                let mut out: MailboxSyncState<T, A> = HashMap::new();
-                for ((m, t_bytes, a_bytes), s) in rows.rows.iter() {
-                    if m == mailbox {
-                        let topic: T = decode(t_bytes).context("decoding topic")?;
-                        let author: A = decode(a_bytes).context("decoding author")?;
-                        out.entry(topic).or_default().insert(author, *s);
-                    }
-                }
-                Ok(out)
-            }
-        }
+        self.store.get_sync_state(mailbox).await
     }
 
     pub async fn drop_mailbox(&self, mailbox: &MailboxId) -> anyhow::Result<()> {
-        match &self.inner {
-            SyncBackend::Sqlite(pool) => {
-                let pool = pool.pool();
-                sqlx::query("DELETE FROM mailbox_sync_state WHERE mailbox_id = ?")
-                    .bind(mailbox)
-                    .execute(pool)
-                    .await?;
-                sqlx::query("DELETE FROM mailbox_url WHERE mailbox_id = ?")
-                    .bind(mailbox)
-                    .execute(pool)
-                    .await?;
-                sqlx::query("DELETE FROM mailbox_status WHERE mailbox_id = ?")
-                    .bind(mailbox)
-                    .execute(pool)
-                    .await?;
-            }
-            SyncBackend::Mem(rows) => {
-                let mut rows = rows.lock().await;
-                rows.rows.retain(|(m, _, _), _| m != mailbox);
-                rows.urls.remove(mailbox);
-                rows.statuses.remove(mailbox);
-            }
-        }
+        self.store.drop_mailbox(mailbox).await?;
+        self.mailbox_store.drop_mailbox(mailbox).await?;
         self.all_ids_tx.send_if_modified(|ids| ids.remove(mailbox));
         self.per_mailbox.lock().await.remove(mailbox);
         Ok(())
     }
 }
 
-async fn load_all_ids_sqlite(pool: &SqlitePool) -> anyhow::Result<BTreeSet<MailboxId>> {
-    let rows: Vec<(String,)> = sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_sync_state")
-        .fetch_all(pool)
-        .await?;
-    Ok(rows.into_iter().map(|(m,)| m).collect())
-}
-
-fn encode<T: Serialize>(value: &T) -> anyhow::Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    ciborium::into_writer(value, &mut buf)?;
-    Ok(buf)
-}
-
-fn decode<T: DeserializeOwned>(bytes: &[u8]) -> anyhow::Result<T> {
-    Ok(ciborium::from_reader(bytes)?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::Persistence;
+    use crate::persistence::sqlite::SqlitePersistence;
     use pretty_assertions::assert_eq;
 
     enum Backend {
@@ -496,12 +191,28 @@ mod tests {
             Backend::Sqlite => {
                 let dir = tempfile::tempdir().unwrap();
                 let path = dir.path().join("sync_state.db");
-                let store = MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
-                    .await
-                    .unwrap();
+                let persistence =
+                    SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
+                        .await
+                        .unwrap();
+                let store = MailboxSyncTracker::<u8, char>::new(
+                    persistence.sync_store(),
+                    persistence.mailbox_store(),
+                    persistence.sync_store().load_all_ids().await.unwrap(),
+                );
                 (Some(dir), store)
             }
-            Backend::Mem => (None, MailboxSyncTracker::in_memory()),
+            Backend::Mem => {
+                // Mock-time-safe in-memory backend; a sqlx :memory: pool would
+                // deadlock under tokio::test(start_paused = true).
+                let persistence = crate::persistence::mem::MemPersistence::<u8, char>::new();
+                let store = MailboxSyncTracker::<u8, char>::new(
+                    persistence.sync_store(),
+                    persistence.mailbox_store(),
+                    BTreeSet::new(),
+                );
+                (None, store)
+            }
         }
     }
 
@@ -616,6 +327,14 @@ mod tests {
             .record_synced(&"mb2".into(), &[(7u8, 'a', 2)])
             .await
             .unwrap();
+        store
+            .record_url(&"mb1".into(), "https://one.example")
+            .await
+            .unwrap();
+        store
+            .record_url(&"mb2".into(), "https://two.example")
+            .await
+            .unwrap();
         store.drop_mailbox(&"mb1".into()).await.unwrap();
         assert_eq!(
             store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
@@ -624,6 +343,21 @@ mod tests {
         assert_eq!(
             store.get_synced(&"mb2".into(), &7u8, &'a').await.unwrap(),
             Some(2)
+        );
+        assert_eq!(
+            store
+                .mailbox_id_for_url("https://one.example")
+                .await
+                .unwrap(),
+            None,
+            "dropped mailbox's URL must be removed"
+        );
+        assert_eq!(
+            store
+                .mailbox_id_for_url("https://two.example")
+                .await
+                .unwrap(),
+            Some("mb2".to_string())
         );
     }
 
@@ -643,10 +377,15 @@ mod tests {
         let path = dir.path().join("sync_state.db");
 
         {
-            let store: MailboxSyncTracker<u8, char> =
-                MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
+            let persistence =
+                SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
                     .await
                     .unwrap();
+            let store = MailboxSyncTracker::new(
+                persistence.sync_store(),
+                persistence.mailbox_store(),
+                persistence.sync_store().load_all_ids().await.unwrap(),
+            );
             store
                 .record_synced(&"mb1".into(), &[(7u8, 'a', 3)])
                 .await
@@ -659,13 +398,18 @@ mod tests {
                 .record_synced(&"mb2".into(), &[(8u8, 'c', 5)])
                 .await
                 .unwrap();
-            store.close().await;
+            persistence.close().await;
         }
 
-        let store: MailboxSyncTracker<u8, char> =
-            MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
+        let persistence =
+            SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
                 .await
                 .unwrap();
+        let store = MailboxSyncTracker::new(
+            persistence.sync_store(),
+            persistence.mailbox_store(),
+            persistence.sync_store().load_all_ids().await.unwrap(),
+        );
         assert_eq!(
             store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
             Some(3),
@@ -708,7 +452,9 @@ mod tests {
 
     #[tokio::test]
     async fn all_mailbox_ids_watch_updates_on_record_synced_and_drop() {
-        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::in_memory();
+        let p = crate::persistence::mem::MemPersistence::<u8, char>::new();
+        let store =
+            MailboxSyncTracker::<u8, char>::new(p.sync_store(), p.mailbox_store(), BTreeSet::new());
         let mut rx = store.all_mailbox_ids();
         assert!(rx.borrow().is_empty());
 
@@ -784,21 +530,31 @@ mod tests {
         let path = dir.path().join("sync_state.db");
 
         {
-            let store: MailboxSyncTracker<u8, char> =
-                MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
+            let persistence =
+                SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
                     .await
                     .unwrap();
+            let store = MailboxSyncTracker::new(
+                persistence.sync_store(),
+                persistence.mailbox_store(),
+                persistence.sync_store().load_all_ids().await.unwrap(),
+            );
             store
                 .record_status(&"mb1".into(), SyncStatus::Degraded)
                 .await
                 .unwrap();
-            store.close().await;
+            persistence.close().await;
         }
 
-        let store: MailboxSyncTracker<u8, char> =
-            MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
+        let persistence =
+            SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
                 .await
                 .unwrap();
+        let store = MailboxSyncTracker::new(
+            persistence.sync_store(),
+            persistence.mailbox_store(),
+            persistence.sync_store().load_all_ids().await.unwrap(),
+        );
         assert_eq!(
             store.get_status(&"mb1".into()).await.unwrap(),
             Some(SyncStatus::Degraded),
@@ -838,7 +594,9 @@ mod tests {
     }
     #[tokio::test]
     async fn sync_state_watch_updates_on_record_synced() {
-        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::in_memory();
+        let p = crate::persistence::mem::MemPersistence::<u8, char>::new();
+        let store =
+            MailboxSyncTracker::<u8, char>::new(p.sync_store(), p.mailbox_store(), BTreeSet::new());
         let mut rx = store.sync_state(&"mb1".into()).await.unwrap();
         assert!(rx.borrow().is_empty());
 
