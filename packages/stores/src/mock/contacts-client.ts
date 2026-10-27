@@ -3,9 +3,17 @@ import type {
 	IContactsClient,
 	Profile,
 } from '../contacts/contacts-client';
+import type { SimplifiedOperation } from '../p2panda/simplified-types';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
-import { personalTopicFor } from '../topics';
+import type { Payload } from '../types';
 import { type LocalStorageLogsClient, chatIdForDevices } from './client';
+
+function profileOf(op: SimplifiedOperation<Payload>): Profile | undefined {
+	const body = op.body;
+	if (body?.type !== 'Chat' && body?.type !== 'DeviceGroupPayload')
+		return undefined;
+	return body.payload.type === 'SetProfile' ? body.payload.payload : undefined;
+}
 
 export class MockContactsClient implements IContactsClient {
 	constructor(
@@ -33,19 +41,42 @@ export class MockContactsClient implements IContactsClient {
 		return () => {};
 	}
 
+	onProfileChanged(handler: (agentId: AgentId | undefined) => void) {
+		return this.logsClient.emitter.on(
+			'new-operation',
+			({ operation }: { operation: SimplifiedOperation<Payload> }) => {
+				if (profileOf(operation) !== undefined) handler(undefined);
+			},
+		);
+	}
+
 	async directChatId(devicePubkey: DeviceId): Promise<string> {
 		return chatIdForDevices(this.deviceId, devicePubkey);
 	}
 
 	async setProfile(profile: Profile): Promise<void> {
-		await this.logsClient.create(personalTopicFor(this.agentId), {
-			type: 'Announcements',
+		await this.logsClient.create(this.deviceGroupTopicId, {
+			type: 'DeviceGroupPayload',
 			payload: { type: 'SetProfile', payload: profile },
 		});
 	}
 
-	async getProfile(_agentId: AgentId): Promise<Profile | undefined> {
-		return undefined;
+	/** My profile from my device group; a contact's from our direct chat. */
+	async getProfile(agentId: AgentId): Promise<Profile | undefined> {
+		const peerDevice = this.knownDevices[agentId];
+		const [topicId, author] =
+			agentId === this.agentId
+				? [this.deviceGroupTopicId, this.deviceId]
+				: [chatIdForDevices(this.deviceId, peerDevice), peerDevice];
+		if (author === undefined) return undefined;
+		const log: SimplifiedOperation<Payload>[] = await this.logsClient.getLog(
+			topicId,
+			author,
+		);
+		const newest = log
+			.filter(op => profileOf(op) !== undefined)
+			.sort((a, b) => b.header.timestamp - a.header.timestamp)[0];
+		return newest === undefined ? undefined : profileOf(newest);
 	}
 
 	async createContactCode(): Promise<string> {

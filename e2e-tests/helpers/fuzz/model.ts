@@ -1072,7 +1072,7 @@ export class ExpectedModel {
 	}
 
 	/** Record that `agent` gave itself a new name, which reaches everyone
-	 *  that syncs its announcements. */
+	 *  it shares a chat with — see [`profileReaches`]. */
 	updateProfile(agent: string, name: string): void {
 		this.recordProfile(agent, name);
 	}
@@ -1823,17 +1823,35 @@ export class ExpectedModel {
 	}
 
 	/** Topics `holder` syncs, or null for a hub or the cloud, which sync them
-	 * all. */
+	 * all. An agent's profiles travel on a topic of their own, reaching the
+	 * devices [`profileReaches`] says they do. */
 	private subscriptions(holder: string): Set<Topic> | null {
 		if (holder === CLOUD || this.hubs.some(h => h.name === holder)) return null;
 		const topics = new Set<Topic>([`announce:${holder}`, `inbox:${holder}`]);
 		for (const other of this.names()) {
-			if (!this.added.has(`${holder}>${other}`)) continue;
-			topics.add(`announce:${other}`);
-			topics.add(`inbox:${other}`);
+			if (this.added.has(`${holder}>${other}`)) topics.add(`inbox:${other}`);
+			if (this.profileReaches(other, holder)) topics.add(`announce:${other}`);
 		}
 		for (const chat of this.knownChats(holder)) topics.add(chatTopic(chat));
 		return topics;
+	}
+
+	/** Whether `publisher`'s profiles reach `viewer`. The app pushes a
+	 *  profile into every chat its author is in, except the direct chat of a
+	 *  peer it blocks, so it reaches whoever shares a group with the author,
+	 *  and a contact the author does not block. */
+	private profileReaches(publisher: string, viewer: string): boolean {
+		if (publisher === viewer) return false;
+		return this.chats.some(chat => {
+			if (chat.kind === 'direct') {
+				return (
+					chat.members.includes(publisher) &&
+					chat.members.includes(viewer) &&
+					!this.blocks(publisher, viewer)
+				);
+			}
+			return this.hasGroup(publisher, chat) && this.hasGroup(viewer, chat);
+		});
 	}
 
 	private notifiesEachMessage(name: string): boolean {

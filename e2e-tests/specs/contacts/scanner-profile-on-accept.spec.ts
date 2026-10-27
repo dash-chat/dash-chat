@@ -78,12 +78,12 @@ describe('Scanner profile on accept', () => {
 		await alice.directChatPage.waitForPeerProfile();
 
 		// Stop Bob now that the cached profile has already resolved. This
-		// prevents Alice from syncing Bob's announcements topic, which was the
-		// only fallback source for his profile before the cached-profile fix.
+		// prevents Alice from syncing their direct chat, which was the only
+		// fallback source for his profile before the cached-profile fix.
 		await bob.stopApp();
 
 		// Verify the avatar stayed resolved after Bob went offline — i.e. it did
-		// not depend on live announcements sync.
+		// not depend on live chat sync.
 		expect(await alice.directChatPage.peerAvatarIsPlaceholder()).toBe(false);
 	});
 });

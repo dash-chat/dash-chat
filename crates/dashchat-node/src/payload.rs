@@ -35,12 +35,6 @@ impl Profile {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
-pub enum AnnouncementsPayload {
-    SetProfile(Profile),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "payload")]
 pub enum InboxPayload {
     /// Invites the recipient to add the sender as a contact. `reply_topic` is a
     /// private inbox the sender created for this exchange; the recipient sends
@@ -59,7 +53,7 @@ pub enum InboxPayload {
     },
     /// Sent by the inbox owner back to the scanner over the scanner's private
     /// reply topic, carrying the owner's profile so the scanner learns it
-    /// immediately rather than waiting for announcements sync. `agent_id` is the
+    /// immediately rather than waiting for chat sync. `agent_id` is the
     /// owner's agent id; the scanner records it against the op author
     /// (device_pubkey), a step toward dropping `agent_id` from the QR code.
     ContactRequestAccept {
@@ -128,15 +122,20 @@ pub enum ChatPayload {
 
     GroupInfo(GroupInfo),
 
+    /// The author's current profile, published into every chat they are in
+    /// so that it reaches exactly the people who can already see their
+    /// messages. The profile belongs to the author's agent; the latest by
+    /// operation timestamp across all chats and devices wins.
+    SetProfile(Profile),
+
     /// Used to tell other group members about agents they may not know about
-    /// (typically because they aren't contacts), so they can subscribe to those
-    /// agents' announcements topics and see their profiles. The inviter publishes
-    /// this on behalf of any agents they add, since a newly-added member may be
-    /// offline and can't announce themselves until they come online.
+    /// (typically because they aren't contacts), so they can attribute those
+    /// agents' profiles and messages to them. The inviter publishes this on
+    /// behalf of any agents they add, since a newly-added member may be offline
+    /// and can't introduce themselves until they come online.
     ///
     /// The mapping is from each member's device_id (which is what appears in the
-    /// group's auth extensions) to its agent_id (which identifies the
-    /// announcements topic to subscribe to).
+    /// group's auth extensions) to its agent_id.
     ///
     /// TODO: this will be unnecessary once device groups are implemented,
     /// because AgentIds will be added to groups directly, so everyone will already know
@@ -218,6 +217,9 @@ pub struct PendingContactRequest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
+    /// My own profile, the record of truth that my devices share. The copies
+    /// in [`ChatPayload::SetProfile`] are how it reaches other people.
+    SetProfile(Profile),
     AddContact {
         agent_id: AgentId,
         direct_chat_topic_id: ChatId,
@@ -251,9 +253,6 @@ pub struct ReportContactPayload {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum Payload {
-    /// Pushing data out to my contacts.
-    Announcements(AnnouncementsPayload),
-
     /// Data sent to someone who is not your contact
     Inbox(InboxPayload),
 

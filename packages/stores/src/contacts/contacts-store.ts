@@ -4,8 +4,7 @@ import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, TopicId } from '../p2panda/types';
-import { personalTopicFor } from '../topics';
-import { AnnouncementPayload, ChatId, Payload } from '../types';
+import { ChatId, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
 
 // Must match `NodeConfig::contact_code_expiry`: past it the node no longer
@@ -389,43 +388,32 @@ export class ContactsStore {
 		return latest?.profile;
 	});
 
-	profiles = reactive(async (agentId: AgentId) => {
-		const topicId = personalTopicFor(agentId);
+	/** The newest profile the backend holds for the agent, refreshed as
+	 * profiles arrive and as devices are introduced as the agent's. Falls back
+	 * to the profile a pending contact request carried. */
+	profiles = reactive(
+		(agentId: AgentId): ReactivePromise<Profile | undefined> =>
+			relay<Profile | undefined>(state => {
+				const fetchProfile = async () => {
+					const profile = await this.client.getProfile(agentId);
+					if (profile) return profile;
+					return await this.inboxProfile(agentId);
+				};
+				state.setPromise(fetchProfile());
 
-		const operations = await this.logsStore.logsForAllAuthors(topicId);
-
-		const log: SimplifiedOperation<Payload>[] =
-			Object.values(operations)[0] || [];
-
-		const setProfiles: Array<[number, Profile]> = log
-			.filter(
-				l =>
-					l.body?.type === 'Announcements' &&
-					l.body.payload.type === 'SetProfile',
-			)
-			.map(l => [
-				l.header.timestamp,
-				(l.body!.payload as AnnouncementPayload).payload as Profile,
-			]);
-
-		const descendantSortedOperations = setProfiles.sort(
-			(o1, o2) => o2[0] - o1[0],
-		);
-		const lastOperation = descendantSortedOperations[0];
-
-		if (!lastOperation) {
-			// Prefer a profile cached locally from a ContactRequestAccept; if none
-			// is available yet, re-fetch the profile from the server
-			// in case it has change by other means.
-			const serverProfile = await this.client.getProfile(agentId);
-			if (serverProfile) return serverProfile;
-
-			return await this.inboxProfile(agentId);
-		}
-
-		const profile: Profile = lastOperation[1];
-		return profile;
-	});
+				const unsubscribeProfiles = this.client.onProfileChanged(changed => {
+					if (changed !== undefined && changed !== agentId) return;
+					state.setPromise(fetchProfile());
+				});
+				const unsubscribeAgents = this.client.onAgentsIntroduced(() => {
+					state.setPromise(fetchProfile());
+				});
+				return () => {
+					unsubscribeProfiles();
+					unsubscribeAgents();
+				};
+			}),
+	);
 
 	profilesForAgents = reactive(async (agentIds: Set<AgentId>) => {
 		const entries = await Promise.all(

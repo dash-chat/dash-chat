@@ -2,7 +2,7 @@
  * Pure peer-to-peer sync, with no mailbox in the picture.
  *
  * The shared cloud mailbox is suspended before anything syncs, and the local
- * mailbox is off by default, so profile announcements, contact exchange, text
+ * mailbox is off by default, so profiles, contact exchange, text
  * messages, and media all have to propagate over a direct p2p (iroh/mDNS)
  * connection between the two agents. This is the path exercised by real
  * device-to-device delivery and, unlike the rest of the suite, never falls back
