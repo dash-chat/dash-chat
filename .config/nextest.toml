@@ -185,3 +185,10 @@ slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
 [[profile.default.overrides]]
 filter = 'binary(online_peers) & test(every_member_of_a_large_group_is_online)'
 slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Every write commits to disk, and commits are an order of magnitude slower on
+# Windows runners: 5000 sequential writes take ~12s on Linux and over 60s there.
+[[profile.default.overrides]]
+platform = 'cfg(windows)'
+filter = 'package(mailbox-server) & binary(stress)'
+slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
