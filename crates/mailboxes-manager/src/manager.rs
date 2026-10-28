@@ -551,6 +551,13 @@ where
             manager
                 .persist_status_change(&id, &tracked_mailbox, |tracked_mailbox| match result {
                     Ok(()) => tracked_mailbox.record_success(),
+                    // A local store failure says nothing about the mailbox:
+                    // log it and leave the mailbox's health alone, so a
+                    // broken op store doesn't degrade a healthy connection.
+                    Err(err) if !err.is_mailbox_fault() => {
+                        tracing::error!(?err, mailbox = %id, "sync failed on the local store; mailbox health unchanged");
+                        tracked_mailbox.reschedule();
+                    }
                     Err(err) => {
                         tracing::error!(?err, mailbox = %id, "mailbox sync error");
                         tracked_mailbox.poll_failed(format!("{err:?}"), probe);
@@ -578,13 +585,13 @@ where
         topics: impl Iterator<Item = Item::Topic>,
         id: &MailboxId,
         tracked: &TrackedMailbox<Item, Store>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), DeliveryError> {
         let delivery = tracked.delivery().await;
         let outcome = delivery.sync(topics, &self.topic_registry).await;
         self.topic_registry
             .cleanup_closed_subscriptions(&outcome.closed_topics)
             .await;
-        let acks = outcome.result.map_err(|err| anyhow::anyhow!(err))?;
+        let acks = outcome.result?;
         if let Err(err) = self.op_tracker.record_synced(id, &acks).await {
             tracing::error!(?err, mailbox = %id, "failed to record sync watermarks");
         }
@@ -2197,6 +2204,59 @@ mod tests {
             fetched_topics.lock().await.as_slice(),
             [BTreeSet::from([1, 2])]
         );
+    }
+
+    /// A sync that fails on the local store (DeliveryError::Local) does not
+    /// count against the mailbox's health: the connection may be fine.
+    #[tokio::test(start_paused = true)]
+    async fn local_store_failure_leaves_mailbox_health_unchanged() {
+        let config = test_config();
+
+        // A store whose reads always fail — every sync errors with Local.
+        #[derive(Clone)]
+        struct FailingStore;
+
+        #[async_trait::async_trait]
+        impl mailbox_client::store::MailboxStore<Msg> for FailingStore {
+            async fn get_log(
+                &self,
+                _author: &char,
+                _topic: &u8,
+                _from: SeqNum,
+            ) -> Result<Option<Vec<Msg>>, anyhow::Error> {
+                anyhow::bail!("store read failed")
+            }
+
+            async fn get_log_heights(
+                &self,
+                _topic: &u8,
+            ) -> Result<Vec<(char, SeqNum)>, anyhow::Error> {
+                anyhow::bail!("store read failed")
+            }
+        }
+
+        let mgr = Mailboxes::new(
+            FailingStore,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            config.clone(),
+            None,
+        );
+        let (client, _polls) = TrackingClient::new(false);
+        let id = client.id.clone();
+        mgr.register(client).await;
+        let _rx = mgr.subscribe(0u8).await.unwrap();
+
+        // Run a poll directly; the fetch path reads log heights from the
+        // store first, so it fails with Local before touching the client.
+        let tracked = mgr.tracked_mailbox(&id).await.unwrap();
+        let result = mgr.sync_topics([0u8].into_iter(), &id, &tracked).await;
+        assert!(matches!(result.unwrap_err(), DeliveryError::Local(_)));
+
+        // The poll loop's classification: local faults don't degrade.
+        let health = tracked.health();
+        assert_eq!(health.borrow().status, SyncStatus::Active);
+        assert_eq!(health.borrow().consecutive_errors, 0);
     }
 
     /// A sync requested while a poll is in flight is covered by the *next* poll,
