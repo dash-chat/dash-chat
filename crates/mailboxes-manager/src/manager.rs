@@ -84,6 +84,13 @@ where
         self.mailbox_registry.get(id).await
     }
 
+    /// Every currently-registered mailbox, for reconciliation passes.
+    pub(crate) async fn registered_mailboxes(
+        &self,
+    ) -> Vec<(MailboxId, Arc<TrackedMailbox<Item, Store>>)> {
+        self.mailbox_registry.all().await
+    }
+
     pub async fn register(&self, mailbox: impl MailboxClient<Item>) {
         // TODO: check for existing mailbox with different ID but same "URL" (which is currently abstracted away and inaccessible here, darn)
         // TODO: make the ID come from the mailbox server itself, e.g. for mDNS discovery the ID is set by the mDNS service, but multiple services could point to the same actual mailbox state.

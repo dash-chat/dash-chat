@@ -17,10 +17,7 @@ pub use mailbox_server::RegisterPeerRequest;
 #[cfg(feature = "testing")]
 pub mod testing;
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, HashMap};
 
 use once_cell::sync::Lazy;
 
@@ -222,10 +219,29 @@ impl<T> OptionalItemTraits for T {}
 /// Node-side sink for per-mailbox unfetched blob-hash tracking. Implemented in
 /// `dashchat-node` over `LocalStore`; kept as a trait here so this crate stays
 /// free of node types.
+///
+/// Reads and writes both live here: a sync pass asks `unfetched` for the
+/// outstanding set, and the engine records what it announced and removes what
+/// the mailbox confirmed. Write errors are logged by the engine (delivery
+/// shouldn't fail because bookkeeping did); read errors propagate — not
+/// knowing what's outstanding is unrecoverable for that pass.
 #[async_trait::async_trait]
 pub trait UnfetchedBlobTracker: Send + Sync + 'static {
-    async fn record(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]);
-    async fn remove(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]);
+    async fn record(
+        &self,
+        mailbox_id: &MailboxId,
+        hashes: &[iroh_blobs::Hash],
+    ) -> Result<(), anyhow::Error>;
+    async fn remove(
+        &self,
+        mailbox_id: &MailboxId,
+        hashes: &[iroh_blobs::Hash],
+    ) -> Result<(), anyhow::Error>;
+    /// Every hash still recorded as unfetched for this mailbox.
+    async fn unfetched(
+        &self,
+        mailbox_id: &MailboxId,
+    ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error>;
 }
 
 /// Node-side source of blob bytes by hash. Implemented in `dashchat-node` over
@@ -238,13 +254,32 @@ pub trait BlobReader: Send + Sync + 'static {
 }
 
 /// No-op tracker for tests and contexts that don't persist unfetched blobs.
+/// Writes are accepted and forgotten; reads report nothing outstanding.
 #[derive(Clone, Default)]
 pub struct NoopUnfetchedBlobTracker;
 
 #[async_trait::async_trait]
 impl UnfetchedBlobTracker for NoopUnfetchedBlobTracker {
-    async fn record(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
-    async fn remove(&self, _mailbox_id: &MailboxId, _hashes: &[iroh_blobs::Hash]) {}
+    async fn record(
+        &self,
+        _mailbox_id: &MailboxId,
+        _hashes: &[iroh_blobs::Hash],
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+    async fn remove(
+        &self,
+        _mailbox_id: &MailboxId,
+        _hashes: &[iroh_blobs::Hash],
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+    async fn unfetched(
+        &self,
+        _mailbox_id: &MailboxId,
+    ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+        Ok(Vec::new())
+    }
 }
 
 impl MailboxKey for p2panda_core::Topic {

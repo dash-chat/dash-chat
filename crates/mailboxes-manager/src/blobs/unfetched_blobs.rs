@@ -1,8 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use mailbox_client::{
-    BlobReader, MailboxId, MailboxItem, OptionalItemTraits, UnfetchedBlobTracker,
-    store::MailboxStore,
+    BlobReader, MailboxItem, OptionalItemTraits, UnfetchedBlobTracker, store::MailboxStore,
 };
 
 use crate::manager::Mailboxes;
@@ -11,17 +10,12 @@ use crate::manager::Mailboxes;
 // followup path is not yet cleanly separated from node concerns. This is a
 // marker so future refactors return here.
 
-/// Source of blob-upload work from the node that owns the blobs.
-///
-/// This trait is the boundary between `mailbox-client` (which knows which
-/// mailboxes are connected and how to push blobs to them) and `dashchat-node`
-/// (which knows which blobs exist, where their bytes live, and how to refresh
-/// the node's dialing address with a mailbox).
+/// The node-side half of blob followups: refreshing our dialing address with
+/// the mailbox before attempting upload. The outstanding-set read lives on
+/// [`UnfetchedBlobTracker::unfetched`]; this trait is what remains of the
+/// boundary once that moved.
 #[async_trait::async_trait]
 pub trait BlobSource: Send + Sync + 'static {
-    /// Return all blob hashes still recorded as unfetched, grouped by mailbox.
-    async fn unfetched_blobs_by_mailbox(&self) -> BTreeMap<MailboxId, Vec<iroh_blobs::Hash>>;
-
     /// Refresh our dialing address with the mailbox before attempting upload.
     async fn prepare_upload_to(&self, url: &str);
 }
@@ -40,11 +34,17 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
     Store: MailboxStore<Item>,
     Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
-    let by_mailbox = source.unfetched_blobs_by_mailbox().await;
-    for (mailbox_id, hashes) in by_mailbox {
-        let Some(tracked) = mailboxes.tracked_mailbox(&mailbox_id).await else {
-            continue; // mailbox not currently registered; retry when it returns
+    for (mailbox_id, tracked) in mailboxes.registered_mailboxes().await {
+        let hashes = match tracker.unfetched(&mailbox_id).await {
+            Ok(hashes) => hashes,
+            Err(err) => {
+                tracing::error!(?err, mailbox = %mailbox_id, "failed to read unfetched blobs");
+                continue;
+            }
         };
+        if hashes.is_empty() {
+            continue;
+        }
         let client = tracked.client().await;
         let Some(url) = client.url() else {
             continue; // non-HTTP mailbox (e.g. in-memory test mailbox)

@@ -24,23 +24,34 @@ impl LocalStoreBlobTracker {
 
 #[async_trait::async_trait]
 impl UnfetchedBlobTracker for LocalStoreBlobTracker {
-    async fn record(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]) {
-        if let Err(err) = self
-            .local_store
+    async fn record(
+        &self,
+        mailbox_id: &MailboxId,
+        hashes: &[iroh_blobs::Hash],
+    ) -> Result<(), anyhow::Error> {
+        self.local_store
             .add_unfetched_blobs(mailbox_id, hashes)
             .await
-        {
-            tracing::error!(?err, mailbox = %mailbox_id, "failed to record unfetched blobs");
-        }
     }
-    async fn remove(&self, mailbox_id: &MailboxId, hashes: &[iroh_blobs::Hash]) {
-        if let Err(err) = self
-            .local_store
+    async fn remove(
+        &self,
+        mailbox_id: &MailboxId,
+        hashes: &[iroh_blobs::Hash],
+    ) -> Result<(), anyhow::Error> {
+        self.local_store
             .remove_unfetched_blobs(mailbox_id, hashes)
             .await
-        {
-            tracing::error!(?err, mailbox = %mailbox_id, "failed to remove unfetched blobs");
-        }
+    }
+    async fn unfetched(
+        &self,
+        mailbox_id: &MailboxId,
+    ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+        Ok(self
+            .local_store
+            .unfetched_blobs_by_mailbox()
+            .await?
+            .remove(mailbox_id)
+            .unwrap_or_default())
     }
 }
 
@@ -56,16 +67,6 @@ impl NodeBlobSource {
 
 #[async_trait::async_trait]
 impl BlobSource for NodeBlobSource {
-    async fn unfetched_blobs_by_mailbox(&self) -> BTreeMap<MailboxId, Vec<iroh_blobs::Hash>> {
-        match self.node.local_store.unfetched_blobs_by_mailbox().await {
-            Ok(m) => m,
-            Err(err) => {
-                tracing::error!(?err, "failed to read unfetched blobs");
-                BTreeMap::new()
-            }
-        }
-    }
-
     async fn prepare_upload_to(&self, url: &str) {
         if let Err(err) = self.node.register_with_mailbox(url).await {
             tracing::warn!(?err, "failed to refresh our address on the mailbox");
@@ -126,11 +127,11 @@ mod tests {
         let tracker = LocalStoreBlobTracker::new(store.clone());
         let h = iroh_blobs::Hash::new([5; 32]);
 
-        tracker.record(&"mbx".to_string(), &[h]).await;
+        tracker.record(&"mbx".to_string(), &[h]).await.unwrap();
         let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
         assert_eq!(by_mailbox.get("mbx").unwrap(), &vec![h]);
 
-        tracker.remove(&"mbx".to_string(), &[h]).await;
+        tracker.remove(&"mbx".to_string(), &[h]).await.unwrap();
         let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
         assert!(by_mailbox.get("mbx").is_none());
     }

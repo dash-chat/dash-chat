@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use crate::{BlobReader, BlobUploadLifecycle, HTTP_CLIENT, MailboxId, UnfetchedBlobTracker};
+use crate::{BlobReader, BlobUploadLifecycle, UnfetchedBlobTracker};
 
 /// Outbound delivery of blobs to ONE mailbox, driving the client's blob
 /// primitives (`announce_blob_hashes` / `upload_blob`).
@@ -107,10 +107,14 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
             .into_iter()
             .filter(|h| !already_stored.contains(h))
             .collect();
-        self.tracker.record(&self.client.id(), &not_stored).await;
-        self.tracker
-            .remove(&self.client.id(), &already_stored)
-            .await;
+        let id = self.client.id();
+        // Bookkeeping must not fail delivery: the announce already happened.
+        if let Err(err) = self.tracker.record(&id, &not_stored).await {
+            tracing::error!(?err, mailbox = %id, "failed to record unfetched blobs");
+        }
+        if let Err(err) = self.tracker.remove(&id, &already_stored).await {
+            tracing::error!(?err, mailbox = %id, "failed to clear stored blobs");
+        }
         self.spawn_upload(reader, not_stored);
         Ok(())
     }
@@ -159,7 +163,9 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
                 match client.upload_blob(bytes).await {
                     Ok(()) => {
                         tracing::info!(%hash, size, "uploaded blob");
-                        tracker.remove(&id, &[hash]).await;
+                        if let Err(err) = tracker.remove(&id, &[hash]).await {
+                            tracing::error!(?err, mailbox = %id, "failed to clear uploaded blob");
+                        }
                         lifecycle.finish_upload(&id, hash, claim, true);
                     }
                     Err(crate::BlobUploadError::MailboxUnavailable(err)) => {
