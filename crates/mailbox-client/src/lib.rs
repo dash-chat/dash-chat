@@ -1,4 +1,5 @@
 pub mod backends;
+pub mod blob_delivery;
 pub mod blobs;
 mod connection_health;
 pub mod operation_delivery;
