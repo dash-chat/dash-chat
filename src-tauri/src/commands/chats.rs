@@ -9,6 +9,7 @@ use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::commands::logs::{simplify, SimplifiedOperation};
 use crate::node::AppNodeManager;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -186,6 +187,24 @@ pub async fn get_group_chats(
     node.get_groups()
         .await
         .map_err(|e| format!("Failed to get groups: {e:?}"))
+}
+
+/// The group's Create / Add / Remove / Promote / Demote operations, which live in p2panda's
+/// per-author group-control logs rather than the chat topic's log `get_log` serves.
+#[tauri::command]
+pub async fn get_group_control_log(
+    chat_id: ChatId,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<Vec<SimplifiedOperation>, String> {
+    let node = app_node_manager.get().await?;
+    let ops = node
+        .get_group_control_ops(chat_id)
+        .await
+        .map_err(|e| format!("Failed to get group control log: {e:?}"))?;
+    ops.into_iter()
+        .map(|op| simplify(chat_id.into(), op.hash, op.header, op.body))
+        .collect::<anyhow::Result<Vec<SimplifiedOperation>>>()
+        .map_err(|e| format!("{e:?}"))
 }
 
 #[tauri::command]

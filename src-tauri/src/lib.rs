@@ -172,6 +172,7 @@ pub fn run() {
             commands::chats::leave_group,
             commands::chats::get_group_chats,
             commands::chats::get_group_members,
+            commands::chats::get_group_control_log,
             commands::settings::get_settings,
             commands::settings::set_setting,
             #[cfg(not(mobile))]

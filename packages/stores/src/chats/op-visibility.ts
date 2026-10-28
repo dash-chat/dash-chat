@@ -43,15 +43,16 @@ export function stateAt(
  *
  * Ops predating our first membership event are kept: a late joiner is given
  * the history from before she was added, and only a `Remove` ever starts
- * hiding anything. Group-control ops are always kept, so being added back
- * still applies. Chats that never name the device in a membership action — a
- * direct chat, or a group whose `Create` has not synced yet — are untouched.
+ * hiding anything. Chats whose `controlOps` never name the device in a
+ * membership action — a direct chat, or a group whose `Create` has not synced
+ * yet — are untouched.
  */
 export function dropOpsAuthoredWhileNotAMember(
 	opsOrdered: SimplifiedOperation<Payload>[],
+	controlOps: SimplifiedOperation<Payload>[],
 	myDeviceId: DeviceId,
 ): SimplifiedOperation<Payload>[] {
-	const windows = membershipWindows(opsOrdered, myDeviceId);
+	const windows = membershipWindows(controlOps, myDeviceId);
 	if (windows.length === 0) return opsOrdered;
 	return opsOrdered.filter(op => {
 		if (op.body?.type !== 'Chat') return true;
@@ -59,13 +60,16 @@ export function dropOpsAuthoredWhileNotAMember(
 	});
 }
 
-/** When `myDeviceId` joined and left this chat, from the group-control ops in
- * its log, sorted by ascending timestamp. */
+/** When `myDeviceId` joined and left this chat, from the group-control ops,
+ * sorted by ascending timestamp. */
 function membershipWindows(
-	opsOrdered: SimplifiedOperation<Payload>[],
+	controlOps: SimplifiedOperation<Payload>[],
 	myDeviceId: DeviceId,
 ): StateChange[] {
 	const windows: StateChange[] = [];
+	const opsOrdered = [...controlOps].sort(
+		(a, b) => a.header.timestamp - b.header.timestamp,
+	);
 	for (const op of opsOrdered) {
 		const action = op.header.auth?.action;
 		if (!action) continue;

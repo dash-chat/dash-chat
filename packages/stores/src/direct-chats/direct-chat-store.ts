@@ -44,6 +44,7 @@ export class DirectChatStore {
 			chatId,
 			messagesClient,
 			reactive(async () => await this.isBlocked()),
+			reactive(async () => []),
 		);
 	}
 
