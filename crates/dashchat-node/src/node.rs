@@ -812,6 +812,18 @@ impl Node {
         Ok(())
     }
 
+    #[cfg(feature = "testing")]
+    /// Publish a Create for a space at a chosen id, bypassing the usual checks, to
+    /// probe what p2panda does when a space id already has a Create root elsewhere.
+    pub async fn create_space_at(
+        &self,
+        chat_id: ChatId,
+        initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
+    ) -> anyhow::Result<()> {
+        self.create_space(chat_id, initial_members).await?;
+        Ok(())
+    }
+
     pub async fn create_chat_group(
         &self,
         mut initial_members: BTreeMap<VerifyingKey, p2panda_auth::Access>,
