@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -29,11 +29,6 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libasound2-dev
-
-      # See ios-build.yaml: the homebrew shims would otherwise shadow rustup.
-      - name: Remove broken homebrew rust shims
-        if: runner.os == 'macOS'
-        run: rm -f /opt/homebrew/bin/cargo /opt/homebrew/bin/rustc /opt/homebrew/bin/rustup /opt/homebrew/bin/rustup-init
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1

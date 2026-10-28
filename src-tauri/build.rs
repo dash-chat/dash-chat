@@ -30,7 +30,28 @@ fn main() {
         "PUSH_NOTIFICATIONS_SERVER_PORT",
     );
 
-    tauri_build::build()
+    tauri_build::try_build(
+        tauri_build::Attributes::new()
+            .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest()),
+    )
+    .expect("failed to run tauri-build");
+    embed_windows_manifest_in_every_binary();
+}
+
+/// tauri-build's own manifest only reaches the app binary, so test binaries
+/// start without Common Controls v6 and die with `STATUS_ENTRYPOINT_NOT_FOUND`.
+/// The linker args reach every binary; tauri does the same for its own tests.
+fn embed_windows_manifest_in_every_binary() {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os != "windows" || target_env != "msvc" {
+        return;
+    }
+    let manifest =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("windows-app-manifest.xml");
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+    println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
 }
 
 /// A DSN that is set but unparseable would disable reporting in the backend
