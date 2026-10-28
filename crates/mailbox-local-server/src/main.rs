@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     // Bound before anything is announced, so a port that cannot be served is
     // never advertised.
     let listener = match args.port {
-        Some(port) => tokio::net::TcpListener::bind(format!("[::]:{port}")).await?,
+        Some(port) => tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?,
         None => {
             let (listener, _) = mailbox_local_server::reserve_listener(&args.db_path)?;
             listener.set_nonblocking(true)?;

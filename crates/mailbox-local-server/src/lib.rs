@@ -3,7 +3,7 @@
 //! sync against it without any cloud service.
 
 use std::fs;
-use std::net::Ipv6Addr;
+use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -133,7 +133,7 @@ pub fn reserve_listener(db_path: &Path) -> anyhow::Result<(std::net::TcpListener
         .ok()
         .and_then(|port| port.trim().parse::<u16>().ok());
     let listener = match remembered {
-        Some(port) => match std::net::TcpListener::bind((Ipv6Addr::UNSPECIFIED, port)) {
+        Some(port) => match std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, port)) {
             Ok(listener) => listener,
             Err(err) => {
                 log::info!("Local mailbox port {port} is not free ({err}); taking another");
@@ -152,7 +152,7 @@ pub fn reserve_listener(db_path: &Path) -> anyhow::Result<(std::net::TcpListener
 }
 
 fn any_free_listener() -> anyhow::Result<std::net::TcpListener> {
-    Ok(std::net::TcpListener::bind((Ipv6Addr::UNSPECIFIED, 0))?)
+    Ok(std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))?)
 }
 
 /// Announce a mailbox on the LAN so peers discover it. The instance id is the
@@ -220,6 +220,14 @@ mod tests {
         drop(taken);
         drop(held);
         assert_eq!(reserve_listener(&db_path(&dir)).unwrap().1, second);
+    }
+
+    /// Discovery only announces IPv4 addresses, so that is what peers dial.
+    #[test]
+    fn a_hub_accepts_ipv4_connections() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_listener, port) = reserve_listener(&db_path(&dir)).unwrap();
+        std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
     }
 
     #[test]
