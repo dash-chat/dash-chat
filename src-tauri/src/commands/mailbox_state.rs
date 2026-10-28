@@ -6,7 +6,7 @@ use async_stream::stream;
 use dashchat_node::{topic::TopicId, DeviceId};
 use futures::{Stream, StreamExt};
 use mailbox_client::{MailboxConnectionHealth, MailboxId};
-use mailboxes_manager::MailboxSyncState;
+use mailboxes_manager::OperationSyncState;
 use tauri_plugin_subscriptions::subscription;
 use tokio_stream::wrappers::WatchStream;
 
@@ -63,7 +63,7 @@ pub fn mailbox_subscribe_connection_state(
 #[subscription]
 pub fn mailbox_subscribe_sync_state(
     mailbox_id: MailboxId,
-) -> impl Stream<Item = MailboxSyncState<TopicId, DeviceId>> {
+) -> impl Stream<Item = OperationSyncState<TopicId, DeviceId>> {
     node_stream_values(move |node| {
         let id = mailbox_id.clone();
         stream! {

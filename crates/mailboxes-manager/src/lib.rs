@@ -8,12 +8,13 @@
 pub mod blobs;
 mod mailbox_registry;
 pub mod manager;
+pub mod operations;
 pub(crate) mod persistence;
 mod polling;
-mod sync_tracker;
+
 mod tracked_mailbox;
 
 pub use blobs::unfetched_blobs::BlobSource;
 pub use manager::Mailboxes;
-pub use sync_tracker::{MailboxSyncState, MailboxSyncTracker};
+pub use operations::operation_sync_tracker::{OperationSyncState, OperationSyncTracker};
 pub use tracked_mailbox::TrackedMailbox;

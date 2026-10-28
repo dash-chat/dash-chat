@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mailbox_client::operation_delivery::OperationDelivery;
+use mailbox_client::operations::operation_delivery::OperationDelivery;
 use mailbox_client::store::MailboxStore;
 use mailbox_client::sync_scheduler::{PendingRequest, RequestOutcome};
 use mailbox_client::{

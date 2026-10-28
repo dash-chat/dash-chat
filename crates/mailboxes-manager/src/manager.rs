@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::sync::Arc;
 use std::time::Duration;
 
-use mailbox_client::operation_delivery::DeliveryError;
+use mailbox_client::operations::operation_delivery::DeliveryError;
 use mailbox_client::store::MailboxStore;
 use mailbox_client::sync_scheduler::RequestOutcome;
 use mailbox_client::topic_registry::TopicRegistry;
@@ -19,16 +19,16 @@ use crate::blobs::blob_sync_tracker::BlobSyncTracker;
 use crate::blobs::unfetched_blobs::{BlobSource, reconcile_unfetched_blobs};
 use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::mailbox_registry::MailboxRegistry;
+use crate::operations::operation_sync_tracker::OperationSyncTracker;
 use crate::persistence::{Persistence, sqlite::SqlitePersistence};
 use crate::polling::PollGuard;
-use crate::sync_tracker::MailboxSyncTracker;
 use crate::tracked_mailbox::TrackedMailbox;
 
 #[derive(Clone)]
 pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     mailbox_registry: Arc<MailboxRegistry<Item, Store>>,
     topic_registry: Arc<TopicRegistry<Item>>,
-    sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
     blob_tracker: Arc<BlobSyncTracker>,
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
@@ -48,7 +48,7 @@ where
 {
     fn new(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
         blob_tracker: Arc<BlobSyncTracker>,
         config: MailboxesConfig,
         persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
@@ -57,7 +57,7 @@ where
             blob_tracker,
             mailbox_registry: Arc::new(MailboxRegistry::new()),
             topic_registry: Arc::new(TopicRegistry::new()),
-            sync_tracker: sync_tracker.clone(),
+            op_tracker: op_tracker.clone(),
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
@@ -73,8 +73,8 @@ where
     }
 
     /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
-    pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::Topic, Item::Author>> {
-        &self.sync_tracker
+    pub fn sync_tracker(&self) -> &Arc<OperationSyncTracker<Item::Topic, Item::Author>> {
+        &self.op_tracker
     }
 
     /// The blob delivery tracker: what each mailbox still lacks. Node code
@@ -111,7 +111,7 @@ where
         // restart even when it is not currently registered (e.g. the cloud
         // mailbox whose id is otherwise only resolvable from its live server).
         if let Some(url) = new_client.url() {
-            if let Err(err) = self.sync_tracker.record_url(&id, &url).await {
+            if let Err(err) = self.op_tracker.record_url(&id, &url).await {
                 tracing::error!(?err, mailbox = %id, "failed to record mailbox url");
             }
         }
@@ -122,7 +122,7 @@ where
         let seeded_status = if self.is_tracked(&id).await {
             SyncStatus::Active
         } else {
-            match self.sync_tracker.get_status(&id).await {
+            match self.op_tracker.get_status(&id).await {
                 Ok(status) => status.unwrap_or(SyncStatus::Active),
                 Err(err) => {
                     tracing::error!(?err, mailbox = %id, "failed to load persisted mailbox status");
@@ -168,7 +168,7 @@ where
             // A removed mailbox starts fresh if it later reappears, so we
             // discard its persisted status to avoid seeding a new registration
             // with stale backoff state.
-            if let Err(err) = self.sync_tracker.clear_status(id).await {
+            if let Err(err) = self.op_tracker.clear_status(id).await {
                 tracing::error!(?err, mailbox = %id, "failed to clear mailbox status");
             }
         }
@@ -274,7 +274,7 @@ where
         if status_after == status_before {
             return;
         }
-        if let Err(err) = self.sync_tracker.record_status(id, status_after).await {
+        if let Err(err) = self.op_tracker.record_status(id, status_after).await {
             tracing::error!(?err, mailbox = %id, "failed to record mailbox status");
         }
     }
@@ -339,11 +339,11 @@ where
         topic: Item::Topic,
         author: Item::Author,
     ) -> anyhow::Result<()> {
-        let synced = self.sync_tracker.get_synced(id, &topic, &author).await?;
+        let synced = self.op_tracker.get_synced(id, &topic, &author).await?;
         let delivery = tracked.delivery().await;
         match delivery.publish(topic, author, synced).await {
             Ok(Some(watermark)) => {
-                self.sync_tracker
+                self.op_tracker
                     .record_synced(id, &[(topic, author, watermark)])
                     .await?;
                 Ok(())
@@ -410,14 +410,14 @@ where
     #[cfg(test)]
     pub(crate) fn spawn(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Self {
         let blob_tracker = Arc::new(BlobSyncTracker::new(
             Arc::new(crate::persistence::mem::MemBlobStore::default()),
             Default::default(),
         ));
-        Self::spawn_internal(store, sync_tracker, blob_tracker, config, None)
+        Self::spawn_internal(store, op_tracker, blob_tracker, config, None)
     }
 
     /// Spawn the poll loop backed by a SQLite database at `path`.
@@ -431,7 +431,7 @@ where
         let persistence =
             Arc::new(SqlitePersistence::<Item::Topic, Item::Author>::open(path, gate).await?);
         let initial_ids = persistence.sync_store().load_all_ids().await?;
-        let sync_tracker = Arc::new(MailboxSyncTracker::new(
+        let sync_tracker = Arc::new(OperationSyncTracker::new(
             persistence.sync_store(),
             persistence.mailbox_store(),
             initial_ids,
@@ -449,12 +449,12 @@ where
 
     fn spawn_internal(
         store: Store,
-        sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
         blob_tracker: Arc<BlobSyncTracker>,
         config: MailboxesConfig,
         persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     ) -> Self {
-        let manager = Self::new(store, sync_tracker, blob_tracker, config, persistence);
+        let manager = Self::new(store, op_tracker, blob_tracker, config, persistence);
         let r = manager.clone();
         let handle = tokio::spawn(
             async move {
@@ -585,7 +585,7 @@ where
             .cleanup_closed_subscriptions(&outcome.closed_topics)
             .await;
         let acks = outcome.result.map_err(|err| anyhow::anyhow!(err))?;
-        if let Err(err) = self.sync_tracker.record_synced(id, &acks).await {
+        if let Err(err) = self.op_tracker.record_synced(id, &acks).await {
             tracing::error!(?err, mailbox = %id, "failed to record sync watermarks");
         }
         Ok(())
@@ -601,8 +601,8 @@ struct NextDue {
 mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-    use mailbox_client::MailboxConnectionHealth;
     use mailbox_client::sync_scheduler::PendingRequest;
+    use mailbox_client::{MailboxConnectionHealth, blobs::blob_delivery::BlobDelivery};
 
     use super::*;
     use std::collections::BTreeMap;
@@ -760,10 +760,10 @@ mod tests {
         ))
     }
 
-    fn test_sync_tracker() -> Arc<MailboxSyncTracker<u8, char>> {
+    fn test_sync_tracker() -> Arc<OperationSyncTracker<u8, char>> {
         use crate::persistence::Persistence;
         let store = crate::persistence::mem::MemPersistence::<u8, char>::new();
-        Arc::new(MailboxSyncTracker::<u8, char>::new(
+        Arc::new(OperationSyncTracker::<u8, char>::new(
             store.sync_store(),
             store.mailbox_store(),
             BTreeSet::new(),
@@ -868,7 +868,7 @@ mod tests {
         let failing_reader: Arc<dyn BlobReader> = Arc::new(FailingBlobReader { hash });
 
         let registered = mailboxes.tracked_mailbox(&id).await.unwrap();
-        let delivery = mailbox_client::blob_delivery::BlobDelivery::new(
+        let delivery = BlobDelivery::new(
             registered.client().await,
             Some(failing_reader.clone()),
             Arc::new(NoopUnfetchedBlobTracker),

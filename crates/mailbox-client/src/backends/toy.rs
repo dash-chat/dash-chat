@@ -6,7 +6,7 @@ use mailbox_server::{
     Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest, StoreBlipsResponse,
 };
 
-use crate::blob_delivery::BlobDelivery;
+use crate::blobs::blob_delivery::BlobDelivery;
 use crate::{
     BlobUploadLifecycle, FetchRequest, FetchResponse, FetchTopicResponse, HTTP_CLIENT,
     MailboxClient, MailboxId, MailboxItem, MailboxKey, PublishResponse,

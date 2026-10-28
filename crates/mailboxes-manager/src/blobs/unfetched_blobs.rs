@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use mailbox_client::{
-    BlobReader, MailboxItem, OptionalItemTraits, UnfetchedBlobTracker, store::MailboxStore,
+    BlobReader, MailboxItem, OptionalItemTraits, UnfetchedBlobTracker,
+    blobs::blob_delivery::BlobDelivery, store::MailboxStore,
 };
 
 use crate::manager::Mailboxes;
@@ -66,7 +67,7 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
 
         // Upload again too: the upload that followed these blobs' message may
         // have been cut off, and the mailbox can't fetch from a phone it can't dial.
-        let delivery = mailbox_client::blob_delivery::BlobDelivery::new(
+        let delivery = BlobDelivery::new(
             client,
             Some(reader.clone()),
             tracker.clone(),

@@ -1,8 +1,7 @@
 pub mod backends;
-pub mod blob_delivery;
 pub mod blobs;
 mod health;
-pub mod operation_delivery;
+pub mod operations;
 pub mod store;
 pub mod sync_scheduler;
 pub mod topic_registry;
