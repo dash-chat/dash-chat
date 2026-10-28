@@ -357,6 +357,15 @@ where
                     echoed = ?echoed,
                     "mailbox watermark behind after direct store"
                 );
+                // The echo is the mailbox's statement of what it holds
+                // contiguously — recording it is exactly watermark semantics,
+                // and lets the next push resume from the echo instead of
+                // resending the whole batch.
+                if let Some(echoed) = echoed {
+                    self.op_tracker
+                        .record_synced(id, &[(topic, author, echoed)])
+                        .await?;
+                }
                 Err(anyhow::anyhow!(err))
             }
             Err(err) => Err(anyhow::anyhow!(err)),
@@ -2440,6 +2449,68 @@ mod tests {
         assert_eq!(
             mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
             Some(5)
+        );
+    }
+
+    /// A short echo still advances the watermark to what the mailbox
+    /// confirmed: the next push resumes from the echo rather than resending
+    /// the whole batch.
+    #[tokio::test(start_paused = true)]
+    async fn short_echo_records_the_partial_watermark() {
+        /// Echoes a capped watermark regardless of what was stored.
+        struct CappedEchoClient {
+            id: MailboxId,
+            cap: SeqNum,
+        }
+
+        #[async_trait::async_trait]
+        impl MailboxClient<Msg> for CappedEchoClient {
+            fn id(&self) -> MailboxId {
+                self.id.clone()
+            }
+
+            async fn publish(&self, ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+                let mut response = PublishResponse::default();
+                for op in ops {
+                    response
+                        .0
+                        .entry(op.topic)
+                        .or_default()
+                        .insert(op.author, Some(self.cap));
+                }
+                Ok(response)
+            }
+
+            async fn fetch(
+                &self,
+                _request: FetchRequest<Msg>,
+            ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+                Ok(FetchResponse(Default::default()))
+            }
+        }
+
+        let store = MemStore::default();
+        store.set_height(0, 'a', 5);
+        let mgr = test_mailboxes_with_store(test_config(), store);
+        let client = CappedEchoClient {
+            id: nanoid::nanoid!(),
+            cap: 3,
+        };
+        let id = client.id();
+        mgr.register(client).await;
+        mgr.sync_tracker()
+            .record_synced(&id, &[(0, 'a', 1)])
+            .await
+            .unwrap();
+
+        // The push sends 2..=5; the echo caps at 3. The push fails with
+        // WatermarkBehind, but the partial watermark is recorded.
+        join(mgr.publish_fast_push(0, 'a').await).await;
+
+        assert_eq!(
+            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            Some(3),
+            "the echo is recorded even though the push failed"
         );
     }
 
