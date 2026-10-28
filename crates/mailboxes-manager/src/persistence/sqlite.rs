@@ -390,6 +390,73 @@ impl crate::persistence::BlobStore for SqliteBlobStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::BlobStore;
+
+    async fn blob_store() -> (tempfile::TempDir, Arc<dyn BlobStore>) {
+        let dir = tempfile::tempdir().unwrap();
+        let persistence = SqlitePersistence::<u8, char>::open(
+            dir.path().join("test.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap();
+        let store = persistence.blob_store();
+        (dir, store)
+    }
+
+    /// Record, read back, and remove — the whole lifecycle on real SQL,
+    /// with no tracker involved.
+    #[tokio::test]
+    async fn blob_store_round_trip() {
+        let (_dir, store) = blob_store().await;
+        let mbx = "mbx".to_string();
+        let h1 = iroh_blobs::Hash::new([1; 32]);
+        let h2 = iroh_blobs::Hash::new([2; 32]);
+
+        store.record(&mbx, &[h1, h2]).await.unwrap();
+        let mut got = store.unfetched(&mbx).await.unwrap();
+        got.sort();
+        assert_eq!(got, vec![h1, h2]);
+
+        store.remove(&mbx, &[h1, h2]).await.unwrap();
+        assert!(store.unfetched(&mbx).await.unwrap().is_empty());
+    }
+
+    /// The multi-bind IN clause: removing several hashes in one statement
+    /// must remove exactly those hashes and no others.
+    #[tokio::test]
+    async fn blob_store_multi_hash_remove() {
+        let (_dir, store) = blob_store().await;
+        let mbx = "mbx".to_string();
+        let hashes: Vec<_> = (0u8..5).map(|i| iroh_blobs::Hash::new([i; 32])).collect();
+
+        store.record(&mbx, &hashes).await.unwrap();
+        store.remove(&mbx, &[hashes[0], hashes[2], hashes[4]]).await.unwrap();
+
+        let mut got = store.unfetched(&mbx).await.unwrap();
+        got.sort();
+        let mut want = vec![hashes[1], hashes[3]];
+        want.sort();
+        assert_eq!(got, want);
+    }
+
+    /// Records are idempotent (INSERT OR IGNORE) and isolated per mailbox.
+    #[tokio::test]
+    async fn blob_store_record_is_idempotent_and_scoped() {
+        let (_dir, store) = blob_store().await;
+        let h = iroh_blobs::Hash::new([7; 32]);
+
+        store.record(&"a".into(), &[h]).await.unwrap();
+        store.record(&"a".into(), &[h]).await.unwrap();
+        store.record(&"b".into(), &[h]).await.unwrap();
+
+        assert_eq!(store.unfetched(&"a".into()).await.unwrap(), vec![h]);
+        assert_eq!(store.unfetched(&"b".into()).await.unwrap(), vec![h]);
+
+        store.remove(&"a".into(), &[h]).await.unwrap();
+        assert!(store.unfetched(&"a".into()).await.unwrap().is_empty());
+        assert_eq!(store.unfetched(&"b".into()).await.unwrap(), vec![h]);
+    }
 
     #[tokio::test]
     async fn gate_still_tracks_pool_after_open() {

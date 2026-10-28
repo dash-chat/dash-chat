@@ -142,20 +142,44 @@ impl UnfetchedBlobTracker for BlobSyncTracker {
 mod tests {
     use super::*;
     use crate::persistence::mem::MemBlobStore;
+    use crate::persistence::sqlite::SqlitePersistence;
+    use crate::persistence::{BlobStore, Persistence};
 
-    fn tracker() -> BlobSyncTracker {
-        BlobSyncTracker::new(Arc::new(MemBlobStore::default()), Default::default())
+    enum Backend {
+        Sqlite,
+        Mem,
     }
 
-    #[tokio::test]
-    async fn record_and_remove_round_trip() {
-        let tracker = tracker();
+    async fn open(backend: Backend) -> (Option<tempfile::TempDir>, BlobSyncTracker) {
+        match backend {
+            Backend::Sqlite => {
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join("blob_sync.db");
+                let persistence =
+                    SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
+                        .await
+                        .unwrap();
+                let ids = persistence.blob_store().unfetched_ids().await.unwrap();
+                let tracker = BlobSyncTracker::new(persistence.blob_store(), ids);
+                (Some(dir), tracker)
+            }
+            Backend::Mem => {
+                let store: Arc<dyn BlobStore> = Arc::new(MemBlobStore::default());
+                (None, BlobSyncTracker::new(store, Default::default()))
+            }
+        }
+    }
+
+    async fn record_and_remove_round_trip_impl(backend: Backend) {
+        let (_dir, tracker) = open(backend).await;
         let mbx = "mbx".to_string();
         let h1 = iroh_blobs::Hash::new([1; 32]);
         let h2 = iroh_blobs::Hash::new([2; 32]);
 
         tracker.record(&mbx, &[h1, h2]).await.unwrap();
-        assert_eq!(tracker.unfetched(&mbx).await.unwrap().len(), 2);
+        let mut got = tracker.unfetched(&mbx).await.unwrap();
+        got.sort();
+        assert_eq!(got, vec![h1, h2]);
 
         tracker.remove(&mbx, &[h1]).await.unwrap();
         assert_eq!(tracker.unfetched(&mbx).await.unwrap(), vec![h2]);
@@ -165,26 +189,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unfetched_state_watch_updates_on_writes() {
-        let tracker = tracker();
-        let mbx = "mbx".to_string();
-        let h = iroh_blobs::Hash::new([7; 32]);
-
-        let mut rx = tracker.unfetched_state(&mbx).await.unwrap();
-        assert!(rx.borrow().is_empty());
-
-        tracker.record(&mbx, &[h]).await.unwrap();
-        assert!(rx.has_changed().unwrap());
-        assert!(rx.borrow_and_update().contains(&h));
-
-        tracker.remove(&mbx, &[h]).await.unwrap();
-        assert!(rx.has_changed().unwrap());
-        assert!(rx.borrow_and_update().is_empty());
+    async fn record_and_remove_round_trip_sqlite() {
+        record_and_remove_round_trip_impl(Backend::Sqlite).await;
     }
 
     #[tokio::test]
-    async fn remove_all_mailboxes_clears_every_mailbox() {
-        let tracker = tracker();
+    async fn record_and_remove_round_trip_mem() {
+        record_and_remove_round_trip_impl(Backend::Mem).await;
+    }
+
+    async fn remove_all_mailboxes_impl(backend: Backend) {
+        let (_dir, tracker) = open(backend).await;
         let h = iroh_blobs::Hash::new([9; 32]);
         tracker.record(&"a".to_string(), &[h]).await.unwrap();
         tracker.record(&"b".to_string(), &[h]).await.unwrap();
@@ -208,8 +223,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn remove_all_mailboxes_sqlite() {
+        remove_all_mailboxes_impl(Backend::Sqlite).await;
+    }
+
+    #[tokio::test]
+    async fn remove_all_mailboxes_mem() {
+        remove_all_mailboxes_impl(Backend::Mem).await;
+    }
+
+    /// The multi-hash remove exercises the hand-assembled IN clause with more
+    /// than one bind — the shape most likely to silently delete nothing.
+    #[tokio::test]
+    async fn multi_hash_remove_sqlite() {
+        let (_dir, tracker) = open(Backend::Sqlite).await;
+        let mbx = "mbx".to_string();
+        let hashes: Vec<_> = (0u8..4).map(|i| iroh_blobs::Hash::new([i; 32])).collect();
+
+        tracker.record(&mbx, &hashes).await.unwrap();
+        assert_eq!(tracker.unfetched(&mbx).await.unwrap().len(), 4);
+
+        tracker.remove(&mbx, &hashes[0..3]).await.unwrap();
+        assert_eq!(tracker.unfetched(&mbx).await.unwrap(), vec![hashes[3]]);
+    }
+
+    #[tokio::test]
+    async fn unfetched_state_watch_updates_on_writes() {
+        let (_dir, tracker) = open(Backend::Mem).await;
+        let mbx = "mbx".to_string();
+        let h = iroh_blobs::Hash::new([7; 32]);
+
+        let mut rx = tracker.unfetched_state(&mbx).await.unwrap();
+        assert!(rx.borrow().is_empty());
+
+        tracker.record(&mbx, &[h]).await.unwrap();
+        assert!(rx.has_changed().unwrap());
+        assert!(rx.borrow_and_update().contains(&h));
+
+        tracker.remove(&mbx, &[h]).await.unwrap();
+        assert!(rx.has_changed().unwrap());
+        assert!(rx.borrow_and_update().is_empty());
+    }
+
+    #[tokio::test]
     async fn all_mailbox_ids_observes_new_mailboxes() {
-        let tracker = tracker();
+        let (_dir, tracker) = open(Backend::Mem).await;
         assert!(tracker.all_mailbox_ids().borrow().is_empty());
 
         tracker
