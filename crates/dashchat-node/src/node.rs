@@ -447,6 +447,7 @@ impl Node {
                     blob_fetch,
                     source_lookup,
                     local_store.clone(),
+                    mailboxes.blob_tracker().clone(),
                 )
                 .await?,
             )

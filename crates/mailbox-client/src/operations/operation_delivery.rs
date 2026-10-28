@@ -116,6 +116,12 @@ where
 
         for (topic, response) in response.into_iter() {
             let sender = topic_registry.get_sender(&topic).await;
+            if sender.is_none() {
+                // No local subscriber: inbound items can't be delivered, but
+                // the outbound sync (publishing what the mailbox lacks) still
+                // runs — other devices fetch from the mailbox, not from us.
+                tracing::warn!(topic = %topic, "no subscriber for topic; inbound items dropped");
+            }
             let outcome = match self
                 .sync_one_topic(topic.clone(), response, &sent_heights, sender)
                 .await
