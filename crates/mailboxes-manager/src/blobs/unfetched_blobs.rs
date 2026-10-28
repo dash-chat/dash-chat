@@ -29,8 +29,7 @@ pub trait BlobSource: Send + Sync + 'static {
 /// One reconciliation pass: for every mailbox with unfetched blobs that is still
 /// tracked, re-announce its hashes and drop the ones it reports already stored.
 ///
-/// This is a transitional home for the followup logic; it delegates blob upload
-/// to the registered `MailboxClient` via `push_blobs`.
+/// Drives the mailbox's `BlobDelivery` engine directly.
 pub async fn reconcile_unfetched_blobs<Item, Store>(
     mailboxes: &Mailboxes<Item, Store>,
     source: Arc<dyn BlobSource>,
@@ -67,10 +66,13 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
 
         // Upload again too: the upload that followed these blobs' message may
         // have been cut off, and the mailbox can't fetch from a phone it can't dial.
-        if let Err(err) = client
-            .push_blobs(held, reader.clone(), tracker.clone())
-            .await
-        {
+        let delivery = mailbox_client::blob_delivery::BlobDelivery::new(
+            client,
+            Some(reader.clone()),
+            tracker.clone(),
+            mailboxes.upload_tracker(),
+        );
+        if let Err(err) = delivery.sync(held, reader.clone()).await {
             tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
         }
     }

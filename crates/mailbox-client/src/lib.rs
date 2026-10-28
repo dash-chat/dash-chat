@@ -76,19 +76,43 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
         Ok(())
     }
 
-    /// Push unfetched blob bytes to the mailbox, best-effort.
+    /// Announce blob hashes to the mailbox, returning the subset it reports
+    /// already stored. `expect_upload` tells the mailbox to defer its fetch
+    /// backstop because the bytes are about to be pushed; pass `false` when
+    /// no upload is coming so the mailbox fetches immediately.
     ///
-    /// The default no-op covers in-memory/test mailboxes that do not store
-    /// blobs. Implementations should announce the hashes to the mailbox and
-    /// stream the bytes for the ones it lacks.
-    async fn push_blobs(
+    /// The default covers in-memory/test mailboxes that do not store blobs:
+    /// nothing is ever reported stored.
+    async fn announce_blob_hashes(
         &self,
         _hashes: Vec<iroh_blobs::Hash>,
-        _reader: Arc<dyn BlobReader>,
-        _tracker: Arc<dyn UnfetchedBlobTracker>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+        _expect_upload: bool,
+    ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+        Ok(Vec::new())
     }
+
+    /// Push one blob's raw bytes to the mailbox. The default errors:
+    /// mailboxes that don't store blobs have nothing to upload to.
+    async fn upload_blob(&self, _bytes: bytes::Bytes) -> Result<(), BlobUploadError> {
+        Err(BlobUploadError::MailboxUnavailable(anyhow::anyhow!(
+            "mailbox does not accept blob uploads"
+        )))
+    }
+}
+
+/// Why a single blob upload didn't succeed, so a batch can tell an
+/// unreachable mailbox from a failure isolated to one blob.
+#[derive(Debug, thiserror::Error)]
+pub enum BlobUploadError {
+    /// The mailbox itself couldn't be reached. Every other upload in the
+    /// batch will hit the same wall; the caller should stop and let the
+    /// announce/fetch backstop take over.
+    #[error("mailbox unreachable: {0}")]
+    MailboxUnavailable(anyhow::Error),
+    /// The mailbox is reachable but this blob didn't store (rejection, or a
+    /// timeout mid-transfer). Isolated to this blob; the batch continues.
+    #[error("blob upload failed: {0}")]
+    Blob(anyhow::Error),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

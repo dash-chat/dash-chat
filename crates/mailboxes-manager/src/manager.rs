@@ -793,8 +793,11 @@ mod tests {
 
     // -- MailboxTracker unit tests --
 
+    /// A sync driven through the manager's upload tracker leaves a failed
+    /// upload on the shared backoff: the reconcile path and the publish path
+    /// coordinate through one ledger.
     #[tokio::test]
-    async fn register_attaches_upload_tracker_to_toy_client() {
+    async fn blob_sync_uses_the_managers_upload_tracker() {
         let (server, _temp_file) = mailbox_server::test_utils::create_test_server().await;
         let url = server.server_address().unwrap().to_string();
         let url = url.trim_end_matches('/').to_string();
@@ -804,7 +807,7 @@ mod tests {
         let hash = iroh_blobs::Hash::new(b"coordinated blob");
 
         // Reader used to build the client and to satisfy `has_blob` during
-        // `push_blobs`.
+        // the engine's sync.
         let reader = Arc::new(StubBlobReader {
             hash,
             bytes: bytes::Bytes::from_static(b"coordinated blob"),
@@ -827,20 +830,17 @@ mod tests {
         let failing_reader: Arc<dyn BlobReader> = Arc::new(FailingBlobReader { hash });
 
         let registered = mailboxes.tracked_mailbox(&id).await.unwrap();
-        registered
-            .client()
-            .await
-            .push_blobs(
-                vec![hash],
-                failing_reader,
-                Arc::new(NoopUnfetchedBlobTracker),
-            )
-            .await
-            .unwrap();
+        let delivery = mailbox_client::blob_delivery::BlobDelivery::new(
+            registered.client().await,
+            Some(failing_reader.clone()),
+            Arc::new(NoopUnfetchedBlobTracker),
+            mailboxes.upload_tracker(),
+        );
+        delivery.sync(vec![hash], failing_reader).await.unwrap();
 
         assert!(
             !mailboxes.upload_due(&id, hash).await,
-            "registered toy client must share Mailboxes' upload scheduler"
+            "a failed upload via the engine must land on the manager's tracker"
         );
     }
 

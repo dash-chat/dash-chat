@@ -12,6 +12,13 @@ use crate::{
     MailboxClient, MailboxId, MailboxItem, MailboxKey, PublishResponse,
 };
 
+/// Client-side timeout for a single blob upload, larger than the default HTTP
+/// timeout because a blob can be big.
+const UPLOAD_BLOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// The slowest uplink an upload is given time to finish over, so a big blob
+/// from a phone on a weak connection isn't cut off by [`UPLOAD_BLOB_TIMEOUT`].
+const SLOWEST_UPLINK_BYTES_PER_SEC: f64 = 32.0 * 1024.0;
+
 /// A client for the toy mailbox server.
 #[derive(Clone)]
 pub struct ToyMailboxClient<Item: MailboxItem> {
@@ -52,18 +59,16 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         self
     }
 
-    fn blob_delivery(&self) -> BlobDelivery {
+    fn blob_delivery(&self) -> BlobDelivery<Item> {
         self.blob_delivery_with(self.tracker.clone())
     }
 
     fn blob_delivery_with(
         &self,
         tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
-    ) -> BlobDelivery {
+    ) -> BlobDelivery<Item> {
         BlobDelivery::new(
-            self.id.clone(),
-            self.base_url.clone(),
-            self.sender_pubkey,
+            Arc::new(self.clone()),
             self.blob_reader.clone(),
             tracker,
             self.lifecycle.clone(),
@@ -147,13 +152,58 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         }
     }
 
-    async fn push_blobs(
+    async fn announce_blob_hashes(
         &self,
         hashes: Vec<iroh_blobs::Hash>,
-        reader: Arc<dyn crate::BlobReader>,
-        tracker: Arc<dyn crate::UnfetchedBlobTracker>,
-    ) -> Result<(), anyhow::Error> {
-        self.blob_delivery_with(tracker).sync(hashes, reader).await
+        expect_upload: bool,
+    ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+        if hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+        let request = mailbox_server::RegisterHashesRequest {
+            blob_hashes: hashes,
+            sender_pubkey: self.sender_pubkey,
+            expect_upload,
+            signature: Vec::new(),
+        };
+        let response = HTTP_CLIENT
+            .post(format!("{}/blobs/register-hashes", self.base_url))
+            .json(&request)
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to store blobs: {status} - {body}");
+        }
+        let response: mailbox_server::RegisterHashesResponse = response.json().await?;
+        Ok(response.already_stored)
+    }
+
+    async fn upload_blob(&self, bytes: bytes::Bytes) -> Result<(), crate::BlobUploadError> {
+        let response = HTTP_CLIENT
+            .post(format!("{}/blobs/upload", self.base_url))
+            .timeout(UPLOAD_BLOB_TIMEOUT.max(std::time::Duration::from_secs_f64(
+                bytes.len() as f64 / SLOWEST_UPLINK_BYTES_PER_SEC,
+            )))
+            .body(bytes)
+            .send()
+            .await
+            .map_err(|err| {
+                if err.is_connect() {
+                    crate::BlobUploadError::MailboxUnavailable(err.into())
+                } else {
+                    crate::BlobUploadError::Blob(err.into())
+                }
+            })?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(crate::BlobUploadError::Blob(anyhow::anyhow!(
+                "Failed to upload blob: {status} - {body}"
+            )));
+        }
+        Ok(())
     }
 
     async fn report(&self, request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
@@ -273,7 +323,16 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::blob_delivery::{UploadError, send_register_hashes, upload_blob};
+
+    fn blob_test_client(base_url: String) -> ToyMailboxClient<crate::testing::Msg> {
+        ToyMailboxClient::new(
+            "mbx".to_string(),
+            base_url,
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
+            crate::testing::noop_upload_lifecycle(),
+        )
+    }
 
     type StoredBlips = BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, mailbox_server::Blip>>>;
 
@@ -401,14 +460,17 @@ mod tests {
         });
         let base_url = format!("http://{addr}");
 
-        let already = send_register_hashes(
-            &base_url,
-            vec![h_stored, h_new],
+        let client = ToyMailboxClient::<crate::testing::Msg>::new(
+            "mbx".to_string(),
+            base_url,
             iroh::SecretKey::from_bytes(&[3; 32]).public(),
-            false,
-        )
-        .await
-        .unwrap();
+            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
+            crate::testing::noop_upload_lifecycle(),
+        );
+        let already = client
+            .announce_blob_hashes(vec![h_stored, h_new], false)
+            .await
+            .unwrap();
         assert_eq!(already, vec![h_stored]);
     }
 
@@ -492,7 +554,14 @@ mod tests {
         let base_url = format!("http://{addr}");
 
         let data = bytes::Bytes::from_static(b"raw blob bytes");
-        upload_blob(&base_url, data.clone()).await.unwrap();
+        let client = ToyMailboxClient::<crate::testing::Msg>::new(
+            "mbx".to_string(),
+            base_url,
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
+            crate::testing::noop_upload_lifecycle(),
+        );
+        client.upload_blob(data.clone()).await.unwrap();
         assert_eq!(*received.lock().unwrap(), data.to_vec());
     }
 
@@ -504,10 +573,11 @@ mod tests {
         drop(listener);
         let base_url = format!("http://{addr}");
 
-        let err = upload_blob(&base_url, bytes::Bytes::from_static(b"x"))
+        let err = blob_test_client(base_url)
+            .upload_blob(bytes::Bytes::from_static(b"x"))
             .await
             .unwrap_err();
-        assert!(matches!(err, UploadError::MailboxUnavailable(_)));
+        assert!(matches!(err, crate::BlobUploadError::MailboxUnavailable(_)));
     }
 
     #[tokio::test]
@@ -525,10 +595,11 @@ mod tests {
         });
         let base_url = format!("http://{addr}");
 
-        let err = upload_blob(&base_url, bytes::Bytes::from_static(b"x"))
+        let err = blob_test_client(base_url)
+            .upload_blob(bytes::Bytes::from_static(b"x"))
             .await
             .unwrap_err();
-        assert!(matches!(err, UploadError::Blob(_)));
+        assert!(matches!(err, crate::BlobUploadError::Blob(_)));
     }
 
     #[tokio::test]
