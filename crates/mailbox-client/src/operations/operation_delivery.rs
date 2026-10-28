@@ -153,29 +153,24 @@ where
             };
 
             // Only confirmed ops are acked: a log whose echoed watermark is
-            // short (or absent) contributes nothing and fails the sync, so
-            // the caller retries it instead of trusting unconfirmed sends.
-            let mut short: Option<(Item::Topic, Item::Author, SeqNum, Option<SeqNum>)> = None;
+            // short (or absent) contributes nothing — it will be re-pushed on
+            // the next poll — but the sync itself does not fail. A short echo
+            // means the mailbox stored the ops but couldn't prove contiguity;
+            // that is partial progress, not an error, and treating it as one
+            // would both discard the other logs' acks and push a mailbox that
+            // persistently short-echoes into Stopped backoff with no way out.
             for (topic, author, seq) in publish_acks {
                 let echoed = response.watermark(&topic, &author);
                 if echoed.is_some_and(|wm| wm >= seq) {
                     acks.push((topic, author, seq));
-                } else if short.is_none() {
-                    short = Some((topic, author, seq, echoed));
+                } else {
+                    tracing::warn!(
+                        %topic,
+                        pushed = seq,
+                        echoed = ?echoed,
+                        "mailbox watermark behind after sync publish"
+                    );
                 }
-            }
-            if let Some((topic, author, pushed, echoed)) = short {
-                tracing::warn!(
-                    %topic,
-                    pushed,
-                    echoed = ?echoed,
-                    "mailbox watermark behind after sync publish"
-                );
-                let _ = author;
-                return SyncOutcome {
-                    result: Err(DeliveryError::WatermarkBehind { pushed, echoed }),
-                    closed_topics,
-                };
             }
         }
 
@@ -711,8 +706,11 @@ mod tests {
         }
     }
 
+    /// A short echo during sync drops that log's ack but does not fail the
+    /// sync: the unconfirmed ops retry next poll, and confirmed logs keep
+    /// their acks.
     #[tokio::test]
-    async fn sync_with_a_short_publish_echo_fails_and_acks_nothing_published() {
+    async fn sync_with_a_short_publish_echo_acks_only_confirmed_logs() {
         let store = MemStore::default();
         store.set_height(0, 'a', 2);
         let delivery = new_delivery(Arc::new(ShortEchoClient), store);
@@ -720,13 +718,11 @@ mod tests {
 
         let outcome = delivery.sync([0u8].into_iter(), &topic_registry).await;
 
-        assert!(matches!(
-            outcome.result.unwrap_err(),
-            DeliveryError::WatermarkBehind {
-                pushed: 2,
-                echoed: Some(1)
-            }
-        ));
+        let acks = outcome.result.unwrap();
+        assert!(
+            acks.is_empty(),
+            "the short-echoed log's acks are withheld: {acks:?}"
+        );
     }
 
     /// A store whose reads fail, to pin the Local arm of `DeliveryError`.
