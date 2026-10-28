@@ -1059,28 +1059,46 @@ impl Node {
         self.space_members(chat_id.into()).await
     }
 
+    /// Every author's group-control operations for `chat_id`'s space
+    pub async fn get_group_control_ops(&self, chat_id: ChatId) -> anyhow::Result<Vec<Operation>> {
+        let log_id = p2panda::spaces::group_log_id(space_group_id(chat_id.into()));
+        let mut ops = Vec::new();
+        for author in self.op_store.get_authors(log_id).await? {
+            ops.extend(self.op_store.get_log(&author, &log_id, None).await?);
+        }
+        Ok(ops)
+    }
+
+    /// The space's current members, read from its group's state.
     pub async fn space_members(
         &self,
         topic: TopicId,
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let group_id = space_group_id(topic);
+        #[allow(deprecated)]
         let members = self
             .streams
-            .space(topic)
-            .await?
-            .run(async move |space| space.members().await)
-            .await??
+            .with_node(async |node| {
+                let manager = node.spaces_manager();
+                if !manager.has_group(group_id).await? {
+                    return anyhow::Ok(vec![]);
+                }
+                let group = manager.group(group_id).created().await?;
+                Ok(group.members().await?)
+            })
+            .await?;
+        Ok(members
             .into_iter()
-            .map(|(member, level)| {
+            .map(|(member, access)| {
                 (
                     DeviceId::from(member),
                     Access {
                         conditions: None,
-                        level,
+                        level: access.level,
                     },
                 )
             })
-            .collect();
-        Ok(members)
+            .collect())
     }
 
     async fn is_only_member(&self, chat_id: ChatId, member: DeviceId) -> anyhow::Result<bool> {
@@ -2867,4 +2885,8 @@ mod forged_contact_request_tests {
                 .any(|inbox| inbox.topic == alice_inbox.topic)
         );
     }
+}
+
+fn space_group_id(topic: TopicId) -> p2panda::spaces::GroupId {
+    p2panda::spaces::space_group_id(p2panda::spaces::SpaceId::from(*topic.as_bytes()))
 }
