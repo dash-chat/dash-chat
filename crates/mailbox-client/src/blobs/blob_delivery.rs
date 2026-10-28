@@ -1,7 +1,7 @@
 //! Per-mailbox delivery of blobs.
 //!
 //! This module provides `BlobDelivery`: the blob counterpart to
-//! [`crate::operation_delivery::OperationDelivery`]. One instance is the
+//! [`crate::operations::operation_delivery::OperationDelivery`]. One instance is the
 //! delivery relationship with one mailbox: it announces blob hashes (so the
 //! mailbox knows to fetch them as a backstop) and streams the bytes the
 //! mailbox reports lacking, with claims and retry backoffs handled through
@@ -42,14 +42,6 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
         }
     }
 
-    /// Attach a blob-bytes source so `publish` streams blob bytes to the
-    /// mailbox after announcing their hashes. Without a reader the client
-    /// only announces hashes and the mailbox fetches the bytes from us.
-    pub fn with_blob_reader(mut self, reader: Arc<dyn BlobReader>) -> Self {
-        self.reader = Some(reader);
-        self
-    }
-
     /// Announce blob hashes to the mailbox and reconcile the unfetched
     /// tracker, then push the bytes the mailbox still needs in a detached
     /// best-effort task.
@@ -65,15 +57,11 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
     }
 
     /// Reconcile a known-outstanding set with the mailbox: re-announce the
-    /// hashes and push any bytes the mailbox still lacks. `reader` is
-    /// required — a sync that can't serve bytes would announce hashes the
+    /// hashes and push any bytes the mailbox still lacks. Uses the engine's
+    /// reader: a sync that can't serve bytes would announce hashes the
     /// mailbox then fetches from a node that doesn't have them.
-    pub async fn sync(
-        &self,
-        hashes: Vec<iroh_blobs::Hash>,
-        reader: Arc<dyn BlobReader>,
-    ) -> anyhow::Result<()> {
-        self.announce_and_upload(hashes, Some(reader)).await
+    pub async fn sync(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
+        self.announce_and_upload(hashes, self.reader.clone()).await
     }
 
     async fn announce_and_upload(

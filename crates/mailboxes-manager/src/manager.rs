@@ -881,7 +881,7 @@ mod tests {
             Arc::new(NoopUnfetchedBlobTracker),
             mailboxes.upload_tracker(),
         );
-        delivery.sync(vec![hash], failing_reader).await.unwrap();
+        delivery.sync(vec![hash]).await.unwrap();
 
         assert!(
             !mailboxes.upload_due(&id, hash).await,
@@ -2644,7 +2644,7 @@ mod tests {
         // The mailbox will return one item for the closed topic and report
         // the locally held op (seq 0) as missing, so the sync attempts to
         // publish it — and fails: `sync_topics` exits with an error before
-        // the manager can process `SyncTopicOutcome::closed_topics`.
+        // the manager can process `SyncOutcome::closed_topics`.
         let client = FailingPublishClient::new(vec![Msg {
             topic: 0,
             author: 'a',

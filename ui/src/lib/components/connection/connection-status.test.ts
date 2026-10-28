@@ -1,6 +1,6 @@
 import type {
 	AllMailboxesConnectionState,
-	MailboxConnectionState,
+	MailboxConnectionHealth,
 } from 'dash-chat-stores';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +14,7 @@ const BEFORE_RESUME = '2026-01-05T11:59:00Z';
 const AFTER_RESUME = '2026-01-05T12:00:01Z';
 const SETTLED_AT = RESUMED_AT + 10_000;
 
-function answering(at: string | null = AFTER_RESUME): MailboxConnectionState {
+function answering(at: string | null = AFTER_RESUME): MailboxConnectionHealth {
 	return {
 		status: 'Active',
 		consecutive_errors: 0,
@@ -27,7 +27,7 @@ function answering(at: string | null = AFTER_RESUME): MailboxConnectionState {
 function failing(
 	consecutiveErrors: number,
 	at: string = AFTER_RESUME,
-): MailboxConnectionState {
+): MailboxConnectionHealth {
 	return {
 		status: 'Active',
 		consecutive_errors: consecutiveErrors,

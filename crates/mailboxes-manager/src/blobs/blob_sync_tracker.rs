@@ -1,5 +1,5 @@
 //! Per-mailbox record of which blob hashes the mailbox still lacks — the
-//! blob counterpart to [`crate::operations::operations::sync_tracker::OperationSyncTracker`].
+//! blob counterpart to [`crate::operations::operation_sync_tracker::OperationSyncTracker`].
 //!
 //! The outstanding set is unordered and content-addressed, so where the op
 //! tracker stores one watermark per (topic, author), this stores a row per

@@ -76,7 +76,7 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
             tracker.clone(),
             mailboxes.upload_tracker(),
         );
-        if let Err(err) = delivery.sync(held, reader.clone()).await {
+        if let Err(err) = delivery.sync(held).await {
             tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
         }
     }

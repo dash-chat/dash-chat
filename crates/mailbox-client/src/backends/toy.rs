@@ -460,13 +460,7 @@ mod tests {
         });
         let base_url = format!("http://{addr}");
 
-        let client = ToyMailboxClient::<crate::testing::Msg>::new(
-            "mbx".to_string(),
-            base_url,
-            iroh::SecretKey::from_bytes(&[3; 32]).public(),
-            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
-            crate::testing::noop_upload_lifecycle(),
-        );
+        let client = blob_test_client(base_url);
         let already = client
             .announce_blob_hashes(vec![h_stored, h_new], false)
             .await
@@ -478,13 +472,7 @@ mod tests {
     async fn publish_and_fetch_round_trip_msg_keys() {
         let (base_url, stored) = spawn_fake_mailbox_server().await;
 
-        let client = ToyMailboxClient::<crate::testing::Msg>::new(
-            "mbx".to_string(),
-            base_url,
-            iroh::SecretKey::from_bytes(&[3; 32]).public(),
-            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
-            crate::testing::noop_upload_lifecycle(),
-        );
+        let client = blob_test_client(base_url);
 
         let response = client
             .publish(vec![msg(42, 'a', 0), msg(42, 'a', 1), msg(42, 'b', 0)])
@@ -554,13 +542,7 @@ mod tests {
         let base_url = format!("http://{addr}");
 
         let data = bytes::Bytes::from_static(b"raw blob bytes");
-        let client = ToyMailboxClient::<crate::testing::Msg>::new(
-            "mbx".to_string(),
-            base_url,
-            iroh::SecretKey::from_bytes(&[3; 32]).public(),
-            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
-            crate::testing::noop_upload_lifecycle(),
-        );
+        let client = blob_test_client(base_url);
         client.upload_blob(data.clone()).await.unwrap();
         assert_eq!(*received.lock().unwrap(), data.to_vec());
     }
