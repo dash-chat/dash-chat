@@ -13,15 +13,18 @@ import type { DeviceId, TopicId } from '../p2panda/types';
 
 const MOCK_MAILBOX_ID: MailboxId = 'mock-mailbox';
 
-const syncedToInfinity: OperationSyncState = new Proxy({} as OperationSyncState, {
-	get: () =>
-		new Proxy(
-			{},
-			{
-				get: () => Number.MAX_SAFE_INTEGER,
-			},
-		),
-});
+const syncedToInfinity: OperationSyncState = new Proxy(
+	{} as OperationSyncState,
+	{
+		get: () =>
+			new Proxy(
+				{},
+				{
+					get: () => Number.MAX_SAFE_INTEGER,
+				},
+			),
+	},
+);
 
 const constant = <T>(value: T): ReactivePromise<T> =>
 	relay<T>(state => {
