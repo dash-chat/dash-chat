@@ -373,102 +373,6 @@ impl Node {
         )
     }
 
-    /// Note that this is a function that processes operations which could have deleted payloads.
-    /// This function currently doesn't do anything with payloads, so we don't check for tombstones here.
-    /// If this function is modified to process payloads, then we should call
-    /// [`Self::enforce_tombstone`] before processing.
-    async fn process_groups(
-        &self,
-        operation: &ProcessedOperation<Payload>,
-        source: &Source,
-    ) -> anyhow::Result<()> {
-        self.register_bootstrap(operation, source).await?;
-
-        // If an operation is invalidated by the projection layer, we don't process it,
-        // but still allow it to be acknowledged as processed.
-        match self
-            .projection
-            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
-            .await
-        {
-            // Continue processing.
-            Ok(event) => {
-                if let Some(event) = event {
-                    self.notify_system_event(event).await?;
-                }
-            }
-
-            // Don't process but allow the log to proceed.
-            Err(ProjectionError::InvalidOp(msg)) => {
-                tracing::info!(msg, "invalid operation");
-                return Ok(());
-            }
-
-            // Bubble up the error: the log won't proceed.
-            Err(ProjectionError::Any(err)) => {
-                return Err(err);
-            }
-        }
-
-        // Subscribe to announcements topics for any group members whose agent_id we know.
-        let topic = operation.topic();
-        let topic = ChatId::from_topic_id(topic)?;
-
-        // Calculate the current group membership based on local store state rather than
-        // looking into the group actions themselves.
-        //
-        // @TODO: currently we're receiving group control operations here out-of-order but
-        // soon the node will be doing ordering for us and operations will be released
-        // only once their dependencies are met, which is the desired behavior. Once that
-        // change occurs we can also receive current member state, or better just a diff,
-        // in the node event and use that to understand who has been added/removed. For
-        // now we get _all_ members and (possibly redundantly) attempt to subscribe to
-        // them all. Even with the messages arriving out-of-order this will result in us
-        // subscribing to all the correct topics.
-        let member_device_ids: Vec<DeviceId> = self
-            .group_store
-            .members(topic)
-            .await?
-            .iter()
-            .map(|(id, _)| *id)
-            .collect();
-
-        // @TODO: when removals are supported we should also unsubscribe from topics of
-        // removed members.
-
-        // Retrieve the agent_ids from the member_device_ids.
-        //
-        // @TODO: this requires a reliable way to know the agent id from the device id
-        // even if they're not a contact.
-        let known = self
-            .projection
-            .lookup_contacts(member_device_ids.iter())
-            .await?;
-
-        for agent_id in known.into_values() {
-            self.register_and_join_space(Topic::announcements(agent_id))
-                .await
-                .map_err(|err| {
-                    anyhow::anyhow!("failed to subscribe to topic for group member: {err}")
-                })?;
-        }
-
-        // Notify the frontend so it refetches the chat log and observes the new
-        // group-control action (Create / Add / Remove / Promote / Demote). The
-        // op's `auth.action` is what the UI reads to render membership changes.
-        //
-        // @TODO: once group control messages are properly ordered we could send a
-        // membership diff here instead of relying on the frontend to refetch.
-        self.notify_payload(
-            operation.topic(),
-            operation.processed().header(),
-            operation.message(),
-        )
-        .await?;
-
-        Ok(())
-    }
-
     /// Undo the effects of processing an app-layer operation,
     /// reverting to a state as if the operation were never processed.
     /// This is done when an operation payload is deleted.
@@ -624,7 +528,9 @@ impl Node {
                         // scanner's device key (author), so we map that device to
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
-                        if is_advertised_topic && !matches!(source, Source::LocalStore) {
+                        //
+                        // TODO: maybe find a way to not rely on `source`?
+                        if is_advertised_topic && !source.is_local() {
                             // Mutual add: if we also sent this peer a contact
                             // request, their incoming request is an implicit
                             // acceptance — complete the exchange automatically
@@ -655,7 +561,9 @@ impl Node {
                         // Verifying author == expected_ack_author prevents a
                         // third party from injecting a spoofed ack with
                         // an attacker-chosen agent_id/profile.
-                        if is_reply && !matches!(source, Source::LocalStore) {
+                        //
+                        // TODO: maybe find a way to not rely on `source`?
+                        if is_reply && !source.is_local() {
                             let expected = self
                                 .local_store
                                 .get_reply_inbox_expected_ack_author(topic_id)
