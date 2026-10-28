@@ -10,6 +10,7 @@
 //! `mailboxes-manager` crate's `Mailboxes` registry.
 
 use std::collections::{BTreeMap, HashSet};
+use std::fmt::Display;
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -80,7 +81,6 @@ impl<Item, Store> OperationDelivery<Item, Store>
 where
     Item: crate::MailboxItem,
     Store: MailboxStore<Item>,
-    Item::Topic: std::fmt::Display,
 {
     pub fn new(client: Arc<dyn MailboxClient<Item>>, store: Store) -> Self {
         Self { client, store }
@@ -96,7 +96,10 @@ where
         &self,
         topics: impl Iterator<Item = Item::Topic>,
         topic_registry: &TopicRegistry<Item>,
-    ) -> SyncOutcome<Item::Topic, Item::Author> {
+    ) -> SyncOutcome<Item::Topic, Item::Author>
+    where
+        Item::Topic: Display + Eq + Hash + Clone,
+    {
         let (response, sent_heights) = match self.fetch_missing_operations(topics).await {
             Ok(result) => result,
             Err(err) => {
@@ -247,7 +250,7 @@ where
         DeliveryError,
     >
     where
-        Item::Topic: std::fmt::Display,
+        Item::Topic: Display,
     {
         let mut request = BTreeMap::new();
         let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> =
@@ -285,7 +288,7 @@ where
         sender: Option<tokio::sync::mpsc::Sender<Item>>,
     ) -> Result<SyncResult<Item>, DeliveryError>
     where
-        Item::Topic: std::fmt::Display + Eq + Hash + Clone,
+        Item::Topic: Display + Eq + Hash + Clone,
     {
         let FetchTopicResponse { items, missing } = response;
         let mut ops_to_publish = vec![];

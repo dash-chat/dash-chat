@@ -283,7 +283,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
     PollConfig::default()
         .wait_for(|| async {
             tracked
-                .connection_state()
+                .health()
                 .borrow()
                 .last_success_at
                 .is_some()

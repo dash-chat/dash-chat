@@ -1,13 +1,13 @@
 pub mod backends;
 pub mod blob_delivery;
 pub mod blobs;
-mod connection_health;
+mod health;
 pub mod operation_delivery;
 pub mod store;
 pub mod sync_scheduler;
 pub mod topic_registry;
 
-pub use connection_health::{LastError, MailboxConnectionState, MailboxesConfig, SyncStatus};
+pub use health::{LastError, MailboxConnectionHealth, MailboxesConfig, SyncStatus};
 
 pub use blobs::upload_lifecycle::BlobUploadLifecycle;
 pub use mailbox_server::RegisterPeerRequest;

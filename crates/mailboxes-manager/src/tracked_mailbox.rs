@@ -1,80 +1,114 @@
+use std::fmt::Display;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use mailbox_client::operation_delivery::OperationDelivery;
+use mailbox_client::store::MailboxStore;
 use mailbox_client::sync_scheduler::{PendingRequest, RequestOutcome};
 use mailbox_client::{
-    MailboxClient, MailboxConnectionState, MailboxItem, MailboxesConfig, SyncStatus,
+    MailboxClient, MailboxConnectionHealth, MailboxItem, MailboxesConfig, OptionalItemTraits,
+    SyncStatus,
 };
 use tokio::sync::{Mutex, watch};
 use tokio::time::Instant;
 
-/// Per-mailbox handle owning the client and its tracker. Held inside `Mailboxes`
-/// as `Arc<TrackedMailbox<...>>` so cheap clones can be handed out to subscribers.
-/// The client is held behind a `Mutex` so re-registering a mailbox can swap it
-/// in place (e.g. mDNS re-resolution producing a new URL) without disturbing
-/// the `connection_state` watcher's existing subscribers.
-pub struct TrackedMailbox<Item: MailboxItem> {
-    pub(crate) client: Mutex<Arc<dyn MailboxClient<Item>>>,
-    pub(crate) connection_state: watch::Sender<MailboxConnectionState>,
+/// Per-mailbox handle owning the client, its delivery engine, and its
+/// connection state. Held inside `Mailboxes` as `Arc<TrackedMailbox<...>>` so
+/// cheap clones can be handed out to subscribers. The client and its
+/// `OperationDelivery` are held behind one `Mutex` so re-registering a
+/// mailbox can swap both in place (e.g. mDNS re-resolution producing a new
+/// URL) without disturbing the `health` watcher's existing
+/// subscribers — delivery never observes a client/engine mismatch.
+/// `MailboxSession` is the swappable client-plus-engines bundle;
+/// `MailboxConnectionHealth` is the health bookkeeping watching over it.
+pub struct TrackedMailbox<Item, Store>
+where
+    Item: MailboxItem,
+    Store: MailboxStore<Item>,
+{
+    inner: Mutex<MailboxSession<Item, Store>>,
+    pub(crate) health: watch::Sender<MailboxConnectionHealth>,
     polling: AtomicBool,
     pending_request: std::sync::Mutex<PendingRequest<Item::Topic>>,
     config: MailboxesConfig,
 }
 
-impl<Item: MailboxItem> TrackedMailbox<Item> {
+struct MailboxSession<Item, Store>
+where
+    Item: MailboxItem,
+    Store: MailboxStore<Item>,
+{
+    client: Arc<dyn MailboxClient<Item>>,
+    delivery: OperationDelivery<Item, Store>,
+}
+
+impl<Item, Store> TrackedMailbox<Item, Store>
+where
+    Item: MailboxItem,
+    Store: MailboxStore<Item>,
+    Item::Topic: OptionalItemTraits + Display,
+{
     pub(crate) fn new(
         client: Arc<dyn MailboxClient<Item>>,
+        store: Store,
         config: MailboxesConfig,
         initial_status: SyncStatus,
     ) -> Self {
-        let (connection_state, _) =
-            watch::channel(MailboxConnectionState::seeded(initial_status, &config));
+        let (health, _) = watch::channel(MailboxConnectionHealth::seeded(initial_status, &config));
+        let delivery = OperationDelivery::new(client.clone(), store);
         Self {
-            client: Mutex::new(client),
-            connection_state,
+            inner: Mutex::new(MailboxSession { client, delivery }),
+            health,
             polling: AtomicBool::new(false),
             pending_request: std::sync::Mutex::new(PendingRequest::default()),
             config,
         }
     }
 
+    /// The delivery engine for this mailbox's current client.
+    pub(crate) async fn delivery(&self) -> OperationDelivery<Item, Store> {
+        self.inner.lock().await.delivery.clone()
+    }
+
     pub async fn client(&self) -> Arc<dyn MailboxClient<Item>> {
-        self.client.lock().await.clone()
+        self.inner.lock().await.client.clone()
     }
 
-    pub(crate) async fn replace_client(&self, client: Arc<dyn MailboxClient<Item>>) {
-        *self.client.lock().await = client;
+    /// Swap the client (re-registration with a fresh URL) and rebuild its
+    /// delivery engine. The engine is stateless — durable delivery state
+    /// lives in the manager's trackers — so rebuilding loses nothing.
+    pub(crate) async fn replace_client(&self, client: Arc<dyn MailboxClient<Item>>, store: Store) {
+        let delivery = OperationDelivery::new(client.clone(), store);
+        *self.inner.lock().await = MailboxSession { client, delivery };
     }
 
-    pub fn connection_state(&self) -> watch::Receiver<MailboxConnectionState> {
-        self.connection_state.subscribe()
+    pub fn health(&self) -> watch::Receiver<MailboxConnectionHealth> {
+        self.health.subscribe()
     }
 
     pub(crate) fn record_success(&self) {
-        self.connection_state
-            .send_modify(|t| t.record_success(&self.config));
+        self.health.send_modify(|t| t.record_success(&self.config));
     }
 
     pub(crate) fn record_error(&self, err: String) {
-        self.connection_state
+        self.health
             .send_modify(|t| t.record_error(&self.config, err));
     }
 
     pub(crate) fn record_probe_error(&self, err: String) {
-        self.connection_state
+        self.health
             .send_modify(|t| t.record_probe_error(&self.config, err));
     }
 
     pub(crate) fn reschedule(&self) {
-        self.connection_state
-            .send_modify(|t| t.reschedule(&self.config));
+        self.health.send_modify(|t| t.reschedule(&self.config));
     }
 
     /// Treat this mailbox as healthy again and poll every subscribed topic
     /// immediately.
     pub(crate) fn wakeup(&self) {
         self.pending_request.lock().unwrap().merge_wakeup();
-        self.connection_state.send_modify(|t| t.wakeup());
+        self.health.send_modify(|t| t.wakeup());
     }
 
     /// Poll every subscribed topic now without presuming the outcome.
@@ -85,7 +119,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     /// If active, sync `topic` (or every subscribed topic, when `None`) after
     /// the debounce.
     pub(crate) fn request_sync_if_active(&self, topic: Option<Item::Topic>) {
-        if self.connection_state.borrow().status != SyncStatus::Active {
+        if self.health.borrow().status != SyncStatus::Active {
             return;
         }
         self.pending_request.lock().unwrap().merge_poll(topic);
@@ -94,7 +128,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     /// When this mailbox should next be polled: its scheduled poll, or sooner
     /// if a request is pending.
     pub(crate) fn due_at(&self, now: Instant) -> Instant {
-        let next_poll = self.connection_state.borrow().next_poll;
+        let next_poll = self.health.borrow().next_poll;
         self.pending_request
             .lock()
             .unwrap()
@@ -105,8 +139,7 @@ impl<Item: MailboxItem> TrackedMailbox<Item> {
     /// probe failing against a mailbox still believed Active is news, not
     /// confirmation, so it counts like any other error.
     pub(crate) fn poll_failed(&self, err: String, probe: bool) {
-        let confirms_known_failure =
-            probe && self.connection_state.borrow().status != SyncStatus::Active;
+        let confirms_known_failure = probe && self.health.borrow().status != SyncStatus::Active;
         if confirms_known_failure {
             self.record_probe_error(err);
         } else {

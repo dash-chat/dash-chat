@@ -5,7 +5,7 @@ use async_rx::StreamExt as _;
 use async_stream::stream;
 use dashchat_node::{topic::TopicId, DeviceId};
 use futures::{Stream, StreamExt};
-use mailbox_client::{MailboxConnectionState, MailboxId};
+use mailbox_client::{MailboxConnectionHealth, MailboxId};
 use mailboxes_manager::MailboxSyncState;
 use tauri_plugin_subscriptions::subscription;
 use tokio_stream::wrappers::WatchStream;
@@ -40,14 +40,14 @@ pub fn mailbox_subscribe_all_ids() -> impl Stream<Item = BTreeSet<MailboxId>> {
 #[subscription]
 pub fn mailbox_subscribe_connection_state(
     mailbox_id: MailboxId,
-) -> impl Stream<Item = MailboxConnectionState> {
+) -> impl Stream<Item = MailboxConnectionHealth> {
     node_stream_values(move |node| {
         let id = mailbox_id.clone();
         stream! {
             let mut active = node.mailboxes.active_mailbox_ids();
             let watch = loop {
                 if let Some(mailbox) = node.mailboxes.tracked_mailbox(&id).await {
-                    break mailbox.connection_state();
+                    break mailbox.health();
                 }
                 if active.changed().await.is_err() {
                     return;
