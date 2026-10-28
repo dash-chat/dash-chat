@@ -413,10 +413,9 @@ where
         op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Self {
-        let blob_tracker = Arc::new(BlobSyncTracker::new(
-            Arc::new(crate::persistence::mem::MemBlobStore::default()),
-            Default::default(),
-        ));
+        let blob_tracker = Arc::new(BlobSyncTracker::new(Arc::new(
+            crate::persistence::mem::MemBlobStore::default(),
+        )));
         Self::spawn_internal(store, op_tracker, blob_tracker, config, None)
     }
 
@@ -436,8 +435,7 @@ where
             persistence.mailbox_store(),
             initial_ids,
         ));
-        let blob_ids = persistence.blob_store().unfetched_ids().await?;
-        let blob_tracker = Arc::new(BlobSyncTracker::new(persistence.blob_store(), blob_ids));
+        let blob_tracker = Arc::new(BlobSyncTracker::new(persistence.blob_store()));
         Ok(Self::spawn_internal(
             store,
             sync_tracker,
@@ -761,10 +759,9 @@ mod tests {
     }
 
     fn test_blob_tracker() -> Arc<BlobSyncTracker> {
-        Arc::new(BlobSyncTracker::new(
-            Arc::new(crate::persistence::mem::MemBlobStore::default()),
-            Default::default(),
-        ))
+        Arc::new(BlobSyncTracker::new(Arc::new(
+            crate::persistence::mem::MemBlobStore::default(),
+        )))
     }
 
     fn test_sync_tracker() -> Arc<OperationSyncTracker<u8, char>> {

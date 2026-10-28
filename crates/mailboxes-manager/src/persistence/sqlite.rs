@@ -431,7 +431,10 @@ mod tests {
         let hashes: Vec<_> = (0u8..5).map(|i| iroh_blobs::Hash::new([i; 32])).collect();
 
         store.record(&mbx, &hashes).await.unwrap();
-        store.remove(&mbx, &[hashes[0], hashes[2], hashes[4]]).await.unwrap();
+        store
+            .remove(&mbx, &[hashes[0], hashes[2], hashes[4]])
+            .await
+            .unwrap();
 
         let mut got = store.unfetched(&mbx).await.unwrap();
         got.sort();
