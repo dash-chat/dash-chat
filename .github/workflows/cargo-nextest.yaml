@@ -43,8 +43,10 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
+      # On Windows the Tauri crate's test binary dies at startup with
+      # STATUS_ENTRYPOINT_NOT_FOUND: https://github.com/tauri-apps/tauri/issues/13419
       - name: Test
-        run: cargo nextest run
+        run: cargo nextest run ${{ runner.os == 'Windows' && '--workspace --exclude dash-chat' || '' }}
 
   # The required check is named `cargo-nextest`, and a skipped required check
   # counts as passing, so this always runs and fails unless every platform
