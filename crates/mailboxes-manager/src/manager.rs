@@ -1,17 +1,16 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use mailbox_client::operation_delivery::OperationDelivery;
 use mailbox_client::store::MailboxStore;
-use mailbox_client::sync_scheduler::{PendingRequest, RequestOutcome};
+use mailbox_client::sync_scheduler::RequestOutcome;
 use mailbox_client::topic_registry::TopicRegistry;
 use mailbox_client::{
-    BlobReader, MailboxClient, MailboxConnectionState, MailboxId, MailboxItem, MailboxesConfig,
-    OptionalItemTraits, SyncStatus, UnfetchedBlobTracker,
+    BlobReader, MailboxClient, MailboxId, MailboxItem, MailboxesConfig, OptionalItemTraits,
+    SyncStatus, UnfetchedBlobTracker,
 };
-use tokio::sync::{Mutex, Notify, mpsc, watch};
+use tokio::sync::{Notify, mpsc, watch};
 use tokio::time::Instant;
 use tracing::Instrument;
 
@@ -21,148 +20,7 @@ use crate::mailbox_registry::MailboxRegistry;
 use crate::persistence::{Persistence, sqlite::SqlitePersistence};
 use crate::polling::PollGuard;
 use crate::sync_tracker::MailboxSyncTracker;
-
-/// Per-mailbox handle owning the client and its tracker. Held inside `Mailboxes`
-/// as `Arc<TrackedMailbox<...>>` so cheap clones can be handed out to subscribers.
-/// The client is held behind a `Mutex` so re-registering a mailbox can swap it
-/// in place (e.g. mDNS re-resolution producing a new URL) without disturbing
-/// the `connection_state` watcher's existing subscribers.
-pub struct TrackedMailbox<Item: MailboxItem> {
-    pub(crate) client: Mutex<Arc<dyn MailboxClient<Item>>>,
-    pub(crate) connection_state: watch::Sender<MailboxConnectionState>,
-    polling: AtomicBool,
-    pending_request: std::sync::Mutex<PendingRequest<Item::Topic>>,
-    config: MailboxesConfig,
-}
-
-impl<Item: MailboxItem> TrackedMailbox<Item> {
-    fn new(
-        client: Arc<dyn MailboxClient<Item>>,
-        config: MailboxesConfig,
-        initial_status: SyncStatus,
-    ) -> Self {
-        let (connection_state, _) =
-            watch::channel(MailboxConnectionState::seeded(initial_status, &config));
-        Self {
-            client: Mutex::new(client),
-            connection_state,
-            polling: AtomicBool::new(false),
-            pending_request: std::sync::Mutex::new(PendingRequest::default()),
-            config,
-        }
-    }
-
-    pub async fn client(&self) -> Arc<dyn MailboxClient<Item>> {
-        self.client.lock().await.clone()
-    }
-
-    async fn replace_client(&self, client: Arc<dyn MailboxClient<Item>>) {
-        *self.client.lock().await = client;
-    }
-
-    pub fn connection_state(&self) -> watch::Receiver<MailboxConnectionState> {
-        self.connection_state.subscribe()
-    }
-
-    fn record_success(&self) {
-        self.connection_state
-            .send_modify(|t| t.record_success(&self.config));
-    }
-
-    fn record_error(&self, err: String) {
-        self.connection_state
-            .send_modify(|t| t.record_error(&self.config, err));
-    }
-
-    fn record_probe_error(&self, err: String) {
-        self.connection_state
-            .send_modify(|t| t.record_probe_error(&self.config, err));
-    }
-
-    pub(crate) fn reschedule(&self) {
-        self.connection_state
-            .send_modify(|t| t.reschedule(&self.config));
-    }
-
-    /// Treat this mailbox as healthy again and poll every subscribed topic
-    /// immediately.
-    fn wakeup(&self) {
-        self.pending_request.lock().unwrap().merge_wakeup();
-        self.connection_state.send_modify(|t| t.wakeup());
-    }
-
-    /// Poll every subscribed topic now without presuming the outcome.
-    fn probe(&self) {
-        self.pending_request.lock().unwrap().merge_probe();
-    }
-
-    /// If active, sync `topic` (or every subscribed topic, when `None`) after
-    /// the debounce.
-    fn request_sync_if_active(&self, topic: Option<Item::Topic>) {
-        if self.connection_state.borrow().status != SyncStatus::Active {
-            return;
-        }
-        self.pending_request.lock().unwrap().merge_poll(topic);
-    }
-
-    /// When this mailbox should next be polled: its scheduled poll, or sooner
-    /// if a request is pending.
-    fn due_at(&self, now: Instant) -> Instant {
-        let next_poll = self.connection_state.borrow().next_poll;
-        self.pending_request
-            .lock()
-            .unwrap()
-            .due_at(now, next_poll, self.config.sync_debounce)
-    }
-
-    /// `probe` says whether the poll that failed was fulfilling a probe. A
-    /// probe failing against a mailbox still believed Active is news, not
-    /// confirmation, so it counts like any other error.
-    fn poll_failed(&self, err: String, probe: bool) {
-        let confirms_known_failure =
-            probe && self.connection_state.borrow().status != SyncStatus::Active;
-        if confirms_known_failure {
-            self.record_probe_error(err);
-        } else {
-            self.record_error(err);
-        }
-        // A sync requested during a failed poll doesn't earn a quick retry:
-        // the request failed too, so backoff applies. A wakeup or probe does,
-        // since each demands a poll now regardless.
-        let mut pending = self.pending_request.lock().unwrap();
-        if !matches!(*pending, PendingRequest::Wakeup | PendingRequest::Probe) {
-            *pending = PendingRequest::default();
-        }
-    }
-
-    /// Consume the sync request the imminent poll is about to fulfil.
-    pub(crate) fn consume_pending_request(&self) -> (RequestOutcome<Item::Topic>, bool) {
-        self.pending_request.lock().unwrap().consume()
-    }
-
-    /// Take the sync request the imminent poll is about to fulfil, keeping the
-    /// variant detail tests assert on.
-    #[cfg(test)]
-    pub(crate) fn take_pending_request(&self) -> PendingRequest<Item::Topic> {
-        std::mem::replace(
-            &mut self.pending_request.lock().unwrap(),
-            PendingRequest::default(),
-        )
-    }
-
-    /// Claim this mailbox for a poll, returning `false` if one is already in flight.
-    pub(crate) fn begin_poll(&self) -> bool {
-        !self.polling.swap(true, Ordering::SeqCst)
-    }
-
-    pub(crate) fn end_poll(&self) {
-        self.polling.store(false, Ordering::SeqCst);
-    }
-
-    fn is_polling(&self) -> bool {
-        self.polling.load(Ordering::SeqCst)
-    }
-}
+use crate::tracked_mailbox::TrackedMailbox;
 
 #[derive(Clone)]
 pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
@@ -712,10 +570,13 @@ struct NextDue {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
+    use mailbox_client::MailboxConnectionState;
+    use mailbox_client::sync_scheduler::PendingRequest;
 
     use super::*;
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::BTreeMap;
 
     use mailbox_client::{
         BlobReader, FetchRequest, FetchResponse, FetchTopicResponse, NoopUnfetchedBlobTracker,
@@ -795,12 +656,12 @@ mod tests {
     /// A mailbox client that records the topic set of every fetch() it serves.
     struct RecordingClient {
         id: MailboxId,
-        fetched_topics: Arc<Mutex<Vec<BTreeSet<u8>>>>,
+        fetched_topics: Arc<tokio::sync::Mutex<Vec<BTreeSet<u8>>>>,
     }
 
     impl RecordingClient {
-        fn new() -> (Self, Arc<Mutex<Vec<BTreeSet<u8>>>>) {
-            let fetched_topics = Arc::new(Mutex::new(Vec::new()));
+        fn new() -> (Self, Arc<tokio::sync::Mutex<Vec<BTreeSet<u8>>>>) {
+            let fetched_topics = Arc::new(tokio::sync::Mutex::new(Vec::new()));
             let client = Self {
                 id: nanoid::nanoid!(),
                 fetched_topics: fetched_topics.clone(),
@@ -2602,7 +2463,7 @@ mod tests {
     /// publish, simulating a degraded mailbox link.
     struct FailingPublishClient {
         id: MailboxId,
-        items_to_fetch: Arc<Mutex<Vec<Msg>>>,
+        items_to_fetch: Arc<tokio::sync::Mutex<Vec<Msg>>>,
         fail_next_publish: Arc<AtomicBool>,
     }
 
@@ -2610,7 +2471,7 @@ mod tests {
         fn new(items: Vec<Msg>) -> Self {
             Self {
                 id: nanoid::nanoid!(),
-                items_to_fetch: Arc::new(Mutex::new(items)),
+                items_to_fetch: Arc::new(tokio::sync::Mutex::new(items)),
                 fail_next_publish: Arc::new(AtomicBool::new(true)),
             }
         }

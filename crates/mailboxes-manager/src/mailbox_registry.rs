@@ -4,7 +4,7 @@ use tokio::sync::{Mutex, watch};
 
 use mailbox_client::{MailboxId, MailboxItem};
 
-use super::manager::TrackedMailbox;
+use super::tracked_mailbox::TrackedMailbox;
 
 /// Internal registry for managing a collection of tracked mailboxes.
 pub struct MailboxRegistry<Item: MailboxItem> {

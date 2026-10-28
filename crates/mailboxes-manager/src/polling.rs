@@ -1,4 +1,4 @@
-use crate::manager::TrackedMailbox;
+use crate::tracked_mailbox::TrackedMailbox;
 use mailbox_client::MailboxItem;
 use std::sync::Arc;
 use tokio::sync::Notify;
