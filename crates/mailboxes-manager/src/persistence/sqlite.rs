@@ -321,28 +321,33 @@ struct SqliteBlobStore {
 #[async_trait::async_trait]
 impl crate::persistence::BlobStore for SqliteBlobStore {
     async fn record(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
-        for hash in hashes {
-            sqlx::query(
-                "INSERT OR IGNORE INTO mailbox_unfetched_blobs (mailbox_id, blob_hash) VALUES (?, ?)",
-            )
-            .bind(id)
-            .bind(hash.as_bytes().to_vec())
-            .execute(self.pool.pool())
-            .await?;
+        if hashes.is_empty() {
+            return Ok(());
         }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "INSERT OR IGNORE INTO mailbox_unfetched_blobs (mailbox_id, blob_hash) ",
+        );
+        query.push_values(hashes, |mut row, hash| {
+            row.push_bind(id).push_bind(hash.as_bytes().to_vec());
+        });
+        query.build().execute(self.pool.pool()).await?;
         Ok(())
     }
 
     async fn remove(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
-        for hash in hashes {
-            sqlx::query(
-                "DELETE FROM mailbox_unfetched_blobs WHERE mailbox_id = ? AND blob_hash = ?",
-            )
-            .bind(id)
-            .bind(hash.as_bytes().to_vec())
-            .execute(self.pool.pool())
-            .await?;
+        if hashes.is_empty() {
+            return Ok(());
         }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "DELETE FROM mailbox_unfetched_blobs WHERE mailbox_id = ",
+        );
+        query.push_bind(id).push(" AND blob_hash IN (");
+        let mut separated = query.separated(", ");
+        for hash in hashes {
+            separated.push_bind(hash.as_bytes().to_vec());
+        }
+        separated.push_unseparated(") ");
+        query.build().execute(self.pool.pool()).await?;
         Ok(())
     }
 

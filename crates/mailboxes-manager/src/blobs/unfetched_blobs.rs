@@ -35,6 +35,9 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
     Store: MailboxStore<Item>,
     Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
+    // One read per mailbox, not one grouped read: the tracker is the
+    // per-mailbox record, and at current mailbox counts the per-mailbox query
+    // is the simpler, correct-shape access.
     for (mailbox_id, tracked) in mailboxes.registered_mailboxes().await {
         let hashes = match tracker.unfetched(&mailbox_id).await {
             Ok(hashes) => hashes,

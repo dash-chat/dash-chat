@@ -324,8 +324,8 @@ where
         }
 
         if let Some(sender) = sender {
-            for item in &items {
-                if sender.send(item.clone()).await.is_err() {
+            for item in items {
+                if sender.send(item).await.is_err() {
                     tracing::error!(topic = %topic, "topic receiver closed");
                     closed = true;
                     break;
