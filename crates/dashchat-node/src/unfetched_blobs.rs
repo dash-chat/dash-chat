@@ -2,58 +2,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use mailbox_client::{MailboxId, UnfetchedBlobTracker};
+use mailbox_client::UnfetchedBlobTracker;
 use mailboxes_manager::BlobSource;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
 use crate::node::Node;
-use crate::stores::LocalStore;
-
-/// `UnfetchedBlobTracker` backed by the node's `LocalStore` table.
-#[derive(Clone)]
-pub struct LocalStoreBlobTracker {
-    local_store: LocalStore,
-}
-
-impl LocalStoreBlobTracker {
-    pub fn new(local_store: LocalStore) -> Arc<dyn UnfetchedBlobTracker> {
-        Arc::new(Self { local_store })
-    }
-}
-
-#[async_trait::async_trait]
-impl UnfetchedBlobTracker for LocalStoreBlobTracker {
-    async fn record(
-        &self,
-        mailbox_id: &MailboxId,
-        hashes: &[iroh_blobs::Hash],
-    ) -> Result<(), anyhow::Error> {
-        self.local_store
-            .add_unfetched_blobs(mailbox_id, hashes)
-            .await
-    }
-    async fn remove(
-        &self,
-        mailbox_id: &MailboxId,
-        hashes: &[iroh_blobs::Hash],
-    ) -> Result<(), anyhow::Error> {
-        self.local_store
-            .remove_unfetched_blobs(mailbox_id, hashes)
-            .await
-    }
-    async fn unfetched(
-        &self,
-        mailbox_id: &MailboxId,
-    ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
-        Ok(self
-            .local_store
-            .unfetched_blobs_by_mailbox()
-            .await?
-            .remove(mailbox_id)
-            .unwrap_or_default())
-    }
-}
 
 struct NodeBlobSource {
     node: Node,
@@ -106,33 +60,4 @@ pub fn spawn_unfetched_blob_followup_task(
             followup_unfetched_blobs_once(&node).await;
         }
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn tracker_writes_through_to_local_store() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = crate::stores::create_sqlite_pool(
-            dir.path().join("t.db"),
-            &sqlite_gate::SqliteGate::default(),
-        )
-        .await
-        .unwrap()
-        .pool()
-        .clone();
-        let store = LocalStore::new(pool).await.unwrap();
-        let tracker = LocalStoreBlobTracker::new(store.clone());
-        let h = iroh_blobs::Hash::new([5; 32]);
-
-        tracker.record(&"mbx".to_string(), &[h]).await.unwrap();
-        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
-        assert_eq!(by_mailbox.get("mbx").unwrap(), &vec![h]);
-
-        tracker.remove(&"mbx".to_string(), &[h]).await.unwrap();
-        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
-        assert!(by_mailbox.get("mbx").is_none());
-    }
 }

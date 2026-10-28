@@ -632,10 +632,12 @@ impl Node {
             .expect("blob sync is enabled for p2p (testing) nodes")
     }
 
+    /// The blob delivery tracker, owned by the mailboxes manager: what each
+    /// mailbox still lacks, persisted in the manager's database.
     pub fn unfetched_blob_tracker(
         &self,
     ) -> std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker> {
-        crate::LocalStoreBlobTracker::new(self.local_store.clone())
+        self.mailboxes.blob_tracker().clone()
     }
 
     /// A blob-bytes source backed by this node's blob store, for the toy mailbox

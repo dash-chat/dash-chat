@@ -15,6 +15,7 @@ use tokio::sync::{Notify, mpsc, watch};
 use tokio::time::Instant;
 use tracing::Instrument;
 
+use crate::blobs::blob_sync_tracker::BlobSyncTracker;
 use crate::blobs::unfetched_blobs::{BlobSource, reconcile_unfetched_blobs};
 use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::mailbox_registry::MailboxRegistry;
@@ -28,6 +29,7 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     mailbox_registry: Arc<MailboxRegistry<Item, Store>>,
     topic_registry: Arc<TopicRegistry<Item>>,
     sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+    blob_tracker: Arc<BlobSyncTracker>,
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
@@ -47,10 +49,12 @@ where
     fn new(
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        blob_tracker: Arc<BlobSyncTracker>,
         config: MailboxesConfig,
         persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     ) -> Self {
         Self {
+            blob_tracker,
             mailbox_registry: Arc::new(MailboxRegistry::new()),
             topic_registry: Arc::new(TopicRegistry::new()),
             sync_tracker: sync_tracker.clone(),
@@ -71,6 +75,12 @@ where
     /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
     pub fn sync_tracker(&self) -> &Arc<MailboxSyncTracker<Item::Topic, Item::Author>> {
         &self.sync_tracker
+    }
+
+    /// The blob delivery tracker: what each mailbox still lacks. Node code
+    /// records through this; the reconcile pass reads from it.
+    pub fn blob_tracker(&self) -> &Arc<BlobSyncTracker> {
+        &self.blob_tracker
     }
 
     pub async fn is_tracked(&self, id: &MailboxId) -> bool {
@@ -403,7 +413,11 @@ where
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Self {
-        Self::spawn_internal(store, sync_tracker, config, None)
+        let blob_tracker = Arc::new(BlobSyncTracker::new(
+            Arc::new(crate::persistence::mem::MemBlobStore::default()),
+            Default::default(),
+        ));
+        Self::spawn_internal(store, sync_tracker, blob_tracker, config, None)
     }
 
     /// Spawn the poll loop backed by a SQLite database at `path`.
@@ -422,9 +436,12 @@ where
             persistence.mailbox_store(),
             initial_ids,
         ));
+        let blob_ids = persistence.blob_store().unfetched_ids().await?;
+        let blob_tracker = Arc::new(BlobSyncTracker::new(persistence.blob_store(), blob_ids));
         Ok(Self::spawn_internal(
             store,
             sync_tracker,
+            blob_tracker,
             config,
             Some(persistence),
         ))
@@ -433,10 +450,11 @@ where
     fn spawn_internal(
         store: Store,
         sync_tracker: Arc<MailboxSyncTracker<Item::Topic, Item::Author>>,
+        blob_tracker: Arc<BlobSyncTracker>,
         config: MailboxesConfig,
         persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     ) -> Self {
-        let manager = Self::new(store, sync_tracker, config, persistence);
+        let manager = Self::new(store, sync_tracker, blob_tracker, config, persistence);
         let r = manager.clone();
         let handle = tokio::spawn(
             async move {
@@ -735,6 +753,13 @@ mod tests {
         }
     }
 
+    fn test_blob_tracker() -> Arc<BlobSyncTracker> {
+        Arc::new(BlobSyncTracker::new(
+            Arc::new(crate::persistence::mem::MemBlobStore::default()),
+            Default::default(),
+        ))
+    }
+
     fn test_sync_tracker() -> Arc<MailboxSyncTracker<u8, char>> {
         use crate::persistence::Persistence;
         let store = crate::persistence::mem::MemPersistence::<u8, char>::new();
@@ -755,7 +780,13 @@ mod tests {
 
     /// Create a Mailboxes instance without spawning the background loop
     fn test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
-        Mailboxes::new(DummyStore, test_sync_tracker(), config, None)
+        Mailboxes::new(
+            DummyStore,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            config,
+            None,
+        )
     }
 
     fn spawn_test_mailboxes(config: MailboxesConfig) -> Mailboxes<Msg, DummyStore> {
@@ -2266,7 +2297,13 @@ mod tests {
         config: MailboxesConfig,
         store: MemStore,
     ) -> Mailboxes<Msg, MemStore> {
-        Mailboxes::new(store, test_sync_tracker(), config, None)
+        Mailboxes::new(
+            store,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            config,
+            None,
+        )
     }
 
     async fn join(handles: Vec<tokio::task::JoinHandle<()>>) {
@@ -2528,8 +2565,13 @@ mod tests {
         // `get_log_heights` advertises nothing.
         let store = MemStore::default();
         store.set_height(0, 'a', 0);
-        let mgr: Mailboxes<Msg, MemStore> =
-            Mailboxes::new(store, test_sync_tracker(), test_config(), None);
+        let mgr: Mailboxes<Msg, MemStore> = Mailboxes::new(
+            store,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            test_config(),
+            None,
+        );
 
         // Subscribe and immediately drop the receiver to close the channel.
         let rx = mgr
