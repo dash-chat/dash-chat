@@ -6,12 +6,17 @@ on:
     branches: [ main, 'main-**', develop ]
 
 jobs:
-  cargo-nextest:
-    runs-on: ubuntu-latest
+  cargo-nextest-platform:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt install libwebkit2gtk-4.1-dev \
@@ -24,6 +29,11 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libasound2-dev
+
+      # See ios-build.yaml: the homebrew shims would otherwise shadow rustup.
+      - name: Remove broken homebrew rust shims
+        if: runner.os == 'macOS'
+        run: rm -f /opt/homebrew/bin/cargo /opt/homebrew/bin/rustc /opt/homebrew/bin/rustup /opt/homebrew/bin/rustup-init
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -40,6 +50,16 @@ jobs:
 
       - name: Test
         run: cargo nextest run
+
+  # The required check is named `cargo-nextest`, and a skipped required check
+  # counts as passing, so this always runs and fails unless every platform
+  # succeeded.
+  cargo-nextest:
+    if: always()
+    needs: cargo-nextest-platform
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.cargo-nextest-platform.result }}" = success
 
   # The panic policy is a release-profile property that only a release-built
   # binary on an Apple target can exercise; nextest builds debug on Linux.

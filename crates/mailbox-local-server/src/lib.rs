@@ -222,6 +222,14 @@ mod tests {
         assert_eq!(reserve_listener(&db_path(&dir)).unwrap().1, second);
     }
 
+    /// Discovery only announces IPv4 addresses, so that is what peers dial.
+    #[test]
+    fn a_hub_accepts_ipv4_connections() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_listener, port) = reserve_listener(&db_path(&dir)).unwrap();
+        std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    }
+
     #[test]
     fn a_hub_with_nothing_remembered_takes_any_free_port() {
         let dir = tempfile::tempdir().unwrap();
