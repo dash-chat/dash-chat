@@ -58,7 +58,7 @@ pub(crate) async fn cloud_mailbox_id(
         }
     }
     node.mailboxes
-        .sync_tracker()
+        .operation_tracker()
         .mailbox_id_for_url(&cloud_url)
         .await
         .unwrap_or(None)

@@ -32,7 +32,9 @@ pub fn mailbox_subscribe_cloud_id() -> impl Stream<Item = Option<MailboxId>> {
 
 #[subscription]
 pub fn mailbox_subscribe_all_ids() -> impl Stream<Item = BTreeSet<MailboxId>> {
-    node_stream_values(|node| WatchStream::new(node.mailboxes.sync_tracker().all_mailbox_ids()))
+    node_stream_values(|node| {
+        WatchStream::new(node.mailboxes.operation_tracker().all_mailbox_ids())
+    })
 }
 
 /// Right after a node swap the mailbox may not be registered on the new node
@@ -68,7 +70,7 @@ pub fn mailbox_subscribe_sync_state(
         let id = mailbox_id.clone();
         stream! {
             let watch = loop {
-                match node.mailboxes.sync_tracker().sync_state(&id).await {
+                match node.mailboxes.operation_tracker().sync_state(&id).await {
                     Ok(watch) => break watch,
                     Err(err) => {
                         log::warn!("Retrying the sync state of mailbox {id}: {err:?}");

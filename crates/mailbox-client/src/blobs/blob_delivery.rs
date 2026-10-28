@@ -191,6 +191,7 @@ mod tests {
     #[derive(Clone, Default)]
     struct RecordingTracker {
         sets: Arc<Mutex<BTreeMap<MailboxId, BTreeSet<iroh_blobs::Hash>>>>,
+        emptied: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
     }
 
     #[async_trait::async_trait]
@@ -218,6 +219,15 @@ mod tests {
                 for hash in hashes {
                     set.remove(hash);
                 }
+            }
+            let empty = self
+                .sets
+                .lock()
+                .unwrap()
+                .get(mailbox_id)
+                .is_none_or(|set| set.is_empty());
+            if empty && let Some(tx) = self.emptied.lock().unwrap().take() {
+                let _ = tx.send(());
             }
             Ok(())
         }
@@ -298,7 +308,9 @@ mod tests {
     #[tokio::test]
     async fn successful_upload_clears_the_row_recorded_under_the_mailbox_id() {
         let hash = iroh_blobs::Hash::new(b"keyed blob");
+        let (emptied_tx, emptied_rx) = tokio::sync::oneshot::channel();
         let tracker = RecordingTracker::default();
+        *tracker.emptied.lock().unwrap() = Some(emptied_tx);
         let delivery = BlobDelivery::<Msg>::new(
             Arc::new(UrlClient {
                 id: "mailbox-id".to_string(),
@@ -310,18 +322,9 @@ mod tests {
         );
 
         delivery.publish(vec![hash]).await.unwrap();
-        // The spawned upload runs detached; wait for it to finish.
-        for _ in 0..100 {
-            if tracker
-                .unfetched(&"mailbox-id".to_string())
-                .await
-                .unwrap()
-                .is_empty()
-            {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // The spawned upload runs detached; the tracker signals when the row
+        // is cleared (upload returns, then remove runs).
+        emptied_rx.await.unwrap();
 
         assert!(
             tracker

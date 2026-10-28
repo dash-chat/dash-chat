@@ -377,12 +377,18 @@ impl crate::persistence::BlobStore for SqliteBlobStore {
     }
 
     async fn remove_all_mailboxes(&self, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
-        for hash in hashes {
-            sqlx::query("DELETE FROM mailbox_unfetched_blobs WHERE blob_hash = ?")
-                .bind(hash.as_bytes().to_vec())
-                .execute(self.pool.pool())
-                .await?;
+        if hashes.is_empty() {
+            return Ok(());
         }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "DELETE FROM mailbox_unfetched_blobs WHERE blob_hash IN (",
+        );
+        let mut separated = query.separated(", ");
+        for hash in hashes {
+            separated.push_bind(hash.as_bytes().to_vec());
+        }
+        separated.push_unseparated(") ");
+        query.build().execute(self.pool.pool()).await?;
         Ok(())
     }
 }

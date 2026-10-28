@@ -295,7 +295,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
 
     let synced_before_send = alice
         .mailboxes
-        .sync_tracker()
+        .operation_tracker()
         .get_synced(&mailbox_id, &chat, &alice.device_id())
         .await
         .unwrap();
@@ -306,7 +306,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
         .wait_for(|| async {
             let synced = alice
                 .mailboxes
-                .sync_tracker()
+                .operation_tracker()
                 .get_synced(&mailbox_id, &chat, &alice.device_id())
                 .await
                 .unwrap();

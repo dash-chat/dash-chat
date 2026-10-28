@@ -215,9 +215,9 @@ pub trait MailboxItem:
 pub trait OptionalItemTraits {}
 impl<T> OptionalItemTraits for T {}
 
-/// Node-side sink for per-mailbox unfetched blob-hash tracking. Implemented in
-/// `dashchat-node` over `LocalStore`; kept as a trait here so this crate stays
-/// free of node types.
+/// Per-mailbox record of which blob hashes a mailbox still lacks. Implemented
+/// in `mailboxes-manager` over its `BlobStore`; kept as a trait here so this
+/// crate stays free of manager types.
 ///
 /// Reads and writes both live here: a sync pass asks `unfetched` for the
 /// outstanding set, and the engine records what it announced and removes what

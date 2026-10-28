@@ -11,10 +11,10 @@ use crate::manager::Mailboxes;
 // followup path is not yet cleanly separated from node concerns. This is a
 // marker so future refactors return here.
 
-/// The node-side half of blob followups: refreshing our dialing address with
-/// the mailbox before attempting upload. The outstanding-set read lives on
-/// [`UnfetchedBlobTracker::unfetched`]; this trait is what remains of the
-/// boundary once that moved.
+/// The node-side half of a blob followup: refreshing our dialing address
+/// with the mailbox before attempting upload, so the mailbox can fetch from
+/// us as a backstop. Our address changes with the network, and the mailbox
+/// fetches from the last one we gave it.
 #[async_trait::async_trait]
 pub trait BlobSource: Send + Sync + 'static {
     /// Refresh our dialing address with the mailbox before attempting upload.

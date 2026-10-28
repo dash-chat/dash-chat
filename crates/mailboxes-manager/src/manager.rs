@@ -73,7 +73,7 @@ where
     }
 
     /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
-    pub fn sync_tracker(&self) -> &Arc<OperationSyncTracker<Item::Topic, Item::Author>> {
+    pub fn operation_tracker(&self) -> &Arc<OperationSyncTracker<Item::Topic, Item::Author>> {
         &self.op_tracker
     }
 
@@ -1692,7 +1692,7 @@ mod tests {
 
         let (client, _polls) = TrackingClient::new(true);
         let id = client.id.clone();
-        mgr.sync_tracker()
+        mgr.operation_tracker()
             .record_status(&id, SyncStatus::Stopped)
             .await
             .unwrap();
@@ -1722,7 +1722,7 @@ mod tests {
 
         let (client, poll_count) = TrackingClient::new(true);
         let id = client.id.clone();
-        mgr.sync_tracker()
+        mgr.operation_tracker()
             .record_status(&id, SyncStatus::Stopped)
             .await
             .unwrap();
@@ -1749,7 +1749,7 @@ mod tests {
 
         let (client, poll_count) = TrackingClient::new(false);
         let id = client.id.clone();
-        mgr.sync_tracker()
+        mgr.operation_tracker()
             .record_status(&id, SyncStatus::Stopped)
             .await
             .unwrap();
@@ -1768,7 +1768,7 @@ mod tests {
         }
         // The recovery is persisted, so the next registration seeds Active.
         assert_eq!(
-            mgr.sync_tracker().get_status(&id).await.unwrap(),
+            mgr.operation_tracker().get_status(&id).await.unwrap(),
             Some(SyncStatus::Active)
         );
     }
@@ -1785,7 +1785,7 @@ mod tests {
 
         tokio::time::sleep(config.stopped_interval).await;
         assert_eq!(
-            mgr.sync_tracker().get_status(&id).await.unwrap(),
+            mgr.operation_tracker().get_status(&id).await.unwrap(),
             Some(SyncStatus::Stopped)
         );
     }
@@ -1799,13 +1799,13 @@ mod tests {
 
         let mb = MemMailbox::<Msg>::new();
         let id = mb.client().id();
-        mgr.sync_tracker()
+        mgr.operation_tracker()
             .record_status(&id, SyncStatus::Stopped)
             .await
             .unwrap();
         mgr.register(mb.client()).await;
         assert!(mgr.unregister(&id).await);
-        assert_eq!(mgr.sync_tracker().get_status(&id).await.unwrap(), None);
+        assert_eq!(mgr.operation_tracker().get_status(&id).await.unwrap(), None);
 
         mgr.register(mb.client()).await;
         let mm = mgr.mailbox_registry.mailboxes.lock().await;
@@ -2393,7 +2393,7 @@ mod tests {
         let id = client.id();
         seqs.lock().unwrap().insert((0, 'a'), (0..=4).collect());
         mgr.register(client).await;
-        mgr.sync_tracker()
+        mgr.operation_tracker()
             .record_synced(&id, &[(0, 'a', 4)])
             .await
             .unwrap();
@@ -2402,7 +2402,10 @@ mod tests {
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [5])]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.operation_tracker()
+                .get_synced(&id, &0, &'a')
+                .await
+                .unwrap(),
             Some(5)
         );
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2422,7 +2425,10 @@ mod tests {
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [0])]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.operation_tracker()
+                .get_synced(&id, &0, &'a')
+                .await
+                .unwrap(),
             Some(0)
         );
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2438,7 +2444,7 @@ mod tests {
         let id = client.id();
         seqs.lock().unwrap().insert((0, 'a'), (0..=1).collect());
         mgr.register(client).await;
-        mgr.sync_tracker()
+        mgr.operation_tracker()
             .record_synced(&id, &[(0, 'a', 1)])
             .await
             .unwrap();
@@ -2447,7 +2453,10 @@ mod tests {
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', 2..=5)]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.operation_tracker()
+                .get_synced(&id, &0, &'a')
+                .await
+                .unwrap(),
             Some(5)
         );
     }
@@ -2498,7 +2507,7 @@ mod tests {
         };
         let id = client.id();
         mgr.register(client).await;
-        mgr.sync_tracker()
+        mgr.operation_tracker()
             .record_synced(&id, &[(0, 'a', 1)])
             .await
             .unwrap();
@@ -2508,7 +2517,10 @@ mod tests {
         join(mgr.publish_fast_push(0, 'a').await).await;
 
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.operation_tracker()
+                .get_synced(&id, &0, &'a')
+                .await
+                .unwrap(),
             Some(3),
             "the echo is recorded even though the push failed"
         );
@@ -2524,7 +2536,7 @@ mod tests {
         let (client, _seqs, published) = EchoClient::new(false);
         let id = client.id();
         mgr.register(client).await;
-        mgr.sync_tracker()
+        mgr.operation_tracker()
             .record_synced(&id, &[(0, 'a', 4)])
             .await
             .unwrap();
@@ -2533,7 +2545,10 @@ mod tests {
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', [5])]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.operation_tracker()
+                .get_synced(&id, &0, &'a')
+                .await
+                .unwrap(),
             Some(4)
         );
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2572,7 +2587,10 @@ mod tests {
 
         assert_eq!(published.lock().unwrap().clone(), vec![msgs(0, 'a', 0..=2)]);
         assert_eq!(
-            mgr.sync_tracker().get_synced(&id, &0, &'a').await.unwrap(),
+            mgr.operation_tracker()
+                .get_synced(&id, &0, &'a')
+                .await
+                .unwrap(),
             Some(5)
         );
         let tracked = mgr.tracked_mailbox(&id).await.unwrap();
@@ -2750,7 +2768,7 @@ mod tests {
                 .await
                 .unwrap();
         let mailbox: MailboxId = "mb1".into();
-        mgr.sync_tracker()
+        mgr.operation_tracker()
             .record_synced(&mailbox, &[(7u8, 'a', 3)])
             .await
             .unwrap();
@@ -2772,7 +2790,7 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(
-            mgr.sync_tracker()
+            mgr.operation_tracker()
                 .get_synced(&mailbox, &7u8, &'a')
                 .await
                 .unwrap(),
@@ -2780,7 +2798,7 @@ mod tests {
             "reopened manager must seed its tracker from persisted watermarks"
         );
         assert!(
-            mgr.sync_tracker()
+            mgr.operation_tracker()
                 .all_mailbox_ids()
                 .borrow()
                 .contains(&mailbox),
