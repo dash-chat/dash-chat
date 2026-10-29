@@ -87,12 +87,9 @@ async function readTempFile(path: string): Promise<Uint8Array> {
 	return bytes;
 }
 
+// Not smartAlbumRecentlyAdded: it only holds the last 30 days, so it exists but
+// is empty for anyone who hasn't added a photo lately.
 async function resolveAlbumId(): Promise<string | undefined> {
-	const recent = await requestAlbums({
-		with: PHAssetCollectionType.smartAlbum,
-		subtype: PHAssetCollectionSubtype.smartAlbumRecentlyAdded,
-	});
-	if (recent[0]) return recent[0].id;
 	const library = await requestAlbums({
 		with: PHAssetCollectionType.smartAlbum,
 		subtype: PHAssetCollectionSubtype.smartAlbumUserLibrary,
