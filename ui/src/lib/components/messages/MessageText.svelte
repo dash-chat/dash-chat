@@ -10,6 +10,7 @@
 	import { openExternalUrl } from '$lib/utils/links';
 	import { showToast } from '$lib/utils/toasts';
 	import { messageTextHtml } from './message-helpers';
+	import { searchTerms, textMatchesSearch } from './message-search';
 
 	interface Props {
 		text: string;
@@ -36,7 +37,7 @@
 	// Reveal the whole message while searching so a match in the hidden tail
 	// is in the DOM to be found, scrolled to, and highlighted.
 	const matchesSearch = $derived(
-		!!searchQuery && text.toLowerCase().includes(searchQuery.toLowerCase()),
+		textMatchesSearch(text, searchTerms(searchQuery)),
 	);
 	// Grapheme count never exceeds UTF-16 length, so skip the segmentation pass
 	// entirely for short messages. Keep the whole message when only a short tail

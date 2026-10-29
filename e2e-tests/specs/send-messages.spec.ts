@@ -133,6 +133,17 @@ describe('Full messaging flow', () => {
 		);
 	});
 
+	it('matches search words against the start of words only', async () => {
+		await agent1.directChatPage.searchFor('acc');
+		await expect(agent1.directChatPage.searchResultsCount).not.toHaveText(
+			await agent1.tr('noResults'),
+		);
+		await agent1.directChatPage.searchFor('ccept');
+		await expect(agent1.directChatPage.searchResultsCount).toHaveText(
+			await agent1.tr('noResults'),
+		);
+	});
+
 	it('does not match the Read more button label', async () => {
 		// A truncated message renders a "Read more" button; searching for its
 		// label must not produce a false match from the UI chrome.
