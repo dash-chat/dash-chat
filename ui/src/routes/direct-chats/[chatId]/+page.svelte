@@ -3,7 +3,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
-	import { getContext, setContext, onMount, tick } from 'svelte';
+	import { getContext, setContext, onMount, tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
@@ -57,7 +57,9 @@
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
+	import { searchMessages } from '$lib/components/messages/message-search';
 	import {
+		closestDay,
 		endsDeliveryStatusRun,
 		groupedEvents,
 		messagePosition,
@@ -187,26 +189,33 @@
 		}
 	});
 
+	function visibleDays<
+		T extends { eventsGroups: Array<Array<[Hash, DirectChatEvent]>> },
+	>(days: T[], contactRequest: ContactRequest | undefined): T[] {
+		return contactRequest === undefined || requestMessagesRevealed
+			? days
+			: withoutMessages(days);
+	}
+
+	// Searches when the query changes only, so a message arriving mid-search
+	// doesn't move the selection away from the match being read.
+	let searchRun = 0;
 	$effect(() => {
-		const q = searchQuery;
-		tick().then(() => {
-			if (!q || !searchMode) {
-				matchingHashes = [];
-				currentMatchIndex = 0;
-				return;
-			}
-			const lowerQ = q.toLowerCase();
-			const els = parentDivEl?.querySelectorAll('[data-message-hash]') ?? [];
-			const matches: Hash[] = [];
-			els.forEach(el => {
-				const hash = el.getAttribute('data-message-hash') as Hash;
-				const text = el.querySelector('[data-message-text]')?.textContent || '';
-				if (text.toLowerCase().includes(lowerQ)) matches.push(hash);
-			});
-			matchingHashes = matches;
-			currentMatchIndex = matches.length > 0 ? matches.length - 1 : 0;
-			if (matches.length > 0) scrollToMatch();
-		});
+		const query = searchMode ? searchQuery : '';
+		const run = ++searchRun;
+		untrack(() => Promise.all([$messageGroups, $contactRequest])).then(
+			([days, contactRequest]) => {
+				if (run !== searchRun) return;
+				matchingHashes = searchMessages(
+					visibleDays(days, contactRequest),
+					query,
+				);
+				currentMatchIndex = Math.max(0, matchingHashes.length - 1);
+				// The match's bubble re-renders highlighted, and expanded when
+				// the match is in its truncated tail, before it is scrolled to.
+				if (matchingHashes.length > 0) tick().then(scrollToMatch);
+			},
+		);
 	});
 
 	function scrollToMatch() {
@@ -250,22 +259,19 @@
 		currentMatchIndex = 0;
 	}
 
-	function jumpToDate(dateStr: string) {
-		const target = new Date(dateStr).getTime();
-		const dayTags = Array.from(
-			parentDivEl?.querySelectorAll('[data-day]') ?? [],
+	async function jumpToDate(dateStr: string) {
+		const [days, request] = await Promise.all([
+			$messageGroups,
+			$contactRequest,
+		]);
+		const day = closestDay(
+			visibleDays(days, request).map(d => d.day),
+			new Date(dateStr),
 		);
-		let closest: Element | null = null;
-		let closestDiff = Infinity;
-		for (const el of dayTags) {
-			const day = new Date(el.getAttribute('data-day')!).getTime();
-			const diff = Math.abs(day - target);
-			if (diff < closestDiff) {
-				closestDiff = diff;
-				closest = el;
-			}
-		}
-		closest?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		if (day === undefined) return;
+		parentDivEl
+			?.querySelector(`[data-day="${day.toISOString()}"]`)
+			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
 	const theme = $derived(useTheme());
@@ -386,10 +392,10 @@
 								contactRequest !== undefined
 									? countMessages(messageGroupsInDays)
 									: 0}
-							{@const visibleGroupsInDays =
-								contactRequest === undefined || requestMessagesRevealed
-									? messageGroupsInDays
-									: withoutMessages(messageGroupsInDays)}
+							{@const visibleGroupsInDays = visibleDays(
+								messageGroupsInDays,
+								contactRequest,
+							)}
 							<div
 								class="column"
 								style={`padding-bottom: ${bottomBarHeight}px`}
