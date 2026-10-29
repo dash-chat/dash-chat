@@ -103,7 +103,9 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
         if let Err(err) = self.tracker.remove(&id, &already_stored).await {
             tracing::error!(?err, mailbox = %id, "failed to clear stored blobs");
         }
-        self.spawn_upload(reader, not_stored);
+        if let Some(reader) = reader {
+            self.spawn_upload(reader, not_stored);
+        }
         Ok(())
     }
 
@@ -115,11 +117,8 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
     /// rejects is left in the tracker and skipped, but the moment the mailbox
     /// itself is unreachable we stop — the remaining blobs stay queued for
     /// the mailbox's fetch backstop rather than burning through the batch
-    /// against a dead endpoint. No-op when no blob reader is configured.
-    fn spawn_upload(&self, reader: Option<Arc<dyn BlobReader>>, hashes: Vec<iroh_blobs::Hash>) {
-        let Some(reader) = reader else {
-            return;
-        };
+    /// against a dead endpoint.
+    fn spawn_upload(&self, reader: Arc<dyn BlobReader>, hashes: Vec<iroh_blobs::Hash>) {
         // Claimed up front, so a later sync doesn't start the ones this task
         // hasn't reached yet alongside it over the same uplink. The lifecycle
         // keys claims on the mailbox's URL — the shared upload tracker's
