@@ -46,6 +46,7 @@ describe('Local hub LAN warning', function () {
 			timeout: PROBE_TIMEOUT_MS,
 			timeoutMsg: 'no LAN warning while local network access is pending',
 		});
+		await agent.offlinePage.openLocalNetworkSettings.waitForDisplayed();
 
 		await agent.offlinePage.back.click();
 		await agent.settingsPage.ready();

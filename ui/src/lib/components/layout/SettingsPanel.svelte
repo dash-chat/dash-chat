@@ -187,6 +187,7 @@
 							<WarningIcon
 								size={24}
 								label={m.localHubCantBeFound()}
+								color="text-red-500"
 								data-testid="settings-offline-hub-warning"
 							/>
 						{/if}

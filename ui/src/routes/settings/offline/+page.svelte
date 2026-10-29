@@ -6,9 +6,11 @@
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { type SettingsStore } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
+	import { openExternalUrl } from '$lib/utils/links';
 	import {
 		BlockFooter,
 		BlockTitle,
+		Button,
 		List,
 		ListItem,
 		Navbar,
@@ -19,6 +21,11 @@
 	} from 'konsta/svelte';
 	import { isAndroid, isMac, isMobile } from '$lib/utils/environment';
 	import WarningIcon from '$lib/components/WarningIcon.svelte';
+	import BorderedBox from '$lib/components/BorderedBox.svelte';
+
+	// macOS 15 opens Privacy & Security here, one click short of Local Network.
+	const LOCAL_NETWORK_SETTINGS_URL =
+		'x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
@@ -51,6 +58,14 @@
 			showToast(m.errorUnexpected(), 'unexpected', e);
 		} finally {
 			togglingBackgroundMode = false;
+		}
+	}
+
+	async function openLocalNetworkSettings() {
+		try {
+			await openExternalUrl(LOCAL_NETWORK_SETTINGS_URL);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
 		}
 	}
 </script>
@@ -95,18 +110,45 @@
 					>{m.localMessageServerDescription()}</BlockFooter
 				>
 				{#if $localHubBlocked === true}
-					<BlockFooter
-						class="mt-4 flex items-center gap-5 px-4"
-						colors={{ textIos: 'text-red-500', textMaterial: 'text-red-500' }}
-						data-testid="offline-local-mailbox-lan-blocked"
-					>
-						<WarningIcon size={32} color="text-red-500" class="shrink-0" />
-						<span
-							>{isMac
-								? m.localMessageServerLanBlockedMacos()
-								: m.localMessageServerLanBlocked()}</span
-						>
-					</BlockFooter>
+					<div class="px-4 pt-4">
+						<BorderedBox data-testid="offline-local-mailbox-lan-blocked">
+							<div class="flex gap-3 text-sm">
+								<WarningIcon size={24} color="text-red-500" class="shrink-0" />
+								<div class="flex flex-col gap-2">
+									<span class="font-semibold">{m.localHubCantBeFound()}</span>
+									{#if isMac}
+										<span>{m.localHubLanBlockedMacosIntro()}</span>
+										<ol class="flex list-decimal flex-col gap-2 ps-5">
+											<li>
+												<div
+													class="flex flex-wrap items-center gap-x-3 gap-y-2"
+												>
+													<span class="min-w-40 flex-1"
+														>{m.localHubLanBlockedMacosStep1()}</span
+													>
+													<Button
+														inline
+														tonal
+														class="shrink-0 whitespace-nowrap"
+														onClick={openLocalNetworkSettings}
+														data-testid="offline-local-mailbox-open-settings"
+														>{m.openSystemSettings()}</Button
+													>
+												</div>
+											</li>
+											<li>{m.localHubLanBlockedMacosStep2()}</li>
+											<li>{m.localHubLanBlockedMacosStep3()}</li>
+										</ol>
+										<span class="opacity-70"
+											>{m.localHubLanBlockedMacosRecurs()}</span
+										>
+									{:else}
+										<span>{m.localHubLanBlockedOther()}</span>
+									{/if}
+								</div>
+							</div>
+						</BorderedBox>
+					</div>
 				{/if}
 			</div>
 		{/if}

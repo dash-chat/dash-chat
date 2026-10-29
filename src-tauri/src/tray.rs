@@ -101,7 +101,7 @@ fn lan_blocked_menu_item<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Resul
     Ok(IconMenuItem::with_id_and_native_icon(
         app_handle,
         "offline",
-        t!("trayLanBlocked"),
+        t!("localHubCantBeFound"),
         true,
         Some(tauri::menu::NativeIcon::Caution),
         None::<&str>,
@@ -113,7 +113,7 @@ fn lan_blocked_menu_item<R: Runtime>(app_handle: &AppHandle<R>) -> anyhow::Resul
     Ok(IconMenuItem::with_id(
         app_handle,
         "offline",
-        t!("trayLanBlocked"),
+        t!("localHubCantBeFound"),
         true,
         Some(Image::from_bytes(MENU_WARNING_ICON_BYTES)?),
         None::<&str>,
@@ -139,7 +139,10 @@ fn set_lan_warning<R: Runtime>(app_handle: &AppHandle<R>, warn: bool) -> anyhow:
         return Ok(());
     };
     let (icon, tooltip) = if warn {
-        (TRAY_WARNING_ICON_BYTES, Some(lan_blocked_instructions()))
+        (
+            TRAY_WARNING_ICON_BYTES,
+            Some(t!("localHubCantBeFound").to_string()),
+        )
     } else {
         (TRAY_ICON_BYTES, None)
     };
@@ -148,16 +151,6 @@ fn set_lan_warning<R: Runtime>(app_handle: &AppHandle<R>, warn: bool) -> anyhow:
     tray.set_tooltip(tooltip)?;
     tray.set_menu(Some(tray_menu(app_handle, warn)?))?;
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn lan_blocked_instructions() -> String {
-    t!("localMessageServerLanBlockedMacos").to_string()
-}
-
-#[cfg(not(target_os = "macos"))]
-fn lan_blocked_instructions() -> String {
-    t!("localMessageServerLanBlocked").to_string()
 }
 
 /// Handle the tray's "Quit" item. Always disables the local message server (in

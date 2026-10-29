@@ -15,7 +15,8 @@
 		<WarningIcon
 			size={18}
 			{label}
-			class="bg-page-surface absolute -bottom-1 -end-1 rounded-full p-px"
+			color="text-red-500"
+			class="absolute -bottom-1 -end-1"
 			data-testid="warning-badge"
 		/>
 	{/if}
