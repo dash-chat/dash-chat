@@ -61,6 +61,10 @@ const MIGRATIONS: &[&str] = &[
         op_hash BLOB NOT NULL,
         PRIMARY KEY (topic_id, acker_device_id, author_device_id)
     )",
+    "CREATE TABLE IF NOT EXISTS chat_lamports (
+        topic_id BLOB NOT NULL PRIMARY KEY,
+        lamport INTEGER NOT NULL
+    )",
 ];
 
 /// Why an operation was tombstoned.
@@ -549,6 +553,9 @@ impl OpProjection {
         };
 
         if let Payload::Chat(chat_payload) = &payload {
+            if let ChatPayload::Message(message) = chat_payload {
+                self.record_chat_lamport(topic, message.lamport).await?;
+            }
             if !matches!(chat_payload, ChatPayload::MessageAck { .. }) {
                 let header = &operation.event.operation.header;
                 self.record_chat_log_head(topic, author, header.seq_num, header.hash())
@@ -763,6 +770,35 @@ impl OpProjection {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// Record a processed message's lamport counter into the per-topic
+    /// maximum. Monotonic upsert like [`Self::record_chat_log_head`], so
+    /// replays are idempotent.
+    async fn record_chat_lamport(&self, topic: TopicId, lamport: u64) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO chat_lamports (topic_id, lamport)
+             VALUES (?, ?)
+             ON CONFLICT (topic_id) DO UPDATE SET
+                 lamport = excluded.lamport
+             WHERE excluded.lamport > chat_lamports.lamport",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(lamport as i64)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// The highest message lamport processed in this topic, or 0 when none
+    /// carried one (see `ChatMessageContent::lamport`).
+    pub async fn max_chat_lamport(&self, topic: TopicId) -> anyhow::Result<u64> {
+        let lamport: Option<i64> =
+            sqlx::query_scalar("SELECT lamport FROM chat_lamports WHERE topic_id = ?")
+                .bind(topic.as_bytes().to_vec())
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(lamport.map(u64::try_from).transpose()?.unwrap_or(0))
     }
 
     /// Whether an ack by `acker` counts toward "delivered" for ops authored by
@@ -1024,6 +1060,30 @@ mod tests {
         assert_eq!(delta.get(&author), Some(&AckedOp { hash: h5, seq: 5 }));
 
         assert_eq!(db.ack_topic_ids().await.unwrap(), vec![topic]);
+    }
+
+    /// The per-topic lamport maximum only ever moves forward: a replayed
+    /// (lower) counter never overwrites a higher one, topics are independent,
+    /// and an unseen topic reads as 0.
+    #[tokio::test]
+    async fn test_chat_lamports_monotonic() {
+        let db = projection().await;
+        let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
+        let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
+
+        assert_eq!(db.max_chat_lamport(topic_a).await.unwrap(), 0);
+
+        db.record_chat_lamport(topic_a, 3).await.unwrap();
+        // Replay of an older message is ignored.
+        db.record_chat_lamport(topic_a, 1).await.unwrap();
+        assert_eq!(db.max_chat_lamport(topic_a).await.unwrap(), 3);
+
+        db.record_chat_lamport(topic_a, 5).await.unwrap();
+        assert_eq!(db.max_chat_lamport(topic_a).await.unwrap(), 5);
+
+        db.record_chat_lamport(topic_b, 2).await.unwrap();
+        assert_eq!(db.max_chat_lamport(topic_b).await.unwrap(), 2);
+        assert_eq!(db.max_chat_lamport(topic_a).await.unwrap(), 5);
     }
 
     /// `record_message_ack` folds monotonically per (acker, author);

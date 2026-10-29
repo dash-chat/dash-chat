@@ -1267,27 +1267,14 @@ impl Node {
         Ok(header)
     }
 
-    /// One greater than the highest message `lamport` in this topic's logs
-    /// (see `ChatMessageContent::lamport`). Scanning the stored ops at send
-    /// time makes the counter survive restarts and absorb received peers'
-    /// counters with no extra state; the scan is O(topic size) per send.
+    /// One greater than the highest message `lamport` processed in this topic
+    /// (see `ChatMessageContent::lamport`), read from the projection's
+    /// `chat_lamports` table, which `OpProjection::reduce` keeps as a
+    /// monotonic per-topic maximum over every processed message — own and
+    /// received alike — so the counter survives restarts and absorbs peers'
+    /// counters without a log scan.
     async fn next_lamport(&self, topic: ChatId) -> anyhow::Result<u64> {
-        let log_id = LogId::from(topic);
-        let authors = self.op_store.get_authors(log_id).await?;
-        let mut max = 0;
-        for author in authors {
-            for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
-                    continue;
-                };
-                let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
-                else {
-                    continue;
-                };
-                max = max.max(message.lamport);
-            }
-        }
-        Ok(max + 1)
+        Ok(self.projection.max_chat_lamport(topic.into()).await? + 1)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
