@@ -98,6 +98,20 @@ export function groupedEvents<T>(
 	);
 }
 
+export function closestDay(days: Date[], target: Date): Date | undefined {
+	let closest: Date | undefined;
+	for (const day of days) {
+		const distance = Math.abs(day.getTime() - target.getTime());
+		if (
+			closest === undefined ||
+			distance < Math.abs(closest.getTime() - target.getTime())
+		) {
+			closest = day;
+		}
+	}
+	return closest;
+}
+
 const SENDER_COLOR_COUNT = 12;
 
 export function senderColor(authorId: string): string {
