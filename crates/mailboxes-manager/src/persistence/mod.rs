@@ -7,6 +7,18 @@ use std::sync::Arc;
 pub mod mem;
 pub mod sqlite;
 
+/// Repository for per-mailbox outstanding blob hashes.
+#[async_trait]
+pub trait BlobStore: Send + Sync {
+    async fn record(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()>;
+    async fn remove(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()>;
+    async fn unfetched(&self, id: &MailboxId) -> anyhow::Result<Vec<iroh_blobs::Hash>>;
+    async fn unfetched_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>>;
+    /// Drop every row for these hashes across all mailboxes — the node
+    /// deleted the blob locally and can no longer serve it.
+    async fn remove_all_mailboxes(&self, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()>;
+}
+
 /// Repository for mailbox identity and location.
 #[async_trait]
 pub trait MailboxUrlStore: Send + Sync {
@@ -58,6 +70,7 @@ where
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore>;
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>>;
+    fn blob_store(&self) -> Arc<dyn BlobStore>;
 
     /// Release the underlying storage (e.g. the SQLite pool and its file
     /// lock). No-op for in-memory persistence.

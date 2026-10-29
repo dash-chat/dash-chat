@@ -58,6 +58,7 @@ impl BlobSync {
         blob_fetch: BlobFetchPool,
         sources: MixedSourceLookup,
         local_store: LocalStore,
+        unfetched_tracker: std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker>,
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
 
@@ -67,7 +68,7 @@ impl BlobSync {
             ..EventMask::DEFAULT
         };
         let (events, rx) = EventSender::channel(256, mask);
-        spawn_download_event_listener(rx, local_store);
+        spawn_download_event_listener(rx, unfetched_tracker);
 
         let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
         let mixed_alpn =
@@ -269,7 +270,7 @@ impl BlobSync {
 /// row for that mailbox — the mailbox now has the blob.
 fn spawn_download_event_listener(
     mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>,
-    local_store: LocalStore,
+    tracker: std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker>,
 ) {
     tokio::spawn(async move {
         let mut connections: HashMap<u64, iroh::EndpointId> = HashMap::new();
@@ -286,16 +287,14 @@ fn spawn_download_event_listener(
                 ProviderMessage::GetRequestReceivedNotify(msg) => {
                     let hash = msg.inner.request.hash;
                     let endpoint = connections.get(&msg.inner.connection_id).copied();
-                    let local_store = local_store.clone();
+                    let tracker = tracker.clone();
                     let mut updates = msg.rx;
                     tokio::spawn(async move {
                         while let Ok(Some(update)) = updates.recv().await {
                             if let RequestUpdate::Completed(_) = update {
                                 if let Some(endpoint) = endpoint {
                                     let mailbox_id = mailbox_server::encode_mailbox_id(endpoint);
-                                    if let Err(err) =
-                                        local_store.remove_unfetched_blob(&mailbox_id, hash).await
-                                    {
+                                    if let Err(err) = tracker.remove(&mailbox_id, &[hash]).await {
                                         tracing::error!(?err, %hash, "failed to clear unfetched blob after download");
                                     }
                                 }

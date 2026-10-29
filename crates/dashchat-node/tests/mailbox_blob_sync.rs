@@ -202,32 +202,6 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
 
 /// A node recovers a blob the mailbox failed to fetch, after the source node
 /// restarts.
-///
-/// Exercises the full unfetched-blob followup feature end to end:
-/// 1. The sender publishes a media message to the mailbox. `ToyMailboxClient`
-///    announces the blob via `/blobs/store` and (because the mailbox does not
-///    yet have it) records an `unfetched_blob_hashes` row through the node's
-///    real `LocalStoreBlobTracker`.
-/// 2. The mailbox tries and *fails* to fetch the blob: its relay node has mDNS
-///    discovery disabled, so it never learns the sender's dialing address and
-///    cannot pull the blob even though the sender is online. This is the
-///    deterministic "failed fetch" condition — no timing race.
-/// 3. The sender restarts; we assert the persisted `unfetched_blob_hashes` row
-///    survives the restart.
-/// 4. The sender is now reachable: we register its fresh dialing address with
-///    the relay (as `/health` / `/peers/register` would in production) and run
-///    one deterministic `followup_unfetched_blobs_once` pass, which re-announces
-///    the still-unfetched blob to the mailbox and re-enqueues the fetch.
-/// 5. The mailbox now downloads the blob from the online sender.
-/// 6. The sender's iroh-blobs provider-event listener sees that download
-///    complete and clears the `unfetched_blob_hashes` row.
-///
-/// The mailbox rides the relay node's iroh endpoint, so its MailboxId equals the
-/// relay's EndpointId — which is exactly what the provider-event listener
-/// reconstructs from the downloading endpoint, so the cleared row matches the
-/// recorded one. The relay disables mDNS so the *only* way it can reach the
-/// sender's blob is the explicit address registration in step 4, guaranteeing
-/// the fetch cannot succeed before then.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "the followup now uploads the blob, so the mailbox never has to fetch it"]
 async fn recovers_unfetched_blob_after_source_restart() {
@@ -343,21 +317,19 @@ async fn recovers_unfetched_blob_after_source_restart() {
 
     // Alice's mailbox sync runs `publish` on a background task; `publish`
     // announces the blob via `/blobs/store` and, because the mailbox does not
-    // yet have it, records the unfetched-blob row through the real tracker. The
-    // first sync pass depends on the mailbox becoming reachable, which can take
-    // longer than the default 10s window, so widen this specific wait.
+    // yet have it, records the outstanding hash in the manager's blob tracker.
+    // The first sync pass depends on the mailbox becoming reachable, which can
+    // take longer than the default 10s window, so widen this specific wait.
     PollConfig::seconds(30)
         .wait_for(|| async {
-            let by_mailbox = alice
-                .local_store
-                .unfetched_blobs_by_mailbox()
+            alice
+                .unfetched_blob_tracker()
+                .unfetched(&mailbox_id)
                 .await
-                .unwrap();
-            by_mailbox
-                .get(&mailbox_id)
-                .is_some_and(|hashes| hashes.contains(&hash))
+                .unwrap()
+                .contains(&hash)
                 .then_some(())
-                .ok_or("alice has not recorded the unfetched blob row yet")
+                .ok_or("alice has not recorded the unfetched blob yet")
         })
         .await
         .unwrap();
@@ -378,19 +350,18 @@ async fn recovers_unfetched_blob_after_source_restart() {
     // but she gets a fresh endpoint address.
     let alice_dir = alice.shutdown().await;
 
-    // Confirm the row persisted across the restart boundary (the whole point of
-    // the on-disk table): reopen alice's store in place and read it back.
+    // Confirm the outstanding hash persisted across the restart boundary (the
+    // whole point of the on-disk table): reopen alice in place and read the
+    // manager's tracker back.
     let alice = TestNode::new_at_path(config.clone(), "alice", alice_dir).await;
-    let by_mailbox = alice
-        .local_store
-        .unfetched_blobs_by_mailbox()
-        .await
-        .unwrap();
     assert!(
-        by_mailbox
-            .get(&mailbox_id)
-            .is_some_and(|hashes| hashes.contains(&hash)),
-        "unfetched blob row should persist across a source restart"
+        alice
+            .unfetched_blob_tracker()
+            .unfetched(&mailbox_id)
+            .await
+            .unwrap()
+            .contains(&hash),
+        "unfetched blob should persist across a source restart"
     );
     alice
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
@@ -430,16 +401,14 @@ async fn recovers_unfetched_blob_after_source_restart() {
 
     // The provider-download event on alice's blob endpoint clears the row.
     poll.wait_for(|| async {
-        let by_mailbox = alice
-            .local_store
-            .unfetched_blobs_by_mailbox()
+        (!alice
+            .unfetched_blob_tracker()
+            .unfetched(&mailbox_id)
             .await
-            .unwrap();
-        (!by_mailbox
-            .get(&mailbox_id)
-            .is_some_and(|hashes| hashes.contains(&hash)))
+            .unwrap()
+            .contains(&hash))
         .then_some(())
-        .ok_or("alice has not cleared the unfetched blob row after the download completed")
+        .ok_or("alice has not cleared the unfetched blob after the download completed")
     })
     .await
     .unwrap();

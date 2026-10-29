@@ -1,8 +1,8 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use mailbox_client::{
-    BlobReader, MailboxId, MailboxItem, OptionalItemTraits, UnfetchedBlobTracker,
-    store::MailboxStore,
+    BlobReader, MailboxItem, OptionalItemTraits, UnfetchedBlobTracker,
+    blobs::blob_delivery::BlobDelivery, store::MailboxStore,
 };
 
 use crate::manager::Mailboxes;
@@ -11,17 +11,12 @@ use crate::manager::Mailboxes;
 // followup path is not yet cleanly separated from node concerns. This is a
 // marker so future refactors return here.
 
-/// Source of blob-upload work from the node that owns the blobs.
-///
-/// This trait is the boundary between `mailbox-client` (which knows which
-/// mailboxes are connected and how to push blobs to them) and `dashchat-node`
-/// (which knows which blobs exist, where their bytes live, and how to refresh
-/// the node's dialing address with a mailbox).
+/// The node-side half of a blob followup: refreshing our dialing address
+/// with the mailbox before attempting upload, so the mailbox can fetch from
+/// us as a backstop. Our address changes with the network, and the mailbox
+/// fetches from the last one we gave it.
 #[async_trait::async_trait]
 pub trait BlobSource: Send + Sync + 'static {
-    /// Return all blob hashes still recorded as unfetched, grouped by mailbox.
-    async fn unfetched_blobs_by_mailbox(&self) -> BTreeMap<MailboxId, Vec<iroh_blobs::Hash>>;
-
     /// Refresh our dialing address with the mailbox before attempting upload.
     async fn prepare_upload_to(&self, url: &str);
 }
@@ -29,8 +24,7 @@ pub trait BlobSource: Send + Sync + 'static {
 /// One reconciliation pass: for every mailbox with unfetched blobs that is still
 /// tracked, re-announce its hashes and drop the ones it reports already stored.
 ///
-/// This is a transitional home for the followup logic; it delegates blob upload
-/// to the registered `MailboxClient` via `push_blobs`.
+/// Drives the mailbox's `BlobDelivery` engine directly.
 pub async fn reconcile_unfetched_blobs<Item, Store>(
     mailboxes: &Mailboxes<Item, Store>,
     source: Arc<dyn BlobSource>,
@@ -41,11 +35,20 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
     Store: MailboxStore<Item>,
     Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
-    let by_mailbox = source.unfetched_blobs_by_mailbox().await;
-    for (mailbox_id, hashes) in by_mailbox {
-        let Some(tracked) = mailboxes.tracked_mailbox(&mailbox_id).await else {
-            continue; // mailbox not currently registered; retry when it returns
+    // One read per mailbox, not one grouped read: the tracker is the
+    // per-mailbox record, and at current mailbox counts the per-mailbox query
+    // is the simpler, correct-shape access.
+    for (mailbox_id, tracked) in mailboxes.registered_mailboxes().await {
+        let hashes = match tracker.unfetched(&mailbox_id).await {
+            Ok(hashes) => hashes,
+            Err(err) => {
+                tracing::error!(?err, mailbox = %mailbox_id, "failed to read unfetched blobs");
+                continue;
+            }
         };
+        if hashes.is_empty() {
+            continue;
+        }
         let client = tracked.client().await;
         let Some(url) = client.url() else {
             continue; // non-HTTP mailbox (e.g. in-memory test mailbox)
@@ -67,10 +70,13 @@ pub async fn reconcile_unfetched_blobs<Item, Store>(
 
         // Upload again too: the upload that followed these blobs' message may
         // have been cut off, and the mailbox can't fetch from a phone it can't dial.
-        if let Err(err) = client
-            .push_blobs(held, reader.clone(), tracker.clone())
-            .await
-        {
+        let delivery = BlobDelivery::new(
+            client,
+            Some(reader.clone()),
+            tracker.clone(),
+            mailboxes.upload_tracker(),
+        );
+        if let Err(err) = delivery.sync(held).await {
             tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
         }
     }

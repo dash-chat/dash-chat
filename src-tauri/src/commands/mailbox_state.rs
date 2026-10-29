@@ -5,8 +5,8 @@ use async_rx::StreamExt as _;
 use async_stream::stream;
 use dashchat_node::{topic::TopicId, DeviceId};
 use futures::{Stream, StreamExt};
-use mailbox_client::{MailboxConnectionState, MailboxId};
-use mailboxes_manager::MailboxSyncState;
+use mailbox_client::{MailboxConnectionHealth, MailboxId};
+use mailboxes_manager::OperationSyncState;
 use tauri_plugin_subscriptions::subscription;
 use tokio_stream::wrappers::WatchStream;
 
@@ -32,7 +32,9 @@ pub fn mailbox_subscribe_cloud_id() -> impl Stream<Item = Option<MailboxId>> {
 
 #[subscription]
 pub fn mailbox_subscribe_all_ids() -> impl Stream<Item = BTreeSet<MailboxId>> {
-    node_stream_values(|node| WatchStream::new(node.mailboxes.sync_tracker().all_mailbox_ids()))
+    node_stream_values(|node| {
+        WatchStream::new(node.mailboxes.operation_tracker().all_mailbox_ids())
+    })
 }
 
 /// Right after a node swap the mailbox may not be registered on the new node
@@ -40,14 +42,14 @@ pub fn mailbox_subscribe_all_ids() -> impl Stream<Item = BTreeSet<MailboxId>> {
 #[subscription]
 pub fn mailbox_subscribe_connection_state(
     mailbox_id: MailboxId,
-) -> impl Stream<Item = MailboxConnectionState> {
+) -> impl Stream<Item = MailboxConnectionHealth> {
     node_stream_values(move |node| {
         let id = mailbox_id.clone();
         stream! {
             let mut active = node.mailboxes.active_mailbox_ids();
             let watch = loop {
                 if let Some(mailbox) = node.mailboxes.tracked_mailbox(&id).await {
-                    break mailbox.connection_state();
+                    break mailbox.health();
                 }
                 if active.changed().await.is_err() {
                     return;
@@ -63,12 +65,12 @@ pub fn mailbox_subscribe_connection_state(
 #[subscription]
 pub fn mailbox_subscribe_sync_state(
     mailbox_id: MailboxId,
-) -> impl Stream<Item = MailboxSyncState<TopicId, DeviceId>> {
+) -> impl Stream<Item = OperationSyncState<TopicId, DeviceId>> {
     node_stream_values(move |node| {
         let id = mailbox_id.clone();
         stream! {
             let watch = loop {
-                match node.mailboxes.sync_tracker().sync_state(&id).await {
+                match node.mailboxes.operation_tracker().sync_state(&id).await {
                     Ok(watch) => break watch,
                     Err(err) => {
                         log::warn!("Retrying the sync state of mailbox {id}: {err:?}");

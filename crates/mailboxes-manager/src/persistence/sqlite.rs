@@ -30,6 +30,7 @@ pub struct SqlitePersistence<T, A> {
     pool: GatedPool,
     mailbox_store: Arc<dyn MailboxUrlStore>,
     sync_store: Arc<dyn SyncStore<T, A>>,
+    blob_store: Arc<SqliteBlobStore>,
 }
 
 impl<T, A> SqlitePersistence<T, A>
@@ -55,9 +56,11 @@ where
             pool: pool.clone(),
             _phantom: std::marker::PhantomData,
         });
+        let blob_store = Arc::new(SqliteBlobStore { pool: pool.clone() });
 
         Ok(Self {
             pool,
+            blob_store,
             mailbox_store,
             sync_store,
         })
@@ -81,6 +84,10 @@ where
     }
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>> {
         self.sync_store.clone()
+    }
+
+    fn blob_store(&self) -> Arc<dyn crate::persistence::BlobStore> {
+        self.blob_store.clone()
     }
 
     async fn close(&self) {
@@ -298,11 +305,167 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         mailbox_id TEXT NOT NULL PRIMARY KEY,
         status     TEXT NOT NULL,
         updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS mailbox_unfetched_blobs (
+        mailbox_id TEXT NOT NULL,
+        blob_hash  BLOB NOT NULL,
+        PRIMARY KEY (mailbox_id, blob_hash)
     );";
+
+/// Blob hashes are 32 raw bytes — stored directly, no encoding.
+#[derive(Clone)]
+struct SqliteBlobStore {
+    pool: GatedPool,
+}
+
+#[async_trait::async_trait]
+impl crate::persistence::BlobStore for SqliteBlobStore {
+    async fn record(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "INSERT OR IGNORE INTO mailbox_unfetched_blobs (mailbox_id, blob_hash) ",
+        );
+        query.push_values(hashes, |mut row, hash| {
+            row.push_bind(id).push_bind(hash.as_bytes().to_vec());
+        });
+        query.build().execute(self.pool.pool()).await?;
+        Ok(())
+    }
+
+    async fn remove(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "DELETE FROM mailbox_unfetched_blobs WHERE mailbox_id = ",
+        );
+        query.push_bind(id).push(" AND blob_hash IN (");
+        let mut separated = query.separated(", ");
+        for hash in hashes {
+            separated.push_bind(hash.as_bytes().to_vec());
+        }
+        separated.push_unseparated(") ");
+        query.build().execute(self.pool.pool()).await?;
+        Ok(())
+    }
+
+    async fn unfetched(&self, id: &MailboxId) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
+        let rows: Vec<(Vec<u8>,)> =
+            sqlx::query_as("SELECT blob_hash FROM mailbox_unfetched_blobs WHERE mailbox_id = ?")
+                .bind(id)
+                .fetch_all(self.pool.pool())
+                .await?;
+        rows.iter()
+            .map(|(bytes,)| {
+                let arr: [u8; 32] = bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("blob hash is not 32 bytes"))?;
+                Ok(iroh_blobs::Hash::from(arr))
+            })
+            .collect()
+    }
+
+    async fn unfetched_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>> {
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_unfetched_blobs")
+                .fetch_all(self.pool.pool())
+                .await?;
+        Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
+
+    async fn remove_all_mailboxes(&self, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "DELETE FROM mailbox_unfetched_blobs WHERE blob_hash IN (",
+        );
+        let mut separated = query.separated(", ");
+        for hash in hashes {
+            separated.push_bind(hash.as_bytes().to_vec());
+        }
+        separated.push_unseparated(") ");
+        query.build().execute(self.pool.pool()).await?;
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::BlobStore;
+
+    async fn blob_store() -> (tempfile::TempDir, Arc<dyn BlobStore>) {
+        let dir = tempfile::tempdir().unwrap();
+        let persistence = SqlitePersistence::<u8, char>::open(
+            dir.path().join("test.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap();
+        let store = persistence.blob_store();
+        (dir, store)
+    }
+
+    /// Record, read back, and remove — the whole lifecycle on real SQL,
+    /// with no tracker involved.
+    #[tokio::test]
+    async fn blob_store_round_trip() {
+        let (_dir, store) = blob_store().await;
+        let mbx = "mbx".to_string();
+        let h1 = iroh_blobs::Hash::new([1; 32]);
+        let h2 = iroh_blobs::Hash::new([2; 32]);
+
+        store.record(&mbx, &[h1, h2]).await.unwrap();
+        let mut got = store.unfetched(&mbx).await.unwrap();
+        got.sort();
+        assert_eq!(got, vec![h1, h2]);
+
+        store.remove(&mbx, &[h1, h2]).await.unwrap();
+        assert!(store.unfetched(&mbx).await.unwrap().is_empty());
+    }
+
+    /// The multi-bind IN clause: removing several hashes in one statement
+    /// must remove exactly those hashes and no others.
+    #[tokio::test]
+    async fn blob_store_multi_hash_remove() {
+        let (_dir, store) = blob_store().await;
+        let mbx = "mbx".to_string();
+        let hashes: Vec<_> = (0u8..5).map(|i| iroh_blobs::Hash::new([i; 32])).collect();
+
+        store.record(&mbx, &hashes).await.unwrap();
+        store
+            .remove(&mbx, &[hashes[0], hashes[2], hashes[4]])
+            .await
+            .unwrap();
+
+        let mut got = store.unfetched(&mbx).await.unwrap();
+        got.sort();
+        let mut want = vec![hashes[1], hashes[3]];
+        want.sort();
+        assert_eq!(got, want);
+    }
+
+    /// Records are idempotent (INSERT OR IGNORE) and isolated per mailbox.
+    #[tokio::test]
+    async fn blob_store_record_is_idempotent_and_scoped() {
+        let (_dir, store) = blob_store().await;
+        let h = iroh_blobs::Hash::new([7; 32]);
+
+        store.record(&"a".into(), &[h]).await.unwrap();
+        store.record(&"a".into(), &[h]).await.unwrap();
+        store.record(&"b".into(), &[h]).await.unwrap();
+
+        assert_eq!(store.unfetched(&"a".into()).await.unwrap(), vec![h]);
+        assert_eq!(store.unfetched(&"b".into()).await.unwrap(), vec![h]);
+
+        store.remove(&"a".into(), &[h]).await.unwrap();
+        assert!(store.unfetched(&"a".into()).await.unwrap().is_empty());
+        assert_eq!(store.unfetched(&"b".into()).await.unwrap(), vec![h]);
+    }
 
     #[tokio::test]
     async fn gate_still_tracks_pool_after_open() {

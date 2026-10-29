@@ -5,23 +5,26 @@ import type {
 	IMailboxTrackerStore,
 } from '../mailbox-tracker/mailbox-tracker-store';
 import {
-	type MailboxConnectionState,
+	type MailboxConnectionHealth,
 	type MailboxId,
-	type MailboxSyncState,
+	type OperationSyncState,
 } from '../mailbox-tracker/types';
 import type { DeviceId, TopicId } from '../p2panda/types';
 
 const MOCK_MAILBOX_ID: MailboxId = 'mock-mailbox';
 
-const syncedToInfinity: MailboxSyncState = new Proxy({} as MailboxSyncState, {
-	get: () =>
-		new Proxy(
-			{},
-			{
-				get: () => Number.MAX_SAFE_INTEGER,
-			},
-		),
-});
+const syncedToInfinity: OperationSyncState = new Proxy(
+	{} as OperationSyncState,
+	{
+		get: () =>
+			new Proxy(
+				{},
+				{
+					get: () => Number.MAX_SAFE_INTEGER,
+				},
+			),
+	},
+);
 
 const constant = <T>(value: T): ReactivePromise<T> =>
 	relay<T>(state => {
@@ -35,7 +38,7 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 	allMailboxIds = reactive(() => constant<MailboxId[]>([MOCK_MAILBOX_ID]));
 
 	connectionState = reactive((_mailboxId: MailboxId) =>
-		constant<MailboxConnectionState>({
+		constant<MailboxConnectionHealth>({
 			status: 'Active',
 			consecutive_errors: 0,
 			next_poll_in_ms: 5000,

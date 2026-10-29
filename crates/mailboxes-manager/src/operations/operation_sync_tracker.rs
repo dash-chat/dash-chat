@@ -8,18 +8,18 @@ use crate::persistence::{MailboxUrlStore, SyncStore};
 use mailbox_client::{ItemTraits, MailboxId, SeqNum, SyncStatus};
 
 /// Per-mailbox sync watermarks: `topic -> author -> highest seq num the mailbox holds`.
-pub type MailboxSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
+pub type OperationSyncState<T, A> = HashMap<T, HashMap<A, SeqNum>>;
 
 /// Watch-based tracker for what each mailbox has acknowledged syncing, backed
 /// by a persistence store (SQLite in production, in-memory for tests).
-pub struct MailboxSyncTracker<T, A> {
+pub struct OperationSyncTracker<T, A> {
     store: Arc<dyn SyncStore<T, A>>,
     mailbox_store: Arc<dyn MailboxUrlStore>,
     all_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
-    per_mailbox: Mutex<HashMap<MailboxId, watch::Sender<MailboxSyncState<T, A>>>>,
+    per_mailbox: Mutex<HashMap<MailboxId, watch::Sender<OperationSyncState<T, A>>>>,
 }
 
-impl<T, A> MailboxSyncTracker<T, A>
+impl<T, A> OperationSyncTracker<T, A>
 where
     T: ItemTraits + 'static,
     A: ItemTraits + 'static,
@@ -48,7 +48,7 @@ where
     pub async fn sync_state(
         &self,
         mailbox: &MailboxId,
-    ) -> anyhow::Result<watch::Receiver<MailboxSyncState<T, A>>> {
+    ) -> anyhow::Result<watch::Receiver<OperationSyncState<T, A>>> {
         let mut per_mailbox = self.per_mailbox.lock().await;
         if let Some(tx) = per_mailbox.get(mailbox) {
             return Ok(tx.subscribe());
@@ -159,7 +159,7 @@ where
     pub async fn get_all_for_mailbox(
         &self,
         mailbox: &MailboxId,
-    ) -> anyhow::Result<MailboxSyncState<T, A>> {
+    ) -> anyhow::Result<OperationSyncState<T, A>> {
         self.store.get_sync_state(mailbox).await
     }
 
@@ -184,7 +184,7 @@ mod tests {
         Mem,
     }
 
-    async fn open(backend: Backend) -> (Option<tempfile::TempDir>, MailboxSyncTracker<u8, char>) {
+    async fn open(backend: Backend) -> (Option<tempfile::TempDir>, OperationSyncTracker<u8, char>) {
         match backend {
             Backend::Sqlite => {
                 let dir = tempfile::tempdir().unwrap();
@@ -193,7 +193,7 @@ mod tests {
                     SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
                         .await
                         .unwrap();
-                let store = MailboxSyncTracker::<u8, char>::new(
+                let store = OperationSyncTracker::<u8, char>::new(
                     persistence.sync_store(),
                     persistence.mailbox_store(),
                     persistence.sync_store().load_all_ids().await.unwrap(),
@@ -204,7 +204,7 @@ mod tests {
                 // Mock-time-safe in-memory backend; a sqlx :memory: pool would
                 // deadlock under tokio::test(start_paused = true).
                 let persistence = crate::persistence::mem::MemPersistence::<u8, char>::new();
-                let store = MailboxSyncTracker::<u8, char>::new(
+                let store = OperationSyncTracker::<u8, char>::new(
                     persistence.sync_store(),
                     persistence.mailbox_store(),
                     BTreeSet::new(),
@@ -379,7 +379,7 @@ mod tests {
                 SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
                     .await
                     .unwrap();
-            let store = MailboxSyncTracker::new(
+            let store = OperationSyncTracker::new(
                 persistence.sync_store(),
                 persistence.mailbox_store(),
                 persistence.sync_store().load_all_ids().await.unwrap(),
@@ -403,7 +403,7 @@ mod tests {
             SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
                 .await
                 .unwrap();
-        let store = MailboxSyncTracker::new(
+        let store = OperationSyncTracker::new(
             persistence.sync_store(),
             persistence.mailbox_store(),
             persistence.sync_store().load_all_ids().await.unwrap(),
@@ -451,8 +451,11 @@ mod tests {
     #[tokio::test]
     async fn all_mailbox_ids_watch_updates_on_record_synced_and_drop() {
         let p = crate::persistence::mem::MemPersistence::<u8, char>::new();
-        let store =
-            MailboxSyncTracker::<u8, char>::new(p.sync_store(), p.mailbox_store(), BTreeSet::new());
+        let store = OperationSyncTracker::<u8, char>::new(
+            p.sync_store(),
+            p.mailbox_store(),
+            BTreeSet::new(),
+        );
         let mut rx = store.all_mailbox_ids();
         assert!(rx.borrow().is_empty());
 
@@ -532,7 +535,7 @@ mod tests {
                 SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
                     .await
                     .unwrap();
-            let store = MailboxSyncTracker::new(
+            let store = OperationSyncTracker::new(
                 persistence.sync_store(),
                 persistence.mailbox_store(),
                 persistence.sync_store().load_all_ids().await.unwrap(),
@@ -548,7 +551,7 @@ mod tests {
             SqlitePersistence::<u8, char>::open(&path, &sqlite_gate::SqliteGate::default())
                 .await
                 .unwrap();
-        let store = MailboxSyncTracker::new(
+        let store = OperationSyncTracker::new(
             persistence.sync_store(),
             persistence.mailbox_store(),
             persistence.sync_store().load_all_ids().await.unwrap(),
@@ -593,8 +596,11 @@ mod tests {
     #[tokio::test]
     async fn sync_state_watch_updates_on_record_synced() {
         let p = crate::persistence::mem::MemPersistence::<u8, char>::new();
-        let store =
-            MailboxSyncTracker::<u8, char>::new(p.sync_store(), p.mailbox_store(), BTreeSet::new());
+        let store = OperationSyncTracker::<u8, char>::new(
+            p.sync_store(),
+            p.mailbox_store(),
+            BTreeSet::new(),
+        );
         let mut rx = store.sync_state(&"mb1".into()).await.unwrap();
         assert!(rx.borrow().is_empty());
 

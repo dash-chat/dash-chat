@@ -294,13 +294,13 @@ mod tests {
         // The mailbox should have recorded alice's seq 0 from both sides.
         let alice_sync = alice
             .mailboxes
-            .sync_tracker()
+            .operation_tracker()
             .sync_state(&mailbox_id)
             .await
             .expect("alice sync state missing");
         let bobbi_sync = bobbi
             .mailboxes
-            .sync_tracker()
+            .operation_tracker()
             .sync_state(&mailbox_id)
             .await
             .expect("bobbi sync state missing");
