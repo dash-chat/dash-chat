@@ -48,13 +48,13 @@ reporting = { path = "crates/reporting" }
 #   CRDT, so a non-admin can leave a space.
 # - `PendingSpace::publisher`, so a space's topic can import mailbox
 #   operations before we have joined it.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "1f68a9e4" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "1f68a9e4", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "faaa1175" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "faaa1175", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "1f68a9e4" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "1f68a9e4" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "1f68a9e4", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "faaa1175" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "faaa1175" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "faaa1175", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -62,9 +62,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "1f68a9e4"
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "1f68a9e4" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "1f68a9e4" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "1f68a9e4" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "faaa1175" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "faaa1175" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "faaa1175" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [
