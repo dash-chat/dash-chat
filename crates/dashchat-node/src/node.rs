@@ -1234,7 +1234,8 @@ impl Node {
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta.clone(), reply);
+        let lamport = self.next_lamport(chat_id).await?;
+        let message = ChatMessageContent::new(message, meta.clone(), reply, lamport);
         let header = self.send_message_raw(chat_id, message).await?;
         if let Some(bundle) = meta {
             let topic_id: TopicId = chat_id.into();
@@ -1255,10 +1256,9 @@ impl Node {
     pub async fn send_message_raw(
         &self,
         topic: impl Into<ChatId>,
-        mut message: ChatMessageContent,
+        message: ChatMessageContent,
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
-        message.lamport = self.next_lamport(topic).await?;
 
         let header = self
             .publish(topic, Payload::Chat(ChatPayload::Message(message)), None)

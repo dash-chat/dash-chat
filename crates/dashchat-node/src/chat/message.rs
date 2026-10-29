@@ -12,12 +12,8 @@ pub struct ChatMessageContentV1 {
     /// messages unchanged (and silently drop the reply on newer ones).
     #[serde(default)]
     pub reply: Option<Hash>,
-    /// Lamport counter: one greater than the highest `lamport` among the chat
-    /// messages the author had processed in this topic when sending (see
-    /// `Node::next_lamport`). The primary display-ordering criterion, so a
-    /// reply never sorts before the message it answers even when the authors'
-    /// clocks disagree; the wall-clock header timestamp is never adjusted and
-    /// only tie-breaks. `0` on messages from clients that predate the field.
+    /// Lamport timestamp, used to ensure that new messages published after
+    /// existing messages are ordered after them, regardless of wall timestamp.
     #[serde(default)]
     pub lamport: u64,
 }
@@ -183,12 +179,13 @@ impl ChatMessageContent {
         message: impl Into<String>,
         media: Option<MediaBundle>,
         reply: Option<Hash>,
+        lamport: u64,
     ) -> Self {
         ChatMessageContentV1 {
             message: message.into(),
             media,
             reply,
-            lamport: 0,
+            lamport,
         }
     }
 
@@ -284,7 +281,7 @@ mod tests {
     #[test]
     fn chat_message_v1_reply_roundtrip() {
         let target = Hash::from_bytes([7; 32]);
-        let v1 = ChatMessageContent::new("hello", None, Some(target));
+        let v1 = ChatMessageContent::new("hello", None, Some(target), 0);
         let bytes = encode_cbor(&v1).unwrap();
         let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
         assert_eq!(decoded, v1);
