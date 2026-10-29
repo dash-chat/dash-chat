@@ -240,15 +240,14 @@
 	}
 
 	function goToPreviousMatch() {
-		if (!matchingHashes.length) return;
-		currentMatchIndex =
-			(currentMatchIndex - 1 + matchingHashes.length) % matchingHashes.length;
+		if (currentMatchIndex <= 0) return;
+		currentMatchIndex -= 1;
 		scrollToMatch();
 	}
 
 	function goToNextMatch() {
-		if (!matchingHashes.length) return;
-		currentMatchIndex = (currentMatchIndex + 1) % matchingHashes.length;
+		if (currentMatchIndex >= matchingHashes.length - 1) return;
+		currentMatchIndex += 1;
 		scrollToMatch();
 	}
 

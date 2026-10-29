@@ -10,6 +10,8 @@ import {
 } from 'dash-chat-stores';
 import { find } from 'linkifyjs';
 
+import { searchMatchRanges, searchTerms } from './message-search';
+
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
 
 export function canEditMessage(
@@ -130,13 +132,25 @@ function escapeHtml(text: string): string {
 		.replace(/"/g, '&quot;');
 }
 
-export function highlightMatch(text: string, query: string): string {
-	if (!query) return escapeHtml(text);
-	const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	return escapeHtml(text).replace(
-		new RegExp(`(${escaped})`, 'gi'),
-		'<mark class="search-highlight">$1</mark>',
-	);
+/** Escaped HTML for `text[start, end)`, with the parts inside `matches`
+ * (ranges over the whole text) wrapped as search highlights. */
+function highlightedHtml(
+	text: string,
+	start: number,
+	end: number,
+	matches: Array<[number, number]>,
+): string {
+	let html = '';
+	let cursor = start;
+	for (const [matchStart, matchEnd] of matches) {
+		const from = Math.max(matchStart, cursor);
+		const to = Math.min(matchEnd, end);
+		if (from >= to) continue;
+		html += escapeHtml(text.slice(cursor, from));
+		html += `<mark class="search-highlight">${escapeHtml(text.slice(from, to))}</mark>`;
+		cursor = to;
+	}
+	return html + escapeHtml(text.slice(cursor, end));
 }
 
 /** Run `callback` once a smooth scroll triggered somewhere under `root` has
@@ -222,13 +236,14 @@ function flashCard(card: Element): void {
 /** Escaped HTML for a message body: http(s) urls become anchors, and search
  * matches are highlighted within each run. */
 export function messageTextHtml(text: string, query: string): string {
+	const matches = searchMatchRanges(text, searchTerms(query));
 	let html = '';
 	let cursor = 0;
 	for (const link of find(text, 'url', { defaultProtocol: 'https' })) {
 		if (!/^https?:\/\//i.test(link.href)) continue;
-		html += highlightMatch(text.slice(cursor, link.start), query);
-		html += `<a href="${escapeHtml(link.href)}" class="message-link" data-testid="message-link">${highlightMatch(link.value, query)}</a>`;
+		html += highlightedHtml(text, cursor, link.start, matches);
+		html += `<a href="${escapeHtml(link.href)}" class="message-link" data-testid="message-link">${highlightedHtml(text, link.start, link.end, matches)}</a>`;
 		cursor = link.end;
 	}
-	return html + highlightMatch(text.slice(cursor), query);
+	return html + highlightedHtml(text, cursor, text.length, matches);
 }

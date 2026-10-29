@@ -45,7 +45,7 @@
 		{/if}
 	</span>
 	<button
-		disabled={total === 0}
+		disabled={current <= 1}
 		onclick={onPrevious}
 		class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
 		aria-label={m.previousResult()}
@@ -53,7 +53,7 @@
 		<wa-icon src={wrapPathInSvg(mdiChevronUp)}></wa-icon>
 	</button>
 	<button
-		disabled={total === 0}
+		disabled={current >= total}
 		onclick={onNext}
 		class="flex h-8 w-8 items-center justify-center disabled:opacity-30"
 		aria-label={m.nextResult()}
