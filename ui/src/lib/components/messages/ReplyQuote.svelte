@@ -4,6 +4,7 @@
 	import { useDeviceId } from '$lib/stores/my-device-id';
 	import BlobImage from '$lib/components/BlobImage.svelte';
 	import QuoteFrame from './QuoteFrame.svelte';
+	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
 
 	let {
 		reply,
@@ -51,6 +52,7 @@
 </script>
 
 <button
+	use:keepKeyboardOpen
 	type="button"
 	class="reply-quote"
 	class:cursor-default={scrollTarget === undefined}
