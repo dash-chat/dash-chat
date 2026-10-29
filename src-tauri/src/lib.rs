@@ -93,13 +93,28 @@ pub fn run() {
                 .build(),
         );
     }
-    // E2E tests run multiple built instances side-by-side; skip single-instance,
-    // updater, and MCP bridge plugins. macOS has no WebDriver for WKWebView, so
+    // E2E tests run multiple built instances side-by-side; skip single-instance
+    // and MCP bridge plugins. macOS has no WebDriver for WKWebView, so
     // the e2e harness drives the app through a W3C server embedded here, on
     // the port TAURI_WEBDRIVER_PORT names.
     #[cfg(all(not(mobile), feature = "e2e-tests"))]
     {
         builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+        // The updater spec opts back into the real updater plugin by pointing
+        // it at a mock endpoint (see the context mutation below) and naming the
+        // version the app should believe it runs, since every e2e instance is
+        // built from the same checkout and would otherwise never see an update.
+        if std::env::var("E2E_UPDATER_URL").is_ok() {
+            let current: semver::Version = std::env::var("E2E_UPDATER_CURRENT_VERSION")
+                .expect("E2E_UPDATER_URL is set but E2E_UPDATER_CURRENT_VERSION is not")
+                .parse()
+                .expect("E2E_UPDATER_CURRENT_VERSION is not a semver version");
+            builder = builder.plugin(
+                tauri_plugin_updater::Builder::new()
+                    .default_version_comparator(move |_, update| update.version > current)
+                    .build(),
+            );
+        }
     }
     #[cfg(all(not(mobile), not(feature = "e2e-tests")))]
     {
@@ -208,6 +223,16 @@ pub fn run() {
         }));
     }
 
+    #[cfg_attr(any(mobile, not(feature = "e2e-tests")), allow(unused_mut))]
+    let mut context = tauri::generate_context!();
+    #[cfg(all(not(mobile), feature = "e2e-tests"))]
+    if let Ok(url) = std::env::var("E2E_UPDATER_URL") {
+        if let Some(config) = context.config_mut().plugins.0.get_mut("updater") {
+            config["endpoints"] = serde_json::json!([url]);
+            config["dangerousInsecureTransportProtocol"] = serde_json::json!(true);
+        }
+    }
+
     builder
         .on_window_event(|window, event| match event {
             #[cfg(desktop)]
@@ -246,7 +271,7 @@ pub fn run() {
             result?;
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             #[cfg(mobile)]

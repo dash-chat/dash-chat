@@ -97,6 +97,9 @@ export async function isAgentAppRunning(slot: number): Promise<boolean> {
 
 /** The apps this worker launched, by slot. */
 const launched = new Map<number, ChildProcess>();
+/** Extra env for each slot's app, kept so a relaunch (`Agent.restart`) brings
+ *  the agent back with the same configuration. */
+const agentEnv = new Map<number, NodeJS.ProcessEnv>();
 /** The echo of each launched agent's log, by slot. */
 const loggers = new Map<number, ChildProcess>();
 
@@ -164,14 +167,12 @@ export async function launchDesktopApp(
  *  listening. On Linux the opener stub goes on its PATH. */
 export async function launchAgentApp(slot: number): Promise<void> {
 	const port = agentPort(slot);
-	const app = await launchDesktopApp(
-		APP_BINARY,
-		agentDir(slot),
-		port,
-		MACOS
+	const app = await launchDesktopApp(APP_BINARY, agentDir(slot), port, {
+		...(MACOS
 			? {}
-			: { PATH: `${installXdgOpenStub(slot)}:${process.env.PATH ?? ''}` },
-	);
+			: { PATH: `${installXdgOpenStub(slot)}:${process.env.PATH ?? ''}` }),
+		...agentEnv.get(slot),
+	});
 	launched.set(slot, app);
 }
 
@@ -258,7 +259,9 @@ export async function connectDesktopAgent(
  *  its log echoed — and open a WebDriver session to it. */
 export async function launchDesktopAgent(
 	slot: number,
+	env: NodeJS.ProcessEnv = {},
 ): Promise<WebdriverIO.Browser> {
+	agentEnv.set(slot, env);
 	prepareDesktopAgent(slot);
 	await launchAgentApp(slot);
 	return await connectDesktopAgent(slot);
@@ -268,6 +271,7 @@ export async function launchDesktopAgent(
 export async function discardDesktopAgent(slot: number): Promise<void> {
 	await killAgentApp(slot);
 	launched.delete(slot);
+	agentEnv.delete(slot);
 	loggers.get(slot)?.kill();
 	loggers.delete(slot);
 	rmSync(agentDir(slot), { recursive: true, force: true });
