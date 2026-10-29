@@ -20,8 +20,12 @@
 	const mockUpdate: false | 'available' | 'downloading' | 'ready' | 'error' =
 		false;
 
+	// The e2e frontend build has DEV set (the harness builds it under
+	// NODE_ENV=test), but its updater spec needs the real check to run.
+	const isE2E = import.meta.env.VITE_E2E === 'true';
+
 	onMount(() => {
-		if (!isTauriEnv() || isMobile || import.meta.env.DEV) {
+		if (!isTauriEnv() || isMobile || (import.meta.env.DEV && !isE2E)) {
 			if (mockUpdate) simulateMockUpdate(mockUpdate);
 			return;
 		}
