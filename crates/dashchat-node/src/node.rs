@@ -1255,15 +1255,39 @@ impl Node {
     pub async fn send_message_raw(
         &self,
         topic: impl Into<ChatId>,
-        message: ChatMessageContent,
+        mut message: ChatMessageContent,
     ) -> anyhow::Result<Header> {
         let topic = topic.into();
+        message.lamport = self.next_lamport(topic).await?;
 
         let header = self
             .publish(topic, Payload::Chat(ChatPayload::Message(message)), None)
             .await?;
 
         Ok(header)
+    }
+
+    /// One greater than the highest message `lamport` in this topic's logs
+    /// (see `ChatMessageContent::lamport`). Scanning the stored ops at send
+    /// time makes the counter survive restarts and absorb received peers'
+    /// counters with no extra state; the scan is O(topic size) per send.
+    async fn next_lamport(&self, topic: ChatId) -> anyhow::Result<u64> {
+        let log_id = LogId::from(topic);
+        let authors = self.op_store.get_authors(log_id).await?;
+        let mut max = 0;
+        for author in authors {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body.as_ref() else {
+                    continue;
+                };
+                let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
+                else {
+                    continue;
+                };
+                max = max.max(message.lamport);
+            }
+        }
+        Ok(max + 1)
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]

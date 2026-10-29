@@ -10,20 +10,53 @@ export interface EventGroupsInDay<T> {
 export interface EventWithProvenance<T> {
 	event: T;
 	timestamp: number;
+	/** Lamport counter of the underlying operation; `0` for events whose
+	 * operations don't carry one (reports, blocks, group control, pre-lamport
+	 * messages). Primary ordering criterion — see `orderEventsAscending`. */
+	lamport: number;
 	author: DeviceId;
 	type: string;
 }
 
 export type EventGroup<T> = Array<[Hash, T]>;
 
+/** Events in display order: lamport first — so a reply never sorts before the
+ * message it answers even when the authors' clocks disagree — with the
+ * wall-clock timestamp and author as tiebreakers. Events without a lamport
+ * (`0`) are anchored to the highest lamport among events timestamped at or
+ * before them, which keeps them in their wall-clock position within the
+ * lamport sequence instead of all sorting first. */
+export function orderEventsAscending<T>(
+	events: Record<Hash, EventWithProvenance<T>>,
+): Array<[Hash, EventWithProvenance<T>]> {
+	const byTimestamp = Object.entries(events).sort(
+		(m1, m2) =>
+			m1[1].timestamp - m2[1].timestamp ||
+			m1[1].author.localeCompare(m2[1].author),
+	);
+	let maxLamport = 0;
+	const anchored = byTimestamp.map(([hash, event]) => {
+		maxLamport = Math.max(maxLamport, event.lamport);
+		const lamport = event.lamport > 0 ? event.lamport : maxLamport;
+		return { hash, event, lamport };
+	});
+	anchored.sort(
+		(m1, m2) =>
+			m1.lamport - m2.lamport ||
+			m1.event.timestamp - m2.event.timestamp ||
+			m1.event.author.localeCompare(m2.event.author),
+	);
+	return anchored.map(
+		({ hash, event }) => [hash, event] as [Hash, EventWithProvenance<T>],
+	);
+}
+
 export function groupEventsInDays<T>(
 	events: Record<Hash, EventWithProvenance<T>>,
 	agentSets: Array<Array<DeviceId>>,
 ): Array<EventGroupsInDay<T>> {
 	const eventsGroupsInDay: EventGroupsInDay<EventWithProvenance<T>>[] = [];
-	const orderedAscendingEvents = Object.entries(events).sort(
-		(m1, m2) => m1[1].timestamp - m2[1].timestamp,
-	);
+	const orderedAscendingEvents = orderEventsAscending(events);
 	for (const [eventHash, event] of orderedAscendingEvents) {
 		if (eventsGroupsInDay.length === 0) {
 			const date = new Date(event.timestamp);
@@ -58,7 +91,7 @@ export function groupEventsInDays<T>(
 				currentMessageAgentSet !== undefined &&
 				lastMessageAgentSet === currentMessageAgentSet;
 			const sameTimeframe =
-				event.timestamp - lastEvent.timestamp <
+				Math.abs(event.timestamp - lastEvent.timestamp) <
 				MESSAGE_SET_TIMEFRAME_INTERVAL_MS;
 			const sameType = lastEvent.type === event.type;
 
@@ -68,7 +101,10 @@ export function groupEventsInDays<T>(
 			date.setSeconds(0);
 			date.setMilliseconds(0);
 
-			if (date.valueOf() === lastEventGroupsInDay.day.valueOf()) {
+			// `<=` rather than `===`: lamport order can place a skew-stamped
+			// event after one with a later wall-clock day; clamping into the
+			// current day keeps the day headers monotonic.
+			if (date.valueOf() <= lastEventGroupsInDay.day.valueOf()) {
 				if (sameProvenance && sameTimeframe && sameType) {
 					lastEventGroup.push([eventHash, event]);
 				} else {

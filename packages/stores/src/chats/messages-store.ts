@@ -42,6 +42,9 @@ export interface Message {
 	 * `'deleted-for-everyone'` once deleted. */
 	content: MessageDisplay;
 	timestamp: number;
+	/** See `MessageContentV1.lamport`; `0` when the payload carries none or is
+	 * gone (tombstoned). */
+	lamport: number;
 	author: DeviceId;
 	seqNum: number;
 	replyQuote?: MessageReply;
@@ -52,6 +55,7 @@ export interface Message {
 export type Bodyless = {
 	hash: string;
 	timestamp: number;
+	lamport: number;
 	author: DeviceId;
 	seqNum: number;
 };
@@ -176,7 +180,7 @@ export class MessagesStore {
 		const messages = await this.messages();
 
 		const sortedMessages = Object.values(messages).sort(
-			(m1, m2) => m2.timestamp - m1.timestamp,
+			(m1, m2) => m2.lamport - m1.lamport || m2.timestamp - m1.timestamp,
 		);
 		return sortedMessages.length > 0 ? sortedMessages[0] : undefined;
 	});
@@ -325,6 +329,7 @@ function logsToMessages(
 				author,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
+				lamport: 0,
 			};
 			continue;
 		}
@@ -383,6 +388,7 @@ function logsToMessages(
 				author,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
+				lamport: body.payload.payload.lamport ?? 0,
 				replyQuote: replyQuote,
 			};
 		} else if (body.payload.type === 'Reaction') {
@@ -478,6 +484,7 @@ function placeholderFor(message: Bodyless): Message {
 		author: message.author,
 		seqNum: message.seqNum,
 		timestamp: message.timestamp,
+		lamport: message.lamport,
 	};
 }
 
