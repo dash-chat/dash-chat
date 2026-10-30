@@ -60,6 +60,7 @@
 		reportUncaughtErrors,
 	} from '$lib/utils/logs';
 	import { handleUrls } from '$lib/utils/deep-links';
+	import { trackHistoryDepth } from '$lib/utils/navigation';
 	import { followPendingNavigations } from '$lib/utils/pending-navigations';
 
 	import { m } from '$lib/paraglide/messages.js';
@@ -94,6 +95,7 @@
 	// Forward console.log/info/warn/error from the WebView to the tauri logs
 	forwardConsoleToTauriLog();
 	reportUncaughtErrors();
+	trackHistoryDepth();
 
 	let { children } = $props();
 

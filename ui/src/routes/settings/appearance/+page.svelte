@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -42,7 +43,7 @@
 		{#snippet left()}
 			{#if !isWideScreen.value}
 				<NavbarBackLink
-					onClick={() => goto('/settings')}
+					onClick={() => goBack('/settings')}
 					data-testid="appearance-back"
 				/>
 			{/if}

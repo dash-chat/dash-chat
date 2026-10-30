@@ -2,6 +2,7 @@ import { tid } from '../../selectors';
 import { TestHelper } from '../test-helper';
 
 export class GroupInfoEditPage extends TestHelper {
+	back = this.el(tid('group-info-edit-back'));
 	nameInput = this.el(tid('group-info-edit-name'));
 	descriptionInput = this.el(tid('group-info-edit-description'));
 	editPhotoButton = this.el(tid('edit-photo'));

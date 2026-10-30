@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ContactsStore, Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { settled, useReactivePromise } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
@@ -68,7 +68,7 @@
 				avatar,
 				about: about || undefined,
 			});
-			goto('/settings/profile');
+			goBack('/settings/profile');
 		} catch (e) {
 			console.error(e);
 			const error = e as Error;
@@ -103,7 +103,7 @@
 		>
 			{#snippet left()}
 				<NavbarBackLink
-					onClick={() => goto('/settings/profile')}
+					onClick={() => goBack('/settings/profile')}
 					data-testid="edit-about-back"
 				/>
 			{/snippet}

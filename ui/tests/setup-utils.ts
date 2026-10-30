@@ -683,6 +683,11 @@ export const testUtils = {
 	setLocale: (_locale: string) => {},
 	/** SvelteKit goto — set by registerTestUtils from +layout.svelte. */
 	goto: (_path: string) => Promise.resolve() as Promise<void>,
+	/** Current pathname, for history-stack assertions. */
+	currentPath: (): string => location.pathname,
+	/** `history.forward()`: after a Back that popped the stack it returns to
+	 * the popped page, while a Back that pushed leaves nothing ahead. */
+	historyForward: (): void => history.forward(),
 	/** Enable preview features — set by registerTestUtils from +layout.svelte. */
 	enablePreviewFeatures: (): void => {
 		throw new Error(

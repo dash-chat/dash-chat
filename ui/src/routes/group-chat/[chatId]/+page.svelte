@@ -7,7 +7,7 @@
 	} from '$lib/stores/use-signal';
 	import { getContext, setContext } from 'svelte';
 	import type { Action } from 'svelte/action';
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import {
 		fullName,
 		type ChatsStore,
@@ -137,7 +137,7 @@
 				{#snippet left()}
 					{#if !isWideScreen.value}
 						<NavbarBackLink
-							onClick={() => goto('/')}
+							onClick={() => goBack('/')}
 							data-testid="group-chat-back"
 						/>
 					{/if}

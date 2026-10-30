@@ -2,7 +2,7 @@
 	import type { ContactsStore } from 'dash-chat-stores';
 	import type { Error } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { m } from '$lib/paraglide/messages.js';
 	import { Page } from 'konsta/svelte';
@@ -39,7 +39,7 @@
 				avatar,
 				about,
 			});
-			goto('/settings/profile');
+			goBack('/settings/profile');
 		} catch (e) {
 			console.error(e);
 			const error = e as Error;
@@ -60,7 +60,7 @@
 	<AvatarPicker
 		loading={$myProfile === undefined}
 		bind:avatar
-		onClose={() => goto('/settings/profile')}
+		onClose={() => goBack('/settings/profile')}
 		onSave={save}
 		saveLabel={m.save()}
 		saveDisabled={!hasChanges}

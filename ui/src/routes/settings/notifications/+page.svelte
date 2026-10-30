@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
@@ -64,7 +64,7 @@
 		{#snippet left()}
 			{#if !isWideScreen.value}
 				<NavbarBackLink
-					onClick={() => goto('/settings')}
+					onClick={() => goBack('/settings')}
 					data-testid="notifications-back"
 				/>
 			{/if}

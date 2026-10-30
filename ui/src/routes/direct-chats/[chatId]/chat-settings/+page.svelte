@@ -7,6 +7,7 @@
 	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiBellOutline,
@@ -72,7 +73,7 @@
 		<Navbar transparent={true}>
 			{#snippet left()}
 				<NavbarBackLink
-					onClick={() => goto(`/direct-chats/${chatId}`)}
+					onClick={() => goBack(`/direct-chats/${chatId}`)}
 					data-testid="chat-settings-back"
 				/>
 			{/snippet}
