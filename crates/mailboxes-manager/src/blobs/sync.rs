@@ -203,7 +203,7 @@ where
             if blob_height.is_some_and(|h| h >= op_height) {
                 continue;
             }
-            let candidates = height_candidates_for_log(
+            let Some(candidates) = height_candidates_for_log(
                 source,
                 mailbox_id,
                 reader,
@@ -212,7 +212,13 @@ where
                 blob_height,
                 op_height,
             )
-            .await;
+            .await
+            else {
+                // `None` means "the window could not be walked" — don't
+                // push a `LogCandidates` for it, so no height bump lands
+                // and the next pass retries the same range.
+                continue;
+            };
             logs.push(LogCandidates {
                 topic,
                 author,
@@ -241,6 +247,13 @@ where
 /// the mailbox by its own fetch retries against our now-held copy. This
 /// is intentional: late-arrival is the mailbox's pull problem, not our
 /// push gap.
+///
+/// Returns `None` when the window could not be walked (a `get_log` read
+/// error, or an `(author, topic)` log that doesn't exist locally) — the
+/// caller must not push the `LogCandidates` for the log and the height
+/// stays put so the next pass retries. Returning `Some(vec![])` would
+/// collapse "unreadable" and "nothing to do" onto the same arm, and the
+/// caller would close the window permanently for blobs it never saw.
 async fn height_candidates_for_log<Item>(
     source: &dyn CandidateSource<Item>,
     mailbox_id: &mailbox_client::MailboxId,
@@ -249,17 +262,17 @@ async fn height_candidates_for_log<Item>(
     author: Item::Author,
     blob_height: Option<SeqNum>,
     op_height: SeqNum,
-) -> Vec<(SeqNum, iroh_blobs::Hash)>
+) -> Option<Vec<(SeqNum, iroh_blobs::Hash)>>
 where
     Item: MailboxItem,
 {
     let from = blob_height.map_or(0, |h| h + 1);
     let ops = match source.get_log(&author, &topic, from).await {
         Ok(Some(ops)) => ops,
-        Ok(None) => return Vec::new(),
+        Ok(None) => return None,
         Err(err) => {
             tracing::error!(?err, mailbox = %mailbox_id, "failed to read op log for blob candidates");
-            return Vec::new();
+            return None;
         }
     };
 
@@ -275,7 +288,7 @@ where
             }
         }
     }
-    out
+    Some(out)
 }
 
 /// Advance each log's blob height from the announce response. The height
@@ -491,6 +504,9 @@ mod tests {
         /// When true, `blob_heights` reads error — to test that a transient
         /// read failure cannot be replaced by an all-empty state.
         fail_blob_heights: bool,
+        /// When true, `get_log` reads error — to test that a transient op-log
+        /// read failure leaves the log out of the pass's `LogCandidates`.
+        fail_get_log: bool,
     }
 
     impl FakeBlobOpSource {
@@ -501,6 +517,7 @@ mod tests {
                 blob_heights: HashMap::new(),
                 outstanding: Vec::new(),
                 fail_blob_heights: false,
+                fail_get_log: false,
             }
         }
 
@@ -561,6 +578,9 @@ mod tests {
             topic: &u8,
             from: SeqNum,
         ) -> anyhow::Result<Option<Vec<BlobOp>>> {
+            if self.fail_get_log {
+                return Err(anyhow::anyhow!("simulated get_log failure"));
+            }
             Ok(self
                 .ops
                 .get(&(*topic, *author))
@@ -599,7 +619,8 @@ mod tests {
             None, // no blob_height recorded
             2,    // op watermark
         )
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(
             out.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
@@ -627,7 +648,8 @@ mod tests {
             Some(1),
             3,
         )
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(
             out.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
@@ -644,7 +666,8 @@ mod tests {
 
         let out =
             height_candidates_for_log::<BlobOp>(&s, &"mbx".into(), &holds_none(), 1, 'a', None, 1)
-                .await;
+                .await
+                .unwrap();
 
         assert!(out.is_empty());
     }
@@ -657,7 +680,8 @@ mod tests {
 
         let out =
             height_candidates_for_log::<BlobOp>(&s, &"mbx".into(), &holds_all(), 1, 'a', None, 1)
-                .await;
+                .await
+                .unwrap();
 
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].0, 1);
@@ -679,7 +703,8 @@ mod tests {
             Some(1),
             3,
         )
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(
             out.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
@@ -739,6 +764,24 @@ mod tests {
         assert!(
             out.blob_heights.is_empty(),
             "blob state snapshot is empty on failure so advance_blob_heights writes nothing"
+        );
+    }
+
+    /// A `get_log` read failure leaves the log out of the pass's
+    /// `LogCandidates` entirely, so `advance_blob_heights` writes nothing
+    /// for it and the next pass retries the window.
+    #[tokio::test]
+    async fn a_failed_get_log_read_drops_the_log_from_the_pass() {
+        let mut s = FakeBlobOpSource::new().with_op_height(1, 'a', 5);
+        s.push_op(1, 'a', 0, Some(h(1)));
+        s.push_op(1, 'a', 1, Some(h(2)));
+        s.fail_get_log = true;
+
+        let out = blob_candidates_from::<BlobOp>(&s, &"mbx".into(), &holds_all()).await;
+
+        assert!(
+            out.logs.is_empty(),
+            "a failed get_log read must not substitute a walked-nothing outcome"
         );
     }
 
