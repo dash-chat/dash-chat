@@ -653,8 +653,8 @@ export class Message extends TestHelper {
 	/** The message's wrapper element in the list. */
 	readonly wrapper;
 
-	/** Every message mounts its own (closed) actions popover, so the menu and
-	 * its actions must be resolved scoped to this message's wrapper. */
+	/** Each message hosts its own actions menu, so the menu and its actions
+	 * must be resolved scoped to this message's wrapper. */
 	get actionsMenu() {
 		return this.wrapper.$(tid('message-actions-menu'));
 	}

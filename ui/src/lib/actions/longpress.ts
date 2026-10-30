@@ -2,6 +2,9 @@ import type { Action } from 'svelte/action';
 
 interface LongPressParams {
 	onLongPress: (e: MouseEvent | TouchEvent, element: HTMLElement) => void;
+	/** Called once a touch has rested on the element for a moment, well before
+	 * the long-press fires. */
+	onPressStart?: () => void;
 	duration?: number;
 }
 
@@ -12,8 +15,16 @@ function suppressNativeLongPress(target: HTMLElement) {
 	target.style.setProperty('-webkit-touch-callout', 'none');
 }
 
-export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
+// A flick starts with a touch too; only a finger that stays put is pressing.
+const PRESS_SETTLE_MS = 150;
+
+export function longPressHandlers({
+	onLongPress,
+	onPressStart,
+	duration,
+}: LongPressParams) {
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let settleTimer: ReturnType<typeof setTimeout> | undefined;
 	let triggered = false;
 
 	return {
@@ -22,6 +33,8 @@ export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
 			const element = e.currentTarget;
 			if (!(element instanceof HTMLElement)) return;
 			suppressNativeLongPress(element);
+			clearTimeout(settleTimer);
+			if (onPressStart) settleTimer = setTimeout(onPressStart, PRESS_SETTLE_MS);
 			clearTimeout(timer);
 			triggered = false;
 			timer = setTimeout(() => {
@@ -32,9 +45,11 @@ export function longPressHandlers({ onLongPress, duration }: LongPressParams) {
 		},
 		ontouchmove() {
 			clearTimeout(timer);
+			clearTimeout(settleTimer);
 		},
 		ontouchend(e: TouchEvent) {
 			clearTimeout(timer);
+			clearTimeout(settleTimer);
 			if (triggered) {
 				triggered = false;
 				e.preventDefault();

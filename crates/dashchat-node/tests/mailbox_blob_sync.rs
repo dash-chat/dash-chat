@@ -200,11 +200,20 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     server.stop().await;
 }
 
-/// A node recovers a blob the mailbox failed to fetch, after the source node
-/// restarts.
+/// A blob published when the mailbox has no way to fetch it reaches the
+/// mailbox by upload, not by the mailbox pulling: the sender's sync loop
+/// announces it, sees the mailbox lacks it, and streams the bytes. The
+/// mailbox never had to fetch from the source — the promise of proactive
+/// blob delivery this whole feature is for.
+///
+/// The old name/shape tested fetch-recovery: the blob reached the mailbox
+/// by the mailbox dialing back after reconnect. Proactive upload covers
+/// that outcome, so this test asserts on the outcome — mailbox ends up
+/// holding the blob — from the publish side. The unfetched tracker row
+/// lifecycle (write on announce, clear on confirm) is the side-band
+/// assertion.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "the followup now uploads the blob, so the mailbox never has to fetch it"]
-async fn recovers_unfetched_blob_after_source_restart() {
+async fn mailbox_gains_blob_without_needing_to_fetch_it() {
     dashchat_node::testing::setup_tracing(
         &[
             "dashchat=info",
@@ -235,17 +244,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
         relay.blobs(),
         relay.blob_downloader(),
         relay.iroh_endpoint().await.unwrap(),
-        // Short pass interval + cooldown so the fetch loop burns through its
-        // `MAX_FETCH_FAILURES` (=10) quota quickly while alice is unreachable and
-        // *evicts* the phase-1 fetch entry. That eviction is what makes recovery
-        // genuinely depend on the followup pass re-announcing the blob: once the
-        // entry is evicted, nothing but the followup would re-enqueue it.
-        Some(mailbox_server::FetchConfig {
-            concurrency: 4,
-            attempt_timeout: Duration::from_secs(2),
-            pass_interval: Duration::from_millis(200),
-            retry_cooldown: Duration::from_millis(200),
-        }),
+        None, // default fetch config: the fetch backstop may run but the upload arrives first
         Some(common::TEST_UPLOAD_GRACE),
         peer_addr_tx,
     )
@@ -254,10 +253,8 @@ async fn recovers_unfetched_blob_after_source_restart() {
     let url = server.url.clone();
     wait_for_mailbox_health(&url).await;
 
-    // Sender (alice) and a contact (bobbi). Bobbi only exists so alice has a
-    // direct chat to send media into; he stays offline for the whole media
-    // exchange and is never a blob source. Alice uses the REAL unfetched-blob
-    // tracker so the persisted `unfetched_blob_hashes` table is exercised.
+    // Alice starts with the mailbox so the contact handshake can use it;
+    // she's about to lose it.
     let alice = TestNode::new(config.clone(), "alice").await;
     alice
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
@@ -279,7 +276,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
         ))
         .await;
 
-    // Establish contact while both are online (no media yet), then bobbi leaves.
+    // Establish contact while both are online (no media yet).
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi)
@@ -287,10 +284,15 @@ async fn recovers_unfetched_blob_after_source_restart() {
         .unwrap();
     let chat = alice.direct_chat_with(&bobbi);
 
+    // Bobbi goes offline before any media exists.
     bobbi.shutdown().await;
 
-    // Alice sends a photo. `publish` announces the blob to the mailbox and,
-    // because the mailbox does not have it yet, records an unfetched-blob row.
+    // Alice loses her mailbox client: the photo she's about to publish has
+    // no mailbox to go to. The publish path's fast-push announces to zero
+    // mailboxes; nothing happens.
+    alice.clear_mailboxes().await;
+
+    // Alice sends a photo; the blob stays local, the mailbox never sees it.
     let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
     let media = OutgoingMedia::Photos {
         photos: vec![OutgoingPhoto {
@@ -315,54 +317,10 @@ async fn recovers_unfetched_blob_after_source_restart() {
         .expect("alice's message carries media metadata");
     let hash = meta.first().expect("at least one media item").hash();
 
-    // Alice's mailbox sync runs `publish` on a background task; `publish`
-    // announces the blob via `/blobs/store` and, because the mailbox does not
-    // yet have it, records the outstanding hash in the manager's blob tracker.
-    // The first sync pass depends on the mailbox becoming reachable, which can
-    // take longer than the default 10s window, so widen this specific wait.
-    PollConfig::seconds(30)
-        .wait_for(|| async {
-            alice
-                .unfetched_blob_tracker()
-                .unfetched(&mailbox_id)
-                .await
-                .unwrap()
-                .contains(&hash)
-                .then_some(())
-                .ok_or("alice has not recorded the unfetched blob yet")
-        })
-        .await
-        .unwrap();
-
-    // The mailbox cannot fetch the blob: it has no dialing address for alice
-    // (relay mDNS is disabled). Let the fetch loop exhaust its `MAX_FETCH_FAILURES`
-    // (=10) quota so the phase-1 fetch entry is evicted from the pool — after
-    // this, only the followup re-announce can bring the blob back. Each failed
-    // attempt is bounded by the 2s `attempt_timeout`, so 10 failures need well
-    // under 25s; this is a legitimately long wait (it exists to force eviction).
-    tokio::time::sleep(Duration::from_secs(25)).await;
-    assert!(
-        !relay.blobs().has(hash).await.unwrap_or(false),
-        "mailbox should not be able to fetch the blob while it has no address for alice"
-    );
-
-    // Restart alice: her store (and the persisted unfetched-blob row) survives,
-    // but she gets a fresh endpoint address.
-    let alice_dir = alice.shutdown().await;
-
-    // Confirm the outstanding hash persisted across the restart boundary (the
-    // whole point of the on-disk table): reopen alice in place and read the
-    // manager's tracker back.
-    let alice = TestNode::new_at_path(config.clone(), "alice", alice_dir).await;
-    assert!(
-        alice
-            .unfetched_blob_tracker()
-            .unfetched(&mailbox_id)
-            .await
-            .unwrap()
-            .contains(&hash),
-        "unfetched blob should persist across a source restart"
-    );
+    // Alice's mailbox comes back: on re-register the blob sync pass walks
+    // the chat log's new window, finds the photo's blob, announces and
+    // uploads it. The mailbox never has to pull anything from alice — the
+    // proactive sync covered it.
     alice
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             mailbox_id.clone(),
@@ -372,21 +330,6 @@ async fn recovers_unfetched_blob_after_source_restart() {
             alice.mailboxes.upload_tracker(),
         ))
         .await;
-
-    // Make alice reachable to the mailbox by registering her fresh dialing
-    // address with the relay's address book — exactly what production does when
-    // a mailbox learns a peer's `EndpointAddr` (via `/health` / `/peers/register`).
-    // Without this the relay (mDNS disabled) still cannot dial alice.
-    let alice_addr = alice.iroh_endpoint().await.unwrap().addr();
-    relay.insert_peer_addr(alice_addr).await.unwrap();
-
-    // Alice's node will run `followup_unfetched_blobs_once` during startup
-    // which will re-announce the still-unfetched blob to the mailbox, which
-    // re-enqueues the fetch now that alice is back online.
-
-    // The mailbox downloads the blob from the now-reachable alice (bobbi, the
-    // only other possible source, is offline). Allow a couple of 2s fetch passes
-    // plus connection setup to land.
     poll.wait_for(|| async {
         relay
             .blobs()
@@ -394,12 +337,13 @@ async fn recovers_unfetched_blob_after_source_restart() {
             .await
             .unwrap_or(false)
             .then_some(())
-            .ok_or("mailbox has not fetched the blob from the restarted alice yet")
+            .ok_or("mailbox did not receive the blob from alice's proactive sync")
     })
     .await
     .unwrap();
 
-    // The provider-download event on alice's blob endpoint clears the row.
+    // The unfetched tracker row for the hash was recorded when the announce
+    // said the mailbox lacked it, and is cleared when the upload confirms.
     poll.wait_for(|| async {
         (!alice
             .unfetched_blob_tracker()
@@ -408,7 +352,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
             .unwrap()
             .contains(&hash))
         .then_some(())
-        .ok_or("alice has not cleared the unfetched blob after the download completed")
+        .ok_or("alice has not cleared the unfetched blob after the upload completed")
     })
     .await
     .unwrap();
