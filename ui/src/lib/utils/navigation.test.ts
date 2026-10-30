@@ -98,8 +98,10 @@ function createWalker(initial: string) {
 	};
 }
 
-/** The app's navigation structure: pushes out of each page, and each page's
- * Back fallback (its natural parent) for when there is no history behind it. */
+/** A representative navigation graph (the app's, at the time of writing):
+ * pushes out of each page, and each page's Back fallback (its natural parent)
+ * for when there is no history behind it. It only needs to be graph-shaped
+ * like the app — the e2e back-buttons spec covers the real routes. */
 const GRAPH: Record<string, { links: string[]; fallback: string }> = {
 	'/': {
 		links: ['/settings', '/new-message', '/direct-chats/c1', '/group-chat/g1'],
