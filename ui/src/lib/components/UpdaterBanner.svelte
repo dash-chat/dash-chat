@@ -20,12 +20,8 @@
 	const mockUpdate: false | 'available' | 'downloading' | 'ready' | 'error' =
 		false;
 
-	// The e2e frontend build has DEV set (the harness builds it under
-	// NODE_ENV=test), but its updater spec needs the real check to run.
-	const isE2E = import.meta.env.VITE_E2E === 'true';
-
 	onMount(() => {
-		if (!isTauriEnv() || isMobile || (import.meta.env.DEV && !isE2E)) {
+		if (!isTauriEnv() || isMobile || import.meta.env.DEV) {
 			if (mockUpdate) simulateMockUpdate(mockUpdate);
 			return;
 		}
@@ -33,9 +29,14 @@
 		checkForUpdate();
 	});
 
-	// Allow E2E tests and dev tools to trigger banner states
+	// Allow E2E tests and dev tools to trigger banner states, or ('check')
+	// the real update check that mounting skips in dev and e2e builds
 	$effect(() => {
-		const handler = (event: CustomEvent<BannerState>) => {
+		const handler = (event: CustomEvent<BannerState | 'check'>) => {
+			if (event.detail === 'check') {
+				checkForUpdate();
+				return;
+			}
 			version = '1.2.0';
 			contentLength = 50_000_000;
 			progress = contentLength;

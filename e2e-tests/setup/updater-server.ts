@@ -5,6 +5,7 @@
  * advertised artifact url and signature are placeholders that are never
  * downloaded.
  */
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -13,6 +14,8 @@ export interface UpdaterServer {
 	url: string;
 	close(): Promise<void>;
 }
+
+const MANIFEST_PATH = '/latest.json';
 
 /** Serve a manifest advertising `version` on an ephemeral localhost port. */
 export async function startUpdaterServer(
@@ -24,17 +27,45 @@ export async function startUpdaterServer(
 		url: 'http://127.0.0.1:1/never-downloaded',
 		signature: 'e2e-placeholder',
 	});
-	const server = createServer((_req, res) => {
+	const server = createServer((req, res) => {
+		if (req.url !== MANIFEST_PATH) {
+			res.statusCode = 404;
+			res.end();
+			return;
+		}
 		res.setHeader('content-type', 'application/json');
 		res.end(manifest);
 	});
 	await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
 	const { port } = server.address() as AddressInfo;
 	return {
-		url: `http://127.0.0.1:${port}/latest.json`,
+		url: `http://127.0.0.1:${port}${MANIFEST_PATH}`,
 		close: () =>
 			new Promise<void>((resolve, reject) => {
+				// close() alone waits for the app's keep-alive socket to die.
+				server.closeAllConnections();
 				server.close(err => (err === undefined ? resolve() : reject(err)));
 			}),
 	};
+}
+
+/** The release manifest endpoint baked into production builds. */
+export function productionUpdaterEndpoint(): string {
+	const conf = JSON.parse(
+		readFileSync(
+			new URL('../../src-tauri/tauri.conf.json', import.meta.url),
+			'utf8',
+		),
+	) as { plugins: { updater: { endpoints: string[] } } };
+	return conf.plugins.updater.endpoints[0];
+}
+
+/** Whether the production update endpoint answers from this host, so the
+ *  spec against it can skip on offline runs. */
+export async function productionEndpointReachable(): Promise<boolean> {
+	try {
+		return (await fetch(productionUpdaterEndpoint())).ok;
+	} catch {
+		return false;
+	}
 }

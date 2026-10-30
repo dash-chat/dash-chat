@@ -100,20 +100,23 @@ pub fn run() {
     #[cfg(all(not(mobile), feature = "e2e-tests"))]
     {
         builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
-        // The updater spec opts back into the real updater plugin by pointing
-        // it at a mock endpoint (see the context mutation below) and naming the
-        // version the app should believe it runs, since every e2e instance is
-        // built from the same checkout and would otherwise never see an update.
-        if std::env::var("E2E_UPDATER_URL").is_ok() {
-            let current: semver::Version = std::env::var("E2E_UPDATER_CURRENT_VERSION")
-                .expect("E2E_UPDATER_URL is set but E2E_UPDATER_CURRENT_VERSION is not")
-                .parse()
-                .expect("E2E_UPDATER_CURRENT_VERSION is not a semver version");
-            builder = builder.plugin(
-                tauri_plugin_updater::Builder::new()
-                    .default_version_comparator(move |_, update| update.version > current)
-                    .build(),
-            );
+        // The updater specs opt back into the real updater plugin: against a
+        // mock endpoint (E2E_UPDATER_URL, see the context mutation below), or
+        // against the production endpoint while believing it runs
+        // E2E_UPDATER_CURRENT_VERSION, so the latest published release counts
+        // as an update.
+        let believed_version = std::env::var("E2E_UPDATER_CURRENT_VERSION");
+        if std::env::var("E2E_UPDATER_URL").is_ok() || believed_version.is_ok() {
+            let mut updater = tauri_plugin_updater::Builder::new();
+            if let Ok(version) = believed_version {
+                updater = updater.default_version_comparator(move |_, update| {
+                    let believed = version
+                        .parse()
+                        .expect("E2E_UPDATER_CURRENT_VERSION is not a semver version");
+                    update.version > believed
+                });
+            }
+            builder = builder.plugin(updater.build());
         }
     }
     #[cfg(all(not(mobile), not(feature = "e2e-tests")))]
@@ -227,10 +230,14 @@ pub fn run() {
     let mut context = tauri::generate_context!();
     #[cfg(all(not(mobile), feature = "e2e-tests"))]
     if let Ok(url) = std::env::var("E2E_UPDATER_URL") {
-        if let Some(config) = context.config_mut().plugins.0.get_mut("updater") {
-            config["endpoints"] = serde_json::json!([url]);
-            config["dangerousInsecureTransportProtocol"] = serde_json::json!(true);
-        }
+        let config = context
+            .config_mut()
+            .plugins
+            .0
+            .get_mut("updater")
+            .expect("tauri.conf.json has no updater plugin config");
+        config["endpoints"] = serde_json::json!([url]);
+        config["dangerousInsecureTransportProtocol"] = serde_json::json!(true);
     }
 
     builder

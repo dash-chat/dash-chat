@@ -143,7 +143,6 @@ tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"
-semver = { version = "1", optional = true }
 mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
 lan-multicast-probe = { workspace = true }
@@ -153,7 +152,6 @@ e2e-tests = [
   "dashchat-node/testing",
   "mailbox-client/e2e-test-ca",
   "dep:tauri-plugin-wdio-webdriver",
-  "dep:semver",
   "tauri-plugin-network-interfaces/wifi-control",
 ]
 

@@ -25,6 +25,12 @@ export class UpdaterBanner extends TestHelper {
 		);
 	}
 
+	/** Run the banner's real update check (plugin check → banner), which
+	 *  mounting skips in e2e builds (their frontend is DEV-flagged). */
+	async checkForUpdate(): Promise<void> {
+		await this.agent.execute(() => window.__test.simulateUpdate('check'));
+	}
+
 	async dismiss(): Promise<void> {
 		await this.dismissButton.click();
 	}

@@ -40,9 +40,10 @@ export interface RecentPhotosTestData {
 type MessageKey = Extract<keyof Messages, string>;
 type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
 
-/** Trigger UpdaterBanner into a specific state via custom event. */
+/** Trigger UpdaterBanner into a specific state via custom event, or ('check')
+ *  run its real update check. */
 function simulateUpdate(
-	state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden',
+	state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden' | 'check',
 ) {
 	window.dispatchEvent(
 		new CustomEvent('test-simulate-update', { detail: state }),
