@@ -1274,7 +1274,11 @@ impl Node {
     /// received alike — so the counter survives restarts and absorbs peers'
     /// counters without a log scan.
     async fn next_lamport(&self, topic: ChatId) -> anyhow::Result<u64> {
-        Ok(self.projection.max_chat_lamport(topic.into()).await? + 1)
+        Ok(self
+            .projection
+            .max_chat_lamport(topic.into())
+            .await?
+            .saturating_add(1))
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]

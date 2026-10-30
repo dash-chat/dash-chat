@@ -597,10 +597,10 @@ impl OpProjection {
 
     fn enforce_lamport_bound(payload: &Payload) -> Result<(), ProjectionError> {
         if let Payload::Chat(ChatPayload::Message(message)) = payload
-            && message.lamport > MAX_LAMPORT
+            && message.lamport >= MAX_LAMPORT
         {
             return Err(ProjectionError::invalid(format!(
-                "lamport {} exceeds {MAX_LAMPORT}",
+                "lamport {} is not below {MAX_LAMPORT}",
                 message.lamport
             )));
         }
