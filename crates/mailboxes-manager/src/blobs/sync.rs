@@ -18,11 +18,14 @@ pub trait BlobSource: Send + Sync + 'static {
 }
 
 /// One log's walk outcome: the blob candidates found inside its
-/// `(blob_height, op_watermark]` window, plus the watermark that bounds it.
+/// `(blob_height, op_watermark]` window, plus the last seq the walk read.
+/// That can fall short of the watermark: `get_log` only returns ops the
+/// node has finished processing, and the watermark moves as soon as a fetch
+/// stores them.
 struct LogCandidates<Item: MailboxItem> {
     topic: Item::Topic,
     author: Item::Author,
-    op_height: SeqNum,
+    walked_to: SeqNum,
     candidates: Vec<(SeqNum, iroh_blobs::Hash)>,
 }
 
@@ -203,7 +206,7 @@ where
             if blob_height.is_some_and(|h| h >= op_height) {
                 continue;
             }
-            let Some(candidates) = height_candidates_for_log(
+            let Some(log) = height_candidates_for_log(
                 source,
                 mailbox_id,
                 reader,
@@ -214,17 +217,12 @@ where
             )
             .await
             else {
-                // `None` means "the window could not be walked" — don't
+                // `None` means "no op of the window could be read" — don't
                 // push a `LogCandidates` for it, so no height bump lands
                 // and the next pass retries the same range.
                 continue;
             };
-            logs.push(LogCandidates {
-                topic,
-                author,
-                op_height,
-                candidates,
-            });
+            logs.push(log);
         }
     }
 
@@ -248,12 +246,13 @@ where
 /// is intentional: late-arrival is the mailbox's pull problem, not our
 /// push gap.
 ///
-/// Returns `None` when the window could not be walked (a `get_log` read
-/// error, or an `(author, topic)` log that doesn't exist locally) — the
-/// caller must not push the `LogCandidates` for the log and the height
-/// stays put so the next pass retries. Returning `Some(vec![])` would
-/// collapse "unreadable" and "nothing to do" onto the same arm, and the
-/// caller would close the window permanently for blobs it never saw.
+/// Returns `None` when no op of the window could be read (a `get_log` read
+/// error, an `(author, topic)` log that doesn't exist locally, or a log
+/// whose next op isn't processed yet) — the caller must not push the
+/// `LogCandidates` for the log and the height stays put so the next pass
+/// retries. Returning an empty walk would collapse "unreadable" and
+/// "nothing to do" onto the same arm, and the caller would close the
+/// window permanently for blobs it never saw.
 async fn height_candidates_for_log<Item>(
     source: &dyn CandidateSource<Item>,
     mailbox_id: &mailbox_client::MailboxId,
@@ -262,7 +261,7 @@ async fn height_candidates_for_log<Item>(
     author: Item::Author,
     blob_height: Option<SeqNum>,
     op_height: SeqNum,
-) -> Option<Vec<(SeqNum, iroh_blobs::Hash)>>
+) -> Option<LogCandidates<Item>>
 where
     Item: MailboxItem,
 {
@@ -276,29 +275,37 @@ where
         }
     };
 
-    let mut out = Vec::new();
+    let mut walked_to = None;
+    let mut candidates = Vec::new();
     for op in ops {
         let seq = op.seq_num();
         if seq > op_height {
             break;
         }
+        walked_to = Some(seq);
         for hash in op.blob_hashes() {
             if reader.has_blob(hash).await {
-                out.push((seq, hash));
+                candidates.push((seq, hash));
             }
         }
     }
-    Some(out)
+    Some(LogCandidates {
+        topic,
+        author,
+        walked_to: walked_to?,
+        candidates,
+    })
 }
 
 /// Advance each log's blob height from the announce response. The height
-/// lands at `op_height` whenever the window has been walked: every seq's
-/// emitted blob is either in `already_stored` (confirming it) or was
+/// lands at `walked_to` whenever the window has been walked: every walked
+/// seq's emitted blob is either in `already_stored` (confirming it) or was
 /// offered this pass and now lives as an outstanding tracker row, which
 /// is announced by hash on subsequent passes regardless. Pinning the
 /// height below an unconfirmed seq offers nothing the tracker row doesn't
 /// already cover, and would leave the walk window open to grow with the
-/// op log.
+/// op log. Seqs past `walked_to` were never read, so they have no tracker
+/// row and the height must not cover them.
 async fn advance_blob_heights<Item, Store>(
     mailboxes: &Mailboxes<Item, Store>,
     mailbox_id: &mailbox_client::MailboxId,
@@ -337,8 +344,9 @@ async fn advance_blob_heights_via<Item>(
     for log in logs {
         // Any unconfirmed candidates are tracked by hash in the outstanding
         // set and re-announced on each pass, so the height can move straight
-        // to `op_height` — the window is accounted for. Skip a no-op write.
-        let h = log.op_height;
+        // to `walked_to` — the walked seqs are accounted for. Skip a no-op
+        // write.
+        let h = log.walked_to;
         let current: Option<SeqNum> = current_blob_heights
             .get(&log.topic)
             .and_then(|m| m.get(&log.author))
@@ -507,6 +515,9 @@ mod tests {
         /// When true, `get_log` reads error — to test that a transient op-log
         /// read failure leaves the log out of the pass's `LogCandidates`.
         fail_get_log: bool,
+        /// The last op the node has finished processing. `get_log` leaves out
+        /// every op after it, like `OpStore::get_log` does.
+        processed_up_to: Option<SeqNum>,
     }
 
     impl FakeBlobOpSource {
@@ -518,6 +529,7 @@ mod tests {
                 outstanding: Vec::new(),
                 fail_blob_heights: false,
                 fail_get_log: false,
+                processed_up_to: None,
             }
         }
 
@@ -581,10 +593,13 @@ mod tests {
             if self.fail_get_log {
                 return Err(anyhow::anyhow!("simulated get_log failure"));
             }
-            Ok(self
-                .ops
-                .get(&(*topic, *author))
-                .map(|ops| ops.iter().filter(|op| op.seq >= from).cloned().collect()))
+            Ok(self.ops.get(&(*topic, *author)).map(|ops| {
+                ops.iter()
+                    .filter(|op| op.seq >= from)
+                    .filter(|op| self.processed_up_to.is_none_or(|last| op.seq <= last))
+                    .cloned()
+                    .collect()
+            }))
         }
     }
 
@@ -620,7 +635,8 @@ mod tests {
             2,    // op watermark
         )
         .await
-        .unwrap();
+        .unwrap()
+        .candidates;
 
         assert_eq!(
             out.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
@@ -649,7 +665,8 @@ mod tests {
             3,
         )
         .await
-        .unwrap();
+        .unwrap()
+        .candidates;
 
         assert_eq!(
             out.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
@@ -667,7 +684,8 @@ mod tests {
         let out =
             height_candidates_for_log::<BlobOp>(&s, &"mbx".into(), &holds_none(), 1, 'a', None, 1)
                 .await
-                .unwrap();
+                .unwrap()
+                .candidates;
 
         assert!(out.is_empty());
     }
@@ -681,7 +699,8 @@ mod tests {
         let out =
             height_candidates_for_log::<BlobOp>(&s, &"mbx".into(), &holds_all(), 1, 'a', None, 1)
                 .await
-                .unwrap();
+                .unwrap()
+                .candidates;
 
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].0, 1);
@@ -704,7 +723,8 @@ mod tests {
             3,
         )
         .await
-        .unwrap();
+        .unwrap()
+        .candidates;
 
         assert_eq!(
             out.iter().map(|(seq, _)| *seq).collect::<Vec<_>>(),
@@ -805,7 +825,7 @@ mod tests {
         let logs = vec![LogCandidates::<Msg> {
             topic: 1,
             author: 'a',
-            op_height: 3,
+            walked_to: 3,
             candidates: vec![(1, h(1)), (2, h(2)), (3, h(3))],
         }];
         advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &HashMap::new()).await;
@@ -824,7 +844,7 @@ mod tests {
         let logs = vec![LogCandidates::<Msg> {
             topic: 1,
             author: 'a',
-            op_height: 5,
+            walked_to: 5,
             candidates: vec![(1, h(1)), (2, h(2)), (3, h(3))],
         }];
         advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &HashMap::new()).await;
@@ -841,7 +861,7 @@ mod tests {
         let logs = vec![LogCandidates::<Msg> {
             topic: 1,
             author: 'a',
-            op_height: 2,
+            walked_to: 2,
             candidates: vec![(1, h(1)), (2, h(2))],
         }];
         advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &HashMap::new()).await;
@@ -862,7 +882,7 @@ mod tests {
         let logs = vec![LogCandidates::<Msg> {
             topic: 1,
             author: 'a',
-            op_height: 5,
+            walked_to: 5,
             candidates: vec![],
         }];
         advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &HashMap::new()).await;
@@ -887,7 +907,7 @@ mod tests {
         let logs = vec![LogCandidates::<Msg> {
             topic: 1,
             author: 'a',
-            op_height: 5,
+            walked_to: 5,
             candidates: vec![(1, h(1))],
         }];
         let mut current: HashMap<u8, HashMap<char, SeqNum>> = HashMap::new();
@@ -943,6 +963,31 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![5, 6],
             "the second pass walks only (3, 6], not the whole log from 0"
+        );
+    }
+
+    /// Right after a fetch the mailbox watermark is ahead of what the node
+    /// has processed, so `get_log` returns fewer ops than the watermark covers.
+    #[tokio::test]
+    async fn blob_height_stops_at_the_last_processed_op() {
+        let tracker = mem_blob_tracker();
+        let mut s = FakeBlobOpSource::new().with_op_height(1, 'a', 10);
+        for seq in 0..=10 {
+            s.push_op(1, 'a', seq, None);
+        }
+        s.processed_up_to = Some(3);
+
+        let pass = blob_candidates_from::<BlobOp>(&s, &"mbx".into(), &holds_all()).await;
+        advance_blob_heights_via::<BlobOp>(&tracker, &"mbx".into(), pass.logs, &pass.blob_heights)
+            .await;
+
+        let heights = tracker
+            .get_all_blob_heights_for_mailbox(&"mbx".into())
+            .await
+            .unwrap();
+        assert_eq!(
+            heights.get(&1u8).and_then(|m| m.get(&'a')).copied(),
+            Some(3)
         );
     }
 }
