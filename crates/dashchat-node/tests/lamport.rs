@@ -32,13 +32,13 @@ async fn replies_carry_higher_lamports_than_the_messages_they_answer() {
 
     let chat = alice.direct_chat_with(&bobbi);
 
-    alice.send_message_raw(chat, "hello".into()).await.unwrap();
+    alice.send_message(chat, "hello", None, None).await.unwrap();
     poll.consistency([&alice, &bobbi], &[chat.into()])
         .await
         .unwrap();
 
     bobbi
-        .send_message_raw(chat, "hi back".into())
+        .send_message(chat, "hi back", None, None)
         .await
         .unwrap();
     poll.consistency([&alice, &bobbi], &[chat.into()])
@@ -46,7 +46,7 @@ async fn replies_carry_higher_lamports_than_the_messages_they_answer() {
         .unwrap();
 
     alice
-        .send_message_raw(chat, "how are you".into())
+        .send_message(chat, "how are you", None, None)
         .await
         .unwrap();
     poll.consistency([&alice, &bobbi], &[chat.into()])
