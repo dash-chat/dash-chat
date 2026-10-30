@@ -14,7 +14,7 @@ mod polling;
 
 mod tracked_mailbox;
 
-pub use blobs::unfetched_blobs::BlobSource;
+pub use blobs::sync::BlobSource;
 pub use manager::Mailboxes;
 pub use operations::operation_sync_tracker::{OperationSyncState, OperationSyncTracker};
 pub use tracked_mailbox::TrackedMailbox;
