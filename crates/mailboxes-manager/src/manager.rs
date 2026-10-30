@@ -1048,7 +1048,7 @@ mod tests {
         topic: u8,
         author: char,
         seq: SeqNum,
-        blob: iroh_blobs::Hash,
+        blob: Option<iroh_blobs::Hash>,
     }
 
     impl mailbox_client::MailboxItem for BlobMsg {
@@ -1069,7 +1069,7 @@ mod tests {
             self.topic
         }
         fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
-            vec![self.blob]
+            self.blob.into_iter().collect()
         }
     }
 
@@ -1098,9 +1098,24 @@ mod tests {
                     topic,
                     author,
                     seq,
-                    blob,
+                    blob: Some(blob),
                 });
             blob
+        }
+
+        /// Append a text-like op carrying no blob.
+        fn append_blobless(&self, topic: u8, author: char, seq: SeqNum) {
+            self.logs
+                .lock()
+                .unwrap()
+                .entry((topic, author))
+                .or_default()
+                .push(BlobMsg {
+                    topic,
+                    author,
+                    seq,
+                    blob: None,
+                });
         }
     }
 
@@ -1308,11 +1323,9 @@ mod tests {
         );
     }
 
-    /// Regression for the off-by-one that skipped seq 0: with no blob
-    /// confirmed yet, "not-yet-confirmed" was collapsed into height 0 and
-    /// the walk started at seq 1. A log whose only op is seq 0 — e.g. an
-    /// avatar set at profile creation, the announcements log's first op —
-    /// was therefore never announced by the height path.
+    /// A log whose only op is seq 0 with a blob — e.g. the first avatar on
+    /// profile creation — must be proposed as a candidate on a mailbox
+    /// that's never confirmed any blob for it.
     #[tokio::test(start_paused = true)]
     async fn reconcile_walks_seq_zero_on_a_never_confirmed_log() {
         let op_store = BlobStoreStub::default();
@@ -1396,6 +1409,106 @@ mod tests {
             state.get(&topic).and_then(|m| m.get(&author)).copied(),
             Some(0),
             "blob height should land at seq 0, not remain unrecorded"
+        );
+    }
+
+    /// After one pass that confirms the only blob in a log with a tail of
+    /// blob-less ops after it, the height advances to the op watermark;
+    /// a second pass over the same state announces nothing.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_advances_height_to_op_watermark_past_blobless_tail() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        let blob = op_store.append(topic, author, 0);
+        for tail in 1..=5 {
+            op_store.append_blobless(topic, author, tail);
+        }
+
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> = Mailboxes::new(
+            op_store,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            test_config(),
+            None,
+        );
+        let mailbox_id: MailboxId = "mbx-blobless-tail".into();
+        // The mailbox holds all ops up to seq 5; the blob is the only
+        // candidate.
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 5)])
+            .await
+            .unwrap();
+
+        struct ConfirmsOnce {
+            id: MailboxId,
+            announces: Arc<AtomicU32>,
+        }
+
+        #[async_trait::async_trait]
+        impl MailboxClient<BlobMsg> for ConfirmsOnce {
+            fn id(&self) -> MailboxId {
+                self.id.clone()
+            }
+            fn url(&self) -> Option<String> {
+                Some(format!("http://{}", self.id))
+            }
+            async fn publish(
+                &self,
+                _: Vec<BlobMsg>,
+            ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                Ok(PublishResponse::default())
+            }
+            async fn fetch(
+                &self,
+                _: FetchRequest<BlobMsg>,
+            ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                Ok(FetchResponse(BTreeMap::new()))
+            }
+            async fn announce_blob_hashes(
+                &self,
+                hashes: Vec<iroh_blobs::Hash>,
+                _: bool,
+            ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                self.announces.fetch_add(1, Ordering::Relaxed);
+                Ok(hashes)
+            }
+        }
+
+        let announces = Arc::new(AtomicU32::new(0));
+        mgr.register(ConfirmsOnce {
+            id: mailbox_id.clone(),
+            announces: announces.clone(),
+        })
+        .await;
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+
+        let _ = blob;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "first pass announces the only blob"
+        );
+        let state = mgr
+            .blob_tracker()
+            .get_all_blob_heights_for_mailbox(&mailbox_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            state.get(&topic).and_then(|m| m.get(&author)).copied(),
+            Some(5),
+            "height should advance to the op watermark past the blob-less tail, not stop at the blob op's seq"
+        );
+
+        // Second pass: nothing new to announce.
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "second pass must not re-announce — the window is now fully covered"
         );
     }
 
