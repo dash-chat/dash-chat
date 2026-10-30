@@ -636,6 +636,7 @@ where
             let result = manager
                 .sync_topics(topics.into_iter(), &id, &tracked_mailbox)
                 .await;
+            let sync_succeeded = result.is_ok();
             manager
                 .persist_status_change(&id, &tracked_mailbox, |tracked_mailbox| match result {
                     Ok(()) => tracked_mailbox.record_success(),
@@ -660,6 +661,12 @@ where
                     }
                 })
                 .await;
+            if sync_succeeded {
+                // Op watermarks just moved and/or this mailbox just flipped
+                // Active from backoff: blob candidates may now exist that
+                // didn't before the op sync. Wake the blob sync loop.
+                manager.blob_followup.notify_one();
+            }
             guard.complete();
         });
         Some(task)
@@ -1247,6 +1254,106 @@ mod tests {
             "blob height should stop at the last fully-confirmed seq"
         );
         let _ = blob3;
+    }
+
+    /// When the op poll succeeds, the blob sync loop wakes — covering the
+    /// case where a mailbox's first poll lands fresh op watermarks and its
+    /// blob followup would otherwise wait for the next interval tick.
+    #[tokio::test(start_paused = true)]
+    async fn poll_success_wakes_blob_sync_pass() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        op_store.append(topic, author, 1);
+
+        // spawn_internal wires the poll loop, `start_blob_followup` wires the
+        // blob sync loop.
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> =
+            Mailboxes::spawn(op_store.clone(), test_sync_tracker(), test_config());
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.start_blob_followup(Arc::new(NoopBlobSource), reader, Duration::from_secs(3600));
+
+        let mailbox_id: MailboxId = "mbx-blob-wake".into();
+        let announces = Arc::new(AtomicU32::new(0));
+        let (client, _) = {
+            let announces = announces.clone();
+            struct C {
+                id: MailboxId,
+                announces: Arc<AtomicU32>,
+            }
+            #[async_trait::async_trait]
+            impl MailboxClient<BlobMsg> for C {
+                fn id(&self) -> MailboxId {
+                    self.id.clone()
+                }
+                fn url(&self) -> Option<String> {
+                    Some(format!("http://{}", self.id))
+                }
+                async fn publish(
+                    &self,
+                    _: Vec<BlobMsg>,
+                ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                    Ok(PublishResponse::default())
+                }
+                async fn fetch(
+                    &self,
+                    _: FetchRequest<BlobMsg>,
+                ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                    // The op sync calls fetch; returning nothing means the
+                    // publish is a no-op but the poll succeeds (mailbox is
+                    // healthy, no local ops required of it).
+                    Ok(FetchResponse(BTreeMap::new()))
+                }
+                async fn announce_blob_hashes(
+                    &self,
+                    _: Vec<iroh_blobs::Hash>,
+                    _: bool,
+                ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                    self.announces.fetch_add(1, Ordering::Relaxed);
+                    Ok(Vec::new())
+                }
+            }
+            (
+                C {
+                    id: mailbox_id.clone(),
+                    announces,
+                },
+                (),
+            )
+        };
+
+        // Before register: nothing has been announced.
+        mgr.register(client).await;
+        // The register-triggered blob pass sees no op watermarks yet, so no
+        // candidates, so no announce. Wait a beat for it to have fired.
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        let after_register = announces.load(Ordering::Relaxed);
+
+        // Mark the topic as subscribed so the op poll actually runs, and
+        // advance op watermarks out-of-band so the blob pass that fires
+        // afterwards has a by-height candidate.
+        let _rx = mgr.subscribe(topic).await.unwrap();
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 1)])
+            .await
+            .unwrap();
+
+        // The poll loop should run an op sync shortly (its `active_interval`
+        // in test_config is 5s). Yield a lot of times to let it wake and
+        // complete; with paused time, `tokio::time::advance` drives the
+        // interval tick deterministically.
+        tokio::time::advance(Duration::from_secs(10)).await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+
+        let after_poll = announces.load(Ordering::Relaxed);
+        assert!(
+            after_poll > after_register,
+            "an op-sync success should wake the blob sync pass (register={after_register}, poll={after_poll})"
+        );
     }
 
     /// A mailbox in backoff (`Degraded` or `Stopped` health) is skipped by
