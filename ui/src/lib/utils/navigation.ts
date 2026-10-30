@@ -1,5 +1,7 @@
 import { afterNavigate, goto } from '$app/navigation';
 
+export type NavigationKind = 'enter' | 'popstate' | 'push' | 'replace';
+
 /**
  * Bookkeeping for how many in-app history entries are behind the current one.
  * Pure (no browser APIs) so the random-walk property test can drive it; the
@@ -7,28 +9,17 @@ import { afterNavigate, goto } from '$app/navigation';
  */
 export function createBackTracker() {
 	let depth = 0;
-	let replacePending = false;
 
 	return {
 		get canGoBack() {
 			return depth > 0;
 		},
-		/** Flag the next push-like navigation as a replace (no depth change). */
-		markReplace() {
-			replacePending = true;
-		},
-		clearReplace() {
-			replacePending = false;
-		},
-		handleNavigation(type: 'enter' | 'popstate' | 'push', delta?: number) {
-			if (type === 'enter') {
+		handleNavigation(kind: NavigationKind, delta?: number) {
+			if (kind === 'enter') {
 				depth = 0;
-				replacePending = false;
-			} else if (type === 'popstate') {
+			} else if (kind === 'popstate') {
 				depth = Math.max(0, depth + (delta ?? -1));
-			} else if (replacePending) {
-				replacePending = false;
-			} else {
+			} else if (kind === 'push') {
 				depth += 1;
 			}
 		},
@@ -37,17 +28,22 @@ export function createBackTracker() {
 
 const tracker = createBackTracker();
 
+// `afterNavigate` cannot tell a replace from a push, so `replaceGoto` raises
+// this while its navigation is in flight.
+let replacing = false;
+
+function classify(type: string): NavigationKind {
+	if (type === 'enter' || type === 'popstate') return type;
+	return replacing ? 'replace' : 'push';
+}
+
 /**
  * Feed every navigation into the back tracker. Call once during root layout
  * initialization (it registers an `afterNavigate` lifecycle callback).
  */
 export function trackHistoryDepth() {
 	afterNavigate(navigation => {
-		const type =
-			navigation.type === 'enter' || navigation.type === 'popstate'
-				? navigation.type
-				: 'push';
-		tracker.handleNavigation(type, navigation.delta);
+		tracker.handleNavigation(classify(navigation.type), navigation.delta);
 	});
 }
 
@@ -59,11 +55,11 @@ export async function replaceGoto(
 	url: string,
 	opts: Omit<NonNullable<Parameters<typeof goto>[1]>, 'replaceState'> = {},
 ): Promise<void> {
-	tracker.markReplace();
+	replacing = true;
 	try {
 		await goto(url, { ...opts, replaceState: true });
 	} finally {
-		tracker.clearReplace();
+		replacing = false;
 	}
 }
 

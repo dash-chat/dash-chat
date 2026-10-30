@@ -42,9 +42,8 @@ class FakeHistory {
 
 /**
  * Drives a back tracker against a fake history exactly the way the app wires
- * it: pushes and replaces feed `handleNavigation('push')` (replaces flagged
- * via `markReplace`), browser backs feed popstate deltas, and `goBack`
- * reproduces the real helper's decision.
+ * it: each navigation feeds `handleNavigation` with its kind (browser backs
+ * as popstate deltas), and `goBack` reproduces the real helper's decision.
  */
 function createWalker(initial: string) {
 	let tracker = createBackTracker();
@@ -70,8 +69,7 @@ function createWalker(initial: string) {
 		},
 		replace(url: string) {
 			history.replace(url);
-			tracker.markReplace();
-			tracker.handleNavigation('push');
+			tracker.handleNavigation('replace');
 			journey[journey.length - 1] = url;
 		},
 		browserBack() {
