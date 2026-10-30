@@ -147,7 +147,6 @@
 					/>
 				{:else}
 					<Card
-						raised
 						contentWrapPadding="p-2"
 						class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 					>

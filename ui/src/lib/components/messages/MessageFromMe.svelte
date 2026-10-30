@@ -131,7 +131,6 @@
 			<DeletedMessage {message} {position} {myDeviceId} />
 		{:else}
 			<Card
-				raised
 				contentWrapPadding="p-2"
 				colors={{
 					bgIos: 'bg-brand-primary',
