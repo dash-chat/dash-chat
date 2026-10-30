@@ -695,7 +695,7 @@ mod tests {
 
     use mailbox_client::{
         BlobReader, FetchRequest, FetchResponse, FetchTopicResponse, NoopUnfetchedBlobTracker,
-        PublishResponse, SeqNum,
+        PublishResponse, SeqNum, UnfetchedBlobTracker,
         backends::{mem::MemMailbox, toy::ToyMailboxClient},
         testing::{DummyStore, MemStore, Msg},
     };
@@ -964,6 +964,132 @@ mod tests {
         assert!(
             !mailboxes.upload_due(&id, hash).await,
             "a failed upload via the engine must land on the manager's tracker"
+        );
+    }
+
+    // -- blob followup loop tests --
+
+    /// A client with a url (so the reconcile pass doesn't skip it) whose
+    /// announce reports nothing already stored, leaving the tracker row in
+    /// place across passes; the call counter is the observable signal that
+    /// a pass reached this mailbox.
+    struct BlobTrackClient {
+        id: MailboxId,
+        announces: Arc<AtomicU32>,
+    }
+
+    impl BlobTrackClient {
+        fn new(id: &str) -> (Self, Arc<AtomicU32>) {
+            let announces = Arc::new(AtomicU32::new(0));
+            (
+                Self {
+                    id: id.into(),
+                    announces: announces.clone(),
+                },
+                announces,
+            )
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for BlobTrackClient {
+        fn id(&self) -> MailboxId {
+            self.id.clone()
+        }
+
+        fn url(&self) -> Option<String> {
+            Some(format!("http://{}", self.id))
+        }
+
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            Ok(FetchResponse(BTreeMap::new()))
+        }
+
+        async fn announce_blob_hashes(
+            &self,
+            _hashes: Vec<iroh_blobs::Hash>,
+            _expect_upload: bool,
+        ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+            self.announces.fetch_add(1, Ordering::Relaxed);
+            Ok(Vec::new()) // nothing stored yet, so the tracker row persists
+        }
+    }
+
+    struct NoopBlobSource;
+
+    #[async_trait::async_trait]
+    impl BlobSource for NoopBlobSource {
+        async fn prepare_upload_to(&self, _url: &str) {}
+    }
+
+    /// The followup loop spawned by `start_blob_followup` runs a pass at
+    /// startup, again whenever `notify_unfetched_blobs()` is called, and
+    /// again when `register()` gives a tracked-with-unfetched-blobs mailbox
+    /// a live client. Each pass reaches the mailbox's `announce_blob_hashes`
+    /// (awaited synchronously in the pass), so the announce count directly
+    /// measures passes-run.
+    #[tokio::test(start_paused = true)]
+    async fn blob_followup_runs_on_startup_notify_and_register() {
+        let mgr = test_mailboxes(test_config());
+        let id: MailboxId = "blob-mbx".into();
+        let hash = iroh_blobs::Hash::new(b"followup blob");
+
+        // Seed the manager's own tracker: this mailbox owes us a blob.
+        mgr.blob_tracker().record(&id, &[hash]).await.unwrap();
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubBlobReader {
+            hash,
+            bytes: bytes::Bytes::from_static(b"payload"),
+        });
+        // Long interval so the ticker never fires during the test; every
+        // pass is attributable to a named trigger.
+        mgr.start_blob_followup(Arc::new(NoopBlobSource), reader, Duration::from_secs(3600));
+
+        // Startup pass: no mailboxes registered yet, nothing to announce.
+        tokio::task::yield_now().await;
+
+        let (client, announces) = BlobTrackClient::new(&id);
+        mgr.register(client).await;
+        // The register-triggered pass runs `announce_blob_hashes` inline inside
+        // the loop, whose spawn-and-wake spans a couple of schedulings; yield
+        // twice so it runs to completion before we read the counter.
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        let after_register = announces.load(Ordering::Relaxed);
+        assert!(
+            after_register >= 1,
+            "registering an unfetched-blobs mailbox should fire a followup pass"
+        );
+
+        // The upload spawned off the pass used the default `upload_blob`,
+        // which errors, leaving a 5s backoff; `reset_uploads` is exactly what
+        // `handle_network_change` does to make the next pass viable.
+        mgr.reset_uploads();
+        mgr.notify_unfetched_blobs();
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        let after_notify = announces.load(Ordering::Relaxed);
+        assert!(
+            after_notify > after_register,
+            "notify_unfetched_blobs should run another pass"
+        );
+
+        mgr.close().await;
+        let at_close = announces.load(Ordering::Relaxed);
+
+        mgr.notify_unfetched_blobs();
+        tokio::task::yield_now().await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            at_close,
+            "a closed manager runs no further followup passes"
         );
     }
 
