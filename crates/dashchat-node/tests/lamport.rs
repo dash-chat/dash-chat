@@ -66,3 +66,49 @@ async fn replies_carry_higher_lamports_than_the_messages_they_answer() {
         assert_eq!(lamports["how are you"], 3);
     }
 }
+
+/// The UI compares lamports as JS numbers, so a peer must not be able to push a
+/// chat's counter past what they represent exactly.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_peers_out_of_range_lamport_does_not_advance_the_counter() {
+    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::<MailboxOperation>::new();
+
+    let alice = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat = alice.direct_chat_with(&bobbi);
+
+    bobbi
+        .send_message_raw(chat, ChatMessageContent::new("huge", None, None, u64::MAX))
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    alice.send_message(chat, "hello", None, None).await.unwrap();
+
+    let hello = alice
+        .get_messages(chat)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|m| m.content.message() == "hello")
+        .unwrap();
+    assert_eq!(hello.content.lamport, 1);
+}
