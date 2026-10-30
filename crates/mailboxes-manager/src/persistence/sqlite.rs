@@ -215,6 +215,10 @@ where
             .bind(id)
             .execute(self.pool.pool())
             .await?;
+        sqlx::query("DELETE FROM mailbox_blob_sync_state WHERE mailbox_id = ?")
+            .bind(id)
+            .execute(self.pool.pool())
+            .await?;
         Ok(())
     }
 
@@ -267,6 +271,64 @@ where
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
+    async fn record_blob_synced(
+        &self,
+        id: &MailboxId,
+        heights: &[(T, A, SeqNum)],
+    ) -> anyhow::Result<()> {
+        if heights.is_empty() {
+            return Ok(());
+        }
+        let mut encoded: Vec<(Vec<u8>, Vec<u8>, SeqNum)> = Vec::with_capacity(heights.len());
+        for (t, a, s) in heights {
+            encoded.push((
+                encode(t).context("encoding topic")?,
+                encode(a).context("encoding author")?,
+                *s,
+            ));
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "INSERT INTO mailbox_blob_sync_state (mailbox_id, topic, author, seq_num, updated_at) ",
+        );
+        query.push_values(&encoded, |mut row, (t_bytes, a_bytes, seq)| {
+            row.push_bind(id)
+                .push_bind(t_bytes)
+                .push_bind(a_bytes)
+                .push_bind(i64::from(*seq))
+                .push_bind(now);
+        });
+        query.push(
+            " ON CONFLICT (mailbox_id, topic, author) DO UPDATE SET
+                seq_num = MAX(excluded.seq_num, mailbox_blob_sync_state.seq_num),
+                updated_at = excluded.updated_at",
+        );
+        query.build().execute(self.pool.pool()).await?;
+        Ok(())
+    }
+
+    async fn get_blob_sync_state(
+        &self,
+        id: &MailboxId,
+    ) -> anyhow::Result<HashMap<T, HashMap<A, SeqNum>>> {
+        let rows: Vec<(Vec<u8>, Vec<u8>, i64)> = sqlx::query_as(
+            "SELECT topic, author, seq_num FROM mailbox_blob_sync_state WHERE mailbox_id = ?",
+        )
+        .bind(id)
+        .fetch_all(self.pool.pool())
+        .await?;
+
+        let mut out: HashMap<T, HashMap<A, SeqNum>> = HashMap::new();
+        for (t_bytes, a_bytes, s) in rows {
+            let topic = decode(&t_bytes).context("decoding topic")?;
+            let author = decode(&a_bytes).context("decoding author")?;
+            out.entry(topic)
+                .or_default()
+                .insert(author, SeqNum::try_from(s)?);
+        }
+        Ok(out)
+    }
+
     async fn get_synced_for_log(
         &self,
         topic: &T,
@@ -310,6 +372,14 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         mailbox_id TEXT NOT NULL,
         blob_hash  BLOB NOT NULL,
         PRIMARY KEY (mailbox_id, blob_hash)
+    );
+    CREATE TABLE IF NOT EXISTS mailbox_blob_sync_state (
+        mailbox_id TEXT NOT NULL,
+        topic      BLOB NOT NULL,
+        author     BLOB NOT NULL,
+        seq_num    INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (mailbox_id, topic, author)
     );";
 
 /// Blob hashes are 32 raw bytes — stored directly, no encoding.

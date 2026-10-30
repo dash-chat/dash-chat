@@ -59,6 +59,21 @@ where
         author: &A,
     ) -> anyhow::Result<std::collections::BTreeMap<MailboxId, SeqNum>>;
     async fn load_all_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>>;
+    /// Record the highest op seq in each log whose referenced blobs this
+    /// mailbox is confirmed to hold. Same `max()` upsert semantics as
+    /// `record_synced` — the height only moves forward.
+    async fn record_blob_synced(
+        &self,
+        id: &MailboxId,
+        heights: &[(T, A, SeqNum)],
+    ) -> anyhow::Result<()>;
+    /// Every `(topic, author)`'s blob-confirmed height for one mailbox;
+    /// absent entries mean no blob has ever been confirmed for that log on
+    /// this mailbox (equivalent to height 0).
+    async fn get_blob_sync_state(
+        &self,
+        id: &MailboxId,
+    ) -> anyhow::Result<std::collections::HashMap<T, std::collections::HashMap<A, SeqNum>>>;
 }
 
 /// Unified persistence manager that provides access to the underlying stores.

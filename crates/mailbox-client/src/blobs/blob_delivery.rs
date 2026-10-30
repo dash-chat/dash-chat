@@ -52,7 +52,10 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
     /// lacks — spawned, so a batch of large blobs never stalls the caller,
     /// and scoped to `not_stored`, so we never re-upload blobs the mailbox
     /// already holds.
-    pub async fn publish(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
+    pub async fn publish(
+        &self,
+        hashes: Vec<iroh_blobs::Hash>,
+    ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
         self.announce_and_upload(hashes, self.reader.clone()).await
     }
 
@@ -60,7 +63,17 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
     /// hashes and push any bytes the mailbox still lacks. Uses the engine's
     /// reader: a sync that can't serve bytes would announce hashes the
     /// mailbox then fetches from a node that doesn't have them.
-    pub async fn sync(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
+    ///
+    /// Returns the hashes the mailbox confirmed it already holds at announce
+    /// time. The detached upload may land more after this returns — the
+    /// caller (typically a reconcile pass that maps blobs back to op seq
+    /// numbers) uses the returned set to advance its per-mailbox
+    /// blob-confirmed heights, and picks up upload-confirmed blobs on the
+    /// next pass.
+    pub async fn sync(
+        &self,
+        hashes: Vec<iroh_blobs::Hash>,
+    ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
         self.announce_and_upload(hashes, self.reader.clone()).await
     }
 
@@ -68,9 +81,9 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
         &self,
         mut hashes: Vec<iroh_blobs::Hash>,
         reader: Option<Arc<dyn BlobReader>>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
         if hashes.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         // A forwarded op's blob this device hasn't fetched is left out: the
         // mailbox would dial us for bytes we don't have.
@@ -106,7 +119,7 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
         if let Some(reader) = reader {
             self.spawn_upload(reader, not_stored);
         }
-        Ok(())
+        Ok(already_stored)
     }
 
     /// Spawn a detached best-effort task that streams each blob's bytes to

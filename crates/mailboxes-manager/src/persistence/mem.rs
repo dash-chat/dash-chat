@@ -50,6 +50,7 @@ where
 {
     status: RwLock<HashMap<MailboxId, SyncStatus>>,
     sync_state: RwLock<HashMap<MailboxId, HashMap<T, HashMap<A, SeqNum>>>>,
+    blob_sync_state: RwLock<HashMap<MailboxId, HashMap<T, HashMap<A, SeqNum>>>>,
 }
 
 impl<T, A> MemSyncStore<T, A>
@@ -61,6 +62,7 @@ where
         Self {
             status: RwLock::new(HashMap::new()),
             sync_state: RwLock::new(HashMap::new()),
+            blob_sync_state: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -88,6 +90,7 @@ where
     async fn drop_mailbox(&self, id: &MailboxId) -> anyhow::Result<()> {
         self.status.write().unwrap().remove(id);
         self.sync_state.write().unwrap().remove(id);
+        self.blob_sync_state.write().unwrap().remove(id);
         Ok(())
     }
 
@@ -150,6 +153,29 @@ where
     async fn load_all_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>> {
         let state = self.sync_state.read().unwrap();
         Ok(state.keys().cloned().collect())
+    }
+
+    async fn record_blob_synced(
+        &self,
+        id: &MailboxId,
+        heights: &[(T, A, SeqNum)],
+    ) -> anyhow::Result<()> {
+        let mut state = self.blob_sync_state.write().unwrap();
+        let mailbox_state = state.entry(id.clone()).or_default();
+        for (topic, author, seq) in heights {
+            let author_state = mailbox_state.entry(*topic).or_default();
+            let current = author_state.entry(*author).or_insert(0);
+            *current = (*current).max(*seq);
+        }
+        Ok(())
+    }
+
+    async fn get_blob_sync_state(
+        &self,
+        id: &MailboxId,
+    ) -> anyhow::Result<HashMap<T, HashMap<A, SeqNum>>> {
+        let state = self.blob_sync_state.read().unwrap();
+        Ok(state.get(id).cloned().unwrap_or_default())
     }
 }
 

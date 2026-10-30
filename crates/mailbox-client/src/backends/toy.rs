@@ -78,7 +78,8 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     /// Announce blob hashes to the mailbox and reconcile the unfetched tracker,
     /// then push the bytes the mailbox still needs in a detached best-effort task.
     pub async fn store_blobs(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
-        self.blob_delivery().publish(hashes).await
+        self.blob_delivery().publish(hashes).await?;
+        Ok(())
     }
 }
 
