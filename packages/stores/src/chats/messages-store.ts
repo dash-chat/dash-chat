@@ -20,6 +20,7 @@ import {
 	isMessage,
 	mediaBundleToAttachment,
 } from '../types';
+import { orderEventsAscending } from '../utils/group-events-in-days';
 import { type IMessagesClient } from './messages-client';
 import { dropOpsAuthoredWhileNotAMember } from './op-visibility';
 import { type MessageReply } from './replies';
@@ -179,10 +180,10 @@ export class MessagesStore {
 	lastMessage = reactive(async () => {
 		const messages = await this.messages();
 
-		const sortedMessages = Object.values(messages).sort(
-			(m1, m2) => m2.lamport - m1.lamport || m2.timestamp - m1.timestamp,
-		);
-		return sortedMessages.length > 0 ? sortedMessages[0] : undefined;
+		const orderedMessages = orderEventsAscending(messages);
+		return orderedMessages.length > 0
+			? orderedMessages[orderedMessages.length - 1][1]
+			: undefined;
 	});
 
 	readMessageHashes = reactive(async () => {

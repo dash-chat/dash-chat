@@ -20,15 +20,21 @@ export interface EventWithProvenance<T> {
 
 export type EventGroup<T> = Array<[Hash, T]>;
 
+export interface LamportOrderable {
+	timestamp: number;
+	lamport: number;
+	author: DeviceId;
+}
+
 /** Events in display order: lamport first — so a reply never sorts before the
  * message it answers even when the authors' clocks disagree — with the
  * wall-clock timestamp and author as tiebreakers. Events without a lamport
  * (`0`) are anchored to the highest lamport among events timestamped at or
  * before them, which keeps them in their wall-clock position within the
  * lamport sequence instead of all sorting first. */
-export function orderEventsAscending<T>(
-	events: Record<Hash, EventWithProvenance<T>>,
-): Array<[Hash, EventWithProvenance<T>]> {
+export function orderEventsAscending<E extends LamportOrderable>(
+	events: Record<Hash, E>,
+): Array<[Hash, E]> {
 	const byTimestamp = Object.entries(events).sort(
 		(m1, m2) =>
 			m1[1].timestamp - m2[1].timestamp ||
@@ -46,9 +52,7 @@ export function orderEventsAscending<T>(
 			m1.event.timestamp - m2.event.timestamp ||
 			m1.event.author.localeCompare(m2.event.author),
 	);
-	return anchored.map(
-		({ hash, event }) => [hash, event] as [Hash, EventWithProvenance<T>],
-	);
+	return anchored.map(({ hash, event }) => [hash, event] as [Hash, E]);
 }
 
 export function groupEventsInDays<T>(

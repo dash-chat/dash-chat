@@ -6,6 +6,7 @@ import {
 	EventWithProvenance,
 	MESSAGE_SET_TIMEFRAME_INTERVAL_MS,
 	groupEventsInDays,
+	orderEventsAscending,
 } from '../src/utils/group-events-in-days';
 
 const ME: DeviceId = 'me';
@@ -123,5 +124,30 @@ describe('groupEventsInDays', () => {
 		const days = groupEventsInDays(input, AGENT_SETS);
 		assert.equal(days.length, 1);
 		assert.deepEqual(groupHashes(input), [['a'], ['b']]);
+	});
+});
+
+describe('orderEventsAscending', () => {
+	function orderedHashes(
+		input: Record<Hash, EventWithProvenance<TestEvent>>,
+	): Hash[] {
+		return orderEventsAscending(input).map(([hash]) => hash);
+	}
+
+	it('keeps a newest deleted message last', () => {
+		const input = events([
+			{ hash: 'a', offsetMs: 0, lamport: 1 },
+			{ hash: 'deleted', offsetMs: 1000 },
+		]);
+		assert.deepEqual(orderedHashes(input), ['a', 'deleted']);
+	});
+
+	it("keeps a pre-lamport peer's newest reply last", () => {
+		const input = events([
+			{ hash: 'a', offsetMs: 0, lamport: 1 },
+			{ hash: 'b', offsetMs: 1000, lamport: 2 },
+			{ hash: 'reply', author: PEER, offsetMs: 2000 },
+		]);
+		assert.deepEqual(orderedHashes(input), ['a', 'b', 'reply']);
 	});
 });
