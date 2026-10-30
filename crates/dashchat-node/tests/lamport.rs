@@ -68,9 +68,18 @@ async fn replies_carry_higher_lamports_than_the_messages_they_answer() {
 }
 
 /// The UI compares lamports as JS numbers, so a peer must not be able to push a
-/// chat's counter past what they represent exactly.
+/// chat's counter to or past the largest one they represent exactly.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_peers_out_of_range_lamport_does_not_advance_the_counter() {
+async fn a_peers_u64_max_lamport_does_not_advance_the_counter() {
+    peers_out_of_range_lamport_does_not_advance_the_counter(u64::MAX).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_peers_max_safe_integer_lamport_does_not_advance_the_counter() {
+    peers_out_of_range_lamport_does_not_advance_the_counter((1 << 53) - 1).await;
+}
+
+async fn peers_out_of_range_lamport_does_not_advance_the_counter(lamport: u64) {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
 
     let poll = PollConfig::default();
@@ -94,21 +103,31 @@ async fn a_peers_out_of_range_lamport_does_not_advance_the_counter() {
     let chat = alice.direct_chat_with(&bobbi);
 
     bobbi
-        .send_message_raw(chat, ChatMessageContent::new("huge", None, None, u64::MAX))
+        .send_message_raw(chat, ChatMessageContent::new("huge", None, None, lamport))
         .await
         .unwrap();
     poll.consistency([&alice, &bobbi], &[chat.into()])
         .await
         .unwrap();
 
-    alice.send_message(chat, "hello", None, None).await.unwrap();
-
-    let hello = alice
-        .get_messages(chat)
+    alice.send_message(chat, "first", None, None).await.unwrap();
+    alice
+        .send_message(chat, "second", None, None)
         .await
-        .unwrap()
-        .into_iter()
-        .find(|m| m.content.message() == "hello")
         .unwrap();
-    assert_eq!(hello.content.lamport, 1);
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    for node in [&alice, &bobbi] {
+        let lamports: HashMap<String, u64> = node
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| (m.content.message().to_string(), m.content.lamport))
+            .collect();
+        assert_eq!(lamports["first"], 1);
+        assert_eq!(lamports["second"], 2);
+    }
 }
