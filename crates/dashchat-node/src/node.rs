@@ -36,6 +36,7 @@ use mailbox_client::MailboxesConfig;
 use mailboxes_manager::Mailboxes;
 use tokio::task::JoinHandle;
 
+use crate::NodeBlobSource;
 use crate::OnlinePeers;
 use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
@@ -105,9 +106,9 @@ pub struct NodeConfig {
     /// server — is unavailable.
     pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
-    /// How often the followup task re-announces still-unfetched blob hashes to
-    /// their mailboxes.
-    pub unfetched_blob_followup_interval: std::time::Duration,
+    /// How often the manager's blob sync loop wakes up on its own between
+    /// event-driven triggers (publish, connect, network change).
+    pub blob_sync_interval: std::time::Duration,
     /// How long the delivery-ack writer waits after new operations arrive
     /// before publishing a [`ChatPayload::MessageAck`], so a burst of incoming
     /// operations is covered by a single ack.
@@ -181,7 +182,7 @@ impl NodeConfig {
                 attempt_timeout: std::time::Duration::from_secs(3),
                 retry_cooldown: std::time::Duration::from_secs(1),
             },
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
+            blob_sync_interval: std::time::Duration::from_secs(1),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
@@ -211,7 +212,7 @@ impl Default for NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(4),
+            blob_sync_interval: std::time::Duration::from_secs(4),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
@@ -268,8 +269,6 @@ pub struct Node {
     /// once nothing needs the endpoint (see [`Self::init`]).
     endpoint: Option<p2panda::Endpoint>,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    unfetched_blob_trigger: Arc<tokio::sync::Notify>,
-    unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
@@ -482,8 +481,6 @@ impl Node {
             blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
-            unfetched_blob_trigger: Default::default(),
-            unfetched_blob_followup_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
             dirty_ack_topics: Default::default(),
@@ -507,27 +504,27 @@ impl Node {
 
         // === network change notifier === //
 
-        let network_change_handle = crate::network_change_notifier::spawn(
-            node.endpoint.clone(),
-            node.mailboxes.clone(),
-            node.unfetched_blob_trigger.clone(),
-        );
+        let network_change_handle =
+            crate::network_change_notifier::spawn(node.endpoint.clone(), node.mailboxes.clone());
         node.network_change_handle
             .lock()
             .await
             .replace(network_change_handle);
 
-        // === unfetched blob followup loop === //
+        // === blob sync loop === //
 
-        let followup_handle = crate::spawn_unfetched_blob_followup_task(
-            node.clone(),
-            node.config.unfetched_blob_followup_interval,
-            node.unfetched_blob_trigger.clone(),
-        );
-        node.unfetched_blob_followup_handle
-            .lock()
-            .await
-            .replace(followup_handle);
+        // The push extension has no blob store (`enable_blob_sync = false`).
+        // Starting the sync there would poison the mailboxes'
+        // `mailbox_blob_sync_state` table — shared with the main app over the
+        // same filesystem path — by advancing every log's blob height past
+        // its op watermark without ever announcing a blob.
+        if node.blob_sync.is_some() {
+            node.mailboxes.start_blob_sync(
+                NodeBlobSource::new(node.clone()),
+                node.blob_reader(),
+                node.config.blob_sync_interval,
+            );
+        }
 
         // === message ack writer === //
 
@@ -651,10 +648,11 @@ impl Node {
         })
     }
 
-    /// Wake the unfetched-blob followup task to run a reconciliation pass now
-    /// (e.g. on unpause / network change).
-    pub fn notify_unfetched_blob_followup(&self) {
-        self.unfetched_blob_trigger.notify_one();
+    /// Tell the manager the set of things-that-might-be-owed-to-mailboxes has
+    /// changed (e.g. a publish just landed a new blob), so it should run a
+    /// sync pass now rather than wait out the next interval. Pure wake-up.
+    pub fn notify_blobs_changed(&self) {
+        self.mailboxes.notify_blobs_changed();
     }
 
     /// Catch up after the process was suspended as after a network change: a
@@ -663,7 +661,6 @@ impl Node {
         crate::network_change_notifier::handle_network_change(
             self.endpoint.as_ref(),
             &self.mailboxes,
-            &self.unfetched_blob_trigger,
         )
         .await;
     }
@@ -1660,10 +1657,6 @@ impl Node {
             handle.abort();
         }
 
-        if let Some(handle) = self.unfetched_blob_followup_handle.lock().await.take() {
-            handle.abort();
-        }
-
         if let Some(handle) = self.message_ack_handle.lock().await.take() {
             handle.abort();
         }
@@ -1672,12 +1665,14 @@ impl Node {
             handle.abort();
         }
 
+        self.mailboxes.close().await;
+
         // File locks first, slow best-effort endpoint close last, each
         // time-bounded so a rebuild isn't held up by either.
 
-        // iroh-blobs redb store; fetch loop aborted above so nothing else is
-        // using it now. Absent when blob sync is disabled (the push extension),
-        // which never opens it.
+        // iroh-blobs redb store; all blob-touching loops are aborted above
+        // so nothing else is using it now. Absent when blob sync is disabled
+        // (the push extension), which never opens it.
         if let Some(blob_sync) = &self.blob_sync {
             match tokio::time::timeout(
                 std::time::Duration::from_secs(5),
@@ -1691,10 +1686,9 @@ impl Node {
             }
         }
 
-        // Close pools last.
-        // SqlitePool clones share state, so this drains every connection; the
-        // manager owns the mailbox sync tracker persistence pool.
-        self.mailboxes.close().await;
+        // Close pools last. SqlitePool clones share state, so one `close()` on
+        // each store drains every connection that store ever handed out; the
+        // manager owns its own mailbox-pool close and already did it above.
         self.local_store.close().await;
         self.op_store.close().await;
 
