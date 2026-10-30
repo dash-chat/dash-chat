@@ -255,12 +255,15 @@ where
 }
 
 /// Advance each log's blob height from the announce response. The height
-/// lands at the earliest unconfirmed seq minus one — meaning everything
-/// below it is confirmed — or at `op_height` when there's no unconfirmed
-/// candidate, so a fully-accounted window is never re-walked.
+/// lands at the earliest unconfirmed seq minus one — everything below that
+/// was announced this pass and either confirmed by `already_stored` or
+/// offered without confirmation — or at `op_height` when the window has
+/// no unconfirmed candidate, so a fully-accounted window is never re-walked.
 ///
-/// A log with only a blocker and no confirmed blobs yields no bump: a
-/// height is only recorded when it represents real progress.
+/// The blocker is honoured unconditionally: an unconfirmed blob stays in
+/// the unfetched tracker and is announced by hash on each pass regardless
+/// of where the height sits, so pinning the height just below it keeps the
+/// bounded-window invariant without losing the chance to retry.
 async fn advance_blob_heights<Item, Store>(
     mailboxes: &Mailboxes<Item, Store>,
     mailbox_id: &mailbox_client::MailboxId,
@@ -309,20 +312,10 @@ async fn advance_blob_heights_via<Item>(
 
         let new_height: Option<SeqNum> = match blocked_at {
             None => Some(log.op_height),
-            Some(blocked) => {
-                let Some(h) = blocked.checked_sub(1) else {
-                    continue; // blocker at seq 0: nothing representable below
-                };
-                let any_confirmed_below = log
-                    .candidates
-                    .iter()
-                    .any(|(seq, hash)| *seq <= h && already_stored.contains(hash));
-                if any_confirmed_below {
-                    Some(h)
-                } else {
-                    continue;
-                }
-            }
+            Some(blocked) => match blocked.checked_sub(1) {
+                Some(h) => Some(h.min(log.op_height)),
+                None => continue, // blocker at seq 0: nothing representable below
+            },
         };
 
         if let Some(h) = new_height {
@@ -778,7 +771,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn advance_does_not_bump_when_nothing_is_confirmed() {
+    async fn advance_stops_at_earliest_unconfirmed_even_when_nothing_confirmed() {
         let tracker = mem_blob_tracker();
         let logs = vec![LogCandidates::<Msg> {
             topic: 1,
@@ -798,9 +791,10 @@ mod tests {
             .get_all_blob_heights_for_mailbox(&"mbx".into())
             .await
             .unwrap();
-        assert!(
-            state.get(&1u8).and_then(|m| m.get(&'a')).is_none(),
-            "no bump is recorded when nothing was confirmed"
+        assert_eq!(
+            state.get(&1u8).and_then(|m| m.get(&'a')).copied(),
+            Some(0),
+            "blocker at seq 1 pins the height at 0, so seqs 1..=2 aren't re-walked next pass"
         );
     }
 

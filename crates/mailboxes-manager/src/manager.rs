@@ -1360,11 +1360,12 @@ mod tests {
         );
     }
 
-    /// An announce that confirms nothing leaves the blob height at 0, so
-    /// the next pass re-walks the same op window. This is the failure mode
-    /// the whole design targets: op landed, blob push raced.
+    /// An announce that confirms nothing bumps the log's blob height just
+    /// below the earliest unconfirmed seq, so future passes walk from there
+    /// rather than re-reading the same seq 0 window forever. The announced
+    /// hashes stay in the unfetched tracker and continue to be offered.
     #[tokio::test(start_paused = true)]
-    async fn reconcile_leaves_blob_height_at_zero_when_nothing_confirmed() {
+    async fn reconcile_pins_height_below_earliest_unconfirmed() {
         let op_store = BlobStoreStub::default();
         let topic = 1u8;
         let author = 'a';
@@ -1432,8 +1433,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             state.get(&topic).and_then(|m| m.get(&author)).copied(),
-            None,
-            "an announce with no stored confirmations must not advance the blob height"
+            Some(0),
+            "blocker at seq 1 pins the height at 0"
         );
     }
 
