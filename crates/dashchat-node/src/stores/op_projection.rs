@@ -67,6 +67,8 @@ const MIGRATIONS: &[&str] = &[
     )",
 ];
 
+const MAX_LAMPORT: u64 = (1 << 53) - 1;
+
 /// Why an operation was tombstoned.
 //
 // TODO: ACID: The tombstone state for `DeletedForMe` is actually required for
@@ -403,6 +405,7 @@ impl OpProjection {
         let topic = operation.topic();
 
         self.enforce_blocklist(operation).await?;
+        Self::enforce_lamport_bound(operation.message())?;
 
         let event = match &payload {
             Payload::Chat(ChatPayload::MessageAck { acks }) => {
@@ -589,6 +592,18 @@ impl OpProjection {
                 )));
             }
         };
+        Ok(())
+    }
+
+    fn enforce_lamport_bound(payload: &Payload) -> Result<(), ProjectionError> {
+        if let Payload::Chat(ChatPayload::Message(message)) = payload
+            && message.lamport > MAX_LAMPORT
+        {
+            return Err(ProjectionError::invalid(format!(
+                "lamport {} exceeds {MAX_LAMPORT}",
+                message.lamport
+            )));
+        }
         Ok(())
     }
 
@@ -784,7 +799,7 @@ impl OpProjection {
              WHERE excluded.lamport > chat_lamports.lamport",
         )
         .bind(topic.as_bytes().to_vec())
-        .bind(lamport as i64)
+        .bind(i64::try_from(lamport)?)
         .execute(&self.pool)
         .await?;
         Ok(())
